@@ -1,5 +1,15 @@
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const _initialHash = window.location.hash
+
+// ─── LOGGER ───────────────────────────────────────────────────────────────────
+// Structured console logging. All DB operations log [tag] before/after.
+// Open DevTools → Console to trace any failure instantly.
+const log = {
+  info:  (tag, msg, data) => console.log(`[${tag}]`, msg, data ?? ''),
+  warn:  (tag, msg, data) => console.warn(`[${tag}]`, msg, data ?? ''),
+  error: (tag, msg, data) => console.error(`[${tag}] ❌`, msg, data ?? ''),
+  ok:    (tag, msg, data) => console.log(`[${tag}] ✓`, msg, data ?? ''),
+}
 const SUPABASE_URL = 'https://avilxuiacmtgeoxxhfhc.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2aWx4dWlhY210Z2VveHhoZmhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NjExNzcsImV4cCI6MjA5NzQzNzE3N30.SpVc5ZX_yf6gMrCJLxY9CxDki7PhBj2vbENha7tWBrc'
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -23,12 +33,14 @@ async function showApp() {
 }
 
 async function loadUserInfo() {
-  const { data } = await db
+  log.info('loadUserInfo', 'fetching profile', { userId: currentUser.id })
+  const { data, error } = await db
     .from('profiles')
     .select('full_name')
     .eq('id', currentUser.id)
     .single()
 
+  if (error) log.error('loadUserInfo', 'profile fetch failed', error)
   currentProfile = data
   const name    = data?.full_name || currentUser.email
   const initial = name.charAt(0).toUpperCase()
@@ -57,15 +69,20 @@ document.getElementById('login-form').addEventListener('submit', async e => {
   btn.textContent  = 'Signing in…'
   errorEl.textContent = ''
 
+  const email = document.getElementById('login-email').value
+  log.info('login', 'attempting sign in', { email })
   const { error } = await db.auth.signInWithPassword({
-    email:    document.getElementById('login-email').value,
+    email,
     password: document.getElementById('login-password').value
   })
 
   if (error) {
+    log.error('login', 'sign in failed', error)
     errorEl.textContent = error.message
     btn.disabled    = false
     btn.textContent = 'Sign in'
+  } else {
+    log.ok('login', 'sign in successful', { email })
   }
 })
 
@@ -78,17 +95,21 @@ document.getElementById('signup-form').addEventListener('submit', async e => {
   errorEl.textContent  = ''
   errorEl.style.color  = ''
 
+  const email = document.getElementById('signup-email').value
+  log.info('signup', 'attempting sign up', { email })
   const { data, error } = await db.auth.signUp({
-    email:    document.getElementById('signup-email').value,
+    email,
     password: document.getElementById('signup-password').value,
     options:  { data: { full_name: document.getElementById('signup-name').value.trim() } }
   })
 
   if (error) {
+    log.error('signup', 'sign up failed', error)
     errorEl.textContent = error.message || 'Something went wrong. Please try again.'
     btn.disabled    = false
     btn.textContent = 'Create account'
   } else if (data.session) {
+    log.ok('signup', 'account created and session active', { email })
     errorEl.style.color = 'var(--success)'
     errorEl.textContent = 'Account created! Signing you in…'
   } else {
@@ -117,6 +138,7 @@ function navigate(page) {
     case 'dashboard': renderDashboard(container); break
     case 'clients':   renderClients(container);   break
     case 'workouts':  renderWorkouts(container);  break
+    case 'calendar':  renderCalendar(container);  break
     default: container.innerHTML = '<div class="loading-state">Page not found</div>'
   }
 }
@@ -130,26 +152,77 @@ document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 async function renderDashboard(el) {
+  log.info('renderDashboard', 'fetching dashboard data')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  const sevenDaysAgo   = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000).toISOString()
+  const fourteenDaysOn = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const todayStr       = new Date().toISOString().split('T')[0]
 
   const [
     { count: clientCount },
     { count: goalCount },
-    { count: workoutCount }
+    { count: workoutCount },
+    { data: recentWeights },
+    { data: recentWorkouts },
+    { data: activeClients },
+    { data: upcomingGoals }
   ] = await Promise.all([
     db.from('clients').select('*', { count: 'exact', head: true }),
     db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-    db.from('workout_logs').select('*', { count: 'exact', head: true })
+    db.from('workout_logs').select('*', { count: 'exact', head: true }),
+    db.from('weight_logs').select('client_id, logged_at, weight_kg').gte('logged_at', sevenDaysAgo).order('logged_at', { ascending: false }).limit(30),
+    db.from('workout_logs').select('client_id, logged_at').gte('logged_at', sevenDaysAgo).order('logged_at', { ascending: false }).limit(30),
+    db.from('clients').select('id, full_name, status').eq('status', 'active').order('full_name'),
+    db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', fourteenDaysOn).order('target_date').limit(5)
   ])
+
+  const clientMap = {}
+  ;(activeClients || []).forEach(c => { clientMap[c.id] = c.full_name })
+
+  // Activity feed — merge weight + workout logs, sort newest first
+  const feed = [
+    ...(recentWeights  || []).map(w => ({ type: 'weight',  client_id: w.client_id, logged_at: w.logged_at, detail: `${w.weight_kg} kg` })),
+    ...(recentWorkouts || []).map(w => ({ type: 'session', client_id: w.client_id, logged_at: w.logged_at, detail: 'Session logged' }))
+  ].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at)).slice(0, 8)
+
+  // Clients with no activity in last 7 days
+  const activeSet = new Set([
+    ...(recentWeights  || []).map(w => w.client_id),
+    ...(recentWorkouts || []).map(w => w.client_id)
+  ])
+  const quietClients = (activeClients || []).filter(c => !activeSet.has(c.id))
 
   const firstName = currentProfile?.full_name?.split(' ')[0] || 'Coach'
   const today     = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+
+  function timeAgo(iso) {
+    const diff = Date.now() - new Date(iso)
+    const h = Math.floor(diff / 3600000)
+    const d = Math.floor(diff / 86400000)
+    if (h < 1)  return 'just now'
+    if (h < 24) return `${h}h ago`
+    if (d === 1) return 'yesterday'
+    return `${d}d ago`
+  }
+
+  function daysUntil(dateStr) {
+    const diff = new Date(dateStr) - new Date(todayStr)
+    const d = Math.round(diff / 86400000)
+    if (d === 0) return 'today'
+    if (d === 1) return 'tomorrow'
+    return `in ${d} days`
+  }
 
   el.innerHTML = `
     <div class="page-header">
       <div>
         <h1 class="page-title">Welcome back, ${firstName} 👋</h1>
         <p class="page-subtitle">${today}</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="showAddClientModal()">+ Add client</button>
+        <button class="btn-secondary" onclick="navigate('workouts')">Build a workout</button>
       </div>
     </div>
 
@@ -168,20 +241,90 @@ async function renderDashboard(el) {
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">Quick actions</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+
+      <!-- Recent activity -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Recent activity</h2>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:2px">Last 7 days</p>
+        </div>
+        <div class="card-body" style="padding:12px 20px 16px">
+          ${feed.length === 0 ? `
+            <p style="color:var(--text-muted);font-size:13px">No activity logged in the last 7 days.</p>
+          ` : feed.map(f => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:13px">
+                  ${f.type === 'weight' ? '⚖' : '💪'}
+                </div>
+                <div>
+                  <div style="font-size:13px;font-weight:600;cursor:pointer" onclick="openClientByName('${(clientMap[f.client_id] || '').replace(/'/g,"\\'")}')">
+                    ${clientMap[f.client_id] || 'Unknown'}
+                  </div>
+                  <div style="font-size:11.5px;color:var(--text-muted)">${f.type === 'weight' ? f.detail : 'Session logged'}</div>
+                </div>
+              </div>
+              <div style="font-size:11.5px;color:var(--text-muted);white-space:nowrap">${timeAgo(f.logged_at)}</div>
+            </div>
+          `).join('')}
+        </div>
       </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn-primary" onclick="navigate('clients')">+ Add client</button>
-        <button class="btn-secondary" onclick="navigate('workouts')">Build a workout</button>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- Needs check-in -->
+        <div class="card">
+          <div class="card-header" style="padding:16px 20px 0">
+            <h2 class="section-title">Needs a check-in</h2>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:2px">Active clients — no logs this week</p>
+          </div>
+          <div class="card-body" style="padding:12px 20px 16px">
+            ${quietClients.length === 0 ? `
+              <p style="color:#22c55e;font-size:13px;font-weight:500">✓ All active clients logged this week</p>
+            ` : quietClients.map(c => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+                <div style="font-size:13px;font-weight:500;cursor:pointer;color:var(--text)" onclick="openClient('${c.id}')">${c.full_name}</div>
+                <button class="btn-secondary" style="font-size:11px;padding:3px 10px" onclick="openClient('${c.id}')">View</button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Goals due soon -->
+        <div class="card">
+          <div class="card-header" style="padding:16px 20px 0">
+            <h2 class="section-title">Goals due soon</h2>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:2px">Next 14 days</p>
+          </div>
+          <div class="card-body" style="padding:12px 20px 16px">
+            ${!upcomingGoals || upcomingGoals.length === 0 ? `
+              <p style="color:var(--text-muted);font-size:13px">No goals due in the next 14 days.</p>
+            ` : upcomingGoals.map(g => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+                <div>
+                  <div style="font-size:13px;font-weight:500">${g.title}</div>
+                  <div style="font-size:11.5px;color:var(--text-muted)">${g.clients?.full_name || ''}</div>
+                </div>
+                <div style="font-size:11.5px;font-weight:600;color:var(--accent);white-space:nowrap">${daysUntil(g.target_date)}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
       </div>
     </div>
   `
 }
 
+async function openClientByName(name) {
+  const { data } = await db.from('clients').select('id').eq('full_name', name).single()
+  if (data) openClient(data.id)
+}
+
 // ─── CLIENTS LIST ─────────────────────────────────────────────────────────────
 async function renderClients(el) {
+  log.info('renderClients', 'fetching client list')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const { data: clients, error } = await db
@@ -189,7 +332,8 @@ async function renderClients(el) {
     .select('*')
     .order('full_name')
 
-  if (error) { el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  if (error) { log.error('renderClients', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  log.ok('renderClients', `loaded ${clients.length} clients`)
 
   el.innerHTML = `
     <div class="page-header">
@@ -278,6 +422,7 @@ async function saveNewClient() {
   const errorEl = document.getElementById('nc-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
+  log.info('saveNewClient', 'inserting client', { name })
   const { error } = await db.from('clients').insert({
     coach_id:      currentUser.id,
     full_name:     name,
@@ -288,7 +433,8 @@ async function saveNewClient() {
     notes:         document.getElementById('nc-notes').value.trim()  || null
   })
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveNewClient', 'insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveNewClient', 'client created', { name })
 
   closeModal('add-client-modal')
   renderClients(document.getElementById('main-content'))
@@ -296,6 +442,7 @@ async function saveNewClient() {
 
 // ─── CLIENT DETAIL ────────────────────────────────────────────────────────────
 async function openClient(id) {
+  log.info('openClient', 'loading client profile', { clientId: id })
   const el = document.getElementById('main-content')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
@@ -305,7 +452,8 @@ async function openClient(id) {
     .eq('id', id)
     .single()
 
-  if (error) { el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  if (error) { log.error('openClient', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  log.ok('openClient', 'loaded', { name: client.full_name })
 
   el.innerHTML = `
     <a class="back-btn" href="#" onclick="navigate('clients');return false">
@@ -431,8 +579,10 @@ async function saveUpdateEmail(clientId) {
   const errorEl = document.getElementById('ue-error')
   if (!email) { errorEl.textContent = 'Email is required'; return }
 
+  log.info('saveUpdateEmail', 'updating client email', { clientId, email })
   const { error } = await db.from('clients').update({ email, updated_at: new Date().toISOString() }).eq('id', clientId)
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveUpdateEmail', 'update failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveUpdateEmail', 'email updated', { clientId, email })
 
   closeModal('update-email-modal')
   openClient(clientId)
@@ -501,6 +651,7 @@ async function saveEditClient(id) {
   const errorEl = document.getElementById('ec-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
+  log.info('saveEditClient', 'updating client details', { clientId: id, name })
   const { error } = await db.from('clients').update({
     full_name:     name,
     email:         document.getElementById('ec-email').value.trim()  || null,
@@ -512,14 +663,277 @@ async function saveEditClient(id) {
     updated_at:    new Date().toISOString()
   }).eq('id', id)
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveEditClient', 'update failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveEditClient', 'client updated', { clientId: id })
 
   closeModal('edit-client-modal')
   openClient(id)
 }
 
+// ─── CALENDAR ─────────────────────────────────────────────────────────────────
+const EVENT_COLOURS = {
+  session:     { bg: 'rgba(99,102,241,0.12)', text: 'var(--accent)',  dot: '#6366f1' },
+  review:      { bg: 'rgba(251,191,36,0.12)', text: '#f59e0b',        dot: '#f59e0b' },
+  competition: { bg: 'rgba(239,68,68,0.12)',  text: '#ef4444',        dot: '#ef4444' },
+  holiday:     { bg: 'rgba(34,197,94,0.12)',  text: '#22c55e',        dot: '#22c55e' },
+  gym:         { bg: 'rgba(168,85,247,0.12)', text: '#a855f7',        dot: '#a855f7' },
+  other:       { bg: 'rgba(156,163,175,0.12)',text: 'var(--text-muted)', dot: '#9ca3af' }
+}
+
+let calendarYear, calendarMonth
+
+async function renderCalendar(el) {
+  const now = new Date()
+  calendarYear  = calendarYear  ?? now.getFullYear()
+  calendarMonth = calendarMonth ?? now.getMonth()
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  // Fetch events for this month + overflow days
+  const firstDay = new Date(calendarYear, calendarMonth, 1)
+  const lastDay  = new Date(calendarYear, calendarMonth + 1, 0)
+  const from = firstDay.toISOString().split('T')[0]
+  const to   = lastDay.toISOString().split('T')[0]
+
+  const [{ data: events }, { data: clients }] = await Promise.all([
+    db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
+    db.from('clients').select('id, full_name').order('full_name')
+  ])
+
+  const clientMap = {}
+  ;(clients || []).forEach(c => { clientMap[c.id] = c.full_name })
+
+  // Group events by date
+  const byDate = {}
+  ;(events || []).forEach(e => {
+    if (!byDate[e.date]) byDate[e.date] = []
+    byDate[e.date].push(e)
+  })
+
+  const monthName = firstDay.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  const todayStr  = now.toISOString().split('T')[0]
+
+  // Build calendar grid (Mon-start)
+  const startDow = (firstDay.getDay() + 6) % 7 // 0=Mon
+  const daysInMonth = lastDay.getDate()
+  let cells = []
+  for (let i = 0; i < startDow; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  el.innerHTML = `
+    <div class="page-header">
+      <h1 class="page-title">Calendar</h1>
+      <button class="btn-primary" onclick="showAddEventModal()">+ Add event</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-body" style="padding:16px 20px">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <button class="btn-secondary" style="padding:6px 14px" onclick="calNav(-1)">←</button>
+          <h2 style="font-size:16px;font-weight:600">${monthName}</h2>
+          <button class="btn-secondary" style="padding:6px 14px" onclick="calNav(1)">→</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">
+          ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d =>
+            `<div style="font-size:11px;font-weight:600;color:var(--text-muted);padding:4px 0">${d}</div>`
+          ).join('')}
+          ${cells.map(d => {
+            if (!d) return `<div style="aspect-ratio:1;padding:4px"></div>`
+            const dateStr = `${calendarYear}-${String(calendarMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+            const dayEvents = byDate[dateStr] || []
+            const isToday = dateStr === todayStr
+            return `
+              <div onclick="showDayEvents('${dateStr}')" style="
+                aspect-ratio:1;padding:4px;border-radius:8px;cursor:pointer;
+                background:${isToday ? 'var(--accent)' : 'transparent'};
+                border:${isToday ? 'none' : '1px solid transparent'};
+                transition:background 0.15s
+              " onmouseover="this.style.background=this.style.background||'var(--surface-2)'"
+                 onmouseout="this.style.background='${isToday ? 'var(--accent)' : 'transparent'}'">
+                <div style="font-size:12px;font-weight:${isToday?'700':'500'};color:${isToday?'#fff':'var(--text)'}">
+                  ${d}
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;margin-top:2px">
+                  ${dayEvents.slice(0,3).map(e =>
+                    `<div style="width:5px;height:5px;border-radius:50%;background:${EVENT_COLOURS[e.type]?.dot || '#9ca3af'}"></div>`
+                  ).join('')}
+                </div>
+              </div>
+            `
+          }).join('')}
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Event list for selected month -->
+    <div id="cal-event-list">
+      ${renderEventList(events || [], clientMap)}
+    </div>
+  `
+}
+
+function renderEventList(events, clientMap) {
+  if (!events.length) return `
+    <div class="card"><div class="card-body" style="padding:20px;text-align:center">
+      <p style="color:var(--text-muted);font-size:13px">No events this month</p>
+    </div></div>
+  `
+  return `
+    <div class="card">
+      <div class="card-header" style="padding:16px 20px 0">
+        <h2 class="section-title">This month</h2>
+      </div>
+      <div class="card-body" style="padding:8px 20px 16px">
+        ${events.map(e => {
+          const col = EVENT_COLOURS[e.type] || EVENT_COLOURS.other
+          const dateLabel = new Date(e.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+          return `
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+              <div style="width:40px;text-align:center;flex-shrink:0">
+                <div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase">${dateLabel.split(' ')[0]}</div>
+                <div style="font-size:18px;font-weight:700;line-height:1.1">${dateLabel.split(' ')[1]}</div>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600">${e.title}</div>
+                <div style="display:flex;gap:6px;margin-top:3px;align-items:center">
+                  <span style="font-size:11px;padding:2px 7px;border-radius:4px;background:${col.bg};color:${col.text};font-weight:600">${e.type}</span>
+                  ${e.client_id ? `<span style="font-size:11.5px;color:var(--text-muted)">${clientMap[e.client_id] || ''}</span>` : ''}
+                </div>
+              </div>
+              <button onclick="deleteEvent('${e.id}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;font-size:14px" title="Delete">✕</button>
+            </div>
+          `
+        }).join('')}
+      </div>
+    </div>
+  `
+}
+
+function calNav(dir) {
+  calendarMonth += dir
+  if (calendarMonth > 11) { calendarMonth = 0; calendarYear++ }
+  if (calendarMonth < 0)  { calendarMonth = 11; calendarYear-- }
+  renderCalendar(document.getElementById('main-content'))
+}
+
+function showDayEvents(dateStr) {
+  showAddEventModal(dateStr)
+}
+
+async function deleteEvent(id) {
+  if (!confirm('Delete this event?')) return
+  log.info('deleteEvent', 'deleting event', { eventId: id })
+  const { error } = await db.from('events').delete().eq('id', id)
+  if (error) { log.error('deleteEvent', 'delete failed', error); return }
+  log.ok('deleteEvent', 'event deleted', { eventId: id })
+  renderCalendar(document.getElementById('main-content'))
+}
+
+function showAddEventModal(prefillDate = '') {
+  const existing = document.getElementById('add-event-modal')
+  if (existing) existing.remove()
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'add-event-modal'
+
+  const todayStr = new Date().toISOString().split('T')[0]
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Add event</h2>
+        <button class="modal-close" onclick="closeModal('add-event-modal')">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label">Title <span style="color:var(--danger)">*</span></label>
+        <input class="field-input" id="ae-title" placeholder="e.g. Weekly check-in">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label class="field-label">Date <span style="color:var(--danger)">*</span></label>
+          <input class="field-input" id="ae-date" type="date" value="${prefillDate || todayStr}">
+        </div>
+        <div class="field">
+          <label class="field-label">Type</label>
+          <select class="field-input" id="ae-type">
+            <option value="session">Session</option>
+            <option value="review">Review</option>
+            <option value="competition">Competition</option>
+            <option value="holiday">Holiday</option>
+            <option value="gym">Gym</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Client (optional)</label>
+        <select class="field-input" id="ae-client">
+          <option value="">— All clients / no specific client —</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">Notes</label>
+        <textarea class="field-input" id="ae-notes" rows="2" style="resize:vertical" placeholder="Optional"></textarea>
+      </div>
+      <p class="modal-error" id="ae-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('add-event-modal')">Cancel</button>
+        <button class="btn-primary" onclick="saveEvent()">Save event</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+
+  // Populate client dropdown
+  db.from('clients').select('id, full_name').order('full_name').then(({ data }) => {
+    const sel = document.getElementById('ae-client')
+    if (!sel) return
+    ;(data || []).forEach(c => {
+      const opt = document.createElement('option')
+      opt.value = c.id
+      opt.textContent = c.full_name
+      sel.appendChild(opt)
+    })
+  })
+}
+
+async function saveEvent() {
+  const title   = document.getElementById('ae-title').value.trim()
+  const date    = document.getElementById('ae-date').value
+  const type    = document.getElementById('ae-type').value
+  const clientId = document.getElementById('ae-client').value || null
+  const notes   = document.getElementById('ae-notes').value.trim() || null
+  const errorEl = document.getElementById('ae-error')
+
+  if (!title) { errorEl.textContent = 'Title is required'; return }
+  if (!date)  { errorEl.textContent = 'Date is required'; return }
+
+  log.info('saveEvent', 'inserting event', { title, date, type, clientId })
+  const { data: { user } } = await db.auth.getUser()
+  const { error } = await db.from('events').insert({
+    title,
+    date,
+    type,
+    client_id: clientId,
+    notes,
+    is_pt_assigned: true,
+    created_by: user.id
+  })
+
+  if (error) { log.error('saveEvent', 'insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveEvent', 'event saved', { title, date })
+
+  closeModal('add-event-modal')
+  renderCalendar(document.getElementById('main-content'))
+}
+
 // ─── CLIENT GOALS ─────────────────────────────────────────────────────────────
 async function renderClientGoals(clientId, el) {
+  log.info('renderClientGoals', 'fetching goals', { clientId })
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const { data: goals, error } = await db
@@ -529,7 +943,8 @@ async function renderClientGoals(clientId, el) {
     .order('priority')
     .order('created_at')
 
-  if (error) { el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  if (error) { log.error('renderClientGoals', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  log.ok('renderClientGoals', `loaded ${goals.length} goals`)
 
   el.innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
@@ -674,6 +1089,7 @@ async function saveNewGoal(clientId) {
   const errorEl = document.getElementById('ag-error')
   if (!title) { errorEl.textContent = 'Title is required'; return }
 
+  log.info('saveNewGoal', 'inserting goal', { clientId, title })
   const startVal = document.getElementById('ag-start').value
   const { error } = await db.from('goals').insert({
     client_id:    clientId,
@@ -691,7 +1107,8 @@ async function saveNewGoal(clientId) {
     status:       'active'
   })
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveNewGoal', 'insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveNewGoal', 'goal created', { clientId, title })
 
   closeModal('add-goal-modal')
   const tabContent = document.getElementById('tab-content')
@@ -854,6 +1271,7 @@ async function saveNewMilestone(goalId, clientId) {
   const errorEl = document.getElementById('am-error')
   if (!title) { errorEl.textContent = 'Title is required'; return }
 
+  log.info('saveNewMilestone', 'inserting milestone', { goalId, title })
   const { error } = await db.from('goal_milestones').insert({
     goal_id:      goalId,
     title,
@@ -862,16 +1280,20 @@ async function saveNewMilestone(goalId, clientId) {
     target_date:  document.getElementById('am-date').value          || null
   })
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveNewMilestone', 'insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveNewMilestone', 'milestone created', { goalId, title })
   closeModal('add-milestone-modal')
   openGoal(goalId, clientId)
 }
 
 async function toggleMilestone(milestoneId, goalId, clientId) {
-  const { data: m } = await db.from('goal_milestones').select('completed_at').eq('id', milestoneId).single()
-  await db.from('goal_milestones').update({
-    completed_at: m.completed_at ? null : new Date().toISOString()
-  }).eq('id', milestoneId)
+  log.info('toggleMilestone', 'toggling milestone', { milestoneId })
+  const { data: m, error: fetchErr } = await db.from('goal_milestones').select('completed_at').eq('id', milestoneId).single()
+  if (fetchErr) { log.error('toggleMilestone', 'fetch failed', fetchErr); return }
+  const newVal = m.completed_at ? null : new Date().toISOString()
+  const { error } = await db.from('goal_milestones').update({ completed_at: newVal }).eq('id', milestoneId)
+  if (error) { log.error('toggleMilestone', 'update failed', error); return }
+  log.ok('toggleMilestone', 'milestone toggled', { milestoneId, completed: !!newVal })
   openGoal(goalId, clientId)
 }
 
@@ -914,6 +1336,7 @@ async function saveCheckIn(goalId, clientId) {
   const errorEl = document.getElementById('ci-error')
   const value   = document.getElementById('ci-value').value
 
+  log.info('saveCheckIn', 'inserting check-in', { goalId, value })
   const { error } = await db.from('goal_check_ins').insert({
     goal_id:       goalId,
     created_by:    currentUser.id,
@@ -922,11 +1345,14 @@ async function saveCheckIn(goalId, clientId) {
     notes:         document.getElementById('ci-notes').value.trim() || null
   })
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveCheckIn', 'insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveCheckIn', 'check-in saved', { goalId, value })
 
   // Update goal's current_value if a value was provided
   if (value) {
-    await db.from('goals').update({ current_value: parseFloat(value), updated_at: new Date().toISOString() }).eq('id', goalId)
+    log.info('saveCheckIn', 'updating goal current_value', { goalId, value })
+    const { error: updateErr } = await db.from('goals').update({ current_value: parseFloat(value), updated_at: new Date().toISOString() }).eq('id', goalId)
+    if (updateErr) log.error('saveCheckIn', 'goal current_value update failed', updateErr)
   }
 
   closeModal('add-checkin-modal')
@@ -995,6 +1421,7 @@ async function saveEditGoal(goalId, clientId) {
   const title   = document.getElementById('eg-title').value.trim()
   if (!title) { errorEl.textContent = 'Title is required'; return }
 
+  log.info('saveEditGoal', 'updating goal', { goalId, title })
   const { error } = await db.from('goals').update({
     title,
     description:   document.getElementById('eg-desc').value.trim()    || null,
@@ -1005,14 +1432,18 @@ async function saveEditGoal(goalId, clientId) {
     updated_at:    new Date().toISOString()
   }).eq('id', goalId)
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveEditGoal', 'update failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveEditGoal', 'goal updated', { goalId })
   closeModal('edit-goal-modal')
   openGoal(goalId, clientId)
 }
 
 async function deleteGoal(goalId, clientId) {
   if (!confirm('Delete this goal and all its milestones and check-ins? This cannot be undone.')) return
-  await db.from('goals').delete().eq('id', goalId)
+  log.info('deleteGoal', 'deleting goal', { goalId })
+  const { error } = await db.from('goals').delete().eq('id', goalId)
+  if (error) { log.error('deleteGoal', 'delete failed', error); return }
+  log.ok('deleteGoal', 'goal deleted', { goalId })
   closeModal('edit-goal-modal')
   const content = document.getElementById('tab-content')
   renderClientGoals(clientId, content)
@@ -1070,13 +1501,15 @@ function switchWorkoutTab(tab) {
 }
 
 async function renderWorkoutTemplates(el) {
+  log.info('renderWorkoutTemplates', 'fetching templates')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
   const { data: templates, error } = await db
     .from('workout_templates')
     .select('*, workout_template_exercises(id)')
     .order('name')
 
-  if (error) { el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  if (error) { log.error('renderWorkoutTemplates', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
 
   el.innerHTML = templates.length === 0 ? `
     <div class="empty-state">
@@ -1207,6 +1640,7 @@ async function saveNewExercise() {
   const errorEl = document.getElementById('ae-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
+  log.info('saveNewExercise', 'inserting exercise', { name })
   const { error } = await db.from('exercises').insert({
     coach_id:      currentUser.id,
     name,
@@ -1217,7 +1651,8 @@ async function saveNewExercise() {
     notes:         document.getElementById('ae-notes').value.trim() || null
   })
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveNewExercise', 'insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveNewExercise', 'exercise created', { name })
   closeModal('add-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
 }
@@ -1284,6 +1719,7 @@ async function saveEditExercise(id) {
   const errorEl = document.getElementById('ee-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
+  log.info('saveEditExercise', 'updating exercise', { id, name })
   const { error } = await db.from('exercises').update({
     name,
     muscle_group:  document.getElementById('ee-muscle').value    || null,
@@ -1293,14 +1729,18 @@ async function saveEditExercise(id) {
     notes:         document.getElementById('ee-notes').value.trim() || null
   }).eq('id', id)
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveEditExercise', 'update failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveEditExercise', 'exercise updated', { id, name })
   closeModal('edit-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
 }
 
 async function deleteExercise(id) {
   if (!confirm('Delete this exercise? It will be removed from any templates that use it.')) return
-  await db.from('exercises').delete().eq('id', id)
+  log.info('deleteExercise', 'deleting exercise', { id })
+  const { error } = await db.from('exercises').delete().eq('id', id)
+  if (error) { log.error('deleteExercise', 'delete failed', error); return }
+  log.ok('deleteExercise', 'exercise deleted', { id })
   closeModal('edit-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
 }
@@ -1340,13 +1780,15 @@ async function saveNewTemplate() {
   const errorEl = document.getElementById('ct-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
+  log.info('saveNewTemplate', 'creating template', { name })
   const { data, error } = await db.from('workout_templates').insert({
     coach_id:    currentUser.id,
     name,
     description: document.getElementById('ct-desc').value.trim() || null
   }).select().single()
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveNewTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveNewTemplate', 'template created', { id: data.id, name })
   closeModal('create-template-modal')
   openTemplate(data.id)
 }
@@ -1601,6 +2043,7 @@ async function saveExerciseToTemplate(templateId) {
   const name = document.getElementById('att-name').value.trim()
   const errorEl = document.getElementById('att-error')
   if (!name) { errorEl.textContent = 'Exercise name is required'; return }
+  log.info('saveExerciseToTemplate', 'adding exercise to template', { templateId, name })
 
   const { data: existing } = await db
     .from('workout_template_exercises')
@@ -1632,7 +2075,8 @@ async function saveExerciseToTemplate(templateId) {
     notes:         document.getElementById('att-notes').value.trim() || null
   })
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveExerciseToTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveExerciseToTemplate', 'exercise added to template', { templateId, name })
   closeModal('add-to-template-modal')
   openTemplate(templateId)
 }
@@ -1691,6 +2135,7 @@ async function saveEditTemplateExercise(texId, templateId) {
   if (!name) { errorEl.textContent = 'Name is required'; return }
   const sets = window._templateSets || []
 
+  log.info('saveEditTemplateExercise', 'updating template exercise', { texId, name })
   const { error } = await db.from('workout_template_exercises').update({
     exercise_name: name,
     exercise_type: document.getElementById('ett-type').value,
@@ -1698,13 +2143,17 @@ async function saveEditTemplateExercise(texId, templateId) {
     sets_json:     sets.length ? sets : null,
     notes:         document.getElementById('etex-notes').value.trim() || null
   }).eq('id', texId)
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveEditTemplateExercise', 'template exercise updated', { texId })
   closeModal('edit-tex-modal')
   openTemplate(templateId)
 }
 
 async function deleteTemplateExercise(texId, templateId) {
-  await db.from('workout_template_exercises').delete().eq('id', texId)
+  log.info('deleteTemplateExercise', 'removing exercise from template', { texId, templateId })
+  const { error } = await db.from('workout_template_exercises').delete().eq('id', texId)
+  if (error) { log.error('deleteTemplateExercise', 'delete failed', error); return }
+  log.ok('deleteTemplateExercise', 'exercise removed', { texId })
   closeModal('edit-tex-modal')
   openTemplate(templateId)
 }
@@ -1744,24 +2193,30 @@ async function saveEditTemplate(id) {
   const errorEl = document.getElementById('et-error')
   const name = document.getElementById('et-name').value.trim()
   if (!name) { errorEl.textContent = 'Name is required'; return }
+  log.info('saveEditTemplate', 'updating template', { id, name })
   const { error } = await db.from('workout_templates').update({
     name,
     description: document.getElementById('et-desc').value.trim() || null
   }).eq('id', id)
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveEditTemplate', 'update failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveEditTemplate', 'template updated', { id })
   closeModal('edit-template-modal')
   openTemplate(id)
 }
 
 async function deleteTemplate(id) {
   if (!confirm('Delete this template? This cannot be undone.')) return
-  await db.from('workout_templates').delete().eq('id', id)
+  log.info('deleteTemplate', 'deleting template', { id })
+  const { error } = await db.from('workout_templates').delete().eq('id', id)
+  if (error) { log.error('deleteTemplate', 'delete failed', error); return }
+  log.ok('deleteTemplate', 'template deleted', { id })
   closeModal('edit-template-modal')
   navigate('workouts')
 }
 
 // ─── CLIENT WORKOUTS TAB ──────────────────────────────────────────────────────
 async function renderClientWorkouts(clientId, el) {
+  log.info('renderClientWorkouts', 'fetching workout logs', { clientId })
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const { data: logs, error } = await db
@@ -1770,7 +2225,8 @@ async function renderClientWorkouts(clientId, el) {
     .eq('client_id', clientId)
     .order('date', { ascending: false })
 
-  if (error) { el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  if (error) { log.error('renderClientWorkouts', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  log.ok('renderClientWorkouts', `loaded ${logs.length} sessions`)
 
   el.innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
@@ -2035,7 +2491,8 @@ async function saveWorkoutSession(clientId) {
   const blocks = window._logBlocks.filter(b => b.name.trim())
   if (blocks.length === 0) { errorEl.textContent = 'Add at least one exercise'; return }
 
-  const { data: log, error } = await db.from('workout_logs').insert({
+  log.info('saveWorkoutSession', 'saving session', { clientId, name, exerciseCount: blocks.length })
+  const { data: sessionLog, error } = await db.from('workout_logs').insert({
     coach_id:    currentUser.id,
     client_id:   clientId,
     template_id: document.getElementById('ls-template').value || null,
@@ -2044,18 +2501,20 @@ async function saveWorkoutSession(clientId) {
     notes:       document.getElementById('ls-notes').value.trim() || null
   }).select().single()
 
-  if (error) { errorEl.textContent = error.message; return }
+  if (error) { log.error('saveWorkoutSession', 'workout_logs insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveWorkoutSession', 'workout log created', { logId: sessionLog.id })
 
   for (let bi = 0; bi < blocks.length; bi++) {
     const block = blocks[bi]
+    log.info('saveWorkoutSession', `saving exercise ${bi + 1}/${blocks.length}`, { name: block.name, sets: block.sets.length })
     const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
-      log_id:        log.id,
+      log_id:        sessionLog.id,
       exercise_name: block.name.trim(),
       exercise_type: block.type,
       order_index:   bi
     }).select().single()
 
-    if (exErr) { errorEl.textContent = exErr.message; return }
+    if (exErr) { log.error('saveWorkoutSession', `exercise ${bi + 1} insert failed`, exErr); errorEl.textContent = exErr.message; return }
 
     const setsToInsert = block.sets.map((s, si) => {
       const row = {
@@ -2081,10 +2540,12 @@ async function saveWorkoutSession(clientId) {
 
     if (setsToInsert.length) {
       const { error: setsErr } = await db.from('workout_log_sets').insert(setsToInsert)
-      if (setsErr) { errorEl.textContent = setsErr.message; return }
+      if (setsErr) { log.error('saveWorkoutSession', `sets insert failed for exercise ${bi + 1}`, setsErr); errorEl.textContent = setsErr.message; return }
+      log.ok('saveWorkoutSession', `sets saved for exercise ${bi + 1}`, { count: setsToInsert.length })
     }
   }
 
+  log.ok('saveWorkoutSession', 'session fully saved', { clientId, name })
   closeModal('log-session-modal')
   window._logBlocks = []
   const tabContent = document.getElementById('tab-content')
@@ -2169,7 +2630,10 @@ function backToClientWorkouts(clientId) {
 
 async function deleteWorkoutLog(logId, clientId) {
   if (!confirm('Delete this session? This cannot be undone.')) return
-  await db.from('workout_logs').delete().eq('id', logId)
+  log.info('deleteWorkoutLog', 'deleting session', { logId })
+  const { error } = await db.from('workout_logs').delete().eq('id', logId)
+  if (error) { log.error('deleteWorkoutLog', 'delete failed', error); return }
+  log.ok('deleteWorkoutLog', 'session deleted', { logId })
   renderClientWorkouts(clientId, document.getElementById('tab-content'))
 }
 
@@ -2195,6 +2659,7 @@ const PERF_COLOURS = {
 }
 
 async function renderClientPerformance(clientId, el) {
+  log.info('renderClientPerformance', 'fetching performance logs', { clientId })
   el.innerHTML = '<div style="padding:24px;color:var(--text-muted);text-align:center">Loading…</div>'
 
   const { data: logs, error } = await db
@@ -2203,7 +2668,8 @@ async function renderClientPerformance(clientId, el) {
     .eq('client_id', clientId)
     .order('date', { ascending: false })
 
-  if (error) { el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading performance data</div></div>`; return }
+  if (error) { log.error('renderClientPerformance', 'fetch failed', error); el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading performance data</div></div>`; return }
+  log.ok('renderClientPerformance', `loaded ${logs.length} records`)
 
   // Group by category
   const byCategory = {}
@@ -2256,7 +2722,7 @@ async function renderClientPerformance(clientId, el) {
         if (catLogs.length === 0) return ''
         const colour = PERF_COLOURS[cat.id]
 
-        // Group by name to find PBs
+        // Group by exercise name, sorted newest first within each
         const byName = {}
         catLogs.forEach(l => {
           if (!byName[l.name]) byName[l.name] = []
@@ -2270,34 +2736,71 @@ async function renderClientPerformance(clientId, el) {
             <span style="font-size:13px;font-weight:700;color:var(--text)">${cat.label}</span>
             <span style="font-size:11px;color:var(--text-muted)">${catLogs.length} record${catLogs.length !== 1 ? 's' : ''}</span>
           </div>
-          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
-            <table style="width:100%;border-collapse:collapse">
-              <thead>
-                <tr style="background:var(--surface2)">
-                  <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Exercise / Name</th>
-                  <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Best</th>
-                  <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Date</th>
-                  <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Records</th>
-                  <th style="padding:10px 14px;width:40px"></th>
-                </tr>
-              </thead>
-              <tbody>
-                ${Object.entries(byName).map(([name, records], i) => {
-                  const best = records[0]
-                  return `
-                  <tr style="border-top:${i > 0 ? '1px solid var(--border)' : 'none'}">
-                    <td style="padding:10px 14px;font-size:13px;font-weight:600;color:var(--text)">${name}</td>
-                    <td style="padding:10px 14px;text-align:right;font-size:14px;font-weight:700;color:${colour}">${best.value} ${best.unit}</td>
-                    <td style="padding:10px 14px;text-align:right;font-size:12px;color:var(--text-muted)">${best.date}</td>
-                    <td style="padding:10px 14px;text-align:right;font-size:12px;color:var(--text-muted)">${records.length}</td>
-                    <td style="padding:10px 14px;text-align:right">
-                      <button onclick="deletePerfLog('${best.id}','${clientId}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:15px;padding:2px 6px;border-radius:4px" title="Delete latest">×</button>
-                    </td>
-                  </tr>`
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
+
+          ${Object.entries(byName).map(([name, records]) => {
+            const best = records[0]
+            const slug = name.replace(/[^a-z0-9]/gi,'_') + '_' + cat.id
+            const chartData = [...records].reverse() // oldest→newest for chart
+            return `
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden">
+
+              <!-- Summary row — click to expand -->
+              <div onclick="togglePerfHistory('${slug}')"
+                style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div>
+                    <div style="font-size:13px;font-weight:600">${name}</div>
+                    <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${records.length} entr${records.length !== 1 ? 'ies' : 'y'}</div>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="font-size:15px;font-weight:700;color:${colour}">${best.value} ${best.unit}</span>
+                  <span style="font-size:10px;font-weight:700;background:gold;color:#78350f;padding:2px 7px;border-radius:4px">PB</span>
+                  <span id="perf-chevron-${slug}" style="color:var(--text-muted);font-size:12px;transition:transform 0.2s">▼</span>
+                </div>
+              </div>
+
+              <!-- Expandable history + chart -->
+              <div id="perf-history-${slug}" style="display:none;border-top:1px solid var(--border)">
+
+                <!-- Chart -->
+                ${records.length > 1 ? `
+                <div style="padding:16px;border-bottom:1px solid var(--border)">
+                  <canvas id="perf-chart-${slug}" height="80"></canvas>
+                </div>` : ''}
+
+                <!-- History table -->
+                <table style="width:100%;border-collapse:collapse">
+                  <thead>
+                    <tr style="background:var(--surface-2)">
+                      <th style="padding:8px 14px;text-align:left;font-size:11px;color:var(--text-muted);font-weight:600">Date</th>
+                      <th style="padding:8px 14px;text-align:right;font-size:11px;color:var(--text-muted);font-weight:600">Value</th>
+                      <th style="padding:8px 14px;text-align:left;font-size:11px;color:var(--text-muted);font-weight:600">Notes</th>
+                      <th style="padding:8px 14px;width:36px"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${records.map((r, i) => `
+                    <tr style="border-top:${i > 0 ? '1px solid var(--border)' : 'none'}">
+                      <td style="padding:9px 14px;font-size:12.5px;color:var(--text-muted)">${r.date}</td>
+                      <td style="padding:9px 14px;text-align:right;font-size:13px;font-weight:${i === 0 ? '700' : '500'};color:${i === 0 ? colour : 'var(--text)'}">
+                        ${r.value} ${r.unit}
+                        ${i === 0 ? `<span style="font-size:9px;font-weight:700;background:gold;color:#78350f;padding:1px 5px;border-radius:3px;margin-left:4px">PB</span>` : ''}
+                      </td>
+                      <td style="padding:9px 14px;font-size:12px;color:var(--text-muted)">${r.notes || '—'}</td>
+                      <td style="padding:9px 14px;text-align:right">
+                        <button onclick="deletePerfLog('${r.id}','${clientId}')"
+                          style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:2px 5px">×</button>
+                      </td>
+                    </tr>`).join('')}
+                  </tbody>
+                </table>
+
+              </div>
+            </div>
+
+            `
+          }).join('')}
         </div>`
       }).join('')}
 
@@ -2309,6 +2812,68 @@ async function renderClientPerformance(clientId, el) {
         </div>` : ''}
     </div>
   `
+
+  // Store chart data after HTML is rendered (script tags in innerHTML don't execute)
+  window.__perfCharts    = {}
+  window.__perfChartData = {}
+  PERF_CATEGORIES.forEach(cat => {
+    const catLogs = byCategory[cat.id]
+    const colour  = PERF_COLOURS[cat.id]
+    const byName  = {}
+    catLogs.forEach(l => {
+      if (!byName[l.name]) byName[l.name] = []
+      byName[l.name].push(l)
+    })
+    Object.entries(byName).forEach(([name, records]) => {
+      const slug      = name.replace(/[^a-z0-9]/gi,'_') + '_' + cat.id
+      const chartData = [...records].reverse()
+      window.__perfChartData[slug] = {
+        labels: chartData.map(r => r.date),
+        values: chartData.map(r => r.value),
+        colour
+      }
+    })
+  })
+}
+
+function togglePerfHistory(slug) {
+  const panel   = document.getElementById(`perf-history-${slug}`)
+  const chevron = document.getElementById(`perf-chevron-${slug}`)
+  if (!panel) return
+  const isOpen = panel.style.display !== 'none'
+  panel.style.display = isOpen ? 'none' : 'block'
+  if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)'
+
+  // Draw chart on first open
+  if (!isOpen) {
+    const d = window.__perfChartData?.[slug]
+    const canvas = document.getElementById(`perf-chart-${slug}`)
+    if (!d || !canvas || d.values.length < 2) return
+    if (window.__perfCharts[slug]) window.__perfCharts[slug].destroy()
+    window.__perfCharts[slug] = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: d.labels,
+        datasets: [{
+          data: d.values,
+          borderColor: d.colour,
+          backgroundColor: d.colour + '22',
+          borderWidth: 2,
+          pointRadius: 3,
+          tension: 0.3,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { font: { size: 10 } } }
+        }
+      }
+    })
+  }
 }
 
 function updatePerfUnits() {
@@ -2331,6 +2896,7 @@ async function savePerformanceLog(clientId) {
 
   if (!category || !date || !name || !value || !unit) return alert('Please fill in all required fields.')
 
+  log.info('savePerformanceLog', 'inserting performance record', { clientId, category, name, value, unit })
   const { data: { user } } = await db.auth.getUser()
 
   const { error } = await db.from('performance_logs').insert({
@@ -2344,19 +2910,24 @@ async function savePerformanceLog(clientId) {
     notes: notes || null
   })
 
-  if (error) { alert('Error saving: ' + error.message); return }
+  if (error) { log.error('savePerformanceLog', 'insert failed', error); alert('Error saving: ' + error.message); return }
+  log.ok('savePerformanceLog', 'record saved', { clientId, name, value, unit })
   renderClientPerformance(clientId, document.getElementById('tab-content'))
 }
 
 async function deletePerfLog(id, clientId) {
   if (!confirm('Delete this record?')) return
-  await db.from('performance_logs').delete().eq('id', id)
+  log.info('deletePerfLog', 'deleting performance record', { id })
+  const { error } = await db.from('performance_logs').delete().eq('id', id)
+  if (error) { log.error('deletePerfLog', 'delete failed', error); return }
+  log.ok('deletePerfLog', 'record deleted', { id })
   renderClientPerformance(clientId, document.getElementById('tab-content'))
 }
 
 // ─── WEIGHT TRACKING ──────────────────────────────────────────────────────────
 
 async function renderClientWeight(clientId, el) {
+  log.info('renderClientWeight', 'fetching weight logs', { clientId })
   el.innerHTML = '<div style="padding:24px;color:var(--text-muted);text-align:center">Loading…</div>'
 
   const { data: logs, error } = await db
@@ -2365,7 +2936,8 @@ async function renderClientWeight(clientId, el) {
     .eq('client_id', clientId)
     .order('date', { ascending: false })
 
-  if (error) { el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading weight data</div></div>`; return }
+  if (error) { log.error('renderClientWeight', 'fetch failed', error); el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading weight data</div></div>`; return }
+  log.ok('renderClientWeight', `loaded ${logs.length} entries`)
 
   const fmt = kg => `${parseFloat(kg).toFixed(1)} kg`
   const latest = logs[0]
@@ -2520,6 +3092,7 @@ async function renderClientWeight(clientId, el) {
 async function sendClientInvite(clientId, email) {
   if (!confirm(`Send invite email to ${email}?`)) return
 
+  log.info('sendClientInvite', 'sending invite', { clientId, email })
   const btn = event.target
   btn.disabled = true
   btn.textContent = 'Sending…'
@@ -2538,13 +3111,16 @@ async function sendClientInvite(clientId, email) {
   const json = await res.json()
 
   if (!res.ok) {
+    log.error('sendClientInvite', 'edge function returned error', { status: res.status, error: json.error })
     alert('Failed to send invite: ' + (json.error || 'Unknown error'))
     btn.disabled = false
     btn.textContent = '✉ Send invite'
     return
   }
 
-  await db.from('clients').update({ invited_at: new Date().toISOString() }).eq('id', clientId)
+  log.ok('sendClientInvite', 'invite sent via edge function', { email, userId: json.userId })
+  const { error: stampErr } = await db.from('clients').update({ invited_at: new Date().toISOString() }).eq('id', clientId)
+  if (stampErr) log.error('sendClientInvite', 'failed to stamp invited_at', stampErr)
 
   alert(`Invite sent to ${email}`)
   openClient(clientId)
@@ -2558,6 +3134,7 @@ async function saveWeightLog(clientId) {
 
   if (!date || !weight) return alert('Date and weight are required.')
 
+  log.info('saveWeightLog', 'inserting weight entry', { clientId, date, weight_kg: weight })
   const { error } = await db.from('weight_logs').insert({
     client_id:    clientId,
     date,
@@ -2566,13 +3143,17 @@ async function saveWeightLog(clientId) {
     notes:        notes || null
   })
 
-  if (error) { alert('Error saving: ' + error.message); return }
+  if (error) { log.error('saveWeightLog', 'insert failed', error); alert('Error saving: ' + error.message); return }
+  log.ok('saveWeightLog', 'weight entry saved', { clientId, date, weight_kg: weight })
   renderClientWeight(clientId, document.getElementById('tab-content'))
 }
 
 async function deleteWeightLog(id, clientId) {
   if (!confirm('Delete this entry?')) return
-  await db.from('weight_logs').delete().eq('id', id)
+  log.info('deleteWeightLog', 'deleting weight entry', { id })
+  const { error } = await db.from('weight_logs').delete().eq('id', id)
+  if (error) { log.error('deleteWeightLog', 'delete failed', error); return }
+  log.ok('deleteWeightLog', 'entry deleted', { id })
   renderClientWeight(clientId, document.getElementById('tab-content'))
 }
 
@@ -2599,18 +3180,21 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
 
   // Supabase JS v2 auto-processes the invite hash on init and establishes the session.
   // No manual setSession needed — call updateUser directly.
+  log.info('inviteForm', 'submitting invite acceptance', { name })
   const { error } = await db.auth.updateUser({
     password,
     data: { full_name: name }
   })
 
   if (error) {
+    log.error('inviteForm', 'updateUser failed', error)
     errorEl.textContent = error.message
     btn.disabled = false
     btn.textContent = 'Activate account'
     return
   }
 
+  log.ok('inviteForm', 'account activated successfully')
   // Clear the hash so the invite token isn't reused
   history.replaceState(null, '', window.location.pathname)
   showApp()
@@ -2624,6 +3208,7 @@ if (_initialHash.includes('type=invite')) {
 }
 
 db.auth.onAuthStateChange((event, session) => {
+  log.info('auth', `state change: ${event}`, { userId: session?.user?.id ?? null })
   currentUser = session?.user ?? null
 
   if (event === 'PASSWORD_RECOVERY') return
