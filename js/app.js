@@ -292,7 +292,6 @@ async function renderDashboard(el) {
             ${complianceRows.length === 0 ? `
               <p style="color:var(--text-muted);font-size:13px">No active clients.</p>
             ` : (() => {
-              const zeroCount = complianceRows.filter(c => c.sessions === 0).length
               const visible = complianceRows.slice(0, 6)
               const remaining = complianceRows.length - visible.length
               return visible.map(c => {
