@@ -1560,7 +1560,7 @@ async function renderExerciseLibrary(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
   const { data: exercises, error } = await db.from('exercises').select('*').order('name')
 
-  if (error) { el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  if (error) { log.error('renderExerciseLibrary', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
   const groups = {}
   exercises.forEach(e => {
@@ -1826,7 +1826,7 @@ async function openTemplate(id) {
     .eq('id', id)
     .single()
 
-  if (error) { el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  if (error) { log.error('openTemplate', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
   const exercises = (t.workout_template_exercises || []).sort((a, b) => a.order_index - b.order_index)
 
@@ -2736,6 +2736,7 @@ async function renderClientPerformance(clientId, el) {
           <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Notes <span style="font-weight:400">(optional)</span></label>
           <input id="pl-notes" type="text" class="field-input" placeholder="e.g. Competition day, fresh, with belt">
         </div>
+        <p id="perf-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
         <button onclick="savePerformanceLog('${clientId}')" class="btn-primary" style="width:100%">Save record</button>
       </div>
 
@@ -2933,7 +2934,7 @@ async function savePerformanceLog(clientId) {
     notes: notes || null
   })
 
-  if (error) { log.error('savePerformanceLog', 'insert failed', error); alert('Error saving: ' + error.message); return }
+  if (error) { log.error('savePerformanceLog', 'insert failed', error); document.getElementById('perf-error') && (document.getElementById('perf-error').textContent = error.message); return }
   log.ok('savePerformanceLog', 'record saved', { clientId, name, value, unit })
   renderClientPerformance(clientId, document.getElementById('tab-content'))
 }
@@ -2992,6 +2993,7 @@ async function renderClientWeight(clientId, el) {
           <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Notes <span style="font-weight:400">(optional)</span></label>
           <input id="wl-notes" type="text" class="field-input" placeholder="e.g. morning, fasted">
         </div>
+        <p id="wl-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
         <button onclick="saveWeightLog('${clientId}')" class="btn-primary" style="width:100%">Save entry</button>
       </div>
 
@@ -3166,7 +3168,7 @@ async function saveWeightLog(clientId) {
     notes:        notes || null
   })
 
-  if (error) { log.error('saveWeightLog', 'insert failed', error); alert('Error saving: ' + error.message); return }
+  if (error) { log.error('saveWeightLog', 'insert failed', error); document.getElementById('wl-error') && (document.getElementById('wl-error').textContent = error.message); return }
   log.ok('saveWeightLog', 'weight entry saved', { clientId, date, weight_kg: weight })
   renderClientWeight(clientId, document.getElementById('tab-content'))
 }
@@ -3227,7 +3229,7 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
 
 // Handle invite links immediately — don't wait for auth event
 if (_initialHash.includes('type=invite')) {
-  try { showInviteForm() } catch(e) { console.error('showInviteForm failed:', e) }
+  try { showInviteForm() } catch(e) { log.error('boot', 'showInviteForm failed', e) }
 }
 
 db.auth.onAuthStateChange((event, session) => {
