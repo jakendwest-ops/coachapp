@@ -13,10 +13,11 @@ Call `preview_start("CoachApp")`. If it fails or the launch config is missing, n
 
 ## Step 2 — Read the Vault
 
-Read all three files in this order:
+Read all four files in this order:
 1. `C:\Users\jaken\Claude\Vault\projects\PTHub\STATUS.md` — live project state
 2. `C:\Users\jaken\Claude\Vault\projects\PTHub\LOG.md` — last few entries (most recent first)
-3. `C:\Users\jaken\Claude\Vault\projects\CoachApp\blueprint.md` — product blueprint
+3. `C:\Users\jaken\Claude\Vault\projects\CoachApp\roadmap.md` — full feature roadmap (status tags)
+4. `C:\Users\jaken\Claude\Vault\projects\CoachApp\blueprint.md` — product blueprint
 
 Also read if needed:
 - `C:\Users\jaken\Claude\Vault\memory\lessons.jsonl` — to avoid repeating past mistakes
@@ -29,13 +30,17 @@ Write a short summary (3–5 bullets) of what was done last session, based on th
 - Any known bugs or blockers left open
 - What version app.js is at and whether a Netlify deploy is pending
 
-## Step 4 — Propose this session's plan
+## Step 4 — Roadmap snapshot
 
-Based on STATUS.md "What needs building" list, propose 2–3 things to tackle this session. State them as a numbered list. Ask Jake which he wants to start with — or offer a recommendation if the priority is obvious.
+Show a condensed roadmap view: list everything currently `🔧 In progress`, then the top 3 `🗓 Planned` items by priority. This is the "where are we / where next" view Jake sees every session.
 
-## Step 5 — Surface open to-dos
+## Step 5 — Propose this session's plan
 
-Check STATUS.md for any "open to-dos for Jake" items (manual steps Jake needs to do, like running SQL or deploying). List them clearly.
+Based on the roadmap and STATUS.md, propose 2–3 things to tackle this session. State them as a numbered list. Ask Jake which he wants to start with — or offer a recommendation if the priority is obvious.
+
+## Step 6 — Surface open to-dos
+
+Check the roadmap "Pending actions for Jake" section and STATUS.md for any manual steps Jake needs to take (running SQL, deploying, testing). List them clearly.
 
 ---
 
