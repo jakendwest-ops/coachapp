@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log Session Modal — Preview</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+    :root {
+      --accent:      #6366f1;
+      --accent-dim:  rgba(99,102,241,.08);
+      --bg:          #0f1117;
+      --surface:     #1a1d27;
+      --surface2:    #222536;
+      --border:      rgba(255,255,255,.1);
+      --border2:     rgba(255,255,255,.06);
+      --text:        #f0f1f5;
+      --muted:       #8b8fa8;
+      --danger:      #ef4444;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+
+    /* ── overlay ── */
+    .overlay {
+      width: 100%;
+      max-width: 640px;
+    }
+
+    /* ── modal box ── */
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-header h2 { font-size: 15px; font-weight: 500 }
+    .btn-icon {
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px;
+    }
+    .btn-icon:hover { background: var(--surface2); color: var(--text) }
+
+    /* ── body ── */
+    .modal-body {
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+    .field { display: flex; flex-direction: column; gap: 4px }
+    .field label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+    }
+
+    input, select, textarea {
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      width: 100%;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    select option { background: #1a1d27 }
+
+    /* ── exercise block ── */
+    .ex-block {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .ex-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      background: var(--accent-dim);
+      border-bottom: 1px solid var(--border2);
+    }
+    .ex-letter {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .ex-name-input {
+      flex: 1;
+      background: transparent;
+      border-color: transparent;
+      font-weight: 500;
+      padding: 4px 7px;
+    }
+    .ex-name-input:focus { background: var(--surface2); border-color: var(--accent) }
+    .ex-type-select {
+      width: 100px;
+      flex-shrink: 0;
+      font-size: 12px;
+      padding: 4px 7px;
+    }
+    .ex-remove {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .ex-remove:hover { color: var(--danger) }
+
+    /* ── 1RM row ── */
+    .orm-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--border2);
+      background: rgba(255,255,255,.02);
+    }
+    .orm-label { font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap }
+    .orm-input { width: 72px !important; text-align: center; font-size: 12px !important; padding: 4px 7px !important }
+    .orm-hint  { font-size: 11px; color: var(--muted); margin-left: 2px }
+
+    /* ── sets area ── */
+    .sets-area { padding: 8px 12px 10px }
+
+    .col-hdr { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); text-align: center }
+
+    .si {
+      padding: 5px 4px !important;
+      font-size: 12px !important;
+      text-align: center !important;
+      min-width: 0 !important;
+    }
+    .si.calc { color: var(--accent) !important; background: var(--accent-dim) !important }
+
+    .pct-hint { font-size: 9px; color: var(--accent); text-align: center; margin-top: 2px }
+
+    /* ── RPE/RIR toggle ── */
+    .eff-toggle {
+      display: flex;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .eff-btn {
+      flex: 1;
+      padding: 2px 0;
+      font-size: 9px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      background: transparent;
+      color: var(--muted);
+      font-family: inherit;
+      letter-spacing: .03em;
+    }
+    .eff-btn.on { background: var(--accent); color: #fff }
+
+    .rm-set {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 13px;
+      width: 22px; height: 22px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .rm-set:hover { color: var(--danger); border-color: var(--danger) }
+
+    .add-set-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 0;
+      margin-top: 4px;
+      font-family: inherit;
+    }
+
+    /* ── add exercise ── */
+    .add-ex-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: none;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      padding: 9px 12px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color .15s, color .15s;
+    }
+    .add-ex-btn:hover { border-color: var(--accent); color: var(--accent) }
+
+    /* ── footer ── */
+    .modal-footer {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      padding: 12px 18px;
+      border-top: 1px solid var(--border);
+    }
+    .btn-cancel {
+      padding: 7px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-save {
+      padding: 7px 20px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-save:hover { background: #4f51d1 }
+  </style>
+</head>
+<body>
+
+<div class="overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Log session</h2>
+      <button class="btn-icon" title="Close">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <div class="field-row">
+        <div class="field">
+          <label>Session name</label>
+          <input type="text" id="ls-name" value="Pull Day A" placeholder="e.g. Pull Day A">
+        </div>
+        <div class="field">
+          <label>Date</label>
+          <input type="date" id="ls-date" value="2026-06-19">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Template</label>
+        <select id="ls-template" onchange="loadTemplate(this.value)">
+          <option value="">— No template / custom —</option>
+          <option value="pull" selected>Pull Day A</option>
+          <option value="push">Push Day B</option>
+          <option value="legs">Leg Day</option>
+        </select>
+      </div>
+
+      <div id="ls-exercises"></div>
+
+      <button class="add-ex-btn" onclick="addExercise()">
+        <span style="font-size:18px;line-height:1">+</span> Add exercise
+      </button>
+
+      <div class="field">
+        <label>Session notes</label>
+        <textarea id="ls-notes" rows="2" style="resize:vertical" placeholder="How did the session go?"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-cancel">Cancel</button>
+      <button class="btn-save">Save session</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+let exercises = []
+
+const TEMPLATES = {
+  pull: [
+    { name: 'Barbell back squat', type: 'strength', effortMode: 'RPE', oneRM: '140',
+      sets: [
+        { rMin:'6', rMax:'8', weight:'105', pMin:'75', pMax:'80', effort:'8', rest:'2:30' },
+        { rMin:'6', rMax:'8', weight:'105', pMin:'75', pMax:'80', effort:'8', rest:'2:30' },
+        { rMin:'5', rMax:'7', weight:'112', pMin:'80', pMax:'85', effort:'9', rest:'3:00' },
+      ]},
+    { name: 'Romanian deadlift', type: 'strength', effortMode: 'RIR', oneRM: '',
+      sets: [
+        { rMin:'10', rMax:'12', weight:'70', pMin:'', pMax:'', effort:'2', rest:'1:30' },
+        { rMin:'10', rMax:'12', weight:'70', pMin:'', pMax:'', effort:'1', rest:'1:30' },
+        { rMin:'10', rMax:'12', weight:'70', pMin:'', pMax:'', effort:'1', rest:'1:30' },
+      ]},
+  ],
+  push: [
+    { name: 'Bench press', type: 'strength', effortMode: 'RPE', oneRM: '100',
+      sets: [
+        { rMin:'5', rMax:'6', weight:'80', pMin:'80', pMax:'85', effort:'8', rest:'3:00' },
+        { rMin:'5', rMax:'6', weight:'80', pMin:'80', pMax:'85', effort:'8', rest:'3:00' },
+        { rMin:'5', rMax:'6', weight:'80', pMin:'80', pMax:'85', effort:'9', rest:'3:00' },
+      ]},
+    { name: 'Overhead press', type: 'strength', effortMode: 'RPE', oneRM: '',
+      sets: [
+        { rMin:'8', rMax:'10', weight:'50', pMin:'', pMax:'', effort:'7', rest:'1:30' },
+        { rMin:'8', rMax:'10', weight:'50', pMin:'', pMax:'', effort:'8', rest:'1:30' },
+      ]},
+  ],
+  legs: [
+    { name: 'Back squat', type: 'strength', effortMode: 'RPE', oneRM: '120',
+      sets: [
+        { rMin:'5', rMax:'5', weight:'96', pMin:'80', pMax:'80', effort:'8', rest:'3:00' },
+        { rMin:'5', rMax:'5', weight:'96', pMin:'80', pMax:'80', effort:'8', rest:'3:00' },
+        { rMin:'5', rMax:'5', weight:'96', pMin:'80', pMax:'80', effort:'9', rest:'3:00' },
+      ]},
+    { name: '5k run', type: 'cardio', effortMode: 'RPE', oneRM: '',
+      sets: [{ dur: '25:00', dist: '5' }]},
+  ]
+}
+
+function calcWeight(oneRM, pct) {
+  if (!oneRM || !pct) return ''
+  return (Math.round(parseFloat(oneRM) * parseFloat(pct) / 100 * 2) / 2).toFixed(1)
+}
+
+function fmtRest(raw) {
+  const digits = String(raw || '').replace(/\D/g, '').slice(-4)
+  if (!digits) return ''
+  if (digits.length <= 2) return '0:' + digits.padStart(2, '0')
+  return digits.slice(0, -2).replace(/^0+/, '') + ':' + digits.slice(-2)
+}
+
+function flush() {
+  exercises.forEach((ex, bi) => {
+    const ormEl = document.getElementById(`orm-${bi}`)
+    if (ormEl) ex.oneRM = ormEl.value
+    ex.sets.forEach((s, si) => {
+      const g = id => document.getElementById(id)?.value ?? ''
+      if (ex.type === 'cardio') {
+        s.dur  = g(`dur-${bi}-${si}`)
+        s.dist = g(`dist-${bi}-${si}`)
+      } else {
+        s.rMin   = g(`rmin-${bi}-${si}`)
+        s.rMax   = g(`rmax-${bi}-${si}`)
+        s.weight = g(`wt-${bi}-${si}`)
+        s.pMin   = g(`pmin-${bi}-${si}`)
+        s.pMax   = g(`pmax-${bi}-${si}`)
+        s.effort = g(`eff-${bi}-${si}`)
+        s.rest   = g(`rest-${bi}-${si}`)
+      }
+    })
+  })
+}
+
+function render() {
+  const container = document.getElementById('ls-exercises')
+  const hdr = txt => `<span class="col-hdr">${txt}</span>`
+
+  const si = (id, val, ph, extra = '') =>
+    `<input id="${id}" class="si" type="number" placeholder="${ph}" value="${val || ''}" ${extra} style="width:100%;box-sizing:border-box">`
+
+  const st = (id, val, ph) =>
+    `<input id="${id}" class="si" type="text" placeholder="${ph}" value="${val || ''}" oninput="this.value=fmtRest(this.value)" style="width:100%;box-sizing:border-box">`
+
+  container.innerHTML = exercises.map((ex, bi) => {
+    const isCardio = ex.type === 'cardio'
+    const isRIR    = ex.effortMode === 'RIR'
+    const orm      = parseFloat(ex.oneRM) || 0
+
+    const GRID = isCardio
+      ? '28px 1fr 1fr 22px'
+      : '28px 42px 42px 60px 42px 42px 54px 54px 22px'
+
+    const colHeaders = isCardio ? `
+      <span></span>
+      ${hdr('Duration')}
+      ${hdr('Dist (km)')}
+      <span></span>
+    ` : `
+      <span></span>
+      <div style="grid-column:span 2;display:flex;flex-direction:column;align-items:center;gap:2px">
+        ${hdr('Reps')}
+        <div style="display:flex;gap:3px;width:100%">
+          <span class="col-hdr" style="flex:1">min</span>
+          <span class="col-hdr" style="flex:1">max</span>
+        </div>
+      </div>
+      ${hdr('Weight (kg)')}
+      <div style="grid-column:span 2;display:flex;flex-direction:column;align-items:center;gap:2px">
+        ${hdr('% 1RM')}
+        <div style="display:flex;gap:3px;width:100%">
+          <span class="col-hdr" style="flex:1">min</span>
+          <span class="col-hdr" style="flex:1">max</span>
+        </div>
+      </div>
+      <div>
+        <div class="eff-toggle">
+          <button class="eff-btn ${!isRIR ? 'on' : ''}" onclick="exercises[${bi}].effortMode='RPE';render()">RPE</button>
+          <button class="eff-btn ${isRIR  ? 'on' : ''}" onclick="exercises[${bi}].effortMode='RIR';render()">RIR</button>
+        </div>
+      </div>
+      ${hdr('Rest')}
+      <span></span>
+    `
+
+    const setRows = ex.sets.map((s, si_) => {
+      const wMin = calcWeight(ex.oneRM, s.pMin)
+      const wMax = calcWeight(ex.oneRM, s.pMax)
+      const hint = orm && (s.pMin || s.pMax)
+        ? `<div class="pct-hint">${wMin || ''}${wMax && wMax !== wMin ? '–' + wMax : ''}${orm && (s.pMin || s.pMax) ? ' kg' : ''}</div>`
+        : ''
+      const wVal = orm && (s.pMin || s.pMax) ? (wMin || s.weight || '') : (s.weight || '')
+      const wCls = orm && (s.pMin || s.pMax) ? 'si calc' : 'si'
+
+      if (isCardio) return `
+        <div style="display:grid;grid-template-columns:${GRID};gap:4px;align-items:center;margin-bottom:4px">
+          <span style="font-size:11px;font-weight:600;color:var(--muted);text-align:center">${si_ + 1}</span>
+          ${st(`dur-${bi}-${si_}`,  s.dur  || '', '0:00')}
+          ${si(`dist-${bi}-${si_}`, s.dist || '', 'km')}
+          <button class="rm-set" onclick="flush();exercises[${bi}].sets.splice(${si_},1);render()">×</button>
+        </div>`
+
+      return `
+        <div style="display:grid;grid-template-columns:${GRID};gap:4px;align-items:start;margin-bottom:4px">
+          <span style="font-size:11px;font-weight:600;color:var(--muted);text-align:center;padding-top:6px">${si_ + 1}</span>
+          ${si(`rmin-${bi}-${si_}`, s.rMin, 'min')}
+          ${si(`rmax-${bi}-${si_}`, s.rMax, 'max')}
+          <input id="wt-${bi}-${si_}" class="${wCls}" type="number" step="0.5" placeholder="kg" value="${wVal}" style="width:100%;box-sizing:border-box">
+          ${si(`pmin-${bi}-${si_}`, s.pMin, '%', 'oninput="flush();render()"')}
+          <div>
+            ${si(`pmax-${bi}-${si_}`, s.pMax, '%', 'oninput="flush();render()"')}
+            ${hint}
+          </div>
+          ${si(`eff-${bi}-${si_}`,  s.effort, isRIR ? '0–5' : '1–10')}
+          ${st(`rest-${bi}-${si_}`, s.rest, '0:00')}
+          <button class="rm-set" onclick="flush();exercises[${bi}].sets.splice(${si_},1);render()" style="margin-top:2px">×</button>
+        </div>`
+    }).join('')
+
+    return `
+      <div class="ex-block" style="margin-bottom:10px">
+        <div class="ex-header">
+          <div class="ex-letter">${LETTERS[bi]}</div>
+          <input class="ex-name-input" value="${ex.name}" placeholder="Exercise name" oninput="exercises[${bi}].name=this.value">
+          <select class="ex-type-select" onchange="flush();exercises[${bi}].type=this.value;render()">
+            <option value="strength" ${!isCardio ? 'selected' : ''}>Strength</option>
+            <option value="cardio"   ${isCardio  ? 'selected' : ''}>Cardio</option>
+          </select>
+          <button class="ex-remove" onclick="flush();exercises.splice(${bi},1);render()">×</button>
+        </div>
+
+        ${!isCardio ? `
+        <div class="orm-row">
+          <span class="orm-label">1 rep max</span>
+          <input id="orm-${bi}" class="orm-input" type="number" step="0.5" placeholder="e.g. 100" value="${ex.oneRM || ''}" oninput="exercises[${bi}].oneRM=this.value;render()">
+          <span class="orm-label">kg</span>
+          <span class="orm-hint">${orm ? '— % 1RM auto-fills weight' : '— enter to enable % 1RM'}</span>
+        </div>` : ''}
+
+        <div class="sets-area">
+          <div style="display:grid;grid-template-columns:${GRID};gap:4px;margin-bottom:6px;align-items:end">
+            ${colHeaders}
+          </div>
+          ${setRows}
+          <button class="add-set-btn" onclick="flush();exercises[${bi}].sets.push({rMin:'',rMax:'',weight:'',pMin:'',pMax:'',effort:'',rest:''});render()">+ Add set</button>
+        </div>
+      </div>
+    `
+  }).join('')
+}
+
+function loadTemplate(key) {
+  if (!key) { exercises = []; render(); return }
+  exercises = JSON.parse(JSON.stringify(TEMPLATES[key] || []))
+  render()
+}
+
+function addExercise() {
+  exercises.push({ name: '', type: 'strength', effortMode: 'RPE', oneRM: '', sets: [
+    { rMin: '', rMax: '', weight: '', pMin: '', pMax: '', effort: '', rest: '' }
+  ]})
+  render()
+}
+
+loadTemplate('pull')
+</script>
+
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>CoachApp</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+  <!-- ═══ AUTH SCREEN ═══ -->
+  <div id="auth-screen" class="auth-screen" style="display:none">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="auth-logo">C</div>
+        <span class="auth-wordmark">CoachApp</span>
+      </div>
+
+      <!-- Login -->
+      <form id="login-form" class="auth-form">
+        <h2 class="auth-title">Welcome back</h2>
+        <p class="auth-subtitle">Sign in to your account</p>
+        <div class="field">
+          <label class="field-label">Email</label>
+          <input class="field-input" type="email" id="login-email" placeholder="you@example.com" required>
+        </div>
+        <div class="field">
+          <label class="field-label">Password</label>
+          <input class="field-input" type="password" id="login-password" placeholder="••••••••" required>
+        </div>
+        <p class="auth-error" id="login-error"></p>
+        <button class="btn-primary btn-full" type="submit" id="login-submit">Sign in</button>
+        <p class="auth-switch">Don't have an account? <a href="#" id="show-signup">Sign up</a></p>
+      </form>
+
+      <!-- Invite acceptance (set password) -->
+      <form id="invite-form" class="auth-form" style="display:none">
+        <h2 class="auth-title">Set your password</h2>
+        <p class="auth-subtitle">You've been invited to CoachApp. Choose a password to get started.</p>
+        <div class="field">
+          <label class="field-label">Full name</label>
+          <input class="field-input" type="text" id="invite-name" placeholder="Your name" required>
+        </div>
+        <div class="field">
+          <label class="field-label">Password</label>
+          <input class="field-input" type="password" id="invite-password" placeholder="Min. 6 characters" required minlength="6">
+        </div>
+        <p class="auth-error" id="invite-error"></p>
+        <button class="btn-primary btn-full" type="submit" id="invite-submit">Activate account</button>
+      </form>
+
+      <!-- Sign up -->
+      <form id="signup-form" class="auth-form" style="display:none">
+        <h2 class="auth-title">Create account</h2>
+        <p class="auth-subtitle">Get started for free</p>
+        <div class="field">
+          <label class="field-label">Full name</label>
+          <input class="field-input" type="text" id="signup-name" placeholder="Jake West" required>
+        </div>
+        <div class="field">
+          <label class="field-label">Email</label>
+          <input class="field-input" type="email" id="signup-email" placeholder="you@example.com" required>
+        </div>
+        <div class="field">
+          <label class="field-label">Password</label>
+          <input class="field-input" type="password" id="signup-password" placeholder="Min. 6 characters" required minlength="6">
+        </div>
+        <p class="auth-error" id="signup-error"></p>
+        <button class="btn-primary btn-full" type="submit" id="signup-submit">Create account</button>
+        <p class="auth-switch">Already have an account? <a href="#" id="show-login">Sign in</a></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══ APP SHELL ═══ -->
+  <div id="app-shell" class="app-shell" style="display:none">
+
+    <!-- Sidebar (desktop) -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-logo">C</div>
+        <span class="sidebar-wordmark">CoachApp</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item" data-page="dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Dashboard
+        </a>
+        <a href="#" class="nav-item" data-page="clients">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Clients
+        </a>
+        <a href="#" class="nav-item" data-page="workouts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+          Workouts
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-pill">
+          <div class="user-avatar" id="user-avatar">?</div>
+          <span class="user-name" id="user-name">Loading...</span>
+        </div>
+        <button class="btn-signout" id="sign-out-btn">Sign out</button>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main-content" id="main-content">
+      <div class="loading-state">Loading...</div>
+    </main>
+
+    <!-- Bottom nav (mobile) -->
+    <nav class="bottom-nav">
+      <a href="#" class="bottom-nav-item" data-page="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>Dashboard</span>
+      </a>
+      <a href="#" class="bottom-nav-item" data-page="clients">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Clients</span>
+      </a>
+      <a href="#" class="bottom-nav-item" data-page="workouts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+        <span>Workouts</span>
+      </a>
+    </nav>
+
+  </div>
+
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="js/app.js?v=15"></script>
+</body>
+</html>

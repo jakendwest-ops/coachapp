@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "CoachApp",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-Command", "& { $l = New-Object System.Net.HttpListener; $l.Prefixes.Add('http://localhost:3001/'); $l.Start(); Write-Host 'Listening on http://localhost:3001'; while ($l.IsListening) { try { $ctx = $l.GetContext(); $req = $ctx.Request; $res = $ctx.Response; $path = $req.Url.LocalPath.TrimStart('/'); if ($path -eq '' -or $path -eq '/') { $path = 'index.html' }; $file = Join-Path 'C:/Users/jaken/coachapp' $path; if (Test-Path $file) { $ext = [System.IO.Path]::GetExtension($file); $mime = if ($ext -eq '.css') { 'text/css' } elseif ($ext -eq '.js') { 'application/javascript' } elseif ($ext -eq '.html') { 'text/html' } else { 'application/octet-stream' }; $res.ContentType = $mime; $bytes = [System.IO.File]::ReadAllBytes($file); $res.ContentLength64 = [long]$bytes.Length; $res.OutputStream.Write($bytes, 0, $bytes.Length) } else { $res.StatusCode = 404; $res.ContentLength64 = 0 }; $res.OutputStream.Close() } catch { } } }"],
+      "port": 3001
+    }
+  ]
+}
