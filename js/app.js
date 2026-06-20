@@ -193,6 +193,15 @@ async function renderDashboard(el) {
   ])
   const quietClients = (activeClients || []).filter(c => !activeSet.has(c.id))
 
+  // Compliance — session count per active client this week
+  const sessionCounts = {}
+  ;(recentWorkouts || []).forEach(w => {
+    sessionCounts[w.client_id] = (sessionCounts[w.client_id] || 0) + 1
+  })
+  const complianceRows = (activeClients || [])
+    .map(c => ({ ...c, sessions: sessionCounts[c.id] || 0 }))
+    .sort((a, b) => a.sessions - b.sessions) // fewest first
+
   const firstName = currentProfile?.full_name?.split(' ')[0] || 'Coach'
   const today     = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 
@@ -273,21 +282,35 @@ async function renderDashboard(el) {
 
       <div style="display:flex;flex-direction:column;gap:16px">
 
-        <!-- Needs check-in -->
+        <!-- Compliance -->
         <div class="card">
           <div class="card-header" style="padding:16px 20px 0">
-            <h2 class="section-title">Needs a check-in</h2>
-            <p style="font-size:12px;color:var(--text-muted);margin-top:2px">Active clients — no logs this week</p>
+            <h2 class="section-title">This week's sessions</h2>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:2px">Active clients — sessions logged last 7 days</p>
           </div>
           <div class="card-body" style="padding:12px 20px 16px">
-            ${quietClients.length === 0 ? `
-              <p style="color:#22c55e;font-size:13px;font-weight:500">✓ All active clients logged this week</p>
-            ` : quietClients.map(c => `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
-                <div style="font-size:13px;font-weight:500;cursor:pointer;color:var(--text)" onclick="openClient('${c.id}')">${c.full_name}</div>
-                <button class="btn-secondary" style="font-size:11px;padding:3px 10px" onclick="openClient('${c.id}')">View</button>
-              </div>
-            `).join('')}
+            ${complianceRows.length === 0 ? `
+              <p style="color:var(--text-muted);font-size:13px">No active clients.</p>
+            ` : (() => {
+              const zeroCount = complianceRows.filter(c => c.sessions === 0).length
+              const visible = complianceRows.slice(0, 6)
+              const remaining = complianceRows.length - visible.length
+              return visible.map(c => {
+                const dot = c.sessions === 0 ? '#ef4444' : c.sessions === 1 ? '#f59e0b' : '#22c55e'
+                const label = c.sessions === 0 ? 'No sessions' : `${c.sessions} session${c.sessions !== 1 ? 's' : ''}`
+                return `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <div style="width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0"></div>
+                    <div style="font-size:13px;font-weight:500;cursor:pointer" onclick="openClient('${c.id}')">${c.full_name}</div>
+                  </div>
+                  <span style="font-size:11.5px;font-weight:600;color:${dot}">${label}</span>
+                </div>`
+              }).join('') + (remaining > 0 ? `
+                <div style="padding-top:10px;text-align:center">
+                  <a href="#" onclick="navigate('clients');return false" style="font-size:12px;color:var(--accent);font-weight:500">+ ${remaining} more clients →</a>
+                </div>` : '')
+            })()}
           </div>
         </div>
 
