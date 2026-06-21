@@ -624,20 +624,24 @@ async function renderPrograms(el) {
 
     ${!programs?.length ? `
       <div class="empty-state">
-        <p>No programs yet.</p>
-        <p style="font-size:13px;color:var(--text-muted);margin-top:4px">Create a program to organise training phases for your clients.</p>
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">No programs yet</div>
+        <div class="empty-text">Create a program to organise training phases for your clients.</div>
+        <button class="btn-primary" onclick="showCreateProgramModal()">+ Create program</button>
       </div>
     ` : `
-      <div class="client-grid">
+      <div class="list">
         ${programs.map(p => `
-          <div class="client-card" onclick="openProgram('${p.id}')">
-            <div class="client-card-avatar">${p.name.charAt(0).toUpperCase()}</div>
-            <div class="client-card-info">
-              <div class="client-card-name">${p.name}</div>
-              <div class="client-card-meta">${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}</div>
-              ${p.description ? `<div class="client-card-meta" style="margin-top:2px;color:var(--text-muted)">${p.description}</div>` : ''}
+          <div class="list-row" onclick="openProgram('${p.id}')">
+            <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📋</div>
+            <div class="row-info">
+              <div class="row-name">${p.name}</div>
+              <div class="row-meta">${p.description || `${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}`}</div>
             </div>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
+            <div class="row-right">
+              <span style="font-size:12px;color:var(--text-muted)">${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}</span>
+              <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
           </div>`).join('')}
       </div>
     `}
@@ -714,18 +718,18 @@ async function openProgram(programId) {
 
     <div id="phases-list">
       ${!phases.length ? `<p style="color:var(--text-muted);font-size:13px">No phases yet. Add the first phase to get started.</p>` :
-        phases.map((ph, i) => `
-          <div class="client-card" style="margin-bottom:8px;cursor:default" id="phase-${ph.id}">
-            <div style="width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i + 1}</div>
-            <div class="client-card-info">
-              <div class="client-card-name">${ph.name}</div>
-              <div class="client-card-meta">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}</div>
+        `<div class="list">${phases.map((ph, i) => `
+          <div class="list-row" id="phase-${ph.id}" style="cursor:default">
+            <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i + 1}</div>
+            <div class="row-info">
+              <div class="row-name">${ph.name}</div>
+              <div class="row-meta">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}</div>
             </div>
-            <div style="display:flex;gap:6px">
+            <div class="row-right">
               <button class="btn-icon" title="Edit" onclick="showEditPhaseForm('${program.id}','${ph.id}','${ph.name.replace(/'/g,"\\'")}',${ph.duration_weeks},${ph.order_index})">✎</button>
               <button class="btn-icon" title="Delete" onclick="deletePhase('${program.id}','${ph.id}')">✕</button>
             </div>
-          </div>`).join('')}
+          </div>`).join('')}</div>`}
     </div>
 
     <!-- Add/edit phase form -->
