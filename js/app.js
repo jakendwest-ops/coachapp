@@ -480,7 +480,10 @@ async function renderClientDashboard(el) {
 
       <!-- Weight -->
       <div class="dashboard-card">
-        <div class="card-header"><h2 class="card-title">Weight</h2></div>
+        <div class="card-header">
+          <h2 class="card-title">Weight</h2>
+          <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log</button>
+        </div>
         ${latestWeight ? `
           <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
             <span style="font-size:32px;font-weight:700">${latestWeight.weight_kg}</span>
@@ -490,6 +493,33 @@ async function renderClientDashboard(el) {
           <p style="font-size:12px;color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
           ${prevWeight ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">Previous: ${prevWeight.weight_kg} kg</p>` : ''}
         ` : `<p style="color:var(--text-muted);font-size:13px">No weight logged yet.</p>`}
+        <div id="client-weight-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <label class="form-label">Date</label>
+              <input type="date" id="cwf-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
+            </div>
+            <div>
+              <label class="form-label">Weight (kg)</label>
+              <input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <label class="form-label">Body fat % <span style="color:var(--text-muted)">(optional)</span></label>
+              <input type="number" id="cwf-bf" class="form-input" placeholder="e.g. 19.5" step="0.1" min="1" max="60">
+            </div>
+            <div>
+              <label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label>
+              <input type="text" id="cwf-notes" class="form-input" placeholder="Any notes…">
+            </div>
+          </div>
+          <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
+            <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
       </div>
 
       <!-- Upcoming -->
@@ -510,7 +540,10 @@ async function renderClientDashboard(el) {
 
       <!-- Personal Bests -->
       <div class="dashboard-card" style="grid-column: span 2">
-        <div class="card-header"><h2 class="card-title">Personal Bests</h2></div>
+        <div class="card-header">
+          <h2 class="card-title">Personal Bests</h2>
+          <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log PB</button>
+        </div>
         ${!pbs.length ? `<p style="color:var(--text-muted);font-size:13px">No records yet.</p>` : `
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
           ${pbs.map(pb => `
@@ -520,11 +553,109 @@ async function renderClientDashboard(el) {
               <div style="font-size:20px;font-weight:700;color:var(--accent)">${pb.value} <span style="font-size:12px;font-weight:400;color:var(--text-muted)">${pb.unit}</span></div>
             </div>`).join('')}
         </div>`}
+        <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <label class="form-label">Exercise name</label>
+              <input type="text" id="cpb-name" class="form-input" placeholder="e.g. Deadlift">
+            </div>
+            <div>
+              <label class="form-label">Category</label>
+              <select id="cpb-category" class="form-input">
+                <option value="strength">Strength</option>
+                <option value="cardio">Cardio</option>
+                <option value="body_metric">Body metric</option>
+                <option value="benchmark">Benchmark</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <label class="form-label">Value</label>
+              <input type="number" id="cpb-value" class="form-input" placeholder="e.g. 100" step="0.1">
+            </div>
+            <div>
+              <label class="form-label">Unit</label>
+              <input type="text" id="cpb-unit" class="form-input" placeholder="kg / min / reps">
+            </div>
+            <div>
+              <label class="form-label">Date</label>
+              <input type="date" id="cpb-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
+            </div>
+          </div>
+          <div style="margin-bottom:8px">
+            <label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label>
+            <input type="text" id="cpb-notes" class="form-input" placeholder="Any notes…">
+          </div>
+          <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${clientId}')">Save</button>
+            <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
       </div>
 
     </div>`
 
   log.ok('renderClientDashboard', 'rendered', { clientId, goals: goals?.length, events: events?.length, pbs: pbs.length })
+}
+
+function showClientPBForm(clientId) {
+  const form = document.getElementById('client-pb-form')
+  if (!form) return
+  form.style.display = form.style.display === 'none' ? 'block' : 'none'
+}
+
+async function saveClientPB(clientId) {
+  const name     = document.getElementById('cpb-name').value.trim()
+  const category = document.getElementById('cpb-category').value
+  const value    = parseFloat(document.getElementById('cpb-value').value)
+  const unit     = document.getElementById('cpb-unit').value.trim()
+  const date     = document.getElementById('cpb-date').value
+  const notes    = document.getElementById('cpb-notes').value.trim()
+  const errorEl  = document.getElementById('cpb-error')
+
+  if (!name || isNaN(value) || !unit || !date) { errorEl.textContent = 'Name, value, unit and date are required.'; return }
+  errorEl.textContent = ''
+
+  const row = { client_id: clientId, logged_by: currentUser.id, category, name, value, unit, date }
+  if (notes) row.notes = notes
+
+  log.info('saveClientPB', 'inserting', row)
+  const { error } = await db.from('performance_logs').insert(row)
+  if (error) { log.error('saveClientPB', 'insert failed', error); errorEl.textContent = error.message; return }
+
+  log.ok('saveClientPB', 'PB logged', row)
+  renderClientDashboard(document.getElementById('main-content'))
+}
+
+function showClientWeightForm(clientId) {
+  const form = document.getElementById('client-weight-form')
+  if (!form) return
+  form.style.display = form.style.display === 'none' ? 'block' : 'none'
+}
+
+async function saveClientWeight(clientId) {
+  const date   = document.getElementById('cwf-date').value
+  const weight = parseFloat(document.getElementById('cwf-weight').value)
+  const bf     = document.getElementById('cwf-bf').value
+  const notes  = document.getElementById('cwf-notes').value.trim()
+  const errorEl = document.getElementById('cwf-error')
+
+  if (!date || isNaN(weight)) { errorEl.textContent = 'Date and weight are required.'; return }
+  errorEl.textContent = ''
+
+  const row = { client_id: clientId, date, weight_kg: weight }
+  if (bf)    row.body_fat_pct = parseFloat(bf)
+  if (notes) row.notes = notes
+
+  log.info('saveClientWeight', 'inserting', row)
+  const { error } = await db.from('weight_logs').insert(row)
+  if (error) { log.error('saveClientWeight', 'insert failed', error); errorEl.textContent = error.message; return }
+
+  log.ok('saveClientWeight', 'weight logged', row)
+  // Refresh the client dashboard to show the new entry
+  renderClientDashboard(document.getElementById('main-content'))
 }
 
 // ─── CLIENTS LIST ─────────────────────────────────────────────────────────────
