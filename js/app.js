@@ -382,11 +382,13 @@ async function renderClientDashboard(el) {
     { data: events },
     { data: weights },
     { data: perfLogs },
+    { data: assignedPrograms },
   ] = await Promise.all([
     db.from('goals').select('id, title, target_date, status, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
     db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
+    db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index))').eq('client_id', clientId).limit(1),
   ])
 
   // Latest weight + trend
@@ -596,9 +598,179 @@ async function renderClientDashboard(el) {
         </div>
       </div>
 
+      <!-- Active Program -->
+      ${(() => {
+        const ap = assignedPrograms?.[0]
+        if (!ap || !ap.programs) return ''
+        const prog = ap.programs
+        const phases = (prog.program_phases || []).sort((a, b) => a.order_index - b.order_index)
+        const startDate = ap.start_date ? new Date(ap.start_date + 'T00:00:00') : null
+        const totalWeeks = phases.reduce((s, ph) => s + ph.duration_weeks, 0)
+        let currentPhaseLabel = '—'
+        if (startDate) {
+          const weeksSinceStart = Math.floor((Date.now() - startDate) / 604800000)
+          let cumulative = 0
+          for (const ph of phases) {
+            cumulative += ph.duration_weeks
+            if (weeksSinceStart < cumulative) { currentPhaseLabel = ph.name; break }
+          }
+        }
+        return `
+        <div class="dashboard-card" style="grid-column: span 2">
+          <div class="card-header">
+            <h2 class="card-title">Training Program</h2>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+            <div style="width:44px;height:44px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📋</div>
+            <div>
+              <div style="font-weight:600;font-size:15px">${prog.name}</div>
+              ${prog.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${prog.description}</div>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:20px;font-size:13px">
+            <div><span style="color:var(--text-muted)">Phases:</span> ${phases.length}</div>
+            <div><span style="color:var(--text-muted)">Duration:</span> ${totalWeeks} weeks</div>
+            <div><span style="color:var(--text-muted)">Current phase:</span> ${currentPhaseLabel}</div>
+          </div>
+          ${phases.length ? `
+          <div style="margin-top:12px;display:flex;gap:4px">
+            ${phases.map((ph, i) => {
+              const weeksBefore = phases.slice(0, i).reduce((s, p) => s + p.duration_weeks, 0)
+              const weeksAfter  = weeksBefore + ph.duration_weeks
+              const weeksSinceStart = startDate ? Math.floor((Date.now() - startDate) / 604800000) : -1
+              const active = weeksSinceStart >= weeksBefore && weeksSinceStart < weeksAfter
+              const done   = weeksSinceStart >= weeksAfter
+              return `<div style="flex:${ph.duration_weeks};height:6px;border-radius:3px;background:${done ? 'var(--accent)' : active ? 'var(--accent)' : 'var(--surface-2)'};opacity:${active ? 1 : done ? 0.5 : 1}" title="${ph.name}: ${ph.duration_weeks}w"></div>`
+            }).join('')}
+          </div>` : ''}
+        </div>`
+      })()}
+
     </div>`
 
   log.ok('renderClientDashboard', 'rendered', { clientId, goals: goals?.length, events: events?.length, pbs: pbs.length })
+}
+
+// ─── CLIENT PROFILE: PROGRAMS TAB ─────────────────────────────────────────────
+async function renderClientPrograms(clientId, el) {
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+  const { data: assignments, error } = await db
+    .from('client_programs')
+    .select('*, programs(id, name, description, program_phases(id))')
+    .eq('client_id', clientId)
+
+  if (error) {
+    el.innerHTML = `<div class="card"><div class="card-body" style="padding:20px">
+      <p style="color:var(--danger);font-size:13px">${error.message}</p>
+      <p style="color:var(--text-muted);font-size:12px;margin-top:8px">Run the client_programs SQL in Supabase first.</p>
+    </div></div>`
+    return
+  }
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 class="section-title">Assigned programs</h2>
+      <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign program</button>
+    </div>
+    ${!assignments?.length ? `
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">No programs assigned</div>
+        <div class="empty-text">Assign a program from your library to give this client a structured training plan.</div>
+        <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign program</button>
+      </div>
+    ` : `
+      <div class="list">
+        ${assignments.map(a => {
+          const p = a.programs
+          const phaseCount = p?.program_phases?.length || 0
+          const startLabel = a.start_date ? new Date(a.start_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No start date'
+          return `
+            <div class="list-row" style="cursor:default">
+              <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📋</div>
+              <div class="row-info">
+                <div class="row-name">${p?.name || 'Unknown program'}</div>
+                <div class="row-meta">${phaseCount} phase${phaseCount !== 1 ? 's' : ''} · Started ${startLabel}</div>
+              </div>
+              <div class="row-right">
+                <button class="btn-secondary" style="font-size:12px;padding:4px 10px;color:var(--danger);border-color:var(--danger)" onclick="unassignProgram('${clientId}','${a.id}')">Remove</button>
+              </div>
+            </div>`
+        }).join('')}
+      </div>
+    `}
+  `
+}
+
+function showAssignProgramModal(clientId) {
+  const existing = document.getElementById('assign-program-modal')
+  if (existing) existing.remove()
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'assign-program-modal'
+  const todayStr = new Date().toISOString().split('T')[0]
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Assign program</h2>
+        <button class="modal-close" onclick="closeModal('assign-program-modal')">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label">Program <span style="color:var(--danger)">*</span></label>
+        <select class="field-input" id="ap-program">
+          <option value="">Select a program…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">Start date</label>
+        <input class="field-input" id="ap-start" type="date" value="${todayStr}">
+      </div>
+      <p class="modal-error" id="ap-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('assign-program-modal')">Cancel</button>
+        <button class="btn-primary" onclick="saveAssignProgram('${clientId}')">Assign</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+
+  db.from('programs').select('id, name').order('name').then(({ data }) => {
+    const sel = document.getElementById('ap-program')
+    if (!sel) return
+    ;(data || []).forEach(p => {
+      const opt = document.createElement('option')
+      opt.value = p.id
+      opt.textContent = p.name
+      sel.appendChild(opt)
+    })
+  })
+}
+
+async function saveAssignProgram(clientId) {
+  const programId = document.getElementById('ap-program').value
+  const startDate = document.getElementById('ap-start').value || null
+  const errorEl   = document.getElementById('ap-error')
+
+  if (!programId) { errorEl.textContent = 'Please select a program'; return }
+
+  const { error } = await db.from('client_programs').insert({
+    client_id: clientId,
+    program_id: programId,
+    start_date: startDate || null
+  })
+
+  if (error) { log.error('saveAssignProgram', 'insert failed', error); errorEl.textContent = error.message; return }
+  closeModal('assign-program-modal')
+  renderClientPrograms(clientId, document.getElementById('tab-content'))
+}
+
+async function unassignProgram(clientId, assignmentId) {
+  if (!confirm('Remove this program from the client?')) return
+  const { error } = await db.from('client_programs').delete().eq('id', assignmentId)
+  if (error) { log.error('unassignProgram', 'delete failed', error); return }
+  renderClientPrograms(clientId, document.getElementById('tab-content'))
 }
 
 // ─── PROGRAMS ─────────────────────────────────────────────────────────────────
@@ -1125,6 +1297,7 @@ async function openClient(id) {
       <button class="tab-btn" onclick="switchTab(this,'tab-workouts','${id}')">Workouts</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-weight','${id}')">Weight</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-performance','${id}')">Performance</button>
+      <button class="tab-btn" onclick="switchTab(this,'tab-programs','${id}')">Programs</button>
     </div>
 
     <div id="tab-content">
@@ -1144,6 +1317,7 @@ function switchTab(btn, tab, clientId) {
     case 'tab-workouts': content.innerHTML = ''; renderClientWorkouts(clientId, content); break
     case 'tab-weight':       content.innerHTML = ''; renderClientWeight(clientId, content);       break
     case 'tab-performance':  content.innerHTML = ''; renderClientPerformance(clientId, content);  break
+    case 'tab-programs':     content.innerHTML = ''; renderClientPrograms(clientId, content);     break
   }
 }
 
@@ -1330,13 +1504,20 @@ async function renderCalendar(el) {
   const from = firstDay.toISOString().split('T')[0]
   const to   = lastDay.toISOString().split('T')[0]
 
-  const [{ data: events }, { data: clients }] = await Promise.all([
-    db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
-    db.from('clients').select('id, full_name').order('full_name')
-  ])
+  const isClient = currentProfile?.role === 'client'
+  let events, clientMap = {}
 
-  const clientMap = {}
-  ;(clients || []).forEach(c => { clientMap[c.id] = c.full_name })
+  if (isClient) {
+    const { data } = await db.from('events').select('*').gte('date', from).lte('date', to).order('date')
+    events = data
+  } else {
+    const [evRes, clRes] = await Promise.all([
+      db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
+      db.from('clients').select('id, full_name').order('full_name')
+    ])
+    events = evRes.data
+    ;(clRes.data || []).forEach(c => { clientMap[c.id] = c.full_name })
+  }
 
   // Group events by date
   const byDate = {}
@@ -1359,7 +1540,7 @@ async function renderCalendar(el) {
   el.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Calendar</h1>
-      <button class="btn-primary" onclick="showAddEventModal()">+ Add event</button>
+      <button class="btn-primary" onclick="${isClient ? 'showClientAddEventModal()' : 'showAddEventModal()'}">+ Add event</button>
     </div>
 
     <div class="card" style="margin-bottom:16px">
@@ -1456,7 +1637,8 @@ function calNav(dir) {
 }
 
 function showDayEvents(dateStr) {
-  showAddEventModal(dateStr)
+  if (currentProfile?.role === 'client') showClientAddEventModal(dateStr)
+  else showAddEventModal(dateStr)
 }
 
 async function deleteEvent(id) {
@@ -1563,6 +1745,79 @@ async function saveEvent() {
   if (error) { log.error('saveEvent', 'insert failed', error); errorEl.textContent = error.message; return }
   log.ok('saveEvent', 'event saved', { title, date })
 
+  closeModal('add-event-modal')
+  renderCalendar(document.getElementById('main-content'))
+}
+
+function showClientAddEventModal(prefillDate = '') {
+  const existing = document.getElementById('add-event-modal')
+  if (existing) existing.remove()
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'add-event-modal'
+  const todayStr = new Date().toISOString().split('T')[0]
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Add event</h2>
+        <button class="modal-close" onclick="closeModal('add-event-modal')">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label">Title <span style="color:var(--danger)">*</span></label>
+        <input class="field-input" id="ae-title" placeholder="e.g. Local competition">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label class="field-label">Date <span style="color:var(--danger)">*</span></label>
+          <input class="field-input" id="ae-date" type="date" value="${prefillDate || todayStr}">
+        </div>
+        <div class="field">
+          <label class="field-label">Type</label>
+          <select class="field-input" id="ae-type">
+            <option value="competition">Competition</option>
+            <option value="holiday">Holiday</option>
+            <option value="gym">Gym</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Notes</label>
+        <textarea class="field-input" id="ae-notes" rows="2" style="resize:vertical" placeholder="Optional"></textarea>
+      </div>
+      <p class="modal-error" id="ae-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('add-event-modal')">Cancel</button>
+        <button class="btn-primary" onclick="saveClientEvent()">Save event</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+}
+
+async function saveClientEvent() {
+  const title   = document.getElementById('ae-title').value.trim()
+  const date    = document.getElementById('ae-date').value
+  const type    = document.getElementById('ae-type').value
+  const notes   = document.getElementById('ae-notes').value.trim() || null
+  const errorEl = document.getElementById('ae-error')
+
+  if (!title) { errorEl.textContent = 'Title is required'; return }
+  if (!date)  { errorEl.textContent = 'Date is required'; return }
+
+  const { data: clientRow, error: clientErr } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+  if (clientErr || !clientRow) { errorEl.textContent = 'Could not find your client record'; return }
+
+  const { error } = await db.from('events').insert({
+    title, date, type, notes,
+    client_id: clientRow.id,
+    is_pt_assigned: false,
+    created_by: currentUser.id
+  })
+
+  if (error) { log.error('saveClientEvent', 'insert failed', error); errorEl.textContent = error.message; return }
   closeModal('add-event-modal')
   renderCalendar(document.getElementById('main-content'))
 }
