@@ -52,7 +52,7 @@ async function loadUserInfo() {
 function applyRoleUI() {
   const isClient = currentProfile?.role === 'client'
   // Hide coach-only nav items from clients
-  document.querySelectorAll('[data-page="clients"], [data-page="workouts"]').forEach(el => {
+  document.querySelectorAll('[data-page="clients"], [data-page="workouts"], [data-page="programs"]').forEach(el => {
     el.style.display = isClient ? 'none' : ''
   })
 }
@@ -146,6 +146,7 @@ function navigate(page) {
   switch (page) {
     case 'dashboard':        renderDashboard(container);       break
     case 'client-dashboard': renderClientDashboard(container); break
+    case 'programs':         renderPrograms(container);        break
     case 'clients':          renderClients(container);         break
     case 'workouts':         renderWorkouts(container);        break
     case 'calendar':         renderCalendar(container);        break
@@ -598,6 +599,301 @@ async function renderClientDashboard(el) {
     </div>`
 
   log.ok('renderClientDashboard', 'rendered', { clientId, goals: goals?.length, events: events?.length, pbs: pbs.length })
+}
+
+// ─── PROGRAMS ─────────────────────────────────────────────────────────────────
+async function renderPrograms(el) {
+  log.info('renderPrograms', 'fetching programs')
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  const { data: programs, error } = await db
+    .from('programs')
+    .select('id, name, description, created_at, program_phases(id)')
+    .eq('coach_id', currentUser.id)
+    .order('created_at', { ascending: false })
+
+  if (error) { log.error('renderPrograms', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+
+  log.ok('renderPrograms', 'loaded', { count: programs?.length })
+
+  el.innerHTML = `
+    <div class="page-header">
+      <h1 class="page-title">Programs</h1>
+      <button class="btn btn-primary" onclick="showCreateProgramModal()">+ New program</button>
+    </div>
+
+    ${!programs?.length ? `
+      <div class="empty-state">
+        <p>No programs yet.</p>
+        <p style="font-size:13px;color:var(--text-muted);margin-top:4px">Create a program to organise training phases for your clients.</p>
+      </div>
+    ` : `
+      <div class="client-grid">
+        ${programs.map(p => `
+          <div class="client-card" onclick="openProgram('${p.id}')">
+            <div class="client-card-avatar">${p.name.charAt(0).toUpperCase()}</div>
+            <div class="client-card-info">
+              <div class="client-card-name">${p.name}</div>
+              <div class="client-card-meta">${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}</div>
+              ${p.description ? `<div class="client-card-meta" style="margin-top:2px;color:var(--text-muted)">${p.description}</div>` : ''}
+            </div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>`).join('')}
+      </div>
+    `}
+
+    <!-- Create/Edit program modal -->
+    <div id="program-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeProgramModal()">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h2 class="modal-title" id="program-modal-title">New program</h2>
+          <button class="btn-icon" onclick="closeProgramModal()">✕</button>
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="form-label">Program name <span style="color:#ef4444">*</span></label>
+          <input type="text" id="pm-name" class="form-input" placeholder="e.g. 12-Week Strength Block">
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="form-label">Description <span style="color:var(--text-muted)">(optional)</span></label>
+          <textarea id="pm-desc" class="form-input" rows="3" placeholder="What is this program for?" style="resize:vertical"></textarea>
+        </div>
+        <p id="pm-error" style="color:#ef4444;font-size:12px;margin:0 0 10px"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-secondary" onclick="closeProgramModal()">Cancel</button>
+          <button class="btn btn-primary" id="pm-save-btn" onclick="saveProgram()">Create program</button>
+        </div>
+      </div>
+    </div>`
+
+  // Re-attach nav listeners lost on re-render
+  document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
+    el.addEventListener('click', e => { e.preventDefault(); navigate(el.dataset.page) })
+  })
+}
+
+async function openProgram(programId) {
+  const el = document.getElementById('main-content')
+  log.info('openProgram', 'loading', { programId })
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  const { data: program, error } = await db
+    .from('programs')
+    .select('id, name, description, created_at, program_phases(id, name, duration_weeks, order_index)')
+    .eq('id', programId)
+    .single()
+
+  if (error) { log.error('openProgram', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+
+  const phases = (program.program_phases || []).sort((a, b) => a.order_index - b.order_index)
+  const totalWeeks = phases.reduce((sum, p) => sum + p.duration_weeks, 0)
+
+  el.innerHTML = `
+    <div style="margin-bottom:20px">
+      <a href="#" onclick="navigate('programs');return false" style="font-size:13px;color:var(--accent);display:inline-flex;align-items:center;gap:4px;margin-bottom:12px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="15 18 9 12 15 6"/></svg>
+        All programs
+      </a>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <h1 class="page-title" style="margin-bottom:4px">${program.name}</h1>
+          ${program.description ? `<p style="color:var(--text-muted);font-size:14px">${program.description}</p>` : ''}
+          <p style="font-size:12px;color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${program.name.replace(/'/g,"\\'")}','${(program.description||'').replace(/'/g,"\\'")}')">Edit</button>
+          <button class="btn btn-danger" onclick="deleteProgram('${program.id}')">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phases -->
+    <div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+      <h2 style="font-size:15px;font-weight:600">Phases</h2>
+      <button class="btn btn-primary" onclick="showAddPhaseForm('${program.id}')">+ Add phase</button>
+    </div>
+
+    <div id="phases-list">
+      ${!phases.length ? `<p style="color:var(--text-muted);font-size:13px">No phases yet. Add the first phase to get started.</p>` :
+        phases.map((ph, i) => `
+          <div class="client-card" style="margin-bottom:8px;cursor:default" id="phase-${ph.id}">
+            <div style="width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i + 1}</div>
+            <div class="client-card-info">
+              <div class="client-card-name">${ph.name}</div>
+              <div class="client-card-meta">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn-icon" title="Edit" onclick="showEditPhaseForm('${program.id}','${ph.id}','${ph.name.replace(/'/g,"\\'")}',${ph.duration_weeks},${ph.order_index})">✎</button>
+              <button class="btn-icon" title="Delete" onclick="deletePhase('${program.id}','${ph.id}')">✕</button>
+            </div>
+          </div>`).join('')}
+    </div>
+
+    <!-- Add/edit phase form -->
+    <div id="phase-form" style="display:none;background:var(--surface-2);border-radius:10px;padding:16px;margin-top:12px">
+      <h3 style="font-size:14px;font-weight:600;margin-bottom:12px" id="phase-form-title">Add phase</h3>
+      <input type="hidden" id="pf-phase-id">
+      <input type="hidden" id="pf-order-index">
+      <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:10px">
+        <div>
+          <label class="form-label">Phase name <span style="color:#ef4444">*</span></label>
+          <input type="text" id="pf-name" class="form-input" placeholder="e.g. Base Building">
+        </div>
+        <div>
+          <label class="form-label">Duration (weeks)</label>
+          <input type="number" id="pf-weeks" class="form-input" placeholder="4" min="1" max="52" style="width:90px">
+        </div>
+      </div>
+      <p id="pf-error" style="color:#ef4444;font-size:12px;margin:0 0 8px"></p>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" id="pf-save-btn" onclick="savePhase('${program.id}')">Add phase</button>
+        <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('phase-form').style.display='none'">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Edit program modal -->
+    <div id="program-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeProgramModal()">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h2 class="modal-title" id="program-modal-title">Edit program</h2>
+          <button class="btn-icon" onclick="closeProgramModal()">✕</button>
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="form-label">Program name <span style="color:#ef4444">*</span></label>
+          <input type="text" id="pm-name" class="form-input">
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="form-label">Description <span style="color:var(--text-muted)">(optional)</span></label>
+          <textarea id="pm-desc" class="form-input" rows="3" style="resize:vertical"></textarea>
+        </div>
+        <p id="pm-error" style="color:#ef4444;font-size:12px;margin:0 0 10px"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-secondary" onclick="closeProgramModal()">Cancel</button>
+          <button class="btn btn-primary" id="pm-save-btn" onclick="saveProgram('${program.id}')">Save changes</button>
+        </div>
+      </div>
+    </div>`
+}
+
+let _editingProgramId = null
+
+function showCreateProgramModal() {
+  _editingProgramId = null
+  document.getElementById('program-modal-title').textContent = 'New program'
+  document.getElementById('pm-name').value = ''
+  document.getElementById('pm-desc').value = ''
+  document.getElementById('pm-error').textContent = ''
+  document.getElementById('pm-save-btn').textContent = 'Create program'
+  document.getElementById('program-modal').style.display = 'flex'
+}
+
+function showEditProgramModal(id, name, description) {
+  _editingProgramId = id
+  document.getElementById('program-modal-title').textContent = 'Edit program'
+  document.getElementById('pm-name').value = name
+  document.getElementById('pm-desc').value = description
+  document.getElementById('pm-error').textContent = ''
+  document.getElementById('pm-save-btn').textContent = 'Save changes'
+  document.getElementById('program-modal').style.display = 'flex'
+}
+
+function closeProgramModal() {
+  document.getElementById('program-modal').style.display = 'none'
+}
+
+async function saveProgram(programId) {
+  const name = document.getElementById('pm-name').value.trim()
+  const desc = document.getElementById('pm-desc').value.trim()
+  const errorEl = document.getElementById('pm-error')
+  if (!name) { errorEl.textContent = 'Program name is required.'; return }
+  errorEl.textContent = ''
+
+  const id = programId || _editingProgramId
+
+  if (id) {
+    log.info('saveProgram', 'updating', { id })
+    const { error } = await db.from('programs').update({ name, description: desc || null }).eq('id', id)
+    if (error) { log.error('saveProgram', 'update failed', error); errorEl.textContent = error.message; return }
+    log.ok('saveProgram', 'updated', { id })
+    closeProgramModal()
+    openProgram(id)
+  } else {
+    log.info('saveProgram', 'creating')
+    const { data, error } = await db.from('programs').insert({ coach_id: currentUser.id, name, description: desc || null }).select().single()
+    if (error) { log.error('saveProgram', 'create failed', error); errorEl.textContent = error.message; return }
+    log.ok('saveProgram', 'created', { id: data.id })
+    closeProgramModal()
+    openProgram(data.id)
+  }
+}
+
+async function deleteProgram(programId) {
+  if (!confirm('Delete this program and all its phases?')) return
+  log.info('deleteProgram', 'deleting', { programId })
+  const { error } = await db.from('programs').delete().eq('id', programId)
+  if (error) { log.error('deleteProgram', 'failed', error); alert(error.message); return }
+  log.ok('deleteProgram', 'deleted', { programId })
+  navigate('programs')
+}
+
+function showAddPhaseForm(programId) {
+  document.getElementById('phase-form-title').textContent = 'Add phase'
+  document.getElementById('pf-phase-id').value = ''
+  document.getElementById('pf-order-index').value = ''
+  document.getElementById('pf-name').value = ''
+  document.getElementById('pf-weeks').value = ''
+  document.getElementById('pf-error').textContent = ''
+  document.getElementById('pf-save-btn').textContent = 'Add phase'
+  document.getElementById('phase-form').style.display = 'block'
+  document.getElementById('pf-name').focus()
+}
+
+function showEditPhaseForm(programId, phaseId, name, weeks, orderIndex) {
+  document.getElementById('phase-form-title').textContent = 'Edit phase'
+  document.getElementById('pf-phase-id').value = phaseId
+  document.getElementById('pf-order-index').value = orderIndex
+  document.getElementById('pf-name').value = name
+  document.getElementById('pf-weeks').value = weeks
+  document.getElementById('pf-error').textContent = ''
+  document.getElementById('pf-save-btn').textContent = 'Save phase'
+  document.getElementById('phase-form').style.display = 'block'
+  document.getElementById('pf-name').focus()
+}
+
+async function savePhase(programId) {
+  const name     = document.getElementById('pf-name').value.trim()
+  const weeks    = parseInt(document.getElementById('pf-weeks').value)
+  const phaseId  = document.getElementById('pf-phase-id').value
+  const errorEl  = document.getElementById('pf-error')
+
+  if (!name || isNaN(weeks) || weeks < 1) { errorEl.textContent = 'Name and duration are required.'; return }
+  errorEl.textContent = ''
+
+  if (phaseId) {
+    log.info('savePhase', 'updating', { phaseId })
+    const { error } = await db.from('program_phases').update({ name, duration_weeks: weeks }).eq('id', phaseId)
+    if (error) { log.error('savePhase', 'update failed', error); errorEl.textContent = error.message; return }
+    log.ok('savePhase', 'updated', { phaseId })
+  } else {
+    // Get current max order_index to append at end
+    const { data: existing } = await db.from('program_phases').select('order_index').eq('program_id', programId).order('order_index', { ascending: false }).limit(1)
+    const nextIndex = (existing?.[0]?.order_index ?? -1) + 1
+    log.info('savePhase', 'creating', { programId, nextIndex })
+    const { error } = await db.from('program_phases').insert({ program_id: programId, name, duration_weeks: weeks, order_index: nextIndex })
+    if (error) { log.error('savePhase', 'create failed', error); errorEl.textContent = error.message; return }
+    log.ok('savePhase', 'created')
+  }
+
+  document.getElementById('phase-form').style.display = 'none'
+  openProgram(programId)
+}
+
+async function deletePhase(programId, phaseId) {
+  if (!confirm('Remove this phase?')) return
+  log.info('deletePhase', 'deleting', { phaseId })
+  const { error } = await db.from('program_phases').delete().eq('id', phaseId)
+  if (error) { log.error('deletePhase', 'failed', error); alert(error.message); return }
+  log.ok('deletePhase', 'deleted', { phaseId })
+  openProgram(programId)
 }
 
 function showClientPBForm(clientId) {
