@@ -29,14 +29,15 @@ async function showApp() {
   document.getElementById('auth-screen').style.display = 'none'
   document.getElementById('app-shell').style.display   = 'flex'
   await loadUserInfo()
-  navigate('dashboard')
+  applyRoleUI()
+  navigate(currentProfile?.role === 'client' ? 'client-dashboard' : 'dashboard')
 }
 
 async function loadUserInfo() {
   log.info('loadUserInfo', 'fetching profile', { userId: currentUser.id })
   const { data, error } = await db
     .from('profiles')
-    .select('full_name')
+    .select('full_name, role')
     .eq('id', currentUser.id)
     .single()
 
@@ -46,6 +47,14 @@ async function loadUserInfo() {
   const initial = name.charAt(0).toUpperCase()
   document.getElementById('user-name').textContent   = name.split(' ')[0]
   document.getElementById('user-avatar').textContent = initial
+}
+
+function applyRoleUI() {
+  const isClient = currentProfile?.role === 'client'
+  // Hide coach-only nav items from clients
+  document.querySelectorAll('[data-page="clients"], [data-page="workouts"]').forEach(el => {
+    el.style.display = isClient ? 'none' : ''
+  })
 }
 
 // ─── AUTH FORMS ───────────────────────────────────────────────────────────────
@@ -135,10 +144,11 @@ function navigate(page) {
   const container = document.getElementById('main-content')
 
   switch (page) {
-    case 'dashboard': renderDashboard(container); break
-    case 'clients':   renderClients(container);   break
-    case 'workouts':  renderWorkouts(container);  break
-    case 'calendar':  renderCalendar(container);  break
+    case 'dashboard':        renderDashboard(container);       break
+    case 'client-dashboard': renderClientDashboard(container); break
+    case 'clients':          renderClients(container);         break
+    case 'workouts':         renderWorkouts(container);        break
+    case 'calendar':         renderCalendar(container);        break
     default: container.innerHTML = '<div class="loading-state">Page not found</div>'
   }
 }
@@ -342,6 +352,179 @@ async function renderDashboard(el) {
 async function openClientByName(name) {
   const { data } = await db.from('clients').select('id').eq('full_name', name).single()
   if (data) openClient(data.id)
+}
+
+// ─── CLIENT DASHBOARD ─────────────────────────────────────────────────────────
+async function renderClientDashboard(el) {
+  log.info('renderClientDashboard', 'fetching data', { userId: currentUser.id })
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  const todayStr = new Date().toISOString().split('T')[0]
+
+  // Find this client's record via user_id
+  const { data: clientRow, error: clientErr } = await db
+    .from('clients')
+    .select('id, full_name, coach_id')
+    .eq('user_id', currentUser.id)
+    .single()
+
+  if (clientErr || !clientRow) {
+    log.error('renderClientDashboard', 'client record not found', clientErr)
+    el.innerHTML = '<div class="loading-state">Unable to load your profile. Please contact your coach.</div>'
+    return
+  }
+
+  const clientId = clientRow.id
+
+  const [
+    { data: goals },
+    { data: events },
+    { data: weights },
+    { data: perfLogs },
+  ] = await Promise.all([
+    db.from('goals').select('id, title, target_date, status, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
+    db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
+    db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
+    db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
+  ])
+
+  // Latest weight + trend
+  const latestWeight = weights?.[0] ?? null
+  const prevWeight   = weights?.[1] ?? null
+  let weightTrend = '→'
+  if (latestWeight && prevWeight) {
+    if (latestWeight.weight_kg < prevWeight.weight_kg) weightTrend = '↓'
+    else if (latestWeight.weight_kg > prevWeight.weight_kg) weightTrend = '↑'
+  }
+  const trendColour = weightTrend === '↓' ? '#22c55e' : weightTrend === '↑' ? '#ef4444' : 'var(--text-muted)'
+
+  // PBs — best value per exercise (max for strength/benchmark, min for cardio time)
+  const pbMap = {}
+  ;(perfLogs || []).forEach(p => {
+    const key = p.name
+    if (!pbMap[key]) { pbMap[key] = p; return }
+    const better = p.category === 'cardio'
+      ? p.value < pbMap[key].value
+      : p.value > pbMap[key].value
+    if (better) pbMap[key] = p
+  })
+  const pbs = Object.values(pbMap)
+
+  // Event type label + colour
+  function eventStyle(type) {
+    const map = {
+      session:     { label: 'PT Session',   colour: '#6366f1' },
+      review:      { label: 'Review',       colour: '#f59e0b' },
+      competition: { label: 'Competition',  colour: '#ef4444' },
+      holiday:     { label: 'Holiday',      colour: '#22c55e' },
+      gym:         { label: 'Gym',          colour: '#3b82f6' },
+      other:       { label: 'Event',        colour: 'var(--text-muted)' },
+    }
+    return map[type] || map.other
+  }
+
+  function formatDate(dateStr) {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+  }
+
+  function daysUntil(dateStr) {
+    const diff = new Date(dateStr) - new Date(todayStr)
+    const d = Math.round(diff / 86400000)
+    if (d === 0) return 'Today'
+    if (d === 1) return 'Tomorrow'
+    return `In ${d} days`
+  }
+
+  const firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
+
+  el.innerHTML = `
+    <div class="dashboard-header">
+      <div>
+        <h1 class="dashboard-greeting">Hi, ${firstName} 👋</h1>
+        <p style="color:var(--text-muted);font-size:14px;margin:2px 0 0">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+
+      <!-- Goals -->
+      <div class="dashboard-card" style="grid-column: span 2">
+        <div class="card-header"><h2 class="card-title">Your Goals</h2></div>
+        ${!goals?.length ? `<p style="color:var(--text-muted);font-size:13px">No active goals yet.</p>` : goals.map(goal => {
+          const milestones = (goal.goal_milestones || []).sort((a, b) => a.order - b.order)
+          const done = milestones.filter(m => m.completed_at).length
+          const pct  = goal.target_value && goal.current_value
+            ? Math.min(100, Math.round(((goal.current_value - (goal.current_value > goal.target_value ? goal.target_value : goal.current_value)) / Math.abs(goal.target_value - goal.current_value || 1)) * 100))
+            : milestones.length ? Math.round((done / milestones.length) * 100) : 0
+          const daysLeft = goal.target_date ? daysUntil(goal.target_date) : null
+          return `
+          <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+              <div style="font-size:14px;font-weight:600">${goal.title}</div>
+              ${daysLeft ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
+            </div>
+            ${goal.current_value != null && goal.target_value != null ? `
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+              Current: <strong style="color:var(--text)">${goal.current_value}</strong> → Target: <strong style="color:var(--accent)">${goal.target_value}</strong>
+            </div>` : ''}
+            ${milestones.length ? `
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+              ${milestones.map(m => `
+                <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:3px 8px;border-radius:20px;background:${m.completed_at ? 'var(--accent)' : 'var(--surface-2)'};color:${m.completed_at ? '#fff' : 'var(--text-muted)'}">
+                  ${m.completed_at ? '✓' : '○'} ${m.title}
+                </span>`).join('')}
+            </div>` : ''}
+          </div>`
+        }).join('')}
+      </div>
+
+      <!-- Weight -->
+      <div class="dashboard-card">
+        <div class="card-header"><h2 class="card-title">Weight</h2></div>
+        ${latestWeight ? `
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+            <span style="font-size:32px;font-weight:700">${latestWeight.weight_kg}</span>
+            <span style="font-size:16px;color:var(--text-muted)">kg</span>
+            <span style="font-size:22px;color:${trendColour};margin-left:4px">${weightTrend}</span>
+          </div>
+          <p style="font-size:12px;color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
+          ${prevWeight ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">Previous: ${prevWeight.weight_kg} kg</p>` : ''}
+        ` : `<p style="color:var(--text-muted);font-size:13px">No weight logged yet.</p>`}
+      </div>
+
+      <!-- Upcoming -->
+      <div class="dashboard-card">
+        <div class="card-header"><h2 class="card-title">Upcoming</h2></div>
+        ${!events?.length ? `<p style="color:var(--text-muted);font-size:13px">No upcoming events.</p>` : events.map(ev => {
+          const s = eventStyle(ev.type)
+          return `
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+            <div style="width:3px;min-width:3px;height:36px;border-radius:2px;background:${s.colour};margin-top:2px"></div>
+            <div>
+              <div style="font-size:13px;font-weight:500">${ev.title}</div>
+              <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${s.label} · ${formatDate(ev.date)} · ${daysUntil(ev.date)}</div>
+            </div>
+          </div>`
+        }).join('')}
+      </div>
+
+      <!-- Personal Bests -->
+      <div class="dashboard-card" style="grid-column: span 2">
+        <div class="card-header"><h2 class="card-title">Personal Bests</h2></div>
+        ${!pbs.length ? `<p style="color:var(--text-muted);font-size:13px">No records yet.</p>` : `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+          ${pbs.map(pb => `
+            <div style="background:var(--surface-2);border-radius:8px;padding:12px">
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${pb.category}</div>
+              <div style="font-size:13px;font-weight:600;margin-bottom:2px">${pb.name}</div>
+              <div style="font-size:20px;font-weight:700;color:var(--accent)">${pb.value} <span style="font-size:12px;font-weight:400;color:var(--text-muted)">${pb.unit}</span></div>
+            </div>`).join('')}
+        </div>`}
+      </div>
+
+    </div>`
+
+  log.ok('renderClientDashboard', 'rendered', { clientId, goals: goals?.length, events: events?.length, pbs: pbs.length })
 }
 
 // ─── CLIENTS LIST ─────────────────────────────────────────────────────────────
