@@ -383,12 +383,14 @@ async function renderClientDashboard(el) {
     { data: weights },
     { data: perfLogs },
     { data: assignedPrograms },
+    { data: recentSessions },
   ] = await Promise.all([
     db.from('goals').select('id, title, target_date, status, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
     db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
     db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index))').eq('client_id', clientId).limit(1),
+    db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
   ])
 
   // Latest weight + trend
@@ -473,9 +475,9 @@ async function renderClientDashboard(el) {
             ${milestones.length ? `
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
               ${milestones.map(m => `
-                <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:3px 8px;border-radius:20px;background:${m.completed_at ? 'var(--accent)' : 'var(--surface-2)'};color:${m.completed_at ? '#fff' : 'var(--text-muted)'}">
+                <button onclick="toggleClientMilestone('${m.id}')" style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:3px 8px;border-radius:20px;border:none;cursor:pointer;background:${m.completed_at ? 'var(--accent)' : 'var(--surface-2)'};color:${m.completed_at ? '#fff' : 'var(--text-muted)'}">
                   ${m.completed_at ? '✓' : '○'} ${m.title}
-                </span>`).join('')}
+                </button>`).join('')}
             </div>` : ''}
           </div>`
         }).join('')}
@@ -596,6 +598,29 @@ async function renderClientDashboard(el) {
             <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
           </div>
         </div>
+      </div>
+
+      <!-- Recent Sessions -->
+      <div class="dashboard-card" style="grid-column: span 2">
+        <div class="card-header">
+          <h2 class="card-title">Recent Sessions</h2>
+          <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showLogSessionModal('${clientId}')">+ Log session</button>
+        </div>
+        ${!recentSessions?.length ? `<p style="color:var(--text-muted);font-size:13px">No sessions logged yet. Log your first session to start tracking your training.</p>` : `
+        <div class="list">
+          ${recentSessions.map(s => {
+            const dateStr = new Date(s.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+            const exCount = s.workout_log_exercises?.length || 0
+            return `
+            <div class="list-row" style="cursor:default">
+              <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
+              <div class="row-info">
+                <div class="row-name">${s.name}</div>
+                <div class="row-meta">${dateStr} · ${exCount} exercise${exCount !== 1 ? 's' : ''}</div>
+              </div>
+            </div>`
+          }).join('')}
+        </div>`}
       </div>
 
       <!-- Active Program -->
@@ -2188,6 +2213,15 @@ async function toggleMilestone(milestoneId, goalId, clientId) {
   openGoal(goalId, clientId)
 }
 
+async function toggleClientMilestone(milestoneId) {
+  const { data: m, error: fetchErr } = await db.from('goal_milestones').select('completed_at').eq('id', milestoneId).single()
+  if (fetchErr) { log.error('toggleClientMilestone', 'fetch failed', fetchErr); return }
+  const newVal = m.completed_at ? null : new Date().toISOString()
+  const { error } = await db.from('goal_milestones').update({ completed_at: newVal }).eq('id', milestoneId)
+  if (error) { log.error('toggleClientMilestone', 'update failed', error); alert(error.message); return }
+  renderClientDashboard(document.getElementById('main-content'))
+}
+
 // ─── CHECK-IN MODAL ───────────────────────────────────────────────────────────
 function showAddCheckInModal(goalId, clientId) {
   const overlay = document.createElement('div')
@@ -3382,9 +3416,13 @@ async function saveWorkoutSession(clientId) {
   const blocks = window._logBlocks.filter(b => b.name.trim())
   if (blocks.length === 0) { errorEl.textContent = 'Add at least one exercise'; return }
 
+  // Derive coach_id from the client record — works for both coach and client self-logging
+  const { data: clientRecord } = await db.from('clients').select('coach_id').eq('id', clientId).single()
+  const coachId = clientRecord?.coach_id || currentUser.id
+
   log.info('saveWorkoutSession', 'saving session', { clientId, name, exerciseCount: blocks.length })
   const { data: sessionLog, error } = await db.from('workout_logs').insert({
-    coach_id:    currentUser.id,
+    coach_id:    coachId,
     client_id:   clientId,
     template_id: document.getElementById('ls-template').value || null,
     name,
