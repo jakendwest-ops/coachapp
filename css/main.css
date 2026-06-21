@@ -658,6 +658,16 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   .page-title { font-size: 20px; }
 }
 
+@media (max-width: 540px) {
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal-fullscreen-mobile {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+    max-width: 100% !important;
+    max-height: 92vh !important;
+    padding: 20px 16px !important;
+  }
+}
+
 @media (max-width: 400px) {
   .auth-card { padding: 28px 20px; }
   .stats-row { grid-template-columns: 1fr 1fr; }

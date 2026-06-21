@@ -3227,7 +3227,7 @@ function flushLogState() {
         set.distance = g(`ls-dist-${bi}-${si}`)
       } else {
         set.repsMin = g(`ls-rmin-${bi}-${si}`)
-        set.repsMax = g(`ls-rmax-${bi}-${si}`)
+        set.repsMax = g(`ls-rmax-${bi}-${si}`) || set.repsMin
         set.weight  = g(`ls-weight-${bi}-${si}`)
         set.pctMin  = g(`ls-pmin-${bi}-${si}`)
         set.pctMax  = g(`ls-pmax-${bi}-${si}`)
@@ -3247,23 +3247,31 @@ function renderLogExercises() {
   const container = document.getElementById('ls-exercises')
   if (!container) return
 
+  const isMobile = window.innerWidth < 520
   const hdr = (txt) => `<span style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);text-align:center">${txt}</span>`
-  const si_style = `class="field-input" style="padding:4px 5px;font-size:12px;text-align:center;min-width:0"`
+  const si_style = `class="field-input" style="padding:${isMobile?'8px 6px':'4px 5px'};font-size:${isMobile?'16px':'12px'};text-align:center;min-width:0"`
 
   container.innerHTML = window._logBlocks.map((block, bi) => {
     const isCardio = block.type === 'cardio'
     const isRIR = block.effortMode === 'RIR'
     const orm = parseFloat(block.oneRM) || 0
 
-    // strength: Set | RepsMin | RepsMax | Weight | PctMin | PctMax | Effort | Rest | ×
+    // Mobile: Set | Reps | Weight | RPE | ×
+    // Desktop: Set | RepsMin | RepsMax | Weight | PctMin | PctMax | Effort | Rest | ×
     const GRID = isCardio
-      ? '28px 1fr 1fr 22px'
-      : '28px 42px 42px 58px 42px 42px 52px 54px 22px'
+      ? (isMobile ? '24px 1fr 1fr 28px' : '28px 1fr 1fr 22px')
+      : (isMobile ? '24px 1fr 1fr 56px 28px' : '28px 42px 42px 58px 42px 42px 52px 54px 22px')
 
     const colHeaders = isCardio ? `
       ${hdr('')}
       ${hdr('Duration')}
       ${hdr('Distance (km)')}
+      <span></span>
+    ` : isMobile ? `
+      ${hdr('#')}
+      ${hdr('Reps')}
+      ${hdr('Weight (kg)')}
+      ${hdr('RPE')}
       <span></span>
     ` : `
       ${hdr('')}
@@ -3294,12 +3302,17 @@ function renderLogExercises() {
       const wFromPct = orm
         ? `<div style="font-size:9px;color:var(--accent);text-align:center;margin-top:1px">${_calcWeightFromPct(orm, s.pctMin) || ''}${s.pctMax && s.pctMax !== s.pctMin ? '–' + _calcWeightFromPct(orm, s.pctMax) : ''}${orm && (s.pctMin || s.pctMax) ? 'kg' : ''}</div>`
         : ''
+      const delBtn = `<button onclick="flushLogState();window._logBlocks[${bi}].sets.splice(${si},1);renderLogExercises()" style="width:${isMobile?'28px':'22px'};height:${isMobile?'36px':'22px'};border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;padding:0">×</button>`
       return `
-        <div style="display:grid;grid-template-columns:${GRID};gap:3px;align-items:center;margin-bottom:3px">
+        <div style="display:grid;grid-template-columns:${GRID};gap:${isMobile?'5px':'3px'};align-items:center;margin-bottom:${isMobile?'6px':'3px'}">
           <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">${si + 1}</span>
           ${isCardio ? `
             <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.duration || ''}" oninput="this.value=fmtRest(this.value)">
             <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="0.01" placeholder="km" value="${s.distance || ''}">
+          ` : isMobile ? `
+            <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${s.repsMin || ''}">
+            <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="kg" value="${s.weight || ''}">
+            <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="RPE" value="${s.effort || ''}">
           ` : `
             <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${s.repsMin || ''}">
             <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${s.repsMax || ''}">
@@ -3314,7 +3327,7 @@ function renderLogExercises() {
             <input id="ls-effort-${bi}-${si}" ${si_style} type="number" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${s.effort || ''}">
             <input id="ls-rest-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.rest || ''}" oninput="this.value=fmtRest(this.value)">
           `}
-          <button onclick="flushLogState();window._logBlocks[${bi}].sets.splice(${si},1);renderLogExercises()" style="width:22px;height:22px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;padding:0">×</button>
+          ${delBtn}
         </div>
       `
     }).join('')
@@ -3362,7 +3375,7 @@ async function showLogSessionModal(clientId) {
   overlay.className = 'modal-overlay'
   overlay.id = 'log-session-modal'
   overlay.innerHTML = `
-    <div class="modal" style="max-width:580px;max-height:90vh;overflow-y:auto">
+    <div class="modal modal-fullscreen-mobile" style="max-width:580px;max-height:90vh;overflow-y:auto">
       <div class="modal-header">
         <h2 class="modal-title">Log session</h2>
         <button class="modal-close" onclick="closeModal('log-session-modal')">✕</button>
