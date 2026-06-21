@@ -468,9 +468,18 @@ async function renderClientDashboard(el) {
               <div style="font-size:14px;font-weight:600">${goal.title}</div>
               ${daysLeft ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
             </div>
-            ${goal.current_value != null && goal.target_value != null ? `
-            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
-              Current: <strong style="color:var(--text)">${goal.current_value}</strong> → Target: <strong style="color:var(--accent)">${goal.target_value}</strong>
+            ${goal.target_value != null ? `
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span>Current: <strong style="color:var(--text)">${goal.current_value ?? '—'}</strong> → Target: <strong style="color:var(--accent)">${goal.target_value}</strong></span>
+              <button onclick="showGoalProgressForm('${goal.id}',${goal.current_value ?? ''})" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;padding:0">Update</button>
+            </div>
+            <div id="gpf-${goal.id}" style="display:none;margin-bottom:8px">
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="number" id="gpf-val-${goal.id}" class="field-input" style="width:100px;padding:4px 8px;font-size:13px" step="0.1" placeholder="New value">
+                <button class="btn-primary" style="font-size:12px;padding:4px 12px" onclick="saveGoalProgress('${goal.id}')">Save</button>
+                <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="document.getElementById('gpf-${goal.id}').style.display='none'">Cancel</button>
+              </div>
+              <p id="gpf-err-${goal.id}" style="color:var(--danger);font-size:11px;margin:4px 0 0"></p>
             </div>` : ''}
             ${milestones.length ? `
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
@@ -2222,6 +2231,25 @@ async function toggleClientMilestone(milestoneId) {
   renderClientDashboard(document.getElementById('main-content'))
 }
 
+function showGoalProgressForm(goalId, currentVal) {
+  const form = document.getElementById(`gpf-${goalId}`)
+  const input = document.getElementById(`gpf-val-${goalId}`)
+  if (!form || !input) return
+  input.value = currentVal || ''
+  form.style.display = 'block'
+  input.focus()
+}
+
+async function saveGoalProgress(goalId) {
+  const input  = document.getElementById(`gpf-val-${goalId}`)
+  const errEl  = document.getElementById(`gpf-err-${goalId}`)
+  const val    = parseFloat(input?.value)
+  if (isNaN(val)) { if (errEl) errEl.textContent = 'Enter a valid number'; return }
+  const { error } = await db.from('goals').update({ current_value: val }).eq('id', goalId)
+  if (error) { log.error('saveGoalProgress', 'update failed', error); if (errEl) errEl.textContent = error.message; return }
+  renderClientDashboard(document.getElementById('main-content'))
+}
+
 // ─── CHECK-IN MODAL ───────────────────────────────────────────────────────────
 function showAddCheckInModal(goalId, clientId) {
   const overlay = document.createElement('div')
@@ -3479,6 +3507,7 @@ async function saveWorkoutSession(clientId) {
   window._logBlocks = []
   const tabContent = document.getElementById('tab-content')
   if (tabContent) renderClientWorkouts(clientId, tabContent)
+  else renderClientDashboard(document.getElementById('main-content'))
 }
 
 async function openWorkoutLog(logId, clientId) {
