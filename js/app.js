@@ -234,7 +234,7 @@ async function renderDashboard(el) {
     db.from('workout_logs').select('*', { count: 'exact', head: true }).eq('coach_id', currentUser.id),
     db.from('weight_logs').select('client_id, created_at, weight_kg').gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30),
     db.from('workout_logs').select('client_id, date, created_at').gte('date', todayStr.slice(0,7) + '-01').order('date', { ascending: false }).limit(100),
-    db.from('clients').select('id, full_name, status').eq('status', 'active').order('full_name'),
+    db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).eq('status', 'active').order('full_name'),
     db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', fourteenDaysOn).order('target_date').limit(5)
   ])
 
@@ -885,7 +885,7 @@ function showAssignProgramModal(clientId) {
   `
   document.body.appendChild(overlay)
 
-  db.from('programs').select('id, name').order('name').then(({ data }) => {
+  db.from('programs').select('id, name').eq('coach_id', currentUser.id).order('name').then(({ data }) => {
     const sel = document.getElementById('ap-program')
     if (!sel) return
     ;(data || []).forEach(p => {
@@ -3745,6 +3745,22 @@ function logRunnerSet() {
       return
     }
   }
+  // If all target sets for this exercise are done, advance or finish
+  const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
+  if (hitTarget) {
+    const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+    if (nextExIdx !== -1) {
+      // More exercises — rest then advance
+      _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
+      renderRunner()
+      startRestTimer(ex.restSecs || 90)
+      return
+    } else {
+      // All done — go straight to finish
+      showRunnerFinish()
+      return
+    }
+  }
   renderRunner()
   // Start rest timer
   const restSecs = ex.restSecs || 90
@@ -3788,6 +3804,8 @@ function startRestTimer(secs) {
       _runner.restRemaining = null
       playBeep(1046, 0.4, 0.5) // higher, longer beep on finish
       document.getElementById('rest-timer-overlay')?.remove()
+      const cb = _runner._afterRest
+      if (cb) { _runner._afterRest = null; cb() }
     } else {
       if (_runner.restRemaining <= 5) playBeep(880, 0.08, 0.3)
       const el = document.getElementById('rt-countdown')
@@ -3813,6 +3831,8 @@ function skipRestTimer() {
   clearInterval(_runner._restInterval)
   _runner.restRemaining = null
   document.getElementById('rest-timer-overlay')?.remove()
+  const cb = _runner._afterRest
+  if (cb) { _runner._afterRest = null; cb() }
 }
 
 function renderRestTimer() {
@@ -3838,7 +3858,7 @@ function renderRestTimer() {
         </svg>
         <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
       </div>
-      <div style="color:var(--text-muted);font-size:13px;margin-bottom:24px">Next: Set ${(_runner.exercises[_runner.exIdx].loggedSets.length) + 1}</div>
+      <div style="color:var(--text-muted);font-size:13px;margin-bottom:24px">${_runner._afterRest ? 'Next: ' + (_runner.exercises.find((e,i) => i > _runner.exIdx && e.name)?.name || 'Next exercise') : 'Next: Set ' + (_runner.exercises[_runner.exIdx].loggedSets.length + 1)}</div>
       <button onclick="skipRestTimer()" style="width:100%;padding:14px;border:none;border-radius:12px;background:var(--surface-2);font-size:15px;font-weight:700;cursor:pointer;color:var(--text)">Skip rest →</button>
     </div>
   `
@@ -3923,13 +3943,21 @@ function showRunnerFinish() {
   const el = document.getElementById('workout-runner')
   if (!el) return
   const totalSets = _runner.exercises.reduce((s,e) => s + e.loggedSets.length, 0)
+  const totalVol  = _runner.exercises.reduce((s,e) => s + e.loggedSets.reduce((sv,set) => {
+    const w = parseFloat(set.weight); const r = parseInt(set.reps,10)
+    return sv + (isNaN(w)||isNaN(r) ? 0 : w * r)
+  }, 0), 0)
   const duration  = fmtRunnerTime(_runner.startTime)
 
   el.innerHTML = `
     <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
       <div style="padding:20px 16px;border-bottom:1px solid var(--border)">
-        <h2 style="font-size:22px;font-weight:700;margin-bottom:4px">Workout complete 💪</h2>
-        <p style="color:var(--text-muted);font-size:13px">${totalSets} sets · ${duration}</p>
+        <h2 style="font-size:22px;font-weight:700;margin-bottom:12px">Workout complete 💪</h2>
+        <div style="display:flex;gap:12px">
+          ${totalVol > 0 ? `<div style="flex:1;background:var(--surface-2);border-radius:10px;padding:10px 12px;text-align:center"><div style="font-size:18px;font-weight:800;color:var(--accent)">${totalVol.toLocaleString()} kg</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">Total volume</div></div>` : ''}
+          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:10px 12px;text-align:center"><div style="font-size:18px;font-weight:800">${totalSets}</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">Sets</div></div>
+          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:10px 12px;text-align:center"><div style="font-size:18px;font-weight:800">${duration}</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">Duration</div></div>
+        </div>
       </div>
       <div style="flex:1;overflow-y:auto;padding:16px">
         ${_runner.exercises.filter(e=>e.loggedSets.length).map(e=>`
