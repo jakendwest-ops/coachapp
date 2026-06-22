@@ -220,7 +220,7 @@ async function renderDashboard(el) {
     db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active'),
     db.from('workout_logs').select('*', { count: 'exact', head: true }),
     db.from('weight_logs').select('client_id, logged_at, weight_kg').gte('logged_at', sevenDaysAgo).order('logged_at', { ascending: false }).limit(30),
-    db.from('workout_logs').select('client_id, logged_at').gte('logged_at', sevenDaysAgo).order('logged_at', { ascending: false }).limit(30),
+    db.from('workout_logs').select('client_id, date, created_at').gte('date', todayStr.slice(0,7) + '-01').order('date', { ascending: false }).limit(100),
     db.from('clients').select('id, full_name, status').eq('status', 'active').order('full_name'),
     db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', fourteenDaysOn).order('target_date').limit(5)
   ])
@@ -231,7 +231,7 @@ async function renderDashboard(el) {
   // Activity feed — merge weight + workout logs, sort newest first
   const feed = [
     ...(recentWeights  || []).map(w => ({ type: 'weight',  client_id: w.client_id, logged_at: w.logged_at, detail: `${w.weight_kg} kg` })),
-    ...(recentWorkouts || []).map(w => ({ type: 'session', client_id: w.client_id, logged_at: w.logged_at, detail: 'Session logged' }))
+    ...(recentWorkouts || []).map(w => ({ type: 'session', client_id: w.client_id, logged_at: w.created_at || w.date, detail: 'Session logged' }))
   ].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at)).slice(0, 8)
 
   // Clients with no activity in last 7 days
@@ -242,8 +242,9 @@ async function renderDashboard(el) {
   const quietClients = (activeClients || []).filter(c => !activeSet.has(c.id))
 
   // Compliance — session count per active client this week
+  const weekAgoStr = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const sessionCounts = {}
-  ;(recentWorkouts || []).forEach(w => {
+  ;(recentWorkouts || []).filter(w => w.date >= weekAgoStr).forEach(w => {
     sessionCounts[w.client_id] = (sessionCounts[w.client_id] || 0) + 1
   })
   const complianceRows = (activeClients || [])
@@ -421,6 +422,7 @@ async function renderClientDashboard(el) {
     { data: perfLogs },
     { data: assignedPrograms },
     { data: recentSessions },
+    { data: checkIns },
   ] = await Promise.all([
     db.from('goals').select('id, title, target_date, status, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
@@ -428,6 +430,7 @@ async function renderClientDashboard(el) {
     db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
     db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index))').eq('client_id', clientId).limit(1),
     db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
+    db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
   ])
 
   // Latest weight + trend
@@ -479,11 +482,38 @@ async function renderClientDashboard(el) {
 
   const firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
 
+  // This week stats
+  const weekAgoStr2 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const sessionsThisWeek = (recentSessions || []).filter(s => s.date >= weekAgoStr2).length
+  const lastCheckIn = checkIns?.[0] || null
+  const daysSinceCheckIn = lastCheckIn ? Math.floor((Date.now() - new Date(lastCheckIn.created_at)) / 86400000) : null
+  const checkInDue = daysSinceCheckIn === null || daysSinceCheckIn >= 7
+
   el.innerHTML = `
     <div class="dashboard-header">
       <div>
         <h1 class="dashboard-greeting">Hi, ${firstName} 👋</h1>
         <p style="color:var(--text-muted);font-size:14px;margin:2px 0 0">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+      </div>
+    </div>
+
+    <!-- This week banner -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px;background:var(--accent);border-radius:12px;padding:14px 16px;color:#fff">
+        <div style="font-size:28px;font-weight:800">${sessionsThisWeek}</div>
+        <div style="font-size:12px;font-weight:600;opacity:.85;margin-top:2px">Sessions this week</div>
+      </div>
+      <div style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+        <div style="font-size:28px;font-weight:800">${latestWeight ? latestWeight.weight_kg+' kg' : '—'}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-top:2px">Latest weight</div>
+      </div>
+      <div style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+        <div style="font-size:28px;font-weight:800">${goals?.length || 0}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-top:2px">Active goals</div>
+      </div>
+      <div onclick="document.getElementById('checkin-card').scrollIntoView({behavior:'smooth'})" style="flex:1;min-width:120px;background:${checkInDue?'rgba(245,158,11,.1)':'var(--surface)'};border:1px solid ${checkInDue?'#f59e0b':'var(--border)'};border-radius:12px;padding:14px 16px;cursor:pointer">
+        <div style="font-size:22px;font-weight:800">${checkInDue?'Due ✎':'Done ✓'}</div>
+        <div style="font-size:12px;font-weight:600;color:${checkInDue?'#d97706':'var(--text-muted)'};margin-top:2px">Weekly check-in</div>
       </div>
     </div>
 
@@ -716,6 +746,41 @@ async function renderClientDashboard(el) {
           </div>` : ''}
         </div>`
       })()}
+
+      <!-- Weekly check-in -->
+      <div class="dashboard-card" style="grid-column: span 2" id="checkin-card">
+        <div class="card-header">
+          <h2 class="card-title">Weekly check-in</h2>
+          ${lastCheckIn ? `<span style="font-size:12px;color:var(--text-muted)">${daysSinceCheckIn === 0 ? 'Submitted today' : daysSinceCheckIn + 'd ago'}</span>` : ''}
+        </div>
+        ${!checkInDue && lastCheckIn ? `
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
+            ${[['Sleep',lastCheckIn.sleep],['Energy',lastCheckIn.energy],['Stress',lastCheckIn.stress],['Soreness',lastCheckIn.soreness]].map(([label,val])=>`
+            <div style="text-align:center;background:var(--surface-2);border-radius:10px;padding:10px">
+              <div style="font-size:22px;font-weight:800;color:var(--accent)">${val}/5</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${label}</div>
+            </div>`).join('')}
+          </div>
+          ${lastCheckIn.notes ? `<p style="font-size:13px;color:var(--text-muted);margin:0 0 12px">${lastCheckIn.notes}</p>` : ''}
+          <button onclick="document.getElementById('checkin-form').style.display='block'" class="btn-secondary" style="font-size:13px">Submit new check-in</button>
+        ` : `<p style="font-size:13px;color:var(--text-muted);margin:0 0 12px">${checkInDue ? 'Your weekly check-in is due. Let your coach know how you\'re feeling.' : 'No check-ins yet.'}</p>`}
+        <div id="checkin-form" style="${checkInDue ? '' : 'display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)'}">
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px">
+            ${[['sleep','Sleep (1–5)'],['energy','Energy (1–5)'],['stress','Stress (1–5)'],['soreness','Soreness (1–5)']].map(([id,label])=>`
+            <div>
+              <label class="field-label">${label}</label>
+              <input type="range" id="ci-${id}" min="1" max="5" step="1" value="${lastCheckIn?.[id]||3}" class="field-input" style="padding:6px 0">
+              <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-top:2px"><span>Low</span><span>High</span></div>
+            </div>`).join('')}
+          </div>
+          <div class="field">
+            <label class="field-label">Notes for your coach <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+            <textarea id="ci-notes" class="field-input" rows="2" placeholder="How's training feeling? Any injuries or concerns?">${lastCheckIn?.notes||''}</textarea>
+          </div>
+          <p id="ci-error" style="color:var(--danger);font-size:12px;margin:4px 0"></p>
+          <button onclick="saveClientCheckIn('${clientId}')" class="btn-primary" style="margin-top:8px">Submit check-in</button>
+        </div>
+      </div>
 
     </div>`
 
@@ -1174,6 +1239,19 @@ function showClientWeightForm(clientId) {
   form.style.display = form.style.display === 'none' ? 'block' : 'none'
 }
 
+async function saveClientCheckIn(clientId) {
+  const sleep    = parseInt(document.getElementById('ci-sleep')?.value)
+  const energy   = parseInt(document.getElementById('ci-energy')?.value)
+  const stress   = parseInt(document.getElementById('ci-stress')?.value)
+  const soreness = parseInt(document.getElementById('ci-soreness')?.value)
+  const notes    = document.getElementById('ci-notes')?.value.trim() || null
+  const errEl    = document.getElementById('ci-error')
+  if ([sleep,energy,stress,soreness].some(isNaN)) { if(errEl) errEl.textContent = 'Please fill in all ratings'; return }
+  const { error } = await db.from('client_check_ins').insert({ client_id: clientId, sleep, energy, stress, soreness, notes })
+  if (error) { if(errEl) errEl.textContent = error.message; return }
+  renderClientDashboard(document.getElementById('main-content'))
+}
+
 async function saveClientWeight(clientId) {
   const date   = document.getElementById('cwf-date').value
   const weight = parseFloat(document.getElementById('cwf-weight').value)
@@ -1413,8 +1491,29 @@ function clientOverviewTab(client) {
 }
 
 async function renderClientOverview(id, el) {
-  const { data: client } = await db.from('clients').select('*').eq('id', id).single()
-  el.innerHTML = clientOverviewTab(client)
+  const [{ data: client }, { data: checkIns }] = await Promise.all([
+    db.from('clients').select('*').eq('id', id).single(),
+    db.from('client_check_ins').select('*').eq('client_id', id).order('created_at', { ascending: false }).limit(4)
+  ])
+  const latestCI = checkIns?.[0]
+  const ciHtml = latestCI ? `
+    <div class="card" style="margin-top:16px">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:700">Latest check-in</div>
+          <div style="font-size:11px;color:var(--text-muted)">${new Date(latestCI.created_at).toLocaleDateString('en-GB', { day:'numeric',month:'short' })}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+          ${[['Sleep',latestCI.sleep],['Energy',latestCI.energy],['Stress',latestCI.stress],['Soreness',latestCI.soreness]].map(([label,val])=>`
+          <div style="text-align:center;background:var(--surface-2);border-radius:8px;padding:8px">
+            <div style="font-size:20px;font-weight:800;color:${val<=2?'#ef4444':val>=4?'#22c55e':'var(--accent)'}">${val}/5</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${label}</div>
+          </div>`).join('')}
+        </div>
+        ${latestCI.notes ? `<p style="font-size:13px;color:var(--text-muted);margin:0;font-style:italic">"${latestCI.notes}"</p>` : ''}
+      </div>
+    </div>` : ''
+  el.innerHTML = clientOverviewTab(client) + ciHtml
 }
 
 function infoItem(label, value) {
@@ -2895,6 +2994,9 @@ async function openTemplate(id) {
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                   <span style="font-weight:600;font-size:14px">${ex.exercise_name}</span>
                   ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
+                  ${ex.superset_group ? `<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:4px;background:rgba(245,158,11,.15);color:#d97706">SS: ${ex.superset_group}</span>` : ''}
+                  ${ex.sets_json?.[0]?.bodyweight ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(16,185,129,.12);color:#059669">BW</span>` : ''}
+                  ${ex.sets_json?.[0]?.assisted ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(139,92,246,.12);color:#7c3aed">Assisted</span>` : ''}
                 </div>
                 ${ex.sets_json?.length ? (() => {
                   const rows = ex.sets_json.map((s, si) => {
@@ -2965,6 +3067,7 @@ function flushTemplateSets(containerId) {
     s.countdown    = document.getElementById(`ts-cd-${i}`)?.value       ?? s.countdown
     s.duration     = document.getElementById(`ts-duration-${i}`)?.value ?? s.duration
     s.distance     = document.getElementById(`ts-distance-${i}`)?.value ?? s.distance
+    s.assistWeight = document.getElementById(`ts-assist-${i}`)?.value   ?? s.assistWeight
   })
 }
 
@@ -3005,6 +3108,8 @@ function renderTemplateSets(containerId, type) {
             ${tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`)}
             ${tog('⟺ Uni', s.unilateral, `toggleTsSet(${i},'unilateral','${containerId}')`)}
             ${tog('⏱ Timed', s.timed, `toggleTsSet(${i},'timed','${containerId}')`)}
+            ${tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`)}
+            ${tog('Assist', s.assisted, `toggleTsSet(${i},'assisted','${containerId}')`)}
           ` : ''}
           <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'strength')" style="width:26px;height:26px;border-radius:6px;border:1px solid #d1d5db;background:transparent;color:#9ca3af;cursor:pointer;font-size:15px;line-height:1">×</button>
         </div>
@@ -3016,7 +3121,8 @@ function renderTemplateSets(containerId, type) {
         ${row('RPE', mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="—"'+(s.effortMin?` value="${s.effortMin}"`:'')))}
       ` : `
         ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
-        ${row('Weight', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
+        ${s.bodyweight ? '' : row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
+        ${s.assisted ? row('Assist weight (kg)', mini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${s.assistWeight}"`:''))): ''}
         ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${s.intensityMin}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${s.intensityMax}"`:'')))}
         ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" onblur="this.value=this.value?fmtRest(parseRest(this.value)):this.value"'+(s.restMin?` value="${s.restMin}"`:'')) + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" onblur="this.value=this.value?fmtRest(parseRest(this.value)):this.value"'+(s.restMax?` value="${s.restMax}"`:'')))}
         ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
@@ -3077,6 +3183,10 @@ function showAddExerciseToTemplateModal(templateId) {
           <label class="field-label">Notes / coaching cues</label>
           <textarea class="field-input" id="att-notes" placeholder="e.g. Pause 1s at bottom, 3s eccentric" rows="2" style="resize:vertical"></textarea>
         </div>
+        <div class="field">
+          <label class="field-label">Superset group <span style="font-weight:400;color:var(--text-muted)">(optional — enter same letter, e.g. A, to link exercises)</span></label>
+          <input class="field-input" id="att-superset" placeholder="e.g. A" maxlength="3" style="width:80px">
+        </div>
         <p class="modal-error" id="att-error"></p>
         <div class="modal-footer">
           <button class="btn-secondary" onclick="closeModal('add-to-template-modal')">Cancel</button>
@@ -3115,6 +3225,7 @@ async function saveExerciseToTemplate(templateId) {
 
   const cleanSets = sets.map(s => ({
     amrap: !!s.amrap, unilateral: !!s.unilateral, timed: !!s.timed,
+    bodyweight: !!s.bodyweight, assisted: !!s.assisted, assistWeight: s.assistWeight||null,
     repsMin: s.repsMin||null, repsMax: s.repsMax||null, weight: s.weight||null,
     intensityMin: s.intensityMin||null, intensityMax: s.intensityMax||null,
     restMin: s.restMin||null, restMax: s.restMax||null,
@@ -3128,9 +3239,10 @@ async function saveExerciseToTemplate(templateId) {
     exercise_name: name,
     exercise_type: document.getElementById('att-type').value,
     order_index:   nextOrder,
-    sets:          cleanSets.length || null,
-    sets_json:     cleanSets.length ? cleanSets : null,
-    notes:         document.getElementById('att-notes').value.trim() || null
+    sets:           cleanSets.length || null,
+    sets_json:      cleanSets.length ? cleanSets : null,
+    notes:          document.getElementById('att-notes').value.trim() || null,
+    superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   })
 
   if (error) { log.error('saveExerciseToTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
@@ -3173,6 +3285,10 @@ async function showEditTemplateExerciseModal(templateExId, templateId) {
         <label class="field-label">Notes / coaching cues</label>
         <input class="field-input" id="etex-notes" value="${ex.notes || ''}">
       </div>
+      <div class="field">
+        <label class="field-label">Superset group <span style="font-weight:400;color:var(--text-muted)">(optional — same letter links exercises, e.g. A)</span></label>
+        <input class="field-input" id="etex-superset" value="${ex.superset_group || ''}" placeholder="e.g. A" maxlength="3" style="width:80px">
+      </div>
       <p class="modal-error" id="etex-error"></p>
       <div class="modal-footer">
         <button class="btn-danger" onclick="deleteTemplateExercise('${templateExId}','${templateId}')">Remove</button>
@@ -3197,9 +3313,10 @@ async function saveEditTemplateExercise(texId, templateId) {
   const { error } = await db.from('workout_template_exercises').update({
     exercise_name: name,
     exercise_type: document.getElementById('ett-type').value,
-    sets:          sets.length || null,
-    sets_json:     sets.length ? sets : null,
-    notes:         document.getElementById('etex-notes').value.trim() || null
+    sets:           sets.length || null,
+    sets_json:      sets.length ? sets : null,
+    notes:          document.getElementById('etex-notes').value.trim() || null,
+    superset_group: document.getElementById('etex-superset')?.value.trim().toUpperCase() || null
   }).eq('id', texId)
   if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
   log.ok('saveEditTemplateExercise', 'template exercise updated', { texId })
@@ -3378,7 +3495,8 @@ function launchRunner(clientId) {
       .map(ex => {
         const repsStr = String(ex.reps || '')
         const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.[0]?.restMin || '') || 90
-        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [] }
+        const s0 = ex.sets_json?.[0] || {}
+        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [] }
       })
   }
   if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
@@ -3468,9 +3586,9 @@ function renderRunner() {
         </div>
         <!-- Field displays -->
         <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;margin-bottom:8px">
-          <div id="wr-weight-box" onclick="wrSetField('weight')" style="text-align:center;padding:8px 4px;border-radius:10px;border:2px solid ${_runner.activeField==='weight'?'var(--accent)':'var(--border)'};cursor:pointer;background:var(--bg)">
-            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">Kilograms</div>
-            <div id="wr-weight-display" style="font-size:30px;font-weight:700;color:var(--text);line-height:1">${_runner.weightInput||'—'}</div>
+          <div id="wr-weight-box" onclick="${ex.bodyweight?'':'wrSetField(\'weight\')'}" style="text-align:center;padding:8px 4px;border-radius:10px;border:2px solid ${_runner.activeField==='weight'?'var(--accent)':'var(--border)'};cursor:pointer;background:var(--bg)">
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">${ex.bodyweight?'Bodyweight':ex.assisted?'Assist (kg)':'Kilograms'}</div>
+            <div id="wr-weight-display" style="font-size:30px;font-weight:700;color:var(--text);line-height:1">${ex.bodyweight?'BW':(_runner.weightInput||'—')}</div>
           </div>
           <div style="font-size:13px;font-weight:700;color:var(--text);text-align:center;line-height:1.2">Set<br><span style="font-size:22px">${setNum}</span></div>
           <div id="wr-reps-box" onclick="wrSetField('reps')" style="text-align:center;padding:8px 4px;border-radius:10px;border:2px solid ${_runner.activeField==='reps'?'var(--accent)':'var(--border)'};cursor:pointer;background:var(--bg)">
@@ -3493,15 +3611,28 @@ function renderRunner() {
 }
 
 function logRunnerSet() {
-  const weight = _runner.weightInput.trim()
+  const ex     = _runner.exercises[_runner.exIdx]
+  const weight = ex.bodyweight ? 'BW' : _runner.weightInput.trim()
   const reps   = _runner.repsInput.trim()
   if (!reps) return
-  _runner.exercises[_runner.exIdx].loggedSets.push({ weight, reps })
+  const setData = { weight, reps }
+  if (ex.assisted) setData.assistWeight = _runner.weightInput.trim()
+  ex.loggedSets.push(setData)
   _runner.repsInput   = ''
-  _runner.activeField = 'reps'
+  _runner.weightInput = ''
+  _runner.activeField = ex.bodyweight ? 'reps' : 'weight'
+  // Superset: if next exercise shares a superset group, switch to it instead of resting
+  if (ex.supersetGroup) {
+    const nextIdx = _runner.exercises.findIndex((e, i) => i !== _runner.exIdx && e.supersetGroup === ex.supersetGroup)
+    if (nextIdx !== -1) {
+      _runner.exIdx = nextIdx
+      renderRunner()
+      return
+    }
+  }
   renderRunner()
   // Start rest timer
-  const restSecs = _runner.exercises[_runner.exIdx].restSecs || 90
+  const restSecs = ex.restSecs || 90
   startRestTimer(restSecs)
 }
 
@@ -4146,12 +4277,27 @@ async function openWorkoutLog(logId, clientId) {
         `
       }).join('')
     }
-    ${log.notes ? `<div class="card"><div class="card-body"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">Notes</div><div style="font-size:13.5px;color:var(--text-muted)">${log.notes}</div></div></div>` : ''}
+    <div class="card" style="margin-top:8px">
+      <div class="card-body">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Coach notes</div>
+        <textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${log.coach_notes||log.notes||''}</textarea>
+        <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:13px;padding:7px 16px">Save notes</button>
+        <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:12px;color:#10b981;font-weight:600">Saved ✓</span>
+      </div>
+    </div>
   `
 }
 
 function backToClientWorkouts(clientId) {
   renderClientWorkouts(clientId, document.getElementById('tab-content'))
+}
+
+async function saveCoachNotes(logId) {
+  const notes = document.getElementById('wl-coach-notes')?.value.trim() || null
+  const { error } = await db.from('workout_logs').update({ notes }).eq('id', logId)
+  if (error) { alert('Failed to save notes: ' + error.message); return }
+  const saved = document.getElementById('wl-notes-saved')
+  if (saved) { saved.style.display = 'inline'; setTimeout(() => saved.style.display = 'none', 2000) }
 }
 
 async function deleteWorkoutLog(logId, clientId) {
