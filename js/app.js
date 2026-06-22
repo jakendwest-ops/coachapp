@@ -229,10 +229,10 @@ async function renderDashboard(el) {
     { data: activeClients },
     { data: upcomingGoals }
   ] = await Promise.all([
-    db.from('clients').select('*', { count: 'exact', head: true }),
-    db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-    db.from('workout_logs').select('*', { count: 'exact', head: true }),
-    db.from('weight_logs').select('client_id, logged_at, weight_kg').gte('logged_at', sevenDaysAgo).order('logged_at', { ascending: false }).limit(30),
+    db.from('clients').select('*', { count: 'exact', head: true }).eq('coach_id', currentUser.id),
+    db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active').in('client_id', (await db.from('clients').select('id').eq('coach_id', currentUser.id)).data?.map(c=>c.id)||[]),
+    db.from('workout_logs').select('*', { count: 'exact', head: true }).eq('coach_id', currentUser.id),
+    db.from('weight_logs').select('client_id, created_at, weight_kg').gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30),
     db.from('workout_logs').select('client_id, date, created_at').gte('date', todayStr.slice(0,7) + '-01').order('date', { ascending: false }).limit(100),
     db.from('clients').select('id, full_name, status').eq('status', 'active').order('full_name'),
     db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', fourteenDaysOn).order('target_date').limit(5)
@@ -243,7 +243,7 @@ async function renderDashboard(el) {
 
   // Activity feed — merge weight + workout logs, sort newest first
   const feed = [
-    ...(recentWeights  || []).map(w => ({ type: 'weight',  client_id: w.client_id, logged_at: w.logged_at, detail: `${w.weight_kg} kg` })),
+    ...(recentWeights  || []).map(w => ({ type: 'weight',  client_id: w.client_id, logged_at: w.created_at, detail: `${w.weight_kg} kg` })),
     ...(recentWorkouts || []).map(w => ({ type: 'session', client_id: w.client_id, logged_at: w.created_at || w.date, detail: 'Session logged' }))
   ].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at)).slice(0, 8)
 
@@ -330,7 +330,7 @@ async function renderDashboard(el) {
                   ${f.type === 'weight' ? '⚖' : '💪'}
                 </div>
                 <div>
-                  <div style="font-size:13px;font-weight:600;cursor:pointer" onclick="openClientByName('${(clientMap[f.client_id] || '').replace(/'/g,"\\'")}')">
+                  <div style="font-size:13px;font-weight:600;cursor:pointer" onclick="openClient('${f.client_id}')" >
                     ${clientMap[f.client_id] || 'Unknown'}
                   </div>
                   <div style="font-size:11.5px;color:var(--text-muted)">${f.type === 'weight' ? f.detail : 'Session logged'}</div>
@@ -1392,6 +1392,7 @@ async function renderClients(el) {
   const { data: clients, error } = await db
     .from('clients')
     .select('*')
+    .eq('coach_id', currentUser.id)
     .order('full_name')
 
   if (error) { log.error('renderClients', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
@@ -2690,12 +2691,12 @@ async function renderWorkouts(el) {
 }
 
 async function renderClientWorkoutsPage(el) {
-  const { data: clientRecord } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+  const { data: clientRecord } = await db.from('clients').select('id, coach_id').eq('user_id', currentUser.id).single()
   if (!clientRecord) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
   const clientId = clientRecord.id
 
   const [{ data: templates }, { data: logs }] = await Promise.all([
-    db.from('workout_templates').select('id, name, description, workout_template_exercises(id)').order('name'),
+    db.from('workout_templates').select('id, name, description, workout_template_exercises(id)').eq('coach_id', clientRecord.coach_id).order('name'),
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(10)
   ])
 
@@ -3550,7 +3551,10 @@ async function renderClientWorkouts(clientId, el) {
 let _runner = null
 
 async function startWorkoutRunner(clientId, templateId) {
-  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').order('name')
+  const coachId = currentProfile?.role === 'client'
+    ? (await db.from('clients').select('coach_id').eq('user_id', currentUser.id).single()).data?.coach_id
+    : currentUser.id
+  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('coach_id', coachId).order('name')
   window._runnerTemplates = templates || []
 
   // If a specific template was chosen, skip the setup modal and go straight in
@@ -4391,7 +4395,7 @@ async function openWorkoutLog(logId, clientId) {
     <div class="card" style="margin-top:8px">
       <div class="card-body">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Coach notes</div>
-        <textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${log.coach_notes||log.notes||''}</textarea>
+        <textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${log.notes||''}</textarea>
         <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:13px;padding:7px 16px">Save notes</button>
         <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:12px;color:#10b981;font-weight:600">Saved ✓</span>
       </div>
