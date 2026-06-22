@@ -3420,15 +3420,6 @@ function renderRunner() {
         </div>
       </div>
 
-      <!-- Stats bar -->
-      <div style="display:flex;border-bottom:1px solid var(--border)">
-        ${[['Volume', totalVol>0?Math.round(totalVol)+' kg':'— kg'],['Sets',totalSets||'—'],['Reps',totalReps||'—'],['Time','<span id="wr-timer">'+fmtRunnerTime(_runner.startTime)+'</span>']].map(([l,v])=>`
-          <div style="flex:1;text-align:center;padding:8px 2px;border-right:1px solid var(--border)">
-            <div style="font-size:15px;font-weight:700;color:var(--accent)">${v}</div>
-            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">${l}</div>
-          </div>`).join('')}
-      </div>
-
       <!-- Logged sets list -->
       <div style="flex:1;overflow-y:auto;padding:12px 16px">
         ${!ex.loggedSets.length ? `<p style="color:var(--text-muted);font-size:13px;margin:0">No sets logged yet.</p>` :
@@ -3446,8 +3437,17 @@ function renderRunner() {
           </div>` : ''}
       </div>
 
+      <!-- Stats bar — sits just above the keypad -->
+      <div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+        ${[['Volume', totalVol>0?Math.round(totalVol)+' kg':'— kg'],['Sets',totalSets||'—'],['Reps',totalReps||'—'],['Time','<span id="wr-timer">'+fmtRunnerTime(_runner.startTime)+'</span>']].map(([l,v])=>`
+          <div style="flex:1;text-align:center;padding:6px 2px;border-right:1px solid var(--border)">
+            <div style="font-size:14px;font-weight:700;color:var(--accent)">${v}</div>
+            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">${l}</div>
+          </div>`).join('')}
+      </div>
+
       <!-- Set input + custom keypad -->
-      <div style="padding:10px 12px 6px;border-top:2px solid var(--border);background:var(--surface)">
+      <div style="padding:10px 12px 6px;background:var(--surface)">
         <!-- Field displays -->
         <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;margin-bottom:8px">
           <div id="wr-weight-box" onclick="wrSetField('weight')" style="text-align:center;padding:8px 4px;border-radius:10px;border:2px solid ${_runner.activeField==='weight'?'var(--accent)':'var(--border)'};cursor:pointer;background:var(--bg)">
