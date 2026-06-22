@@ -3437,11 +3437,11 @@ function renderRunner() {
       <div style="flex:1;overflow-y:auto;padding:12px 16px">
         ${!ex.loggedSets.length ? `<p style="color:var(--text-muted);font-size:13px;margin:0">No sets logged yet.</p>` :
           ex.loggedSets.map((s,i) => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">
+            <div onclick="editRunnerSet(${_runner.exIdx},${i})" style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">
               <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:50px">Set ${i+1}</span>
               <span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span>
               <span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>
-              ${s.rpe ? `<span style="font-size:12px;color:var(--text-muted)">RPE ${s.rpe}</span>` : '<span></span>'}
+              <span style="font-size:11px;color:var(--text-muted)">✎</span>
             </div>`).join('')}
         ${nextEx ? `
           <div style="margin-top:16px;padding:10px 12px;border-radius:10px;background:var(--surface-2)">
@@ -3461,6 +3461,11 @@ function renderRunner() {
 
       <!-- Set input + custom keypad -->
       <div style="padding:10px 12px 6px;background:var(--surface)">
+        <!-- Target + last set reference -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;min-height:16px">
+          ${ex.targetReps||ex.targetWeight ? `<span style="font-size:11px;color:var(--text-muted)">Target: ${ex.targetReps?ex.targetReps+' reps':''}${ex.targetReps&&ex.targetWeight?' · ':''}${ex.targetWeight?ex.targetWeight+'kg':''}</span>` : '<span></span>'}
+          ${lastSet ? `<span style="font-size:11px;color:var(--text-muted)">Last: ${lastSet.weight?lastSet.weight+'kg · ':''}${lastSet.reps} reps</span>` : ''}
+        </div>
         <!-- Field displays -->
         <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;margin-bottom:8px">
           <div id="wr-weight-box" onclick="wrSetField('weight')" style="text-align:center;padding:8px 4px;border-radius:10px;border:2px solid ${_runner.activeField==='weight'?'var(--accent)':'var(--border)'};cursor:pointer;background:var(--bg)">
@@ -3478,7 +3483,7 @@ function renderRunner() {
           ${['7','8','9','4','5','6','1','2','3','.','0','⌫'].map((k,i) => `
             <button onclick="wrKp('${k}')" style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:20px;font-weight:600;cursor:pointer;color:var(--text);${k==='⌫'?'font-size:16px':''}">${k}</button>
           `).join('')}
-          <button onclick="skipToNextExercise()" style="grid-column:4;grid-row:1/3;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted);line-height:1.3">${isLast?'Finish 🏁':'Next<br>Set →'}</button>
+          ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="grid-column:4;grid-row:1/3;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted);line-height:1.3">${isLast?'Finish 🏁':'Next<br>Set →'}</button>` : `<div style="grid-column:4;grid-row:1/3"></div>`}
           <button onclick="logRunnerSet()" style="grid-column:4;grid-row:3/5;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
           <button onclick="wrSwitchField()" style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted)">Switch</button>
         </div>
@@ -3620,6 +3625,42 @@ function wrSetField(field) {
 
 function wrSwitchField() {
   wrSetField(_runner.activeField === 'weight' ? 'reps' : 'weight')
+}
+
+function editRunnerSet(exIdx, setIdx) {
+  const s = _runner.exercises[exIdx].loggedSets[setIdx]
+  if (!s) return
+  const overlay = document.createElement('div')
+  overlay.id = 'wr-edit-overlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center'
+  overlay.innerHTML = `
+    <div style="width:100%;max-width:480px;background:var(--surface);border-radius:24px 24px 0 0;padding:24px 20px 36px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:16px">Edit Set ${setIdx+1}</div>
+      <div style="display:flex;gap:10px;margin-bottom:16px">
+        <div style="flex:1">
+          <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">kg</label>
+          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.weight||''}" placeholder="—">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">Reps</label>
+          <input id="wr-edit-reps" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.reps||''}" placeholder="—" type="number">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="document.getElementById('wr-edit-overlay').remove()" style="flex:1;padding:13px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:14px;font-weight:600;cursor:pointer">Cancel</button>
+        <button onclick="saveEditRunnerSet(${exIdx},${setIdx})" style="flex:2;padding:13px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Save</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+}
+
+function saveEditRunnerSet(exIdx, setIdx) {
+  const weight = document.getElementById('wr-edit-weight')?.value.trim()
+  const reps   = document.getElementById('wr-edit-reps')?.value.trim()
+  if (!reps) return
+  _runner.exercises[exIdx].loggedSets[setIdx] = { ..._runner.exercises[exIdx].loggedSets[setIdx], weight, reps }
+  document.getElementById('wr-edit-overlay')?.remove()
+  renderRunner()
 }
 
 function skipToNextExercise() {
