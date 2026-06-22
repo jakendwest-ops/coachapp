@@ -3367,7 +3367,8 @@ function launchRunner(clientId) {
       .sort((a, b) => a.order_index - b.order_index)
       .map(ex => {
         const repsStr = String(ex.reps || '')
-        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', loggedSets: [] }
+        const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.restMin || '') || 90
+        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [] }
       })
   }
   if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
@@ -3481,10 +3482,81 @@ function logRunnerSet() {
   const reps   = _runner.repsInput.trim()
   if (!reps) return
   _runner.exercises[_runner.exIdx].loggedSets.push({ weight, reps })
-  // Keep weight for next set, clear reps, focus reps
   _runner.repsInput   = ''
   _runner.activeField = 'reps'
   renderRunner()
+  // Start rest timer
+  const restSecs = _runner.exercises[_runner.exIdx].restSecs || 90
+  startRestTimer(restSecs)
+}
+
+function startRestTimer(secs) {
+  clearInterval(_runner._restInterval)
+  _runner.restRemaining = secs
+  _runner.restTotal     = secs
+  renderRestTimer()
+  _runner._restInterval = setInterval(() => {
+    _runner.restRemaining--
+    if (_runner.restRemaining <= 0) {
+      clearInterval(_runner._restInterval)
+      _runner.restRemaining = null
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200])
+      document.getElementById('rest-timer-overlay')?.remove()
+    } else {
+      const el = document.getElementById('rt-countdown')
+      if (el) {
+        el.textContent = fmtRestCountdown(_runner.restRemaining)
+        // Pulse red in last 10 seconds
+        el.style.color = _runner.restRemaining <= 10 ? '#ef4444' : 'var(--accent)'
+      }
+      const ring = document.getElementById('rt-ring')
+      if (ring) {
+        const pct = _runner.restRemaining / _runner.restTotal
+        const circ = 2 * Math.PI * 54
+        ring.style.strokeDashoffset = circ * (1 - pct)
+      }
+    }
+  }, 1000)
+}
+
+function fmtRestCountdown(secs) {
+  return `${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`
+}
+
+function skipRestTimer() {
+  clearInterval(_runner._restInterval)
+  _runner.restRemaining = null
+  document.getElementById('rest-timer-overlay')?.remove()
+}
+
+function renderRestTimer() {
+  document.getElementById('rest-timer-overlay')?.remove()
+  const secs = _runner.restRemaining
+  const total = _runner.restTotal
+  const circ = 2 * Math.PI * 54
+  const pct  = secs / total
+
+  const overlay = document.createElement('div')
+  overlay.id = 'rest-timer-overlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:400;display:flex;align-items:flex-end;justify-content:center'
+  overlay.innerHTML = `
+    <div style="width:100%;max-width:480px;background:var(--surface);border-radius:24px 24px 0 0;padding:32px 24px 40px;text-align:center">
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:20px">Rest</div>
+      <div style="position:relative;display:inline-block;margin-bottom:20px">
+        <svg width="120" height="120" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
+          <circle id="rt-ring" cx="60" cy="60" r="54" fill="none" stroke="var(--accent)" stroke-width="6"
+            stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - pct)}"
+            stroke-linecap="round" transform="rotate(-90 60 60)"
+            style="transition:stroke-dashoffset .9s linear"/>
+        </svg>
+        <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
+      </div>
+      <div style="color:var(--text-muted);font-size:13px;margin-bottom:24px">Next: Set ${(_runner.exercises[_runner.exIdx].loggedSets.length) + 1}</div>
+      <button onclick="skipRestTimer()" style="width:100%;padding:14px;border:none;border-radius:12px;background:var(--surface-2);font-size:15px;font-weight:700;cursor:pointer;color:var(--text)">Skip rest →</button>
+    </div>
+  `
+  document.body.appendChild(overlay)
 }
 
 function wrKp(key) {
