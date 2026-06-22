@@ -3704,8 +3704,10 @@ function renderRunner() {
           ex.loggedSets.map((s,i) => `
             <div onclick="editRunnerSet(${_runner.exIdx},${i})" style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">
               <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:50px">Set ${i+1}</span>
-              <span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span>
-              <span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>
+              ${ex.type === 'cardio'
+                ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : s.distance ? s.distance+' km' : '—'}</span>`
+                : `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span>
+              <span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
               <span style="font-size:11px;color:var(--text-muted)">✎</span>
             </div>`).join('')}
         ${nextEx ? `
@@ -3717,21 +3719,66 @@ function renderRunner() {
 
       <!-- Stats bar — sits just above the keypad -->
       <div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
-        ${[['Volume', totalVol>0?Math.round(totalVol)+' kg':'— kg'],['Sets',totalSets||'—'],['Reps',totalReps||'—'],['Time','<span id="wr-timer">'+fmtRunnerTime(_runner.startTime)+'</span>']].map(([l,v])=>`
+        ${(ex.type === 'cardio' ? [
+          ['Sets', totalSets||'—'],
+          ['Intervals', ex.loggedSets.length + (ex.targetSets ? '/'+ex.targetSets : '') || '—'],
+          ['Target', (() => { const t = ex.sets_json?.[0]; return t?.isDistanceBased ? (t.distance||'—')+' km' : (t?.duration||'—') })()],
+          ['Time', '<span id="wr-timer">'+fmtRunnerTime(_runner.startTime)+'</span>']
+        ] : [
+          ['Volume', totalVol>0?Math.round(totalVol)+' kg':'— kg'],
+          ['Sets', totalSets||'—'],
+          ['Reps', totalReps||'—'],
+          ['Time', '<span id="wr-timer">'+fmtRunnerTime(_runner.startTime)+'</span>']
+        ]).map(([l,v])=>`
           <div style="flex:1;text-align:center;padding:6px 2px;border-right:1px solid var(--border)">
             <div style="font-size:14px;font-weight:700;color:var(--accent)">${v}</div>
             <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">${l}</div>
           </div>`).join('')}
       </div>
 
-      <!-- Set input + custom keypad -->
-      <div style="padding:10px 12px 6px;background:var(--surface)">
-        <!-- Target + last set reference -->
+      <!-- Set input -->
+      <div style="padding:10px 12px 12px;background:var(--surface)">
+        ${ex.type === 'cardio' ? (() => {
+          const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+          const lastCardio = ex.loggedSets[ex.loggedSets.length - 1]
+          const distBased = tgt.isDistanceBased
+          return `
+          <!-- Cardio targets -->
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+            ${distBased && tgt.distance ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${tgt.distance} km</span>` : ''}
+            ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${tgt.duration}</span>` : ''}
+            ${tgt.pace500Min ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.pace500Min}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+tgt.pace500Max:''} /500m</span>` : ''}
+            ${tgt.hrZoneMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${tgt.hrZoneMin}${tgt.hrZoneMax?'–'+tgt.hrZoneMax:''} bpm</span>` : ''}
+            ${tgt.restMin && tgt.restMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${tgt.restMin}</span>` : ''}
+          </div>
+          <!-- Set label -->
+          <div style="text-align:center;font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Set ${setNum}</div>
+          <!-- Cardio input -->
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
+            ${distBased ? `
+              <div>
+                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance achieved (km)</div>
+                <input id="wr-cardio-dist" type="number" step="0.01" inputmode="decimal" placeholder="${tgt.distance||'0'}" value="${lastCardio?.distance||tgt.distance||''}"
+                  style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+              </div>` : `
+              <div>
+                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Duration (MM:SS)</div>
+                <input id="wr-cardio-dur" type="text" inputmode="numeric" placeholder="${tgt.duration||'0:00'}" value="${lastCardio?.duration||tgt.duration||''}"
+                  oninput="this.value=fmtRestInput(this.value)"
+                  style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+              </div>`}
+          </div>
+          <!-- LOG + optional finish -->
+          <div style="display:flex;gap:8px">
+            ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 16px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
+            <button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
+          </div>`
+        })() : `
+        <!-- Strength input -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;min-height:16px">
           ${ex.targetReps||ex.targetWeight ? `<span style="font-size:11px;color:var(--text-muted)">Target: ${ex.targetReps?ex.targetReps+' reps':''}${ex.targetReps&&ex.targetWeight?' · ':''}${ex.targetWeight?ex.targetWeight+'kg':''}</span>` : '<span></span>'}
           ${lastSet ? `<span style="font-size:11px;color:var(--text-muted)">Last: ${lastSet.weight?lastSet.weight+'kg · ':''}${lastSet.reps} reps</span>` : ''}
         </div>
-        <!-- Field displays -->
         <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;margin-bottom:8px">
           <div id="wr-weight-box" onclick="${ex.bodyweight?'':'wrSetField(\'weight\')'}" style="text-align:center;padding:8px 4px;border-radius:10px;border:2px solid ${_runner.activeField==='weight'?'var(--accent)':'var(--border)'};cursor:pointer;background:var(--bg)">
             <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">${ex.bodyweight?'Bodyweight':ex.assisted?'Assist (kg)':'Kilograms'}</div>
@@ -3743,7 +3790,6 @@ function renderRunner() {
             <div id="wr-reps-display" style="font-size:30px;font-weight:700;color:var(--text);line-height:1">${_runner.repsInput||'—'}</div>
           </div>
         </div>
-        <!-- Keypad -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr) 80px;grid-template-rows:repeat(4,48px);gap:4px">
           ${['7','8','9','4','5','6','1','2','3','.','0','⌫'].map((k,i) => `
             <button onclick="wrKp('${k}')" style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:20px;font-weight:600;cursor:pointer;color:var(--text);${k==='⌫'?'font-size:16px':''}">${k}</button>
@@ -3751,23 +3797,37 @@ function renderRunner() {
           ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="grid-column:4;grid-row:1/3;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted);line-height:1.3">${isLast?'Finish 🏁':'Next<br>Set →'}</button>` : `<div style="grid-column:4;grid-row:1/3"></div>`}
           <button onclick="logRunnerSet()" style="grid-column:4;grid-row:3/5;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
           <button onclick="wrSwitchField()" style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted)">Switch</button>
-        </div>
+        </div>`}
       </div>
     </div>
   `
 }
 
 function logRunnerSet() {
-  const ex     = _runner.exercises[_runner.exIdx]
-  const weight = ex.bodyweight ? 'BW' : _runner.weightInput.trim()
-  const reps   = _runner.repsInput.trim()
-  if (!reps) return
-  const setData = { weight, reps }
-  if (ex.assisted) setData.assistWeight = _runner.weightInput.trim()
+  const ex = _runner.exercises[_runner.exIdx]
+  let setData
+  if (ex.type === 'cardio') {
+    const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+    if (tgt.isDistanceBased) {
+      const dist = document.getElementById('wr-cardio-dist')?.value?.trim()
+      if (!dist) return
+      setData = { distance: dist }
+    } else {
+      const dur = document.getElementById('wr-cardio-dur')?.value?.trim()
+      if (!dur || dur === '0:00') return
+      setData = { duration: dur }
+    }
+  } else {
+    const weight = ex.bodyweight ? 'BW' : _runner.weightInput.trim()
+    const reps   = _runner.repsInput.trim()
+    if (!reps) return
+    setData = { weight, reps }
+    if (ex.assisted) setData.assistWeight = _runner.weightInput.trim()
+    _runner.repsInput   = ''
+    _runner.weightInput = ''
+    _runner.activeField = ex.bodyweight ? 'reps' : 'weight'
+  }
   ex.loggedSets.push(setData)
-  _runner.repsInput   = ''
-  _runner.weightInput = ''
-  _runner.activeField = ex.bodyweight ? 'reps' : 'weight'
   // Superset: if next exercise shares a superset group, switch to it instead of resting
   if (ex.supersetGroup) {
     const nextIdx = _runner.exercises.findIndex((e, i) => i !== _runner.exIdx && e.supersetGroup === ex.supersetGroup)
@@ -3998,7 +4058,7 @@ function showRunnerFinish() {
             ${e.loggedSets.map((s,i)=>`
               <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
                 <span style="color:var(--text-muted)">Set ${i+1}</span>
-                <span style="font-weight:600">${s.weight?s.weight+' kg · ':''}${s.reps} reps</span>
+                <span style="font-weight:600">${e.type==='cardio' ? (s.duration||'') + (s.distance ? s.distance+' km' : '') : (s.weight?s.weight+' kg · ':'')+s.reps+' reps'}</span>
               </div>`).join('')}
           </div>`).join('')}
         <div class="field" style="margin-top:8px">
@@ -4054,7 +4114,7 @@ async function saveRunnerSession() {
       const row = { workout_log_exercise_id: logEx.id, set_number: si+1, set_type: 'working' }
       if (ex.type === 'cardio') {
         if (s.duration) row.duration_seconds = parseDuration(s.duration)
-        if (s.reps) row.distance_m = Math.round(parseFloat(s.reps)*1000)
+        if (s.distance) row.distance_m = Math.round(parseFloat(s.distance)*1000)
       } else {
         if (s.reps) row.reps_achieved = parseInt(s.reps)
         if (s.weight) row.weight_kg = parseFloat(s.weight)
@@ -4068,9 +4128,7 @@ async function saveRunnerSession() {
 
   const savedClientId = _runner.clientId
   discardRunner()
-  const tabContent = document.getElementById('tab-content')
-  if (tabContent) renderClientWorkouts(savedClientId, tabContent)
-  else renderClientDashboard(document.getElementById('main-content'))
+  navigate('workouts')
 }
 
 // ─── LOG SESSION ──────────────────────────────────────────────────────────────
