@@ -4997,9 +4997,10 @@ async function sendClientInvite(clientId, email) {
 
   if (!res.ok) {
     log.error('sendClientInvite', 'edge function returned error', { status: res.status, error: json.error })
-    alert('Failed to send invite: ' + (json.error || 'Unknown error'))
     btn.disabled = false
-    btn.textContent = '✉ Send invite'
+    btn.textContent = '✗ ' + (json.error || 'Failed to send')
+    btn.style.color = 'var(--danger)'
+    setTimeout(() => { btn.textContent = '✉ Send invite'; btn.style.color = '' }, 3000)
     return
   }
 
@@ -5007,8 +5008,9 @@ async function sendClientInvite(clientId, email) {
   const { error: stampErr } = await db.from('clients').update({ invited_at: new Date().toISOString() }).eq('id', clientId)
   if (stampErr) log.error('sendClientInvite', 'failed to stamp invited_at', stampErr)
 
-  alert(`Invite sent to ${email}`)
-  openClient(clientId)
+  btn.textContent = '✓ Invite sent'
+  btn.style.color = 'var(--success, #16a34a)'
+  setTimeout(() => openClient(clientId), 1200)
 }
 
 async function saveWeightLog(clientId) {
