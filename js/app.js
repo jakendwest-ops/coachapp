@@ -189,10 +189,12 @@ function navigate(page) {
   }
 }
 
-document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
-  el.addEventListener('click', e => {
-    e.preventDefault()
-    navigate(el.dataset.page)
+// Single delegated listener on each nav container — survives any re-render, never stacks
+;['sidebar-nav', 'bottom-nav'].forEach(id => {
+  const nav = document.querySelector(`.${id === 'sidebar-nav' ? 'sidebar' : 'bottom-nav'}`)
+  if (nav) nav.addEventListener('click', e => {
+    const item = e.target.closest('.nav-item, .bottom-nav-item')
+    if (item?.dataset.page) { e.preventDefault(); navigate(item.dataset.page) }
   })
 })
 
@@ -910,10 +912,6 @@ async function renderPrograms(el) {
       </div>
     </div>`
 
-  // Re-attach nav listeners lost on re-render
-  document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
-    el.addEventListener('click', e => { e.preventDefault(); navigate(el.dataset.page) })
-  })
 }
 
 async function openProgram(programId) {
