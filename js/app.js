@@ -3487,10 +3487,22 @@ function logRunnerSet() {
   startRestTimer(restSecs)
 }
 
+let _audioCtx = null
+function getAudioCtx() {
+  if (!_audioCtx || _audioCtx.state === 'closed') {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+  }
+  // iOS requires explicit resume after user gesture
+  if (_audioCtx.state === 'suspended') _audioCtx.resume()
+  return _audioCtx
+}
+// Unlock audio on first user tap anywhere — required by iOS Safari
+document.addEventListener('touchstart', () => { try { getAudioCtx() } catch(e) {} }, { once: true })
+
 function playBeep(freq = 880, duration = 0.08, volume = 0.4) {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)()
-    const osc = ctx.createOscillator()
+    const ctx = getAudioCtx()
+    const osc  = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain)
     gain.connect(ctx.destination)
@@ -3499,7 +3511,6 @@ function playBeep(freq = 880, duration = 0.08, volume = 0.4) {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
     osc.start(ctx.currentTime)
     osc.stop(ctx.currentTime + duration)
-    osc.onended = () => ctx.close()
   } catch(e) {}
 }
 
