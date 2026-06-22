@@ -2447,7 +2447,7 @@ function fmtDuration(secs) {
   const m = Math.floor(secs / 60), s = secs % 60
   return s ? `${m}:${String(s).padStart(2,'0')}` : `${m}:00`
 }
-function fmtRest(raw) {
+function fmtRestInput(raw) {
   const digits = String(raw || '').replace(/\D/g, '').slice(-4)
   if (!digits) return ''
   if (digits.length <= 2) return '0:' + digits.padStart(2, '0')
@@ -3799,7 +3799,7 @@ function renderLogExercises() {
         <div style="display:grid;grid-template-columns:${GRID};gap:${isMobile?'5px':'3px'};align-items:center;margin-bottom:${isMobile?'6px':'3px'}">
           <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">${si + 1}</span>
           ${isCardio ? `
-            <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.duration || ''}" oninput="this.value=fmtRest(this.value)">
+            <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.duration || ''}" oninput="this.value=fmtRestInput(this.value)">
             <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="0.01" placeholder="km" value="${s.distance || ''}">
           ` : isMobile ? `
             <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${s.repsMin || ''}">
@@ -3817,7 +3817,7 @@ function renderLogExercises() {
               ${wFromPct}
             </div>
             <input id="ls-effort-${bi}-${si}" ${si_style} type="number" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${s.effort || ''}">
-            <input id="ls-rest-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.rest || ''}" oninput="this.value=fmtRest(this.value)">
+            <input id="ls-rest-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.rest || ''}" oninput="this.value=fmtRestInput(this.value)">
           `}
           ${delBtn}
         </div>
