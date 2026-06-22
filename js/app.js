@@ -10,6 +10,16 @@ const log = {
   error: (tag, msg, data) => console.error(`[${tag}] ❌`, msg, data ?? ''),
   ok:    (tag, msg, data) => console.log(`[${tag}] ✓`, msg, data ?? ''),
 }
+// Supabase query wrapper — auto-logs all errors; warns on PGRST116 (no row found)
+async function dbq(label, query) {
+  const { data, error } = await query
+  if (error) {
+    if (error.code === 'PGRST116') log.warn(label, 'no row found', { code: error.code })
+    else log.error(label, `${error.code ?? 'ERR'}: ${error.message}`, error)
+  }
+  return { data, error }
+}
+
 const SUPABASE_URL = 'https://avilxuiacmtgeoxxhfhc.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2aWx4dWlhY210Z2VveHhoZmhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NjExNzcsImV4cCI6MjA5NzQzNzE3N30.SpVc5ZX_yf6gMrCJLxY9CxDki7PhBj2vbENha7tWBrc'
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -51,7 +61,7 @@ async function loadUserInfo() {
     if (clientRec) {
       currentProfile = { ...(currentProfile || {}), role: 'client' }
       // Also patch the profiles row so this only happens once
-      await db.from('profiles').upsert({ id: currentUser.id, role: 'client', full_name: data?.full_name || currentUser.email }, { onConflict: 'id' })
+      await dbq('loadUserInfo:profilePatch', db.from('profiles').upsert({ id: currentUser.id, role: 'client', full_name: data?.full_name || currentUser.email }, { onConflict: 'id' }))
       log.info('loadUserInfo', 'client role inferred from clients table and patched')
     }
   }
@@ -1309,7 +1319,8 @@ async function savePhaseWorkout() {
 }
 
 async function removePhaseWorkout(pwId, phaseId) {
-  await db.from('program_phase_workouts').delete().eq('id', pwId)
+  const { error } = await dbq('removePhaseWorkout', db.from('program_phase_workouts').delete().eq('id', pwId))
+  if (error) return
   if (window._openProgramId) openProgram(window._openProgramId)
 }
 
@@ -4270,7 +4281,7 @@ async function saveRunnerSession() {
   const exercises = _runner.exercises.filter(e => e.name && e.loggedSets.length)
   if (!exercises.length) { discardRunner(); return }
 
-  const { data: clientRecord } = await db.from('clients').select('coach_id').eq('id', _runner.clientId).single()
+  const { data: clientRecord } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', _runner.clientId).single())
   const coachId = clientRecord?.coach_id || currentUser.id
 
   const { data: sessionLog, error } = await db.from('workout_logs').insert({
@@ -4556,7 +4567,7 @@ async function saveWorkoutSession(clientId) {
   if (blocks.length === 0) { errorEl.textContent = 'Add at least one exercise'; return }
 
   // Derive coach_id from the client record — works for both coach and client self-logging
-  const { data: clientRecord } = await db.from('clients').select('coach_id').eq('id', clientId).single()
+  const { data: clientRecord } = await dbq('saveWorkoutSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single())
   const coachId = clientRecord?.coach_id || currentUser.id
 
   log.info('saveWorkoutSession', 'saving session', { clientId, name, exerciseCount: blocks.length })
@@ -5384,8 +5395,8 @@ db.auth.onAuthStateChange((event, session) => {
   if (_initialHash.includes('type=invite') && event !== 'USER_UPDATED') return
 
   if (currentUser) {
-    // Only run full showApp once per session — INITIAL_SESSION can fire multiple times
-    if (!_appLoaded || event === 'SIGNED_IN') {
+    // Only bootstrap once — SIGNED_IN fires on every token refresh, not just genuine logins
+    if (!_appLoaded) {
       _appLoaded = true
       showApp()
     }
