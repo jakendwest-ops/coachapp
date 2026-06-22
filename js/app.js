@@ -3364,7 +3364,7 @@ function launchRunner(clientId) {
       .sort((a, b) => a.order_index - b.order_index)
       .map(ex => {
         const repsStr = String(ex.reps || '')
-        const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.restMin || '') || 90
+        const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.[0]?.restMin || '') || 90
         return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [] }
       })
   }
