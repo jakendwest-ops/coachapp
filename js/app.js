@@ -43,13 +43,26 @@ async function loadUserInfo() {
 
   if (error) log.error('loadUserInfo', 'profile fetch failed', error)
   currentProfile = data
-  const name    = data?.full_name || currentUser.email
+
+  // If profile has no role (invited client whose profile row may have been created without role),
+  // check the clients table to determine correct role
+  if (!currentProfile?.role || currentProfile.role === null) {
+    const { data: clientRec } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+    if (clientRec) {
+      currentProfile = { ...(currentProfile || {}), role: 'client' }
+      // Also patch the profiles row so this only happens once
+      await db.from('profiles').upsert({ id: currentUser.id, role: 'client', full_name: data?.full_name || currentUser.email }, { onConflict: 'id' })
+      log.info('loadUserInfo', 'client role inferred from clients table and patched')
+    }
+  }
+
+  const name    = currentProfile?.full_name || currentUser.email
   const initial = name.charAt(0).toUpperCase()
   document.getElementById('user-name').textContent   = name.split(' ')[0]
   document.getElementById('user-avatar').textContent = initial
 
   // Check if this account also has a client record (master account detection)
-  if (data?.role === 'coach') {
+  if (currentProfile?.role === 'coach') {
     const { data: clientRec } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
     if (clientRec) {
       window._masterAccount = true
