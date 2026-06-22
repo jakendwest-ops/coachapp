@@ -3021,7 +3021,20 @@ function renderTemplateSets(containerId, type) {
         ${row('Countdown (s)', mini(`ts-cd-${i}`,'type="number" placeholder="Optional"'+(s.countdown?` value="${s.countdown}"`:'')))}
       `}
     </div>`
-  }).join('') + `<button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.push({effortType:'rpe'});renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'strength')" style="margin-top:6px;font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Add set</button>`
+  }).join('') + `
+  <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
+    <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.push({effortType:'rpe'});renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'strength')" style="font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Add set</button>
+    ${(window._templateSets||[]).length > 1 ? `<button type="button" onclick="copyLastTemplateSet('${containerId}','${tid}')" style="font-size:13px;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;cursor:pointer;font-weight:600">Copy last set</button>` : ''}
+  </div>`
+}
+
+function copyLastTemplateSet(containerId, tid) {
+  flushTemplateSets(containerId)
+  const sets = window._templateSets || []
+  if (!sets.length) return
+  const last = { ...sets[sets.length - 1] }
+  sets.push(last)
+  renderTemplateSets(containerId, document.getElementById(tid)?.value || 'strength')
 }
 
 function showAddExerciseToTemplateModal(templateId) {
