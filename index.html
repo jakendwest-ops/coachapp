@@ -6,7 +6,7 @@
   <title>CoachApp</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/main.css?v=2">
 </head>
 <body>
 
@@ -127,7 +127,7 @@
     </main>
 
     <!-- Mobile view switcher (master account only) -->
-    <div id="mobile-view-switcher" style="display:none;position:fixed;bottom:68px;left:50%;transform:translateX(-50%);z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:3px;display:none;gap:2px;box-shadow:0 2px 12px rgba(0,0,0,.15)">
+    <div id="mobile-view-switcher" style="position:fixed;bottom:68px;left:50%;transform:translateX(-50%);z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:3px;gap:2px;box-shadow:0 2px 12px rgba(0,0,0,.15)">
       <button id="mvs-coach" onclick="switchView('coach')" style="padding:5px 16px;border:none;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer">PT</button>
       <button id="mvs-client" onclick="switchView('client')" style="padding:5px 16px;border:none;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer">Client</button>
     </div>

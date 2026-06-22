@@ -54,8 +54,7 @@ async function loadUserInfo() {
     if (clientRec) {
       window._masterAccount = true
       document.getElementById('view-switcher').style.display = 'block'
-      const mvs = document.getElementById('mobile-view-switcher')
-      if (mvs) mvs.style.display = window.innerWidth < 768 ? 'flex' : 'none'
+      // mobile-view-switcher visibility is handled by CSS media query
       updateViewSwitcherButtons('coach')
     }
   }
