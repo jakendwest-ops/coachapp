@@ -2996,7 +2996,10 @@ function renderTemplateSets(containerId, type) {
     const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'#d1d5db'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'#6b7280'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
     return `<div style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:10px;padding:0 14px;margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #e5e7eb">
-        <span style="font-size:12px;font-weight:700;color:#374151">Set ${i+1}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:12px;font-weight:700;color:#374151">Set ${i+1}</span>
+          ${i > 0 ? `<button type="button" onclick="copyPrevTemplateSet(${i},'${containerId}','${tid}')" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">Copy set ${i} ↑</button>` : ''}
+        </div>
         <div style="display:flex;gap:4px">
           ${!isCardio ? `
             ${tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`)}
@@ -3022,18 +3025,15 @@ function renderTemplateSets(containerId, type) {
       `}
     </div>`
   }).join('') + `
-  <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
-    <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.push({effortType:'rpe'});renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'strength')" style="font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Add set</button>
-    ${(window._templateSets||[]).length > 1 ? `<button type="button" onclick="copyLastTemplateSet('${containerId}','${tid}')" style="font-size:13px;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;cursor:pointer;font-weight:600">Copy last set</button>` : ''}
-  </div>`
+  <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.push({effortType:'rpe'});renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'strength')" style="margin-top:6px;font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Add set</button>`
 }
 
-function copyLastTemplateSet(containerId, tid) {
+function copyPrevTemplateSet(i, containerId, tid) {
   flushTemplateSets(containerId)
   const sets = window._templateSets || []
-  if (!sets.length) return
-  const last = { ...sets[sets.length - 1] }
-  sets.push(last)
+  if (i < 1 || i >= sets.length) return
+  const prev = { ...sets[i - 1] }
+  sets[i] = prev
   renderTemplateSets(containerId, document.getElementById(tid)?.value || 'strength')
 }
 
