@@ -3487,46 +3487,28 @@ function logRunnerSet() {
   startRestTimer(restSecs)
 }
 
-let _audioCtx = null
-let _audioUnlocked = false
-
-function getAudioCtx() {
-  if (!_audioCtx || _audioCtx.state === 'closed') {
-    _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+function _makeBeepWav(freq, duration, volume) {
+  const sr = 22050, n = Math.floor(sr * duration)
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf)
+  const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)))
+  str(0,'RIFF'); v.setUint32(4, 36+n*2, true); str(8,'WAVE'); str(12,'fmt ')
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true)
+  v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true)
+  str(36,'data'); v.setUint32(40,n*2,true)
+  for (let i = 0; i < n; i++) {
+    const t = i / sr
+    const env = Math.min(1, (duration - t) / 0.02)
+    v.setInt16(44 + i*2, Math.sin(2*Math.PI*freq*t) * env * volume * 0x7FFF, true)
   }
-  return _audioCtx
+  return new Blob([buf], { type: 'audio/wav' })
 }
 
-// iOS Safari: play a silent 1-sample buffer synchronously inside a touch event to permanently unlock audio
-function _unlockAudio() {
-  if (_audioUnlocked) return
+function playBeep(freq = 880, duration = 0.1, volume = 0.5) {
   try {
-    const ctx = getAudioCtx()
-    const buf = ctx.createBuffer(1, 1, 22050)
-    const src = ctx.createBufferSource()
-    src.buffer = buf
-    src.connect(ctx.destination)
-    src.start(0)
-    ctx.resume()
-    _audioUnlocked = true
-  } catch(e) {}
-}
-document.addEventListener('touchstart', _unlockAudio, { passive: true })
-document.addEventListener('touchend',   _unlockAudio, { passive: true })
-
-function playBeep(freq = 880, duration = 0.08, volume = 0.4) {
-  try {
-    const ctx = getAudioCtx()
-    if (ctx.state === 'suspended') ctx.resume()
-    const osc  = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.frequency.value = freq
-    gain.gain.setValueAtTime(volume, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + duration)
+    const url = URL.createObjectURL(_makeBeepWav(freq, duration, volume))
+    const a = new Audio(url)
+    a.play().catch(() => {})
+    a.onended = () => URL.revokeObjectURL(url)
   } catch(e) {}
 }
 
