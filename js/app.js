@@ -4674,18 +4674,22 @@ if (_initialHash.includes('type=invite')) {
   try { showInviteForm() } catch(e) { log.error('boot', 'showInviteForm failed', e) }
 }
 
+let _appLoaded = false
 db.auth.onAuthStateChange((event, session) => {
   log.info('auth', `state change: ${event}`, { userId: session?.user?.id ?? null })
   currentUser = session?.user ?? null
 
   if (event === 'PASSWORD_RECOVERY') return
-
-  // If this is an invite flow, stay on invite form until user submits
   if (_initialHash.includes('type=invite') && event !== 'USER_UPDATED') return
 
   if (currentUser) {
-    showApp()
+    // Only run full showApp once per session — INITIAL_SESSION can fire multiple times
+    if (!_appLoaded || event === 'SIGNED_IN') {
+      _appLoaded = true
+      showApp()
+    }
   } else {
+    _appLoaded = false
     showAuth()
   }
 })
