@@ -3687,6 +3687,7 @@ function renderRunner() {
       <!-- Header -->
       <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+          ${_runner.exIdx > 0 ? `<button onclick="runnerGoBack()" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:13px;font-weight:700;cursor:pointer;color:var(--text-muted);flex-shrink:0">← Back</button>` : ''}
           <div style="flex:1;min-width:0">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">
               Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}
@@ -3832,8 +3833,16 @@ function logRunnerSet() {
       const paceEl = document.getElementById('wr-cardio-pace')
       setData = { distance: dist, paceAchieved: paceEl?.value?.trim() || null }
     } else {
-      const dur = document.getElementById('wr-cardio-dur')?.value?.trim()
+      // If interval timer is running, compute elapsed time; otherwise read the manual input field
+      let dur
+      if (_runner._intervalRunning && _runner._intervalSecs != null && _runner._intervalRemaining != null) {
+        const elapsedSecs = _runner._intervalSecs - _runner._intervalRemaining
+        dur = elapsedSecs > 0 ? fmtRestCountdown(elapsedSecs) : tgt.duration || null
+      } else {
+        dur = document.getElementById('wr-cardio-dur')?.value?.trim()
+      }
       if (!dur || dur === '0:00') return
+      // Overlay inputs take priority over runner-form inputs (interval overlay is still mounted here)
       const distEl = document.getElementById('wr-cardio-dist-opt')
       const paceEl = document.getElementById('wr-cardio-pace')
       setData = { duration: dur, distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null }
@@ -4151,6 +4160,18 @@ function skipToNextExercise() {
     renderRunner()
   } else {
     showRunnerFinish()
+  }
+}
+
+function runnerGoBack() {
+  stopIntervalTimer()
+  skipRestTimer()
+  if (_runner.exIdx > 0) {
+    _runner.exIdx--
+    _runner.weightInput = ''
+    _runner.repsInput = ''
+    _runner.activeField = 'weight'
+    renderRunner()
   }
 }
 
@@ -4595,6 +4616,8 @@ async function openWorkoutLog(logId, clientId) {
     .select('*, workout_log_exercises(*, workout_log_sets(*))')
     .eq('id', logId)
     .single()
+
+  if (!log) { el.innerHTML = '<div class="empty-state"><div class="empty-text">Session not found or access denied.</div></div>'; return }
 
   const exercises = (log.workout_log_exercises || []).sort((a, b) => a.order_index - b.order_index)
   const dateStr = new Date(log.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
