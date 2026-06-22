@@ -47,14 +47,50 @@ async function loadUserInfo() {
   const initial = name.charAt(0).toUpperCase()
   document.getElementById('user-name').textContent   = name.split(' ')[0]
   document.getElementById('user-avatar').textContent = initial
+
+  // Check if this account also has a client record (master account detection)
+  if (data?.role === 'coach') {
+    const { data: clientRec } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+    if (clientRec) {
+      window._masterAccount = true
+      document.getElementById('view-switcher').style.display = 'block'
+      const mvs = document.getElementById('mobile-view-switcher')
+      if (mvs) mvs.style.display = 'flex'
+      updateViewSwitcherButtons('coach')
+    }
+  }
 }
 
 function applyRoleUI() {
   const isClient = currentProfile?.role === 'client'
-  // Hide coach-only nav items from clients
-  document.querySelectorAll('[data-page="clients"], [data-page="workouts"], [data-page="programs"]').forEach(el => {
+  document.querySelectorAll('[data-page="clients"], [data-page="programs"]').forEach(el => {
     el.style.display = isClient ? 'none' : ''
   })
+  // Workouts is visible to both — clients get their own view of it
+}
+
+function updateViewSwitcherButtons(activeView) {
+  const active   = 'background:var(--accent);color:#fff'
+  const inactive = 'background:transparent;color:var(--text-muted)'
+  const base     = ';border:none;cursor:pointer;font-weight:700;transition:all .15s'
+
+  // Sidebar buttons
+  const sc = document.getElementById('vs-coach'), sk = document.getElementById('vs-client')
+  if (sc) { sc.style.cssText  = (activeView==='coach'  ? active : inactive) + base + ';flex:1;padding:5px 8px;border-radius:6px;font-size:12px' }
+  if (sk) { sk.style.cssText  = (activeView==='client' ? active : inactive) + base + ';flex:1;padding:5px 8px;border-radius:6px;font-size:12px' }
+
+  // Mobile pill buttons
+  const mc = document.getElementById('mvs-coach'), mk = document.getElementById('mvs-client')
+  if (mc) { mc.style.cssText = (activeView==='coach'  ? active : inactive) + base + ';padding:5px 16px;border-radius:16px;font-size:12px' }
+  if (mk) { mk.style.cssText = (activeView==='client' ? active : inactive) + base + ';padding:5px 16px;border-radius:16px;font-size:12px' }
+}
+
+function switchView(view) {
+  if (!window._masterAccount) return
+  currentProfile = { ...currentProfile, role: view }
+  updateViewSwitcherButtons(view)
+  applyRoleUI()
+  navigate(view === 'client' ? 'client-dashboard' : 'dashboard')
 }
 
 // ─── AUTH FORMS ───────────────────────────────────────────────────────────────
@@ -613,7 +649,7 @@ async function renderClientDashboard(el) {
       <div class="dashboard-card" style="grid-column: span 2">
         <div class="card-header">
           <h2 class="card-title">Recent Sessions</h2>
-          <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showLogSessionModal('${clientId}')">+ Log session</button>
+          <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="startWorkoutRunner('${clientId}')">▶ Start</button>
         </div>
         ${!recentSessions?.length ? `<p style="color:var(--text-muted);font-size:13px">No sessions logged yet. Log your first session to start tracking your training.</p>` : `
         <div class="list">
@@ -2431,6 +2467,7 @@ function fmtSet(s, type) {
 
 // ─── WORKOUTS PAGE ────────────────────────────────────────────────────────────
 async function renderWorkouts(el) {
+  if (currentProfile?.role === 'client') { await renderClientWorkoutsPage(el); return }
   el.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Workouts</h1>
@@ -2443,6 +2480,64 @@ async function renderWorkouts(el) {
     <div id="workout-tab-content"></div>
   `
   await renderWorkoutTemplates(document.getElementById('workout-tab-content'))
+}
+
+async function renderClientWorkoutsPage(el) {
+  const { data: clientRecord } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+  if (!clientRecord) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
+  const clientId = clientRecord.id
+
+  const [{ data: templates }, { data: logs }] = await Promise.all([
+    db.from('workout_templates').select('id, name, description, workout_template_exercises(id)').order('name'),
+    db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(10)
+  ])
+
+  el.innerHTML = `
+    <div class="page-header">
+      <h1 class="page-title">Workouts</h1>
+    </div>
+
+    <div class="section-header" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Start a workout</div>
+    ${!(templates?.length) ? `
+      <div class="empty-state">
+        <div class="empty-icon">💪</div>
+        <div class="empty-title">No workouts yet</div>
+        <div class="empty-text">Your coach hasn't added any workout templates yet.</div>
+      </div>` : `
+      <div class="list" style="margin-bottom:28px">
+        ${templates.map(t => `
+          <div class="list-row" style="cursor:default">
+            <div style="width:36px;height:36px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+            </div>
+            <div class="row-info">
+              <div class="row-name">${t.name}</div>
+              <div class="row-meta">${t.workout_template_exercises?.length || 0} exercises${t.description ? ' · ' + t.description : ''}</div>
+            </div>
+            <div class="row-right">
+              <button class="btn-primary" style="font-size:13px;padding:6px 14px" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
+            </div>
+          </div>`).join('')}
+      </div>`}
+
+    <div class="section-header" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Recent sessions</div>
+    ${!(logs?.length) ? `
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">No sessions yet</div>
+        <div class="empty-text">Complete a workout to see your history here.</div>
+      </div>` : `
+      <div class="list">
+        ${logs.map(l => `
+          <div class="list-row" style="cursor:default">
+            <div style="width:36px;height:36px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">✓</div>
+            <div class="row-info">
+              <div class="row-name">${l.name || 'Workout'}</div>
+              <div class="row-meta">${new Date(l.date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
+            </div>
+          </div>`).join('')}
+      </div>`}
+  `
 }
 
 function switchWorkoutTab(tab) {
@@ -3182,8 +3277,9 @@ async function renderClientWorkouts(clientId, el) {
   log.ok('renderClientWorkouts', `loaded ${logs.length} sessions`)
 
   el.innerHTML = `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
-      <button class="btn-primary" onclick="showLogSessionModal('${clientId}')">+ Log session</button>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">
+      <button class="btn-secondary" style="font-size:13px" onclick="showLogSessionModal('${clientId}')">Log past session</button>
+      <button class="btn-primary" onclick="startWorkoutRunner('${clientId}')">▶ Start workout</button>
     </div>
     <div class="list">
       ${logs.length === 0 ? `
@@ -3210,6 +3306,317 @@ async function renderClientWorkouts(clientId, el) {
       }).join('')}
     </div>
   `
+}
+
+// ─── WORKOUT RUNNER ───────────────────────────────────────────────────────────
+let _runner = null
+
+async function startWorkoutRunner(clientId, templateId) {
+  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').order('name')
+  window._runnerTemplates = templates || []
+
+  // If a specific template was chosen, skip the setup modal and go straight in
+  if (templateId) {
+    const tmpl = templates?.find(t => t.id === templateId)
+    const name = tmpl?.name || new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) + ' workout'
+    _fakeRsTemplate = templateId
+    _fakeRsName = name
+    launchRunner(clientId)
+    return
+  }
+
+  const overlay = document.createElement('div')
+  overlay.id = 'runner-setup'
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal modal-fullscreen-mobile" style="max-width:480px">
+      <div class="modal-header">
+        <h2 class="modal-title">Start workout</h2>
+        <button class="modal-close" onclick="document.getElementById('runner-setup').remove()">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label">Session name</label>
+        <input class="field-input" id="rs-name" placeholder="e.g. Push A" value="${new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})} workout">
+      </div>
+      <div class="field">
+        <label class="field-label">Load from template</label>
+        <select class="field-input" id="rs-template">
+          <option value="">— Custom / blank —</option>
+          ${(templates||[]).map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}
+        </select>
+      </div>
+      <p class="modal-error" id="rs-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('runner-setup').remove()">Cancel</button>
+        <button class="btn-primary" onclick="launchRunner('${clientId}')">▶ Start</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+}
+
+function launchRunner(clientId) {
+  const name     = document.getElementById('rs-name')?.value.trim() || window._fakeRsName || 'Workout'
+  const tmplId   = document.getElementById('rs-template')?.value || window._fakeRsTemplate || ''
+  window._fakeRsName = null; window._fakeRsTemplate = null
+  const template = window._runnerTemplates?.find(t => t.id === tmplId)
+
+  let exercises = []
+  if (template) {
+    exercises = (template.workout_template_exercises || [])
+      .sort((a, b) => a.order_index - b.order_index)
+      .map(ex => {
+        const repsStr = String(ex.reps || '')
+        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', loggedSets: [] }
+      })
+  }
+  if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
+
+  document.getElementById('runner-setup')?.remove()
+
+  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, weightInput: '', repsInput: '', activeField: 'weight' }
+  renderRunner()
+  _runner._timerInterval = setInterval(() => {
+    const el = document.getElementById('wr-timer')
+    if (el) el.textContent = fmtRunnerTime(_runner.startTime)
+  }, 1000)
+}
+
+function fmtRunnerTime(startTime) {
+  const s = Math.floor((Date.now() - startTime) / 1000)
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`
+}
+
+function renderRunner() {
+  const ex      = _runner.exercises[_runner.exIdx]
+  const setNum  = ex.loggedSets.length + 1
+  const isLast  = _runner.exIdx === _runner.exercises.length - 1
+  const nextEx  = _runner.exercises[_runner.exIdx + 1]
+  const lastSet = ex.loggedSets[ex.loggedSets.length - 1]
+
+  const totalSets   = _runner.exercises.reduce((s,e) => s + e.loggedSets.length, 0)
+  const totalReps   = _runner.exercises.reduce((s,e) => s + e.loggedSets.reduce((r,set) => r+(parseInt(set.reps)||0), 0), 0)
+  const totalVol    = _runner.exercises.reduce((s,e) => s + e.loggedSets.reduce((v,set) => v+((parseFloat(set.weight)||0)*(parseInt(set.reps)||0)), 0), 0)
+
+  // Pre-fill inputs on first render of each set (keep user edits otherwise)
+  if (_runner.weightInput === '' ) _runner.weightInput = String(lastSet?.weight ?? ex.targetWeight ?? '')
+  if (_runner.repsInput   === '' ) _runner.repsInput   = String(lastSet?.reps   ?? (ex.targetReps?.split('-')[0] ?? ''))
+
+  let el = document.getElementById('workout-runner')
+  if (!el) { el = document.createElement('div'); el.id = 'workout-runner'; document.body.appendChild(el) }
+
+  el.innerHTML = `
+    <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
+
+      <!-- Header -->
+      <div style="padding:16px 16px 12px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">
+              Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}
+            </div>
+            <input id="wr-exname" value="${ex.name}" placeholder="Exercise name" style="font-size:20px;font-weight:700;border:none;background:transparent;color:var(--text);width:100%;padding:0;outline:none" oninput="_runner.exercises[${_runner.exIdx}].name=this.value">
+            ${ex.targetReps||ex.targetWeight ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ex.targetSets?ex.targetSets+' sets·':''} ${ex.targetReps?ex.targetReps+' reps':''} ${ex.targetWeight?'@ '+ex.targetWeight+'kg':''}</div>` : ''}
+          </div>
+          <button onclick="confirmEndRunner()" style="padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-muted);flex-shrink:0">End</button>
+        </div>
+      </div>
+
+      <!-- Stats bar -->
+      <div style="display:flex;border-bottom:1px solid var(--border)">
+        ${[['Volume', totalVol>0?Math.round(totalVol)+' kg':'— kg'],['Sets',totalSets||'—'],['Reps',totalReps||'—'],['Time','<span id="wr-timer">'+fmtRunnerTime(_runner.startTime)+'</span>']].map(([l,v])=>`
+          <div style="flex:1;text-align:center;padding:8px 2px;border-right:1px solid var(--border)">
+            <div style="font-size:15px;font-weight:700;color:var(--accent)">${v}</div>
+            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">${l}</div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Logged sets list -->
+      <div style="flex:1;overflow-y:auto;padding:12px 16px">
+        ${!ex.loggedSets.length ? `<p style="color:var(--text-muted);font-size:13px;margin:0">No sets logged yet.</p>` :
+          ex.loggedSets.map((s,i) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">
+              <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:50px">Set ${i+1}</span>
+              <span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span>
+              <span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>
+              ${s.rpe ? `<span style="font-size:12px;color:var(--text-muted)">RPE ${s.rpe}</span>` : '<span></span>'}
+            </div>`).join('')}
+        ${nextEx ? `
+          <div style="margin-top:16px;padding:10px 12px;border-radius:10px;background:var(--surface-2)">
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">Next up</div>
+            <div style="font-size:14px;font-weight:600">${nextEx.name || 'Unnamed exercise'}</div>
+          </div>` : ''}
+      </div>
+
+      <!-- Set input + custom keypad -->
+      <div style="padding:10px 12px 6px;border-top:2px solid var(--border);background:var(--surface)">
+        <!-- Field displays -->
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;margin-bottom:8px">
+          <div id="wr-weight-box" onclick="wrSetField('weight')" style="text-align:center;padding:8px 4px;border-radius:10px;border:2px solid ${_runner.activeField==='weight'?'var(--accent)':'var(--border)'};cursor:pointer;background:var(--bg)">
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">Kilograms</div>
+            <div id="wr-weight-display" style="font-size:30px;font-weight:700;color:var(--text);line-height:1">${_runner.weightInput||'—'}</div>
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">Set<br>${setNum}</div>
+          <div id="wr-reps-box" onclick="wrSetField('reps')" style="text-align:center;padding:8px 4px;border-radius:10px;border:2px solid ${_runner.activeField==='reps'?'var(--accent)':'var(--border)'};cursor:pointer;background:var(--bg)">
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">Reps</div>
+            <div id="wr-reps-display" style="font-size:30px;font-weight:700;color:var(--text);line-height:1">${_runner.repsInput||'—'}</div>
+          </div>
+        </div>
+        <!-- Keypad -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr) 80px;grid-template-rows:repeat(4,48px);gap:4px">
+          ${['7','8','9','4','5','6','1','2','3','.','0','⌫'].map((k,i) => `
+            <button onclick="wrKp('${k}')" style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:20px;font-weight:600;cursor:pointer;color:var(--text);${k==='⌫'?'font-size:16px':''}">${k}</button>
+          `).join('')}
+          <button onclick="skipToNextExercise()" style="grid-column:4;grid-row:1/3;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted);line-height:1.3">${isLast?'Finish 🏁':'Next<br>→'}</button>
+          <button onclick="logRunnerSet()" style="grid-column:4;grid-row:3/5;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
+          <button onclick="wrSwitchField()" style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted)">Switch</button>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function logRunnerSet() {
+  const weight = _runner.weightInput.trim()
+  const reps   = _runner.repsInput.trim()
+  if (!reps) return
+  _runner.exercises[_runner.exIdx].loggedSets.push({ weight, reps })
+  // Keep weight for next set, clear reps, focus reps
+  _runner.repsInput   = ''
+  _runner.activeField = 'reps'
+  renderRunner()
+}
+
+function wrKp(key) {
+  const f = _runner.activeField
+  let v = _runner[f + 'Input'] || ''
+  if (key === '⌫') {
+    v = v.slice(0, -1)
+  } else if (key === '.') {
+    if (f === 'reps') return
+    if (!v.includes('.')) v += (v === '' ? '0.' : '.')
+  } else {
+    v = (v === '0' ? key : v + key)
+  }
+  _runner[f + 'Input'] = v
+  const el = document.getElementById('wr-' + f + '-display')
+  if (el) el.textContent = v || '—'
+}
+
+function wrSetField(field) {
+  _runner.activeField = field
+  const wb = document.getElementById('wr-weight-box')
+  const rb = document.getElementById('wr-reps-box')
+  if (wb) wb.style.borderColor = field === 'weight' ? 'var(--accent)' : 'var(--border)'
+  if (rb) rb.style.borderColor = field === 'reps'   ? 'var(--accent)' : 'var(--border)'
+}
+
+function wrSwitchField() {
+  wrSetField(_runner.activeField === 'weight' ? 'reps' : 'weight')
+}
+
+function skipToNextExercise() {
+  if (_runner.exIdx < _runner.exercises.length - 1) {
+    _runner.exIdx++
+    renderRunner()
+  } else {
+    showRunnerFinish()
+  }
+}
+
+function showRunnerFinish() {
+  clearInterval(_runner._timerInterval)
+  const el = document.getElementById('workout-runner')
+  if (!el) return
+  const totalSets = _runner.exercises.reduce((s,e) => s + e.loggedSets.length, 0)
+  const duration  = fmtRunnerTime(_runner.startTime)
+
+  el.innerHTML = `
+    <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:20px 16px;border-bottom:1px solid var(--border)">
+        <h2 style="font-size:22px;font-weight:700;margin-bottom:4px">Workout complete 💪</h2>
+        <p style="color:var(--text-muted);font-size:13px">${totalSets} sets · ${duration}</p>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:16px">
+        ${_runner.exercises.filter(e=>e.loggedSets.length).map(e=>`
+          <div style="margin-bottom:16px">
+            <div style="font-weight:600;font-size:15px;margin-bottom:6px">${e.name}</div>
+            ${e.loggedSets.map((s,i)=>`
+              <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+                <span style="color:var(--text-muted)">Set ${i+1}</span>
+                <span style="font-weight:600">${s.weight?s.weight+' kg · ':''}${s.reps} reps</span>
+              </div>`).join('')}
+          </div>`).join('')}
+        <div class="field" style="margin-top:8px">
+          <label class="field-label">Session name</label>
+          <input class="field-input" id="rf-name" value="${_runner.name}">
+        </div>
+        <div class="field">
+          <label class="field-label">Notes</label>
+          <textarea class="field-input" id="rf-notes" rows="2" placeholder="How did it go?"></textarea>
+        </div>
+      </div>
+      <div style="padding:12px 16px 24px;border-top:1px solid var(--border);display:flex;gap:8px">
+        <button onclick="discardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:13px;font-weight:600;cursor:pointer;color:var(--danger)">Discard</button>
+        <button onclick="saveRunnerSession()" style="flex:1;height:48px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:700;cursor:pointer">Save workout</button>
+      </div>
+    </div>
+  `
+}
+
+function confirmEndRunner() {
+  if (_runner.exercises.some(e=>e.loggedSets.length)) showRunnerFinish()
+  else discardRunner()
+}
+
+function discardRunner() {
+  clearInterval(_runner?._timerInterval)
+  document.getElementById('workout-runner')?.remove()
+  _runner = null
+}
+
+async function saveRunnerSession() {
+  const name  = document.getElementById('rf-name')?.value.trim() || _runner.name
+  const notes = document.getElementById('rf-notes')?.value.trim() || null
+  const exercises = _runner.exercises.filter(e => e.name && e.loggedSets.length)
+  if (!exercises.length) { discardRunner(); return }
+
+  const { data: clientRecord } = await db.from('clients').select('coach_id').eq('id', _runner.clientId).single()
+  const coachId = clientRecord?.coach_id || currentUser.id
+
+  const { data: sessionLog, error } = await db.from('workout_logs').insert({
+    coach_id: coachId, client_id: _runner.clientId, name, date: _runner.date, notes
+  }).select().single()
+  if (error) { alert('Save failed: ' + error.message); return }
+
+  for (let bi = 0; bi < exercises.length; bi++) {
+    const ex = exercises[bi]
+    const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
+      log_id: sessionLog.id, exercise_name: ex.name, exercise_type: ex.type, order_index: bi
+    }).select().single()
+    if (exErr) { alert('Save failed: ' + exErr.message); return }
+
+    const sets = ex.loggedSets.map((s, si) => {
+      const row = { workout_log_exercise_id: logEx.id, set_number: si+1, set_type: 'working' }
+      if (ex.type === 'cardio') {
+        if (s.duration) row.duration_seconds = parseDuration(s.duration)
+        if (s.reps) row.distance_m = Math.round(parseFloat(s.reps)*1000)
+      } else {
+        if (s.reps) row.reps_achieved = parseInt(s.reps)
+        if (s.weight) row.weight_kg = parseFloat(s.weight)
+        if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
+      }
+      return row
+    }).filter(s => Object.keys(s).length > 3)
+
+    if (sets.length) await db.from('workout_log_sets').insert(sets)
+  }
+
+  const savedClientId = _runner.clientId
+  discardRunner()
+  const tabContent = document.getElementById('tab-content')
+  if (tabContent) renderClientWorkouts(savedClientId, tabContent)
+  else renderClientDashboard(document.getElementById('main-content'))
 }
 
 // ─── LOG SESSION ──────────────────────────────────────────────────────────────
