@@ -3407,16 +3407,16 @@ function renderRunner() {
     <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
 
       <!-- Header -->
-      <div style="padding:16px 16px 12px;border-bottom:1px solid var(--border)">
+      <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
           <div style="flex:1;min-width:0">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">
               Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}
             </div>
-            <input id="wr-exname" value="${ex.name}" placeholder="Exercise name" style="font-size:20px;font-weight:700;border:none;background:transparent;color:var(--text);width:100%;padding:0;outline:none" oninput="_runner.exercises[${_runner.exIdx}].name=this.value">
-            ${ex.targetReps||ex.targetWeight ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ex.targetSets?ex.targetSets+' sets·':''} ${ex.targetReps?ex.targetReps+' reps':''} ${ex.targetWeight?'@ '+ex.targetWeight+'kg':''}</div>` : ''}
+            <div style="font-size:18px;font-weight:700;color:var(--text);line-height:1.25;word-break:break-word">${ex.name||'Exercise name'}</div>
+            ${ex.targetReps||ex.targetWeight ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ex.targetSets?ex.targetSets+' sets · ':''} ${ex.targetReps?ex.targetReps+' reps':''} ${ex.targetWeight?'@ '+ex.targetWeight+'kg':''}</div>` : ''}
           </div>
-          <button onclick="confirmEndRunner()" style="padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-muted);flex-shrink:0">End</button>
+          <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
         </div>
       </div>
 
@@ -3454,7 +3454,7 @@ function renderRunner() {
             <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">Kilograms</div>
             <div id="wr-weight-display" style="font-size:30px;font-weight:700;color:var(--text);line-height:1">${_runner.weightInput||'—'}</div>
           </div>
-          <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">Set<br>${setNum}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);text-align:center;line-height:1.2">Set<br><span style="font-size:22px">${setNum}</span></div>
           <div id="wr-reps-box" onclick="wrSetField('reps')" style="text-align:center;padding:8px 4px;border-radius:10px;border:2px solid ${_runner.activeField==='reps'?'var(--accent)':'var(--border)'};cursor:pointer;background:var(--bg)">
             <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">Reps</div>
             <div id="wr-reps-display" style="font-size:30px;font-weight:700;color:var(--text);line-height:1">${_runner.repsInput||'—'}</div>
@@ -3465,7 +3465,7 @@ function renderRunner() {
           ${['7','8','9','4','5','6','1','2','3','.','0','⌫'].map((k,i) => `
             <button onclick="wrKp('${k}')" style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:20px;font-weight:600;cursor:pointer;color:var(--text);${k==='⌫'?'font-size:16px':''}">${k}</button>
           `).join('')}
-          <button onclick="skipToNextExercise()" style="grid-column:4;grid-row:1/3;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted);line-height:1.3">${isLast?'Finish 🏁':'Next<br>→'}</button>
+          <button onclick="skipToNextExercise()" style="grid-column:4;grid-row:1/3;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted);line-height:1.3">${isLast?'Finish 🏁':'Next<br>Set →'}</button>
           <button onclick="logRunnerSet()" style="grid-column:4;grid-row:3/5;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
           <button onclick="wrSwitchField()" style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted)">Switch</button>
         </div>
