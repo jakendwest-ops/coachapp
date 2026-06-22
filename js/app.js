@@ -3011,13 +3011,13 @@ function renderTemplateSets(containerId, type) {
       ${isCardio ? `
         ${row('Duration', mini(`ts-duration-${i}`,'type="text" placeholder="20:00"'+(s.duration?` value="${s.duration}"`:'')))}
         ${row('Distance (km)', mini(`ts-distance-${i}`,'type="number" step="0.01" placeholder="—"'+(s.distance?` value="${s.distance}"`:'')))}
-        ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="2:00"'+(s.restMin?` value="${s.restMin}"`:'')) + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="—"'+(s.restMax?` value="${s.restMax}"`:'')))}
+        ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" onblur="this.value=this.value?fmtRest(parseRest(this.value)):this.value"'+(s.restMin?` value="${s.restMin}"`:'')) + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" onblur="this.value=this.value?fmtRest(parseRest(this.value)):this.value"'+(s.restMax?` value="${s.restMax}"`:'')))}
         ${row('RPE', mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="—"'+(s.effortMin?` value="${s.effortMin}"`:'')))}
       ` : `
         ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
         ${row('Weight', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
         ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${s.intensityMin}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${s.intensityMax}"`:'')))}
-        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="2:00" onblur="this.value=this.value?fmtRest(parseRest(this.value)):this.value"'+(s.restMin?` value="${s.restMin}"`:'')) + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="—" onblur="this.value=this.value?fmtRest(parseRest(this.value)):this.value"'+(s.restMax?` value="${s.restMax}"`:'')))}
+        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" onblur="this.value=this.value?fmtRest(parseRest(this.value)):this.value"'+(s.restMin?` value="${s.restMin}"`:'')) + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" onblur="this.value=this.value?fmtRest(parseRest(this.value)):this.value"'+(s.restMax?` value="${s.restMax}"`:'')))}
         ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
         ${row('Tempo', mini(`ts-tempo-${i}`,'type="text" placeholder="e.g. 3011"'+(s.tempo?` value="${s.tempo}"`:'')))}
         ${row('Countdown (s)', mini(`ts-cd-${i}`,'type="number" placeholder="Optional"'+(s.countdown?` value="${s.countdown}"`:'')))}
