@@ -3112,9 +3112,17 @@ async function openTemplate(id) {
                 </div>
                 ${ex.sets_json?.length ? (() => {
                   const rows = ex.sets_json.map((s, si) => {
-                    const parts = isCardio
-                      ? [s.duration || null, s.distance ? s.distance+' km' : null]
-                      : [s.reps || null, s.weight ? s.weight+'kg' : null, s.rest ? s.rest+'s rest' : null, s.rpe ? 'RPE '+s.rpe : null]
+                    let parts
+                    if (isCardio) {
+                      const paceStr = (s.pace500Min && s.pace500Max) ? `${s.pace500Min}–${s.pace500Max}/500m` : (s.pace500Min || s.pace500Max || null)
+                      const restStr = s.restMin ? (s.restMin === s.restMax || !s.restMax ? s.restMin+' rest' : s.restMin+'–'+s.restMax+' rest') : null
+                      const hrStr = (s.hrZoneMin || s.hrZoneMax) ? `HR ${s.hrZoneMin||'?'}–${s.hrZoneMax||'?'}` : null
+                      parts = s.isDistanceBased
+                        ? [s.distance ? s.distance+' km' : null, paceStr, restStr, hrStr]
+                        : [s.duration || null, paceStr, restStr, hrStr]
+                    } else {
+                      parts = [s.reps || null, s.weight ? s.weight+'kg' : null, s.rest ? s.rest+'s rest' : null, s.rpe ? 'RPE '+s.rpe : null]
+                    }
                     const summary = parts.filter(Boolean).join(' · ')
                     return summary ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">Set ${si+1}:</span> ${summary}</div>` : null
                   }).filter(Boolean)
@@ -3643,7 +3651,7 @@ function launchRunner(clientId) {
         const repsStr = String(ex.reps || '')
         const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.[0]?.restMin || '') || 90
         const s0 = ex.sets_json?.[0] || {}
-        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [] }
+        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null }
       })
   }
   if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
@@ -3783,6 +3791,7 @@ function renderRunner() {
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>`}
           </div>
+          ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
           <!-- Buttons -->
           <div style="display:flex;gap:8px;margin-bottom:6px">
             ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
@@ -3792,6 +3801,7 @@ function renderRunner() {
           <button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>`
         })() : `
         <!-- Strength input -->
+        ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;min-height:16px">
           ${ex.targetReps||ex.targetWeight ? `<span style="font-size:11px;color:var(--text-muted)">Target: ${ex.targetReps?ex.targetReps+' reps':''}${ex.targetReps&&ex.targetWeight?' · ':''}${ex.targetWeight?ex.targetWeight+'kg':''}</span>` : '<span></span>'}
           ${lastSet ? `<span style="font-size:11px;color:var(--text-muted)">Last: ${lastSet.weight?lastSet.weight+'kg · ':''}${lastSet.reps} reps</span>` : ''}
@@ -4266,14 +4276,14 @@ async function saveRunnerSession() {
   const { data: sessionLog, error } = await db.from('workout_logs').insert({
     coach_id: coachId, client_id: _runner.clientId, name, date: _runner.date, notes
   }).select().single()
-  if (error) { alert('Save failed: ' + error.message); return }
+  if (error) { log.error('saveRunnerSession', 'workout_logs insert failed', error); return }
 
   for (let bi = 0; bi < exercises.length; bi++) {
     const ex = exercises[bi]
     const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
       log_id: sessionLog.id, exercise_name: ex.name, exercise_type: ex.type, order_index: bi
     }).select().single()
-    if (exErr) { alert('Save failed: ' + exErr.message); return }
+    if (exErr) { log.error('saveRunnerSession', `exercise ${bi+1} insert failed`, exErr); return }
 
     const sets = ex.loggedSets.map((s, si) => {
       const row = { workout_log_exercise_id: logEx.id, set_number: si+1, set_type: 'working' }
@@ -4288,8 +4298,12 @@ async function saveRunnerSession() {
       return row
     }).filter(s => Object.keys(s).length > 3)
 
-    if (sets.length) await db.from('workout_log_sets').insert(sets)
+    if (sets.length) {
+      const { error: setsErr } = await db.from('workout_log_sets').insert(sets)
+      if (setsErr) log.error('saveRunnerSession', `sets insert failed for exercise ${bi+1}`, setsErr)
+    }
   }
+  log.ok('saveRunnerSession', 'session saved', { name, exercises: exercises.length })
 
   const savedClientId = _runner.clientId
   discardRunner()
@@ -4611,16 +4625,26 @@ async function openWorkoutLog(logId, clientId) {
   const el = document.getElementById('tab-content')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const { data: log } = await db
+  // Fetch log + exercises. workout_log_sets lacks an FK to workout_log_exercises in the schema,
+  // so we fetch sets separately and merge rather than using nested PostgREST join.
+  const { data: logRow, error: logErr } = await db
     .from('workout_logs')
-    .select('*, workout_log_exercises(*, workout_log_sets(*))')
+    .select('*, workout_log_exercises(*)')
     .eq('id', logId)
     .single()
+  if (logErr) { log.error('openWorkoutLog', 'fetch failed', logErr); el.innerHTML = `<div class="empty-state"><div class="empty-text">Error loading session: ${logErr.message}</div></div>`; return }
 
-  if (!log) { el.innerHTML = '<div class="empty-state"><div class="empty-text">Session not found or access denied.</div></div>'; return }
+  const exIds = (logRow?.workout_log_exercises || []).map(e => e.id)
+  const { data: allSets, error: setsErr } = exIds.length
+    ? await db.from('workout_log_sets').select('*').in('workout_log_exercise_id', exIds).order('set_number')
+    : { data: [], error: null }
+  if (setsErr) log.error('openWorkoutLog', 'sets fetch failed', setsErr)
 
-  const exercises = (log.workout_log_exercises || []).sort((a, b) => a.order_index - b.order_index)
-  const dateStr = new Date(log.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  // Merge sets back onto exercises — rename to `session` to avoid shadowing the log utility
+  const session = { ...logRow, workout_log_exercises: (logRow?.workout_log_exercises || []).map(ex => ({ ...ex, workout_log_sets: (allSets || []).filter(s => s.workout_log_exercise_id === ex.id) })) }
+
+  const exercises = (session.workout_log_exercises || []).sort((a, b) => a.order_index - b.order_index)
+  const dateStr = new Date(session.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   el.innerHTML = `
     <a class="back-btn" href="#" onclick="backToClientWorkouts('${clientId}');return false">
@@ -4630,7 +4654,7 @@ async function openWorkoutLog(logId, clientId) {
 
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:24px;flex-wrap:wrap">
       <div>
-        <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${log.name}</h2>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${session.name}</h2>
         <p style="color:var(--text-muted)">${dateStr}</p>
       </div>
       <button class="btn-danger" style="font-size:13px;padding:6px 12px" onclick="deleteWorkoutLog('${logId}','${clientId}')">Delete</button>
@@ -4680,7 +4704,7 @@ async function openWorkoutLog(logId, clientId) {
     <div class="card" style="margin-top:8px">
       <div class="card-body">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Coach notes</div>
-        <textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${log.notes||''}</textarea>
+        <textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${session.notes||''}</textarea>
         <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:13px;padding:7px 16px">Save notes</button>
         <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:12px;color:#10b981;font-weight:600">Saved ✓</span>
       </div>
