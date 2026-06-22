@@ -3150,6 +3150,24 @@ async function moveTemplateExercise(templateId, exId, dir) {
 }
 
 // ─── TEMPLATE SET HELPERS ─────────────────────────────────────────────────────
+function calcPace1000(min500, max500) {
+  const toSecs = s => { if (!s) return 0; const p = s.split(':'); return (parseInt(p[0])||0)*60+(parseInt(p[1])||0) }
+  const fmt = s => { if (!s) return '—'; const m = Math.floor(s/60), sec = String(s%60).padStart(2,'0'); return `${m}:${sec}` }
+  const minS = toSecs(min500) * 2, maxS = toSecs(max500) * 2
+  if (!minS && !maxS) return '—'
+  if (minS === maxS || !maxS) return fmt(minS)
+  return fmt(minS) + ' – ' + fmt(maxS)
+}
+
+function tsPace500Input(i, containerId) {
+  const minEl = document.getElementById(`ts-p500min-${i}`)
+  const maxEl = document.getElementById(`ts-p500max-${i}`)
+  if (minEl) minEl.value = fmtRestInput(minEl.value)
+  if (maxEl) maxEl.value = fmtRestInput(maxEl.value)
+  const el1000 = document.getElementById(`ts-p1000-${i}`)
+  if (el1000) el1000.textContent = calcPace1000(minEl?.value, maxEl?.value)
+}
+
 function parseRest(str) {
   if (!str) return 0
   const parts = str.split(':')
@@ -3179,6 +3197,10 @@ function flushTemplateSets(containerId) {
     s.countdown    = document.getElementById(`ts-cd-${i}`)?.value       ?? s.countdown
     s.duration     = document.getElementById(`ts-duration-${i}`)?.value ?? s.duration
     s.distance     = document.getElementById(`ts-distance-${i}`)?.value ?? s.distance
+    s.pace500Min   = document.getElementById(`ts-p500min-${i}`)?.value  ?? s.pace500Min
+    s.pace500Max   = document.getElementById(`ts-p500max-${i}`)?.value  ?? s.pace500Max
+    s.hrZoneMin    = document.getElementById(`ts-hrzmin-${i}`)?.value   ?? s.hrZoneMin
+    s.hrZoneMax    = document.getElementById(`ts-hrzmax-${i}`)?.value   ?? s.hrZoneMax
     s.assistWeight = document.getElementById(`ts-assist-${i}`)?.value   ?? s.assistWeight
   })
 }
@@ -3227,10 +3249,20 @@ function renderTemplateSets(containerId, type) {
         </div>
       </div>
       ${isCardio ? `
-        ${row('Duration', mini(`ts-duration-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.duration||'0:00')+'"'))}
-        ${row('Distance (km)', mini(`ts-distance-${i}`,'type="number" step="0.01" placeholder="—"'+(s.distance?` value="${s.distance}"`:'')))}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f4f6">
+          <span style="font-size:13px;font-weight:600;color:#374151">Target</span>
+          <div style="display:flex;gap:4px">
+            ${tog('Duration', !s.isDistanceBased, `toggleTsSet(${i},'isDistanceBased','${containerId}')`)}
+            ${tog('Distance', s.isDistanceBased, `toggleTsSet(${i},'isDistanceBased','${containerId}')`)}
+          </div>
+        </div>
+        ${!s.isDistanceBased ? row('Duration', mini(`ts-duration-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.duration||'0:00')+'"')) : ''}
+        ${s.isDistanceBased ? row('Distance (km)', mini(`ts-distance-${i}`, `type="number" step="0.01" placeholder="—"${s.distance ? ` value="${s.distance}"` : ''}`)) : ''}
+        ${row('Pace / 500m', mini(`ts-p500min-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Min||'0:00'}"`) + dash + mini(`ts-p500max-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Max||'0:00'}"`))}
+
+        ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:13px;font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
         ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
-        ${row('RPE', mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="—"'+(s.effortMin?` value="${s.effortMin}"`:'')))}
+        ${row('HR Zone (BPM)', mini(`ts-hrzmin-${i}`,'type="number" placeholder="—"'+(s.hrZoneMin?` value="${s.hrZoneMin}"`:'')) + dash + mini(`ts-hrzmax-${i}`,'type="number" placeholder="—"'+(s.hrZoneMax?` value="${s.hrZoneMax}"`:'')))}
       ` : `
         ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
         ${s.bodyweight ? '' : row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
