@@ -984,16 +984,17 @@ async function openProgram(programId) {
   log.info('openProgram', 'loading', { programId })
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const { data: program, error } = await db
-    .from('programs')
-    .select('id, name, description, created_at, program_phases(id, name, duration_weeks, order_index)')
-    .eq('id', programId)
-    .single()
+  const [{ data: program, error }, { data: templates }] = await Promise.all([
+    db.from('programs').select('id, name, description, created_at, program_phases(id, name, duration_weeks, order_index)').eq('id', programId).single(),
+    db.from('workout_templates').select('id, name').eq('coach_id', currentUser.id).order('name'),
+  ])
 
   if (error) { log.error('openProgram', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
   const phases = (program.program_phases || []).sort((a, b) => a.order_index - b.order_index)
   const totalWeeks = phases.reduce((sum, p) => sum + p.duration_weeks, 0)
+  window._programTemplates = templates || []
+  window._openProgramId = programId
 
   el.innerHTML = `
     <div style="margin-bottom:20px">
@@ -1022,18 +1023,22 @@ async function openProgram(programId) {
 
     <div id="phases-list">
       ${!phases.length ? `<p style="color:var(--text-muted);font-size:13px">No phases yet. Add the first phase to get started.</p>` :
-        `<div class="list">${phases.map((ph, i) => `
-          <div class="list-row" id="phase-${ph.id}" style="cursor:default">
-            <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i + 1}</div>
-            <div class="row-info">
-              <div class="row-name">${ph.name}</div>
-              <div class="row-meta">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}</div>
+        phases.map((ph, i) => `
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-body">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+                <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i + 1}</div>
+                <div style="flex:1">
+                  <div style="font-weight:600;font-size:15px">${ph.name}</div>
+                  <div style="font-size:12px;color:var(--text-muted)">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}</div>
+                </div>
+                <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showEditPhaseForm('${program.id}','${ph.id}','${ph.name.replace(/'/g,"\\'")}',${ph.duration_weeks},${ph.order_index})">Edit</button>
+                <button class="btn-danger" style="font-size:12px;padding:4px 10px" onclick="deletePhase('${program.id}','${ph.id}')">Remove</button>
+              </div>
+              <div id="phase-workouts-${ph.id}"><div style="color:var(--text-muted);font-size:12px">Loading workouts…</div></div>
+              <button onclick="showAddPhaseWorkout('${ph.id}','${program.id}')" class="btn-secondary" style="margin-top:10px;font-size:12px;padding:4px 12px">+ Assign workout</button>
             </div>
-            <div class="row-right">
-              <button class="btn-icon" title="Edit" onclick="showEditPhaseForm('${program.id}','${ph.id}','${ph.name.replace(/'/g,"\\'")}',${ph.duration_weeks},${ph.order_index})">✎</button>
-              <button class="btn-icon" title="Delete" onclick="deletePhase('${program.id}','${ph.id}')">✕</button>
-            </div>
-          </div>`).join('')}</div>`}
+          </div>`).join('')}
     </div>
 
     <!-- Add/edit phase form -->
@@ -1055,6 +1060,44 @@ async function openProgram(programId) {
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" id="pf-save-btn" onclick="savePhase('${program.id}')">Add phase</button>
         <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('phase-form').style.display='none'">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Add phase workout modal -->
+    <div id="phase-workout-modal" class="modal-overlay" style="display:none">
+      <div class="modal" style="max-width:420px">
+        <div class="modal-header">
+          <h2 class="modal-title">Assign workout to phase</h2>
+          <button class="modal-close" onclick="document.getElementById('phase-workout-modal').style.display='none'">✕</button>
+        </div>
+        <input type="hidden" id="pwm-phase-id">
+        <div class="field">
+          <label class="field-label">Day of week</label>
+          <select class="field-input" id="pwm-day">
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+            <option value="7">Sunday</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">Workout template</label>
+          <select class="field-input" id="pwm-template">
+            ${(window._programTemplates||[]).map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">Notes <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+          <input class="field-input" id="pwm-notes" placeholder="e.g. Higher intensity week">
+        </div>
+        <p id="pwm-error" class="modal-error"></p>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="document.getElementById('phase-workout-modal').style.display='none'">Cancel</button>
+          <button class="btn-primary" onclick="savePhaseWorkout()">Assign</button>
+        </div>
       </div>
     </div>
 
@@ -1080,6 +1123,8 @@ async function openProgram(programId) {
         </div>
       </div>
     </div>`
+
+  loadAllPhaseWorkouts(phases)
 }
 
 let _editingProgramId = null
@@ -1202,6 +1247,57 @@ async function deletePhase(programId, phaseId) {
   if (error) { log.error('deletePhase', 'failed', error); alert(error.message); return }
   log.ok('deletePhase', 'deleted', { phaseId })
   openProgram(programId)
+}
+
+async function loadAllPhaseWorkouts(phases) {
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+  for (const ph of phases) {
+    const el = document.getElementById(`phase-workouts-${ph.id}`)
+    if (!el) continue
+    const { data: pws } = await db.from('program_phase_workouts').select('*, workout_templates(name)').eq('phase_id', ph.id).order('day_of_week')
+    if (!pws?.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">No workouts assigned yet.</div>'; continue }
+    const byDay = {}
+    pws.forEach(pw => { byDay[pw.day_of_week] = byDay[pw.day_of_week] || []; byDay[pw.day_of_week].push(pw) })
+    el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px">
+      ${Object.entries(byDay).sort(([a],[b])=>a-b).map(([day, wks]) => `
+        <div style="background:var(--surface-2);border-radius:8px;padding:8px 12px;min-width:120px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${days[day-1]}</div>
+          ${wks.map(w => `
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+              <span style="font-size:12px;font-weight:600">${w.workout_templates?.name || 'Unknown'}</span>
+              <button onclick="removePhaseWorkout('${w.id}','${ph.id}')" style="font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0">✕</button>
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>`
+  }
+}
+
+function showAddPhaseWorkout(phaseId, programId) {
+  const modal = document.getElementById('phase-workout-modal')
+  if (!modal) return
+  document.getElementById('pwm-phase-id').value = phaseId
+  // Rebuild template options in case they changed
+  const sel = document.getElementById('pwm-template')
+  sel.innerHTML = (window._programTemplates||[]).map(t=>`<option value="${t.id}">${t.name}</option>`).join('')
+  modal.style.display = 'flex'
+}
+
+async function savePhaseWorkout() {
+  const phaseId    = document.getElementById('pwm-phase-id').value
+  const dayOfWeek  = parseInt(document.getElementById('pwm-day').value)
+  const templateId = document.getElementById('pwm-template').value
+  const notes      = document.getElementById('pwm-notes')?.value.trim() || null
+  const errEl      = document.getElementById('pwm-error')
+  if (!templateId) { errEl.textContent = 'Pick a template'; return }
+  const { error } = await db.from('program_phase_workouts').insert({ phase_id: phaseId, day_of_week: dayOfWeek, template_id: templateId, notes })
+  if (error) { errEl.textContent = error.message; return }
+  document.getElementById('phase-workout-modal').style.display = 'none'
+  if (window._openProgramId) openProgram(window._openProgramId)
+}
+
+async function removePhaseWorkout(pwId, phaseId) {
+  await db.from('program_phase_workouts').delete().eq('id', pwId)
+  if (window._openProgramId) openProgram(window._openProgramId)
 }
 
 function showClientPBForm(clientId) {
@@ -1443,6 +1539,7 @@ async function openClient(id) {
       <button class="tab-btn" onclick="switchTab(this,'tab-weight','${id}')">Weight</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-performance','${id}')">Performance</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-programs','${id}')">Programs</button>
+      <button class="tab-btn" onclick="switchTab(this,'tab-photos','${id}')">Photos</button>
     </div>
 
     <div id="tab-content">
@@ -1463,6 +1560,7 @@ function switchTab(btn, tab, clientId) {
     case 'tab-weight':       content.innerHTML = ''; renderClientWeight(clientId, content);       break
     case 'tab-performance':  content.innerHTML = ''; renderClientPerformance(clientId, content);  break
     case 'tab-programs':     content.innerHTML = ''; renderClientPrograms(clientId, content);     break
+    case 'tab-photos':       content.innerHTML = ''; renderClientPhotos(clientId, content);       break
   }
 }
 
@@ -4328,6 +4426,74 @@ const PERF_COLOURS = {
   cardio:      '#06b6d4',
   body_metric: '#f59e0b',
   benchmark:   '#22c55e',
+}
+
+async function renderClientPhotos(clientId, el) {
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+  const prefix = `${clientId}/`
+  const { data: files, error } = await db.storage.from('progress-photos').list(prefix, { sortBy: { column: 'created_at', order: 'desc' } })
+
+  const isCoach = currentProfile?.role === 'coach'
+
+  const uploadHtml = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-body">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">Upload progress photo</div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+          <div>
+            <label class="field-label">Date</label>
+            <input type="date" id="pp-date" class="field-input" value="${new Date().toISOString().split('T')[0]}" style="width:160px">
+          </div>
+          <div>
+            <label class="field-label">Photo</label>
+            <input type="file" id="pp-file" class="field-input" accept="image/*" style="width:auto">
+          </div>
+          <button onclick="uploadProgressPhoto('${clientId}')" class="btn-primary" style="font-size:13px;padding:8px 16px">Upload</button>
+        </div>
+        <p id="pp-error" style="color:var(--danger);font-size:12px;margin:6px 0 0"></p>
+      </div>
+    </div>`
+
+  if (error || !files?.length) {
+    el.innerHTML = uploadHtml + `<div class="empty-state"><div class="empty-text">No progress photos yet.</div></div>`
+    return
+  }
+
+  const photoHtml = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
+    ${files.filter(f => f.name !== '.emptyFolderPlaceholder').map(f => {
+      const { data: { publicUrl } } = db.storage.from('progress-photos').getPublicUrl(prefix + f.name)
+      const datePart = f.name.split('_')[0]
+      return `
+        <div style="border-radius:10px;overflow:hidden;background:var(--surface-2);position:relative">
+          <img src="${publicUrl}" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block" loading="lazy">
+          <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:11px;color:var(--text-muted)">${datePart}</span>
+            ${isCoach ? `<button onclick="deleteProgressPhoto('${clientId}','${f.name}')" style="font-size:11px;color:var(--danger);background:none;border:none;cursor:pointer">✕</button>` : ''}
+          </div>
+        </div>`
+    }).join('')}
+  </div>`
+
+  el.innerHTML = uploadHtml + photoHtml
+}
+
+async function uploadProgressPhoto(clientId) {
+  const fileInput = document.getElementById('pp-file')
+  const dateVal   = document.getElementById('pp-date')?.value
+  const errEl     = document.getElementById('pp-error')
+  if (!fileInput?.files?.[0]) { errEl.textContent = 'Please select a photo'; return }
+  const file = fileInput.files[0]
+  const ext  = file.name.split('.').pop()
+  const path = `${clientId}/${dateVal}_${Date.now()}.${ext}`
+  const { error } = await db.storage.from('progress-photos').upload(path, file, { upsert: false })
+  if (error) { errEl.textContent = error.message; return }
+  renderClientPhotos(clientId, document.getElementById('tab-content'))
+}
+
+async function deleteProgressPhoto(clientId, fileName) {
+  if (!confirm('Delete this photo?')) return
+  await db.storage.from('progress-photos').remove([`${clientId}/${fileName}`])
+  renderClientPhotos(clientId, document.getElementById('tab-content'))
 }
 
 async function renderClientPerformance(clientId, el) {
