@@ -3489,6 +3489,22 @@ function logRunnerSet() {
   startRestTimer(restSecs)
 }
 
+function playBeep(freq = 880, duration = 0.08, volume = 0.4) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = freq
+    gain.gain.setValueAtTime(volume, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + duration)
+    osc.onended = () => ctx.close()
+  } catch(e) {}
+}
+
 function startRestTimer(secs) {
   clearInterval(_runner._restInterval)
   _runner.restRemaining = secs
@@ -3499,14 +3515,14 @@ function startRestTimer(secs) {
     if (_runner.restRemaining <= 0) {
       clearInterval(_runner._restInterval)
       _runner.restRemaining = null
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200])
+      playBeep(1046, 0.4, 0.5) // higher, longer beep on finish
       document.getElementById('rest-timer-overlay')?.remove()
     } else {
+      if (_runner.restRemaining <= 5) playBeep(880, 0.08, 0.3)
       const el = document.getElementById('rt-countdown')
       if (el) {
         el.textContent = fmtRestCountdown(_runner.restRemaining)
-        // Pulse red in last 10 seconds
-        el.style.color = _runner.restRemaining <= 10 ? '#ef4444' : 'var(--accent)'
+        el.style.color = _runner.restRemaining <= 5 ? '#ef4444' : 'var(--accent)'
       }
       const ring = document.getElementById('rt-ring')
       if (ring) {
