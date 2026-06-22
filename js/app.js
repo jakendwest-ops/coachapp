@@ -3488,20 +3488,36 @@ function logRunnerSet() {
 }
 
 let _audioCtx = null
+let _audioUnlocked = false
+
 function getAudioCtx() {
   if (!_audioCtx || _audioCtx.state === 'closed') {
     _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
   }
-  // iOS requires explicit resume after user gesture
-  if (_audioCtx.state === 'suspended') _audioCtx.resume()
   return _audioCtx
 }
-// Unlock audio on first user tap anywhere — required by iOS Safari
-document.addEventListener('touchstart', () => { try { getAudioCtx() } catch(e) {} }, { once: true })
+
+// iOS Safari: play a silent 1-sample buffer synchronously inside a touch event to permanently unlock audio
+function _unlockAudio() {
+  if (_audioUnlocked) return
+  try {
+    const ctx = getAudioCtx()
+    const buf = ctx.createBuffer(1, 1, 22050)
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    src.connect(ctx.destination)
+    src.start(0)
+    ctx.resume()
+    _audioUnlocked = true
+  } catch(e) {}
+}
+document.addEventListener('touchstart', _unlockAudio, { passive: true })
+document.addEventListener('touchend',   _unlockAudio, { passive: true })
 
 function playBeep(freq = 880, duration = 0.08, volume = 0.4) {
   try {
     const ctx = getAudioCtx()
+    if (ctx.state === 'suspended') ctx.resume()
     const osc  = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain)
