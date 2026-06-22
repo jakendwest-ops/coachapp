@@ -3719,12 +3719,20 @@ function renderRunner() {
 
       <!-- Stats bar — sits just above the keypad -->
       <div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
-        ${(ex.type === 'cardio' ? [
-          ['Sets', totalSets||'—'],
-          ['Intervals', ex.loggedSets.length + (ex.targetSets ? '/'+ex.targetSets : '') || '—'],
-          ['Target', (() => { const t = ex.sets_json?.[0]; return t?.isDistanceBased ? (t.distance||'—')+' km' : (t?.duration||'—') })()],
-          ['Time', '<span id="wr-timer">'+fmtRunnerTime(_runner.startTime)+'</span>']
-        ] : [
+        ${(ex.type === 'cardio' ? (() => {
+          const totalCardioSecs = _runner.exercises.reduce((s,e) => s + e.loggedSets.reduce((t,set) => {
+            if (set.duration) { const p=set.duration.split(':'); return t+(parseInt(p[0])||0)*60+(parseInt(p[1])||0) }
+            return t
+          }, 0), 0)
+          const totalCardioKm = _runner.exercises.reduce((s,e) => s + e.loggedSets.reduce((t,set) => t+(parseFloat(set.distance)||parseFloat(set.distanceAchieved)||0), 0), 0)
+          const durationLabel = totalCardioSecs > 0 ? fmtRestCountdown(totalCardioSecs) : (totalCardioKm > 0 ? totalCardioKm.toFixed(1)+' km' : '—')
+          return [
+            ['Sets', ex.loggedSets.length + (ex.targetSets ? '/'+ex.targetSets : '')],
+            ['Duration', durationLabel],
+            ['Target', (() => { const t = ex.sets_json?.[0]; return t?.isDistanceBased ? (t.distance||'—')+' km' : (t?.duration||'—') })()],
+            ['Time', '<span id="wr-timer">'+fmtRunnerTime(_runner.startTime)+'</span>']
+          ]
+        })() : [
           ['Volume', totalVol>0?Math.round(totalVol)+' kg':'— kg'],
           ['Sets', totalSets||'—'],
           ['Reps', totalReps||'—'],
@@ -3760,6 +3768,12 @@ function renderRunner() {
                 <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance achieved (km)</div>
                 <input id="wr-cardio-dist" type="number" step="0.01" inputmode="decimal" placeholder="${tgt.distance||'0'}" value="${lastCardio?.distance||tgt.distance||''}"
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+              </div>
+              <div>
+                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Pace /500m achieved — optional</div>
+                <input id="wr-cardio-pace" type="text" inputmode="numeric" placeholder="e.g. 2:32" value="${lastCardio?.paceAchieved||''}"
+                  oninput="this.value=fmtRestInput(this.value)"
+                  style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>` : `
               <div>
                 <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Duration (MM:SS)</div>
@@ -3768,11 +3782,13 @@ function renderRunner() {
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>`}
           </div>
-          <!-- LOG + optional finish -->
-          <div style="display:flex;gap:8px">
-            ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 16px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
+          <!-- Buttons -->
+          <div style="display:flex;gap:8px;margin-bottom:6px">
+            ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
+            ${!distBased && tgt.duration ? `<button onclick="event.stopPropagation();startIntervalTimer(${parseRest(tgt.duration)||300})" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--surface-2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
             <button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
-          </div>`
+          </div>
+          <button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>`
         })() : `
         <!-- Strength input -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;min-height:16px">
@@ -3797,13 +3813,15 @@ function renderRunner() {
           ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="grid-column:4;grid-row:1/3;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted);line-height:1.3">${isLast?'Finish 🏁':'Next<br>Set →'}</button>` : `<div style="grid-column:4;grid-row:1/3"></div>`}
           <button onclick="logRunnerSet()" style="grid-column:4;grid-row:3/5;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
           <button onclick="wrSwitchField()" style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted)">Switch</button>
-        </div>`}
+        </div>
+        ${ex.loggedSets.length > 0 && ex.loggedSets.length >= ex.targetSets ? `<button onclick="addExtraStrengthSet()" style="width:100%;margin-top:6px;padding:7px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`}
       </div>
     </div>
   `
 }
 
 function logRunnerSet() {
+  if (_runner._restInterval) return // block LOG during rest
   const ex = _runner.exercises[_runner.exIdx]
   let setData
   if (ex.type === 'cardio') {
@@ -3811,12 +3829,17 @@ function logRunnerSet() {
     if (tgt.isDistanceBased) {
       const dist = document.getElementById('wr-cardio-dist')?.value?.trim()
       if (!dist) return
-      setData = { distance: dist }
+      const paceEl = document.getElementById('wr-cardio-pace')
+      setData = { distance: dist, paceAchieved: paceEl?.value?.trim() || null }
     } else {
       const dur = document.getElementById('wr-cardio-dur')?.value?.trim()
       if (!dur || dur === '0:00') return
-      setData = { duration: dur }
+      const distEl = document.getElementById('wr-cardio-dist-opt')
+      const paceEl = document.getElementById('wr-cardio-pace')
+      setData = { duration: dur, distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null }
     }
+    // stop any running interval timer
+    stopIntervalTimer()
   } else {
     const weight = ex.bodyweight ? 'BW' : _runner.weightInput.trim()
     const reps   = _runner.repsInput.trim()
@@ -3882,6 +3905,106 @@ function playBeep(freq = 880, duration = 0.1, volume = 0.5) {
     a.play().catch(() => {})
     a.onended = () => URL.revokeObjectURL(url)
   } catch(e) {}
+}
+
+function startIntervalTimer(secs) {
+  stopIntervalTimer()
+  _runner._intervalSecs = secs
+  _runner._intervalRemaining = secs
+  _runner._intervalRunning = true
+  renderIntervalTimer()
+  _runner._intervalInterval = setInterval(() => {
+    _runner._intervalRemaining--
+    if (_runner._intervalRemaining <= 0) {
+      stopIntervalTimer()
+      playBeep(1046, 0.4, 0.6)
+      // auto-log with the target duration
+      const ex = _runner.exercises[_runner.exIdx]
+      const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+      const distEl = document.getElementById('wr-cardio-dist-opt')
+      const paceEl = document.getElementById('wr-cardio-pace')
+      const setData = { duration: tgt.duration || fmtRestCountdown(secs), distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null }
+      ex.loggedSets.push(setData)
+      renderRunner()
+      const restSecs = ex.restSecs || 90
+      const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
+      if (hitTarget) {
+        const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+        if (nextExIdx !== -1) {
+          _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
+          startRestTimer(restSecs)
+        } else {
+          startRestTimer(restSecs)
+          _runner._afterRest = () => showRunnerFinish()
+        }
+      } else {
+        startRestTimer(restSecs)
+      }
+      return
+    }
+    if (_runner._intervalRemaining <= 5) playBeep(880, 0.08, 0.3)
+    const el = document.getElementById('wr-interval-countdown')
+    if (el) {
+      el.textContent = fmtRestCountdown(_runner._intervalRemaining)
+      el.style.color = _runner._intervalRemaining <= 5 ? '#ef4444' : 'var(--accent)'
+    }
+    const ring = document.getElementById('wr-interval-ring')
+    if (ring) {
+      const circ = 2 * Math.PI * 54
+      const pct = _runner._intervalRemaining / _runner._intervalSecs
+      ring.style.strokeDashoffset = circ * (1 - pct)
+    }
+  }, 1000)
+}
+
+function stopIntervalTimer() {
+  clearInterval(_runner._intervalInterval)
+  _runner._intervalRunning = false
+  _runner._intervalRemaining = null
+  document.getElementById('wr-interval-overlay')?.remove()
+}
+
+function renderIntervalTimer() {
+  document.getElementById('wr-interval-overlay')?.remove()
+  const secs = _runner._intervalRemaining
+  const total = _runner._intervalSecs
+  const circ = 2 * Math.PI * 54
+  const pct = secs / total
+  const ex = _runner.exercises[_runner.exIdx]
+  const setNum = ex.loggedSets.length + 1
+
+  const overlay = document.createElement('div')
+  overlay.id = 'wr-interval-overlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
+  overlay.innerHTML = `
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${ex.name} — Set ${setNum}</div>
+    <div style="position:relative;display:inline-block;margin-bottom:24px">
+      <svg width="140" height="140" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
+        <circle id="wr-interval-ring" cx="60" cy="60" r="54" fill="none" stroke="var(--accent)" stroke-width="6"
+          stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - pct)}"
+          stroke-linecap="round" transform="rotate(-90 60 60)"
+          style="transition:stroke-dashoffset .9s linear"/>
+      </svg>
+      <div id="wr-interval-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
+    </div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:24px">INTERVAL IN PROGRESS</div>
+    <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
+      <div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance covered (km) — optional</div>
+        <input id="wr-cardio-dist-opt" type="number" step="0.01" inputmode="decimal" placeholder="e.g. 1.24"
+          style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--surface);color:var(--text)">
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Pace /500m achieved — optional</div>
+        <input id="wr-cardio-pace" type="text" inputmode="numeric" placeholder="e.g. 2:07"
+          oninput="this.value=fmtRestInput(this.value)"
+          style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--surface);color:var(--text)">
+      </div>
+    </div>
+    <button onclick="event.stopPropagation();logRunnerSet()" style="width:100%;max-width:340px;padding:16px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">Done early — LOG</button>
+  `
+  document.body.appendChild(overlay)
 }
 
 function startRestTimer(secs) {
@@ -4022,12 +4145,29 @@ function saveEditRunnerSet(exIdx, setIdx) {
 }
 
 function skipToNextExercise() {
+  stopIntervalTimer()
   if (_runner.exIdx < _runner.exercises.length - 1) {
     _runner.exIdx++
     renderRunner()
   } else {
     showRunnerFinish()
   }
+}
+
+function addExtraCardioSet() {
+  const ex = _runner.exercises[_runner.exIdx]
+  ex.targetSets = (ex.targetSets || 0) + 1
+  if (ex.sets_json?.length) ex.sets_json.push({ ...ex.sets_json[ex.sets_json.length - 1] })
+  renderRunner()
+}
+
+function addExtraStrengthSet() {
+  const ex = _runner.exercises[_runner.exIdx]
+  ex.targetSets = (ex.targetSets || 0) + 1
+  _runner.repsInput = ''
+  _runner.weightInput = ''
+  _runner.activeField = ex.bodyweight ? 'reps' : 'weight'
+  renderRunner()
 }
 
 function showRunnerFinish() {
@@ -4085,7 +4225,11 @@ function confirmEndRunner() {
 
 function discardRunner() {
   clearInterval(_runner?._timerInterval)
+  clearInterval(_runner?._intervalInterval)
+  clearInterval(_runner?._restInterval)
   document.getElementById('workout-runner')?.remove()
+  document.getElementById('wr-interval-overlay')?.remove()
+  document.getElementById('rest-timer-overlay')?.remove()
   _runner = null
 }
 
