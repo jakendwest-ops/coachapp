@@ -3716,6 +3716,7 @@ function launchRunner(clientId) {
   _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, weightInput: '', repsInput: '', activeField: 'weight' }
   renderRunner()
   _runner._timerInterval = setInterval(() => {
+    if (!_runner) return
     const el = document.getElementById('wr-timer')
     if (el) el.textContent = fmtRunnerTime(_runner.startTime)
   }, 1000)
@@ -4320,19 +4321,23 @@ function discardRunner() {
 }
 
 async function saveRunnerSession() {
-  const name  = document.getElementById('rf-name')?.value.trim() || _runner.name
-  const notes = document.getElementById('rf-notes')?.value.trim() || null
+  if (!_runner) return
+  // Capture all _runner fields into locals before any await — discardRunner() can null _runner mid-save
+  const name      = document.getElementById('rf-name')?.value.trim() || _runner.name
+  const notes     = document.getElementById('rf-notes')?.value.trim() || null
+  const clientId  = _runner.clientId
+  const date      = _runner.date
   const exercises = _runner.exercises.filter(e => e.name && e.loggedSets.length)
-  if (!exercises.length) { discardRunner(); return }
-
-  const { data: clientRecord } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', _runner.clientId).single())
-  const coachId = clientRecord?.coach_id || currentUser.id
+  if (!exercises.length) { showToast('No sets logged — nothing to save.', 'warn', 3000); return }
 
   const saveBtn = document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…' }
 
+  const { data: clientRecord } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single())
+  const coachId = clientRecord?.coach_id || currentUser.id
+
   const { data: sessionLog, error } = await db.from('workout_logs').insert({
-    coach_id: coachId, client_id: _runner.clientId, name, date: _runner.date, notes
+    coach_id: coachId, client_id: clientId, name, date, notes
   }).select().single()
   if (error) {
     log.error('saveRunnerSession', 'workout_logs insert failed', error)
@@ -4374,10 +4379,8 @@ async function saveRunnerSession() {
     showToast('Workout saved!', 'success', 2500)
   }
 
-  const savedClientId = _runner.clientId
   discardRunner()
-  // Return to the client's profile so the saved session is visible in their Workouts tab
-  openClient(savedClientId)
+  openClient(clientId)
 }
 
 // ─── LOG SESSION ──────────────────────────────────────────────────────────────
