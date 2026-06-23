@@ -4098,6 +4098,7 @@ function startRestTimer(secs) {
     _runner.restRemaining--
     if (_runner.restRemaining <= 0) {
       clearInterval(_runner._restInterval)
+      _runner._restInterval = null
       _runner.restRemaining = null
       playBeep(1046, 0.4, 0.5) // higher, longer beep on finish
       document.getElementById('rest-timer-overlay')?.remove()
@@ -4126,6 +4127,7 @@ function fmtRestCountdown(secs) {
 
 function skipRestTimer() {
   clearInterval(_runner._restInterval)
+  _runner._restInterval = null
   _runner.restRemaining = null
   document.getElementById('rest-timer-overlay')?.remove()
   const cb = _runner._afterRest
