@@ -4968,7 +4968,8 @@ async function renderClientPhotos(clientId, el) {
 
   const photoHtml = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
     ${files.filter(f => f.name !== '.emptyFolderPlaceholder').map(f => {
-      const { data: { publicUrl } } = db.storage.from('progress-photos').getPublicUrl(prefix + f.name)
+      const { data: { publicUrl: _rawUrl } } = db.storage.from('progress-photos').getPublicUrl(prefix + f.name)
+      const publicUrl = _rawUrl + '?width=600&height=800&resize=cover'
       const datePart = f.name.split('_')[0]
       return `
         <div style="border-radius:10px;overflow:hidden;background:var(--surface-2);position:relative">
