@@ -676,3 +676,5 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   .auth-card { padding: 28px 20px; }
   .stats-row { grid-template-columns: 1fr 1fr; }
 }
+
+@keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(12px) } to { opacity:1; transform:translateX(-50%) translateY(0) } }

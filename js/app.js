@@ -2,20 +2,47 @@
 const _initialHash = window.location.hash
 
 // ─── LOGGER ───────────────────────────────────────────────────────────────────
-// Structured console logging. All DB operations log [tag] before/after.
+// Structured console logging + user-visible error toasts.
 // Open DevTools → Console to trace any failure instantly.
 const log = {
   info:  (tag, msg, data) => console.log(`[${tag}]`, msg, data ?? ''),
   warn:  (tag, msg, data) => console.warn(`[${tag}]`, msg, data ?? ''),
-  error: (tag, msg, data) => console.error(`[${tag}] ❌`, msg, data ?? ''),
+  error: (tag, msg, data) => { console.error(`[${tag}] ❌`, msg, data ?? ''); showToast(`${tag}: ${msg}`, 'error') },
   ok:    (tag, msg, data) => console.log(`[${tag}] ✓`, msg, data ?? ''),
 }
+
+// ─── TOAST NOTIFICATIONS ──────────────────────────────────────────────────────
+// Surface DB errors and key events to the user — not just the console.
+function showToast(msg, type = 'error', duration = 4000) {
+  const existing = document.getElementById('app-toast')
+  if (existing) existing.remove()
+  const colours = { error: '#ef4444', success: '#10b981', info: 'var(--accent)', warn: '#f59e0b' }
+  const el = document.createElement('div')
+  el.id = 'app-toast'
+  el.textContent = msg
+  el.style.cssText = `position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9999;
+    background:${colours[type]||colours.info};color:#fff;padding:10px 20px;border-radius:10px;
+    font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.18);
+    max-width:90vw;text-align:center;pointer-events:none;
+    animation:toastIn .2s ease`
+  document.body.appendChild(el)
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300) }, duration)
+}
+
 // Supabase query wrapper — auto-logs all errors; warns on PGRST116 (no row found)
-async function dbq(label, query) {
+// Pass showUserError:false to suppress toast for expected "no row" scenarios.
+async function dbq(label, query, { showUserError = true } = {}) {
+  const t0 = performance.now()
   const { data, error } = await query
+  const ms = Math.round(performance.now() - t0)
   if (error) {
-    if (error.code === 'PGRST116') log.warn(label, 'no row found', { code: error.code })
-    else log.error(label, `${error.code ?? 'ERR'}: ${error.message}`, error)
+    if (error.code === 'PGRST116') log.warn(label, 'no row found', { code: error.code, ms })
+    else {
+      console.error(`[${label}] ❌ ${error.code ?? 'ERR'}: ${error.message}`, error)
+      if (showUserError) showToast(`Save failed — ${error.message}`, 'error')
+    }
+  } else {
+    log.info(label, `query OK (${ms}ms)`)
   }
   return { data, error }
 }
@@ -76,9 +103,13 @@ async function loadUserInfo() {
     const { data: clientRec } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
     if (clientRec) {
       window._masterAccount = true
+      const storedView = localStorage.getItem('_activeView')
+      if (storedView === 'client') {
+        currentProfile = { ...currentProfile, role: 'client' }
+      }
       document.getElementById('view-switcher').style.display = 'block'
       // mobile-view-switcher visibility is handled by CSS media query
-      updateViewSwitcherButtons('coach')
+      updateViewSwitcherButtons(storedView === 'client' ? 'client' : 'coach')
     }
   }
 }
@@ -110,6 +141,7 @@ function updateViewSwitcherButtons(activeView) {
 function switchView(view) {
   if (!window._masterAccount) return
   currentProfile = { ...currentProfile, role: view }
+  localStorage.setItem('_activeView', view)
   updateViewSwitcherButtons(view)
   applyRoleUI()
   navigate(view === 'client' ? 'client-dashboard' : 'dashboard')
@@ -201,13 +233,17 @@ function navigate(page) {
 
   const container = document.getElementById('main-content')
 
+  const _catch = (page, fn) => fn(container).catch(err => {
+    log.error('navigate', `render failed for ${page}`, err)
+    container.innerHTML = `<div class="loading-state">Something went wrong. <a href="#" onclick="navigate('${page}');return false" style="color:var(--accent)">Retry</a></div>`
+  })
   switch (page) {
-    case 'dashboard':        renderDashboard(container);       break
-    case 'client-dashboard': renderClientDashboard(container); break
-    case 'programs':         renderPrograms(container);        break
-    case 'clients':          renderClients(container);         break
-    case 'workouts':         renderWorkouts(container);        break
-    case 'calendar':         renderCalendar(container);        break
+    case 'dashboard':        _catch('dashboard',        renderDashboard);        break
+    case 'client-dashboard': _catch('client-dashboard', renderClientDashboard);  break
+    case 'programs':         _catch('programs',         renderPrograms);         break
+    case 'clients':          _catch('clients',          renderClients);          break
+    case 'workouts':         _catch('workouts',         renderWorkouts);         break
+    case 'calendar':         _catch('calendar',         renderCalendar);         break
     default: container.innerHTML = '<div class="loading-state">Page not found</div>'
   }
 }
@@ -447,7 +483,7 @@ async function renderClientDashboard(el) {
     { data: recentSessions },
     { data: checkIns },
   ] = await Promise.all([
-    db.from('goals').select('id, title, target_date, status, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
+    db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
     db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
@@ -548,9 +584,17 @@ async function renderClientDashboard(el) {
         ${!goals?.length ? `<p style="color:var(--text-muted);font-size:13px">No active goals yet.</p>` : goals.map(goal => {
           const milestones = (goal.goal_milestones || []).sort((a, b) => a.order - b.order)
           const done = milestones.filter(m => m.completed_at).length
-          const pct  = goal.target_value && goal.current_value
-            ? Math.min(100, Math.round(((goal.current_value - (goal.current_value > goal.target_value ? goal.target_value : goal.current_value)) / Math.abs(goal.target_value - goal.current_value || 1)) * 100))
-            : milestones.length ? Math.round((done / milestones.length) * 100) : 0
+          // Progress: use start→current→target range if all three exist, else milestone ratio
+          const pct = (() => {
+            const sv = parseFloat(goal.start_value), cv = parseFloat(goal.current_value), tv = parseFloat(goal.target_value)
+            if (!isNaN(sv) && !isNaN(cv) && !isNaN(tv) && sv !== tv) {
+              return Math.min(100, Math.max(0, Math.round(((cv - sv) / (tv - sv)) * 100)))
+            }
+            if (!isNaN(cv) && !isNaN(tv) && tv !== 0) {
+              return Math.min(100, Math.max(0, Math.round((cv / tv) * 100)))
+            }
+            return milestones.length ? Math.round((done / milestones.length) * 100) : 0
+          })()
           const daysLeft = goal.target_date ? daysUntil(goal.target_date) : null
           return `
           <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border)">
@@ -1802,7 +1846,7 @@ async function renderCalendar(el) {
   } else {
     const [evRes, clRes] = await Promise.all([
       db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
-      db.from('clients').select('id, full_name').order('full_name')
+      db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).order('full_name')
     ])
     events = evRes.data
     ;(clRes.data || []).forEach(c => { clientMap[c.id] = c.full_name })
@@ -1996,7 +2040,7 @@ function showAddEventModal(prefillDate = '') {
   document.body.appendChild(overlay)
 
   // Populate client dropdown
-  db.from('clients').select('id, full_name').order('full_name').then(({ data }) => {
+  db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).order('full_name').then(({ data }) => {
     const sel = document.getElementById('ae-client')
     if (!sel) return
     ;(data || []).forEach(c => {
@@ -4284,11 +4328,19 @@ async function saveRunnerSession() {
   const { data: clientRecord } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', _runner.clientId).single())
   const coachId = clientRecord?.coach_id || currentUser.id
 
+  const saveBtn = document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…' }
+
   const { data: sessionLog, error } = await db.from('workout_logs').insert({
     coach_id: coachId, client_id: _runner.clientId, name, date: _runner.date, notes
   }).select().single()
-  if (error) { log.error('saveRunnerSession', 'workout_logs insert failed', error); return }
+  if (error) {
+    log.error('saveRunnerSession', 'workout_logs insert failed', error)
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
+    return
+  }
 
+  let setsHadError = false
   for (let bi = 0; bi < exercises.length; bi++) {
     const ex = exercises[bi]
     const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
@@ -4297,28 +4349,35 @@ async function saveRunnerSession() {
     if (exErr) { log.error('saveRunnerSession', `exercise ${bi+1} insert failed`, exErr); return }
 
     const sets = ex.loggedSets.map((s, si) => {
-      const row = { workout_log_exercise_id: logEx.id, set_number: si+1, set_type: 'working' }
+      const row = { workout_log_exercise_id: logEx.id, set_number: si+1 }
       if (ex.type === 'cardio') {
         if (s.duration) row.duration_seconds = parseDuration(s.duration)
         if (s.distance) row.distance_m = Math.round(parseFloat(s.distance)*1000)
       } else {
         if (s.reps) row.reps_achieved = parseInt(s.reps)
-        if (s.weight) row.weight_kg = parseFloat(s.weight)
+        if (s.weight && s.weight !== 'BW') row.weight_kg = parseFloat(s.weight)
         if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
       }
       return row
-    }).filter(s => Object.keys(s).length > 3)
+    }).filter(s => Object.keys(s).length > 2)
 
     if (sets.length) {
       const { error: setsErr } = await db.from('workout_log_sets').insert(sets)
-      if (setsErr) log.error('saveRunnerSession', `sets insert failed for exercise ${bi+1}`, setsErr)
+      if (setsErr) { log.error('saveRunnerSession', `sets insert failed for exercise ${bi+1}`, setsErr); setsHadError = true }
     }
   }
-  log.ok('saveRunnerSession', 'session saved', { name, exercises: exercises.length })
+  if (setsHadError) {
+    showToast('Session saved — but some set data failed to save. Check the session log.', 'warn', 6000)
+    log.warn('saveRunnerSession', 'session saved with set errors', { name })
+  } else {
+    log.ok('saveRunnerSession', 'session saved', { name, exercises: exercises.length })
+    showToast('Workout saved!', 'success', 2500)
+  }
 
   const savedClientId = _runner.clientId
   discardRunner()
-  navigate('workouts')
+  // Return to the client's profile so the saved session is visible in their Workouts tab
+  openClient(savedClientId)
 }
 
 // ─── LOG SESSION ──────────────────────────────────────────────────────────────
@@ -4598,8 +4657,7 @@ async function saveWorkoutSession(clientId) {
     const setsToInsert = block.sets.map((s, si) => {
       const row = {
         workout_log_exercise_id: logEx.id,
-        set_number: si + 1,
-        set_type: 'working'
+        set_number: si + 1
       }
       if (block.type === 'cardio') {
         if (s.duration) row.duration_seconds = parseDuration(s.duration)
@@ -4615,7 +4673,7 @@ async function saveWorkoutSession(clientId) {
         if (s.rest) row.notes = (row.notes || '') + `rest:${s.rest}`
       }
       return row
-    }).filter(s => Object.keys(s).length > 3)
+    }).filter(s => Object.keys(s).length > 2)
 
     if (setsToInsert.length) {
       const { error: setsErr } = await db.from('workout_log_sets').insert(setsToInsert)
@@ -4625,6 +4683,7 @@ async function saveWorkoutSession(clientId) {
   }
 
   log.ok('saveWorkoutSession', 'session fully saved', { clientId, name })
+  showToast('Session saved ✓', 'success', 2000)
   closeModal('log-session-modal')
   window._logBlocks = []
   const tabContent = document.getElementById('tab-content')
@@ -5311,7 +5370,11 @@ async function saveWeightLog(clientId) {
   const bf     = document.getElementById('wl-bf')?.value
   const notes  = document.getElementById('wl-notes')?.value?.trim()
 
-  if (!date || !weight) return alert('Date and weight are required.')
+  if (!date || !weight) {
+    const errEl = document.getElementById('wl-error')
+    if (errEl) errEl.textContent = 'Date and weight are required.'
+    return
+  }
 
   log.info('saveWeightLog', 'inserting weight entry', { clientId, date, weight_kg: weight })
   const { error } = await db.from('weight_logs').insert({
@@ -5324,6 +5387,7 @@ async function saveWeightLog(clientId) {
 
   if (error) { log.error('saveWeightLog', 'insert failed', error); document.getElementById('wl-error') && (document.getElementById('wl-error').textContent = error.message); return }
   log.ok('saveWeightLog', 'weight entry saved', { clientId, date, weight_kg: weight })
+  showToast('Weight logged ✓', 'success', 2000)
   renderClientWeight(clientId, document.getElementById('tab-content'))
 }
 
