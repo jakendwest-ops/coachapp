@@ -67,7 +67,13 @@ async function showApp() {
   document.getElementById('app-shell').style.display   = 'flex'
   await loadUserInfo()
   applyRoleUI()
-  navigate(currentProfile?.role === 'client' ? 'client-dashboard' : 'dashboard')
+  const defaultPage = currentProfile?.role === 'client' ? 'client-dashboard' : 'dashboard'
+  const stored = localStorage.getItem('_activePage')
+  // Restore last page only if it's valid for the current role
+  const clientPages = ['client-dashboard', 'workouts', 'calendar']
+  const coachPages  = ['dashboard', 'clients', 'workouts', 'calendar', 'programs']
+  const validPages  = currentProfile?.role === 'client' ? clientPages : coachPages
+  navigate(stored && validPages.includes(stored) ? stored : defaultPage)
 }
 
 async function loadUserInfo() {
@@ -226,6 +232,7 @@ document.getElementById('sign-out-btn').addEventListener('click', async () => {
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
 function navigate(page) {
   currentPage = page
+  localStorage.setItem('_activePage', page)
 
   document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.page === page)
