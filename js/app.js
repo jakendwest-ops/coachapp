@@ -4257,52 +4257,148 @@ function addExtraStrengthSet() {
   renderRunner()
 }
 
-function showRunnerFinish() {
+async function showRunnerFinish() {
   clearInterval(_runner._timerInterval)
   const el = document.getElementById('workout-runner')
   if (!el) return
-  const totalSets = _runner.exercises.reduce((s,e) => s + e.loggedSets.length, 0)
-  const totalVol  = _runner.exercises.reduce((s,e) => s + e.loggedSets.reduce((sv,set) => {
-    const w = parseFloat(set.weight); const r = parseInt(set.reps,10)
+
+  // Snapshot runner state before any await
+  const clientId   = _runner.clientId
+  const runnerName = _runner.name
+  const startTime  = _runner.startTime
+  const exercises  = _runner.exercises
+
+  const duration  = fmtRunnerTime(startTime)
+  const doneExs   = exercises.filter(e => e.loggedSets.length)
+  const totalSets = doneExs.reduce((s,e) => s + e.loggedSets.length, 0)
+  const totalReps = doneExs.reduce((s,e) => s + e.loggedSets.reduce((sr,set) => sr + (parseInt(set.reps,10)||0), 0), 0)
+  const totalVol  = doneExs.reduce((s,e) => s + e.loggedSets.reduce((sv,set) => {
+    const w = parseFloat(set.weight), r = parseInt(set.reps,10)
     return sv + (isNaN(w)||isNaN(r) ? 0 : w * r)
   }, 0), 0)
-  const duration  = fmtRunnerTime(_runner.startTime)
+  const totalDist = doneExs.filter(e=>e.type==='cardio').reduce((s,e) => s + e.loggedSets.reduce((sd,set) => sd + (parseFloat(set.distance)||0), 0), 0)
 
-  el.innerHTML = `
-    <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
-      <div style="padding:20px 16px;border-bottom:1px solid var(--border)">
-        <h2 style="font-size:22px;font-weight:700;margin-bottom:12px">Workout complete 💪</h2>
-        <div style="display:flex;gap:12px">
-          ${totalVol > 0 ? `<div style="flex:1;background:var(--surface-2);border-radius:10px;padding:10px 12px;text-align:center"><div style="font-size:18px;font-weight:800;color:var(--accent)">${totalVol.toLocaleString()} kg</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">Total volume</div></div>` : ''}
-          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:10px 12px;text-align:center"><div style="font-size:18px;font-weight:800">${totalSets}</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">Sets</div></div>
-          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:10px 12px;text-align:center"><div style="font-size:18px;font-weight:800">${duration}</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">Duration</div></div>
+  // Show screen immediately while PR query runs
+  const renderScreen = (prevBests = {}) => {
+    const prCount = doneExs.filter(e => e.type !== 'cardio').filter(e => {
+      const best = Math.max(...e.loggedSets.map(s => parseFloat(s.weight)||0))
+      return best > 0 && best > (prevBests[e.name] || 0)
+    }).length
+
+    el.innerHTML = `
+      <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:20px 16px 16px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <h2 style="font-size:20px;font-weight:700;margin:0">Workout complete</h2>
+            ${prCount > 0 ? `<span style="background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px">🏆 ${prCount} PR${prCount>1?'s':''}</span>` : ''}
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(${totalVol>0&&totalDist>0?4:3},1fr);gap:8px">
+            <div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800">${duration}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Time</div>
+            </div>
+            <div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800">${totalSets}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Sets</div>
+            </div>
+            ${totalReps > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800">${totalReps.toLocaleString()}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Reps</div>
+            </div>` : ''}
+            ${totalVol > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800;color:var(--accent)">${totalVol>=1000?(totalVol/1000).toFixed(1)+'t':totalVol.toLocaleString()+'kg'}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Volume</div>
+            </div>` : ''}
+            ${totalDist > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800;color:var(--accent)">${totalDist.toFixed(1)} km</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Distance</div>
+            </div>` : ''}
+          </div>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;padding:16px">
+          ${doneExs.map(e => {
+            const isCardio = e.type === 'cardio'
+            const bestWeight = isCardio ? 0 : Math.max(...e.loggedSets.map(s => parseFloat(s.weight)||0))
+            const isPR = !isCardio && bestWeight > 0 && bestWeight > (prevBests[e.name] || 0)
+            const exVol = isCardio ? 0 : e.loggedSets.reduce((s,set) => {
+              const w = parseFloat(set.weight), r = parseInt(set.reps,10)
+              return s + (isNaN(w)||isNaN(r) ? 0 : w*r)
+            }, 0)
+            const exDist = isCardio ? e.loggedSets.reduce((s,set)=>s+(parseFloat(set.distance)||0),0) : 0
+            return `
+            <div style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
+                <span style="font-weight:600;font-size:14px">${e.name}</span>
+                <div style="display:flex;align-items:center;gap:6px">
+                  ${isPR ? `<span style="font-size:10px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.12);padding:2px 7px;border-radius:10px">🏆 PR</span>` : ''}
+                  <span style="font-size:12px;color:var(--text-muted)">${e.loggedSets.length} set${e.loggedSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+exVol.toLocaleString()+'kg':''} ${isCardio&&exDist>0?'· '+exDist.toFixed(1)+'km':''}</span>
+                </div>
+              </div>
+              ${e.loggedSets.map((s,i) => {
+                const w = parseFloat(s.weight), r = parseInt(s.reps,10)
+                const isSetPR = !isCardio && w > 0 && w === bestWeight && isPR
+                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);font-size:13px${isSetPR?' background:rgba(245,158,11,.06)':''}">
+                  <span style="color:var(--text-muted)">Set ${i+1}</span>
+                  <span style="font-weight:600${isSetPR?';color:#d97706':''}">
+                    ${isCardio
+                      ? [s.duration, s.distance ? s.distance+' km' : ''].filter(Boolean).join(' · ')
+                      : [s.weight&&s.weight!=='BW'?s.weight+' kg':s.weight==='BW'?'BW':'', s.reps?s.reps+' reps':''].filter(Boolean).join(' × ')
+                    }
+                    ${isSetPR ? ' 🏆' : ''}
+                  </span>
+                </div>`
+              }).join('')}
+            </div>`
+          }).join('')}
+
+          <div class="field" style="margin-top:4px">
+            <label class="field-label">Session name</label>
+            <input class="field-input" id="rf-name" value="${runnerName}">
+          </div>
+          <div class="field">
+            <label class="field-label">Notes</label>
+            <textarea class="field-input" id="rf-notes" rows="2" placeholder="How did it go?"></textarea>
+          </div>
+        </div>
+
+        <div style="padding:12px 16px 24px;border-top:1px solid var(--border);display:flex;gap:8px">
+          <button onclick="discardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:13px;font-weight:600;cursor:pointer;color:var(--danger)">Discard</button>
+          <button onclick="saveRunnerSession()" style="flex:1;height:48px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:700;cursor:pointer">Save workout</button>
         </div>
       </div>
-      <div style="flex:1;overflow-y:auto;padding:16px">
-        ${_runner.exercises.filter(e=>e.loggedSets.length).map(e=>`
-          <div style="margin-bottom:16px">
-            <div style="font-weight:600;font-size:15px;margin-bottom:6px">${e.name}</div>
-            ${e.loggedSets.map((s,i)=>`
-              <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
-                <span style="color:var(--text-muted)">Set ${i+1}</span>
-                <span style="font-weight:600">${e.type==='cardio' ? (s.duration||'') + (s.distance ? s.distance+' km' : '') : (s.weight?s.weight+' kg · ':'')+s.reps+' reps'}</span>
-              </div>`).join('')}
-          </div>`).join('')}
-        <div class="field" style="margin-top:8px">
-          <label class="field-label">Session name</label>
-          <input class="field-input" id="rf-name" value="${_runner.name}">
-        </div>
-        <div class="field">
-          <label class="field-label">Notes</label>
-          <textarea class="field-input" id="rf-notes" rows="2" placeholder="How did it go?"></textarea>
-        </div>
-      </div>
-      <div style="padding:12px 16px 24px;border-top:1px solid var(--border);display:flex;gap:8px">
-        <button onclick="discardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:13px;font-weight:600;cursor:pointer;color:var(--danger)">Discard</button>
-        <button onclick="saveRunnerSession()" style="flex:1;height:48px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:700;cursor:pointer">Save workout</button>
-      </div>
-    </div>
-  `
+    `
+  }
+
+  // Render immediately with no PR data, then re-render once PRs are fetched
+  renderScreen()
+
+  const strengthNames = doneExs.filter(e=>e.type!=='cardio').map(e=>e.name)
+  if (strengthNames.length && clientId) {
+    const { data: prevExs } = await dbq('showRunnerFinish:prevExercises',
+      db.from('workout_log_exercises')
+        .select('id, exercise_name, workout_logs!inner(client_id)')
+        .eq('workout_logs.client_id', clientId)
+        .in('exercise_name', strengthNames),
+      { showUserError: false }
+    )
+    if (prevExs?.length) {
+      const { data: prevSets } = await dbq('showRunnerFinish:prevSets',
+        db.from('workout_log_sets')
+          .select('workout_log_exercise_id, weight_kg')
+          .in('workout_log_exercise_id', prevExs.map(e=>e.id))
+          .not('weight_kg', 'is', null),
+        { showUserError: false }
+      )
+      const exMap = Object.fromEntries(prevExs.map(e=>[e.id, e.exercise_name]))
+      const prevBests = {}
+      prevSets?.forEach(s => {
+        const name = exMap[s.workout_log_exercise_id]
+        if (name) prevBests[name] = Math.max(prevBests[name]||0, s.weight_kg)
+      })
+      if (document.getElementById('workout-runner')) renderScreen(prevBests)
+    }
+  }
 }
 
 function confirmEndRunner() {
