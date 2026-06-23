@@ -47,6 +47,11 @@ async function dbq(label, query, { showUserError = true } = {}) {
   return { data, error }
 }
 
+// Clears a setInterval/setTimeout ID and returns null so the caller can zero the variable in one line:
+//   _runner._restInterval = clearTimer(_runner._restInterval)
+// Never use clearInterval() directly — the ID stays truthy and breaks if-guards.
+const clearTimer = id => { clearInterval(id); return null }
+
 const SUPABASE_URL = 'https://avilxuiacmtgeoxxhfhc.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2aWx4dWlhY210Z2VveHhoZmhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NjExNzcsImV4cCI6MjA5NzQzNzE3N30.SpVc5ZX_yf6gMrCJLxY9CxDki7PhBj2vbENha7tWBrc'
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -4040,7 +4045,7 @@ function startIntervalTimer(secs) {
 }
 
 function stopIntervalTimer() {
-  clearInterval(_runner._intervalInterval)
+  _runner._intervalInterval = clearTimer(_runner._intervalInterval)
   _runner._intervalRunning = false
   _runner._intervalRemaining = null
   document.getElementById('wr-interval-overlay')?.remove()
@@ -4090,15 +4095,14 @@ function renderIntervalTimer() {
 }
 
 function startRestTimer(secs) {
-  clearInterval(_runner._restInterval)
+  _runner._restInterval = clearTimer(_runner._restInterval)
   _runner.restRemaining = secs
   _runner.restTotal     = secs
   renderRestTimer()
   _runner._restInterval = setInterval(() => {
     _runner.restRemaining--
     if (_runner.restRemaining <= 0) {
-      clearInterval(_runner._restInterval)
-      _runner._restInterval = null
+      _runner._restInterval = clearTimer(_runner._restInterval)
       _runner.restRemaining = null
       playBeep(1046, 0.4, 0.5) // higher, longer beep on finish
       document.getElementById('rest-timer-overlay')?.remove()
@@ -4126,8 +4130,7 @@ function fmtRestCountdown(secs) {
 }
 
 function skipRestTimer() {
-  clearInterval(_runner._restInterval)
-  _runner._restInterval = null
+  _runner._restInterval = clearTimer(_runner._restInterval)
   _runner.restRemaining = null
   document.getElementById('rest-timer-overlay')?.remove()
   const cb = _runner._afterRest
@@ -4267,7 +4270,7 @@ function addExtraStrengthSet() {
 }
 
 async function showRunnerFinish() {
-  clearInterval(_runner._timerInterval)
+  _runner._timerInterval = clearTimer(_runner._timerInterval)
   const el = document.getElementById('workout-runner')
   if (!el) return
 
