@@ -1250,7 +1250,7 @@ async function deleteProgram(programId) {
   if (!confirm('Delete this program and all its phases?')) return
   log.info('deleteProgram', 'deleting', { programId })
   const { error } = await db.from('programs').delete().eq('id', programId)
-  if (error) { log.error('deleteProgram', 'failed', error); alert(error.message); return }
+  if (error) { log.error('deleteProgram', 'failed', error); return }
   log.ok('deleteProgram', 'deleted', { programId })
   navigate('programs')
 }
@@ -1311,7 +1311,7 @@ async function deletePhase(programId, phaseId) {
   if (!confirm('Remove this phase?')) return
   log.info('deletePhase', 'deleting', { phaseId })
   const { error } = await db.from('program_phases').delete().eq('id', phaseId)
-  if (error) { log.error('deletePhase', 'failed', error); alert(error.message); return }
+  if (error) { log.error('deletePhase', 'failed', error); return }
   log.ok('deletePhase', 'deleted', { phaseId })
   openProgram(programId)
 }
@@ -1357,7 +1357,7 @@ async function savePhaseWorkout() {
   const errEl      = document.getElementById('pwm-error')
   if (!templateId) { errEl.textContent = 'Pick a template'; return }
   const { error } = await db.from('program_phase_workouts').insert({ phase_id: phaseId, day_of_week: dayOfWeek, template_id: templateId, notes })
-  if (error) { errEl.textContent = error.message; return }
+  if (error) { log.error('savePhaseWorkout', 'insert failed', error); errEl.textContent = error.message; return }
   document.getElementById('phase-workout-modal').style.display = 'none'
   if (window._openProgramId) openProgram(window._openProgramId)
 }
@@ -1412,7 +1412,7 @@ async function saveClientCheckIn(clientId) {
   const errEl    = document.getElementById('ci-error')
   if ([sleep,energy,stress,soreness].some(isNaN)) { if(errEl) errEl.textContent = 'Please fill in all ratings'; return }
   const { error } = await db.from('client_check_ins').insert({ client_id: clientId, sleep, energy, stress, soreness, notes })
-  if (error) { if(errEl) errEl.textContent = error.message; return }
+  if (error) { log.error('saveClientCheckIn', 'insert failed', error); if(errEl) errEl.textContent = error.message; return }
   renderClientDashboard(document.getElementById('main-content'))
 }
 
@@ -2526,7 +2526,7 @@ async function toggleClientMilestone(milestoneId) {
   if (fetchErr) { log.error('toggleClientMilestone', 'fetch failed', fetchErr); return }
   const newVal = m.completed_at ? null : new Date().toISOString()
   const { error } = await db.from('goal_milestones').update({ completed_at: newVal }).eq('id', milestoneId)
-  if (error) { log.error('toggleClientMilestone', 'update failed', error); alert(error.message); return }
+  if (error) { log.error('toggleClientMilestone', 'update failed', error); return }
   renderClientDashboard(document.getElementById('main-content'))
 }
 
@@ -4789,7 +4789,7 @@ function backToClientWorkouts(clientId) {
 async function saveCoachNotes(logId) {
   const notes = document.getElementById('wl-coach-notes')?.value.trim() || null
   const { error } = await db.from('workout_logs').update({ notes }).eq('id', logId)
-  if (error) { alert('Failed to save notes: ' + error.message); return }
+  if (error) { log.error('saveCoachNotes', 'update failed', error); return }
   const saved = document.getElementById('wl-notes-saved')
   if (saved) { saved.style.display = 'inline'; setTimeout(() => saved.style.display = 'none', 2000) }
 }
@@ -5129,7 +5129,7 @@ async function savePerformanceLog(clientId) {
   const unit     = document.getElementById('pl-unit')?.value
   const notes    = document.getElementById('pl-notes')?.value?.trim()
 
-  if (!category || !date || !name || !value || !unit) return alert('Please fill in all required fields.')
+  if (!category || !date || !name || !value || !unit) { showToast('Please fill in all required fields.', 'warn', 3000); return }
 
   log.info('savePerformanceLog', 'inserting performance record', { clientId, category, name, value, unit })
   const { data: { user } } = await db.auth.getUser()
