@@ -3750,9 +3750,6 @@ function renderRunner() {
   const totalReps   = _runner.exercises.reduce((s,e) => s + e.loggedSets.reduce((r,set) => r+(parseInt(set.reps)||0), 0), 0)
   const totalVol    = _runner.exercises.reduce((s,e) => s + e.loggedSets.reduce((v,set) => v+((parseFloat(set.weight)||0)*(parseInt(set.reps)||0)), 0), 0)
 
-  // Pre-fill inputs on first render of each set (keep user edits otherwise)
-  if (_runner.weightInput === '' ) _runner.weightInput = String(lastSet?.weight ?? ex.targetWeight ?? '')
-  if (_runner.repsInput   === '' ) _runner.repsInput   = String(lastSet?.reps   ?? (ex.targetReps?.split('-')[0] ?? ''))
 
   let el = document.getElementById('workout-runner')
   if (!el) { el = document.createElement('div'); el.id = 'workout-runner'; document.body.appendChild(el) }
