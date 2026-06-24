@@ -2729,7 +2729,7 @@ function fmtRestInput(raw) {
   const digits = String(raw || '').replace(/\D/g, '').slice(-4)
   if (!digits) return ''
   if (digits.length <= 2) return '0:' + digits.padStart(2, '0')
-  return digits.slice(0, -2).replace(/^0+/, '') + ':' + digits.slice(-2)
+  return (digits.slice(0, -2).replace(/^0+/, '') || '0') + ':' + digits.slice(-2)
 }
 function fmtSet(s, type) {
   if (type === 'cardio') {
