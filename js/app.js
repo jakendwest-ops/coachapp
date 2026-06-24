@@ -2811,7 +2811,7 @@ async function renderClientWorkoutsPage(el) {
 
   const [{ data: templates }, { data: logs }] = await Promise.all([
     db.from('workout_templates').select('id, name, description, workout_template_exercises(id)').eq('coach_id', clientRecord.coach_id).order('name'),
-    db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(10)
+    db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20)
   ])
 
   el.innerHTML = `
@@ -2842,21 +2842,25 @@ async function renderClientWorkoutsPage(el) {
           </div>`).join('')}
       </div>`}
 
-    <div class="section-header" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Recent sessions</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Session history</div>
+      ${(logs?.length || 0) > 0 ? `<span style="font-size:12px;color:var(--text-muted)">${logs.length} logged</span>` : ''}
+    </div>
     ${!(logs?.length) ? `
       <div class="empty-state">
         <div class="empty-icon">📋</div>
         <div class="empty-title">No sessions yet</div>
         <div class="empty-text">Complete a workout to see your history here.</div>
       </div>` : `
-      <div class="list">
+      <div class="list" id="client-session-list">
         ${logs.map(l => `
           <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${l.id}','${clientId}')">
             <div style="width:36px;height:36px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">✓</div>
             <div class="row-info">
               <div class="row-name">${l.name || 'Workout'}</div>
-              <div class="row-meta">${new Date(l.date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
+              <div class="row-meta">${new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
             </div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
           </div>`).join('')}
       </div>`}
   `
