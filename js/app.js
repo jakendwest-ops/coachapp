@@ -405,31 +405,39 @@ async function renderDashboard(el) {
         <!-- Compliance -->
         <div class="card">
           <div class="card-header" style="padding:16px 20px 0">
-            <h2 class="section-title">This week's sessions</h2>
-            <p style="font-size:12px;color:var(--text-muted);margin-top:2px">Active clients — sessions logged last 7 days</p>
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div>
+                <h2 class="section-title">This week's sessions</h2>
+                ${complianceRows.length > 0 ? (() => {
+                  const atRisk = complianceRows.filter(c => c.sessions === 0).length
+                  const onTrack = complianceRows.filter(c => c.sessions >= 2).length
+                  const parts = []
+                  if (atRisk > 0) parts.push(`<span style="color:#ef4444;font-weight:700">${atRisk} at risk</span>`)
+                  if (onTrack > 0) parts.push(`<span style="color:#22c55e;font-weight:700">${onTrack} on track</span>`)
+                  return `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">${parts.join('<span style="color:var(--text-muted)"> · </span>')}</p>`
+                })() : ''}
+              </div>
+              <div style="display:flex;gap:4px" id="compliance-filter-btns">
+                ${['All','At risk','Active'].map((f,i) => `<button onclick="filterCompliance('${f}')" id="cf-${f.replace(' ','-')}" style="padding:3px 10px;border-radius:14px;border:1px solid var(--border);background:${i===0?'var(--accent)':'transparent'};color:${i===0?'#fff':'var(--text-muted)'};font-size:11px;font-weight:600;cursor:pointer">${f}</button>`).join('')}
+              </div>
+            </div>
           </div>
-          <div class="card-body" style="padding:12px 20px 16px">
+          <div class="card-body" style="padding:12px 20px 16px" id="compliance-rows">
             ${complianceRows.length === 0 ? `
               <p style="color:var(--text-muted);font-size:13px">No active clients.</p>
-            ` : (() => {
-              const visible = complianceRows.slice(0, 6)
-              const remaining = complianceRows.length - visible.length
-              return visible.map(c => {
-                const dot = c.sessions === 0 ? '#ef4444' : c.sessions === 1 ? '#f59e0b' : '#22c55e'
-                const label = c.sessions === 0 ? 'No sessions' : `${c.sessions} session${c.sessions !== 1 ? 's' : ''}`
-                return `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <div style="width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0"></div>
-                    <div style="font-size:13px;font-weight:500;cursor:pointer" onclick="openClient('${c.id}')">${c.full_name}</div>
-                  </div>
-                  <span style="font-size:11.5px;font-weight:600;color:${dot}">${label}</span>
-                </div>`
-              }).join('') + (remaining > 0 ? `
-                <div style="padding-top:10px;text-align:center">
-                  <a href="#" onclick="navigate('clients');return false" style="font-size:12px;color:var(--accent);font-weight:500">+ ${remaining} more clients →</a>
-                </div>` : '')
-            })()}
+            ` : complianceRows.map(c => {
+              const dot = c.sessions === 0 ? '#ef4444' : c.sessions === 1 ? '#f59e0b' : '#22c55e'
+              const label = c.sessions === 0 ? 'No sessions' : `${c.sessions} session${c.sessions !== 1 ? 's' : ''}`
+              const zone = c.sessions === 0 ? 'at-risk' : 'active'
+              return `
+              <div class="compliance-row" data-zone="${zone}" style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0"></div>
+                  <div style="font-size:13px;font-weight:500;cursor:pointer" onclick="openClient('${c.id}')">${c.full_name}</div>
+                </div>
+                <span style="font-size:11.5px;font-weight:600;color:${dot}">${label}</span>
+              </div>`
+            }).join('')}
           </div>
         </div>
 
@@ -457,6 +465,18 @@ async function renderDashboard(el) {
       </div>
     </div>
   `
+}
+
+function filterCompliance(filter) {
+  document.querySelectorAll('[id^="cf-"]').forEach(b => {
+    const active = b.id === `cf-${filter.replace(' ', '-')}`
+    b.style.background = active ? 'var(--accent)' : 'transparent'
+    b.style.color = active ? '#fff' : 'var(--text-muted)'
+  })
+  document.querySelectorAll('.compliance-row').forEach(row => {
+    const show = filter === 'All' || row.dataset.zone === filter.toLowerCase().replace(' ', '-')
+    row.style.display = show ? '' : 'none'
+  })
 }
 
 async function openClientByName(name) {
