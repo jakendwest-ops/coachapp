@@ -5420,7 +5420,10 @@ async function renderClientWeight(clientId, el) {
 
       <!-- Chart -->
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:20px">
-        <canvas id="weight-chart" height="100"></canvas>
+        <div style="display:flex;gap:6px;margin-bottom:14px">
+          ${['1M','3M','6M','All'].map(r => `<button onclick="weightChartRange('${r}')" id="wcr-${r}" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:${r==='3M'?'var(--accent)':'transparent'};color:${r==='3M'?'#fff':'var(--text-muted)'};font-size:12px;font-weight:600;cursor:pointer">${r}</button>`).join('')}
+        </div>
+        <canvas id="weight-chart" height="120"></canvas>
       </div>` : ''}
 
       <!-- Log table -->
@@ -5460,58 +5463,86 @@ async function renderClientWeight(clientId, el) {
 
   if (logs.length >= 2) {
     const chronological = [...logs].reverse()
-    const hasBf = chronological.some(l => l.body_fat_pct != null)
-    const datasets = [
-      {
-        label: 'Weight (kg)',
-        data: chronological.map(l => parseFloat(l.weight_kg)),
-        borderColor: '#6366f1',
-        backgroundColor: 'rgba(99,102,241,0.08)',
-        fill: true,
-        tension: 0.3,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        yAxisID: 'y'
-      }
-    ]
-    if (hasBf) datasets.push({
-      label: 'Body fat %',
-      data: chronological.map(l => l.body_fat_pct != null ? parseFloat(l.body_fat_pct) : null),
-      borderColor: '#f59e0b',
-      backgroundColor: 'transparent',
-      fill: false,
-      tension: 0.3,
-      pointRadius: 4,
-      pointHoverRadius: 6,
-      spanGaps: true,
-      yAxisID: 'y2'
+
+    const fmtLabel = dateStr => {
+      const d = new Date(dateStr + 'T00:00:00')
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    }
+
+    const rollingAvg = (arr, window = 7) => arr.map((_, i) => {
+      const slice = arr.slice(Math.max(0, i - window + 1), i + 1).filter(v => v != null)
+      return slice.length ? parseFloat((slice.reduce((a, b) => a + b, 0) / slice.length).toFixed(2)) : null
     })
 
-    new Chart(document.getElementById('weight-chart'), {
-      type: 'line',
-      data: { labels: chronological.map(l => l.date), datasets },
-      options: {
-        responsive: true,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { display: hasBf, labels: { font: { size: 12 }, color: '#6b7280' } },
-          tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y } }
+    window._weightAllLogs = chronological
+
+    const buildChart = (range) => {
+      const now = new Date()
+      const cutoff = range === 'All' ? null : new Date(now.getFullYear(), now.getMonth() - parseInt(range), now.getDate())
+      const filtered = cutoff ? chronological.filter(l => new Date(l.date + 'T00:00:00') >= cutoff) : chronological
+      if (filtered.length < 2) return
+
+      const weights = filtered.map(l => parseFloat(l.weight_kg))
+      const hasBf = filtered.some(l => l.body_fat_pct != null)
+      const avg = rollingAvg(weights)
+
+      const datasets = [
+        {
+          label: 'Weight (kg)',
+          data: weights,
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.07)',
+          fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 5, yAxisID: 'y'
         },
-        scales: {
-          x: { ticks: { color: '#9ca3af', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
-          y: {
-            position: 'left',
-            ticks: { color: '#6366f1', font: { size: 11 }, callback: v => v + ' kg' },
-            grid: { color: 'rgba(0,0,0,0.05)' }
-          },
-          ...(hasBf ? { y2: {
-            position: 'right',
-            ticks: { color: '#f59e0b', font: { size: 11 }, callback: v => v + '%' },
-            grid: { drawOnChartArea: false }
-          }} : {})
+        {
+          label: '7-day avg',
+          data: avg,
+          borderColor: '#6366f1',
+          borderWidth: 2,
+          borderDash: [4, 3],
+          backgroundColor: 'transparent',
+          fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 4, yAxisID: 'y'
         }
-      }
-    })
+      ]
+      if (hasBf) datasets.push({
+        label: 'Body fat %',
+        data: filtered.map(l => l.body_fat_pct != null ? parseFloat(l.body_fat_pct) : null),
+        borderColor: '#f59e0b', backgroundColor: 'transparent',
+        fill: false, tension: 0.3, pointRadius: 3, pointHoverRadius: 5, spanGaps: true, yAxisID: 'y2'
+      })
+
+      const existing = Chart.getChart('weight-chart')
+      if (existing) existing.destroy()
+
+      new Chart(document.getElementById('weight-chart'), {
+        type: 'line',
+        data: { labels: filtered.map(l => fmtLabel(l.date)), datasets },
+        options: {
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: true, labels: { font: { size: 11 }, color: '#6b7280', boxWidth: 20 } },
+            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + (ctx.dataset.yAxisID === 'y2' ? '%' : ' kg') } }
+          },
+          scales: {
+            x: { ticks: { color: '#9ca3af', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
+            y: { position: 'left', ticks: { color: '#6366f1', font: { size: 11 }, callback: v => v + ' kg' }, grid: { color: 'rgba(0,0,0,0.05)' } },
+            ...(hasBf ? { y2: { position: 'right', ticks: { color: '#f59e0b', font: { size: 11 }, callback: v => v + '%' }, grid: { drawOnChartArea: false } } } : {})
+          }
+        }
+      })
+    }
+
+    window.weightChartRange = (range) => {
+      document.querySelectorAll('[id^="wcr-"]').forEach(b => {
+        const active = b.id === `wcr-${range}`
+        b.style.background = active ? 'var(--accent)' : 'transparent'
+        b.style.color = active ? '#fff' : 'var(--text-muted)'
+      })
+      buildChart(range)
+    }
+
+    buildChart('3M')
   }
 }
 
