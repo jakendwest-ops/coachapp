@@ -1697,6 +1697,18 @@ async function renderClientOverview(id, el) {
     db.from('client_check_ins').select('*').eq('client_id', id).order('created_at', { ascending: false }).limit(4)
   ])
   const latestCI = checkIns?.[0]
+
+  function ciColour(val) {
+    return val <= 2 ? '#ef4444' : val >= 4 ? '#22c55e' : 'var(--accent)'
+  }
+
+  function ciTrend(metric) {
+    const vals = (checkIns || []).map(c => c[metric]).filter(v => v != null).reverse()
+    if (vals.length < 2) return ''
+    const bars = vals.map(v => `<div style="width:6px;border-radius:3px 3px 0 0;height:${(v/5)*28}px;background:${ciColour(v)};align-self:flex-end"></div>`).join('')
+    return `<div style="display:flex;gap:2px;align-items:flex-end;height:28px;margin-top:4px">${bars}</div>`
+  }
+
   const ciHtml = latestCI ? `
     <div class="card" style="margin-top:16px">
       <div class="card-body">
@@ -1705,13 +1717,26 @@ async function renderClientOverview(id, el) {
           <div style="font-size:11px;color:var(--text-muted)">${new Date(latestCI.created_at).toLocaleDateString('en-GB', { day:'numeric',month:'short' })}</div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
-          ${[['Sleep',latestCI.sleep],['Energy',latestCI.energy],['Stress',latestCI.stress],['Soreness',latestCI.soreness]].map(([label,val])=>`
+          ${[['Sleep','sleep'],['Energy','energy'],['Stress','stress'],['Soreness','soreness']].map(([label,key])=>`
           <div style="text-align:center;background:var(--surface-2);border-radius:8px;padding:8px">
-            <div style="font-size:20px;font-weight:800;color:${val<=2?'#ef4444':val>=4?'#22c55e':'var(--accent)'}">${val}/5</div>
+            <div style="font-size:20px;font-weight:800;color:${ciColour(latestCI[key])}">${latestCI[key]}/5</div>
             <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${label}</div>
+            ${ciTrend(key)}
           </div>`).join('')}
         </div>
         ${latestCI.notes ? `<p style="font-size:13px;color:var(--text-muted);margin:0;font-style:italic">"${latestCI.notes}"</p>` : ''}
+        ${(checkIns?.length || 0) > 1 ? `
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Previous check-ins</div>
+          ${checkIns.slice(1).map(ci => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
+            <span style="font-size:12px;color:var(--text-muted)">${new Date(ci.created_at).toLocaleDateString('en-GB', { day:'numeric',month:'short' })}</span>
+            <div style="display:flex;gap:8px">
+              ${[['S',ci.sleep],['E',ci.energy],['St',ci.stress],['So',ci.soreness]].map(([abbr,val])=>`
+              <span style="font-size:12px;font-weight:600;color:${ciColour(val)}">${abbr}:${val}</span>`).join('')}
+            </div>
+          </div>`).join('')}
+        </div>` : ''}
       </div>
     </div>` : ''
   el.innerHTML = clientOverviewTab(client) + ciHtml
