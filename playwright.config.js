@@ -12,6 +12,7 @@ module.exports = defineConfig({
     viewport: { width: 390, height: 844 },   // mobile-first
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
+    video: 'retain-on-failure',
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },

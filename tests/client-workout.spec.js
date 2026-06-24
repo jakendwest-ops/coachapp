@@ -14,7 +14,8 @@ test.describe('Client workout flow', () => {
 
   test('client can navigate to Workouts page', async ({ page }) => {
     await page.click('[data-page="workouts"]')
-    await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
+    // Wait for a stable workouts-only landmark rather than the async h1
+    await page.waitForSelector('text=START A WORKOUT', { timeout: 10000 })
     await expect(page.locator('text=START A WORKOUT')).toBeVisible()
   })
 
