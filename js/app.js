@@ -4819,7 +4819,7 @@ async function saveWorkoutSession(clientId) {
 }
 
 async function openWorkoutLog(logId, clientId) {
-  const el = document.getElementById('tab-content')
+  const el = document.getElementById('tab-content') || document.getElementById('main-content')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   // Fetch log + exercises. workout_log_sets lacks an FK to workout_log_exercises in the schema,
@@ -4843,13 +4843,45 @@ async function openWorkoutLog(logId, clientId) {
   const exercises = (session.workout_log_exercises || []).sort((a, b) => a.order_index - b.order_index)
   const dateStr = new Date(session.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
+  // Fetch previous session with same name for comparison
+  let prevSession = null
+  const { data: prevLog } = await db.from('workout_logs')
+    .select('id, date, workout_log_exercises(*)')
+    .eq('client_id', clientId).eq('name', session.name)
+    .lt('date', session.date).order('date', { ascending: false }).limit(1).single()
+  if (prevLog) {
+    const prevExIds = (prevLog.workout_log_exercises || []).map(e => e.id)
+    const { data: prevSets } = prevExIds.length
+      ? await db.from('workout_log_sets').select('*').in('workout_log_exercise_id', prevExIds)
+      : { data: [] }
+    prevSession = { ...prevLog, workout_log_exercises: (prevLog.workout_log_exercises || []).map(ex => ({ ...ex, workout_log_sets: (prevSets || []).filter(s => s.workout_log_exercise_id === ex.id) })) }
+  }
+
+  // Compute summary stats
+  const allSetsFlat = exercises.flatMap(ex => ex.workout_log_sets || [])
+  const totalSets   = allSetsFlat.length
+  const totalVol    = allSetsFlat.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
+  const prevSetsFlat = prevSession ? (prevSession.workout_log_exercises || []).flatMap(ex => ex.workout_log_sets || []) : []
+  const prevVol      = prevSetsFlat.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
+  const volDelta     = prevSession ? totalVol - prevVol : null
+
+  // Build a map of exercise name → prev sets for per-exercise comparison
+  const prevExMap = {}
+  if (prevSession) {
+    for (const ex of (prevSession.workout_log_exercises || [])) {
+      prevExMap[ex.exercise_name] = ex.workout_log_sets || []
+    }
+  }
+
+  const thStyle = `text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 12px 8px 0`
+
   el.innerHTML = `
     <a class="back-btn" href="#" onclick="backToClientWorkouts('${clientId}');return false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
       All sessions
     </a>
 
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:24px;flex-wrap:wrap">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       <div>
         <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${session.name}</h2>
         <p style="color:var(--text-muted)">${dateStr}</p>
@@ -4857,26 +4889,51 @@ async function openWorkoutLog(logId, clientId) {
       <button class="btn-danger" style="font-size:13px;padding:6px 12px" onclick="deleteWorkoutLog('${logId}','${clientId}')">Delete</button>
     </div>
 
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
+        <div style="font-size:17px;font-weight:700">${totalVol > 0 ? Math.round(totalVol).toLocaleString()+' kg' : '—'}</div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Volume</div>
+        ${volDelta !== null && totalVol > 0 ? `<div style="font-size:11px;font-weight:600;margin-top:3px;color:${volDelta >= 0 ? '#10b981' : '#ef4444'}">${volDelta >= 0 ? '+' : ''}${Math.round(volDelta).toLocaleString()} kg</div>` : ''}
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
+        <div style="font-size:17px;font-weight:700">${totalSets}</div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Sets</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
+        <div style="font-size:17px;font-weight:700">${exercises.length}</div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Exercises</div>
+      </div>
+    </div>
+
     ${exercises.length === 0 ? `<div class="empty-state"><div class="empty-text">No exercises recorded</div></div>` :
       exercises.map((ex, i) => {
         const sets = (ex.workout_log_sets || []).sort((a, b) => a.set_number - b.set_number)
         const isCardio = ex.exercise_type === 'cardio'
+        const hasRpe   = !isCardio && sets.some(s => s.effort_value != null)
+        const prevSets = prevExMap[ex.exercise_name] || []
+        const prevVol  = prevSets.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
+        const prevSummary = prevSets.length
+          ? (isCardio
+              ? `${prevSets.length} set${prevSets.length > 1 ? 's' : ''}`
+              : prevVol > 0 ? `${Math.round(prevVol).toLocaleString()} kg volume` : `${prevSets.length} set${prevSets.length > 1 ? 's' : ''}`)
+          : null
         return `
           <div class="card" style="margin-bottom:12px">
             <div class="card-body">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-                <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent)">${i+1}</div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0">${i+1}</div>
                 <span style="font-weight:600;font-size:15px">${ex.exercise_name}</span>
                 ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
               </div>
+              ${prevSummary ? `<div style="font-size:11px;color:var(--text-muted);margin-left:36px;margin-bottom:10px">Last time: ${prevSummary}</div>` : `<div style="margin-bottom:10px"></div>`}
               ${sets.length === 0 ? `<div style="color:var(--text-muted);font-size:13px">No sets recorded</div>` : `
                 <table style="width:100%;border-collapse:collapse">
                   <thead>
                     <tr style="border-bottom:1px solid var(--border)">
-                      <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 12px 8px 0">Set</th>
+                      <th style="${thStyle}">Set</th>
                       ${isCardio
-                        ? `<th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 12px 8px 0">Duration</th><th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 0 8px">Distance</th>`
-                        : `<th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 12px 8px 0">Reps</th><th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 12px 8px 0">Weight</th><th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 0 8px">RPE</th>`
+                        ? `<th style="${thStyle}">Duration</th><th style="${thStyle}">Distance</th>`
+                        : `<th style="${thStyle}">Reps</th><th style="${thStyle}">Weight</th>${hasRpe ? `<th style="${thStyle}">RPE</th>` : ''}`
                       }
                     </tr>
                   </thead>
@@ -4886,7 +4943,7 @@ async function openWorkoutLog(logId, clientId) {
                         <td style="padding:8px 12px 8px 0;font-size:13px;color:var(--text-muted);font-weight:600">Set ${s.set_number}</td>
                         ${isCardio
                           ? `<td style="padding:8px 12px 8px 0;font-size:13px">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.distance_m ? (s.distance_m/1000).toFixed(2)+' km' : '—'}</td>`
-                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${s.weight_kg ? s.weight_kg+' kg' : '—'}</td><td style="padding:8px 0;font-size:13px">${s.effort_value != null ? 'RPE '+s.effort_value : '—'}</td>`
+                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${s.weight_kg ? s.weight_kg+' kg' : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? 'RPE '+s.effort_value : '—'}</td>` : ''}`
                         }
                       </tr>
                     `).join('')}
@@ -4910,7 +4967,11 @@ async function openWorkoutLog(logId, clientId) {
 }
 
 function backToClientWorkouts(clientId) {
-  renderClientWorkouts(clientId, document.getElementById('tab-content'))
+  if (document.getElementById('tab-content')) {
+    renderClientWorkouts(clientId, document.getElementById('tab-content'))
+  } else {
+    navigate('workouts')
+  }
 }
 
 async function saveCoachNotes(logId) {
