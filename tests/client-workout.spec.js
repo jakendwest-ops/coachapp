@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test')
+const { test, expect } = require('./fixtures')
 const { loginAsClient } = require('./helpers')
 
 test.describe('Client workout flow', () => {
