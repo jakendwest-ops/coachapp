@@ -2804,7 +2804,7 @@ async function renderClientWorkoutsPage(el) {
       </div>` : `
       <div class="list">
         ${logs.map(l => `
-          <div class="list-row" style="cursor:default">
+          <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${l.id}','${clientId}')">
             <div style="width:36px;height:36px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">✓</div>
             <div class="row-info">
               <div class="row-name">${l.name || 'Workout'}</div>
@@ -4506,7 +4506,8 @@ async function saveRunnerSession() {
   }
 
   discardRunner()
-  openClient(clientId)
+  if (currentView === 'client') navigate('workouts')
+  else openClient(clientId)
 }
 
 // ─── LOG SESSION ──────────────────────────────────────────────────────────────
