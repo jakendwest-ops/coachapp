@@ -4178,7 +4178,7 @@ function renderRestTimer() {
         </svg>
         <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
       </div>
-      <div style="color:var(--text-muted);font-size:13px;margin-bottom:24px">${_runner._afterRest ? 'Next: ' + (_runner.exercises.find((e,i) => i > _runner.exIdx && e.name)?.name || 'Next exercise') : 'Next: Set ' + (_runner.exercises[_runner.exIdx].loggedSets.length + 1)}</div>
+      <div style="color:var(--text-muted);font-size:13px;margin-bottom:24px">${(() => { const curEx = _runner.exercises[_runner.exIdx]; const hitTarget = curEx.targetSets > 0 && curEx.loggedSets.length >= curEx.targetSets; const nextEx = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name); return hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (curEx.loggedSets.length + 1) })()} </div>
       <button onclick="skipRestTimer()" style="width:100%;padding:14px;border:none;border-radius:12px;background:var(--surface-2);font-size:15px;font-weight:700;cursor:pointer;color:var(--text)">Skip rest →</button>
     </div>
   `
