@@ -1478,14 +1478,27 @@ async function renderClients(el) {
   log.info('renderClients', 'fetching client list')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const { data: clients, error } = await db
-    .from('clients')
-    .select('*')
-    .eq('coach_id', currentUser.id)
-    .order('full_name')
+  const [{ data: clients, error }, { data: recentLogs }] = await Promise.all([
+    db.from('clients').select('*').eq('coach_id', currentUser.id).order('full_name'),
+    db.from('workout_logs').select('client_id, date').eq('coach_id', currentUser.id).order('date', { ascending: false }).limit(200)
+  ])
 
   if (error) { log.error('renderClients', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('renderClients', `loaded ${clients.length} clients`)
+
+  // Last session date per client
+  const lastSession = {}
+  ;(recentLogs || []).forEach(l => { if (!lastSession[l.client_id]) lastSession[l.client_id] = l.date })
+
+  function lastSessionLabel(clientId) {
+    const d = lastSession[clientId]
+    if (!d) return { text: 'No sessions', colour: 'var(--text-muted)' }
+    const days = Math.floor((Date.now() - new Date(d + 'T00:00:00')) / 86400000)
+    if (days === 0) return { text: 'Today', colour: '#22c55e' }
+    if (days === 1) return { text: 'Yesterday', colour: '#22c55e' }
+    if (days <= 7)  return { text: `${days}d ago`, colour: '#f59e0b' }
+    return { text: `${days}d ago`, colour: '#ef4444' }
+  }
 
   el.innerHTML = `
     <div class="page-header">
@@ -1500,19 +1513,22 @@ async function renderClients(el) {
           <div class="empty-text">Add your first client to start tracking their goals and workouts</div>
           <button class="btn-primary" onclick="showAddClientModal()">+ Add your first client</button>
         </div>
-      ` : clients.map(c => `
+      ` : clients.map(c => {
+        const { text: lastText, colour: lastColour } = lastSessionLabel(c.id)
+        return `
         <div class="list-row" onclick="openClient('${c.id}')">
           <div class="avatar">${c.full_name.charAt(0).toUpperCase()}</div>
           <div class="row-info">
             <div class="row-name">${c.full_name}</div>
-            <div class="row-meta">${c.email || 'No email added'}</div>
+            <div class="row-meta">${c.email || 'No email'}</div>
           </div>
-          <div class="row-right">
+          <div class="row-right" style="flex-direction:column;align-items:flex-end;gap:4px">
             <span class="badge badge-${c.status}">${c.status}</span>
-            <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            <span style="font-size:11px;font-weight:600;color:${lastColour}">${lastText}</span>
           </div>
-        </div>
-      `).join('')}
+          <svg style="width:15px;height:15px;color:#d1d5db;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>`
+      }).join('')}
     </div>
   `
 }
@@ -3687,7 +3703,7 @@ async function renderClientWorkouts(clientId, el) {
           <button class="btn-primary" onclick="showLogSessionModal('${clientId}')">+ Log first session</button>
         </div>
       ` : logs.map(l => {
-        const dateStr = new Date(l.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+        const dateStr = new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
         return `
           <div class="list-row" onclick="openWorkoutLog('${l.id}','${clientId}')">
             <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
