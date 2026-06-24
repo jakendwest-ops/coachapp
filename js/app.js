@@ -281,7 +281,6 @@ async function renderDashboard(el) {
   const [
     { count: clientCount },
     { count: goalCount },
-    { count: workoutCount },
     { data: recentWeights },
     { data: recentWorkouts },
     { data: activeClients },
@@ -289,7 +288,6 @@ async function renderDashboard(el) {
   ] = await Promise.all([
     db.from('clients').select('*', { count: 'exact', head: true }).eq('coach_id', currentUser.id),
     db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active').in('client_id', (await db.from('clients').select('id').eq('coach_id', currentUser.id)).data?.map(c=>c.id)||[]),
-    db.from('workout_logs').select('*', { count: 'exact', head: true }).eq('coach_id', currentUser.id),
     db.from('weight_logs').select('client_id, created_at, weight_kg').gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30),
     db.from('workout_logs').select('client_id, date, created_at').gte('date', todayStr.slice(0,7) + '-01').order('date', { ascending: false }).limit(100),
     db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).eq('status', 'active').order('full_name'),
@@ -321,6 +319,8 @@ async function renderDashboard(el) {
   const complianceRows = (activeClients || [])
     .map(c => ({ ...c, sessions: sessionCounts[c.id] || 0 }))
     .sort((a, b) => a.sessions - b.sessions) // fewest first
+
+  const sessionsThisWeekTotal = (recentWorkouts || []).filter(w => w.date >= weekAgoStr).length
 
   const firstName = currentProfile?.full_name?.split(' ')[0] || 'Coach'
   const today     = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -365,8 +365,8 @@ async function renderDashboard(el) {
         <div class="stat-label">Active goals</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">${workoutCount ?? 0}</div>
-        <div class="stat-label">Sessions logged</div>
+        <div class="stat-value">${sessionsThisWeekTotal}</div>
+        <div class="stat-label">Sessions this week</div>
       </div>
     </div>
 
@@ -787,12 +787,13 @@ async function renderClientDashboard(el) {
             const dateStr = new Date(s.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
             const exCount = s.workout_log_exercises?.length || 0
             return `
-            <div class="list-row" style="cursor:default">
+            <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${s.id}','${clientId}')">
               <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
               <div class="row-info">
                 <div class="row-name">${s.name}</div>
                 <div class="row-meta">${dateStr} · ${exCount} exercise${exCount !== 1 ? 's' : ''}</div>
               </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
             </div>`
           }).join('')}
         </div>`}
