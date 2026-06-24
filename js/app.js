@@ -256,6 +256,7 @@ function navigate(page) {
     case 'clients':          _catch('clients',          renderClients);          break
     case 'workouts':         _catch('workouts',         renderWorkouts);         break
     case 'calendar':         _catch('calendar',         renderCalendar);         break
+    case 'settings':         _catch('settings',         renderSettings);         break
     default: container.innerHTML = '<div class="loading-state">Page not found</div>'
   }
 }
@@ -3746,7 +3747,7 @@ function launchRunner(clientId) {
 
   document.getElementById('runner-setup')?.remove()
 
-  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, weightInput: '', repsInput: '', activeField: 'weight' }
+  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null }
   renderRunner()
   _runner._timerInterval = setInterval(() => {
     if (!_runner) return
@@ -4204,33 +4205,6 @@ function renderRestTimer() {
   document.body.appendChild(overlay)
 }
 
-function wrKp(key) {
-  const f = _runner.activeField
-  let v = _runner[f + 'Input'] || ''
-  if (key === '⌫') {
-    v = v.slice(0, -1)
-  } else if (key === '.') {
-    if (f === 'reps') return
-    if (!v.includes('.')) v += (v === '' ? '0.' : '.')
-  } else {
-    v = (v === '0' ? key : v + key)
-  }
-  _runner[f + 'Input'] = v
-  const el = document.getElementById('wr-' + f + '-display')
-  if (el) el.textContent = v || '—'
-}
-
-function wrSetField(field) {
-  _runner.activeField = field
-  const wb = document.getElementById('wr-weight-box')
-  const rb = document.getElementById('wr-reps-box')
-  if (wb) wb.style.borderColor = field === 'weight' ? 'var(--accent)' : 'var(--border)'
-  if (rb) rb.style.borderColor = field === 'reps'   ? 'var(--accent)' : 'var(--border)'
-}
-
-function wrSwitchField() {
-  wrSetField(_runner.activeField === 'weight' ? 'reps' : 'weight')
-}
 
 function editRunnerSet(exIdx, setIdx) {
   const s = _runner.exercises[exIdx].loggedSets[setIdx]
@@ -4283,9 +4257,6 @@ function runnerGoBack() {
   skipRestTimer()
   if (_runner.exIdx > 0) {
     _runner.exIdx--
-    _runner.weightInput = ''
-    _runner.repsInput = ''
-    _runner.activeField = 'weight'
     renderRunner()
   }
 }
@@ -4300,9 +4271,6 @@ function addExtraCardioSet() {
 function addExtraStrengthSet() {
   const ex = _runner.exercises[_runner.exIdx]
   ex.targetSets = (ex.targetSets || 0) + 1
-  _runner.repsInput = ''
-  _runner.weightInput = ''
-  _runner.activeField = ex.bodyweight ? 'reps' : 'weight'
   renderRunner()
 }
 
@@ -5711,3 +5679,126 @@ db.auth.onAuthStateChange((event, session) => {
     showAuth()
   }
 })
+
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+
+async function renderSettings(el) {
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  const { data: profile } = await db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single()
+
+  const memberSince = profile?.created_at
+    ? new Date(profile.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : '—'
+
+  el.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Settings</h1>
+        <p class="page-subtitle">Manage your account</p>
+      </div>
+    </div>
+
+    <div style="max-width:560px;display:flex;flex-direction:column;gap:16px">
+
+      <!-- Profile -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Profile</h2>
+        </div>
+        <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
+          <div class="field">
+            <label class="field-label">Full name</label>
+            <input class="field-input" type="text" id="settings-name" value="${profile?.full_name || ''}" placeholder="Your name">
+          </div>
+          <div class="field">
+            <label class="field-label">Email</label>
+            <input class="field-input" type="email" value="${currentUser.email || ''}" disabled style="opacity:.6;cursor:default">
+          </div>
+          <div>
+            <button class="btn-primary" style="font-size:14px" onclick="saveSettingsProfile()">Save changes</button>
+            <span id="settings-profile-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Password -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Change password</h2>
+        </div>
+        <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
+          <div class="field">
+            <label class="field-label">New password</label>
+            <input class="field-input" type="password" id="settings-pw" placeholder="Min. 6 characters" minlength="6">
+          </div>
+          <div class="field">
+            <label class="field-label">Confirm password</label>
+            <input class="field-input" type="password" id="settings-pw2" placeholder="Repeat password">
+          </div>
+          <div>
+            <button class="btn-primary" style="font-size:14px" onclick="saveSettingsPassword()">Update password</button>
+            <span id="settings-pw-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Account info -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Account</h2>
+        </div>
+        <div class="card-body" style="padding:12px 20px 16px">
+          <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">
+            <span style="font-size:13px;color:var(--text-muted)">Role</span>
+            <span style="font-size:13px;font-weight:600;text-transform:capitalize">${profile?.role || '—'}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:7px 0">
+            <span style="font-size:13px;color:var(--text-muted)">Member since</span>
+            <span style="font-size:13px;font-weight:600">${memberSince}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sign out -->
+      <div class="card">
+        <div class="card-body" style="padding:16px 20px">
+          <button onclick="db.auth.signOut().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Sign out</button>
+        </div>
+      </div>
+
+    </div>
+  `
+}
+
+async function saveSettingsProfile() {
+  const name = document.getElementById('settings-name')?.value.trim()
+  const msg  = document.getElementById('settings-profile-msg')
+  if (!name) { if (msg) msg.textContent = 'Name cannot be empty.'; return }
+
+  const { error } = await db.from('profiles').update({ full_name: name }).eq('id', currentUser.id)
+  if (error) {
+    log.error('saveSettingsProfile', 'update failed', error)
+    if (msg) msg.textContent = 'Save failed. Try again.'
+    return
+  }
+  if (currentProfile) currentProfile.full_name = name
+  document.getElementById('user-name').textContent = name
+  if (msg) { msg.style.color = '#22c55e'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
+}
+
+async function saveSettingsPassword() {
+  const pw  = document.getElementById('settings-pw')?.value
+  const pw2 = document.getElementById('settings-pw2')?.value
+  const msg = document.getElementById('settings-pw-msg')
+  if (!pw || pw.length < 6) { if (msg) msg.textContent = 'Min. 6 characters.'; return }
+  if (pw !== pw2) { if (msg) msg.textContent = 'Passwords do not match.'; return }
+
+  const { error } = await db.auth.updateUser({ password: pw })
+  if (error) {
+    log.error('saveSettingsPassword', 'update failed', error)
+    if (msg) msg.textContent = 'Update failed. Try again.'
+    return
+  }
+  if (msg) { msg.style.color = '#22c55e'; msg.textContent = 'Password updated ✓'; setTimeout(() => { if (msg) { msg.textContent = ''; document.getElementById('settings-pw').value = ''; document.getElementById('settings-pw2').value = '' } }, 3000) }
+}
