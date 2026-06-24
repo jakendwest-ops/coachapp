@@ -370,7 +370,7 @@ async function renderDashboard(el) {
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:8px">
 
       <!-- Recent activity -->
       <div class="card">
