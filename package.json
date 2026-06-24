@@ -1,0 +1,19 @@
+{
+  "name": "coachapp",
+  "version": "1.0.0",
+  "description": "CoachApp — PT client management and workout tracking",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jakendwest-ops/coachapp.git"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "dotenv": "^17.4.2"
+  }
+}
