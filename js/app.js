@@ -3768,11 +3768,12 @@ function renderRunner() {
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">
               Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}
             </div>
-            <div style="font-size:18px;font-weight:700;color:var(--text);line-height:1.25;word-break:break-word">${ex.name||'Exercise name'}</div>
+            <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${ex.name||'Exercise name'}</div>
             ${ex.targetReps||ex.targetWeight ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ex.targetSets?ex.targetSets+' sets · ':''} ${ex.targetReps?ex.targetReps+' reps':''} ${ex.targetWeight?'@ '+ex.targetWeight+'kg':''}</div>` : ''}
           </div>
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
         </div>
+        ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div style="flex:1;height:4px;border-radius:2px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'}"></div>`).join('')}</div>` : ''}
       </div>
 
       <!-- Logged sets list -->
@@ -3863,7 +3864,7 @@ function renderRunner() {
           <!-- Buttons -->
           <div style="display:flex;gap:8px;margin-bottom:6px">
             ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
-            ${!distBased && tgt.duration ? `<button onclick="event.stopPropagation();startIntervalTimer(${parseRest(tgt.duration)||300})" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--surface-2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
+            ${!distBased ? `<button onclick="event.stopPropagation();startCardioTimer()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--surface-2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
             <button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
           </div>
           <button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>`
@@ -3964,8 +3965,13 @@ function logRunnerSet() {
     }
   }
   renderRunner()
-  // Start rest timer
   const restSecs = ex.restSecs || 90
+  if (ex.type === 'cardio') {
+    const nextTgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+    if (!nextTgt.isDistanceBased) {
+      _runner._afterRest = () => startIntervalTimer(parseRest(nextTgt.duration) || 300)
+    }
+  }
   startRestTimer(restSecs)
 }
 
@@ -3992,6 +3998,14 @@ function playBeep(freq = 880, duration = 0.1, volume = 0.5) {
     a.play().catch(() => {})
     a.onended = () => URL.revokeObjectURL(url)
   } catch(e) {}
+}
+
+function startCardioTimer() {
+  const ex = _runner.exercises[_runner.exIdx]
+  const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+  const durEl = document.getElementById('wr-cardio-dur')
+  const secs = (durEl?.value?.trim() ? parseRest(durEl.value.trim()) : 0) || parseRest(tgt.duration) || 300
+  startIntervalTimer(secs)
 }
 
 function startIntervalTimer(secs) {
@@ -4025,6 +4039,10 @@ function startIntervalTimer(secs) {
           _runner._afterRest = () => showRunnerFinish()
         }
       } else {
+        const nextTgt2 = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+        if (!nextTgt2.isDistanceBased) {
+          _runner._afterRest = () => startIntervalTimer(parseRest(nextTgt2.duration) || 300)
+        }
         startRestTimer(restSecs)
       }
       return
