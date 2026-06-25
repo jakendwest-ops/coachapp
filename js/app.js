@@ -1250,6 +1250,7 @@ async function openProgram(programId) {
           <select class="field-input" id="pwm-template">
             ${(window._programTemplates||[]).map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}
           </select>
+          <button type="button" onclick="createWorkoutFromPhaseModal()" style="background:none;border:none;color:var(--primary);font-size:13px;cursor:pointer;padding:4px 0;margin-top:4px">+ Create new workout</button>
         </div>
         <div class="field">
           <label class="field-label">Notes <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
@@ -1437,11 +1438,19 @@ async function loadAllPhaseWorkouts(phases) {
 function showAddPhaseWorkout(phaseId, programId) {
   const modal = document.getElementById('phase-workout-modal')
   if (!modal) return
+  window._phaseWorkoutContext = null
   document.getElementById('pwm-phase-id').value = phaseId
-  // Rebuild template options in case they changed
   const sel = document.getElementById('pwm-template')
   sel.innerHTML = (window._programTemplates||[]).map(t=>`<option value="${t.id}">${t.name}</option>`).join('')
   modal.style.display = 'flex'
+}
+
+function createWorkoutFromPhaseModal() {
+  const phaseId   = document.getElementById('pwm-phase-id').value
+  const dayOfWeek = document.getElementById('pwm-day').value
+  window._phaseWorkoutContext = { phaseId, dayOfWeek }
+  document.getElementById('phase-workout-modal').style.display = 'none'
+  showCreateTemplateModal()
 }
 
 async function savePhaseWorkout() {
@@ -3242,6 +3251,13 @@ async function saveNewTemplate() {
   if (error) { log.error('saveNewTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
   log.ok('saveNewTemplate', 'template created', { id: data.id, name })
   closeModal('create-template-modal')
+
+  if (window._phaseWorkoutContext) {
+    window._phaseWorkoutContext = null
+    openTemplate(data.id)
+    return
+  }
+
   openTemplate(data.id)
 }
 
@@ -3310,12 +3326,18 @@ async function openTemplate(id) {
                   const rows = ex.sets_json.map((s, si) => {
                     let parts
                     if (isCardio) {
-                      const paceStr = (s.pace500Min && s.pace500Max) ? `${s.pace500Min}–${s.pace500Max}/500m` : (s.pace500Min || s.pace500Max || null)
-                      const restStr = s.restMin ? (s.restMin === s.restMax || !s.restMax ? s.restMin+' rest' : s.restMin+'–'+s.restMax+' rest') : null
-                      const hrStr = (s.hrZoneMin || s.hrZoneMax) ? `HR ${s.hrZoneMin||'?'}–${s.hrZoneMax||'?'}` : null
+                      const fmtRV = v => { if (!v || v === '0:00') return null; if (typeof v === 'number') return fmtDuration(v); return String(v) }
+                      const paceStr    = (s.pace500Min || s.pace500Max) ? `${s.pace500Min||'?'}–${s.pace500Max||'?'}/500m` : null
+                      const paceKmStr  = (s.paceKmMin  || s.paceKmMax)  ? `${s.paceKmMin||'?'}–${s.paceKmMax||'?'}/km`   : null
+                      const strokeStr  = (s.strokeRateMin || s.strokeRateMax) ? `${s.strokeRateMin||'?'}–${s.strokeRateMax||'?'} spm` : null
+                      const rMin = fmtRV(s.restMin), rMax = fmtRV(s.restMax)
+                      const restStr    = rMin ? (rMin === rMax || !rMax ? rMin+' rest' : rMin+'–'+rMax+' rest') : null
+                      const hrStr      = (s.hrZoneMin || s.hrZoneMax) ? `HR ${s.hrZoneMin||'?'}–${s.hrZoneMax||'?'}` : null
+                      const restHrStr  = s.restHrMax ? `rest HR <${s.restHrMax}` : null
+                      const durStr     = s.duration ? fmtDuration(parseInt(s.duration)||0) : null
                       parts = s.isDistanceBased
-                        ? [s.distance ? s.distance+' km' : null, paceStr, restStr, hrStr]
-                        : [s.duration || null, paceStr, restStr, hrStr]
+                        ? [s.distance ? s.distance+' km' : null, paceStr||paceKmStr, strokeStr, restStr, hrStr, restHrStr]
+                        : [durStr, paceStr||paceKmStr, strokeStr, restStr, hrStr, restHrStr]
                     } else {
                       parts = [s.reps || null, s.weight ? s.weight+'kg' : null, s.rest ? s.rest+'s rest' : null, s.rpe ? 'RPE '+s.rpe : null]
                     }
@@ -3324,7 +3346,12 @@ async function openTemplate(id) {
                   }).filter(Boolean)
                   return rows.length ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:4px">${rows.join('')}</div>` : `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${meta}</div>`
                 })() : `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${meta}</div>`}
-                ${ex.notes ? `<div style="font-size:11.5px;color:var(--accent);margin-top:3px;font-style:italic">${ex.notes}</div>` : ''}
+                ${(() => {
+                  if (!ex.notes) return ''
+                  const m = ex.notes.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
+                  if (m) return `<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:4px;background:rgba(99,102,241,.1);color:var(--accent);display:inline-block">${m[1]}</span>${m[2] ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:1px;font-style:italic">${m[2]}</div>` : ''}</div>`
+                  return `<div style="font-size:11.5px;color:var(--accent);margin-top:3px;font-style:italic">${ex.notes}</div>`
+                })()}
               </div>
               <button class="btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
             </div>
@@ -3401,11 +3428,16 @@ function flushTemplateSets(containerId) {
     s.countdown    = document.getElementById(`ts-cd-${i}`)?.value       ?? s.countdown
     s.duration     = document.getElementById(`ts-duration-${i}`)?.value ?? s.duration
     s.distance     = document.getElementById(`ts-distance-${i}`)?.value ?? s.distance
-    s.pace500Min   = document.getElementById(`ts-p500min-${i}`)?.value  ?? s.pace500Min
-    s.pace500Max   = document.getElementById(`ts-p500max-${i}`)?.value  ?? s.pace500Max
-    s.hrZoneMin    = document.getElementById(`ts-hrzmin-${i}`)?.value   ?? s.hrZoneMin
-    s.hrZoneMax    = document.getElementById(`ts-hrzmax-${i}`)?.value   ?? s.hrZoneMax
-    s.assistWeight = document.getElementById(`ts-assist-${i}`)?.value   ?? s.assistWeight
+    s.pace500Min    = document.getElementById(`ts-p500min-${i}`)?.value   ?? s.pace500Min
+    s.pace500Max    = document.getElementById(`ts-p500max-${i}`)?.value   ?? s.pace500Max
+    s.hrZoneMin     = document.getElementById(`ts-hrzmin-${i}`)?.value    ?? s.hrZoneMin
+    s.hrZoneMax     = document.getElementById(`ts-hrzmax-${i}`)?.value    ?? s.hrZoneMax
+    s.paceKmMin     = document.getElementById(`ts-pkmmin-${i}`)?.value    ?? s.paceKmMin
+    s.paceKmMax     = document.getElementById(`ts-pkmmax-${i}`)?.value    ?? s.paceKmMax
+    s.restHrMax     = document.getElementById(`ts-resthr-${i}`)?.value    ?? s.restHrMax
+    s.strokeRateMin = document.getElementById(`ts-srmin-${i}`)?.value     ?? s.strokeRateMin
+    s.strokeRateMax = document.getElementById(`ts-srmax-${i}`)?.value     ?? s.strokeRateMax
+    s.assistWeight  = document.getElementById(`ts-assist-${i}`)?.value    ?? s.assistWeight
   })
 }
 
@@ -3467,6 +3499,9 @@ function renderTemplateSets(containerId, type) {
         ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:13px;font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
         ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
         ${row('HR Zone (BPM)', mini(`ts-hrzmin-${i}`,'type="number" placeholder="—"'+(s.hrZoneMin?` value="${s.hrZoneMin}"`:'')) + dash + mini(`ts-hrzmax-${i}`,'type="number" placeholder="—"'+(s.hrZoneMax?` value="${s.hrZoneMax}"`:'')))}
+        ${row('Pace / km', mini(`ts-pkmmin-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMin||'0:00'}"`) + dash + mini(`ts-pkmmax-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMax||'0:00'}"`))}
+        ${row('Rest HR max (BPM)', mini(`ts-resthr-${i}`, 'type="number" placeholder="e.g. 150"'+(s.restHrMax ? ` value="${s.restHrMax}"` : '')))}
+        ${row('Stroke rate (spm)', mini(`ts-srmin-${i}`, 'type="number" placeholder="—"'+(s.strokeRateMin?` value="${s.strokeRateMin}"`:'')) + dash + mini(`ts-srmax-${i}`, 'type="number" placeholder="—"'+(s.strokeRateMax?` value="${s.strokeRateMax}"`:'')))}
       ` : `
         ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
         ${s.bodyweight ? '' : row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
@@ -3854,7 +3889,7 @@ function launchRunner(clientId) {
 
   document.getElementById('runner-setup')?.remove()
 
-  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null }
+  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null }
   renderRunner()
   _runner._timerInterval = setInterval(() => {
     if (!_runner) return
@@ -3903,6 +3938,7 @@ function renderRunner() {
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
         </div>
         ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${e.name||'Exercise '+(i+1)}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
+        ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:8px;font-size:11.5px;color:var(--text-muted);line-height:1.5">${_runner.templateDesc}</div>` : ''}
       </div>
 
       <!-- Logged sets list -->
@@ -3965,10 +4001,13 @@ function renderRunner() {
           <!-- Cardio targets -->
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
             ${distBased && tgt.distance ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${tgt.distance} km</span>` : ''}
-            ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${tgt.duration}</span>` : ''}
+            ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${typeof tgt.duration === 'number' ? fmtDuration(tgt.duration) : tgt.duration}</span>` : ''}
             ${tgt.pace500Min ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.pace500Min}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+tgt.pace500Max:''} /500m</span>` : ''}
+            ${tgt.paceKmMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.paceKmMin}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+tgt.paceKmMax:''} /km</span>` : ''}
             ${tgt.hrZoneMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${tgt.hrZoneMin}${tgt.hrZoneMax?'–'+tgt.hrZoneMax:''} bpm</span>` : ''}
-            ${tgt.restMin && tgt.restMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${tgt.restMin}</span>` : ''}
+            ${tgt.restMin && tgt.restMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof tgt.restMin === 'number' ? fmtDuration(tgt.restMin) : tgt.restMin}</span>` : ''}
+            ${tgt.strokeRateMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">${tgt.strokeRateMin}${tgt.strokeRateMax?'–'+tgt.strokeRateMax:''} spm</span>` : ''}
+            ${tgt.restHrMax ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest HR &lt;${tgt.restHrMax}</span>` : ''}
           </div>
           <!-- Set label -->
           <div style="text-align:center;font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Set ${setNum}</div>
