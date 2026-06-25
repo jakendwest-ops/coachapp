@@ -1516,7 +1516,6 @@ async function savePhaseWorkout() {
   const errEl        = document.getElementById('pwm-error')
   if (!templateId) { errEl.textContent = 'Pick a template'; return }
   const dayLabels = ['','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
-  const sessionOrder = parseInt(document.getElementById('pwm-session-order')?.value || '1')
 
   // Validation: prevent duplicate session_order on same day
   const { data: existing } = await db.from('program_phase_workouts').select('id, session_order, workout_templates(name)').eq('phase_id', phaseId).eq('day_of_week', dayOfWeek).eq('session_order', sessionOrder)
