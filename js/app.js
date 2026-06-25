@@ -4185,19 +4185,20 @@ function renderRunner() {
         <!-- Strength input -->
         ${(() => {
           const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
-          const chips = []
+          const cols = []
           const repsStr = tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
-          if (repsStr) chips.push(['reps', repsStr+' reps'])
-          if (tgt.weight) chips.push(['weight', tgt.weight+' kg'])
-          if (tgt.intensityMin) chips.push(['pct', tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'% 1RM'])
-          const effortStr = tgt.effortMin ? ((tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:'')) : null
-          if (effortStr) chips.push(['effort', effortStr])
-          const restStr = tgt.restMin && tgt.restMin !== '0:00' ? tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:'')+' rest' : null
-          if (restStr) chips.push(['rest', restStr])
-          if (tgt.tempo) chips.push(['tempo', tgt.tempo])
-          if (!chips.length) return ''
-          return `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">${chips.map(([k,v]) =>
-            `<span style="font-size:12px;padding:3px 9px;border-radius:20px;background:${k==='reps'||k==='weight'?'var(--accent)':'var(--surface-2)'};color:${k==='reps'||k==='weight'?'#fff':'var(--text-muted)'};font-weight:600">${v}</span>`
+          if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
+          if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
+          if (tgt.intensityMin) cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
+          if (tgt.effortMin) cols.push({ val: (tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
+          if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
+          if (tgt.tempo) cols.push({ val: tgt.tempo, label: 'TEMPO' })
+          if (!cols.length) return ''
+          return `<div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:10px">${cols.map((c, i) =>
+            `<div style="flex:1;text-align:center;padding:8px 4px${i < cols.length-1 ? ';border-right:1px solid var(--border)' : ''}">
+              <div style="font-size:18px;font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'};line-height:1.1">${c.val}</div>
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
+            </div>`
           ).join('')}</div>`
         })()}
         ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
