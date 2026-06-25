@@ -1027,17 +1027,41 @@ async function unassignProgram(clientId, assignmentId) {
 }
 
 async function showAssignProgramToClientModal(programId) {
-  const modal = document.getElementById('apc-modal')
-  if (!modal) return
-  document.getElementById('apc-error').textContent = ''
-  document.getElementById('apc-start').value = new Date().toISOString().split('T')[0]
+  const existing = document.getElementById('apc-modal')
+  if (existing) existing.remove()
 
-  const sel = document.getElementById('apc-client')
-  sel.innerHTML = '<option value="">Loading…</option>'
+  const todayStr = new Date().toISOString().split('T')[0]
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'apc-modal'
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Assign to client</h2>
+        <button class="modal-close" onclick="document.getElementById('apc-modal').remove()">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label">Client <span style="color:var(--danger)">*</span></label>
+        <select class="field-input" id="apc-client"><option value="">Loading…</option></select>
+      </div>
+      <div class="field">
+        <label class="field-label">Start date</label>
+        <input class="field-input" type="date" id="apc-start" value="${todayStr}">
+      </div>
+      <p class="modal-error" id="apc-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('apc-modal').remove()">Cancel</button>
+        <button class="btn-primary" onclick="saveAssignProgramToClient('${programId}')">Assign</button>
+      </div>
+    </div>`
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+  document.body.appendChild(overlay)
+
   const { data: clients } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).order('full_name')
-  sel.innerHTML = '<option value="">Select client…</option>' + (clients || []).map(c => `<option value="${c.id}">${c.full_name}</option>`).join('')
-
-  modal.style.display = 'flex'
+  const sel = document.getElementById('apc-client')
+  if (sel) sel.innerHTML = '<option value="">Select client…</option>' + (clients || []).map(c => `<option value="${c.id}">${c.full_name}</option>`).join('')
 }
 
 async function saveAssignProgramToClient(programId) {
@@ -1047,7 +1071,7 @@ async function saveAssignProgramToClient(programId) {
   if (!clientId) { errEl.textContent = 'Please select a client'; return }
   const { error } = await db.from('client_programs').insert({ client_id: clientId, program_id: programId, start_date: startDate || null })
   if (error) { errEl.textContent = error.message; return }
-  document.getElementById('apc-modal').style.display = 'none'
+  document.getElementById('apc-modal')?.remove()
 }
 
 // ─── PROGRAMS ─────────────────────────────────────────────────────────────────
@@ -1097,7 +1121,7 @@ async function renderPrograms(el) {
 
     <!-- Create/Edit program modal -->
     <div id="program-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeProgramModal()">
-      <div class="modal-box">
+      <div class="modal">
         <div class="modal-header">
           <h2 class="modal-title" id="program-modal-title">New program</h2>
           <button class="btn-icon" onclick="closeProgramModal()">✕</button>
@@ -1239,32 +1263,9 @@ async function openProgram(programId) {
       </div>
     </div>
 
-    <!-- Assign to client modal -->
-    <div id="apc-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-      <div class="modal-box">
-        <div class="modal-header">
-          <h2 class="modal-title">Assign to client</h2>
-          <button class="btn-icon" onclick="document.getElementById('apc-modal').style.display='none'">✕</button>
-        </div>
-        <div style="margin-bottom:14px">
-          <label class="form-label">Client <span style="color:#ef4444">*</span></label>
-          <select class="form-input" id="apc-client"><option value="">Select client…</option></select>
-        </div>
-        <div style="margin-bottom:14px">
-          <label class="form-label">Start date</label>
-          <input class="form-input" type="date" id="apc-start">
-        </div>
-        <p id="apc-error" style="color:#ef4444;font-size:12px;margin:0 0 10px"></p>
-        <div style="display:flex;gap:8px;justify-content:flex-end">
-          <button class="btn btn-secondary" onclick="document.getElementById('apc-modal').style.display='none'">Cancel</button>
-          <button class="btn btn-primary" onclick="saveAssignProgramToClient('${program.id}')">Assign</button>
-        </div>
-      </div>
-    </div>
-
     <!-- Edit program modal -->
     <div id="program-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeProgramModal()">
-      <div class="modal-box">
+      <div class="modal">
         <div class="modal-header">
           <h2 class="modal-title" id="program-modal-title">Edit program</h2>
           <button class="btn-icon" onclick="closeProgramModal()">✕</button>
