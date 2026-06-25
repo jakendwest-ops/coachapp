@@ -3891,7 +3891,11 @@ function renderRunner() {
 
       <!-- Set input -->
       <div style="padding:10px 12px 12px;background:var(--surface)">
-        ${ex.type === 'cardio' ? (() => {
+        ${_runner._restInterval ? `
+          <div style="padding:14px;text-align:center;border-radius:10px;background:var(--surface-2)">
+            <div style="font-size:13px;font-weight:600;color:var(--text-muted)">Resting — inputs available after rest</div>
+          </div>
+        ` : ex.type === 'cardio' ? (() => {
           const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
           const lastCardio = ex.loggedSets[ex.loggedSets.length - 1]
           const distBased = tgt.isDistanceBased
