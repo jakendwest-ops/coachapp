@@ -4239,6 +4239,7 @@ function renderRunner() {
 }
 
 function logRunnerSet() {
+  _unlockAudio() // user gesture — unlock AudioContext for iOS
   if (_runner._restInterval) return // block LOG during rest
   const ex = _runner.exercises[_runner.exIdx]
   let setData
@@ -4310,32 +4311,37 @@ function logRunnerSet() {
   startRestTimer(restSecs)
 }
 
-function _makeBeepWav(freq, duration, volume) {
-  const sr = 22050, n = Math.floor(sr * duration)
-  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf)
-  const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)))
-  str(0,'RIFF'); v.setUint32(4, 36+n*2, true); str(8,'WAVE'); str(12,'fmt ')
-  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true)
-  v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true)
-  str(36,'data'); v.setUint32(40,n*2,true)
-  for (let i = 0; i < n; i++) {
-    const t = i / sr
-    const env = Math.min(1, (duration - t) / 0.02)
-    v.setInt16(44 + i*2, Math.sin(2*Math.PI*freq*t) * env * volume * 0x7FFF, true)
-  }
-  return new Blob([buf], { type: 'audio/wav' })
+let _audioCtx = null
+
+function _unlockAudio() {
+  // Must be called from a user gesture (tap). Once resumed, iOS keeps the
+  // context unlocked so timer-fired playBeep calls work for the session.
+  try {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    if (_audioCtx.state === 'suspended') _audioCtx.resume()
+  } catch(e) {}
 }
 
-function playBeep(freq = 880, duration = 0.1, volume = 0.5) {
+function playBeep(freq = 880, duration = 0.15, volume = 0.4) {
   try {
-    const url = URL.createObjectURL(_makeBeepWav(freq, duration, volume))
-    const a = new Audio(url)
-    a.play().catch(() => {})
-    a.onended = () => URL.revokeObjectURL(url)
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    if (_audioCtx.state === 'suspended') return // not yet unlocked — skip silently
+    const ctx = _audioCtx
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    gain.gain.setValueAtTime(volume, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + duration)
   } catch(e) {}
 }
 
 function startCardioTimer() {
+  _unlockAudio() // user gesture — unlock AudioContext for iOS
   const ex = _runner.exercises[_runner.exIdx]
   const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
   const durEl = document.getElementById('wr-cardio-dur')
