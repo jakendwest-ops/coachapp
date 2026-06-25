@@ -3796,8 +3796,11 @@ function launchRunner(clientId) {
   renderRunner()
   _runner._timerInterval = setInterval(() => {
     if (!_runner) return
+    const t = fmtRunnerTime(_runner.startTime)
     const el = document.getElementById('wr-timer')
-    if (el) el.textContent = fmtRunnerTime(_runner.startTime)
+    if (el) el.textContent = t
+    const el2 = document.getElementById('rt-session-timer')
+    if (el2) el2.textContent = t
   }, 1000)
 }
 
@@ -3837,7 +3840,7 @@ function renderRunner() {
           </div>
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
         </div>
-        ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div style="flex:1;height:4px;border-radius:2px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'}"></div>`).join('')}</div>` : ''}
+        ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${e.name||'Exercise '+(i+1)}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
       </div>
 
       <!-- Logged sets list -->
@@ -4201,7 +4204,7 @@ function startRestTimer(secs) {
       const ring = document.getElementById('rt-ring')
       if (ring) {
         const pct = _runner.restRemaining / _runner.restTotal
-        const circ = 2 * Math.PI * 54
+        const circ = 2 * Math.PI * 18
         ring.style.strokeDashoffset = circ * (1 - pct)
       }
     }
@@ -4222,30 +4225,38 @@ function skipRestTimer() {
 
 function renderRestTimer() {
   document.getElementById('rest-timer-overlay')?.remove()
-  const secs = _runner.restRemaining
+  const secs  = _runner.restRemaining
   const total = _runner.restTotal
-  const circ = 2 * Math.PI * 54
-  const pct  = secs / total
+  const circ  = 2 * Math.PI * 18
+  const pct   = secs / total
+  const curEx    = _runner.exercises[_runner.exIdx]
+  const hitTarget = curEx.targetSets > 0 && curEx.loggedSets.length >= curEx.targetSets
+  const nextEx   = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name)
+  const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (curEx.loggedSets.length + 1)
 
   const overlay = document.createElement('div')
   overlay.id = 'rest-timer-overlay'
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:400;display:flex;align-items:flex-end;justify-content:center'
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:400;background:var(--surface);border-bottom:2px solid var(--accent);display:flex;align-items:center;gap:12px;padding:10px 16px;max-width:480px;margin:0 auto;box-shadow:0 2px 12px rgba(0,0,0,.15)'
   overlay.innerHTML = `
-    <div style="width:100%;max-width:480px;background:var(--surface);border-radius:24px 24px 0 0;padding:32px 24px 40px;text-align:center">
-      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:20px">Rest</div>
-      <div style="position:relative;display:inline-block;margin-bottom:20px">
-        <svg width="120" height="120" viewBox="0 0 120 120">
-          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
-          <circle id="rt-ring" cx="60" cy="60" r="54" fill="none" stroke="var(--accent)" stroke-width="6"
-            stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - pct)}"
-            stroke-linecap="round" transform="rotate(-90 60 60)"
-            style="transition:stroke-dashoffset .9s linear"/>
-        </svg>
-        <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
-      </div>
-      <div style="color:var(--text-muted);font-size:13px;margin-bottom:24px">${(() => { const curEx = _runner.exercises[_runner.exIdx]; const hitTarget = curEx.targetSets > 0 && curEx.loggedSets.length >= curEx.targetSets; const nextEx = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name); return hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (curEx.loggedSets.length + 1) })()} </div>
-      <button onclick="skipRestTimer()" style="width:100%;padding:14px;border:none;border-radius:12px;background:var(--surface-2);font-size:15px;font-weight:700;cursor:pointer;color:var(--text)">Skip rest →</button>
+    <div style="position:relative;width:44px;height:44px;flex-shrink:0">
+      <svg width="44" height="44" viewBox="0 0 44 44">
+        <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" stroke-width="3"/>
+        <circle id="rt-ring" cx="22" cy="22" r="18" fill="none" stroke="var(--accent)" stroke-width="3"
+          stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - pct)}"
+          stroke-linecap="round" transform="rotate(-90 22 22)"
+          style="transition:stroke-dashoffset .9s linear"/>
+      </svg>
+      <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
     </div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
+      <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nextLabel}</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;margin-right:4px">
+      <div style="font-size:10px;color:var(--text-muted)">Session</div>
+      <div id="rt-session-timer" style="font-size:13px;font-weight:700">${fmtRunnerTime(_runner.startTime)}</div>
+    </div>
+    <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:8px;background:var(--surface-2);font-size:13px;font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
   `
   document.body.appendChild(overlay)
 }
@@ -4295,6 +4306,14 @@ function skipToNextExercise() {
   } else {
     showRunnerFinish()
   }
+}
+
+function runnerJumpTo(i) {
+  if (!_runner || i < 0 || i >= _runner.exercises.length) return
+  stopIntervalTimer()
+  skipRestTimer()
+  _runner.exIdx = i
+  renderRunner()
 }
 
 function runnerGoBack() {
@@ -4538,7 +4557,7 @@ async function saveRunnerSession() {
   }
 
   discardRunner()
-  if (currentView === 'client') navigate('workouts')
+  if (currentProfile?.role === 'client') navigate('workouts')
   else openClient(clientId)
 }
 
