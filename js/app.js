@@ -520,7 +520,7 @@ async function renderClientDashboard(el) {
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
     db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
-    db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index))').eq('client_id', clientId).limit(1),
+    db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
     db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
     db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
   ])
@@ -808,43 +808,59 @@ async function renderClientDashboard(el) {
         const phases = (prog.program_phases || []).sort((a, b) => a.order_index - b.order_index)
         const startDate = ap.start_date ? new Date(ap.start_date + 'T00:00:00') : null
         const totalWeeks = phases.reduce((s, ph) => s + ph.duration_weeks, 0)
-        let currentPhaseLabel = '—'
-        if (startDate) {
-          const weeksSinceStart = Math.floor((Date.now() - startDate) / 604800000)
-          let cumulative = 0
-          for (const ph of phases) {
-            cumulative += ph.duration_weeks
-            if (weeksSinceStart < cumulative) { currentPhaseLabel = ph.name; break }
-          }
+
+        // Find current phase
+        let currentPhase = null
+        const weeksSinceStart = startDate ? Math.floor((Date.now() - startDate) / 604800000) : -1
+        let cumulative = 0
+        for (const ph of phases) {
+          if (weeksSinceStart >= cumulative && weeksSinceStart < cumulative + ph.duration_weeks) { currentPhase = ph; break }
+          cumulative += ph.duration_weeks
         }
+        if (!currentPhase && weeksSinceStart >= totalWeeks && phases.length) currentPhase = phases[phases.length - 1]
+
+        // Phase progress bar
+        const progressBar = phases.length ? `
+          <div style="display:flex;gap:3px;margin-bottom:14px">
+            ${phases.map((ph, i) => {
+              const wb = phases.slice(0, i).reduce((s, p) => s + p.duration_weeks, 0)
+              const done = weeksSinceStart >= wb + ph.duration_weeks
+              const active = weeksSinceStart >= wb && weeksSinceStart < wb + ph.duration_weeks
+              return `<div style="flex:${ph.duration_weeks};height:5px;border-radius:3px;background:${active ? 'var(--accent)' : done ? 'var(--accent)' : 'var(--surface-2)'};opacity:${done ? 0.4 : 1}" title="${ph.name}"></div>`
+            }).join('')}
+          </div>` : ''
+
+        // Weekly schedule for current phase
+        const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+        const todayDOW = new Date().getDay() || 7
+        const phaseWorkouts = currentPhase?.program_phase_workouts || []
+        const weekSchedule = `
+          <div style="display:flex;gap:4px">
+            ${dayNames.map((day, i) => {
+              const dow = i + 1
+              const pw = phaseWorkouts.find(w => w.day_of_week === dow)
+              const isToday = dow === todayDOW
+              return `
+                <div style="flex:1;text-align:center;padding:8px 3px;border-radius:8px;background:${isToday ? 'var(--accent)' : 'var(--surface-2)'};min-width:0">
+                  <div style="font-size:10px;font-weight:600;color:${isToday ? '#fff' : 'var(--text-muted)'};">${day}</div>
+                  ${pw ? `
+                    <div style="font-size:10px;font-weight:600;margin-top:4px;color:${isToday ? '#fff' : 'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px">${pw.workout_templates?.name || 'Workout'}</div>
+                    ${isToday ? `<button onclick="startWorkoutRunner('${clientId}','${pw.workout_templates?.id}')" style="margin-top:5px;background:#fff;color:var(--accent);border:none;border-radius:4px;font-size:10px;font-weight:700;padding:2px 5px;cursor:pointer;width:100%">▶ Start</button>` : ''}
+                  ` : `<div style="font-size:9px;color:${isToday ? 'rgba(255,255,255,.6)' : 'var(--text-muted)'};margin-top:4px">Rest</div>`}
+                </div>`
+            }).join('')}
+          </div>`
+
         return `
         <div class="dashboard-card" style="grid-column: span 2">
-          <div class="card-header">
-            <h2 class="card-title">Training Program</h2>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-            <div style="width:44px;height:44px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📋</div>
+          <div class="card-header" style="margin-bottom:10px">
             <div>
-              <div style="font-weight:600;font-size:15px">${prog.name}</div>
-              ${prog.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${prog.description}</div>` : ''}
+              <h2 class="card-title" style="margin-bottom:2px">${prog.name}</h2>
+              ${currentPhase ? `<div style="font-size:12px;color:var(--text-muted)">Phase: ${currentPhase.name} · Week ${weeksSinceStart + 1} of ${totalWeeks}</div>` : `<div style="font-size:12px;color:var(--text-muted)">${totalWeeks} weeks</div>`}
             </div>
           </div>
-          <div style="display:flex;gap:20px;font-size:13px">
-            <div><span style="color:var(--text-muted)">Phases:</span> ${phases.length}</div>
-            <div><span style="color:var(--text-muted)">Duration:</span> ${totalWeeks} weeks</div>
-            <div><span style="color:var(--text-muted)">Current phase:</span> ${currentPhaseLabel}</div>
-          </div>
-          ${phases.length ? `
-          <div style="margin-top:12px;display:flex;gap:4px">
-            ${phases.map((ph, i) => {
-              const weeksBefore = phases.slice(0, i).reduce((s, p) => s + p.duration_weeks, 0)
-              const weeksAfter  = weeksBefore + ph.duration_weeks
-              const weeksSinceStart = startDate ? Math.floor((Date.now() - startDate) / 604800000) : -1
-              const active = weeksSinceStart >= weeksBefore && weeksSinceStart < weeksAfter
-              const done   = weeksSinceStart >= weeksAfter
-              return `<div style="flex:${ph.duration_weeks};height:6px;border-radius:3px;background:${done ? 'var(--accent)' : active ? 'var(--accent)' : 'var(--surface-2)'};opacity:${active ? 1 : done ? 0.5 : 1}" title="${ph.name}: ${ph.duration_weeks}w"></div>`
-            }).join('')}
-          </div>` : ''}
+          ${progressBar}
+          ${weekSchedule}
         </div>`
       })()}
 
@@ -1010,6 +1026,30 @@ async function unassignProgram(clientId, assignmentId) {
   renderClientPrograms(clientId, document.getElementById('tab-content'))
 }
 
+async function showAssignProgramToClientModal(programId) {
+  const modal = document.getElementById('apc-modal')
+  if (!modal) return
+  document.getElementById('apc-error').textContent = ''
+  document.getElementById('apc-start').value = new Date().toISOString().split('T')[0]
+
+  const sel = document.getElementById('apc-client')
+  sel.innerHTML = '<option value="">Loading…</option>'
+  const { data: clients } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).order('full_name')
+  sel.innerHTML = '<option value="">Select client…</option>' + (clients || []).map(c => `<option value="${c.id}">${c.full_name}</option>`).join('')
+
+  modal.style.display = 'flex'
+}
+
+async function saveAssignProgramToClient(programId) {
+  const clientId = document.getElementById('apc-client').value
+  const startDate = document.getElementById('apc-start').value || null
+  const errEl = document.getElementById('apc-error')
+  if (!clientId) { errEl.textContent = 'Please select a client'; return }
+  const { error } = await db.from('client_programs').insert({ client_id: clientId, program_id: programId, start_date: startDate || null })
+  if (error) { errEl.textContent = error.message; return }
+  document.getElementById('apc-modal').style.display = 'none'
+}
+
 // ─── PROGRAMS ─────────────────────────────────────────────────────────────────
 async function renderPrograms(el) {
   log.info('renderPrograms', 'fetching programs')
@@ -1103,16 +1143,13 @@ async function openProgram(programId) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="15 18 9 12 15 6"/></svg>
         All programs
       </a>
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div>
-          <h1 class="page-title" style="margin-bottom:4px">${program.name}</h1>
-          ${program.description ? `<p style="color:var(--text-muted);font-size:14px">${program.description}</p>` : ''}
-          <p style="font-size:12px;color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${program.name.replace(/'/g,"\\'")}','${(program.description||'').replace(/'/g,"\\'")}')">Edit</button>
-          <button class="btn btn-danger" onclick="deleteProgram('${program.id}')">Delete</button>
-        </div>
+      <h1 class="page-title" style="margin-bottom:4px">${program.name}</h1>
+      ${program.description ? `<p style="color:var(--text-muted);font-size:14px">${program.description}</p>` : ''}
+      <p style="font-size:12px;color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${program.name.replace(/'/g,"\\'")}','${(program.description||'').replace(/'/g,"\\'")}')">Edit</button>
+        <button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">Assign to client</button>
+        <button class="btn btn-danger" onclick="deleteProgram('${program.id}')">Delete</button>
       </div>
     </div>
 
@@ -1198,6 +1235,29 @@ async function openProgram(programId) {
         <div class="modal-footer">
           <button class="btn-secondary" onclick="document.getElementById('phase-workout-modal').style.display='none'">Cancel</button>
           <button class="btn-primary" onclick="savePhaseWorkout()">Assign</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Assign to client modal -->
+    <div id="apc-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h2 class="modal-title">Assign to client</h2>
+          <button class="btn-icon" onclick="document.getElementById('apc-modal').style.display='none'">✕</button>
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="form-label">Client <span style="color:#ef4444">*</span></label>
+          <select class="form-input" id="apc-client"><option value="">Select client…</option></select>
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="form-label">Start date</label>
+          <input class="form-input" type="date" id="apc-start">
+        </div>
+        <p id="apc-error" style="color:#ef4444;font-size:12px;margin:0 0 10px"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-secondary" onclick="document.getElementById('apc-modal').style.display='none'">Cancel</button>
+          <button class="btn btn-primary" onclick="saveAssignProgramToClient('${program.id}')">Assign</button>
         </div>
       </div>
     </div>
@@ -1390,7 +1450,8 @@ async function savePhaseWorkout() {
   const notes      = document.getElementById('pwm-notes')?.value.trim() || null
   const errEl      = document.getElementById('pwm-error')
   if (!templateId) { errEl.textContent = 'Pick a template'; return }
-  const { error } = await db.from('program_phase_workouts').insert({ phase_id: phaseId, day_of_week: dayOfWeek, template_id: templateId, notes })
+  const dayLabels = ['','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+  const { error } = await db.from('program_phase_workouts').insert({ phase_id: phaseId, day_of_week: dayOfWeek, day_label: dayLabels[dayOfWeek] || 'Day', template_id: templateId, notes })
   if (error) { log.error('savePhaseWorkout', 'insert failed', error); errEl.textContent = error.message; return }
   document.getElementById('phase-workout-modal').style.display = 'none'
   if (window._openProgramId) openProgram(window._openProgramId)
