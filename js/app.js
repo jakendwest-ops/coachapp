@@ -125,12 +125,54 @@ async function loadUserInfo() {
   }
 }
 
+const _NAV_ICONS = {
+  dashboard:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+  'client-dashboard': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+  clients:          `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+  workouts:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>`,
+  calendar:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
+  programs:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
+  settings:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+  progress:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
+}
+
+const _NAV_ITEMS = {
+  coach:  [
+    { page: 'dashboard',  label: 'Dashboard' },
+    { page: 'clients',    label: 'Clients'   },
+    { page: 'workouts',   label: 'Workouts'  },
+    { page: 'calendar',   label: 'Calendar'  },
+    { page: 'programs',   label: 'Programs'  },
+    { page: 'settings',   label: 'Settings'  },
+  ],
+  client: [
+    { page: 'client-dashboard', label: 'Dashboard' },
+    { page: 'workouts',         label: 'Workouts'  },
+    { page: 'progress',         label: 'Progress'  },
+    { page: 'settings',         label: 'Settings'  },
+  ],
+}
+
+function renderNav(role) {
+  const items = _NAV_ITEMS[role] || _NAV_ITEMS.coach
+  const sidebarNav = document.querySelector('.sidebar-nav')
+  const bottomNav  = document.querySelector('.bottom-nav')
+  if (sidebarNav) {
+    sidebarNav.innerHTML = items.map(({ page, label }) => `
+      <a href="#" class="nav-item${currentPage === page ? ' active' : ''}" data-page="${page}">
+        ${_NAV_ICONS[page] || ''}${label}
+      </a>`).join('')
+  }
+  if (bottomNav) {
+    bottomNav.innerHTML = items.map(({ page, label }) => `
+      <a href="#" class="bottom-nav-item${currentPage === page ? ' active' : ''}" data-page="${page}">
+        ${_NAV_ICONS[page] || ''}<span>${label}</span>
+      </a>`).join('')
+  }
+}
+
 function applyRoleUI() {
-  const isClient = currentProfile?.role === 'client'
-  document.querySelectorAll('[data-page="clients"], [data-page="programs"]').forEach(el => {
-    el.style.display = isClient ? 'none' : ''
-  })
-  // Workouts is visible to both — clients get their own view of it
+  renderNav(currentProfile?.role === 'client' ? 'client' : 'coach')
 }
 
 function updateViewSwitcherButtons(activeView) {
@@ -257,6 +299,7 @@ function navigate(page) {
     case 'workouts':         _catch('workouts',         renderWorkouts);         break
     case 'calendar':         _catch('calendar',         renderCalendar);         break
     case 'settings':         _catch('settings',         renderSettings);         break
+    case 'progress':         _catch('progress',         renderProgress);         break
     default: container.innerHTML = '<div class="loading-state">Page not found</div>'
   }
 }
@@ -3798,11 +3841,12 @@ async function saveEditTemplate(id) {
   const name = document.getElementById('et-name').value.trim()
   if (!name) { errorEl.textContent = 'Name is required'; return }
   log.info('saveEditTemplate', 'updating template', { id, name })
-  const { error } = await db.from('workout_templates').update({
+  const { data, error } = await db.from('workout_templates').update({
     name,
     description: document.getElementById('et-desc').value.trim() || null
-  }).eq('id', id)
+  }).eq('id', id).eq('coach_id', currentUser.id).select()
   if (error) { log.error('saveEditTemplate', 'update failed', error); errorEl.textContent = error.message; return }
+  if (!data?.length) { log.error('saveEditTemplate', 'no rows updated — permission denied?', { id }); errorEl.textContent = 'Save failed — template not found or permission denied.'; return }
   log.ok('saveEditTemplate', 'template updated', { id })
   closeModal('edit-template-modal')
   openTemplate(id)
@@ -3811,8 +3855,9 @@ async function saveEditTemplate(id) {
 async function deleteTemplate(id) {
   if (!confirm('Delete this template? This cannot be undone.')) return
   log.info('deleteTemplate', 'deleting template', { id })
-  const { error } = await db.from('workout_templates').delete().eq('id', id)
+  const { data, error } = await db.from('workout_templates').delete().eq('id', id).eq('coach_id', currentUser.id).select()
   if (error) { log.error('deleteTemplate', 'delete failed', error); return }
+  if (!data?.length) { log.error('deleteTemplate', 'no rows deleted — permission denied or already gone', { id }); return }
   log.ok('deleteTemplate', 'template deleted', { id })
   closeModal('edit-template-modal')
   navigate('workouts')
@@ -3952,6 +3997,50 @@ function fmtRunnerTime(startTime) {
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`
 }
 
+async function fetchRunnerLastSession(exName) {
+  if (!_runner || !exName) return
+  _runner.lastSession = _runner.lastSession || {}
+  if (_runner.lastSession[exName] !== undefined) { renderRunnerLastSession(exName); return }
+  _runner.lastSession[exName] = null
+
+  const { data: logs } = await db.from('workout_logs')
+    .select('id, date').eq('client_id', _runner.clientId)
+    .order('date', { ascending: false }).limit(20)
+  if (!logs?.length) { _runner.lastSession[exName] = null; return }
+
+  const { data: exRows } = await db.from('workout_log_exercises')
+    .select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)')
+    .eq('exercise_name', exName).in('log_id', logs.map(l => l.id))
+    .limit(1)
+  if (!exRows?.length) { _runner.lastSession[exName] = null; return }
+
+  const date = logs.find(l => l.id === exRows[0].log_id)?.date
+  const sets = (exRows[0].workout_log_sets || [])
+    .filter(s => s.weight_kg || s.reps_achieved)
+    .sort((a, b) => a.set_number - b.set_number)
+
+  _runner.lastSession[exName] = sets.length ? { date, sets } : null
+  renderRunnerLastSession(exName)
+}
+
+function renderRunnerLastSession(exName) {
+  const el = document.getElementById('wr-last-session')
+  if (!el) return
+  const data = _runner?.lastSession?.[exName]
+  if (!data?.sets?.length) { el.innerHTML = ''; return }
+  const dateStr = new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);white-space:nowrap">Last · ${dateStr}</span>
+      ${data.sets.map(s => `
+        <span style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap">
+          <span style="color:var(--text-muted)">S${s.set_number}</span>
+          ${s.weight_kg ? s.weight_kg + 'kg' : ''}${s.weight_kg && s.reps_achieved ? ' × ' : ''}${s.reps_achieved ? s.reps_achieved : ''}
+        </span>`).join('')}
+    </div>
+  `
+}
+
 function renderRunner() {
   const ex      = _runner.exercises[_runner.exIdx]
   const setNum  = ex.loggedSets.length + 1
@@ -3980,6 +4069,7 @@ function renderRunner() {
             </div>
             <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${ex.name||'Exercise name'}</div>
             ${ex.targetReps||ex.targetWeight ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ex.targetSets?ex.targetSets+' sets · ':''} ${ex.targetReps?ex.targetReps+' reps':''} ${ex.targetWeight?'@ '+ex.targetWeight+'kg':''}</div>` : ''}
+            ${nextEx ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${nextEx.name}</span></div>` : ''}
           </div>
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
         </div>
@@ -3999,12 +4089,10 @@ function renderRunner() {
               <span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
               <span style="font-size:11px;color:var(--text-muted)">✎</span>
             </div>`).join('')}
-        ${nextEx ? `
-          <div style="margin-top:16px;padding:10px 12px;border-radius:10px;background:var(--surface-2)">
-            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">Next up</div>
-            <div style="font-size:14px;font-weight:600">${nextEx.name || 'Unnamed exercise'}</div>
-          </div>` : ''}
       </div>
+
+      <!-- Last session strip — persistent reference -->
+      ${ex.type !== 'cardio' ? `<div id="wr-last-session" style="border-top:1px solid var(--border);padding:6px 12px;background:var(--bg);min-height:28px"></div>` : ''}
 
       <!-- Stats bar — sits just above the keypad -->
       <div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
@@ -4089,37 +4177,40 @@ function renderRunner() {
         })() : `
         <!-- Strength input -->
         ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;min-height:16px">
-          ${ex.targetReps||ex.targetWeight ? `<span style="font-size:11px;color:var(--text-muted)">Target: ${ex.targetReps?ex.targetReps+' reps':''}${ex.targetReps&&ex.targetWeight?' · ':''}${ex.targetWeight?ex.targetWeight+'kg':''}</span>` : '<span></span>'}
-          ${lastSet ? `<span style="font-size:11px;color:var(--text-muted)">Last: ${lastSet.weight?lastSet.weight+'kg · ':''}${lastSet.reps} reps</span>` : ''}
-        </div>
-        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;margin-bottom:12px">
-          ${ex.bodyweight
-            ? `<div style="text-align:center;padding:10px 4px;border-radius:10px;border:2px solid var(--border);background:var(--bg)">
-                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px">Weight</div>
-                <div style="font-size:30px;font-weight:700;color:var(--text);line-height:1">BW</div>
-               </div>`
-            : `<div>
-                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;text-align:center">${ex.assisted?'Assist (kg)':'Kilograms'}</div>
-                <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="—"
-                  style="width:100%;font-size:28px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:10px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-               </div>`
-          }
-          <div style="font-size:13px;font-weight:700;color:var(--text);text-align:center;line-height:1.2">Set<br><span style="font-size:22px">${setNum}</span></div>
-          <div>
-            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;text-align:center">Reps</div>
-            <input id="wr-reps-input" type="number" inputmode="numeric" placeholder="—"
-              style="width:100%;font-size:28px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:10px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+        <div style="display:flex;align-items:stretch;gap:6px">
+          <!-- Set number -->
+          <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
+            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
+            <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
           </div>
-        </div>
-        <div style="display:flex;gap:6px">
-          ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:56px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-muted);line-height:1.3">${isLast?'Finish 🏁':'Next<br>Set →'}</button>` : ''}
-          <button onclick="logRunnerSet()" style="flex:1;height:56px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:20px;font-weight:800;cursor:pointer">LOG</button>
+          <!-- Weight input -->
+          ${ex.bodyweight
+            ? `<div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg)">
+                <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Weight</div>
+                <div style="font-size:20px;font-weight:700;color:var(--text)">BW</div>
+               </div>`
+            : `<div style="flex:1;display:flex;flex-direction:column">
+                <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${ex.assisted?'Assist (kg)':'Kilograms'}</div>
+                <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="—"
+                  style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+               </div>`}
+          <!-- Reps input -->
+          <div style="flex:1;display:flex;flex-direction:column">
+            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Reps</div>
+            <input id="wr-reps-input" type="number" inputmode="numeric" placeholder="—"
+              style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+          </div>
+          <!-- LOG / Skip -->
+          <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
+            <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
+            ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
+          </div>
         </div>
         ${ex.loggedSets.length > 0 && ex.loggedSets.length >= ex.targetSets ? `<button onclick="addExtraStrengthSet()" style="width:100%;margin-top:6px;padding:7px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`}
       </div>
     </div>
   `
+  if (ex.type !== 'cardio') setTimeout(() => fetchRunnerLastSession(ex.name), 0)
 }
 
 function logRunnerSet() {
@@ -5896,6 +5987,195 @@ db.auth.onAuthStateChange((event, session) => {
 })
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
+
+async function renderProgress(el) {
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  const tabs = ['Body Weight', 'Strength', 'Cardio', 'Personal Bests']
+  const activeTab = window._progressTab || 'Body Weight'
+
+  el.innerHTML = `
+    <div class="page-header"><h1 class="page-title">My Progress</h1></div>
+    <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px;overflow-x:auto">
+      ${tabs.map(t => `
+        <button onclick="window._progressTab='${t}';renderProgress(document.getElementById('main-content'))"
+          style="flex:0 0 auto;padding:10px 16px;border:none;background:transparent;font-size:13px;font-weight:600;cursor:pointer;
+                 color:${t===activeTab?'var(--accent)':'var(--text-muted)'};
+                 border-bottom:${t===activeTab?'2px solid var(--accent)':'2px solid transparent'};margin-bottom:-2px;white-space:nowrap">
+          ${t}
+        </button>`).join('')}
+    </div>
+    <div id="progress-tab-content"><div class="loading-state">Coming soon</div></div>
+  `
+
+  if (activeTab === 'Body Weight')     await renderProgressWeight(document.getElementById('progress-tab-content'))
+  if (activeTab === 'Strength')        await renderProgressStrength(document.getElementById('progress-tab-content'))
+  if (activeTab === 'Cardio')          await renderProgressCardio(document.getElementById('progress-tab-content'))
+  if (activeTab === 'Personal Bests')  await renderProgressPBs(document.getElementById('progress-tab-content'))
+}
+
+async function renderProgressWeight(el) {
+  el.innerHTML = '<div class="loading-state">Loading weight data…</div>'
+  const { data: logs } = await db.from('weight_logs').select('date, weight_kg, body_fat_pct')
+    .eq('user_id', currentUser.id).order('date', { ascending: true })
+  if (!logs?.length) { el.innerHTML = '<div class="empty-state"><p>No weight logs yet.</p></div>'; return }
+  const latest = logs[logs.length - 1]
+  const first  = logs[0]
+  const change = (latest.weight_kg - first.weight_kg).toFixed(1)
+  const sign   = change > 0 ? '+' : ''
+  el.innerHTML = `
+    <div style="display:flex;gap:12px;margin-bottom:16px">
+      ${[['Current', latest.weight_kg + ' kg'], ['Starting', first.weight_kg + ' kg'], ['Change', sign + change + ' kg']].map(([l,v])=>`
+        <div style="flex:1;padding:12px;border-radius:12px;background:var(--surface);text-align:center">
+          <div style="font-size:18px;font-weight:800;color:var(--accent)">${v}</div>
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${l}</div>
+        </div>`).join('')}
+    </div>
+    <div style="position:relative;height:200px;margin-bottom:16px"><canvas id="pw-chart" style="width:100%;height:100%"></canvas></div>
+    <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border)">
+      ${logs.slice().reverse().slice(0,10).map(l=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px;color:var(--text-muted)">${new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
+          <span style="font-size:14px;font-weight:700">${l.weight_kg} kg${l.body_fat_pct ? ' · '+l.body_fat_pct+'% BF' : ''}</span>
+        </div>`).join('')}
+    </div>
+  `
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+  const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
+  new Chart(document.getElementById('pw-chart').getContext('2d'), {
+    type: 'line',
+    data: { labels: logs.map(l => new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
+            datasets: [{ data: logs.map(l => l.weight_kg), borderColor: accent, borderWidth: 2,
+              pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      plugins: { legend: { display: false } },
+      scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 9 }, maxRotation: 0 } },
+                y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 9 }, callback: v => v + 'kg' } } } }
+  })
+}
+
+async function renderProgressStrength(el) {
+  el.innerHTML = '<div class="loading-state">Loading exercise data…</div>'
+  const { data: client } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+  if (!client) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
+  const { data: exRows } = await db.from('workout_log_exercises')
+    .select('exercise_name, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved)')
+    .eq('workout_logs.client_id', client.id).eq('exercise_type', 'strength').order('exercise_name')
+  if (!exRows?.length) { el.innerHTML = '<div class="empty-state"><p>No strength sessions logged yet.</p></div>'; return }
+  const byExercise = {}
+  for (const row of exRows) {
+    const name = row.exercise_name; if (!name) continue
+    if (!byExercise[name]) byExercise[name] = []
+    const maxW = Math.max(...(row.workout_log_sets||[]).map(s => parseFloat(s.weight_kg)||0).filter(w=>w>0))
+    if (maxW > 0) byExercise[name].push({ date: row.workout_logs.date, weight: maxW })
+  }
+  const exercises = Object.entries(byExercise).filter(([,pts]) => pts.length > 0)
+    .map(([name, pts]) => ({ name, pts: pts.sort((a,b)=>new Date(a.date)-new Date(b.date)) }))
+  if (!exercises.length) { el.innerHTML = '<div class="empty-state"><p>No strength data yet.</p></div>'; return }
+  el.innerHTML = exercises.map((ex, i) => `
+    <div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:700;margin-bottom:8px">${ex.name}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">
+        Best: ${Math.max(...ex.pts.map(p=>p.weight))} kg · ${ex.pts.length} session${ex.pts.length===1?'':'s'}
+      </div>
+      <div style="position:relative;height:80px"><canvas id="ps-chart-${i}" style="width:100%;height:100%"></canvas></div>
+    </div>`).join('')
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+  const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
+  exercises.forEach((ex, i) => {
+    const canvas = document.getElementById(`ps-chart-${i}`)
+    if (!canvas || ex.pts.length < 2) return
+    new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: ex.pts.map(p => new Date(p.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
+              datasets: [{ data: ex.pts.map(p=>p.weight), borderColor: accent, borderWidth: 2,
+                pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
+                  y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 }, callback: v => v+'kg' } } } }
+    })
+  })
+}
+
+async function renderProgressCardio(el) {
+  el.innerHTML = '<div class="loading-state">Loading cardio data…</div>'
+  const { data: client } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+  if (!client) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
+  const { data: exRows } = await db.from('workout_log_exercises')
+    .select('exercise_name, workout_logs!inner(date, client_id), workout_log_sets(distance_m, duration_seconds)')
+    .eq('workout_logs.client_id', client.id).eq('exercise_type', 'cardio').order('exercise_name')
+  if (!exRows?.length) { el.innerHTML = '<div class="empty-state"><p>No cardio sessions logged yet.</p></div>'; return }
+  const byExercise = {}
+  for (const row of exRows) {
+    const name = row.exercise_name; if (!name) continue
+    if (!byExercise[name]) byExercise[name] = []
+    const totalDist = (row.workout_log_sets||[]).reduce((s,set)=>s+(parseFloat(set.distance_m)||0),0)
+    const totalSecs = (row.workout_log_sets||[]).reduce((s,set)=>s+(parseInt(set.duration_seconds)||0),0)
+    if (totalDist > 0 || totalSecs > 0)
+      byExercise[name].push({ date: row.workout_logs.date, dist: totalDist/1000, secs: totalSecs })
+  }
+  const exercises = Object.entries(byExercise).filter(([,pts])=>pts.length>0)
+    .map(([name, pts]) => ({ name, pts: pts.sort((a,b)=>new Date(a.date)-new Date(b.date)) }))
+  if (!exercises.length) { el.innerHTML = '<div class="empty-state"><p>No cardio data yet.</p></div>'; return }
+  el.innerHTML = exercises.map((ex, i) => {
+    const usesDist = ex.pts.some(p => p.dist > 0)
+    const best = usesDist ? Math.max(...ex.pts.map(p=>p.dist)).toFixed(1)+' km' : fmtRestCountdown(Math.max(...ex.pts.map(p=>p.secs)))
+    return `
+    <div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${ex.name}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Best: ${best} · ${ex.pts.length} session${ex.pts.length===1?'':'s'}</div>
+      <div style="position:relative;height:80px"><canvas id="pc-chart-${i}" style="width:100%;height:100%"></canvas></div>
+    </div>`}).join('')
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+  const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
+  exercises.forEach((ex, i) => {
+    const canvas = document.getElementById(`pc-chart-${i}`)
+    if (!canvas || ex.pts.length < 2) return
+    const usesDist = ex.pts.some(p => p.dist > 0)
+    new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: ex.pts.map(p => new Date(p.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
+              datasets: [{ data: ex.pts.map(p => usesDist ? p.dist : p.secs/60), borderColor: accent, borderWidth: 2,
+                pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
+                  y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 },
+                    callback: v => usesDist ? v+'km' : v+'min' } } } }
+    })
+  })
+}
+
+async function renderProgressPBs(el) {
+  el.innerHTML = '<div class="loading-state">Loading personal bests…</div>'
+  const { data: client } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+  const clientId = client?.id
+  const { data: logs } = await db.from('performance_logs')
+    .select('*, performance_exercises(name, category, unit)')
+    .eq('client_id', clientId).order('logged_at', { ascending: false })
+  if (!logs?.length) { el.innerHTML = '<div class="empty-state"><p>No personal bests logged yet.</p></div>'; return }
+  const byExercise = {}
+  for (const l of logs) {
+    const name = l.performance_exercises?.name || 'Unknown'
+    if (!byExercise[name]) byExercise[name] = { best: l, all: [], unit: l.performance_exercises?.unit || '', category: l.performance_exercises?.category || '' }
+    byExercise[name].all.push(l)
+  }
+  el.innerHTML = Object.entries(byExercise).map(([name, { best, all, unit, category }]) => `
+    <div style="margin-bottom:12px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:14px;font-weight:700">${name}</div>
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${category}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:20px;font-weight:800;color:var(--accent)">${best.value} <span style="font-size:12px">${unit}</span></div>
+          <div style="font-size:11px;color:var(--text-muted)">${new Date(best.logged_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+        </div>
+      </div>
+      ${all.length > 1 ? `<div style="margin-top:8px;font-size:11px;color:var(--text-muted)">${all.length} entries</div>` : ''}
+    </div>`).join('')
+}
 
 async function renderSettings(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
