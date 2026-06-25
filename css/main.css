@@ -651,7 +651,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 /* Mobile view switcher — hidden by default, only shown on mobile via JS when master account */
 #mobile-view-switcher { display: none !important; }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .sidebar { display: none; }
   .bottom-nav { display: flex; }
   #mobile-view-switcher { display: flex !important; }

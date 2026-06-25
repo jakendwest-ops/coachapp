@@ -7,40 +7,151 @@ description: Run this skill automatically whenever the user says "hello claude" 
 
 Run every step below in order. Do not skip any. Do not write code or take any other action until this ritual is complete.
 
+---
+
 ## Step 1 — Start the preview server
 
 Call `preview_start("CoachApp")`. If it fails or the launch config is missing, note it and continue — don't block on it.
 
+After it starts, resize the preview to **480×844** immediately. Never leave it at the default 390px width — that causes black bars. See [[feedback-preview-width]].
+
+**Daily question cron:** Check whether the daily question cron (job ID `4f871c94`, fires 9:07am) is still active using `CronList`. If it's missing (session restarted), recreate it silently using the prompt from `C:\Users\jaken\.claude\daily-questions\questions.md` and log.md. Do not mention this to Jake unless it failed to recreate.
+
+---
+
 ## Step 2 — Read the Vault
 
-Read all four files in this order:
+Read all of these — none are optional:
 1. `C:\Users\jaken\Claude\Vault\projects\PTHub\STATUS.md` — live project state
-2. `C:\Users\jaken\Claude\Vault\projects\PTHub\LOG.md` — last few entries (most recent first)
+2. `C:\Users\jaken\Claude\Vault\projects\PTHub\LOG.md` — last 2–3 entries (most recent first)
 3. `C:\Users\jaken\Claude\Vault\projects\CoachApp\roadmap.md` — full feature roadmap (status tags)
 4. `C:\Users\jaken\Claude\Vault\projects\CoachApp\blueprint.md` — product blueprint
+5. `C:\Users\jaken\Claude\Vault\memory\lessons.jsonl` — past mistakes not to repeat
+6. `C:\Users\jaken\Claude\Vault\owner\voice.md` — how Jake communicates and what he values
 
-Also read if needed:
-- `C:\Users\jaken\Claude\Vault\memory\lessons.jsonl` — to avoid repeating past mistakes
-- `C:\Users\jaken\Claude\Vault\owner\voice.md` — to stay in sync with Jake's patterns
+---
 
 ## Step 3 — Summarise last session
 
 Write a short summary (3–5 bullets) of what was done last session, based on the LOG. Include:
 - What was built or fixed
 - Any known bugs or blockers left open
-- What version app.js is at and whether a Netlify deploy is pending
+- What version app.js is at and whether CI has deployed it successfully (check `gh run list --limit 1`)
 
-## Step 4 — Roadmap snapshot
+---
 
-Show a condensed roadmap view: list everything currently `🔧 In progress`, then the top 3 `🗓 Planned` items by priority. This is the "where are we / where next" view Jake sees every session.
+## Step 4 — Automated code review
 
-## Step 5 — Propose this session's plan
+Run a targeted bug scan on `C:\Users\jaken\coachapp\js\app.js`. Check for these patterns — categories that have repeatedly caused bugs in this codebase:
 
-Based on the roadmap and STATUS.md, propose 2–3 things to tackle this session. State them as a numbered list. Ask Jake which he wants to start with — or offer a recommendation if the priority is obvious.
+**a) Wrong column names**
+- `weight_logs` queried with `logged_at` — use `date`
+- `workout_logs` queried with `logged_at` — use `date`
+- Any reference to `coach_notes` on `workout_logs` — column is `notes`
 
-## Step 6 — Surface open to-dos
+**b) Unscoped multi-tenant queries** — missing `coach_id` filter:
+- `from('clients').select(...)` without `.eq('coach_id', ...)`
+- `from('workout_templates').select(...)` without `.eq('coach_id', ...)`
+- `from('programs').select(...)` without `.eq('coach_id', ...)`
+- `from('workout_logs').select(...)` without `.eq('coach_id', ...)` or `.eq('client_id', ...)`
 
-Check the roadmap "Pending actions for Jake" section and STATUS.md for any manual steps Jake needs to take (running SQL, deploying, testing). List them clearly.
+**c) Client-side coach_id errors** — when the client is logged in, queries for coach-owned tables (e.g. `workout_templates`) must use the coach's ID from `clients.coach_id`, not `currentUser.id`
+
+**d) Role routing** — any place `currentProfile?.role` decides what to render; check null/missing role is handled (doesn't silently default to PT view)
+
+**e) Duplicate function definitions** — two functions with the same name (second silently wins)
+
+**f) Hardcoded UUIDs or email addresses** in logic code
+
+Use Grep to search for each pattern. Report only real findings with line numbers. Keep it to one paragraph or a bullet list. If nothing found, say "Code review: clean."
+
+---
+
+## Step 5 — Roadmap cross-check
+
+Compare the roadmap against the LOG. For any item the roadmap still marks as `🗓 Planned` or `🔧 In progress` — check whether recent LOG entries show it was actually completed. If yes, flag it so the roadmap can be updated.
+
+Then show the condensed view: everything `🔧 In progress`, then the top 3 `🗓 Planned` by priority.
+
+---
+
+## Step 6 — Propose this session's plan
+
+Based on the roadmap and STATUS.md, propose 2–3 things to tackle. State as a numbered list. Ask Jake which to start — or recommend if the priority is obvious.
+
+---
+
+## Step 7 — Verify and surface open to-dos
+
+Read the "Open to-dos for Jake" section of STATUS.md. For **each item**, verify it against current evidence before surfacing it:
+
+- **PAT / GitHub Actions items** → run `gh run list --limit 3` and check if CI is passing. If yes, the item is resolved — remove it, don't repeat it.
+- **"Verify X live" items** → check whether the Playwright suite covers that flow. If yes and tests are green, the item is resolved.
+- **Supabase config items** → if there's a quick way to verify (e.g. checking a URL or running a query), do it.
+- **SQL migration items** → check whether the schema in STATUS.md already reflects the change. If yes, the item is resolved.
+
+Only surface items that are still genuinely open. Explicitly state which items were cleared and why. Never carry forward a to-do that current evidence resolves.
+
+---
+
+## Step 8 — Predictions review
+
+Read `C:\Users\jaken\Claude\Vault\memory\predictions.jsonl`. Find any entries where `verify_by` is today or earlier and `outcome` is null. For each one, check whether the session's work or current state allows grading it. Surface any that need a verdict — ask Jake to confirm if the outcome is ambiguous.
+
+---
+
+## Standing session behaviours (active all session, not just at start)
+
+### After every end-to-end test → post-build-review
+Run the post-build-review skill at `C:\Users\jaken\.claude\skills\post-build-review\SKILL.md` immediately after any test flow. Cover: what worked, what didn't, root causes, production impact, priority order. Do not wait to be asked. See [[feedback-post-build-review]].
+
+### After any UI change → mobile-check
+Run the mobile-check skill at `C:\Users\jaken\coachapp\.claude\skills\mobile-check\SKILL.md` before reporting any UI change as done. Verify at 480×844. Check sidebar vs bottom-nav, tap targets, modal classes. See [[feedback-mobile-check]].
+
+### Before building any new UI → UI consistency check
+Grep the codebase for the equivalent existing render function before writing any new list, card, form, or detail view. Match classes exactly: `list`/`list-row`, `client-grid`/`client-card`, `modal-overlay`/`modal-box`, `empty-state`. Never assume — read first. See [[feedback-ui-consistency]].
+
+### Before any SQL → sql-safety
+Run the sql-safety skill at `C:\Users\jaken\coachapp\.claude\skills\sql-safety\SKILL.md` before writing any DELETE, UPDATE, or schema-altering SQL. See [[feedback-sql-destructive]].
+
+### Before every git commit → cache bust check
+If `app.js` changed in this commit, verify that `?v=N` on the script tag in `index.html` has been incremented in the same commit. Never commit app.js changes without bumping the version. See [[feedback-cache-bust]].
+
+### Never use custom input controls
+Use native `<input>` elements for all numeric and text entry. No custom keypads, number dials, or picker wheels on web. Use `inputmode="decimal"` for decimal fields. See [[feedback-native-inputs]].
+
+### Verify before reporting done
+Never say "done" or "fixed" without checking the result in the browser or the test output. If a live check isn't possible, say "UNVERIFIED — reason" explicitly. See [[feedback-verify]].
+
+### After every test session → check Supabase API logs
+After any test flow, check Supabase dashboard → Logs → API for PGRST errors. These are invisible in the JS console but show up there. See [[reference-supabase-logs]].
+
+### RLS patterns — never query auth.users directly
+All RLS policies must use `auth.uid()` or `auth.email()`. Never query `auth.users` directly in policies. Coaches own data by `coach_id = auth.uid()`. Clients access via `user_id = auth.uid()`. See [[feedback-rls-patterns]].
+
+### Always repost code in full when correcting
+When retrying or fixing a code block, always post the full corrected block. Never ask Jake to scroll up to find the previous version and patch it. See [[feedback-repost-code]].
+
+### Explain as you build
+After every significant decision — a DB query pattern, an RLS change, an architectural choice — give a plain-English explanation without waiting to be asked. Two sentences: one technical, one simple analogy. See the `educate` skill at `C:\Users\jaken\.claude\skills\educate\SKILL.md` and [[feedback-educate]].
+
+### When creating a new skill → register it
+After writing any new skill file: (1) add a standing behaviour entry here in hello-claude, (2) add an entry in /save step 5, (3) write a memory file and add it to MEMORY.md. Never leave a skill as an orphan. See [[feedback-skill-creator]].
+
+### At session end → /save
+When Jake signals wrap-up ("that's it for today", "let's stop here", "/save"), run the save skill at `C:\Users\jaken\coachapp\.claude\skills\save\SKILL.md`. Updates STATUS.md, LOG.md, surfaces open to-dos, checks memory. Do not wait to be asked.
+
+### Before any git push → offer /code-review
+Before pushing to master, check whether `/code-review ultra` has been run this session. If not, offer it — one line: "Want to run `/code-review` before pushing?" Do not push without giving Jake the chance to run it. This is distinct from the session-start grep scan — `/code-review ultra` does a full multi-agent semantic read. See [[feedback-code-review]].
+
+### Before any beta invite or significant deploy → /deploy-check
+Run `C:\Users\jaken\coachapp\.claude\skills\deploy-check\SKILL.md`. Seven checks: cache bust, /code-review, Playwright suite, Supabase redirect URLs, RLS policies, live smoke test, GitHub Pages deploy. Do not declare "ready" without completing it. See [[feedback-deploy-check]].
+
+### To run Playwright tests → /playwright
+Run `C:\Users\jaken\coachapp\.claude\skills\playwright\SKILL.md`. Reports per-test pass/fail, surfaces console error annotations, gives Green/Amber/Red verdict. See [[feedback-playwright-skill]], [[project-playwright]].
+
+### When the daily question cron fires mid-session
+Ask the question naturally in the flow of conversation. After Jake answers, save his answer to `C:\Users\jaken\.claude\daily-questions\log.md` (prepend a new entry). If the answer reveals something about Jake's preferences, personality, or working style, bank a memory note in the relevant `user_jake.md` or a new `user_*.md` file. Then continue the session — don't make it a big moment.
 
 ---
 
@@ -48,8 +159,28 @@ Check the roadmap "Pending actions for Jake" section and STATUS.md for any manua
 
 STOP immediately. Run this audit before writing any more code:
 1. Review all code touched in this session
-2. Web-search the official docs (Supabase, Netlify, MDN) for the correct approach
+2. Web-search the official docs (Supabase, Supabase JS v2, MDN) for the correct approach
 3. Check for duplicate or conflicting code
 4. Propose one clean solution and get Jake's agreement before building
 
 This protocol is mandatory — not optional. The cost of 5 minutes of research is lower than another broken session.
+
+---
+
+## Who Jake is — how to work with him
+
+Jake is a personal trainer building CoachApp as both developer and primary user. He has no software engineering background but learns fast and wants to understand the why behind every decision.
+
+- Messages are short, lowercase, direct. Don't pad responses.
+- Silence + continuing = positive feedback. He doesn't say "great job."
+- "both" / "all" / "please add" = execute everything, no follow-up needed.
+- "make a note" = write it to the Vault.
+- "are you able to..." = genuine feasibility check, not rhetorical — answer directly.
+- After every significant change: give BOTH a technical explanation AND a plain-English version, inline as you build.
+- Ships small, sees it, moves on. He doesn't like long planning phases.
+- Turns failures into permanent systems — when something breaks badly, a skill or memory entry comes out of it.
+- Proactively audits his own tooling for gaps — don't wait for him to discover a missing check; surface it at session start.
+- Wants the relationship to accumulate depth over time, not just complete tasks.
+- **All-caps restatement** ("PLEASE FIX THIS", "DO NOT DO THAT") = patience exhausted — next attempt must work, no more probing or partial fixes.
+
+See [[user-jake]] for full profile.

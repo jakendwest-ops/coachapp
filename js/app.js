@@ -563,7 +563,7 @@ async function renderClientDashboard(el) {
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
     db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
-    db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
+    db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
     db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
     db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
   ])
@@ -881,15 +881,16 @@ async function renderClientDashboard(el) {
           <div style="display:flex;gap:4px">
             ${dayNames.map((day, i) => {
               const dow = i + 1
-              const pw = phaseWorkouts.find(w => w.day_of_week === dow)
+              const pws = phaseWorkouts.filter(w => w.day_of_week === dow).sort((a,b)=>(a.session_order||1)-(b.session_order||1))
               const isToday = dow === todayDOW
               return `
                 <div style="flex:1;text-align:center;padding:8px 3px;border-radius:8px;background:${isToday ? 'var(--accent)' : 'var(--surface-2)'};min-width:0">
                   <div style="font-size:10px;font-weight:600;color:${isToday ? '#fff' : 'var(--text-muted)'};">${day}</div>
-                  ${pw ? `
-                    <div style="font-size:10px;font-weight:600;margin-top:4px;color:${isToday ? '#fff' : 'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px">${pw.workout_templates?.name || 'Workout'}</div>
-                    ${isToday ? `<button onclick="startWorkoutRunner('${clientId}','${pw.workout_templates?.id}')" style="margin-top:5px;background:#fff;color:var(--accent);border:none;border-radius:4px;font-size:10px;font-weight:700;padding:2px 5px;cursor:pointer;width:100%">▶ Start</button>` : ''}
-                  ` : `<div style="font-size:9px;color:${isToday ? 'rgba(255,255,255,.6)' : 'var(--text-muted)'};margin-top:4px">Rest</div>`}
+                  ${pws.length ? pws.map((pw, pi) => `
+                    ${pws.length > 1 ? `<div style="font-size:8px;font-weight:700;color:${isToday ? 'rgba(255,255,255,.7)' : 'var(--accent)'};margin-top:${pi===0?'3':'6'}px;letter-spacing:.05em">${pw.session_order===2?'PM':'AM'}</div>` : ''}
+                    <div style="font-size:9px;font-weight:600;margin-top:1px;color:${isToday ? '#fff' : 'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px">${pw.workout_templates?.name || 'Workout'}</div>
+                    ${isToday ? `<button onclick="startWorkoutRunner('${clientId}','${pw.workout_templates?.id}')" style="margin-top:4px;background:#fff;color:var(--accent);border:none;border-radius:4px;font-size:10px;font-weight:700;padding:2px 5px;cursor:pointer;width:100%">▶ Start</button>` : ''}
+                  `).join('') : `<div style="font-size:9px;color:${isToday ? 'rgba(255,255,255,.6)' : 'var(--text-muted)'};margin-top:4px">Rest</div>`}
                 </div>`
             }).join('')}
           </div>`
@@ -1276,17 +1277,26 @@ async function openProgram(programId) {
           <button class="modal-close" onclick="document.getElementById('phase-workout-modal').style.display='none'">✕</button>
         </div>
         <input type="hidden" id="pwm-phase-id">
-        <div class="field">
-          <label class="field-label">Day of week</label>
-          <select class="field-input" id="pwm-day">
-            <option value="1">Monday</option>
-            <option value="2">Tuesday</option>
-            <option value="3">Wednesday</option>
-            <option value="4">Thursday</option>
-            <option value="5">Friday</option>
-            <option value="6">Saturday</option>
-            <option value="7">Sunday</option>
-          </select>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:10px" class="field">
+          <div>
+            <label class="field-label">Day of week</label>
+            <select class="field-input" id="pwm-day">
+              <option value="1">Monday</option>
+              <option value="2">Tuesday</option>
+              <option value="3">Wednesday</option>
+              <option value="4">Thursday</option>
+              <option value="5">Friday</option>
+              <option value="6">Saturday</option>
+              <option value="7">Sunday</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">Session</label>
+            <select class="field-input" id="pwm-session-order">
+              <option value="1">AM</option>
+              <option value="2">PM</option>
+            </select>
+          </div>
         </div>
         <div class="field">
           <label class="field-label">Workout template</label>
@@ -1460,7 +1470,7 @@ async function loadAllPhaseWorkouts(phases) {
   for (const ph of phases) {
     const el = document.getElementById(`phase-workouts-${ph.id}`)
     if (!el) continue
-    const { data: pws } = await db.from('program_phase_workouts').select('*, workout_templates(name)').eq('phase_id', ph.id).order('day_of_week')
+    const { data: pws } = await db.from('program_phase_workouts').select('*, workout_templates(name)').eq('phase_id', ph.id).order('day_of_week').order('session_order')
     if (!pws?.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">No workouts assigned yet.</div>'; continue }
     const byDay = {}
     pws.forEach(pw => { byDay[pw.day_of_week] = byDay[pw.day_of_week] || []; byDay[pw.day_of_week].push(pw) })
@@ -1468,8 +1478,9 @@ async function loadAllPhaseWorkouts(phases) {
       ${Object.entries(byDay).sort(([a],[b])=>a-b).map(([day, wks]) => `
         <div style="background:var(--surface-2);border-radius:8px;padding:8px 12px;min-width:120px">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${days[day-1]}</div>
-          ${wks.map(w => `
+          ${wks.map((w, wi) => `
             <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+              ${wks.length > 1 ? `<span style="font-size:9px;font-weight:700;color:var(--accent);min-width:18px">${w.session_order===2?'PM':'AM'}</span>` : ''}
               <span style="font-size:12px;font-weight:600">${w.workout_templates?.name || 'Unknown'}</span>
               <button onclick="removePhaseWorkout('${w.id}','${ph.id}')" style="font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0">✕</button>
             </div>`).join('')}
@@ -1497,14 +1508,25 @@ function createWorkoutFromPhaseModal() {
 }
 
 async function savePhaseWorkout() {
-  const phaseId    = document.getElementById('pwm-phase-id').value
-  const dayOfWeek  = parseInt(document.getElementById('pwm-day').value)
-  const templateId = document.getElementById('pwm-template').value
-  const notes      = document.getElementById('pwm-notes')?.value.trim() || null
-  const errEl      = document.getElementById('pwm-error')
+  const phaseId      = document.getElementById('pwm-phase-id').value
+  const dayOfWeek    = parseInt(document.getElementById('pwm-day').value)
+  const templateId   = document.getElementById('pwm-template').value
+  const notes        = document.getElementById('pwm-notes')?.value.trim() || null
+  const sessionOrder = parseInt(document.getElementById('pwm-session-order')?.value || '1')
+  const errEl        = document.getElementById('pwm-error')
   if (!templateId) { errEl.textContent = 'Pick a template'; return }
   const dayLabels = ['','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
-  const { error } = await db.from('program_phase_workouts').insert({ phase_id: phaseId, day_of_week: dayOfWeek, day_label: dayLabels[dayOfWeek] || 'Day', template_id: templateId, notes })
+  const sessionOrder = parseInt(document.getElementById('pwm-session-order')?.value || '1')
+
+  // Validation: prevent duplicate session_order on same day
+  const { data: existing } = await db.from('program_phase_workouts').select('id, session_order, workout_templates(name)').eq('phase_id', phaseId).eq('day_of_week', dayOfWeek).eq('session_order', sessionOrder)
+  if (existing?.length) {
+    const clash = existing[0].workout_templates?.name || 'another workout'
+    showToast(`${sessionOrder === 1 ? 'AM' : 'PM'} slot already taken by "${clash}" — choose a different slot or day`, 'error')
+    return
+  }
+
+  const { error } = await db.from('program_phase_workouts').insert({ phase_id: phaseId, day_of_week: dayOfWeek, day_label: dayLabels[dayOfWeek] || 'Day', template_id: templateId, notes, session_order: sessionOrder })
   if (error) { log.error('savePhaseWorkout', 'insert failed', error); errEl.textContent = error.message; return }
   document.getElementById('phase-workout-modal').style.display = 'none'
   if (window._openProgramId) openProgram(window._openProgramId)
@@ -2027,11 +2049,41 @@ async function renderCalendar(el) {
   const to   = lastDay.toISOString().split('T')[0]
 
   const isClient = currentProfile?.role === 'client'
-  let events, clientMap = {}
+  let events, clientMap = {}, programWorkoutsByDate = {}
 
   if (isClient) {
-    const { data } = await db.from('events').select('*').gte('date', from).lte('date', to).order('date')
-    events = data
+    const [evRes, cpRes] = await Promise.all([
+      db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
+      db.from('client_programs').select('start_date, programs(program_phases(duration_weeks, program_phase_workouts(day_of_week, session_order, workout_templates(name))))').eq('client_id', currentUser.id).order('created_at', { ascending: false }).limit(1)
+    ])
+    events = evRes.data
+
+    // Map phase workouts to actual calendar dates
+    const cp = cpRes.data?.[0]
+    if (cp?.start_date) {
+      const programStart = new Date(cp.start_date + 'T00:00:00')
+      // Normalise to Monday of that week
+      const dayOfWeekJS = programStart.getDay() // 0=Sun
+      const daysFromMon = (dayOfWeekJS + 6) % 7
+      const weekStart = new Date(programStart)
+      weekStart.setDate(programStart.getDate() - daysFromMon)
+
+      const phases = cp.programs?.program_phases || []
+      phases.forEach(phase => {
+        for (let w = 0; w < (phase.duration_weeks || 1); w++) {
+          ;(phase.program_phase_workouts || []).forEach(pw => {
+            const offset = (w * 7) + (pw.day_of_week - 1)
+            const d = new Date(weekStart)
+            d.setDate(weekStart.getDate() + offset)
+            const ds = d.toISOString().split('T')[0]
+            if (!programWorkoutsByDate[ds]) programWorkoutsByDate[ds] = []
+            programWorkoutsByDate[ds].push(pw)
+          })
+        }
+      })
+      // Sort each day by session_order
+      Object.values(programWorkoutsByDate).forEach(arr => arr.sort((a,b)=>(a.session_order||1)-(b.session_order||1)))
+    }
   } else {
     const [evRes, clRes] = await Promise.all([
       db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
@@ -2079,24 +2131,31 @@ async function renderCalendar(el) {
             `<div style="font-size:11px;font-weight:600;color:var(--text-muted);padding:4px 0">${d}</div>`
           ).join('')}
           ${cells.map(d => {
-            if (!d) return `<div style="aspect-ratio:1;padding:4px"></div>`
+            if (!d) return `<div style="padding:4px;min-height:52px"></div>`
             const dateStr = `${calendarYear}-${String(calendarMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
             const dayEvents = byDate[dateStr] || []
+            const dayWorkouts = programWorkoutsByDate[dateStr] || []
             const isToday = dateStr === todayStr
+            const hasWorkouts = dayWorkouts.length > 0
             return `
               <div onclick="showDayEvents('${dateStr}')" style="
-                aspect-ratio:1;padding:4px;border-radius:8px;cursor:pointer;
-                background:${isToday ? 'var(--accent)' : 'transparent'};
-                border:${isToday ? 'none' : '1px solid transparent'};
+                padding:4px;border-radius:8px;cursor:pointer;min-height:52px;
+                background:${isToday ? 'var(--accent)' : hasWorkouts ? 'var(--surface-2)' : 'transparent'};
+                border:1px solid ${isToday ? 'transparent' : hasWorkouts ? 'var(--border)' : 'transparent'};
                 transition:background 0.15s
-              " onmouseover="this.style.background=this.style.background||'var(--surface-2)'"
-                 onmouseout="this.style.background='${isToday ? 'var(--accent)' : 'transparent'}'">
-                <div style="font-size:12px;font-weight:${isToday?'700':'500'};color:${isToday?'#fff':'var(--text)'}">
+              " onmouseover="this.style.background='${isToday ? 'var(--accent)' : 'var(--surface-2)'}'"
+                 onmouseout="this.style.background='${isToday ? 'var(--accent)' : hasWorkouts ? 'var(--surface-2)' : 'transparent'}'">
+                <div style="font-size:11px;font-weight:${isToday?'700':'500'};color:${isToday?'#fff':'var(--text)'}">
                   ${d}
                 </div>
-                <div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;margin-top:2px">
+                ${hasWorkouts ? dayWorkouts.map(pw => `
+                  <div style="margin-top:2px">
+                    ${dayWorkouts.length > 1 ? `<div style="font-size:7px;font-weight:700;color:${isToday?'rgba(255,255,255,.7)':'var(--accent)'};letter-spacing:.04em;line-height:1">${pw.session_order===2?'PM':'AM'}</div>` : ''}
+                    <div style="font-size:8px;font-weight:600;color:${isToday?'#fff':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2">${(pw.workout_templates?.name||'').replace(/ —.*/, '')}</div>
+                  </div>`).join('') : ''}
+                <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:2px">
                   ${dayEvents.slice(0,3).map(e =>
-                    `<div style="width:5px;height:5px;border-radius:50%;background:${EVENT_COLOURS[e.type]?.dot || '#9ca3af'}"></div>`
+                    `<div style="width:4px;height:4px;border-radius:50%;background:${EVENT_COLOURS[e.type]?.dot || '#9ca3af'}"></div>`
                   ).join('')}
                 </div>
               </div>
@@ -2974,34 +3033,44 @@ async function renderClientWorkoutsPage(el) {
             const label = noteMatch ? noteMatch[1] : null
             const noteText = noteMatch ? noteMatch[2] : (ex.notes || '')
             const sets = ex.sets_json || []
-            const setRows = sets.map((s, si) => {
-              const parts = []
-              if (isCardio) {
-                if (s.duration) parts.push(fmtDuration(parseInt(s.duration)||0))
-                if (s.distance) parts.push(s.distance+' km')
-                if (s.pace500Min) parts.push(s.pace500Min+(s.pace500Max&&s.pace500Max!==s.pace500Min?'–'+s.pace500Max:'')+'/500m')
-                if (s.paceKmMin) parts.push(s.paceKmMin+(s.paceKmMax&&s.paceKmMax!==s.paceKmMin?'–'+s.paceKmMax:'')+'/km')
-                if (s.hrZoneMin) parts.push('HR '+s.hrZoneMin+(s.hrZoneMax?'–'+s.hrZoneMax:'')+' bpm')
-              } else {
-                const repsStr = s.repsMin ? (s.repsMin+(s.repsMax&&s.repsMax!==s.repsMin?'–'+s.repsMax:'')) : null
-                if (repsStr) parts.push(repsStr+' reps')
-                if (s.weight) parts.push(s.weight+'kg')
-                if (s.intensityMin) parts.push(s.intensityMin+(s.intensityMax&&s.intensityMax!==s.intensityMin?'–'+s.intensityMax:'')+'% 1RM')
-                const effortStr = s.effortMin ? ((s.effortType==='rir'?'RIR ':'RPE ')+s.effortMin+(s.effortMax&&s.effortMax!==s.effortMin?'–'+s.effortMax:'')) : null
-                if (effortStr) parts.push(effortStr)
-                const restStr = s.restMin && s.restMin !== '0:00' ? s.restMin+(s.restMax&&s.restMax!==s.restMin?'–'+s.restMax:'')+' rest' : null
-                if (restStr) parts.push(restStr)
-                if (s.tempo) parts.push(s.tempo)
-              }
-              const summary = parts.filter(Boolean).join(' · ')
-              return summary ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600">Set ${si+1}:</span> ${summary}</div>` : null
-            }).filter(Boolean).join('')
+            const setRows = (() => {
+              const summaries = sets.map(s => {
+                const parts = []
+                if (isCardio) {
+                  if (s.duration) parts.push(fmtDuration(parseInt(s.duration)||0))
+                  if (s.distance) parts.push(s.distance+' km')
+                  if (s.pace500Min) parts.push(s.pace500Min+(s.pace500Max&&s.pace500Max!==s.pace500Min?'–'+s.pace500Max:'')+'/500m')
+                  if (s.paceKmMin) parts.push(s.paceKmMin+(s.paceKmMax&&s.paceKmMax!==s.paceKmMin?'–'+s.paceKmMax:'')+'/km')
+                  if (s.hrZoneMin) parts.push('HR '+s.hrZoneMin+(s.hrZoneMax?'–'+s.hrZoneMax:'')+' bpm')
+                } else {
+                  const repsStr = s.repsMin ? (s.repsMin+(s.repsMax&&s.repsMax!==s.repsMin?'–'+s.repsMax:'')) : null
+                  if (repsStr) parts.push(repsStr+' reps')
+                  if (s.weight) parts.push(s.weight+'kg')
+                  if (s.intensityMin) parts.push(s.intensityMin+(s.intensityMax&&s.intensityMax!==s.intensityMin?'–'+s.intensityMax:'')+'% 1RM')
+                  const effortStr = s.effortMin ? ((s.effortType==='rir'?'RIR ':'RPE ')+s.effortMin+(s.effortMax&&s.effortMax!==s.effortMin?'–'+s.effortMax:'')) : null
+                  if (effortStr) parts.push(effortStr)
+                  const restStr = s.restMin && s.restMin !== '0:00' ? s.restMin+(s.restMax&&s.restMax!==s.restMin?'–'+s.restMax:'')+' rest' : null
+                  if (restStr) parts.push(restStr)
+                  if (s.tempo) parts.push(s.tempo)
+                }
+                return parts.filter(Boolean).join(' · ')
+              })
+              // Group consecutive identical sets
+              const groups = []
+              summaries.forEach((s, i) => {
+                if (s && groups.length && groups[groups.length-1].summary === s) groups[groups.length-1].count++
+                else if (s) groups.push({ summary: s, count: 1, first: i })
+              })
+              return groups.map(g =>
+                `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600">${g.count > 1 ? g.count+'×' : 'Set '+(g.first+1)+':'}</span> ${g.summary}</div>`
+              ).join('')
+            })()
             return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
               ${label ? `<span style="flex-shrink:0;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,.1);color:var(--accent);margin-top:1px">${label}</span>` : ''}
               <div style="min-width:0">
                 <div style="font-size:13px;font-weight:600;color:var(--text)">${ex.exercise_name||''}</div>
                 ${setRows ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:3px">${setRows}</div>` : ''}
-                ${noteText ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:2px">${noteText}</div>` : ''}
+                ${noteText ? `<div style="margin-top:4px;padding:4px 8px;border-radius:5px;background:var(--surface-2)"><span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Notes</span><div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:1px">${noteText}</div></div>` : ''}
               </div>
             </div>`
           }).join('')
@@ -3063,6 +3132,7 @@ async function renderWorkoutTemplates(el) {
   const { data: templates, error } = await db
     .from('workout_templates')
     .select('*, workout_template_exercises(id)')
+    .eq('coach_id', currentUser.id)
     .order('name')
 
   if (error) { log.error('renderWorkoutTemplates', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
@@ -4038,7 +4108,7 @@ function renderRunnerLastSession(exName) {
   const dateStr = new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);white-space:nowrap">Last · ${dateStr}</span>
+      <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);white-space:nowrap">↑ Beat · ${dateStr}</span>
       ${data.sets.map(s => `
         <span style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap">
           <span style="color:var(--text-muted)">S${s.set_number}</span>
@@ -4092,8 +4162,9 @@ function renderRunner() {
               <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:50px">Set ${i+1}</span>
               ${ex.type === 'cardio'
                 ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : s.distance ? s.distance+' km' : '—'}</span>`
-                : `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span>
-              <span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
+                : s.distance_m
+                  ? `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
+                  : `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
               <span style="font-size:11px;color:var(--text-muted)">✎</span>
             </div>`).join('')}
       </div>
@@ -4185,53 +4256,61 @@ function renderRunner() {
         <!-- Strength input -->
         ${(() => {
           const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
-          const cols = []
           const repsStr = tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
+          const cols = []
           if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
           if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
           if (tgt.intensityMin) cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
           if (tgt.effortMin) cols.push({ val: (tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
           if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
           if (tgt.tempo) cols.push({ val: tgt.tempo, label: 'TEMPO' })
-          if (!cols.length) return ''
-          return `<div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:10px">${cols.map((c, i) =>
+          const targetBar = cols.length ? `<div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:10px">${cols.map((c, i) =>
             `<div style="flex:1;text-align:center;padding:8px 4px${i < cols.length-1 ? ';border-right:1px solid var(--border)' : ''}">
               <div style="font-size:18px;font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'};line-height:1.1">${c.val}</div>
               <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
             </div>`
-          ).join('')}</div>`
-        })()}
-        ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
-        <div style="display:flex;align-items:stretch;gap:6px">
-          <!-- Set number -->
-          <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
-            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
-            <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
+          ).join('')}</div>` : ''
+          const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
+          const distTarget = ex.notes?.match(/(\d+)[–\-](\d+)\s*m/)?.[0] || tgt.distance || ''
+          const weightPlaceholder = tgt.weight || '—'
+          const repsPlaceholder = repsStr ? repsStr.replace('–', '-') : '—'
+          return `
+          ${targetBar}
+          ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
+          <div style="display:flex;align-items:stretch;gap:6px">
+            <!-- Set number -->
+            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
+              <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
+            </div>
+            <!-- Weight input -->
+            ${ex.bodyweight
+              ? `<div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg)">
+                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Weight</div>
+                  <div style="font-size:20px;font-weight:700;color:var(--text)">BW</div>
+                 </div>`
+              : `<div style="flex:1;display:flex;flex-direction:column">
+                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${ex.assisted?'Assist (kg)':'Kilograms'}</div>
+                  <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
+                    style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+                 </div>`}
+            <!-- Reps or Distance input -->
+            <div style="flex:1;display:flex;flex-direction:column">
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${isDistance ? 'Metres' : 'Reps'}</div>
+              ${isDistance
+                ? `<input id="wr-dist-input" type="number" inputmode="decimal" step="1" placeholder="${distTarget||'m'}"
+                    style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
+                : `<input id="wr-reps-input" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
+                    style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`}
+            </div>
+            <!-- LOG / Skip -->
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
+              <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
+              ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
+            </div>
           </div>
-          <!-- Weight input -->
-          ${ex.bodyweight
-            ? `<div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg)">
-                <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Weight</div>
-                <div style="font-size:20px;font-weight:700;color:var(--text)">BW</div>
-               </div>`
-            : `<div style="flex:1;display:flex;flex-direction:column">
-                <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${ex.assisted?'Assist (kg)':'Kilograms'}</div>
-                <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="—"
-                  style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-               </div>`}
-          <!-- Reps input -->
-          <div style="flex:1;display:flex;flex-direction:column">
-            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Reps</div>
-            <input id="wr-reps-input" type="number" inputmode="numeric" placeholder="—"
-              style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-          </div>
-          <!-- LOG / Skip -->
-          <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
-            <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
-            ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
-          </div>
-        </div>
-        ${ex.loggedSets.length > 0 && ex.loggedSets.length >= ex.targetSets ? `<button onclick="addExtraStrengthSet()" style="width:100%;margin-top:6px;padding:7px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`}
+          ${ex.loggedSets.length > 0 && ex.loggedSets.length >= ex.targetSets ? `<button onclick="addExtraStrengthSet()" style="width:100%;margin-top:6px;padding:7px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
+        })()}`}
       </div>
     </div>
   `
@@ -4268,11 +4347,18 @@ function logRunnerSet() {
     // stop any running interval timer
     stopIntervalTimer()
   } else {
+    const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
     const weight = ex.bodyweight ? 'BW' : (document.getElementById('wr-weight-input')?.value?.trim() || '')
-    const reps   = document.getElementById('wr-reps-input')?.value?.trim() || ''
-    if (!reps) return
-    setData = { weight, reps }
-    if (ex.assisted) setData.assistWeight = weight
+    if (isDistance) {
+      const dist = document.getElementById('wr-dist-input')?.value?.trim() || ''
+      if (!dist) return
+      setData = { weight, distance_m: dist }
+    } else {
+      const reps = document.getElementById('wr-reps-input')?.value?.trim() || ''
+      if (!reps) return
+      setData = { weight, reps }
+      if (ex.assisted) setData.assistWeight = weight
+    }
   }
   ex.loggedSets.push(setData)
   // Superset: if next exercise shares a superset group, switch to it instead of resting
