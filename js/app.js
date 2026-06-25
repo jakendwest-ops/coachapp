@@ -2891,13 +2891,22 @@ async function renderWorkouts(el) {
   await renderWorkoutTemplates(document.getElementById('workout-tab-content'))
 }
 
+function toggleClientTemplate(id) {
+  const panel = document.getElementById(`tmpl-detail-${id}`)
+  const chevron = document.getElementById(`chevron-${id}`)
+  if (!panel) return
+  const open = panel.style.display === 'none'
+  panel.style.display = open ? 'block' : 'none'
+  if (chevron) chevron.style.transform = open ? 'rotate(90deg)' : ''
+}
+
 async function renderClientWorkoutsPage(el) {
   const { data: clientRecord } = await db.from('clients').select('id, coach_id').eq('user_id', currentUser.id).single()
   if (!clientRecord) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
   const clientId = clientRecord.id
 
   const [{ data: templates }, { data: logs }] = await Promise.all([
-    db.from('workout_templates').select('id, name, description, workout_template_exercises(id)').eq('coach_id', clientRecord.coach_id).order('name'),
+    db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id).order('name'),
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20)
   ])
 
@@ -2914,19 +2923,56 @@ async function renderClientWorkoutsPage(el) {
         <div class="empty-text">Your coach hasn't added any workout templates yet.</div>
       </div>` : `
       <div class="list" style="margin-bottom:28px">
-        ${templates.map(t => `
-          <div class="list-row" style="cursor:default">
-            <div style="width:36px;height:36px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+        ${templates.map(t => {
+          const exs = (t.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
+          const exDetail = exs.map(ex => {
+            const isCardio = ex.exercise_type === 'cardio'
+            const noteMatch = ex.notes?.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
+            const label = noteMatch ? noteMatch[1] : null
+            const noteText = noteMatch ? noteMatch[2] : (ex.notes || '')
+            const sets = ex.sets_json || []
+            const setSummary = sets.length ? (() => {
+              const s0 = sets[0]
+              const parts = []
+              if (isCardio) {
+                if (s0.duration) parts.push(fmtDuration(parseInt(s0.duration)||0))
+                if (s0.distance) parts.push(s0.distance+' km')
+                if (s0.pace500Min) parts.push(s0.pace500Min+(s0.pace500Max&&s0.pace500Max!==s0.pace500Min?'–'+s0.pace500Max:'')+'/500m')
+                if (s0.paceKmMin) parts.push(s0.paceKmMin+(s0.paceKmMax&&s0.paceKmMax!==s0.paceKmMin?'–'+s0.paceKmMax:'')+'/km')
+                if (s0.hrZoneMin) parts.push('HR '+s0.hrZoneMin+(s0.hrZoneMax?'–'+s0.hrZoneMax:'')+' bpm')
+              } else {
+                if (s0.repsMin) parts.push(s0.repsMin+(s0.repsMax&&s0.repsMax!==s0.repsMin?'–'+s0.repsMax:'')+' reps')
+                if (s0.weight) parts.push(s0.weight+'kg')
+              }
+              return (sets.length > 1 ? sets.length+'× ' : '') + parts.join(' · ')
+            })() : ''
+            return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+              ${label ? `<span style="flex-shrink:0;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,.1);color:var(--accent);margin-top:1px">${label}</span>` : ''}
+              <div style="min-width:0">
+                <div style="font-size:13px;font-weight:600;color:var(--text)">${ex.exercise_name||''}</div>
+                ${setSummary ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${setSummary}</div>` : ''}
+                ${noteText ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:1px">${noteText}</div>` : ''}
+              </div>
+            </div>`
+          }).join('')
+          return `
+          <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--surface)">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer" onclick="toggleClientTemplate('${t.id}')">
+              <div style="width:36px;height:36px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+              </div>
+              <div class="row-info" style="flex:1;min-width:0">
+                <div class="row-name">${t.name}</div>
+                <div class="row-meta">${exs.length} exercise${exs.length!==1?'s':''}${t.description ? ' · '+t.description : ''}</div>
+              </div>
+              <svg id="chevron-${t.id}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;color:var(--text-muted);transition:transform .2s"><polyline points="9 18 15 12 9 6"/></svg>
+              <button class="btn-primary" style="font-size:13px;padding:6px 14px;flex-shrink:0" onclick="event.stopPropagation();startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
             </div>
-            <div class="row-info">
-              <div class="row-name">${t.name}</div>
-              <div class="row-meta">${t.workout_template_exercises?.length || 0} exercises${t.description ? ' · ' + t.description : ''}</div>
+            <div id="tmpl-detail-${t.id}" style="display:none;padding:0 14px 10px">
+              ${exDetail || '<div style="font-size:13px;color:var(--text-muted);padding:8px 0">No exercises added yet.</div>'}
             </div>
-            <div class="row-right">
-              <button class="btn-primary" style="font-size:13px;padding:6px 14px" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
-            </div>
-          </div>`).join('')}
+          </div>`
+        }).join('')}
       </div>`}
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
