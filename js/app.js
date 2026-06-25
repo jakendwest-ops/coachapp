@@ -2974,27 +2974,34 @@ async function renderClientWorkoutsPage(el) {
             const label = noteMatch ? noteMatch[1] : null
             const noteText = noteMatch ? noteMatch[2] : (ex.notes || '')
             const sets = ex.sets_json || []
-            const setSummary = sets.length ? (() => {
-              const s0 = sets[0]
+            const setRows = sets.map((s, si) => {
               const parts = []
               if (isCardio) {
-                if (s0.duration) parts.push(fmtDuration(parseInt(s0.duration)||0))
-                if (s0.distance) parts.push(s0.distance+' km')
-                if (s0.pace500Min) parts.push(s0.pace500Min+(s0.pace500Max&&s0.pace500Max!==s0.pace500Min?'–'+s0.pace500Max:'')+'/500m')
-                if (s0.paceKmMin) parts.push(s0.paceKmMin+(s0.paceKmMax&&s0.paceKmMax!==s0.paceKmMin?'–'+s0.paceKmMax:'')+'/km')
-                if (s0.hrZoneMin) parts.push('HR '+s0.hrZoneMin+(s0.hrZoneMax?'–'+s0.hrZoneMax:'')+' bpm')
+                if (s.duration) parts.push(fmtDuration(parseInt(s.duration)||0))
+                if (s.distance) parts.push(s.distance+' km')
+                if (s.pace500Min) parts.push(s.pace500Min+(s.pace500Max&&s.pace500Max!==s.pace500Min?'–'+s.pace500Max:'')+'/500m')
+                if (s.paceKmMin) parts.push(s.paceKmMin+(s.paceKmMax&&s.paceKmMax!==s.paceKmMin?'–'+s.paceKmMax:'')+'/km')
+                if (s.hrZoneMin) parts.push('HR '+s.hrZoneMin+(s.hrZoneMax?'–'+s.hrZoneMax:'')+' bpm')
               } else {
-                if (s0.repsMin) parts.push(s0.repsMin+(s0.repsMax&&s0.repsMax!==s0.repsMin?'–'+s0.repsMax:'')+' reps')
-                if (s0.weight) parts.push(s0.weight+'kg')
+                const repsStr = s.repsMin ? (s.repsMin+(s.repsMax&&s.repsMax!==s.repsMin?'–'+s.repsMax:'')) : null
+                if (repsStr) parts.push(repsStr+' reps')
+                if (s.weight) parts.push(s.weight+'kg')
+                if (s.intensityMin) parts.push(s.intensityMin+(s.intensityMax&&s.intensityMax!==s.intensityMin?'–'+s.intensityMax:'')+'% 1RM')
+                const effortStr = s.effortMin ? ((s.effortType==='rir'?'RIR ':'RPE ')+s.effortMin+(s.effortMax&&s.effortMax!==s.effortMin?'–'+s.effortMax:'')) : null
+                if (effortStr) parts.push(effortStr)
+                const restStr = s.restMin && s.restMin !== '0:00' ? s.restMin+(s.restMax&&s.restMax!==s.restMin?'–'+s.restMax:'')+' rest' : null
+                if (restStr) parts.push(restStr)
+                if (s.tempo) parts.push(s.tempo)
               }
-              return (sets.length > 1 ? sets.length+'× ' : '') + parts.join(' · ')
-            })() : ''
+              const summary = parts.filter(Boolean).join(' · ')
+              return summary ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600">Set ${si+1}:</span> ${summary}</div>` : null
+            }).filter(Boolean).join('')
             return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
               ${label ? `<span style="flex-shrink:0;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,.1);color:var(--accent);margin-top:1px">${label}</span>` : ''}
               <div style="min-width:0">
                 <div style="font-size:13px;font-weight:600;color:var(--text)">${ex.exercise_name||''}</div>
-                ${setSummary ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${setSummary}</div>` : ''}
-                ${noteText ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:1px">${noteText}</div>` : ''}
+                ${setRows ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:3px">${setRows}</div>` : ''}
+                ${noteText ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:2px">${noteText}</div>` : ''}
               </div>
             </div>`
           }).join('')
@@ -4176,6 +4183,23 @@ function renderRunner() {
           <button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>`
         })() : `
         <!-- Strength input -->
+        ${(() => {
+          const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+          const chips = []
+          const repsStr = tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
+          if (repsStr) chips.push(['reps', repsStr+' reps'])
+          if (tgt.weight) chips.push(['weight', tgt.weight+' kg'])
+          if (tgt.intensityMin) chips.push(['pct', tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'% 1RM'])
+          const effortStr = tgt.effortMin ? ((tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:'')) : null
+          if (effortStr) chips.push(['effort', effortStr])
+          const restStr = tgt.restMin && tgt.restMin !== '0:00' ? tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:'')+' rest' : null
+          if (restStr) chips.push(['rest', restStr])
+          if (tgt.tempo) chips.push(['tempo', tgt.tempo])
+          if (!chips.length) return ''
+          return `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">${chips.map(([k,v]) =>
+            `<span style="font-size:12px;padding:3px 9px;border-radius:20px;background:${k==='reps'||k==='weight'?'var(--accent)':'var(--surface-2)'};color:${k==='reps'||k==='weight'?'#fff':'var(--text-muted)'};font-weight:600">${v}</span>`
+          ).join('')}</div>`
+        })()}
         ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
         <div style="display:flex;align-items:stretch;gap:6px">
           <!-- Set number -->
