@@ -19,6 +19,13 @@ echo ""
 echo "=== CoachApp pre-push bug check ==="
 echo ""
 
+# ── 0. JS syntax check ────────────────────────────────────────────────────────
+echo "Checking JS syntax..."
+if ! node --check "$FILE" 2>/dev/null; then
+  node --check "$FILE" 2>&1 | while IFS= read -r line; do echo "  $line"; done
+  fail "JS syntax error in $FILE — app will not load in production"
+fi
+
 # ── 1. Wrong column names on known tables ─────────────────────────────────────
 echo "Checking column names..."
 
