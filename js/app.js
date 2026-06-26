@@ -1513,6 +1513,7 @@ function showAddPhaseWorkout(phaseId, programId) {
   const modal = document.getElementById('phase-workout-modal')
   if (!modal) return
   window._phaseWorkoutContext = null
+  window._currentProgramId = programId || null
   document.getElementById('pwm-phase-id').value = phaseId
   const sel = document.getElementById('pwm-template')
   sel.innerHTML = (window._programTemplates||[]).map(t=>`<option value="${t.id}">${t.name}</option>`).join('')
@@ -1522,7 +1523,7 @@ function showAddPhaseWorkout(phaseId, programId) {
 function createWorkoutFromPhaseModal() {
   const phaseId   = document.getElementById('pwm-phase-id').value
   const dayOfWeek = document.getElementById('pwm-day').value
-  window._phaseWorkoutContext = { phaseId, dayOfWeek }
+  window._phaseWorkoutContext = { phaseId, dayOfWeek, programId: window._currentProgramId || null }
   document.getElementById('phase-workout-modal').style.display = 'none'
   showCreateTemplateModal()
 }
@@ -3028,9 +3029,10 @@ async function renderClientWorkoutsPage(el) {
   if (!clientRecord) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
   const clientId = clientRecord.id
 
-  const [{ data: templates }, { data: logs }] = await Promise.all([
-    db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id).order('name'),
-    db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20)
+  const [{ data: templates }, { data: logs }, { data: programs }] = await Promise.all([
+    db.from('workout_templates').select('id, name, description, program_id, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id).order('name'),
+    db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
+    db.from('programs').select('id, name').eq('coach_id', clientRecord.coach_id).order('name')
   ])
 
   el.innerHTML = `
@@ -3044,9 +3046,20 @@ async function renderClientWorkoutsPage(el) {
         <div class="empty-icon">💪</div>
         <div class="empty-title">No workouts yet</div>
         <div class="empty-text">Your coach hasn't added any workout templates yet.</div>
-      </div>` : `
-      <div class="list" style="margin-bottom:28px">
-        ${templates.map(t => {
+      </div>` : (() => {
+      const programMap = Object.fromEntries((programs || []).map(p => [p.id, p.name]))
+      const byProgram = {}
+      const adHoc = []
+      templates.forEach(t => {
+        if (t.program_id && programMap[t.program_id]) {
+          if (!byProgram[t.program_id]) byProgram[t.program_id] = []
+          byProgram[t.program_id].push(t)
+        } else {
+          adHoc.push(t)
+        }
+      })
+      const secHdr = label => `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:20px 0 8px">${label}</div>`
+      const renderGroup = group => group.map(t => {
           const exs = (t.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
           const exDetail = exs.map(ex => {
             const isCardio = ex.exercise_type === 'cardio'
@@ -3112,8 +3125,17 @@ async function renderClientWorkoutsPage(el) {
               ${exDetail || '<div style="font-size:13px;color:var(--text-muted);padding:8px 0">No exercises added yet.</div>'}
             </div>
           </div>`
-        }).join('')}
-      </div>`}
+        }).join('')
+      let html = ''
+      Object.entries(byProgram).forEach(([pid, tmplts]) => {
+        html += secHdr(programMap[pid]) + renderGroup(tmplts)
+      })
+      if (adHoc.length) {
+        if (Object.keys(byProgram).length) html += secHdr('Ad-hoc sessions')
+        html += renderGroup(adHoc)
+      }
+      return `<div style="margin-bottom:28px">${html}</div>`
+    })()}
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Session history</div>
@@ -3150,35 +3172,57 @@ function switchWorkoutTab(tab) {
 async function renderWorkoutTemplates(el) {
   log.info('renderWorkoutTemplates', 'fetching templates')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
-  const { data: templates, error } = await db
-    .from('workout_templates')
-    .select('*, workout_template_exercises(id)')
-    .eq('coach_id', currentUser.id)
-    .order('name')
+  const [{ data: templates, error }, { data: programs }] = await Promise.all([
+    db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).order('name'),
+    db.from('programs').select('id, name').eq('coach_id', currentUser.id).order('name')
+  ])
 
   if (error) { log.error('renderWorkoutTemplates', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
 
-  el.innerHTML = templates.length === 0 ? `
-    <div class="empty-state">
-      <div class="empty-icon">📋</div>
-      <div class="empty-title">No templates yet</div>
-      <div class="empty-text">Create a workout template to quickly build sessions for your clients</div>
-      <button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button>
-    </div>
-  ` : `<div class="list">${templates.map(t => `
+  if (!templates.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No templates yet</div><div class="empty-text">Create a workout template to quickly build sessions for your clients</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
+    return
+  }
+
+  const programMap = Object.fromEntries((programs || []).map(p => [p.id, p.name]))
+  const byProgram = {}
+  const adHoc = []
+  templates.forEach(t => {
+    if (t.program_id && programMap[t.program_id]) {
+      if (!byProgram[t.program_id]) byProgram[t.program_id] = []
+      byProgram[t.program_id].push(t)
+    } else {
+      adHoc.push(t)
+    }
+  })
+
+  const templateRow = t => `
     <div class="list-row" onclick="openTemplate('${t.id}')">
       <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
       <div class="row-info">
         <div class="row-name">${t.name}</div>
-        <div class="row-meta">${t.description || (t.workout_template_exercises.length + ' exercises')}</div>
+        <div class="row-meta">${t.description || (t.workout_template_exercises.length + ' exercise' + (t.workout_template_exercises.length !== 1 ? 's' : ''))}</div>
       </div>
       <div class="row-right">
         <span style="font-size:12px;color:var(--text-muted)">${t.workout_template_exercises.length} ex</span>
         <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
-    </div>
-  `).join('')}</div>`
+    </div>`
+
+  const sectionHeader = label => `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:20px 0 8px">${label}</div>`
+
+  let html = ''
+  Object.entries(byProgram).forEach(([progId, tmplts]) => {
+    html += sectionHeader(programMap[progId])
+    html += `<div class="list">${tmplts.map(templateRow).join('')}</div>`
+  })
+  if (adHoc.length) {
+    if (Object.keys(byProgram).length) html += sectionHeader('Ad-hoc sessions')
+    html += `<div class="list">${adHoc.map(templateRow).join('')}</div>`
+  }
+
+  el.innerHTML = html
 }
 
 async function renderExerciseLibrary(el) {
@@ -3429,10 +3473,12 @@ async function saveNewTemplate() {
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
   log.info('saveNewTemplate', 'creating template', { name })
+  const ctx = window._phaseWorkoutContext
   const { data, error } = await db.from('workout_templates').insert({
     coach_id:    currentUser.id,
     name,
-    description: document.getElementById('ct-desc').value.trim() || null
+    description: document.getElementById('ct-desc').value.trim() || null,
+    program_id:  ctx?.programId || null
   }).select().single()
 
   if (error) { log.error('saveNewTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
@@ -4442,21 +4488,29 @@ function _unlockAudio() {
   } catch(e) {}
 }
 
-function playBeep(freq = 880, duration = 0.15, volume = 0.4) {
+function playBeep(freq = 880, duration = 0.15, volume = 0.8) {
   try {
     if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-    if (_audioCtx.state === 'suspended') return // not yet unlocked — skip silently
-    const ctx = _audioCtx
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.type = 'sine'
-    osc.frequency.value = freq
-    gain.gain.setValueAtTime(volume, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + duration)
+    const _fire = () => {
+      try {
+        const ctx = _audioCtx
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.type = 'sine'
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(volume, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + duration)
+      } catch(e) {}
+    }
+    if (_audioCtx.state === 'suspended') {
+      _audioCtx.resume().then(_fire).catch(() => {})
+    } else {
+      _fire()
+    }
   } catch(e) {}
 }
 
@@ -4479,7 +4533,7 @@ function startIntervalTimer(secs) {
     _runner._intervalRemaining--
     if (_runner._intervalRemaining <= 0) {
       stopIntervalTimer()
-      playBeep(1046, 0.4, 0.6)
+      playBeep(1046, 0.5, 0.95)
       // auto-log with the target duration
       const ex = _runner.exercises[_runner.exIdx]
       const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
@@ -4508,7 +4562,7 @@ function startIntervalTimer(secs) {
       }
       return
     }
-    if (_runner._intervalRemaining <= 5) playBeep(880, 0.08, 0.3)
+    if (_runner._intervalRemaining <= 5) playBeep(880, 0.15, 0.75)
     const el = document.getElementById('wr-interval-countdown')
     if (el) {
       el.textContent = fmtRestCountdown(_runner._intervalRemaining)
@@ -4583,12 +4637,12 @@ function startRestTimer(secs) {
     if (_runner.restRemaining <= 0) {
       _runner._restInterval = clearTimer(_runner._restInterval)
       _runner.restRemaining = null
-      playBeep(1046, 0.4, 0.5) // higher, longer beep on finish
+      playBeep(1046, 0.5, 0.95) // higher, longer beep on finish
       document.getElementById('rest-timer-overlay')?.remove()
       const cb = _runner._afterRest
       if (cb) { _runner._afterRest = null; cb() }
     } else {
-      if (_runner.restRemaining <= 5) playBeep(880, 0.08, 0.3)
+      if (_runner.restRemaining <= 5) playBeep(880, 0.15, 0.75)
       const el = document.getElementById('rt-countdown')
       if (el) {
         el.textContent = fmtRestCountdown(_runner.restRemaining)
