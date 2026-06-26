@@ -867,65 +867,9 @@ async function renderClientDashboard(el) {
       ${(() => {
         const ap = assignedPrograms?.[0]
         if (!ap || !ap.programs) return ''
-        const prog = ap.programs
-        const phases = (prog.program_phases || []).sort((a, b) => a.order_index - b.order_index)
-        const startDate = ap.start_date ? new Date(ap.start_date + 'T00:00:00') : null
-        const totalWeeks = phases.reduce((s, ph) => s + ph.duration_weeks, 0)
-
-        // Find current phase
-        let currentPhase = null
-        const weeksSinceStart = startDate ? Math.floor((Date.now() - startDate) / 604800000) : -1
-        let cumulative = 0
-        for (const ph of phases) {
-          if (weeksSinceStart >= cumulative && weeksSinceStart < cumulative + ph.duration_weeks) { currentPhase = ph; break }
-          cumulative += ph.duration_weeks
-        }
-        if (!currentPhase && weeksSinceStart >= totalWeeks && phases.length) currentPhase = phases[phases.length - 1]
-
-        // Phase progress bar
-        const progressBar = phases.length ? `
-          <div style="display:flex;gap:3px;margin-bottom:14px">
-            ${phases.map((ph, i) => {
-              const wb = phases.slice(0, i).reduce((s, p) => s + p.duration_weeks, 0)
-              const done = weeksSinceStart >= wb + ph.duration_weeks
-              const active = weeksSinceStart >= wb && weeksSinceStart < wb + ph.duration_weeks
-              return `<div style="flex:${ph.duration_weeks};height:5px;border-radius:3px;background:${active ? 'var(--accent)' : done ? 'var(--accent)' : 'var(--surface-2)'};opacity:${done ? 0.4 : 1}" title="${ph.name}"></div>`
-            }).join('')}
-          </div>` : ''
-
-        // Weekly schedule for current phase
-        const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
-        const todayDOW = new Date().getDay() || 7
-        const phaseWorkouts = currentPhase?.program_phase_workouts || []
-        const weekSchedule = `
-          <div style="display:flex;gap:4px">
-            ${dayNames.map((day, i) => {
-              const dow = i + 1
-              const pws = phaseWorkouts.filter(w => w.day_of_week === dow).sort((a,b)=>(a.session_order||1)-(b.session_order||1))
-              const isToday = dow === todayDOW
-              return `
-                <div style="flex:1;text-align:center;padding:8px 3px;border-radius:8px;background:${isToday ? 'var(--accent)' : 'var(--surface-2)'};min-width:0">
-                  <div style="font-size:10px;font-weight:600;color:${isToday ? '#fff' : 'var(--text-muted)'};">${day}</div>
-                  ${pws.length ? pws.map((pw, pi) => `
-                    ${pws.length > 1 ? `<div style="font-size:8px;font-weight:700;color:${isToday ? 'rgba(255,255,255,.7)' : 'var(--accent)'};margin-top:${pi===0?'3':'6'}px;letter-spacing:.05em">${pw.session_order===2?'PM':'AM'}</div>` : ''}
-                    <div style="font-size:9px;font-weight:600;margin-top:1px;color:${isToday ? '#fff' : 'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px">${pw.workout_templates?.name || 'Workout'}</div>
-                    ${isToday ? `<button onclick="startWorkoutRunner('${clientId}','${pw.workout_templates?.id}')" style="margin-top:4px;background:#fff;color:var(--accent);border:none;border-radius:4px;font-size:10px;font-weight:700;padding:2px 5px;cursor:pointer;width:100%">▶ Start</button>` : ''}
-                  `).join('') : `<div style="font-size:9px;color:${isToday ? 'rgba(255,255,255,.6)' : 'var(--text-muted)'};margin-top:4px">Rest</div>`}
-                </div>`
-            }).join('')}
-          </div>`
-
-        return `
-        <div class="dashboard-card" style="grid-column: span 2">
-          <div class="card-header" style="margin-bottom:10px">
-            <div>
-              <h2 class="card-title" style="margin-bottom:2px">${prog.name}</h2>
-              ${currentPhase ? `<div style="font-size:12px;color:var(--text-muted)">Phase: ${currentPhase.name} · Week ${weeksSinceStart + 1} of ${totalWeeks}</div>` : `<div style="font-size:12px;color:var(--text-muted)">${totalWeeks} weeks</div>`}
-            </div>
-          </div>
-          ${progressBar}
-          ${weekSchedule}
-        </div>`
+        window._clientProgramData = { ap, clientId }
+        window._clientProgramWeekOffset = 0
+        return `<div id="program-card-container" style="grid-column: span 2"></div>`
       })()}
 
       <!-- Weekly check-in -->
@@ -965,7 +909,93 @@ async function renderClientDashboard(el) {
 
     </div>`
 
+  const pcContainer = el.querySelector('#program-card-container')
+  if (pcContainer) renderClientProgramCard()
+
   log.ok('renderClientDashboard', 'rendered', { clientId, goals: goals?.length, events: events?.length, pbs: pbs.length })
+}
+
+function clientProgramNav(delta) {
+  if (delta === 'today') window._clientProgramWeekOffset = 0
+  else window._clientProgramWeekOffset = (window._clientProgramWeekOffset || 0) + delta
+  renderClientProgramCard()
+}
+
+function renderClientProgramCard() {
+  const container = document.getElementById('program-card-container')
+  if (!container || !window._clientProgramData) return
+  const { ap, clientId } = window._clientProgramData
+  const prog = ap.programs
+  const phases = (prog.program_phases || []).sort((a, b) => a.order_index - b.order_index)
+  const startDate = ap.start_date ? new Date(ap.start_date + 'T00:00:00') : null
+  const totalWeeks = phases.reduce((s, ph) => s + ph.duration_weeks, 0)
+  const weeksSinceStart = startDate ? Math.floor((Date.now() - startDate) / 604800000) : 0
+  const offset = window._clientProgramWeekOffset || 0
+  const selectedWeek = Math.max(0, Math.min(totalWeeks - 1, weeksSinceStart + offset))
+
+  // Find phase for selected week
+  let selectedPhase = null, cumulative = 0
+  for (const ph of phases) {
+    if (selectedWeek >= cumulative && selectedWeek < cumulative + ph.duration_weeks) { selectedPhase = ph; break }
+    cumulative += ph.duration_weeks
+  }
+  if (!selectedPhase && phases.length) selectedPhase = phases[phases.length - 1]
+
+  // Week date range
+  const weekStart = startDate ? new Date(startDate.getTime() + selectedWeek * 7 * 86400000) : null
+  const todayStr = new Date().toISOString().split('T')[0]
+  const fmtShort = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const weekLabel = weekStart ? `${fmtShort(weekStart)} – ${fmtShort(new Date(weekStart.getTime() + 6 * 86400000))}` : ''
+
+  // Progress bar
+  const progressBar = phases.length ? `<div style="display:flex;gap:3px;margin-bottom:14px">
+    ${phases.map((ph, i) => {
+      const wb = phases.slice(0, i).reduce((s, p) => s + p.duration_weeks, 0)
+      const done = selectedWeek >= wb + ph.duration_weeks
+      const active = selectedWeek >= wb && selectedWeek < wb + ph.duration_weeks
+      return `<div style="flex:${ph.duration_weeks};height:5px;border-radius:3px;background:${active || done ? 'var(--accent)' : 'var(--surface-2)'};opacity:${done ? 0.4 : 1}" title="${ph.name}"></div>`
+    }).join('')}
+  </div>` : ''
+
+  // Day columns
+  const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+  const phaseWorkouts = selectedPhase?.program_phase_workouts || []
+  const dayColumns = dayNames.map((day, i) => {
+    const dow = i + 1
+    const pws = phaseWorkouts.filter(w => w.day_of_week === dow).sort((a, b) => (a.session_order||1) - (b.session_order||1))
+    const dayDate = weekStart ? new Date(weekStart.getTime() + i * 86400000) : null
+    const isToday = dayDate ? dayDate.toISOString().split('T')[0] === todayStr : false
+    const dateNum = dayDate ? dayDate.getDate() : ''
+    return `<div style="flex:1;text-align:center;padding:8px 3px;border-radius:8px;background:${isToday ? 'var(--accent)' : 'var(--surface-2)'};min-width:0">
+      <div style="font-size:10px;font-weight:600;color:${isToday ? '#fff' : 'var(--text-muted)'};">${day}</div>
+      ${weekStart ? `<div style="font-size:11px;font-weight:700;color:${isToday ? 'rgba(255,255,255,.8)' : 'var(--text-muted)'};">${dateNum}</div>` : ''}
+      ${pws.length ? pws.map((pw, pi) => `
+        ${pws.length > 1 ? `<div style="font-size:8px;font-weight:700;color:${isToday ? 'rgba(255,255,255,.7)' : 'var(--accent)'};margin-top:${pi===0?'2':'5'}px;letter-spacing:.05em">${pw.session_order===2?'PM':'AM'}</div>` : ''}
+        <div style="font-size:9px;font-weight:600;margin-top:1px;color:${isToday ? '#fff' : 'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px">${(pw.workout_templates?.name||'Workout').replace(/ — W\d+/,'')}</div>
+        <button onclick="startWorkoutRunner('${clientId}','${pw.workout_templates?.id}')" style="margin-top:4px;background:${isToday?'#fff':'var(--accent)'};color:${isToday?'var(--accent)':'#fff'};border:none;border-radius:4px;font-size:10px;font-weight:700;padding:2px 5px;cursor:pointer;width:100%">▶</button>
+      `).join('') : `<div style="font-size:9px;color:${isToday ? 'rgba(255,255,255,.6)' : 'var(--text-muted)'};margin-top:4px">Rest</div>`}
+    </div>`
+  }).join('')
+
+  const canPrev = selectedWeek > 0
+  const canNext = selectedWeek < totalWeeks - 1
+  const isCurrentWeek = selectedWeek === Math.max(0, Math.min(totalWeeks - 1, weeksSinceStart))
+
+  container.innerHTML = `<div class="dashboard-card">
+    <div class="card-header" style="margin-bottom:10px">
+      <div>
+        <h2 class="card-title" style="margin-bottom:2px">${prog.name}</h2>
+        <div style="font-size:12px;color:var(--text-muted)">${selectedPhase?.name || ''} · Week ${selectedWeek + 1} of ${totalWeeks}${weekLabel ? ' · ' + weekLabel : ''}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button onclick="clientProgramNav(-1)" ${canPrev?'':'disabled'} style="background:var(--surface-2);border:none;border-radius:8px;width:32px;height:32px;cursor:${canPrev?'pointer':'default'};font-size:18px;color:${canPrev?'var(--text)':'var(--text-muted)'};display:flex;align-items:center;justify-content:center">‹</button>
+        ${!isCurrentWeek ? `<button onclick="clientProgramNav('today')" style="background:var(--surface-2);border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:600;color:var(--text)">Today</button>` : ''}
+        <button onclick="clientProgramNav(1)" ${canNext?'':'disabled'} style="background:var(--surface-2);border:none;border-radius:8px;width:32px;height:32px;cursor:${canNext?'pointer':'default'};font-size:18px;color:${canNext?'var(--text)':'var(--text-muted)'};display:flex;align-items:center;justify-content:center">›</button>
+      </div>
+    </div>
+    ${progressBar}
+    <div style="display:flex;gap:4px">${dayColumns}</div>
+  </div>`
 }
 
 // ─── CLIENT PROFILE: PROGRAMS TAB ─────────────────────────────────────────────
