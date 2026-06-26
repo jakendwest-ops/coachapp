@@ -73,12 +73,25 @@ async function showApp() {
   await loadUserInfo()
   applyRoleUI()
   const defaultPage = currentProfile?.role === 'client' ? 'client-dashboard' : 'dashboard'
-  const stored = localStorage.getItem('_activePage')
-  // Restore last page only if it's valid for the current role
-  const clientPages = ['client-dashboard', 'workouts', 'calendar']
-  const coachPages  = ['dashboard', 'clients', 'workouts', 'calendar', 'programs']
+  const clientPages = ['client-dashboard', 'workouts', 'calendar', 'progress', 'settings']
+  const coachPages  = ['dashboard', 'clients', 'workouts', 'calendar', 'programs', 'settings']
   const validPages  = currentProfile?.role === 'client' ? clientPages : coachPages
-  navigate(stored && validPages.includes(stored) ? stored : defaultPage)
+
+  // Check for redirect from 404.html (user loaded a direct URL like /coachapp/dashboard)
+  const redirectPath = sessionStorage.getItem('_spa_redirect')
+  if (redirectPath) {
+    sessionStorage.removeItem('_spa_redirect')
+    const fromPath = redirectPath.replace(/^\//, '').split('/')[0]
+    if (validPages.includes(fromPath)) { navigate(fromPath, 'replace'); return }
+  }
+
+  // Read page from current URL path (e.g. /coachapp/dashboard → 'dashboard')
+  const pathPage = window.location.pathname.replace(/^\/coachapp\/?/, '').split('/')[0]
+  if (pathPage && validPages.includes(pathPage)) { navigate(pathPage, 'replace'); return }
+
+  // Fall back to localStorage then role default
+  const stored = localStorage.getItem('_activePage')
+  navigate(stored && validPages.includes(stored) ? stored : defaultPage, 'replace')
 }
 
 async function loadUserInfo() {
@@ -277,9 +290,11 @@ document.getElementById('sign-out-btn').addEventListener('click', async () => {
 })
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
-function navigate(page) {
+function navigate(page, _historyOp = 'push') {
   currentPage = page
   localStorage.setItem('_activePage', page)
+  if (_historyOp === 'push')    history.pushState({ page }, '', '/coachapp/' + page)
+  else if (_historyOp === 'replace') history.replaceState({ page }, '', '/coachapp/' + page)
 
   document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.page === page)
@@ -303,6 +318,11 @@ function navigate(page) {
     default: container.innerHTML = '<div class="loading-state">Page not found</div>'
   }
 }
+
+// Browser back/forward — re-render without pushing another history entry
+window.addEventListener('popstate', e => {
+  if (e.state?.page) navigate(e.state.page, 'none')
+})
 
 // Single delegated listener on each nav container — survives any re-render, never stacks
 ;['sidebar-nav', 'bottom-nav'].forEach(id => {

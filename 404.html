@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>CoachApp</title></head>
+<body>
+<script>
+  // GitHub Pages serves this on any path that isn't a real file.
+  // Save the intended path and redirect to the SPA root — showApp() will restore it.
+  const path = window.location.pathname.replace('/coachapp', '') || '/'
+  sessionStorage.setItem('_spa_redirect', path)
+  window.location.replace('/coachapp/')
+</script>
+</body>
+</html>
