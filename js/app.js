@@ -1814,6 +1814,7 @@ async function openClient(id) {
       <button class="tab-btn" onclick="switchTab(this,'tab-performance','${id}')">Performance</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-programs','${id}')">Programs</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-photos','${id}')">Photos</button>
+      <button class="tab-btn" onclick="switchTab(this,'tab-1rms','${id}')">1RMs</button>
     </div>
 
     <div id="tab-content">
@@ -1835,6 +1836,7 @@ function switchTab(btn, tab, clientId) {
     case 'tab-performance':  content.innerHTML = ''; renderClientPerformance(clientId, content);  break
     case 'tab-programs':     content.innerHTML = ''; renderClientPrograms(clientId, content);     break
     case 'tab-photos':       content.innerHTML = ''; renderClientPhotos(clientId, content);       break
+    case 'tab-1rms':         content.innerHTML = ''; renderClient1RMs(clientId, content);         break
   }
 }
 
@@ -4055,11 +4057,15 @@ async function startWorkoutRunner(clientId, templateId) {
   document.body.appendChild(overlay)
 }
 
-function launchRunner(clientId) {
+async function launchRunner(clientId) {
   const name     = document.getElementById('rs-name')?.value.trim() || window._fakeRsName || 'Workout'
   const tmplId   = document.getElementById('rs-template')?.value || window._fakeRsTemplate || ''
   window._fakeRsName = null; window._fakeRsTemplate = null
   const template = window._runnerTemplates?.find(t => t.id === tmplId)
+
+  // Fetch stored 1RMs for this client — used to compute kg targets from %1RM sets
+  const { data: oneRMRows } = await db.from('client_1rms').select('exercise_name, one_rm_kg').eq('client_id', clientId)
+  const oneRMMap = Object.fromEntries((oneRMRows || []).map(r => [r.exercise_name.trim().toLowerCase(), parseFloat(r.one_rm_kg)]))
 
   let exercises = []
   if (template) {
@@ -4069,7 +4075,8 @@ function launchRunner(clientId) {
         const repsStr = String(ex.reps || '')
         const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.[0]?.restMin || '') || 90
         const s0 = ex.sets_json?.[0] || {}
-        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null }
+        const oneRM = oneRMMap[ex.exercise_name.trim().toLowerCase()] || null
+        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
       })
   }
   if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
@@ -4279,7 +4286,15 @@ function renderRunner() {
           const cols = []
           if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
           if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
-          if (tgt.intensityMin) cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
+          if (tgt.intensityMin) {
+            if (ex.oneRM) {
+              const kgLo = _calcWeightFromPct(ex.oneRM, tgt.intensityMin)
+              const kgHi = tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? _calcWeightFromPct(ex.oneRM, tgt.intensityMax) : null
+              cols.push({ val: kgLo + (kgHi ? '–'+kgHi : '') + ' kg', label: '1RM TARGET', accent: true })
+            } else {
+              cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
+            }
+          }
           if (tgt.effortMin) cols.push({ val: (tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
           if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
           if (tgt.tempo) cols.push({ val: tgt.tempo, label: 'TEMPO' })
@@ -5511,6 +5526,132 @@ async function deleteProgressPhoto(clientId, fileName) {
   if (!confirm('Delete this photo?')) return
   await db.storage.from('progress-photos').remove([`${clientId}/${fileName}`])
   renderClientPhotos(clientId, document.getElementById('tab-content'))
+}
+
+// ─── 1RMs ────────────────────────────────────────────────────────────────────
+
+async function renderClient1RMs(clientId, el) {
+  el.innerHTML = '<div class="loading-state">Loading 1RMs…</div>'
+  const [{ data: rows }, { data: exercises }] = await Promise.all([
+    db.from('client_1rms').select('*').eq('client_id', clientId).order('exercise_name'),
+    db.from('exercises').select('name').eq('coach_id', currentUser.id).order('name')
+  ])
+  const exNames = (exercises || []).map(e => e.name)
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0;font-size:16px;font-weight:700">1 Rep Maxes</h3>
+      <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add 1RM</button>
+    </div>
+    ${!rows?.length ? `<div class="empty-state"><p>No 1RMs recorded yet.</p><p style="font-size:13px">Add a 1RM to unlock automatic weight targets in the workout runner.</p></div>` : `
+    <div class="list">
+      ${rows.map(r => `
+        <div class="list-row">
+          <div class="row-info">
+            <div class="row-name">${r.exercise_name}</div>
+            <div class="row-meta">Recorded ${new Date(r.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:20px;font-weight:800;color:var(--accent)">${r.one_rm_kg} kg</span>
+            <button onclick="showEdit1RMModal('${r.id}','${clientId}','${r.exercise_name.replace(/'/g,"\\'")}',${r.one_rm_kg},'${r.recorded_at}')" style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">Edit</button>
+            <button onclick="delete1RM('${r.id}','${clientId}')" style="padding:5px 10px;border:1px solid #ef4444;border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:#ef4444">Delete</button>
+          </div>
+        </div>`).join('')}
+    </div>`}
+    <datalist id="ex-names-list">${exNames.map(n=>`<option value="${n}">`).join('')}</datalist>
+  `
+}
+
+function showAdd1RMModal(clientId) {
+  const existing = document.getElementById('modal-1rm')
+  if (existing) existing.remove()
+  const overlay = document.createElement('div')
+  overlay.id = 'modal-1rm'
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Add 1RM</h2>
+        <button class="modal-close" onclick="document.getElementById('modal-1rm').remove()">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label">Exercise</label>
+        <input class="field-input" id="1rm-exercise" list="ex-names-list" placeholder="e.g. Back Squat" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="field-label">1RM (kg)</label>
+        <input class="field-input" id="1rm-weight" type="number" step="0.5" inputmode="decimal" placeholder="e.g. 120">
+      </div>
+      <div class="field">
+        <label class="field-label">Date recorded</label>
+        <input class="field-input" id="1rm-date" type="date" value="${new Date().toISOString().split('T')[0]}">
+      </div>
+      <p class="modal-error" id="1rm-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('modal-1rm').remove()">Cancel</button>
+        <button class="btn-primary" onclick="save1RM('${clientId}')">Save</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+}
+
+function showEdit1RMModal(id, clientId, exerciseName, weight, date) {
+  const existing = document.getElementById('modal-1rm')
+  if (existing) existing.remove()
+  const overlay = document.createElement('div')
+  overlay.id = 'modal-1rm'
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Edit 1RM</h2>
+        <button class="modal-close" onclick="document.getElementById('modal-1rm').remove()">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label">Exercise</label>
+        <input class="field-input" id="1rm-exercise" list="ex-names-list" value="${exerciseName}" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="field-label">1RM (kg)</label>
+        <input class="field-input" id="1rm-weight" type="number" step="0.5" inputmode="decimal" value="${weight}">
+      </div>
+      <div class="field">
+        <label class="field-label">Date recorded</label>
+        <input class="field-input" id="1rm-date" type="date" value="${date}">
+      </div>
+      <p class="modal-error" id="1rm-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('modal-1rm').remove()">Cancel</button>
+        <button class="btn-primary" onclick="save1RM('${clientId}','${id}')">Save</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+}
+
+async function save1RM(clientId, existingId = null) {
+  const exercise = document.getElementById('1rm-exercise')?.value.trim()
+  const weight   = parseFloat(document.getElementById('1rm-weight')?.value)
+  const date     = document.getElementById('1rm-date')?.value
+  const errEl    = document.getElementById('1rm-error')
+  if (!exercise) { errEl.textContent = 'Exercise name is required'; return }
+  if (!weight || weight <= 0) { errEl.textContent = 'Enter a valid weight'; return }
+  const row = { client_id: clientId, exercise_name: exercise, one_rm_kg: weight, recorded_at: date }
+  let error
+  if (existingId) {
+    ;({ error } = await dbq('save1RM:update', db.from('client_1rms').update(row).eq('id', existingId)))
+  } else {
+    ;({ error } = await dbq('save1RM:insert', db.from('client_1rms').upsert({ ...row }, { onConflict: 'client_id,exercise_name' })))
+  }
+  if (error) { errEl.textContent = 'Save failed — try again'; return }
+  document.getElementById('modal-1rm').remove()
+  renderClient1RMs(clientId, document.getElementById('tab-content'))
+}
+
+async function delete1RM(id, clientId) {
+  if (!confirm('Delete this 1RM?')) return
+  await dbq('delete1RM', db.from('client_1rms').delete().eq('id', id))
+  renderClient1RMs(clientId, document.getElementById('tab-content'))
 }
 
 async function renderClientPerformance(clientId, el) {
