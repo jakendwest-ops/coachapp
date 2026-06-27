@@ -4979,6 +4979,7 @@ function skipRestTimer() {
   document.getElementById('rest-timer-overlay')?.remove()
   const cb = _runner._afterRest
   if (cb) { _runner._afterRest = null; cb() }
+  else if (_runner) renderRunner()
 }
 
 function renderRestTimer() {
