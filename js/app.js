@@ -77,17 +77,9 @@ async function showApp() {
   const coachPages  = ['dashboard', 'clients', 'workouts', 'calendar', 'programs', 'settings']
   const validPages  = currentProfile?.role === 'client' ? clientPages : coachPages
 
-  // Check for redirect from 404.html (user loaded a direct URL like /coachapp/dashboard)
-  const redirectPath = sessionStorage.getItem('_spa_redirect')
-  if (redirectPath) {
-    sessionStorage.removeItem('_spa_redirect')
-    const fromPath = redirectPath.replace(/^\//, '').split('/')[0]
-    if (validPages.includes(fromPath)) { navigate(fromPath, 'replace'); return }
-  }
-
-  // Read page from current URL path (e.g. /coachapp/dashboard → 'dashboard')
-  const pathPage = window.location.pathname.replace(/^\/coachapp\/?/, '').split('/')[0]
-  if (pathPage && validPages.includes(pathPage)) { navigate(pathPage, 'replace'); return }
+  // Read page from hash (e.g. #dashboard → 'dashboard')
+  const hashPage = window.location.hash.replace(/^#/, '').split('/')[0]
+  if (hashPage && validPages.includes(hashPage)) { navigate(hashPage, 'replace'); return }
 
   // Fall back to localStorage then role default
   const stored = localStorage.getItem('_activePage')
@@ -292,10 +284,11 @@ document.getElementById('sign-out-btn').addEventListener('click', async () => {
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
 function navigate(page, _historyOp = 'push') {
+  if (currentPage && currentPage !== page) window._prevPage = currentPage
   currentPage = page
   localStorage.setItem('_activePage', page)
-  if (_historyOp === 'push')    history.pushState({ page }, '', '/coachapp/' + page)
-  else if (_historyOp === 'replace') history.replaceState({ page }, '', '/coachapp/' + page)
+  if (_historyOp === 'push')    history.pushState({ page }, '', '#' + page)
+  else if (_historyOp === 'replace') history.replaceState({ page }, '', '#' + page)
 
   document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.page === page)
@@ -909,51 +902,88 @@ async function renderClientDashboard(el) {
 // ─── CLIENT PROFILE: PROGRAMS TAB ─────────────────────────────────────────────
 async function renderClientPrograms(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
-  const { data: assignments, error } = await db
-    .from('client_programs')
-    .select('*, programs(id, name, description, program_phases(id))')
-    .eq('client_id', clientId)
+
+  const [{ data: assignments, error }, { data: clientData }] = await Promise.all([
+    db.from('client_programs')
+      .select('id, start_date, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order)))')
+      .eq('client_id', clientId),
+    db.from('clients').select('full_name').eq('id', clientId).single()
+  ])
 
   if (error) {
     el.innerHTML = `<div class="card"><div class="card-body" style="padding:20px">
       <p style="color:var(--danger);font-size:13px">${error.message}</p>
-      <p style="color:var(--text-muted);font-size:12px;margin-top:8px">Run the client_programs SQL in Supabase first.</p>
     </div></div>`
     return
   }
+
+  if (!assignments?.length) {
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 class="section-title">Assigned programs</h2>
+        <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign program</button>
+      </div>
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">No programs assigned</div>
+        <div class="empty-text">Assign a program from your library to give this client a structured training plan.</div>
+        <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign program</button>
+      </div>`
+    return
+  }
+
+  const cpIds = assignments.map(a => a.id)
+  const { data: cpwRows } = await db.from('client_program_workouts')
+    .select('client_program_id, program_phase_workout_id, workout_template_id, workout_templates(id, name)')
+    .in('client_program_id', cpIds)
+
+  const cpwMap = {}
+  ;(cpwRows || []).forEach(r => { cpwMap[r.program_phase_workout_id] = { templateId: r.workout_template_id, name: r.workout_templates?.name } })
+
+  const clientName = (clientData?.full_name || 'Client').replace(/'/g, "\\'")
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h2 class="section-title">Assigned programs</h2>
       <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign program</button>
     </div>
-    ${!assignments?.length ? `
-      <div class="empty-state">
-        <div class="empty-icon">📋</div>
-        <div class="empty-title">No programs assigned</div>
-        <div class="empty-text">Assign a program from your library to give this client a structured training plan.</div>
-        <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign program</button>
-      </div>
-    ` : `
-      <div class="list">
-        ${assignments.map(a => {
-          const p = a.programs
-          const phaseCount = p?.program_phases?.length || 0
-          const startLabel = a.start_date ? new Date(a.start_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No start date'
-          return `
-            <div class="list-row" style="cursor:default">
-              <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📋</div>
-              <div class="row-info">
-                <div class="row-name">${p?.name || 'Unknown program'}</div>
-                <div class="row-meta">${phaseCount} phase${phaseCount !== 1 ? 's' : ''} · Started ${startLabel}</div>
+    ${assignments.map(a => {
+      const p = a.programs
+      const phases = [...(p?.program_phases || [])].sort((x, y) => x.order_index - y.order_index)
+      const startLabel = a.start_date ? new Date(a.start_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No start date'
+      return `
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-body">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+              <div>
+                <div style="font-size:16px;font-weight:700">${p?.name || 'Unknown program'}</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Started ${startLabel}</div>
               </div>
-              <div class="row-right">
-                <button class="btn-secondary" style="font-size:12px;padding:4px 10px;color:var(--danger);border-color:var(--danger)" onclick="unassignProgram('${clientId}','${a.id}')">Remove</button>
-              </div>
-            </div>`
-        }).join('')}
-      </div>
-    `}
+              <button class="btn-secondary" style="font-size:12px;padding:4px 10px;color:var(--danger);border-color:var(--danger);flex-shrink:0" onclick="unassignProgram('${clientId}','${a.id}')">Remove</button>
+            </div>
+            ${phases.map(phase => {
+              const sessions = [...(phase.program_phase_workouts || [])].sort((x, y) => x.session_order - y.session_order)
+              return `
+                <div style="margin-bottom:16px">
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">${phase.name} · ${phase.duration_weeks}w</div>
+                  ${sessions.map(pw => {
+                    const cpw = cpwMap[pw.id]
+                    const sessionName = cpw?.name || 'Session'
+                    const templateId = cpw?.templateId
+                    return `
+                      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+                        <div>
+                          <div style="font-size:13px;font-weight:600">${sessionName}</div>
+                          <div style="font-size:11px;color:var(--text-muted)">Day ${pw.day_of_week}</div>
+                        </div>
+                        ${templateId ? `<button class="btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0" onclick="openTemplate('${templateId}',{backTo:'client',backLabel:'${clientName}',clientId:'${clientId}',clientName:'${clientName}',clientProgramId:'${a.id}'})">Edit</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
+                      </div>`
+                  }).join('')}
+                </div>`
+            }).join('')}
+          </div>
+        </div>`
+    }).join('')}
   `
 }
 
@@ -1010,15 +1040,64 @@ async function saveAssignProgram(clientId) {
 
   if (!programId) { errorEl.textContent = 'Please select a program'; return }
 
-  const { error } = await db.from('client_programs').insert({
+  const { data: cp, error } = await db.from('client_programs').insert({
     client_id: clientId,
     program_id: programId,
     start_date: startDate || null
-  })
+  }).select('id').single()
 
   if (error) { log.error('saveAssignProgram', 'insert failed', error); errorEl.textContent = error.message; return }
   closeModal('assign-program-modal')
+  _cloneProgramForClient(cp.id, programId, clientId)
   renderClientPrograms(clientId, document.getElementById('tab-content'))
+}
+
+async function _cloneProgramForClient(clientProgramId, programId, clientId) {
+  const { data: phases, error: phErr } = await db
+    .from('program_phases')
+    .select('id, program_phase_workouts(id, template_id, workout_templates(id, name, description, workout_template_exercises(*)))')
+    .eq('program_id', programId)
+    .order('order_index')
+
+  if (phErr || !phases?.length) { log.error('_cloneProgramForClient', 'phase fetch failed', phErr); return }
+
+  const cpwInserts = []
+
+  for (const phase of phases) {
+    for (const pw of (phase.program_phase_workouts || [])) {
+      const tmpl = pw.workout_templates
+      if (!tmpl) continue
+
+      const { data: newTmpl, error: tErr } = await db
+        .from('workout_templates')
+        .insert({ coach_id: currentUser.id, client_id: clientId, program_id: programId, name: tmpl.name, description: tmpl.description || null })
+        .select('id').single()
+
+      if (tErr || !newTmpl) { log.error('_cloneProgramForClient', 'template clone failed', tErr); continue }
+
+      const exs = (tmpl.workout_template_exercises || []).map(ex => ({
+        template_id: newTmpl.id,
+        exercise_id: ex.exercise_id || null,
+        exercise_name: ex.exercise_name,
+        exercise_type: ex.exercise_type,
+        order_index: ex.order_index,
+        sets: ex.sets || null,
+        sets_json: ex.sets_json || null,
+        notes: ex.notes || null,
+        superset_group: ex.superset_group || null
+      }))
+      if (exs.length) await db.from('workout_template_exercises').insert(exs)
+
+      cpwInserts.push({ client_program_id: clientProgramId, program_phase_workout_id: pw.id, workout_template_id: newTmpl.id })
+    }
+  }
+
+  if (cpwInserts.length) {
+    const { error } = await db.from('client_program_workouts').insert(cpwInserts)
+    if (error) log.error('_cloneProgramForClient', 'cpw insert failed', error)
+  }
+
+  log.ok('_cloneProgramForClient', `cloned ${cpwInserts.length} workouts`, { clientId, programId })
 }
 
 async function unassignProgram(clientId, assignmentId) {
@@ -1071,9 +1150,10 @@ async function saveAssignProgramToClient(programId) {
   const startDate = document.getElementById('apc-start').value || null
   const errEl = document.getElementById('apc-error')
   if (!clientId) { errEl.textContent = 'Please select a client'; return }
-  const { error } = await db.from('client_programs').insert({ client_id: clientId, program_id: programId, start_date: startDate || null })
+  const { data: cp, error } = await db.from('client_programs').insert({ client_id: clientId, program_id: programId, start_date: startDate || null }).select('id').single()
   if (error) { errEl.textContent = error.message; return }
   document.getElementById('apc-modal')?.remove()
+  _cloneProgramForClient(cp.id, programId, clientId)
 }
 
 // ─── PROGRAMS ─────────────────────────────────────────────────────────────────
@@ -1756,10 +1836,9 @@ async function openClient(id) {
       <button class="tab-btn" onclick="switchTab(this,'tab-1rms','${id}')">1RMs</button>
     </div>
 
-    <div id="tab-content">
-      ${clientOverviewTab(client)}
-    </div>
+    <div id="tab-content"></div>
   `
+  renderClientOverview(id, document.getElementById('tab-content'))
 }
 
 function switchTab(btn, tab, clientId) {
@@ -1779,7 +1858,7 @@ function switchTab(btn, tab, clientId) {
   }
 }
 
-function clientOverviewTab(client) {
+function clientOverviewTab(client, programName = null) {
   const dob = client.date_of_birth
     ? new Date(client.date_of_birth).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     : '—'
@@ -1790,6 +1869,7 @@ function clientOverviewTab(client) {
   return `
     <div class="card">
       <div class="card-body">
+        ${programName ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Active program</span><span style="font-size:14px;font-weight:600;color:var(--accent)">${programName}</span></div>` : ''}
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:20px">
           ${infoItem('Status', `<span class="badge badge-${client.status}">${client.status}</span>`)}
           ${infoItem('Email', client.email || '—')}
@@ -1804,9 +1884,10 @@ function clientOverviewTab(client) {
 }
 
 async function renderClientOverview(id, el) {
-  const [{ data: client }, { data: checkIns }] = await Promise.all([
+  const [{ data: client }, { data: checkIns }, { data: progAssign }] = await Promise.all([
     db.from('clients').select('*').eq('id', id).single(),
-    db.from('client_check_ins').select('*').eq('client_id', id).order('created_at', { ascending: false }).limit(4)
+    db.from('client_check_ins').select('*').eq('client_id', id).order('created_at', { ascending: false }).limit(4),
+    db.from('client_programs').select('id, programs(name)').eq('client_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle()
   ])
   const latestCI = checkIns?.[0]
 
@@ -1851,7 +1932,7 @@ async function renderClientOverview(id, el) {
         </div>` : ''}
       </div>
     </div>` : ''
-  el.innerHTML = clientOverviewTab(client) + ciHtml
+  el.innerHTML = clientOverviewTab(client, progAssign?.programs?.name || null) + ciHtml
 }
 
 function infoItem(label, value) {
@@ -2012,13 +2093,17 @@ async function renderCalendar(el) {
   let events, clientMap = {}, programWorkoutsByDate = {}
 
   if (isClient) {
-    const [evRes, cpRes, cidRes] = await Promise.all([
+    const [evRes, cpRes, cidRes, cpwRes] = await Promise.all([
       db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
-      db.from('client_programs').select('start_date, programs(program_phases(duration_weeks, program_phase_workouts(day_of_week, session_order, workout_templates(id, name))))').eq('client_id', currentUser.id).order('created_at', { ascending: false }).limit(1),
-      db.from('clients').select('id').eq('user_id', currentUser.id).single()
+      db.from('client_programs').select('id, start_date, programs(program_phases(duration_weeks, program_phase_workouts(id, day_of_week, session_order, workout_templates(id, name))))').eq('client_id', currentUser.id).order('created_at', { ascending: false }).limit(1),
+      db.from('clients').select('id').eq('user_id', currentUser.id).single(),
+      db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id')
     ])
     events = evRes.data
     window._calClientId = cidRes.data?.id
+    const _cpwMap = {}
+    ;(cpwRes.data || []).forEach(r => { _cpwMap[r.program_phase_workout_id] = r.workout_template_id })
+    window._calClientTemplateMap = _cpwMap
 
     // Map phase workouts to actual calendar dates
     const cp = cpRes.data?.[0]
@@ -2039,7 +2124,7 @@ async function renderCalendar(el) {
             d.setDate(weekStart.getDate() + offset)
             const ds = d.toISOString().split('T')[0]
             if (!programWorkoutsByDate[ds]) programWorkoutsByDate[ds] = []
-            programWorkoutsByDate[ds].push(pw)
+            programWorkoutsByDate[ds].push({ ...pw, _clientTemplateId: _cpwMap[pw.id] || null })
           })
         }
       })
@@ -2209,7 +2294,7 @@ function showClientDayDetail(dateStr) {
           <div style="padding:14px 0;border-bottom:1px solid var(--border)">
             ${workouts.length > 1 ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">${pw.session_order === 2 ? 'PM SESSION' : 'AM SESSION'}</div>` : ''}
             <div style="font-size:15px;font-weight:600;margin-bottom:10px">${(pw.workout_templates?.name || 'Workout').replace(/ — W\d+/, '')}</div>
-            <button onclick="startWorkoutRunner('${clientId}','${pw.workout_templates?.id}');document.getElementById('client-day-modal').remove()" class="btn-primary" style="width:100%">▶ Start workout</button>
+            <button onclick="startWorkoutRunner('${clientId}','${pw._clientTemplateId||pw.workout_templates?.id}');document.getElementById('client-day-modal').remove()" class="btn-primary" style="width:100%">▶ Start workout</button>
           </div>`).join('') : `
           <div style="text-align:center;padding:24px 0">
             <div style="font-size:32px;margin-bottom:8px">🛋️</div>
@@ -3007,11 +3092,20 @@ async function renderClientWorkoutsPage(el) {
   if (!clientRecord) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
   const clientId = clientRecord.id
 
-  const [{ data: templates }, { data: logs }, { data: programs }] = await Promise.all([
-    db.from('workout_templates').select('id, name, description, program_id, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id).order('name'),
+  const [{ data: clientWorkouts }, { data: templates }, { data: logs }, { data: programs }, { data: oneRMRows }] = await Promise.all([
+    db.from('client_program_workouts').select('workout_template_id, workout_templates(id, name, description, program_id, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes))'),
+    db.from('workout_templates').select('id, name, description, program_id, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id).is('client_id', null).is('program_id', null).order('name'),
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
-    db.from('programs').select('id, name').eq('coach_id', clientRecord.coach_id).order('name')
+    db.from('programs').select('id, name').eq('coach_id', clientRecord.coach_id).order('name'),
+    db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').eq('client_id', clientId).order('recorded_at', { ascending: false })
   ])
+  const oneRMMap = {}
+  ;(oneRMRows || []).forEach(r => { const k = r.exercise_name.trim().toLowerCase(); if (!oneRMMap[k]) oneRMMap[k] = parseFloat(r.one_rm_kg) })
+  // If no client-specific templates yet (legacy assign), fall back to all coach templates
+  const useClientWorkouts = (clientWorkouts?.length || 0) > 0
+  const allTemplates = useClientWorkouts
+    ? clientWorkouts.map(r => r.workout_templates).filter(Boolean)
+    : (templates || [])
 
   el.innerHTML = `
     <div class="page-header">
@@ -3019,7 +3113,7 @@ async function renderClientWorkoutsPage(el) {
     </div>
 
     <div class="section-header" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Start a workout</div>
-    ${!(templates?.length) ? `
+    ${!(allTemplates?.length) ? `
       <div class="empty-state">
         <div class="empty-icon">💪</div>
         <div class="empty-title">No workouts yet</div>
@@ -3028,7 +3122,7 @@ async function renderClientWorkoutsPage(el) {
       const programMap = Object.fromEntries((programs || []).map(p => [p.id, p.name]))
       const byProgram = {}
       const adHoc = []
-      templates.forEach(t => {
+      allTemplates.forEach(t => {
         if (t.program_id && programMap[t.program_id]) {
           if (!byProgram[t.program_id]) byProgram[t.program_id] = []
           byProgram[t.program_id].push(t)
@@ -3058,7 +3152,13 @@ async function renderClientWorkoutsPage(el) {
                   const repsStr = s.repsMin ? (s.repsMin+(s.repsMax&&s.repsMax!==s.repsMin?'–'+s.repsMax:'')) : null
                   if (repsStr) parts.push(repsStr+' reps')
                   if (s.weight) parts.push(s.weight+'kg')
-                  if (s.intensityMin) parts.push(s.intensityMin+(s.intensityMax&&s.intensityMax!==s.intensityMin?'–'+s.intensityMax:'')+'% 1RM')
+                  if (s.intensityMin) {
+                    const _orm = oneRMMap[ex.exercise_name?.trim().toLowerCase()]
+                    const _kgLo = _orm ? _calcWeightFromPct(_orm, s.intensityMin) : null
+                    const _kgHi = _orm && s.intensityMax && s.intensityMax !== s.intensityMin ? _calcWeightFromPct(_orm, s.intensityMax) : null
+                    const _kgStr = _kgLo ? ` → ${_kgLo}${_kgHi ? '–'+_kgHi : ''} kg` : ''
+                    parts.push(s.intensityMin+(s.intensityMax&&s.intensityMax!==s.intensityMin?'–'+s.intensityMax:'')+'% 1RM'+_kgStr)
+                  }
                   const effortStr = s.effortMin ? ((s.effortType==='rir'?'RIR ':'RPE ')+s.effortMin+(s.effortMax&&s.effortMax!==s.effortMin?'–'+s.effortMax:'')) : null
                   if (effortStr) parts.push(effortStr)
                   const restStr = s.restMin && s.restMin !== '0:00' ? s.restMin+(s.restMax&&s.restMax!==s.restMin?'–'+s.restMax:'')+' rest' : null
@@ -3115,6 +3215,25 @@ async function renderClientWorkoutsPage(el) {
       return `<div style="margin-bottom:28px">${html}</div>`
     })()}
 
+    ${oneRMRows?.length ? `
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Your 1RMs</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:28px">
+      ${(() => {
+        const byEx = {}
+        ;(oneRMRows || []).forEach(r => { if (!byEx[r.exercise_name]) byEx[r.exercise_name] = []; byEx[r.exercise_name].push(r) })
+        return Object.entries(byEx).map(([name, entries]) => {
+          const latest = entries[0]
+          const history = entries.slice(1).map(e => parseFloat(e.one_rm_kg).toFixed(1)+' kg').join(' → ')
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+            <div>
+              <div style="font-size:13px;font-weight:600">${name}</div>
+              ${history ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${history} → current</div>` : ''}
+            </div>
+            <span style="font-size:20px;font-weight:800;color:var(--accent)">${parseFloat(latest.one_rm_kg).toFixed(1)} kg</span>
+          </div>`
+        }).join('')
+      })()}
+    </div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Session history</div>
       ${(logs?.length || 0) > 0 ? `<span style="font-size:12px;color:var(--text-muted)">${logs.length} logged</span>` : ''}
@@ -3469,7 +3588,15 @@ async function saveNewTemplate() {
   openTemplate(data.id)
 }
 
-async function openTemplate(id) {
+async function openTemplate(id, ctx = {}) {
+  window._templateCtx = {
+    backTo: ctx.backTo || null,
+    backLabel: ctx.backLabel || 'Templates',
+    clientId: ctx.clientId || null,
+    clientName: ctx.clientName || null,
+    clientProgramId: ctx.clientProgramId || null,
+    isClientPlan: !!ctx.clientId
+  }
   const el = document.getElementById('main-content')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
@@ -3482,12 +3609,14 @@ async function openTemplate(id) {
   if (error) { log.error('openTemplate', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
   const exercises = (t.workout_template_exercises || []).sort((a, b) => a.order_index - b.order_index)
+  const _ctx = window._templateCtx
 
   el.innerHTML = `
-    <a class="back-btn" href="#" onclick="navigate('workouts');return false">
+    <a class="back-btn" href="#" onclick="_templateGoBack();return false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-      Templates
+      ${_ctx.backLabel}
     </a>
+    ${_ctx.isClientPlan ? `<div style="font-size:11px;font-weight:600;color:var(--accent);background:rgba(99,102,241,.08);border-radius:6px;padding:6px 10px;margin-bottom:12px">Editing ${_ctx.clientName || 'client'}’s plan — changes affect only this client</div>` : ''}
 
     <div class="page-header">
       <div>
@@ -3573,6 +3702,21 @@ async function openTemplate(id) {
   `
 }
 
+function _templateGoBack() {
+  const ctx = window._templateCtx || {}
+  if (ctx.clientId) {
+    openClientProgramsTab(ctx.clientId)
+  } else {
+    navigate(ctx.backTo || 'workouts')
+  }
+}
+
+async function openClientProgramsTab(clientId) {
+  await openClient(clientId)
+  const btn = document.querySelector('[onclick*="tab-programs"]')
+  if (btn) btn.click()
+}
+
 async function moveTemplateExercise(templateId, exId, dir) {
   const { data: all } = await db
     .from('workout_template_exercises')
@@ -3612,6 +3756,7 @@ function tsPace500Input(i, containerId) {
 
 function parseRest(str) {
   if (!str) return 0
+  str = String(str)
   const parts = str.split(':')
   if (parts.length === 2) return (parseInt(parts[0])||0)*60 + (parseInt(parts[1])||0)
   const n = str.replace(/\D/g,'')
@@ -3738,8 +3883,13 @@ function copyPrevTemplateSet(i, containerId, tid) {
 }
 
 function showAddExerciseToTemplateModal(templateId) {
-  db.from('exercises').select('*').order('name').then(({ data: exercises }) => {
+  Promise.all([
+    db.from('exercises').select('*').order('name'),
+    db.from('client_1rms').select('exercise_name').order('exercise_name')
+  ]).then(([{ data: exercises }, { data: ormRows }]) => {
     window._templateSets = [{ effortType: 'rpe' }]
+    // Deduplicate 1RM exercise names across all clients (RLS scopes to coach's clients)
+    const ormNames = [...new Set((ormRows || []).map(r => r.exercise_name))].sort()
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.id = 'add-to-template-modal'
@@ -3754,6 +3904,7 @@ function showAddExerciseToTemplateModal(templateId) {
             <label class="field-label">Pick from library</label>
             <select class="field-input" id="att-exercise">
               <option value="">— or type a custom name below —</option>
+              ${ormNames.length ? `<optgroup label="── 1RM lifts ──">${ormNames.map(n => `<option value="" data-name="${n}" data-is-orm="1">${n}</option>`).join('')}</optgroup>` : ''}
               ${(exercises || []).map(e => `<option value="${e.id}" data-name="${e.name}">${e.name}${e.muscle_group ? ' · '+e.muscle_group : ''}</option>`).join('')}
             </select>
           </div>
@@ -3794,7 +3945,16 @@ function showAddExerciseToTemplateModal(templateId) {
 
     document.getElementById('att-exercise').addEventListener('change', function() {
       const opt = this.options[this.selectedIndex]
-      if (opt.value) document.getElementById('att-name').value = opt.dataset.name || ''
+      if (opt.value || opt.dataset.name) {
+        document.getElementById('att-name').value = opt.dataset.name || ''
+        // If it's a 1RM lift, switch type to strength and scroll intensity fields into view
+        if (opt.dataset.isOrm) {
+          document.getElementById('att-type').value = 'strength'
+          flushTemplateSets('att-sets-container')
+          renderTemplateSets('att-sets-container', 'strength')
+          setTimeout(() => document.querySelector('[id^="ts-imin-"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+        }
+      }
     })
   })
 }
@@ -3842,7 +4002,7 @@ async function saveExerciseToTemplate(templateId) {
   if (error) { log.error('saveExerciseToTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
   log.ok('saveExerciseToTemplate', 'exercise added to template', { templateId, name })
   closeModal('add-to-template-modal')
-  openTemplate(templateId)
+  _checkClientPlanPropagation(templateId)
 }
 
 async function showEditTemplateExerciseModal(templateExId, templateId) {
@@ -3915,7 +4075,7 @@ async function saveEditTemplateExercise(texId, templateId) {
   if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
   log.ok('saveEditTemplateExercise', 'template exercise updated', { texId })
   closeModal('edit-tex-modal')
-  openTemplate(templateId)
+  _checkClientPlanPropagation(templateId)
 }
 
 async function deleteTemplateExercise(texId, templateId) {
@@ -3925,6 +4085,74 @@ async function deleteTemplateExercise(texId, templateId) {
   log.ok('deleteTemplateExercise', 'exercise removed', { texId })
   closeModal('edit-tex-modal')
   openTemplate(templateId)
+}
+
+async function _checkClientPlanPropagation(templateId) {
+  const ctx = window._templateCtx
+  if (!ctx?.isClientPlan || !ctx.clientProgramId) return openTemplate(templateId, ctx)
+
+  const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
+  if (!tmpl) return openTemplate(templateId, ctx)
+
+  const { data: siblings } = await db.from('client_program_workouts')
+    .select('workout_template_id, workout_templates(id, name)')
+    .eq('client_program_id', ctx.clientProgramId)
+
+  const matching = (siblings || []).filter(r =>
+    r.workout_template_id !== templateId &&
+    r.workout_templates?.name === tmpl.name
+  )
+
+  if (!matching.length) return openTemplate(templateId, ctx)
+
+  window._propagateTargets = matching.map(r => r.workout_template_id)
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'propagate-modal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Apply to other sessions?</h2>
+        <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
+      </div>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 20px">There ${matching.length === 1 ? 'is' : 'are'} <strong>${matching.length}</strong> other session${matching.length === 1 ? '' : 's'} named "<strong>${tmpl.name}</strong>" in ${ctx.clientName || 'this client'}'s plan.</p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
+        <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">Update all "${tmpl.name}"</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+}
+
+async function _applyToAllSessions(sourceTemplateId) {
+  closeModal('propagate-modal')
+  const targetIds = window._propagateTargets || []
+  if (!targetIds.length) { openTemplate(sourceTemplateId, window._templateCtx); return }
+
+  const { data: sourceExs } = await db.from('workout_template_exercises')
+    .select('*').eq('template_id', sourceTemplateId).order('order_index')
+
+  for (const targetId of targetIds) {
+    await db.from('workout_template_exercises').delete().eq('template_id', targetId)
+    if (sourceExs?.length) {
+      const copies = sourceExs.map(ex => ({
+        template_id: targetId,
+        exercise_id: ex.exercise_id || null,
+        exercise_name: ex.exercise_name,
+        exercise_type: ex.exercise_type,
+        order_index: ex.order_index,
+        sets: ex.sets || null,
+        sets_json: ex.sets_json || null,
+        notes: ex.notes || null,
+        superset_group: ex.superset_group || null
+      }))
+      await db.from('workout_template_exercises').insert(copies)
+    }
+  }
+  log.ok('_applyToAllSessions', `propagated to ${targetIds.length} sessions`)
+  openTemplate(sourceTemplateId, window._templateCtx)
 }
 
 async function showEditTemplateModal(id) {
@@ -3987,25 +4215,57 @@ async function deleteTemplate(id) {
 
 // ─── CLIENT WORKOUTS TAB ──────────────────────────────────────────────────────
 async function renderClientWorkouts(clientId, el) {
-  log.info('renderClientWorkouts', 'fetching workout logs', { clientId })
+  log.info('renderClientWorkouts', 'fetching', { clientId })
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const { data: logs, error } = await db
-    .from('workout_logs')
-    .select('*, workout_log_exercises(id)')
-    .eq('client_id', clientId)
-    .order('date', { ascending: false })
+  const [{ data: logs, error }, { data: clientProgs }, { data: clientData }] = await Promise.all([
+    db.from('workout_logs').select('*, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }),
+    db.from('client_programs').select('id, programs(id, name)').eq('client_id', clientId).order('created_at', { ascending: false }),
+    db.from('clients').select('full_name').eq('id', clientId).single()
+  ])
 
   if (error) { log.error('renderClientWorkouts', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
-  log.ok('renderClientWorkouts', `loaded ${logs.length} sessions`)
+
+  let programWorkoutsHtml = ''
+  if (clientProgs?.length) {
+    const cpIds = clientProgs.map(cp => cp.id)
+    const { data: cpwRows } = await db.from('client_program_workouts')
+      .select('workout_template_id, workout_templates(id, name)')
+      .in('client_program_id', cpIds)
+
+    if (cpwRows?.length) {
+      const seen = new Set()
+      const unique = cpwRows.filter(r => { const id = r.workout_template_id; if (seen.has(id)) return false; seen.add(id); return true })
+      const programName = clientProgs[0]?.programs?.name || 'Program'
+      programWorkoutsHtml = `
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${programName}</div>
+        <div class="list" style="margin-bottom:20px">
+          ${unique.map(r => `
+            <div class="list-row" onclick="openTemplate('${r.workout_templates?.id||r.workout_template_id}',{backTo:'client',backLabel:'${(clientData?.full_name||'Client').replace(/'/g,"\\'")}',clientId:'${clientId}',clientName:'${(clientData?.full_name||'Client').replace(/'/g,"\\'")}',clientProgramId:'${cpIds[0]||''}'})">
+              <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
+              <div class="row-info">
+                <div class="row-name">${r.workout_templates?.name||'Workout'}</div>
+                <div class="row-meta">Tap to edit for this client</div>
+              </div>
+              <div class="row-right">
+                <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
+            </div>`).join('')}
+        </div>`
+    }
+  }
+
+  log.ok('renderClientWorkouts', `loaded ${logs?.length} sessions`)
 
   el.innerHTML = `
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">
       <button class="btn-secondary" style="font-size:13px" onclick="showLogSessionModal('${clientId}')">Log past session</button>
       <button class="btn-primary" onclick="startWorkoutRunner('${clientId}')">▶ Start workout</button>
     </div>
+    ${programWorkoutsHtml}
+    ${logs?.length ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Session history</div>` : ''}
     <div class="list">
-      ${logs.length === 0 ? `
+      ${!logs?.length ? `
         <div class="empty-state">
           <div class="empty-icon">💪</div>
           <div class="empty-title">No sessions logged yet</div>
@@ -5567,35 +5827,55 @@ async function deleteProgressPhoto(clientId, fileName) {
 async function renderClient1RMs(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading 1RMs…</div>'
   const [{ data: rows }, { data: exercises }] = await Promise.all([
-    db.from('client_1rms').select('*').eq('client_id', clientId).order('exercise_name'),
+    db.from('client_1rms').select('*').eq('client_id', clientId).order('recorded_at', { ascending: false }),
     db.from('exercises').select('name').eq('coach_id', currentUser.id).order('name')
   ])
   const exNames = (exercises || []).map(e => e.name)
+
+  // Group by exercise name, newest first within each group
+  const byEx = {}
+  ;(rows || []).forEach(r => { if (!byEx[r.exercise_name]) byEx[r.exercise_name] = []; byEx[r.exercise_name].push(r) })
+
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3 style="margin:0;font-size:16px;font-weight:700">1 Rep Maxes</h3>
       <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add 1RM</button>
     </div>
-    ${!rows?.length ? `<div class="empty-state"><p>No 1RMs recorded yet.</p><p style="font-size:13px">Add a 1RM to unlock automatic weight targets in the workout runner.</p></div>` : `
-    <div class="list">
-      ${rows.map(r => `
-        <div class="list-row">
-          <div class="row-info">
-            <div class="row-name">${r.exercise_name}</div>
-            <div class="row-meta">Recorded ${new Date(r.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+    ${!Object.keys(byEx).length ? `
+      <div class="empty-state">
+        <div class="empty-icon">🏋️</div>
+        <div class="empty-title">No 1RMs recorded yet</div>
+        <div class="empty-text">Add a 1RM to unlock automatic weight targets in the workout runner.</div>
+      </div>` : Object.entries(byEx).map(([exName, entries]) => {
+        const latest = entries[0]
+        const history = entries.slice(1)
+        return `
+        <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;background:var(--surface)">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px">
+            <div>
+              <div style="font-size:15px;font-weight:700">${exName}</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Recorded ${new Date(latest.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:22px;font-weight:800;color:var(--accent)">${parseFloat(latest.one_rm_kg).toFixed(1)} kg</span>
+              <button onclick="showAdd1RMModal('${clientId}','${exName.replace(/'/g,"\\'")}')" style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Update</button>
+              <button onclick="delete1RM('${latest.id}','${clientId}')" style="padding:5px 10px;border:1px solid #ef4444;border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:#ef4444">Delete</button>
+            </div>
           </div>
-          <div style="display:flex;align-items:center;gap:12px">
-            <span style="font-size:20px;font-weight:800;color:var(--accent)">${r.one_rm_kg} kg</span>
-            <button onclick="showEdit1RMModal('${r.id}','${clientId}','${r.exercise_name.replace(/'/g,"\\'")}',${r.one_rm_kg},'${r.recorded_at}')" style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">Edit</button>
-            <button onclick="delete1RM('${r.id}','${clientId}')" style="padding:5px 10px;border:1px solid #ef4444;border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:#ef4444">Delete</button>
-          </div>
-        </div>`).join('')}
-    </div>`}
+          ${history.length ? `
+          <div style="border-top:1px solid var(--border);padding:10px 16px;background:var(--surface-2)">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px">History</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${history.map(h => `<span style="font-size:12px;color:var(--text-muted)">${parseFloat(h.one_rm_kg).toFixed(1)} kg <span style="font-size:10px">${new Date(h.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span></span>`).join('<span style="color:var(--border)">·</span>')}
+            </div>
+          </div>` : ''}
+        </div>`
+      }).join('')}
     <datalist id="ex-names-list">${exNames.map(n=>`<option value="${n}">`).join('')}</datalist>
   `
 }
 
-function showAdd1RMModal(clientId) {
+function showAdd1RMModal(clientId, prefillExercise = '') {
   const existing = document.getElementById('modal-1rm')
   if (existing) existing.remove()
   const overlay = document.createElement('div')
@@ -5604,12 +5884,12 @@ function showAdd1RMModal(clientId) {
   overlay.innerHTML = `
     <div class="modal-box">
       <div class="modal-header">
-        <h2 class="modal-title">Add 1RM</h2>
+        <h2 class="modal-title">${prefillExercise ? 'Update 1RM' : 'Add 1RM'}</h2>
         <button class="modal-close" onclick="document.getElementById('modal-1rm').remove()">✕</button>
       </div>
       <div class="field">
         <label class="field-label">Exercise</label>
-        <input class="field-input" id="1rm-exercise" list="ex-names-list" placeholder="e.g. Back Squat" autocomplete="off">
+        <input class="field-input" id="1rm-exercise" list="ex-names-list" placeholder="e.g. Back Squat" autocomplete="off" value="${prefillExercise}">
       </div>
       <div class="field">
         <label class="field-label">1RM (kg)</label>
@@ -5675,7 +5955,7 @@ async function save1RM(clientId, existingId = null) {
   if (existingId) {
     ;({ error } = await dbq('save1RM:update', db.from('client_1rms').update(row).eq('id', existingId)))
   } else {
-    ;({ error } = await dbq('save1RM:insert', db.from('client_1rms').upsert({ ...row }, { onConflict: 'client_id,exercise_name' })))
+    ;({ error } = await dbq('save1RM:insert', db.from('client_1rms').insert(row)))
   }
   if (error) { errEl.textContent = 'Save failed — try again'; return }
   document.getElementById('modal-1rm').remove()
