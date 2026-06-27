@@ -3049,7 +3049,7 @@ async function renderClientWorkoutsPage(el) {
               const summaries = sets.map(s => {
                 const parts = []
                 if (isCardio) {
-                  if (s.duration) parts.push(fmtDuration(parseInt(s.duration)||0))
+                  if (s.duration) parts.push(fmtDuration(parseRest(s.duration)||0))
                   if (s.distance) parts.push(s.distance+' km')
                   if (s.pace500Min) parts.push(s.pace500Min+(s.pace500Max&&s.pace500Max!==s.pace500Min?'–'+s.pace500Max:'')+'/500m')
                   if (s.paceKmMin) parts.push(s.paceKmMin+(s.paceKmMax&&s.paceKmMax!==s.paceKmMin?'–'+s.paceKmMax:'')+'/km')
@@ -3542,12 +3542,15 @@ async function openTemplate(id) {
                       const restStr    = rMin ? (rMin === rMax || !rMax ? rMin+' rest' : rMin+'–'+rMax+' rest') : null
                       const hrStr      = (s.hrZoneMin || s.hrZoneMax) ? `HR ${s.hrZoneMin||'?'}–${s.hrZoneMax||'?'}` : null
                       const restHrStr  = s.restHrMax ? `rest HR <${s.restHrMax}` : null
-                      const durStr     = s.duration ? fmtDuration(parseInt(s.duration)||0) : null
+                      const durStr     = s.duration ? fmtDuration(parseRest(s.duration)||0) : null
                       parts = s.isDistanceBased
                         ? [s.distance ? s.distance+' km' : null, paceStr||paceKmStr, strokeStr, restStr, hrStr, restHrStr]
                         : [durStr, paceStr||paceKmStr, strokeStr, restStr, hrStr, restHrStr]
                     } else {
-                      parts = [s.reps || null, s.weight ? s.weight+'kg' : null, s.rest ? s.rest+'s rest' : null, s.rpe ? 'RPE '+s.rpe : null]
+                      const repsStr2 = s.repsMin ? (s.repsMin+(s.repsMax&&s.repsMax!==s.repsMin?'–'+s.repsMax:'')) : (s.reps || null)
+                      const effortStr2 = s.effortMin ? ((s.effortType==='rir'?'RIR ':'RPE ')+s.effortMin+(s.effortMax&&s.effortMax!==s.effortMin?'–'+s.effortMax:'')) : (s.rpe ? 'RPE '+s.rpe : null)
+                      const restStr2 = s.restMin && s.restMin !== '0:00' ? s.restMin+(s.restMax&&s.restMax!==s.restMin?'–'+s.restMax:'')+' rest' : (s.rest ? s.rest+' rest' : null)
+                      parts = [repsStr2 ? repsStr2+' reps' : null, s.weight ? s.weight+'kg' : null, s.intensityMin ? s.intensityMin+(s.intensityMax&&s.intensityMax!==s.intensityMin?'–'+s.intensityMax:'')+'% 1RM' : null, effortStr2, restStr2]
                     }
                     const summary = parts.filter(Boolean).join(' · ')
                     return summary ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">Set ${si+1}:</span> ${summary}</div>` : null
@@ -4621,8 +4624,9 @@ function startRestTimer(secs) {
       if (_runner.restRemaining <= 5) playBeep(880, 0.15, 0.75)
       const el = document.getElementById('rt-countdown')
       if (el) {
-        el.textContent = fmtRestCountdown(_runner.restRemaining)
-        el.style.color = _runner.restRemaining <= 5 ? '#ef4444' : 'var(--accent)'
+        const r = _runner.restRemaining
+        el.textContent = r < 60 ? r+'s' : fmtRestCountdown(r)
+        el.style.color = r <= 5 ? '#ef4444' : 'var(--accent)'
       }
       const ring = document.getElementById('rt-ring')
       if (ring) {
@@ -4669,7 +4673,7 @@ function renderRestTimer() {
           stroke-linecap="round" transform="rotate(-90 22 22)"
           style="transition:stroke-dashoffset .9s linear"/>
       </svg>
-      <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
+      <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--accent)">${secs < 60 ? secs+'s' : fmtRestCountdown(secs)}</div>
     </div>
     <div style="flex:1;min-width:0">
       <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
