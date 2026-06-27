@@ -3164,6 +3164,11 @@ async function renderWorkoutTemplates(el) {
   }
 
   const standalone = templates.filter(t => !t.program_id)
+
+  if (!standalone.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No standalone templates</div><div class="empty-text">All your templates are linked to programs. Manage them via Programs → phase view, or create a standalone template below.</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
+    return
+  }
   const adHoc = standalone
   const byProgram = {}
 
@@ -4092,7 +4097,7 @@ async function launchRunner(clientId) {
         const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.[0]?.restMin || '') || 90
         const s0 = ex.sets_json?.[0] || {}
         const oneRM = oneRMMap[ex.exercise_name.trim().toLowerCase()] || null
-        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
+        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets_json?.length || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
       })
   }
   if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
@@ -4612,6 +4617,7 @@ function startRestTimer(secs) {
       const cb = _runner._afterRest
       if (cb) { _runner._afterRest = null; cb() }
     } else {
+      _unlockAudio()
       if (_runner.restRemaining <= 5) playBeep(880, 0.15, 0.75)
       const el = document.getElementById('rt-countdown')
       if (el) {
@@ -6454,7 +6460,7 @@ async function renderProgressPBs(el) {
   const clientId = client?.id
   const { data: logs } = await db.from('performance_logs')
     .select('*, performance_exercises(name, category, unit)')
-    .eq('client_id', clientId).order('logged_at', { ascending: false })
+    .eq('client_id', clientId).order('date', { ascending: false })
   if (!logs?.length) { el.innerHTML = '<div class="empty-state"><p>No personal bests logged yet.</p></div>'; return }
   const byExercise = {}
   for (const l of logs) {
