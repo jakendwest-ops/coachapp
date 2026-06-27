@@ -4448,11 +4448,12 @@ function renderRunner() {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
           ${_runner.exIdx > 0 ? `<button onclick="runnerGoBack()" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:13px;font-weight:700;cursor:pointer;color:var(--text-muted);flex-shrink:0">← Back</button>` : ''}
           <div style="flex:1;min-width:0">
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">
-              Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}</span>
+              ${ex.targetSets ? `<span style="font-size:11px;font-weight:800;color:var(--accent)">· Set ${setNum} of ${ex.targetSets}</span>` : ''}
             </div>
             <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${ex.name||'Exercise name'}</div>
-            ${ex.targetReps||ex.targetWeight ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ex.targetSets?ex.targetSets+' sets · ':''} ${ex.targetReps?ex.targetReps+' reps':''} ${ex.targetWeight?'@ '+ex.targetWeight+'kg':''}</div>` : ''}
+            ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?ex.targetReps+' reps':null,ex.targetWeight?'@ '+ex.targetWeight+'kg':null].filter(Boolean).join(' · ')}</div>` : ''}
             ${nextEx ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${nextEx.name}</span></div>` : ''}
           </div>
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
@@ -4461,23 +4462,48 @@ function renderRunner() {
         ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:8px;font-size:11.5px;color:var(--text-muted);line-height:1.5">${_runner.templateDesc}</div>` : ''}
       </div>
 
-      <!-- Logged sets list -->
+      <!-- Scrollable area: logged sets + PT note + client notes -->
       <div style="flex:1;overflow-y:auto;padding:12px 16px">
-        ${!ex.loggedSets.length ? `<p style="color:var(--text-muted);font-size:13px;margin:0">No sets logged yet.</p>` :
-          ex.loggedSets.map((s,i) => `
-            <div onclick="editRunnerSet(${_runner.exIdx},${i})" style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">
-              <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:50px">Set ${i+1}</span>
-              ${ex.type === 'cardio'
-                ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : s.distance ? s.distance+' km' : '—'}</span>`
-                : s.distance_m
-                  ? `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
-                  : s.duration
-                  ? `<span style="font-size:15px;font-weight:700">⏱ ${s.duration}</span>${s.weight?`<span style="font-size:14px;font-weight:600;color:var(--text-muted)">${s.weight} kg</span>`:''}`
-                  : s.leftReps != null
-                  ? `<span style="font-size:13px;font-weight:700">L: ${s.leftReps||'—'}${s.leftWeight?' @ '+s.leftWeight+'kg':''}</span><span style="font-size:13px;font-weight:700">R: ${s.rightReps||'—'}${s.rightWeight?' @ '+s.rightWeight+'kg':''}</span>`
-                  : `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
-              <span style="font-size:11px;color:var(--text-muted)">✎</span>
-            </div>`).join('')}
+        <!-- Logged sets -->
+        ${!ex.loggedSets.length
+          ? `<p style="color:var(--text-muted);font-size:13px;margin:0 0 8px">No sets logged yet.</p>`
+          : `<div style="margin-bottom:8px">${ex.loggedSets.map((s,i) => `
+            <div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px">
+              <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:48px;flex-shrink:0">Set ${i+1}</span>
+              <span style="flex:1;display:flex;gap:10px;align-items:center">
+                ${ex.type === 'cardio'
+                  ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : s.distance ? s.distance+' km' : '—'}</span>`
+                  : s.distance_m
+                    ? `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
+                    : s.duration
+                    ? `<span style="font-size:15px;font-weight:700">⏱ ${s.duration}</span>${s.weight?`<span style="font-size:14px;font-weight:600;color:var(--text-muted)">${s.weight} kg</span>`:''}`
+                    : s.leftReps != null
+                    ? `<span style="font-size:13px;font-weight:700">L: ${s.leftReps||'—'}${s.leftWeight?' @ '+s.leftWeight+'kg':''}</span><span style="font-size:13px;font-weight:700">R: ${s.rightReps||'—'}${s.rightWeight?' @ '+s.rightWeight+'kg':''}</span>`
+                    : `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
+              </span>
+              <button onclick="editRunnerSet(${_runner.exIdx},${i})" style="flex-shrink:0;padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--accent)">✎ Edit</button>
+            </div>`).join('')}</div>`}
+
+        <!-- PT note (always shown if exists, label prefix stripped) -->
+        ${(() => {
+          if (!ex.notes) return ''
+          const noteMatch = ex.notes.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
+          const label = noteMatch ? noteMatch[1] : 'Coach note'
+          const noteText = noteMatch ? noteMatch[2] : ex.notes
+          if (!noteText.trim()) return ''
+          return `<div style="margin:8px 0 4px;padding:10px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)">
+            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">${label}</span>
+            <div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.5">${noteText}</div>
+          </div>`
+        })()}
+
+        <!-- Client notes -->
+        <div style="margin-top:14px">
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Your notes</label>
+          <textarea id="wr-client-notes" placeholder="e.g. wide grip felt comfortable…" rows="2"
+            oninput="_runner.exercises[${_runner.exIdx}].clientNotes=this.value"
+            style="width:100%;margin-top:6px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);resize:none;box-sizing:border-box;font-family:inherit;line-height:1.5">${ex.clientNotes||''}</textarea>
+        </div>
       </div>
 
       <!-- Last session strip — persistent reference -->
@@ -4555,7 +4581,6 @@ function renderRunner() {
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>`}
           </div>
-          ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
           <!-- Buttons -->
           <div style="display:flex;gap:8px;margin-bottom:6px">
             ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
@@ -4595,7 +4620,6 @@ function renderRunner() {
           const repsPlaceholder = repsStr ? repsStr.replace('–', '-') : '—'
           return `
           ${targetBar}
-          ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
           ${tgt.unilateral && !isDistance ? `
           <!-- Unilateral L/R input -->
           <div style="display:flex;gap:6px;margin-bottom:6px">
@@ -5260,7 +5284,8 @@ async function saveRunnerSession() {
   for (let bi = 0; bi < exercises.length; bi++) {
     const ex = exercises[bi]
     const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
-      log_id: sessionLog.id, exercise_name: ex.name, exercise_type: ex.type, order_index: bi
+      log_id: sessionLog.id, exercise_name: ex.name, exercise_type: ex.type, order_index: bi,
+      client_notes: ex.clientNotes || null
     }).select().single()
     if (exErr) { log.error('saveRunnerSession', `exercise ${bi+1} insert failed`, exErr); return }
 
