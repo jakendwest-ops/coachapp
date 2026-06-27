@@ -14,16 +14,55 @@ test.describe('Client workout flow', () => {
 
   test('client can navigate to Workouts page', async ({ page }) => {
     await page.click('[data-page="workouts"]')
-    // Wait for a stable workouts-only landmark rather than the async h1
-    await page.waitForSelector('text=START A WORKOUT', { timeout: 10000 })
-    await expect(page.locator('text=START A WORKOUT')).toBeVisible()
+    // Page renders the Workouts h1 and either a program accordion or templates list
+    await page.waitForSelector('button:has-text("▶ Start"), button:has-text("Start")', { timeout: 10000 })
+    await expect(page.locator('h1')).toContainText('Workouts')
   })
 
-  test('workout templates list is visible with Start buttons', async ({ page }) => {
+  test('workout sessions list is visible with Start buttons', async ({ page }) => {
     await page.click('[data-page="workouts"]')
-    await page.waitForSelector('button:has-text("Start")', { timeout: 10000 })
-    const startBtns = page.locator('button:has-text("Start")')
+    await page.waitForSelector('button:has-text("▶ Start"), button:has-text("Start")', { timeout: 10000 })
+    const startBtns = page.locator('button:has-text("▶ Start"), button:has-text("Start")')
     expect(await startBtns.count()).toBeGreaterThan(0)
+  })
+
+  test('program accordion phase expands to show sessions with exercise count', async ({ page }) => {
+    await page.click('[data-page="workouts"]')
+    await page.waitForTimeout(1500)
+
+    // Only run if this client has a program assigned (accordion will be present)
+    const hasAccordion = await page.locator('button').filter({ hasText: /session/ }).first().isVisible({ timeout: 3000 }).catch(() => false)
+    if (!hasAccordion) return // test client has no program — skip
+
+    const firstPhaseBtn = page.locator('button').filter({ hasText: /session/ }).first()
+    await firstPhaseBtn.click()
+
+    // A session row should appear showing exercise count
+    await expect(page.locator('text=/\\d+ exercise/')).toBeVisible({ timeout: 5000 })
+  })
+
+  test('client can tap session name to see exercise list', async ({ page }) => {
+    await page.click('[data-page="workouts"]')
+    await page.waitForTimeout(1500)
+
+    // Only run if this client has a program assigned
+    const hasAccordion = await page.locator('button').filter({ hasText: /session/ }).first().isVisible({ timeout: 3000 }).catch(() => false)
+    if (!hasAccordion) return
+
+    // Expand the first phase
+    const firstPhaseBtn = page.locator('button').filter({ hasText: /session/ }).first()
+    await firstPhaseBtn.click()
+    await page.waitForSelector('[id^="cl-sess-"]', { timeout: 5000 })
+
+    // Tap the session name div (not the Start button) to expand exercise detail
+    const sessionNameDiv = page.locator('[style*="cursor:pointer"]').filter({ hasText: /exercise/ }).first()
+    await sessionNameDiv.click()
+
+    // An exercise detail panel should now be visible
+    const detailPanel = page.locator('[id^="cl-sess-"]').first()
+    await expect(detailPanel).toBeVisible({ timeout: 3000 })
+    const detailText = await detailPanel.textContent()
+    expect(detailText?.trim().length).toBeGreaterThan(0)
   })
 
   test('session history rows are tappable', async ({ page }) => {

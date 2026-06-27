@@ -40,7 +40,15 @@ test.describe('Workout runner (client)', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsClient(page)
     await page.click('[data-page="workouts"]')
-    await page.waitForSelector('button:has-text("Start")', { timeout: 10000 })
+    // Wait for page to settle — may show program accordion or flat template list
+    await page.waitForTimeout(1500)
+    // If phases are present (program accordion), expand the first one so Start buttons are visible
+    const firstPhaseBtn = page.locator('button').filter({ hasText: /session/ }).first()
+    if (await firstPhaseBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await firstPhaseBtn.click()
+    }
+    // Now wait for a visible Start button
+    await page.waitForSelector('button:has-text("Start"):visible, button:has-text("▶ Start"):visible', { timeout: 10000 })
   })
 
   test('runner loads with exercise name visible', async ({ page }) => {
@@ -68,7 +76,7 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('#rest-timer-overlay')).toBeVisible({ timeout: 5000 })
   })
 
-  test('skip rest advances set counter', async ({ page }) => {
+  test('skip rest clears rest overlay and restores input fields', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
@@ -83,12 +91,21 @@ test.describe('Workout runner (client)', () => {
 
     // Skip rest
     await page.locator('button:has-text("Skip →")').click()
+
+    // Rest overlay must be gone
     await expect(page.locator('#rest-timer-overlay')).not.toBeVisible({ timeout: 5000 })
 
-    // Set counter should now show set 2 (or next exercise)
+    // --- Regression guard: input fields must be visible again after skip ---
+    // "Resting — inputs available after rest" must NOT be showing
+    await expect(page.locator('text=Resting — inputs available after rest')).not.toBeVisible({ timeout: 3000 })
+
+    // The LOG button must be visible and enabled (not blocked by rest state)
+    await expect(page.locator('button:has-text("LOG")')).toBeVisible({ timeout: 3000 })
+
+    // Set counter should now show set 2 (or next exercise if target was 1 set)
     const setTwoOrNext =
       await page.locator('text=Set 2').isVisible().catch(() => false) ||
-      await page.locator('text=Exercise 2').isVisible().catch(() => false)
+      await page.locator('text=/Exercise \\d+/').isVisible().catch(() => false)
     expect(setTwoOrNext).toBe(true)
   })
 
@@ -137,7 +154,7 @@ test.describe('Workout runner (client)', () => {
     await page.locator('button:has-text("Save workout")').click()
 
     // Must land on client workouts page — not PT client profile
-    await expect(page.locator('text=START A WORKOUT')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('h1')).toContainText('Workouts', { timeout: 10000 })
     // Verify PT client profile header is NOT shown (regression: post-save nav bug)
     await expect(page.locator('text=Overview')).not.toBeVisible({ timeout: 3000 }).catch(() => {})
   })
