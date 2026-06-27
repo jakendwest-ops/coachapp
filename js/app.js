@@ -3110,127 +3110,86 @@ async function renderClientWorkoutsPage(el) {
   if (!clientRecord) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
   const clientId = clientRecord.id
 
-  const [{ data: clientWorkouts }, { data: templates }, { data: logs }, { data: programs }, { data: oneRMRows }] = await Promise.all([
-    db.from('client_program_workouts').select('workout_template_id, workout_templates(id, name, description, program_id, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes))'),
-    db.from('workout_templates').select('id, name, description, program_id, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id).is('client_id', null).is('program_id', null).order('name'),
+  const [{ data: templates }, { data: logs }, { data: oneRMRows }, { data: cpAssignments }] = await Promise.all([
+    db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id).is('client_id', null).is('program_id', null).order('name'),
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
-    db.from('programs').select('id, name').eq('coach_id', clientRecord.coach_id).order('name'),
-    db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').eq('client_id', clientId).order('recorded_at', { ascending: false })
+    db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').eq('client_id', clientId).order('recorded_at', { ascending: false }),
+    db.from('client_programs').select('id, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
   ])
   const oneRMMap = {}
   ;(oneRMRows || []).forEach(r => { const k = r.exercise_name.trim().toLowerCase(); if (!oneRMMap[k]) oneRMMap[k] = parseFloat(r.one_rm_kg) })
-  // If no client-specific templates yet (legacy assign), fall back to all coach templates
-  const useClientWorkouts = (clientWorkouts?.length || 0) > 0
-  const allTemplates = useClientWorkouts
-    ? clientWorkouts.map(r => r.workout_templates).filter(Boolean)
-    : (templates || [])
+
+  let cpwMap = {}
+  const activeAssignment = cpAssignments?.[0]
+  if (activeAssignment) {
+    const { data: cpwRows } = await db.from('client_program_workouts')
+      .select('program_phase_workout_id, workout_template_id, workout_templates(id, name, description)')
+      .eq('client_program_id', activeAssignment.id)
+    ;(cpwRows || []).forEach(r => { cpwMap[r.program_phase_workout_id] = { templateId: r.workout_template_id, name: r.workout_templates?.name, desc: r.workout_templates?.description } })
+  }
+  const hasProgram = activeAssignment && Object.keys(cpwMap).length > 0
 
   el.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Workouts</h1>
     </div>
 
-    <div class="section-header" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Start a workout</div>
-    ${!(allTemplates?.length) ? `
-      <div class="empty-state">
-        <div class="empty-icon">💪</div>
-        <div class="empty-title">No workouts yet</div>
-        <div class="empty-text">Your coach hasn't added any workout templates yet.</div>
-      </div>` : (() => {
-      const programMap = Object.fromEntries((programs || []).map(p => [p.id, p.name]))
-      const byProgram = {}
-      const adHoc = []
-      allTemplates.forEach(t => {
-        if (t.program_id && programMap[t.program_id]) {
-          if (!byProgram[t.program_id]) byProgram[t.program_id] = []
-          byProgram[t.program_id].push(t)
-        } else {
-          adHoc.push(t)
-        }
-      })
-      const secHdr = label => `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:20px 0 8px">${label}</div>`
-      const renderGroup = group => group.map(t => {
-          const exs = (t.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
-          const exDetail = exs.map(ex => {
-            const isCardio = ex.exercise_type === 'cardio'
-            const noteMatch = ex.notes?.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
-            const label = noteMatch ? noteMatch[1] : null
-            const noteText = noteMatch ? noteMatch[2] : (ex.notes || '')
-            const sets = ex.sets_json || []
-            const setRows = (() => {
-              const summaries = sets.map(s => {
-                const parts = []
-                if (isCardio) {
-                  if (s.duration) parts.push(fmtDuration(parseRest(s.duration)||0))
-                  if (s.distance) parts.push(s.distance+' km')
-                  if (s.pace500Min) parts.push(s.pace500Min+(s.pace500Max&&s.pace500Max!==s.pace500Min?'–'+s.pace500Max:'')+'/500m')
-                  if (s.paceKmMin) parts.push(s.paceKmMin+(s.paceKmMax&&s.paceKmMax!==s.paceKmMin?'–'+s.paceKmMax:'')+'/km')
-                  if (s.hrZoneMin) parts.push('HR '+s.hrZoneMin+(s.hrZoneMax?'–'+s.hrZoneMax:'')+' bpm')
-                } else {
-                  const repsStr = s.repsMin ? (s.repsMin+(s.repsMax&&s.repsMax!==s.repsMin?'–'+s.repsMax:'')) : null
-                  if (repsStr) parts.push(repsStr+' reps')
-                  if (s.weight) parts.push(s.weight+'kg')
-                  if (s.intensityMin) {
-                    const _orm = oneRMMap[ex.exercise_name?.trim().toLowerCase()]
-                    const _kgLo = _orm ? _calcWeightFromPct(_orm, s.intensityMin) : null
-                    const _kgHi = _orm && s.intensityMax && s.intensityMax !== s.intensityMin ? _calcWeightFromPct(_orm, s.intensityMax) : null
-                    const _kgStr = _kgLo ? ` → ${_kgLo}${_kgHi ? '–'+_kgHi : ''} kg` : ''
-                    parts.push(s.intensityMin+(s.intensityMax&&s.intensityMax!==s.intensityMin?'–'+s.intensityMax:'')+'% 1RM'+_kgStr)
-                  }
-                  const effortStr = s.effortMin ? ((s.effortType==='rir'?'RIR ':'RPE ')+s.effortMin+(s.effortMax&&s.effortMax!==s.effortMin?'–'+s.effortMax:'')) : null
-                  if (effortStr) parts.push(effortStr)
-                  const restStr = s.restMin && s.restMin !== '0:00' ? s.restMin+(s.restMax&&s.restMax!==s.restMin?'–'+s.restMax:'')+' rest' : null
-                  if (restStr) parts.push(restStr)
-                  if (s.tempo) parts.push(s.tempo)
-                }
-                return parts.filter(Boolean).join(' · ')
-              })
-              // Group consecutive identical sets
-              const groups = []
-              summaries.forEach((s, i) => {
-                if (s && groups.length && groups[groups.length-1].summary === s) groups[groups.length-1].count++
-                else if (s) groups.push({ summary: s, count: 1, first: i })
-              })
-              return groups.map(g =>
-                `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600">${g.count > 1 ? g.count+'×' : 'Set '+(g.first+1)+':'}</span> ${g.summary}</div>`
-              ).join('')
-            })()
-            return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
-              ${label ? `<span style="flex-shrink:0;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,.1);color:var(--accent);margin-top:1px">${label}</span>` : ''}
-              <div style="min-width:0">
-                <div style="font-size:13px;font-weight:600;color:var(--text)">${ex.exercise_name||''}</div>
-                ${setRows ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:3px">${setRows}</div>` : ''}
-                ${noteText ? `<div style="margin-top:4px;padding:4px 8px;border-radius:5px;background:var(--surface-2)"><span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Notes</span><div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:1px">${noteText}</div></div>` : ''}
+    ${hasProgram ? (() => {
+      const prog = activeAssignment.programs
+      const phases = [...(prog?.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
+      return `<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px">${prog?.name || 'My Program'}</div>
+        <div style="margin-bottom:28px">
+          ${phases.map((phase, pi) => {
+            const sessions = [...(phase.program_phase_workouts || [])].sort((a, b) => a.session_order - b.session_order)
+            const panelId = `cl-phase-${activeAssignment.id}-${pi}`
+            return `<div style="margin-bottom:6px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+              <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
+                <div>
+                  <span style="font-size:13px;font-weight:700;color:var(--text)">${phase.name}</span>
+                  <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${phase.duration_weeks}w · ${sessions.length} session${sessions.length !== 1 ? 's' : ''}</span>
+                </div>
+                <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div id="${panelId}" style="display:none">
+                ${sessions.map(pw => {
+                  const cpw = cpwMap[pw.id]
+                  const name = cpw?.name || 'Session'
+                  const templateId = cpw?.templateId
+                  return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--border)">
+                    <div>
+                      <div style="font-size:13px;font-weight:600">${name}</div>
+                      <div style="font-size:11px;color:var(--text-muted)">Day ${pw.day_of_week}</div>
+                    </div>
+                    ${templateId
+                      ? `<button class="btn-primary" style="font-size:12px;padding:5px 14px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>`
+                      : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
+                  </div>`
+                }).join('')}
               </div>
             </div>`
-          }).join('')
-          return `
-          <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--surface)">
-            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer" onclick="toggleClientTemplate('${t.id}')">
-              <div style="width:36px;height:36px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
-              </div>
+          }).join('')}
+        </div>`
+    })() : (() => {
+      const allTemplates = templates || []
+      return `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Templates</div>
+      ${!allTemplates.length ? `
+        <div class="empty-state">
+          <div class="empty-icon">💪</div>
+          <div class="empty-title">No workouts yet</div>
+          <div class="empty-text">Your coach hasn't added any workout templates yet.</div>
+        </div>` : `<div style="margin-bottom:28px">${allTemplates.map(t => {
+          const exs = (t.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
+          return `<div style="border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--surface)">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px">
               <div class="row-info" style="flex:1;min-width:0">
                 <div class="row-name">${t.name}</div>
-                <div class="row-meta">${exs.length} exercise${exs.length!==1?'s':''}${t.description ? ' · '+t.description : ''}</div>
+                <div class="row-meta">${exs.length} exercise${exs.length!==1?'s':''}</div>
               </div>
-              <svg id="chevron-${t.id}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;color:var(--text-muted);transition:transform .2s"><polyline points="9 18 15 12 9 6"/></svg>
-              <button class="btn-primary" style="font-size:13px;padding:6px 14px;flex-shrink:0" onclick="event.stopPropagation();startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
-            </div>
-            <div id="tmpl-detail-${t.id}" style="display:none;padding:0 14px 10px">
-              ${exDetail || '<div style="font-size:13px;color:var(--text-muted);padding:8px 0">No exercises added yet.</div>'}
+              <button class="btn-primary" style="font-size:13px;padding:6px 14px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
             </div>
           </div>`
-        }).join('')
-      let html = ''
-      Object.entries(byProgram).forEach(([pid, tmplts]) => {
-        html += secHdr(programMap[pid]) + renderGroup(tmplts)
-      })
-      if (adHoc.length) {
-        if (Object.keys(byProgram).length) html += secHdr('Ad-hoc sessions')
-        html += renderGroup(adHoc)
-      }
-      return `<div style="margin-bottom:28px">${html}</div>`
+        }).join('')}</div>`}
+      `
     })()}
 
     ${oneRMRows?.length ? `
@@ -3877,7 +3836,9 @@ function renderTemplateSets(containerId, type) {
         ${row('Rest HR max (BPM)', mini(`ts-resthr-${i}`, 'type="number" placeholder="e.g. 150"'+(s.restHrMax ? ` value="${s.restHrMax}"` : '')))}
         ${row('Stroke rate (spm)', mini(`ts-srmin-${i}`, 'type="number" placeholder="—"'+(s.strokeRateMin?` value="${s.strokeRateMin}"`:'')) + dash + mini(`ts-srmax-${i}`, 'type="number" placeholder="—"'+(s.strokeRateMax?` value="${s.strokeRateMax}"`:'')))}
       ` : `
-        ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
+        ${s.timed
+          ? row('Duration (mm:ss)', mini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.duration||'0:00'}"`))
+          : row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
         ${s.bodyweight ? '' : row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
         ${s.assisted ? row('Assist weight (kg)', mini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${s.assistWeight}"`:''))): ''}
         ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${s.intensityMin}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${s.intensityMax}"`:'')))}
@@ -4510,6 +4471,10 @@ function renderRunner() {
                 ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : s.distance ? s.distance+' km' : '—'}</span>`
                 : s.distance_m
                   ? `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
+                  : s.duration
+                  ? `<span style="font-size:15px;font-weight:700">⏱ ${s.duration}</span>${s.weight?`<span style="font-size:14px;font-weight:600;color:var(--text-muted)">${s.weight} kg</span>`:''}`
+                  : s.leftReps != null
+                  ? `<span style="font-size:13px;font-weight:700">L: ${s.leftReps||'—'}${s.leftWeight?' @ '+s.leftWeight+'kg':''}</span><span style="font-size:13px;font-weight:700">R: ${s.rightReps||'—'}${s.rightWeight?' @ '+s.rightWeight+'kg':''}</span>`
                   : `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
               <span style="font-size:11px;color:var(--text-muted)">✎</span>
             </div>`).join('')}
@@ -4631,13 +4596,41 @@ function renderRunner() {
           return `
           ${targetBar}
           ${ex.notes ? `<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">Coach note</span><div style="font-size:13px;color:var(--text);margin-top:2px;font-style:italic">${ex.notes}</div></div>` : ''}
+          ${tgt.unilateral && !isDistance ? `
+          <!-- Unilateral L/R input -->
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
+              <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;text-align:center;color:var(--accent)">Left</div>
+              <input id="wr-left-weight" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
+                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+              <input id="wr-left-reps" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
+                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>kg</span><span>reps</span></div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;text-align:center;color:var(--accent)">Right</div>
+              <input id="wr-right-weight" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
+                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+              <input id="wr-right-reps" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
+                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>kg</span><span>reps</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
+              <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
+              ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
+            </div>
+          </div>` : `
           <div style="display:flex;align-items:stretch;gap:6px">
             <!-- Set number -->
             <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
               <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
               <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
             </div>
-            <!-- Weight input -->
+            <!-- Weight input (always shown, optional for timed) -->
             ${ex.bodyweight
               ? `<div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg)">
                   <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Weight</div>
@@ -4648,21 +4641,27 @@ function renderRunner() {
                   <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
                     style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
                  </div>`}
-            <!-- Reps or Distance input -->
-            <div style="flex:1;display:flex;flex-direction:column">
-              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${isDistance ? 'Metres' : 'Reps'}</div>
-              ${isDistance
-                ? `<input id="wr-dist-input" type="number" inputmode="decimal" step="1" placeholder="${distTarget||'m'}"
-                    style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
-                : `<input id="wr-reps-input" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
-                    style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`}
-            </div>
+            <!-- Duration (timed) or Reps / Distance -->
+            ${tgt.timed
+              ? `<div style="flex:1;display:flex;flex-direction:column">
+                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Duration</div>
+                  <input id="wr-duration-input" type="text" inputmode="numeric" placeholder="${tgt.duration||'0:00'}" oninput="this.value=fmtRestInput(this.value)"
+                    style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box">
+                 </div>`
+              : `<div style="flex:1;display:flex;flex-direction:column">
+                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${isDistance ? 'Metres' : 'Reps'}</div>
+                  ${isDistance
+                    ? `<input id="wr-dist-input" type="number" inputmode="decimal" step="1" placeholder="${distTarget||'m'}"
+                        style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
+                    : `<input id="wr-reps-input" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
+                        style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`}
+                 </div>`}
             <!-- LOG / Skip -->
             <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
               <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
               ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
             </div>
-          </div>
+          </div>`}
           ${ex.loggedSets.length > 0 && ex.loggedSets.length >= ex.targetSets ? `<button onclick="addExtraStrengthSet()" style="width:100%;margin-top:6px;padding:7px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
         })()}`}
       </div>
@@ -4701,9 +4700,21 @@ function logRunnerSet() {
     // stop any running interval timer
     stopIntervalTimer()
   } else {
+    const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
     const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
     const weight = ex.bodyweight ? 'BW' : (document.getElementById('wr-weight-input')?.value?.trim() || '')
-    if (isDistance) {
+    if (tgt.timed) {
+      const dur = document.getElementById('wr-duration-input')?.value?.trim()
+      if (!dur || dur === '0:00') return
+      setData = { weight: weight || null, duration: dur }
+    } else if (tgt.unilateral && !isDistance) {
+      const leftWeight = document.getElementById('wr-left-weight')?.value?.trim() || ''
+      const leftReps   = document.getElementById('wr-left-reps')?.value?.trim()   || ''
+      const rightWeight = document.getElementById('wr-right-weight')?.value?.trim() || ''
+      const rightReps   = document.getElementById('wr-right-reps')?.value?.trim()   || ''
+      if (!leftReps && !rightReps) return
+      setData = { leftWeight: leftWeight || null, leftReps: leftReps || null, rightWeight: rightWeight || null, rightReps: rightReps || null }
+    } else if (isDistance) {
       const dist = document.getElementById('wr-dist-input')?.value?.trim() || ''
       if (!dist) return
       setData = { weight, distance_m: dist }
