@@ -961,30 +961,48 @@ async function renderClientPrograms(clientId, el) {
               </div>
               <button class="btn-secondary" style="font-size:12px;padding:4px 10px;color:var(--danger);border-color:var(--danger);flex-shrink:0" onclick="unassignProgram('${clientId}','${a.id}')">Remove</button>
             </div>
-            ${phases.map(phase => {
+            ${phases.map((phase, pi) => {
               const sessions = [...(phase.program_phase_workouts || [])].sort((x, y) => x.session_order - y.session_order)
+              const panelId = `phase-panel-${a.id}-${pi}`
               return `
-                <div style="margin-bottom:16px">
-                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">${phase.name} · ${phase.duration_weeks}w</div>
-                  ${sessions.map(pw => {
-                    const cpw = cpwMap[pw.id]
-                    const sessionName = cpw?.name || 'Session'
-                    const templateId = cpw?.templateId
-                    return `
-                      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-                        <div>
-                          <div style="font-size:13px;font-weight:600">${sessionName}</div>
-                          <div style="font-size:11px;color:var(--text-muted)">Day ${pw.day_of_week}</div>
-                        </div>
-                        ${templateId ? `<button class="btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0" onclick="openTemplate('${templateId}',{backTo:'client',backLabel:'${clientName}',clientId:'${clientId}',clientName:'${clientName}',clientProgramId:'${a.id}'})">Edit</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
-                      </div>`
-                  }).join('')}
+                <div style="margin-bottom:6px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+                  <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
+                    <div>
+                      <span style="font-size:13px;font-weight:700;color:var(--text)">${phase.name}</span>
+                      <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${phase.duration_weeks}w · ${sessions.length} session${sessions.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <div id="${panelId}" style="display:none">
+                    ${sessions.map(pw => {
+                      const cpw = cpwMap[pw.id]
+                      const sessionName = cpw?.name || 'Session'
+                      const templateId = cpw?.templateId
+                      return `
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--border)">
+                          <div>
+                            <div style="font-size:13px;font-weight:600">${sessionName}</div>
+                            <div style="font-size:11px;color:var(--text-muted)">Day ${pw.day_of_week}</div>
+                          </div>
+                          ${templateId ? `<button class="btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0" onclick="openTemplate('${templateId}',{backTo:'client',backLabel:'${clientName}',clientId:'${clientId}',clientName:'${clientName}',clientProgramId:'${a.id}'})">Edit</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
+                        </div>`
+                    }).join('')}
+                  </div>
                 </div>`
             }).join('')}
           </div>
         </div>`
     }).join('')}
   `
+}
+
+function toggleClientPhase(panelId) {
+  const panel = document.getElementById(panelId)
+  const chevron = document.getElementById(panelId + '-chevron')
+  if (!panel) return
+  const isOpen = panel.style.display !== 'none'
+  panel.style.display = isOpen ? 'none' : 'block'
+  if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)'
 }
 
 function showAssignProgramModal(clientId) {
@@ -4006,8 +4024,25 @@ async function saveExerciseToTemplate(templateId) {
 }
 
 async function showEditTemplateExerciseModal(templateExId, templateId) {
-  const { data: ex } = await db.from('workout_template_exercises').select('*').eq('id', templateExId).single()
+  const ctx = window._templateCtx
+  const [{ data: ex }, { data: ormRows }] = await Promise.all([
+    db.from('workout_template_exercises').select('*').eq('id', templateExId).single(),
+    ctx?.isClientPlan && ctx.clientId
+      ? db.from('client_1rms').select('exercise_name').eq('client_id', ctx.clientId).order('exercise_name')
+      : Promise.resolve({ data: [] })
+  ])
   window._templateSets = ex.sets_json?.length ? ex.sets_json.map(s => ({...s})) : (ex.sets ? Array.from({length: ex.sets}, () => ({})) : [{}])
+
+  const ormNames = [...new Set((ormRows || []).map(r => r.exercise_name))].sort()
+  const ormDropdown = ormNames.length ? `
+    <div class="field" style="margin-bottom:8px">
+      <label class="field-label">1RM exercise <span style="font-weight:400;color:var(--text-muted)">(select to auto-fill name)</span></label>
+      <select class="field-input" id="etex-orm-pick" onchange="if(this.value){document.getElementById('etex-name').value=this.value}">
+        <option value="">— pick from client's 1RMs —</option>
+        ${ormNames.map(n => `<option value="${n}" ${n === ex.exercise_name ? 'selected' : ''}>${n}</option>`).join('')}
+        <option value="">— or type below —</option>
+      </select>
+    </div>` : ''
 
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
@@ -4018,6 +4053,7 @@ async function showEditTemplateExerciseModal(templateExId, templateId) {
         <h2 class="modal-title">Edit: ${ex.exercise_name}</h2>
         <button class="modal-close" onclick="closeModal('edit-tex-modal')">✕</button>
       </div>
+      ${ormDropdown}
       <div class="field-row">
         <div class="field">
           <label class="field-label">Exercise name</label>
