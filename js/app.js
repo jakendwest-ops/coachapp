@@ -3123,9 +3123,9 @@ async function renderClientWorkoutsPage(el) {
   const activeAssignment = cpAssignments?.[0]
   if (activeAssignment) {
     const { data: cpwRows } = await db.from('client_program_workouts')
-      .select('program_phase_workout_id, workout_template_id, workout_templates(id, name, description)')
+      .select('program_phase_workout_id, workout_template_id, workout_templates(id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes))')
       .eq('client_program_id', activeAssignment.id)
-    ;(cpwRows || []).forEach(r => { cpwMap[r.program_phase_workout_id] = { templateId: r.workout_template_id, name: r.workout_templates?.name, desc: r.workout_templates?.description } })
+    ;(cpwRows || []).forEach(r => { cpwMap[r.program_phase_workout_id] = { templateId: r.workout_template_id, name: r.workout_templates?.name, desc: r.workout_templates?.description, exercises: r.workout_templates?.workout_template_exercises || [] } })
   }
   const hasProgram = activeAssignment && Object.keys(cpwMap).length > 0
 
@@ -3155,14 +3155,46 @@ async function renderClientWorkoutsPage(el) {
                   const cpw = cpwMap[pw.id]
                   const name = cpw?.name || 'Session'
                   const templateId = cpw?.templateId
-                  return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--border)">
-                    <div>
-                      <div style="font-size:13px;font-weight:600">${name}</div>
-                      <div style="font-size:11px;color:var(--text-muted)">Day ${pw.day_of_week}</div>
+                  const exs = (cpw?.exercises || []).sort((a,b) => a.order_index - b.order_index)
+                  const detailId = `cl-sess-${activeAssignment.id}-${pw.id}`
+                  return `<div style="border-top:1px solid var(--border)">
+                    <div style="display:flex;align-items:center;padding:10px 14px;gap:10px">
+                      <div style="flex:1;min-width:0;cursor:pointer" onclick="toggleClientPhase('${detailId}')">
+                        <div style="font-size:13px;font-weight:600">${name}</div>
+                        <div style="font-size:11px;color:var(--text-muted)">${exs.length} exercise${exs.length!==1?'s':''} · Day ${pw.day_of_week}</div>
+                      </div>
+                      ${templateId
+                        ? `<button class="btn-primary" style="font-size:12px;padding:5px 14px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>`
+                        : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
                     </div>
-                    ${templateId
-                      ? `<button class="btn-primary" style="font-size:12px;padding:5px 14px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>`
-                      : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
+                    ${exs.length ? `<div id="${detailId}" style="display:none;padding:0 14px 10px">
+                      ${exs.map(ex => {
+                        const sets = ex.sets_json || []
+                        const isCardio = ex.exercise_type === 'cardio'
+                        const summaries = sets.map(s => {
+                          const p = []
+                          if (isCardio) {
+                            if (s.duration) p.push(s.duration)
+                            if (s.distance) p.push(s.distance+' km')
+                            if (s.pace500Min) p.push(s.pace500Min+'/500m')
+                          } else {
+                            if (s.timed) { if (s.duration) p.push(s.duration) }
+                            else { const r = s.repsMin?(s.repsMin+(s.repsMax&&s.repsMax!==s.repsMin?'–'+s.repsMax:'')):null; if(r) p.push(r+' reps') }
+                            if (s.weight) p.push(s.weight+'kg')
+                            if (s.intensityMin) { const orm=oneRMMap[ex.exercise_name?.trim().toLowerCase()]; p.push(orm?_calcWeightFromPct(orm,s.intensityMin)+'kg':s.intensityMin+'% 1RM') }
+                            if (s.restMin&&s.restMin!=='0:00') p.push(s.restMin+' rest')
+                          }
+                          return p.filter(Boolean).join(' · ')
+                        }).filter(Boolean)
+                        const groups=[];summaries.forEach((s,i)=>{if(groups.length&&groups[groups.length-1].s===s)groups[groups.length-1].n++;else groups.push({s,n:1,i})})
+                        return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+                          <div style="min-width:0">
+                            <div style="font-size:13px;font-weight:600">${ex.exercise_name||''}</div>
+                            ${groups.map(g=>`<div style="font-size:11px;color:var(--text-muted)">${g.n>1?g.n+'×':''} ${g.s}</div>`).join('')}
+                          </div>
+                        </div>`
+                      }).join('')}
+                    </div>` : ''}
                   </div>`
                 }).join('')}
               </div>
