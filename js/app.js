@@ -60,6 +60,8 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 let currentUser    = null
 let currentProfile = null
 let currentPage    = 'dashboard'
+window._branding     = { businessName: null, logoPath: null, logoUrl: null }
+window._brandingFile = null
 
 // ─── SHELL HELPERS ────────────────────────────────────────────────────────────
 function showAuth() {
@@ -128,6 +130,41 @@ async function loadUserInfo() {
       updateViewSwitcherButtons(storedView === 'client' ? 'client' : 'coach')
     }
   }
+  await _loadBranding()
+}
+
+async function _loadBranding() {
+  window._branding = { businessName: null, logoPath: null, logoUrl: null }
+  // RLS handles filtering: coaches see own row, clients see their coach's row
+  const { data } = await db.from('coach_branding').select('business_name, logo_path').maybeSingle()
+  if (!data) return
+  window._branding.businessName = data.business_name || null
+  window._branding.logoPath     = data.logo_path || null
+  if (data.logo_path) {
+    const { data: urlData } = await db.storage.from('logos').createSignedUrl(data.logo_path, 3600)
+    window._branding.logoUrl = urlData?.signedUrl || null
+  }
+  _applyBrandingToSidebar()
+}
+
+function _applyBrandingToSidebar() {
+  const brand = document.querySelector('.sidebar-brand')
+  if (!brand) return
+  const b = window._branding || {}
+  if (b.logoUrl) {
+    brand.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:4px 0">
+        <img src="${b.logoUrl}" alt="${b.businessName || 'Logo'}" style="height:52px;width:auto;max-width:160px;object-fit:contain;border-radius:6px">
+        <span style="font-size:9px;color:var(--text-muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">powered by CoachApp</span>
+      </div>`
+  } else if (b.businessName) {
+    brand.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:4px 0">
+        <span style="font-size:16px;font-weight:700;color:var(--text);line-height:1.2">${b.businessName}</span>
+        <span style="font-size:9px;color:var(--text-muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">powered by CoachApp</span>
+      </div>`
+  }
+  // else: default "C CoachApp" design unchanged
 }
 
 const _NAV_ICONS = {
@@ -406,7 +443,7 @@ async function renderDashboard(el) {
     <div class="page-header">
       <div>
         <h1 class="page-title">Welcome back, ${firstName} 👋</h1>
-        <p class="page-subtitle">${today}</p>
+        <p class="page-subtitle">${window._branding?.businessName ? window._branding.businessName + ' · ' : ''}${today}</p>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="showAddClientModal()">+ Add client</button>
@@ -640,6 +677,14 @@ async function renderClientDashboard(el) {
   const checkInDue = daysSinceCheckIn === null || daysSinceCheckIn >= 7
 
   el.innerHTML = `
+    ${window._branding?.logoUrl || window._branding?.businessName ? `
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
+      ${window._branding.logoUrl ? `<img src="${window._branding.logoUrl}" alt="${window._branding.businessName || ''}" style="height:44px;width:auto;max-width:120px;object-fit:contain;border-radius:6px">` : ''}
+      <div>
+        ${window._branding.businessName ? `<div style="font-size:14px;font-weight:700;color:var(--text)">${window._branding.businessName}</div>` : ''}
+        <div style="font-size:12px;color:var(--text-muted)">Coached by your PT</div>
+      </div>
+    </div>` : ''}
     <div class="dashboard-header">
       <div>
         <h1 class="dashboard-greeting">Hi, ${firstName} 👋</h1>
@@ -6998,11 +7043,59 @@ async function renderProgressPBs(el) {
 async function renderSettings(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const { data: profile } = await db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single()
+  const isCoach = currentProfile?.role === 'coach'
+
+  const [{ data: profile }, { data: branding }] = await Promise.all([
+    db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single(),
+    isCoach ? db.from('coach_branding').select('business_name, logo_path').eq('coach_id', currentUser.id).maybeSingle() : Promise.resolve({ data: null })
+  ])
 
   const memberSince = profile?.created_at
     ? new Date(profile.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     : '—'
+
+  // Generate signed URL for current logo preview (short-lived, display only)
+  let currentLogoUrl = null
+  if (branding?.logo_path) {
+    const { data: urlData } = await db.storage.from('logos').createSignedUrl(branding.logo_path, 3600)
+    currentLogoUrl = urlData?.signedUrl || null
+  }
+
+  const brandingCard = isCoach ? `
+      <!-- Branding -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Branding</h2>
+        </div>
+        <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px">
+          <div class="field">
+            <label class="field-label">Business name</label>
+            <input class="field-input" type="text" id="branding-business-name" value="${branding?.business_name || ''}" placeholder="e.g. West Performance">
+          </div>
+          <div class="field">
+            <label class="field-label">Logo</label>
+            ${currentLogoUrl ? `
+            <div style="margin-bottom:10px">
+              <img id="branding-logo-preview" src="${currentLogoUrl}" alt="Logo" style="height:64px;width:auto;max-width:200px;object-fit:contain;border-radius:8px;border:1px solid var(--border);padding:8px;background:var(--surface-2)">
+            </div>
+            <button onclick="removeBrandingLogo()" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:5px 12px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:10px">Remove logo</button>
+            ` : `
+            <div id="branding-logo-preview" style="height:64px;width:180px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:10px">
+              <span style="font-size:12px;color:var(--text-muted)">No logo uploaded</span>
+            </div>
+            `}
+            <label style="display:inline-block;cursor:pointer;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;color:var(--text)">
+              ${currentLogoUrl ? 'Replace logo' : 'Upload logo'}
+              <input type="file" id="branding-logo-file" accept="image/jpeg,image/png,image/webp,image/svg+xml" style="display:none" onchange="previewBrandingLogo(this)">
+            </label>
+            <span style="font-size:11px;color:var(--text-muted);margin-left:8px">JPG, PNG, WebP, SVG</span>
+          </div>
+          <div>
+            <button class="btn-primary" style="font-size:14px" onclick="saveBrandingSettings()">Save branding</button>
+            <span id="branding-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+      </div>` : ''
 
   el.innerHTML = `
     <div class="page-header">
@@ -7034,6 +7127,8 @@ async function renderSettings(el) {
           </div>
         </div>
       </div>
+
+      ${brandingCard}
 
       <!-- Password -->
       <div class="card">
@@ -7114,4 +7209,67 @@ async function saveSettingsPassword() {
     return
   }
   if (msg) { msg.style.color = '#22c55e'; msg.textContent = 'Password updated ✓'; setTimeout(() => { if (msg) { msg.textContent = ''; document.getElementById('settings-pw').value = ''; document.getElementById('settings-pw2').value = '' } }, 3000) }
+}
+
+function previewBrandingLogo(input) {
+  const file = input.files?.[0]
+  if (!file) return
+  window._brandingFile = file
+  const url = URL.createObjectURL(file)
+  const existing = document.getElementById('branding-logo-preview')
+  if (existing?.tagName === 'IMG') {
+    existing.src = url
+  } else if (existing) {
+    const img = document.createElement('img')
+    img.id = 'branding-logo-preview'
+    img.src = url
+    img.alt = 'Logo'
+    img.style.cssText = 'height:64px;width:auto;max-width:200px;object-fit:contain;border-radius:8px;border:1px solid var(--border);padding:8px;background:var(--surface-2);margin-bottom:10px'
+    existing.replaceWith(img)
+  }
+}
+
+async function saveBrandingSettings() {
+  const msg = document.getElementById('branding-msg')
+  const businessName = document.getElementById('branding-business-name')?.value.trim() || null
+  let logoPath = window._branding?.logoPath || null
+
+  if (window._brandingFile) {
+    const mime = window._brandingFile.type
+    const ext  = mime === 'image/svg+xml' ? 'svg' : mime.split('/')[1] || 'jpg'
+    const path = `${currentUser.id}/logo.${ext}`
+    const { error: uploadErr } = await db.storage.from('logos').upload(path, window._brandingFile, { upsert: true, contentType: mime })
+    if (uploadErr) {
+      if (msg) { msg.style.color = '#ef4444'; msg.textContent = 'Logo upload failed.' }
+      log.error('saveBrandingSettings', 'upload failed', uploadErr)
+      return
+    }
+    logoPath = path
+    window._brandingFile = null
+  }
+
+  const { error } = await db.from('coach_branding').upsert(
+    { coach_id: currentUser.id, business_name: businessName, logo_path: logoPath, updated_at: new Date().toISOString() },
+    { onConflict: 'coach_id' }
+  )
+  if (error) {
+    if (msg) { msg.style.color = '#ef4444'; msg.textContent = 'Save failed.' }
+    log.error('saveBrandingSettings', 'upsert failed', error)
+    return
+  }
+
+  await _loadBranding()
+  if (msg) { msg.style.color = '#22c55e'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
+}
+
+async function removeBrandingLogo() {
+  const path = window._branding?.logoPath
+  if (!path) return
+  const { error: delErr } = await db.storage.from('logos').remove([path])
+  if (delErr) { log.error('removeBrandingLogo', 'delete failed', delErr); return }
+  await db.from('coach_branding').update({ logo_path: null, updated_at: new Date().toISOString() }).eq('coach_id', currentUser.id)
+  window._branding.logoPath = null
+  window._branding.logoUrl  = null
+  _applyBrandingToSidebar()
+  renderSettings(document.getElementById('main-content'))
 }
