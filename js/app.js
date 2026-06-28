@@ -3160,6 +3160,13 @@ function parseDuration(str) {
   if (parts.length === 2) return parseInt(parts[0]) * 60 + parseInt(parts[1])
   return parseInt(str) * 60
 }
+function normalizeDuration(v) {
+  if (!v && v !== 0) return ''
+  const s = String(v)
+  if (s.includes(':')) return s
+  const secs = parseInt(s, 10)
+  return isNaN(secs) ? s : fmtDuration(secs)
+}
 function fmtDuration(secs) {
   if (!secs) return '—'
   const m = Math.floor(secs / 60), s = secs % 60
@@ -4678,7 +4685,7 @@ function renderRunner() {
           <!-- Cardio targets -->
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
             ${distBased && tgt.distance ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${tgt.distance} km</span>` : ''}
-            ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${typeof tgt.duration === 'number' ? fmtDuration(tgt.duration) : tgt.duration}</span>` : ''}
+            ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${normalizeDuration(tgt.duration)}</span>` : ''}
             ${tgt.pace500Min ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.pace500Min}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+tgt.pace500Max:''} /500m</span>` : ''}
             ${tgt.paceKmMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.paceKmMin}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+tgt.paceKmMax:''} /km</span>` : ''}
             ${tgt.hrZoneMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${tgt.hrZoneMin}${tgt.hrZoneMax?'–'+tgt.hrZoneMax:''} bpm</span>` : ''}
@@ -4704,7 +4711,7 @@ function renderRunner() {
               </div>` : `
               <div>
                 <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Duration (MM:SS)</div>
-                <input id="wr-cardio-dur" type="text" inputmode="numeric" placeholder="${tgt.duration||'0:00'}" value="${lastCardio?.duration||tgt.duration||''}"
+                <input id="wr-cardio-dur" type="text" inputmode="numeric" placeholder="${normalizeDuration(tgt.duration)||'0:00'}" value="${normalizeDuration(lastCardio?.duration||tgt.duration||'')}"
                   oninput="this.value=fmtRestInput(this.value)"
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>`}
