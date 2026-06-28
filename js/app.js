@@ -284,6 +284,7 @@ document.getElementById('sign-out-btn').addEventListener('click', async () => {
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
 function navigate(page, _historyOp = 'push') {
+  document.querySelectorAll('.modal-overlay').forEach(m => m.remove())
   if (currentPage && currentPage !== page) window._prevPage = currentPage
   currentPage = page
   localStorage.setItem('_activePage', page)
