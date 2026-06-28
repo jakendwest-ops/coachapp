@@ -67,6 +67,10 @@
           <label class="field-label">Password</label>
           <input class="field-input" type="password" id="signup-password" placeholder="Min. 6 characters" required minlength="6">
         </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;margin:4px 0">
+          <input type="checkbox" id="signup-consent" style="margin-top:3px;flex-shrink:0;accent-color:var(--accent)" required>
+          <label for="signup-consent" style="font-size:13px;color:var(--text-muted);line-height:1.4;cursor:pointer">I agree to the Privacy Policy and understand my health and training data will be stored and processed in accordance with UK GDPR.</label>
+        </div>
         <p class="auth-error" id="signup-error"></p>
         <button class="btn-primary btn-full" type="submit" id="signup-submit">Create account</button>
         <p class="auth-switch">Already have an account? <a href="#" id="show-login">Sign in</a></p>
@@ -118,6 +122,6 @@
 
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <script src="js/app.js?v=151"></script>
+  <script src="js/app.js?v=152"></script>
 </body>
 </html>

@@ -141,7 +141,7 @@ async function _loadBranding() {
   window._branding.businessName = data.business_name || null
   window._branding.logoPath     = data.logo_path || null
   if (data.logo_path) {
-    const { data: urlData } = await db.storage.from('logos').createSignedUrl(data.logo_path, 3600)
+    const { data: urlData } = await db.storage.from('logos').createSignedUrl(data.logo_path, 604800)
     window._branding.logoUrl = urlData?.signedUrl || null
   }
   _applyBrandingToSidebar()
@@ -289,6 +289,11 @@ document.getElementById('signup-form').addEventListener('submit', async e => {
   btn.textContent = 'Creating account…'
   errorEl.textContent  = ''
   errorEl.style.color  = ''
+
+  if (!document.getElementById('signup-consent')?.checked) {
+    errorEl.textContent = 'Please accept the privacy policy to continue.'
+    btn.disabled = false; btn.textContent = 'Create account'; return
+  }
 
   const email = document.getElementById('signup-email').value
   log.info('signup', 'attempting sign up')
@@ -6051,19 +6056,28 @@ async function renderClientPhotos(clientId, el) {
       </div>
     </div>`
 
-  if (error || !files?.length) {
+  const validFiles = files?.filter(f => f.name !== '.emptyFolderPlaceholder') || []
+  if (error || !validFiles.length) {
+    el.innerHTML = uploadHtml + `<div class="empty-state"><div class="empty-text">No progress photos yet.</div></div>`
+    return
+  }
+  if (!validFiles.length) {
     el.innerHTML = uploadHtml + `<div class="empty-state"><div class="empty-text">No progress photos yet.</div></div>`
     return
   }
 
+  const paths = validFiles.map(f => prefix + f.name)
+  const { data: signedUrlData } = await db.storage.from('progress-photos').createSignedUrls(paths, 3600)
+  const urlMap = {}
+  ;(signedUrlData || []).forEach(item => { if (item.signedUrl) urlMap[item.path] = item.signedUrl })
+
   const photoHtml = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
-    ${files.filter(f => f.name !== '.emptyFolderPlaceholder').map(f => {
-      const { data: { publicUrl: _rawUrl } } = db.storage.from('progress-photos').getPublicUrl(prefix + f.name)
-      const publicUrl = _rawUrl + '?width=600&height=800&resize=cover'
-      const datePart = f.name.split('_')[0]
+    ${validFiles.map(f => {
+      const signedUrl = urlMap[prefix + f.name] || ''
+      const datePart  = f.name.split('_')[0]
       return `
         <div style="border-radius:10px;overflow:hidden;background:var(--surface-2);position:relative">
-          <img src="${publicUrl}" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block" loading="lazy">
+          <img src="${signedUrl}" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block" loading="lazy">
           <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:11px;color:var(--text-muted)">${datePart}</span>
             ${isCoach ? `<button onclick="deleteProgressPhoto('${clientId}','${f.name}')" style="font-size:11px;color:var(--danger);background:none;border:none;cursor:pointer">✕</button>` : ''}
@@ -7175,6 +7189,19 @@ async function renderSettings(el) {
         </div>
       </div>
 
+      <!-- Data & privacy -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Data &amp; privacy</h2>
+        </div>
+        <div class="card-body" style="padding:12px 20px 20px;display:flex;flex-direction:column;gap:10px">
+          <p style="font-size:13px;color:var(--text-muted);margin:0 0 4px">Your data is stored in the EU under UK GDPR. You can download a copy or permanently delete your account at any time.</p>
+          <button onclick="downloadMyData()" style="background:none;border:1px solid var(--border);color:var(--text);padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-align:left">Download my data</button>
+          <button onclick="deleteAccount()" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-align:left">Delete account</button>
+          <span id="settings-data-msg" style="font-size:13px;color:var(--text-muted)"></span>
+        </div>
+      </div>
+
     </div>
   `
 }
@@ -7272,4 +7299,68 @@ async function removeBrandingLogo() {
   window._branding.logoUrl  = null
   _applyBrandingToSidebar()
   renderSettings(document.getElementById('main-content'))
+}
+
+async function downloadMyData() {
+  const msg = document.getElementById('settings-data-msg')
+  if (msg) msg.textContent = 'Preparing download…'
+
+  const role = currentProfile?.role
+  let bundle = { exportedAt: new Date().toISOString(), profile: null }
+
+  const { data: profile } = await db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single()
+  bundle.profile = profile
+
+  if (role === 'coach') {
+    const [{ data: clients }, { data: templates }, { data: programs }] = await Promise.all([
+      db.from('clients').select('full_name, email, created_at').eq('coach_id', currentUser.id),
+      db.from('workout_templates').select('name, created_at').eq('coach_id', currentUser.id),
+      db.from('programs').select('name, created_at').eq('coach_id', currentUser.id),
+    ])
+    bundle.clients = clients; bundle.workoutTemplates = templates; bundle.programs = programs
+  } else {
+    const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+    if (clientRow) {
+      const cid = clientRow.id
+      const [{ data: weights }, { data: workouts }, { data: perf }, { data: goals }, { data: events }] = await Promise.all([
+        db.from('weight_logs').select('date, weight_kg, body_fat_pct').eq('client_id', cid).order('date'),
+        db.from('workout_logs').select('name, date').eq('client_id', cid).order('date'),
+        db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', cid).order('date'),
+        db.from('goals').select('title, target_date, status').eq('client_id', cid),
+        db.from('events').select('title, date, type').eq('client_id', cid).order('date'),
+      ])
+      bundle.weightLogs = weights; bundle.workoutLogs = workouts
+      bundle.performanceLogs = perf; bundle.goals = goals; bundle.events = events
+    }
+  }
+
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url; a.download = `coachapp-data-${new Date().toISOString().split('T')[0]}.json`
+  a.click(); URL.revokeObjectURL(url)
+  if (msg) { msg.textContent = 'Download started.'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
+}
+
+async function deleteAccount() {
+  const confirmed = confirm('This will permanently delete your account and all your data. This cannot be undone.\n\nType DELETE in the next prompt to confirm.')
+  if (!confirmed) return
+  const word = prompt('Type DELETE to confirm:')
+  if (word !== 'DELETE') {
+    const m = document.getElementById('settings-data-msg')
+    if (m) { m.style.color = 'var(--text-muted)'; m.textContent = 'Cancelled — account not deleted.' }
+    return
+  }
+
+  const msg = document.getElementById('settings-data-msg')
+  if (msg) msg.textContent = 'Deleting account…'
+
+  const { error } = await db.rpc('delete_current_user')
+  if (error) {
+    log.error('deleteAccount', 'deletion failed', error)
+    if (msg) { msg.style.color = '#ef4444'; msg.textContent = 'Deletion failed. Please contact support.' }
+    return
+  }
+  await db.auth.signOut()
+  location.reload()
 }
