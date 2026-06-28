@@ -68,4 +68,4 @@ The bottom nav has 5 items. On screens < 375px wide this can get cramped. If you
 - After adding any new nav item, toggle, switcher, or persistent control
 - After adding a new modal
 - After any bug report that mentions "not showing on mobile" or "can't see on phone"
-- Before every Netlify deploy
+- Before every deploy to GitHub Pages

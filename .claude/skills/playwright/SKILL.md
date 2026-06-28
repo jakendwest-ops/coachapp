@@ -22,7 +22,7 @@ Timeout: allow up to 3 minutes. Tests run headless with 3 workers.
 
 Structure your report as:
 
-### Result: X/14 passed
+### Result: X/26 passed
 
 | Test | Status | Notes |
 |------|--------|-------|
@@ -46,7 +46,7 @@ For each ❌, include:
 
 ### Verdict
 One of:
-- **Green — safe to deploy** (14/14, no console errors)
+- **Green — safe to deploy** (26/26, no console errors)
 - **Amber — deploy with caution** (flaky tests only, no hard failures, no console errors)
 - **Red — do not deploy** (any hard failure or console errors pointing to a real bug)
 

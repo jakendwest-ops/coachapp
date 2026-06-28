@@ -27,11 +27,6 @@ preview_start("CoachApp")
 
 Returns a `serverId`. Reuses the server if already running. Always use this — never start a Bash process for the server.
 
-Confirmed working output:
-```json
-{ "serverId": "748dc4c9-78b9-4e36-a772-c7f99e1fecc2", "port": 3001, "name": "CoachApp" }
-```
-
 ---
 
 ## Interact with the running app
@@ -67,39 +62,27 @@ preview_console_logs(serverId, level="error")
 
 ---
 
-## Verified interaction (2026-06-20)
+## Hosting
 
-Ran `preview_snapshot` against the live app. Observed:
-- Dashboard heading: "Welcome back, Jake 👋"
-- Stats: 6 Total clients, 0 Active goals, 0 Sessions logged
-- Nav: Dashboard / Clients / Workouts
-- Quick actions: "+ Add client", "Build a workout"
-
-This confirmed the app loads, Supabase session is active, and the dashboard renders correctly.
+- **Live site:** `https://jakendwest-ops.github.io/coachapp` (GitHub Pages)
+- **CI/CD:** GitHub Actions — pushes to `master` branch auto-deploy
+- **Supabase project:** `avilxuiacmtgeoxxhfhc` (eu-west-1, Ireland)
 
 ---
 
 ## Cache-busting
 
-`index.html` references `js/app.js?v=N`. After editing `app.js`, bump `v=N` in `index.html` before deploying to Netlify. The preview server serves fresh files on every request — no cache issue locally.
-
----
-
-## Deploy to Netlify (human path)
-
-1. Go to https://superlative-khapse-b92582.netlify.app (Netlify dashboard)
-2. Drag all files **inside** `C:\Users\jaken\coachapp\` onto the Netlify dropzone — not the folder itself
-3. No build step, no `netlify.toml` needed
+`index.html` references `js/app.js?v=N`. After editing `app.js`, bump `v=N` in `index.html` in the same commit. The preview server serves fresh files on every request — no cache issue locally. GitHub Pages CDN caches aggressively — bumping the version is mandatory for every push.
 
 ---
 
 ## Gotchas
 
 - **`preview_screenshot` times out** if the app is mid-navigation or a Supabase call is in flight. Wait 1–2 seconds and retry, or use `preview_snapshot` instead — it's more reliable.
-- **Auth screen shows instead of dashboard** — localStorage session has expired. Jake needs to log in manually. The skill cannot log in programmatically (credentials not stored here).
-- **`v=N` must be bumped** on every deploy or the browser serves the old `app.js` from cache. The preview server is not affected (no caching).
+- **Auth screen shows instead of dashboard** — localStorage session has expired. Jake needs to log in manually.
+- **`v=N` must be bumped** on every push or the browser serves the old `app.js` from cache. The preview server is not affected (no caching).
 - **Supabase Edge Functions require JWT off** — the `invite-client` function has "Verify JWT" toggled off in the Supabase dashboard. If re-enabled, invite calls will 401.
-- **Netlify invite links** — Supabase Site URL must match the Netlify domain (`https://superlative-khapse-b92582.netlify.app`). If invite links 404, check Supabase Auth → URL Configuration.
+- **Resize preview to 480×844 after start.** Default 390px causes black bars. Always call `preview_resize(480, 844)` immediately after `preview_start`.
 
 ---
 
@@ -111,3 +94,4 @@ This confirmed the app loads, Supabase session is active, and the dashboard rend
 | App shows white screen | Check `preview_console_logs` for JS errors; likely a Supabase connectivity issue or missing `v=N` bump |
 | Dashboard shows login form | Session expired — Jake must log in manually |
 | Invite sends but `user_id` is null | Edge Function is not running or JWT verification was re-enabled in Supabase |
+| GitHub Pages serving stale JS | `v=N` not bumped in `index.html` — bump and push |
