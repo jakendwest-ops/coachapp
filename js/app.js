@@ -1125,7 +1125,7 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
 
       const { data: newTmpl, error: tErr } = await db
         .from('workout_templates')
-        .insert({ coach_id: currentUser.id, client_id: clientId, program_id: programId, name: tmpl.name, description: tmpl.description || null })
+        .insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: tmpl.name, description: tmpl.description || null })
         .select('id').single()
 
       if (tErr || !newTmpl) { log.error('_cloneProgramForClient', 'template clone failed', tErr); continue }
