@@ -120,6 +120,16 @@ if [ -n "$BARE_CLEAR" ]; then
   echo "$BARE_CLEAR" | head -5 | sed 's/^/    /'
 fi
 
+# ── 9a. PII in console logs ───────────────────────────────────────────────────
+# Emails, real names, weight values, and health data must never appear in log
+# calls — they end up in the browser console and can be captured by extensions.
+echo "Checking for PII in log calls..."
+PII_LOGS=$(grep -n "log\.\(info\|ok\|warn\|error\)(" "$FILE" | grep -iE "\{ email|\bemail\b.*\}|full_name|, row\b|weight_kg.*weight\b|body_fat|{ name: [a-z]" | grep -v "clientId\|userId\|date\|//")
+if [ -n "$PII_LOGS" ]; then
+  fail "PII found in log call(s) — strip email/name/weight values, log IDs only:"
+  echo "$PII_LOGS" | head -5 | sed 's/^/    /'
+fi
+
 # ── 9a. Timed set guard — repsMin must never be rendered as 'reps' on same line ─
 # The bug: s.repsMin used to be emitted as '90 reps' for timed sets because the
 # timed check was missing. After the fix, repsStr is only derived when !s.timed.

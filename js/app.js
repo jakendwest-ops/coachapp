@@ -1,4 +1,4 @@
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
+﻿// ─── CONFIG ───────────────────────────────────────────────────────────────────
 const _initialHash = window.location.hash
 
 // ─── LOGGER ───────────────────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ document.getElementById('login-form').addEventListener('submit', async e => {
   errorEl.textContent = ''
 
   const email = document.getElementById('login-email').value
-  log.info('login', 'attempting sign in', { email })
+  log.info('login', 'attempting sign in')
   const { error } = await db.auth.signInWithPassword({
     email,
     password: document.getElementById('login-password').value
@@ -240,7 +240,7 @@ document.getElementById('login-form').addEventListener('submit', async e => {
     btn.disabled    = false
     btn.textContent = 'Sign in'
   } else {
-    log.ok('login', 'sign in successful', { email })
+    log.ok('login', 'sign in successful')
   }
 })
 
@@ -254,7 +254,7 @@ document.getElementById('signup-form').addEventListener('submit', async e => {
   errorEl.style.color  = ''
 
   const email = document.getElementById('signup-email').value
-  log.info('signup', 'attempting sign up', { email })
+  log.info('signup', 'attempting sign up')
   const { data, error } = await db.auth.signUp({
     email,
     password: document.getElementById('signup-password').value,
@@ -267,7 +267,7 @@ document.getElementById('signup-form').addEventListener('submit', async e => {
     btn.disabled    = false
     btn.textContent = 'Create account'
   } else if (data.session) {
-    log.ok('signup', 'account created and session active', { email })
+    log.ok('signup', 'account created and session active')
     errorEl.style.color = 'var(--success)'
     errorEl.textContent = 'Account created! Signing you in…'
   } else {
@@ -1691,11 +1691,11 @@ async function saveClientPB(clientId) {
   const row = { client_id: clientId, logged_by: currentUser.id, category, name, value, unit, date }
   if (notes) row.notes = notes
 
-  log.info('saveClientPB', 'inserting', row)
+  log.info('saveClientPB', 'inserting', { clientId: row.client_id, date: row.date })
   const { error } = await db.from('performance_logs').insert(row)
   if (error) { log.error('saveClientPB', 'insert failed', error); errorEl.textContent = error.message; return }
 
-  log.ok('saveClientPB', 'PB logged', row)
+  log.ok('saveClientPB', 'PB logged', { clientId: row.client_id, date: row.date })
   renderClientDashboard(document.getElementById('main-content'))
 }
 
@@ -1732,11 +1732,11 @@ async function saveClientWeight(clientId) {
   if (bf)    row.body_fat_pct = parseFloat(bf)
   if (notes) row.notes = notes
 
-  log.info('saveClientWeight', 'inserting', row)
+  log.info('saveClientWeight', 'inserting', { clientId: row.client_id, date: row.date })
   const { error } = await db.from('weight_logs').insert(row)
   if (error) { log.error('saveClientWeight', 'insert failed', error); errorEl.textContent = error.message; return }
 
-  log.ok('saveClientWeight', 'weight logged', row)
+  log.ok('saveClientWeight', 'weight logged', { clientId: row.client_id, date: row.date })
   // Refresh the client dashboard to show the new entry
   renderClientDashboard(document.getElementById('main-content'))
 }
@@ -1858,7 +1858,7 @@ async function saveNewClient() {
   const errorEl = document.getElementById('nc-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
-  log.info('saveNewClient', 'inserting client', { name })
+  log.info('saveNewClient', 'inserting client')
   const { error } = await db.from('clients').insert({
     coach_id:      currentUser.id,
     full_name:     name,
@@ -1870,7 +1870,7 @@ async function saveNewClient() {
   })
 
   if (error) { log.error('saveNewClient', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveNewClient', 'client created', { name })
+  log.ok('saveNewClient', 'client created')
 
   closeModal('add-client-modal')
   renderClients(document.getElementById('main-content'))
@@ -1889,7 +1889,7 @@ async function openClient(id) {
     .single()
 
   if (error) { log.error('openClient', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
-  log.ok('openClient', 'loaded', { name: client.full_name })
+  log.ok('openClient', 'loaded')
 
   el.innerHTML = `
     <a class="back-btn" href="#" onclick="navigate('clients');return false">
@@ -2068,10 +2068,10 @@ async function saveUpdateEmail(clientId) {
   const errorEl = document.getElementById('ue-error')
   if (!email) { errorEl.textContent = 'Email is required'; return }
 
-  log.info('saveUpdateEmail', 'updating client email', { clientId, email })
+  log.info('saveUpdateEmail', 'updating client email', { clientId })
   const { error } = await db.from('clients').update({ email, updated_at: new Date().toISOString() }).eq('id', clientId)
   if (error) { log.error('saveUpdateEmail', 'update failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveUpdateEmail', 'email updated', { clientId, email })
+  log.ok('saveUpdateEmail', 'email updated', { clientId })
 
   closeModal('update-email-modal')
   openClient(clientId)
@@ -2140,7 +2140,7 @@ async function saveEditClient(id) {
   const errorEl = document.getElementById('ec-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
-  log.info('saveEditClient', 'updating client details', { clientId: id, name })
+  log.info('saveEditClient', 'updating client details', { clientId: id })
   const { error } = await db.from('clients').update({
     full_name:     name,
     email:         document.getElementById('ec-email').value.trim()  || null,
@@ -5739,7 +5739,7 @@ async function saveWorkoutSession(clientId) {
 
   for (let bi = 0; bi < blocks.length; bi++) {
     const block = blocks[bi]
-    log.info('saveWorkoutSession', `saving exercise ${bi + 1}/${blocks.length}`, { name: block.name, sets: block.sets.length })
+    log.info('saveWorkoutSession', `saving exercise ${bi + 1}/${blocks.length}`, { sets: block.sets.length })
     const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
       log_id:        sessionLog.id,
       exercise_name: block.name.trim(),
@@ -6662,7 +6662,7 @@ async function renderClientWeight(clientId, el) {
 async function sendClientInvite(clientId, email) {
   if (!confirm(`Send invite email to ${email}?`)) return
 
-  log.info('sendClientInvite', 'sending invite', { clientId, email })
+  log.info('sendClientInvite', 'sending invite', { clientId })
   const btn = event.target
   btn.disabled = true
   btn.textContent = 'Sending…'
@@ -6689,7 +6689,7 @@ async function sendClientInvite(clientId, email) {
     return
   }
 
-  log.ok('sendClientInvite', 'invite sent via edge function', { email, userId: json.userId })
+  log.ok('sendClientInvite', 'invite sent via edge function', { userId: json.userId })
   const { error: stampErr } = await db.from('clients').update({ invited_at: new Date().toISOString() }).eq('id', clientId)
   if (stampErr) log.error('sendClientInvite', 'failed to stamp invited_at', stampErr)
 
@@ -6710,7 +6710,7 @@ async function saveWeightLog(clientId) {
     return
   }
 
-  log.info('saveWeightLog', 'inserting weight entry', { clientId, date, weight_kg: weight })
+  log.info('saveWeightLog', 'inserting weight entry', { clientId, date })
   const { error } = await db.from('weight_logs').insert({
     client_id:    clientId,
     date,
@@ -6720,7 +6720,7 @@ async function saveWeightLog(clientId) {
   })
 
   if (error) { log.error('saveWeightLog', 'insert failed', error); document.getElementById('wl-error') && (document.getElementById('wl-error').textContent = error.message); return }
-  log.ok('saveWeightLog', 'weight entry saved', { clientId, date, weight_kg: weight })
+  log.ok('saveWeightLog', 'weight entry saved', { clientId, date })
   showToast('Weight logged ✓', 'success', 2000)
   renderClientWeight(clientId, document.getElementById('tab-content'))
 }
@@ -6757,7 +6757,7 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
 
   // Supabase JS v2 auto-processes the invite hash on init and establishes the session.
   // No manual setSession needed — call updateUser directly.
-  log.info('inviteForm', 'submitting invite acceptance', { name })
+  log.info('inviteForm', 'submitting invite acceptance')
   const { error } = await db.auth.updateUser({
     password,
     data: { full_name: name }
