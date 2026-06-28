@@ -3241,61 +3241,56 @@ async function renderClientWorkoutsPage(el) {
       return `<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px">${prog?.name || 'My Program'}</div>
         <div style="margin-bottom:28px">
           ${phases.map((phase, pi) => {
-            const sessions = [...(phase.program_phase_workouts || [])].sort((a, b) => a.session_order - b.session_order)
+            const allSessions = [...(phase.program_phase_workouts || [])].sort((a, b) => a.day_of_week - b.day_of_week || a.session_order - b.session_order)
+            const dayMap = {}
+            allSessions.forEach(pw => { if (!dayMap[pw.day_of_week]) dayMap[pw.day_of_week] = []; dayMap[pw.day_of_week].push(pw) })
+            const days = Object.keys(dayMap).map(Number).sort((a,b) => a - b)
             const panelId = `cl-phase-${activeAssignment.id}-${pi}`
             return `<div style="margin-bottom:6px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
               <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
                 <div>
                   <span style="font-size:13px;font-weight:700;color:var(--text)">${phase.name}</span>
-                  <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${phase.duration_weeks}w · ${sessions.length} session${sessions.length !== 1 ? 's' : ''}</span>
+                  <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${phase.duration_weeks}w · ${days.length} day${days.length !== 1 ? 's' : ''} · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
                 </div>
                 <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
               <div id="${panelId}" style="display:none">
-                ${sessions.map(pw => {
-                  const cpw = cpwMap[pw.id]
-                  const name = cpw?.name || 'Session'
-                  const templateId = cpw?.templateId
-                  const exs = (cpw?.exercises || []).sort((a,b) => a.order_index - b.order_index)
-                  const detailId = `cl-sess-${activeAssignment.id}-${pw.id}`
+                ${days.map(day => {
+                  const daySessions = dayMap[day]
+                  const multi = daySessions.length > 1
+                  const dayPanelId = `${panelId}-d${day}`
+                  const sessionSummary = daySessions.map(pw => (cpwMap[pw.id]?.name || 'Session').replace(/ — W\d+/, '')).join(', ')
                   return `<div style="border-top:1px solid var(--border)">
-                    <div style="display:flex;align-items:center;padding:10px 14px;gap:10px">
-                      <div style="flex:1;min-width:0;cursor:pointer" onclick="toggleClientPhase('${detailId}')">
-                        <div style="font-size:13px;font-weight:600">${name}</div>
-                        <div style="font-size:11px;color:var(--text-muted)">${exs.length} exercise${exs.length!==1?'s':''} · Day ${pw.day_of_week}</div>
+                    <button onclick="toggleClientPhase('${dayPanelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:none;border:none;cursor:pointer;text-align:left">
+                      <div>
+                        <span style="font-size:12px;font-weight:700;color:var(--accent)">DAY ${day}</span>
+                        <span style="font-size:13px;font-weight:500;color:var(--text);margin-left:8px">${sessionSummary}</span>
                       </div>
-                      ${templateId
-                        ? `<button class="btn-primary" style="font-size:12px;padding:5px 14px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>`
-                        : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
-                    </div>
-                    ${exs.length ? `<div id="${detailId}" style="display:none;padding:0 14px 10px">
-                      ${exs.map(ex => {
-                        const sets = ex.sets_json || []
-                        const isCardio = ex.exercise_type === 'cardio'
-                        const summaries = sets.map(s => {
-                          const p = []
-                          if (isCardio) {
-                            if (s.duration) p.push(s.duration)
-                            if (s.distance) p.push(s.distance+' km')
-                            if (s.pace500Min) p.push(s.pace500Min+'/500m')
-                          } else {
-                            if (s.timed) { if (s.duration) p.push(s.duration) }
-                            else { const r = s.repsMin?(s.repsMin+(s.repsMax&&s.repsMax!==s.repsMin?'–'+s.repsMax:'')):null; if(r) p.push(r+' reps') }
-                            if (s.weight) p.push(s.weight+'kg')
-                            if (s.intensityMin) { const orm=oneRMMap[ex.exercise_name?.trim().toLowerCase()]; p.push(orm?_calcWeightFromPct(orm,s.intensityMin)+'kg':s.intensityMin+'% 1RM') }
-                            if (s.restMin&&s.restMin!=='0:00') p.push(s.restMin+' rest')
-                          }
-                          return p.filter(Boolean).join(' · ')
-                        }).filter(Boolean)
-                        const groups=[];summaries.forEach((s,i)=>{if(groups.length&&groups[groups.length-1].s===s)groups[groups.length-1].n++;else groups.push({s,n:1,i})})
-                        return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
-                          <div style="min-width:0">
-                            <div style="font-size:13px;font-weight:600">${ex.exercise_name||''}</div>
-                            ${groups.map(g=>`<div style="font-size:11px;color:var(--text-muted)">${g.n>1?g.n+'×':''} ${g.s}</div>`).join('')}
+                      <svg id="${dayPanelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                    <div id="${dayPanelId}" style="display:none;padding:0 14px 12px">
+                      ${daySessions.map((pw, si) => {
+                        const cpw = cpwMap[pw.id]
+                        const name = (cpw?.name || 'Session').replace(/ — W\d+/, '')
+                        const templateId = cpw?.templateId
+                        const exs = (cpw?.exercises || []).sort((a,b) => a.order_index - b.order_index)
+                        return `<div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
+                          ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
+                          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '0'}">
+                            <span style="font-size:13px;font-weight:600">${name}</span>
+                            ${templateId ? `<button class="btn-primary" style="font-size:12px;padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
                           </div>
+                          ${exs.length ? `
+                          <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
+                            ${exs.map(ex => `
+                              <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+                                <span style="font-size:12px">${ex.exercise_name}</span>
+                                <span style="font-size:11px;color:var(--text-muted)">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
+                              </div>`).join('')}
+                          </div>` : ''}
                         </div>`
                       }).join('')}
-                    </div>` : ''}
+                    </div>
                   </div>`
                 }).join('')}
               </div>
