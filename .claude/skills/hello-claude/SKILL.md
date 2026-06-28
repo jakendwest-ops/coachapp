@@ -101,6 +101,21 @@ Only surface items that are still genuinely open. Explicitly state which items w
 
 Read `C:\Users\jaken\Claude\Vault\memory\predictions.jsonl`. Find any entries where `verify_by` is today or earlier and `outcome` is null. For each one, check whether the session's work or current state allows grading it. Surface any that need a verdict — ask Jake to confirm if the outcome is ambiguous.
 
+## Step 9 — OS self-check (first session of a new day only)
+
+Verify the OS isn't silently broken. Check these paths exist on disk — if any are missing, stop and flag before doing any other work:
+
+```
+C:\Users\jaken\Claude\Vault\projects\CoachApp\STATUS.md   ← if missing, /save is writing nowhere
+C:\Users\jaken\Claude\Vault\projects\CoachApp\LOG.md      ← if missing, session history is lost
+C:\Users\jaken\coachapp\.claude\skills\save\SKILL.md      ← if missing, /save skill is broken
+C:\Users\jaken\coachapp\.claude\skills\deploy-check\SKILL.md
+```
+
+Also read Step 3 and Step 4 of the save skill and confirm they point to `CoachApp\STATUS.md` and `CoachApp\LOG.md`. If they don't match, fix them before proceeding.
+
+If all clear, say "OS check: clean" in one line and continue. Do not narrate this step if nothing is wrong.
+
 ---
 
 ## Standing session behaviours (active all session, not just at start)

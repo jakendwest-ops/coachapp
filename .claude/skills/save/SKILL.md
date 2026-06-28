@@ -113,7 +113,7 @@ If the list is empty — say so. An empty to-do list is a good outcome, not a ga
 ## Step 7 — Playwright status
 
 State whether the Playwright suite was run this session:
-- If yes: result (X/14, console errors, verdict)
+- If yes: result (X/26, console errors, verdict)
 - If no: flag that tests haven't been run — recommend running before the next deploy
 
 ---
