@@ -4125,24 +4125,28 @@ async function saveExerciseToTemplate(templateId) {
 
 async function showEditTemplateExerciseModal(templateExId, templateId) {
   const ctx = window._templateCtx
-  const [{ data: ex }, { data: ormRows }] = await Promise.all([
+  const [{ data: ex }, { data: ormRows }, { data: libraryExercises }] = await Promise.all([
     db.from('workout_template_exercises').select('*').eq('id', templateExId).single(),
     ctx?.isClientPlan && ctx.clientId
       ? db.from('client_1rms').select('exercise_name').eq('client_id', ctx.clientId).order('exercise_name')
-      : Promise.resolve({ data: [] })
+      : Promise.resolve({ data: [] }),
+    db.from('exercises').select('id, name, muscle_group').order('name')
   ])
   window._templateSets = ex.sets_json?.length ? ex.sets_json.map(s => ({...s})) : (ex.sets ? Array.from({length: ex.sets}, () => ({})) : [{}])
 
   const ormNames = [...new Set((ormRows || []).map(r => r.exercise_name))].sort()
-  const ormDropdown = ormNames.length ? `
-    <div class="field" style="margin-bottom:8px">
-      <label class="field-label">1RM exercise <span style="font-weight:400;color:var(--text-muted)">(select to auto-fill name)</span></label>
-      <select class="field-input" id="etex-orm-pick" onchange="if(this.value){document.getElementById('etex-name').value=this.value}">
-        <option value="">— pick from client's 1RMs —</option>
-        ${ormNames.map(n => `<option value="${n}" ${n === ex.exercise_name ? 'selected' : ''}>${n}</option>`).join('')}
-        <option value="">— or type below —</option>
-      </select>
-    </div>` : ''
+  const libExercises = libraryExercises || []
+  const ormDropdown = `
+    <div class="field-row" style="margin-bottom:8px">
+      <div class="field" style="flex:2">
+        <label class="field-label">Pick from library</label>
+        <select class="field-input" id="etex-lib-pick" onchange="if(this.value){document.getElementById('etex-name').value=this.value}">
+          <option value="">— or type a custom name below —</option>
+          ${ormNames.length ? `<optgroup label="── Client 1RM lifts ──">${ormNames.map(n => `<option value="${n}" ${n === ex.exercise_name ? 'selected' : ''}>${n}</option>`).join('')}</optgroup>` : ''}
+          ${libExercises.map(e => `<option value="${e.name}" ${e.name === ex.exercise_name ? 'selected' : ''}>${e.name}${e.muscle_group ? ' · '+e.muscle_group : ''}</option>`).join('')}
+        </select>
+      </div>
+    </div>`
 
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
