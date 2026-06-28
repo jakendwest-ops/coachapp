@@ -36,7 +36,7 @@ See [[feedback-cache-bust]].
 
 ## Step 3 — Update STATUS.md
 
-File: `C:\Users\jaken\Claude\Vault\projects\PTHub\STATUS.md`
+File: `C:\Users\jaken\Claude\Vault\projects\CoachApp\STATUS.md`
 
 **Before adding anything, sweep the existing "Open to-dos for Jake" section:**
 For each existing item, check whether it's been resolved by this session's work or current evidence:
@@ -55,7 +55,7 @@ Then make surgical edits — do NOT rewrite sections that weren't touched:
 
 ## Step 4 — Write a LOG entry
 
-File: `C:\Users\jaken\Claude\Vault\projects\PTHub\LOG.md`
+File: `C:\Users\jaken\Claude\Vault\projects\CoachApp\LOG.md`
 
 Prepend a new entry at the top (above all existing entries):
 
