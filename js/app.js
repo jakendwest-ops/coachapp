@@ -2316,7 +2316,7 @@ function showClientDayDetail(dateStr) {
   overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
 
   overlay.innerHTML = `
-    <div class="modal-box" style="max-width:420px;width:92%">
+    <div class="modal" style="max-width:420px;width:92%">
       <div class="modal-header">
         <h2 class="modal-title">${dateLabel}</h2>
         <button class="modal-close" onclick="document.getElementById('client-day-modal').remove()">✕</button>
