@@ -7334,25 +7334,45 @@ async function downloadMyData() {
   if (msg) { msg.textContent = 'Download started.'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
 }
 
-async function deleteAccount() {
-  const confirmed = confirm('This will permanently delete your account and all your data. This cannot be undone.\n\nType DELETE in the next prompt to confirm.')
-  if (!confirmed) return
-  const word = prompt('Type DELETE to confirm:')
-  if (word !== 'DELETE') {
-    const m = document.getElementById('settings-data-msg')
-    if (m) { m.style.color = 'var(--text-muted)'; m.textContent = 'Cancelled — account not deleted.' }
+function deleteAccount() {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:400px">
+      <h2 style="font-size:18px;font-weight:700;margin:0 0 8px;color:var(--danger)">Delete account</h2>
+      <p style="font-size:14px;color:var(--text-muted);margin:0 0 16px;line-height:1.5">This will permanently delete your account and all your data. This cannot be undone.</p>
+      <p style="font-size:14px;color:var(--text);margin:0 0 8px;font-weight:600">Type <strong>DELETE</strong> to confirm:</p>
+      <input id="delete-confirm-input" type="text" class="field-input" placeholder="DELETE" autocomplete="off" style="margin-bottom:16px;font-size:15px">
+      <p id="delete-confirm-error" style="font-size:13px;color:var(--danger);margin:0 0 12px;display:none">You must type DELETE exactly to proceed.</p>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+        <button id="delete-confirm-btn" class="btn-primary" style="background:var(--danger)" onclick="deleteAccountConfirmed(this.closest('.modal-overlay'))">Delete my account</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+  setTimeout(() => document.getElementById('delete-confirm-input')?.focus(), 50)
+}
+
+async function deleteAccountConfirmed(overlay) {
+  const input = document.getElementById('delete-confirm-input')
+  const errEl = document.getElementById('delete-confirm-error')
+  if (input?.value !== 'DELETE') {
+    if (errEl) errEl.style.display = 'block'
+    input?.focus()
     return
   }
 
-  const msg = document.getElementById('settings-data-msg')
-  if (msg) msg.textContent = 'Deleting account…'
+  const btn = document.getElementById('delete-confirm-btn')
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…' }
 
   const { error } = await db.rpc('delete_current_user')
   if (error) {
     log.error('deleteAccount', 'deletion failed', error)
-    if (msg) { msg.style.color = '#ef4444'; msg.textContent = 'Deletion failed. Please contact support.' }
+    if (btn) { btn.disabled = false; btn.textContent = 'Delete my account' }
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Deletion failed. Please contact support.' }
     return
   }
+  overlay?.remove()
   await db.auth.signOut()
   location.reload()
 }
