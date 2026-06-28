@@ -120,6 +120,17 @@ if [ -n "$BARE_CLEAR" ]; then
   echo "$BARE_CLEAR" | head -5 | sed 's/^/    /'
 fi
 
+# ── 9a. Timed set guard — repsMin must never be rendered as 'reps' on same line ─
+# The bug: s.repsMin used to be emitted as '90 reps' for timed sets because the
+# timed check was missing. After the fix, repsStr is only derived when !s.timed.
+# If repsMin and ' reps' appear on the same line it means the guard was removed.
+echo "Checking timed set guard..."
+TIMED_REPS=$(grep -n "repsMin.*' reps'" "$FILE")
+if [ -n "$TIMED_REPS" ]; then
+  fail "repsMin rendered as ' reps' on same line — missing timed guard (timed sets will show '90 reps' instead of '1:30'):"
+  echo "$TIMED_REPS" | head -3 | sed 's/^/    /'
+fi
+
 # ── 9. Duplicate function definitions ────────────────────────────────────────
 echo "Checking for duplicate function names..."
 DUPES=$(grep -o "^function [a-zA-Z][a-zA-Z0-9_]*" "$FILE" | awk '{print $2}' | sort | uniq -d)

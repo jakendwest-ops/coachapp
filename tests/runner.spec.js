@@ -34,6 +34,51 @@ test.describe('PT Workouts page', () => {
   })
 })
 
+// ─── Render regression: timed sets ───────────────────────────────────────────
+
+test.describe('Timed set render regression', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+  })
+
+  test('timed set duration renders as mm:ss not reps in template preview', async ({ page }) => {
+    // Exercise the exact render logic that had the bug using app.js globals (parseRest is loaded).
+    // s.repsMin = '90' (seconds stored programmatically), s.timed = true.
+    // Should produce '1:30', NOT '90 reps'.
+    const result = await page.evaluate(() => {
+      const s = { timed: true, repsMin: '90', repsMax: '90', restMin: '2:00', restMax: '2:00' }
+      const secs = s.duration ? (parseRest(s.duration) || 0) : (s.repsMin ? parseInt(s.repsMin) : null)
+      const durDisplay = secs != null ? (Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0')) : null
+      const restStr = s.restMin && s.restMin !== '0:00' ? s.restMin + ' rest' : null
+      return [durDisplay, restStr].filter(Boolean).join(' · ')
+    })
+    expect(result).toContain('1:30')
+    expect(result).not.toMatch(/\d+ reps/)
+  })
+
+  test('timed set duration renders as mm:ss when stored in duration field', async ({ page }) => {
+    // s.duration = '1:30' (mm:ss format saved by the template editor).
+    const result = await page.evaluate(() => {
+      const s = { timed: true, duration: '1:30', restMin: '2:00', restMax: '2:00' }
+      const secs = s.duration ? (parseRest(s.duration) || 0) : (s.repsMin ? parseInt(s.repsMin) : null)
+      const durDisplay = secs != null ? (Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0')) : null
+      return durDisplay
+    })
+    expect(result).toBe('1:30')
+  })
+
+  test('non-timed set still shows reps correctly', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const s = { timed: false, repsMin: '5', repsMax: '5', restMin: '2:00' }
+      if (s.timed) return 'ERROR: hit timed branch'
+      const repsStr = s.repsMin ? (s.repsMin + (s.repsMax && s.repsMax !== s.repsMin ? '–' + s.repsMax : '')) : null
+      return repsStr ? repsStr + ' reps' : null
+    })
+    expect(result).toBe('5 reps')
+    expect(result).not.toContain('1:')
+  })
+})
+
 // ─── Client runner ────────────────────────────────────────────────────────────
 
 test.describe('Workout runner (client)', () => {

@@ -4741,8 +4741,13 @@ function renderRunner() {
         <!-- Strength input -->
         ${(() => {
           const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
-          const repsStr = tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
           const cols = []
+          if (tgt.timed) {
+            const secs = tgt.duration ? (parseRest(tgt.duration)||0) : (tgt.repsMin ? parseInt(tgt.repsMin) : null)
+            const durDisplay = secs != null ? (Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0')) : null
+            if (durDisplay) cols.push({ val: durDisplay, label: 'DURATION', accent: true })
+          }
+          const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
           if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
           if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
           if (tgt.intensityMin) {
