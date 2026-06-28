@@ -2396,22 +2396,21 @@ function showClientDayDetail(dateStr) {
         <button class="modal-close" onclick="document.getElementById('client-day-modal').remove()">✕</button>
       </div>
       <div style="padding:16px 20px 20px">
-        ${workouts.length ? workouts.map(pw => {
+        ${workouts.length ? workouts.map((pw, si) => {
           const exs = (pw.workout_templates?.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
-          const panelId = `cdm-ex-${pw.id}`
+          const multi = workouts.length > 1
           return `
           <div style="padding:14px 0;border-bottom:1px solid var(--border)">
-            ${workouts.length > 1 ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">${pw.session_order === 2 ? 'PM SESSION' : 'AM SESSION'}</div>` : ''}
-            <div onclick="(function(){var p=document.getElementById('${panelId}');var c=document.getElementById('${panelId}-chev');p.style.display=p.style.display==='none'?'block':'none';c.style.transform=p.style.display==='none'?'rotate(0deg)':'rotate(180deg)'})()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:${exs.length ? '8px' : '10px'}">
+            ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${workouts.length}</div>` : ''}
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '10px'}">
               <span style="font-size:15px;font-weight:600">${(pw.workout_templates?.name || 'Workout').replace(/ — W\d+/, '')}</span>
-              ${exs.length ? `<svg id="${panelId}-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px;flex-shrink:0;transition:transform 0.2s;color:var(--text-muted)"><polyline points="6 9 12 15 18 9"/></svg>` : ''}
             </div>
             ${exs.length ? `
-            <div id="${panelId}" style="display:none;margin-bottom:10px;padding:8px 10px;background:var(--surface-2);border-radius:8px">
+            <div style="margin-bottom:10px;padding:6px 8px;background:var(--surface-2);border-radius:8px">
               ${exs.map(ex => `
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)">
-                  <span style="font-size:13px">${ex.exercise_name}</span>
-                  <span style="font-size:12px;color:var(--text-muted);flex-shrink:0;margin-left:8px">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
+                <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+                  <span style="font-size:12px">${ex.exercise_name}</span>
+                  <span style="font-size:11px;color:var(--text-muted)">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
                 </div>`).join('')}
             </div>` : ''}
             <button onclick="startWorkoutRunner('${clientId}','${pw._clientTemplateId||pw.workout_templates?.id}');document.getElementById('client-day-modal').remove()" class="btn-primary" style="width:100%">▶ Start workout</button>
