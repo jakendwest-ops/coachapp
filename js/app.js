@@ -2104,47 +2104,60 @@ async function renderCalendar(el) {
   // Fetch events for this month + overflow days
   const firstDay = new Date(calendarYear, calendarMonth, 1)
   const lastDay  = new Date(calendarYear, calendarMonth + 1, 0)
-  const from = firstDay.toISOString().split('T')[0]
-  const to   = lastDay.toISOString().split('T')[0]
+  const localDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  const from = localDate(firstDay)
+  const to   = localDate(lastDay)
 
-  const isClient = currentProfile?.role === 'client'
+  const isClient = currentProfile?.role === 'client' || currentView === 'client'
   let events, clientMap = {}, programWorkoutsByDate = {}
 
   if (isClient) {
-    const [evRes, cpRes, cidRes, cpwRes] = await Promise.all([
+    // Step 1: get clients.id — needed to scope client_programs correctly
+    const cidRes = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+    window._calClientId = cidRes.data?.id
+    const clientsId = cidRes.data?.id
+
+    // Step 2: events + client_programs in parallel (client_programs uses clients.id not auth uid)
+    const [evRes, cpRes] = await Promise.all([
       db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
-      db.from('client_programs').select('id, start_date, programs(program_phases(duration_weeks, program_phase_workouts(id, day_of_week, session_order, workout_templates(id, name))))').eq('client_id', currentUser.id).order('created_at', { ascending: false }).limit(1),
-      db.from('clients').select('id').eq('user_id', currentUser.id).single(),
-      db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id')
+      clientsId
+        ? db.from('client_programs').select('id, start_date, programs(program_phases(duration_weeks, program_phase_workouts(id, day_of_week, session_order, workout_templates(id, name))))').eq('client_id', clientsId).order('created_at', { ascending: false }).limit(1)
+        : Promise.resolve({ data: [] })
     ])
     events = evRes.data
-    window._calClientId = cidRes.data?.id
+
+    // Step 3: client_program_workouts scoped to this assignment
     const _cpwMap = {}
-    ;(cpwRes.data || []).forEach(r => { _cpwMap[r.program_phase_workout_id] = r.workout_template_id })
+    const cp0 = cpRes.data?.[0]
+    if (cp0?.id) {
+      const cpwRes = await db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id').eq('client_program_id', cp0.id)
+      ;(cpwRes.data || []).forEach(r => { _cpwMap[r.program_phase_workout_id] = r.workout_template_id })
+    }
     window._calClientTemplateMap = _cpwMap
 
     // Map phase workouts to actual calendar dates
-    const cp = cpRes.data?.[0]
-    if (cp?.start_date) {
-      const programStart = new Date(cp.start_date + 'T00:00:00')
+    if (cp0?.start_date) {
+      const programStart = new Date(cp0.start_date + 'T00:00:00')
       // Normalise to Monday of that week
       const dayOfWeekJS = programStart.getDay() // 0=Sun
       const daysFromMon = (dayOfWeekJS + 6) % 7
       const weekStart = new Date(programStart)
       weekStart.setDate(programStart.getDate() - daysFromMon)
 
-      const phases = cp.programs?.program_phases || []
+      const phases = cp0.programs?.program_phases || []
+      let weekOffset = 0
       phases.forEach(phase => {
         for (let w = 0; w < (phase.duration_weeks || 1); w++) {
           ;(phase.program_phase_workouts || []).forEach(pw => {
-            const offset = (w * 7) + (pw.day_of_week - 1)
+            const offset = ((weekOffset + w) * 7) + (pw.day_of_week - 1)
             const d = new Date(weekStart)
             d.setDate(weekStart.getDate() + offset)
-            const ds = d.toISOString().split('T')[0]
+            const ds = localDate(d)
             if (!programWorkoutsByDate[ds]) programWorkoutsByDate[ds] = []
             programWorkoutsByDate[ds].push({ ...pw, _clientTemplateId: _cpwMap[pw.id] || null })
           })
         }
+        weekOffset += (phase.duration_weeks || 1)
       })
       // Sort each day by session_order
       Object.values(programWorkoutsByDate).forEach(arr => arr.sort((a,b)=>(a.session_order||1)-(b.session_order||1)))
@@ -2167,7 +2180,7 @@ async function renderCalendar(el) {
   })
 
   const monthName = firstDay.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-  const todayStr  = now.toISOString().split('T')[0]
+  const todayStr  = localDate(now)
 
   // Build calendar grid (Mon-start)
   const startDow = (firstDay.getDay() + 6) % 7 // 0=Mon
@@ -2284,7 +2297,7 @@ function calNav(dir) {
 }
 
 function showDayEvents(dateStr) {
-  if (currentProfile?.role === 'client') showClientDayDetail(dateStr)
+  if (currentProfile?.role === 'client' || currentView === 'client') showClientDayDetail(dateStr)
   else showAddEventModal(dateStr)
 }
 
