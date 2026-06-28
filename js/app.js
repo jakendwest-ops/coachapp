@@ -960,7 +960,10 @@ async function renderClientPrograms(clientId, el) {
                 <div style="font-size:16px;font-weight:700">${p?.name || 'Unknown program'}</div>
                 <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Started ${startLabel}</div>
               </div>
-              <button class="btn-secondary" style="font-size:12px;padding:4px 10px;color:var(--danger);border-color:var(--danger);flex-shrink:0" onclick="unassignProgram('${clientId}','${a.id}')">Remove</button>
+              <div style="display:flex;gap:6px;flex-shrink:0">
+                <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showEditStartDateModal('${clientId}','${a.id}','${a.start_date||''}')">Edit date</button>
+                <button class="btn-secondary" style="font-size:12px;padding:4px 10px;color:var(--danger);border-color:var(--danger)" onclick="unassignProgram('${clientId}','${a.id}')">Remove</button>
+              </div>
             </div>
             ${phases.map((phase, pi) => {
               const sessions = [...(phase.program_phase_workouts || [])].sort((x, y) => x.session_order - y.session_order)
@@ -1123,6 +1126,44 @@ async function unassignProgram(clientId, assignmentId) {
   if (!confirm('Remove this program from the client?')) return
   const { error } = await db.from('client_programs').delete().eq('id', assignmentId)
   if (error) { log.error('unassignProgram', 'delete failed', error); return }
+  renderClientPrograms(clientId, document.getElementById('tab-content'))
+}
+
+function showEditStartDateModal(clientId, assignmentId, currentDate) {
+  const existing = document.getElementById('esd-modal')
+  if (existing) existing.remove()
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'esd-modal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Edit start date</h2>
+        <button class="modal-close" onclick="document.getElementById('esd-modal').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label">Program start date</label>
+          <input class="field-input" type="date" id="esd-date" value="${currentDate}">
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:8px">Changing the start date shifts all scheduled workouts on the client's calendar.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('esd-modal').remove()">Cancel</button>
+        <button class="btn-primary" onclick="saveEditStartDate('${clientId}','${assignmentId}')">Save</button>
+      </div>
+    </div>`
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+  document.body.appendChild(overlay)
+}
+
+async function saveEditStartDate(clientId, assignmentId) {
+  const newDate = document.getElementById('esd-date')?.value
+  if (!newDate) return
+  const { error } = await db.from('client_programs').update({ start_date: newDate }).eq('id', assignmentId)
+  if (error) { log.error('saveEditStartDate', 'update failed', error); return }
+  document.getElementById('esd-modal')?.remove()
   renderClientPrograms(clientId, document.getElementById('tab-content'))
 }
 
