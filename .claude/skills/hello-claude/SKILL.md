@@ -117,6 +117,12 @@ Grep the codebase for the equivalent existing render function before writing any
 ### Before any SQL → sql-safety
 Run the sql-safety skill at `C:\Users\jaken\coachapp\.claude\skills\sql-safety\SKILL.md` before writing any DELETE, UPDATE, or schema-altering SQL. See [[feedback-sql-destructive]].
 
+### Before any new feature proposal → sounding board
+Do not immediately build. Ask 2–3 targeted questions first: What problem does this solve? Where does it fit in the existing flow? Is there a simpler version? Does it conflict with anything that exists? Challenge gently but directly — Jake wants a partner who pushes back. This does NOT apply to bug fixes, small tweaks, or clearly-scoped tasks. See [[feedback-sounding-board]].
+
+### Before writing any code or SQL → get explicit approval
+After discussing scope, present one consolidated summary of everything about to be built (all files, all changes, all SQL) and wait for Jake to say "approved" or equivalent. Never start building mid-discussion. Silence or "looks good" is not approval. See [[feedback-approve-before-build]].
+
 ### Before any new Storage bucket → security gate
 Before creating any bucket: confirm it will be private (`public = false`). Draft the RLS policies on `storage.objects` before the bucket is used. Switch all display code to `createSignedUrl`/`createSignedUrls` — never `getPublicUrl`. Client health data (progress photos, body metrics) is special-category under UK GDPR. See [[feedback-security-gdpr]].
 
@@ -138,6 +144,13 @@ Use native `<input>` elements for all numeric and text entry. No custom keypads,
 ### Verify before reporting done
 Never say "done" or "fixed" without checking the result in the browser or the test output. If a live check isn't possible, say "UNVERIFIED — reason" explicitly. See [[feedback-verify]].
 
+### After any UI or behaviour change → regression sweep
+Before reporting any change done, ask: "what did the old code hide or suppress that the new code now exposes?" Run through:
+1. Did the old code cover any UI states (loading, disabled, mid-flow) that are now visible?
+2. Does removing/replacing an overlay leave underlying page state exposed that wasn't designed to be seen?
+3. Does the new element collide with or confuse something already on screen?
+This catches regressions that pass code review but break UX. See [[feedback-regression-check]].
+
 ### After every test session → check Supabase API logs
 After any test flow, check Supabase dashboard → Logs → API for PGRST errors. These are invisible in the JS console but show up there. See [[reference-supabase-logs]].
 
@@ -156,11 +169,20 @@ After writing any new skill file: (1) add a standing behaviour entry here in hel
 ### At session end → /save
 When Jake signals wrap-up ("that's it for today", "let's stop here", "/save"), run the save skill at `C:\Users\jaken\coachapp\.claude\skills\save\SKILL.md`. Updates STATUS.md, LOG.md, surfaces open to-dos, checks memory. Do not wait to be asked.
 
+### Before every commit → blast radius sweep
+Before staging any commit, run this logical sweep — not a grep check, but active reasoning:
+1. **What tables/functions did I touch?** Grep for every other caller of each changed function. If another function calls it, does my change break it?
+2. **Is there a client-view equivalent?** If I changed a PT render function, grep for the equivalent client render function and check it has the same fix.
+3. **What happens if the data is empty, null, or an unexpected shape?** Walk the unhappy paths explicitly.
+4. **Does this change touch any existing Playwright test path?** If yes, run `npm test` before pushing — not after.
+5. **What did the old code hide that the new code now exposes?** (Regression sweep — removed overlays, changed navigation, replaced queries.)
+If any item surfaces a risk, fix it before committing. Never defer a known risk to "check on live."
+
 ### Before any git push → offer /code-review
 Before pushing to master, check whether `/code-review ultra` has been run this session. If not, offer it — one line: "Want to run `/code-review` before pushing?" Do not push without giving Jake the chance to run it. This is distinct from the session-start grep scan — `/code-review ultra` does a full multi-agent semantic read. See [[feedback-code-review]].
 
 ### Before any beta invite or significant deploy → /deploy-check
-Run `C:\Users\jaken\coachapp\.claude\skills\deploy-check\SKILL.md`. Seven checks: cache bust, /code-review, Playwright suite, Supabase redirect URLs, RLS policies, live smoke test, GitHub Pages deploy. Do not declare "ready" without completing it. See [[feedback-deploy-check]].
+Run `C:\Users\jaken\coachapp\.claude\skills\deploy-check\SKILL.md`. Nine checks: cache bust, /code-review, Playwright suite, Supabase redirect URLs, RLS policies, storage buckets private, GDPR features present, live smoke test, GitHub Pages deploy. Do not declare "ready" without completing it. See [[feedback-deploy-check]].
 
 ### To run Playwright tests → /playwright
 Run `C:\Users\jaken\coachapp\.claude\skills\playwright\SKILL.md`. Reports per-test pass/fail, surfaces console error annotations, gives Green/Amber/Red verdict. See [[feedback-playwright-skill]], [[project-playwright]].
