@@ -580,11 +580,6 @@ function filterCompliance(filter) {
   })
 }
 
-async function openClientByName(name) {
-  const { data } = await db.from('clients').select('id').eq('full_name', name).single()
-  if (data) openClient(data.id)
-}
-
 // ─── CLIENT DASHBOARD ─────────────────────────────────────────────────────────
 async function renderClientDashboard(el) {
   log.info('renderClientDashboard', 'fetching data', { userId: currentUser.id })
@@ -6061,10 +6056,6 @@ async function renderClientPhotos(clientId, el) {
     el.innerHTML = uploadHtml + `<div class="empty-state"><div class="empty-text">No progress photos yet.</div></div>`
     return
   }
-  if (!validFiles.length) {
-    el.innerHTML = uploadHtml + `<div class="empty-state"><div class="empty-text">No progress photos yet.</div></div>`
-    return
-  }
 
   const paths = validFiles.map(f => prefix + f.name)
   const { data: signedUrlData } = await db.storage.from('progress-photos').createSignedUrls(paths, 3600)
@@ -7294,7 +7285,8 @@ async function removeBrandingLogo() {
   if (!path) return
   const { error: delErr } = await db.storage.from('logos').remove([path])
   if (delErr) { log.error('removeBrandingLogo', 'delete failed', delErr); return }
-  await db.from('coach_branding').update({ logo_path: null, updated_at: new Date().toISOString() }).eq('coach_id', currentUser.id)
+  const { error: updateErr } = await db.from('coach_branding').update({ logo_path: null, updated_at: new Date().toISOString() }).eq('coach_id', currentUser.id)
+  if (updateErr) { log.error('removeBrandingLogo', 'db update failed', updateErr); return }
   window._branding.logoPath = null
   window._branding.logoUrl  = null
   _applyBrandingToSidebar()
