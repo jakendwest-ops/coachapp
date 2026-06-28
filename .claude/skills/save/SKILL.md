@@ -118,7 +118,33 @@ State whether the Playwright suite was run this session:
 
 ---
 
-## Step 8 — Confirm to Jake
+## Step 8 — Commit and push the Vault
+
+After all files are written, commit and push to `jakendwest-ops/vault`:
+
+```
+cd "C:\Users\jaken\Claude\Vault"
+git add projects/ memory/ owner/ ledgers/ north-star.md profile.md
+git commit -m "Save vault state — CoachApp session YYYY-MM-DD (vNNN)"
+git push
+```
+
+If push fails (no remote, auth issue), flag it to Jake — do not skip silently.
+
+---
+
+## Step 9 — Session summary for Jake
+
+Give a two-part summary of everything built or changed this session:
+
+1. **Technical** — what functions/files changed, what queries or schema changed, what the fix was at a code level. One sentence per item.
+2. **Plain English** — what the user actually experiences differently now. No jargon. One sentence per item.
+
+Both parts are mandatory. Never skip the plain-English version.
+
+---
+
+## Step 10 — Confirm to Jake
 
 Tell Jake:
 - STATUS.md ✓ / LOG.md ✓

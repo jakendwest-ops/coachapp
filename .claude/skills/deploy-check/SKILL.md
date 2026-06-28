@@ -75,6 +75,27 @@ ORDER BY tablename;
 
 ---
 
+## 5b. Storage buckets — all private
+
+```sql
+select id, public from storage.buckets order by id;
+```
+
+- ✅ PASS if `public = false` for every bucket (logos, progress-photos)
+- ❌ FAIL if any PUBLIC — client health data would be exposed without authentication
+
+---
+
+## 5c. GDPR features — present and wired
+
+- ✅ PASS if consent checkbox exists in index.html signup form
+- ✅ PASS if Settings page has "Data & privacy" card with Download + Delete buttons
+- ✅ PASS if `delete_current_user()` RPC exists in DB
+- ⚠️ NEEDS ATTENTION if privacy policy still links to `#` — must be a real URL before first beta user signs up
+- ❌ FAIL if any of the above missing
+
+---
+
 ## 6. Live smoke test — client login
 
 Open `https://jakendwest-ops.github.io/coachapp` in a private/incognito window.
@@ -109,6 +130,8 @@ gh run list --limit 3
 | Playwright | |
 | Redirect URLs | |
 | RLS policies | |
+| Storage buckets private | |
+| GDPR features present | |
 | Live smoke test | |
 | GitHub Pages deploy | |
 

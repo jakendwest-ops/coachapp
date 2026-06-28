@@ -114,6 +114,18 @@ Grep the codebase for the equivalent existing render function before writing any
 ### Before any SQL → sql-safety
 Run the sql-safety skill at `C:\Users\jaken\coachapp\.claude\skills\sql-safety\SKILL.md` before writing any DELETE, UPDATE, or schema-altering SQL. See [[feedback-sql-destructive]].
 
+### Before any new Storage bucket → security gate
+Before creating any bucket: confirm it will be private (`public = false`). Draft the RLS policies on `storage.objects` before the bucket is used. Switch all display code to `createSignedUrl`/`createSignedUrls` — never `getPublicUrl`. Client health data (progress photos, body metrics) is special-category under UK GDPR. See [[feedback-security-gdpr]].
+
+### Before any new DB table → security gate
+Before inserting data into any new table: (1) enable RLS, (2) write coach-scoped and client-scoped policies, (3) add the table to `downloadMyData()` if it holds user data, (4) add the table to `delete_current_user()` RPC if it needs cascade deletion. Never `qual = 'true'` on any table that holds user data. See [[feedback-security-gdpr]].
+
+### When touching auth, clients, or health data tables → PII check
+After writing any function that reads/writes clients, weight_logs, performance_logs, workout_logs, goals, or auth flows: scan every log call in that function. IDs and dates only — never names, emails, weights, health values. The pre-push hook catches patterns but cannot catch everything. See [[feedback-security-gdpr]].
+
+### When the session involves security/GDPR work → /security-audit
+Run `C:\Users\jaken\coachapp\.claude\skills\security-audit\SKILL.md`. Covers: private buckets, open RLS policies, PII in logs, GDPR features, new tables, signed URLs. Also runs as part of /deploy-check. See [[feedback-security-gdpr]].
+
 ### Before every git commit → cache bust check
 If `app.js` changed in this commit, verify that `?v=N` on the script tag in `index.html` has been incremented in the same commit. Never commit app.js changes without bumping the version. See [[feedback-cache-bust]].
 
