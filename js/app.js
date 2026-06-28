@@ -1613,6 +1613,7 @@ async function loadAllPhaseWorkouts(phases) {
             <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
               ${wks.length > 1 ? `<span style="font-size:9px;font-weight:700;color:var(--accent);min-width:18px">${w.session_order===2?'PM':'AM'}</span>` : ''}
               <span style="font-size:12px;font-weight:600">${w.workout_templates?.name || 'Unknown'}</span>
+              <button onclick="openTemplate('${w.template_id}',{backLabel:'Back to program',backFn:()=>openProgram('${window._openProgramId}')})" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0 2px">Edit</button>
               <button onclick="removePhaseWorkout('${w.id}','${ph.id}')" style="font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0">✕</button>
             </div>`).join('')}
         </div>`).join('')}
@@ -3704,6 +3705,7 @@ async function openTemplate(id, ctx = {}) {
   window._templateCtx = {
     backTo: ctx.backTo || null,
     backLabel: ctx.backLabel || 'Templates',
+    backFn: ctx.backFn || null,
     clientId: ctx.clientId || null,
     clientName: ctx.clientName || null,
     clientProgramId: ctx.clientProgramId || null,
@@ -3816,7 +3818,9 @@ async function openTemplate(id, ctx = {}) {
 
 function _templateGoBack() {
   const ctx = window._templateCtx || {}
-  if (ctx.clientId) {
+  if (ctx.backFn) {
+    ctx.backFn()
+  } else if (ctx.clientId) {
     openClientProgramsTab(ctx.clientId)
   } else {
     navigate(ctx.backTo || 'workouts')
