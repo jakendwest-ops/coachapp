@@ -22,12 +22,15 @@ After it starts, resize the preview to **480×844** immediately. Never leave it 
 ## Step 2 — Read the Vault
 
 Read all of these — none are optional:
-1. `C:\Users\jaken\Claude\Vault\projects\PTHub\STATUS.md` — live project state
-2. `C:\Users\jaken\Claude\Vault\projects\PTHub\LOG.md` — last 2–3 entries (most recent first)
-3. `C:\Users\jaken\Claude\Vault\projects\CoachApp\roadmap.md` — full feature roadmap (status tags)
-4. `C:\Users\jaken\Claude\Vault\projects\CoachApp\blueprint.md` — product blueprint
+1. `C:\Users\jaken\Claude\Vault\projects\CoachApp\STATUS.md` — live project state + open to-dos
+2. `C:\Users\jaken\Claude\Vault\projects\CoachApp\LOG.md` — last 2–3 entries (most recent first)
+3. `C:\Users\jaken\Claude\Vault\projects\CoachApp\CRITICAL.md` — infrastructure facts, security constraints, GDPR status
+4. `C:\Users\jaken\Claude\Vault\projects\CoachApp\roadmap.md` — full feature roadmap (status tags)
 5. `C:\Users\jaken\Claude\Vault\memory\lessons.jsonl` — past mistakes not to repeat
 6. `C:\Users\jaken\Claude\Vault\owner\voice.md` — how Jake communicates and what he values
+
+Also load from auto-memory (already in context via MEMORY.md) — patterns file is especially important for code work:
+- `project_coachapp_patterns.md` — modal pattern, program_id constraint, timed sets format, dbq(), master account, nav context, save functions
 
 ---
 
