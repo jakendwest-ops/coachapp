@@ -4952,9 +4952,8 @@ function renderRunner() {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
           ${_runner.exIdx > 0 ? `<button onclick="runnerGoBack()" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:13px;font-weight:700;cursor:pointer;color:var(--text-muted);flex-shrink:0">← Back</button>` : ''}
           <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <div style="margin-bottom:4px">
               <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}</span>
-              ${ex.targetSets ? `<span style="font-size:11px;font-weight:800;color:var(--accent)">· Set ${setNum} of ${ex.targetSets}</span>` : ''}
             </div>
             <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${ex.name||'Exercise name'}</div>
             ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?ex.targetReps+' reps':null,ex.targetWeight?'@ '+ex.targetWeight+'kg':null].filter(Boolean).join(' · ')}</div>` : ''}
@@ -5012,6 +5011,12 @@ function renderRunner() {
 
       <!-- Last session strip — persistent reference -->
       ${ex.type !== 'cardio' ? `<div id="wr-last-session" style="border-top:1px solid var(--border);padding:6px 12px;background:var(--bg);min-height:28px"></div>` : ''}
+
+      <!-- Set counter — above stats bar -->
+      ${ex.targetSets ? `<div style="padding:6px 14px;border-top:1px solid var(--border);background:var(--bg);display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;font-weight:700;color:var(--accent)">Set ${setNum} of ${ex.targetSets}</span>
+        <div style="display:flex;gap:4px">${Array.from({length:ex.targetSets},(_,i)=>`<div style="width:20px;height:6px;border-radius:3px;background:${i<ex.loggedSets.length?'var(--accent)':i===ex.loggedSets.length?'rgba(99,102,241,0.4)':'var(--border)'}"></div>`).join('')}</div>
+      </div>` : ''}
 
       <!-- Stats bar — sits just above the keypad -->
       <div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
