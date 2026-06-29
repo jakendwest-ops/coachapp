@@ -19,6 +19,9 @@ async function loginAs(page, email, password) {
 
 async function loginAsPT(page) {
   await loginAs(page, PT_EMAIL, PT_PASSWORD)
+  // Reset to coach view — a previous test in the same worker may have left _activeView=solo
+  await page.evaluate(() => { localStorage.setItem('_activeView', 'coach'); if (typeof switchView === 'function') switchView('coach') })
+  await page.waitForTimeout(300)
 }
 
 async function loginAsClient(page) {
