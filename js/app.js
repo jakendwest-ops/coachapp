@@ -418,21 +418,25 @@ async function renderDashboard(el) {
   const fourteenDaysOn = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const todayStr       = new Date().toISOString().split('T')[0]
 
+  // Fetch coach's client IDs first so all queries are correctly scoped
+  const { data: coachClients } = await db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).order('full_name')
+  const coachClientIds = (coachClients || []).map(c => c.id)
+
   const [
     { count: clientCount },
     { count: goalCount },
     { data: recentWeights },
     { data: recentWorkouts },
-    { data: activeClients },
     { data: upcomingGoals }
   ] = await Promise.all([
     db.from('clients').select('*', { count: 'exact', head: true }).eq('coach_id', currentUser.id),
-    db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active').in('client_id', (await db.from('clients').select('id').eq('coach_id', currentUser.id)).data?.map(c=>c.id)||[]),
-    db.from('weight_logs').select('client_id, created_at, weight_kg').gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30),
-    db.from('workout_logs').select('client_id, date, created_at').gte('date', todayStr.slice(0,7) + '-01').order('date', { ascending: false }).limit(100),
-    db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).eq('status', 'active').order('full_name'),
+    db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active').in('client_id', coachClientIds),
+    coachClientIds.length ? db.from('weight_logs').select('client_id, created_at, weight_kg').in('client_id', coachClientIds).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30) : { data: [] },
+    coachClientIds.length ? db.from('workout_logs').select('client_id, date, created_at').in('client_id', coachClientIds).gte('date', todayStr.slice(0,7) + '-01').order('date', { ascending: false }).limit(100) : { data: [] },
     db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', fourteenDaysOn).order('target_date').limit(5)
   ])
+
+  const activeClients = (coachClients || []).filter(c => c.status === 'active')
 
   const clientMap = {}
   ;(activeClients || []).forEach(c => { clientMap[c.id] = c.full_name })
