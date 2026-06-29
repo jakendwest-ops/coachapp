@@ -4896,11 +4896,14 @@ async function fetchRunnerLastSession(exName) {
   const { data: exRows } = await db.from('workout_log_exercises')
     .select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)')
     .eq('exercise_name', exName).in('log_id', logs.map(l => l.id))
-    .limit(1)
   if (!exRows?.length) { _runner.lastSession[exName] = null; return }
 
-  const date = logs.find(l => l.id === exRows[0].log_id)?.date
-  const sets = (exRows[0].workout_log_sets || [])
+  // Pick the occurrence from the most recent log (logs is already date-desc ordered)
+  const best = exRows.sort((a, b) =>
+    logs.findIndex(l => l.id === a.log_id) - logs.findIndex(l => l.id === b.log_id)
+  )[0]
+  const date = logs.find(l => l.id === best.log_id)?.date
+  const sets = (best.workout_log_sets || [])
     .filter(s => s.weight_kg || s.reps_achieved)
     .sort((a, b) => a.set_number - b.set_number)
 
