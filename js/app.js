@@ -2503,7 +2503,7 @@ async function renderCalendar(el) {
   const from = localDate(firstDay)
   const to   = localDate(lastDay)
 
-  const isClient = currentProfile?.role === 'client' || currentProfile?.role === 'solo' || currentView === 'client'
+  const isClient = currentProfile?.role === 'client' || currentProfile?.role === 'solo'
   let events, clientMap = {}, programWorkoutsByDate = {}
 
   if (isClient) {
@@ -2692,7 +2692,7 @@ function calNav(dir) {
 }
 
 function showDayEvents(dateStr) {
-  if (currentProfile?.role === 'client' || currentView === 'client') showClientDayDetail(dateStr)
+  if (currentProfile?.role === 'client' || currentProfile?.role === 'solo') showClientDayDetail(dateStr)
   else showAddEventModal(dateStr)
 }
 
