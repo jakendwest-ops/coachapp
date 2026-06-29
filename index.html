@@ -93,7 +93,8 @@
           <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px">View as</div>
           <div style="display:flex;background:var(--surface-2);border-radius:8px;padding:3px;gap:2px">
             <button id="vs-coach" onclick="switchView('coach')" style="flex:1;padding:5px 8px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">PT</button>
-            <button id="vs-client" onclick="switchView('client')" style="flex:1;padding:5px 8px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Client</button>
+            <button id="vs-client" onclick="switchView('client')" style="display:none;flex:1;padding:5px 8px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Client</button>
+            <button id="vs-personal" onclick="switchView('solo')" style="display:none;flex:1;padding:5px 8px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">Personal</button>
           </div>
         </div>
         <div class="user-pill">
@@ -112,7 +113,8 @@
     <!-- Mobile view switcher (master account only) -->
     <div id="mobile-view-switcher" style="position:fixed;bottom:68px;left:50%;transform:translateX(-50%);z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:3px;gap:2px;box-shadow:0 2px 12px rgba(0,0,0,.15)">
       <button id="mvs-coach" onclick="switchView('coach')" style="padding:5px 16px;border:none;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer">PT</button>
-      <button id="mvs-client" onclick="switchView('client')" style="padding:5px 16px;border:none;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer">Client</button>
+      <button id="mvs-client" onclick="switchView('client')" style="display:none;padding:5px 16px;border:none;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer">Client</button>
+      <button id="mvs-personal" onclick="switchView('solo')" style="display:none;padding:5px 16px;border:none;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer">Personal</button>
     </div>
 
     <!-- Bottom nav (mobile) -->
@@ -122,6 +124,6 @@
 
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <script src="js/app.js?v=157"></script>
+  <script src="js/app.js?v=158"></script>
 </body>
 </html>

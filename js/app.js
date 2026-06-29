@@ -60,8 +60,10 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 let currentUser    = null
 let currentProfile = null
 let currentPage    = 'dashboard'
-window._branding     = { businessName: null, logoPath: null, logoUrl: null }
-window._brandingFile = null
+window._branding      = { businessName: null, logoPath: null, logoUrl: null }
+window._brandingFile  = null
+window._soloClientId  = null  // personal account client record (coach_id = null)
+window._masterClientId = null  // coached client record (coach_id = coach's uid)
 
 // ─── SHELL HELPERS ────────────────────────────────────────────────────────────
 function escapeHtml(str) {
@@ -79,10 +81,12 @@ async function showApp() {
   document.getElementById('app-shell').style.display   = 'flex'
   await loadUserInfo()
   applyRoleUI()
-  const defaultPage = currentProfile?.role === 'client' ? 'client-dashboard' : 'dashboard'
+  const role = currentProfile?.role
+  const defaultPage = role === 'client' ? 'client-dashboard' : role === 'solo' ? 'solo-dashboard' : 'dashboard'
   const clientPages = ['client-dashboard', 'workouts', 'calendar', 'progress', 'settings']
+  const soloPages   = ['solo-dashboard', 'workouts', 'programs', 'calendar', 'progress', 'settings']
   const coachPages  = ['dashboard', 'clients', 'workouts', 'calendar', 'programs', 'settings']
-  const validPages  = currentProfile?.role === 'client' ? clientPages : coachPages
+  const validPages  = role === 'client' ? clientPages : role === 'solo' ? soloPages : coachPages
 
   // Read page from hash (e.g. #dashboard → 'dashboard')
   const hashPage = window.location.hash.replace(/^#/, '').split('/')[0]
@@ -121,18 +125,22 @@ async function loadUserInfo() {
   document.getElementById('user-name').textContent   = name.split(' ')[0]
   document.getElementById('user-avatar').textContent = initial
 
-  // Check if this account also has a client record (master account detection)
+  // Check if this account also has client records (master account detection)
   if (currentProfile?.role === 'coach') {
-    const { data: clientRec } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-    if (clientRec) {
-      window._masterAccount = true
+    const [{ data: coachedRec }, { data: soloRec }] = await Promise.all([
+      db.from('clients').select('id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle(),
+      db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle(),
+    ])
+    if (coachedRec) { window._masterAccount = true; window._masterClientId = coachedRec.id }
+    if (soloRec)    { window._masterAccount = true; window._soloClientId   = soloRec.id }
+    if (window._masterAccount) {
       const storedView = localStorage.getItem('_activeView')
-      if (storedView === 'client') {
-        currentProfile = { ...currentProfile, role: 'client' }
-      }
+      const validStoredViews = ['coach', ...(window._masterClientId ? ['client'] : []), ...(window._soloClientId ? ['solo'] : [])]
+      const activeView = validStoredViews.includes(storedView) ? storedView : 'coach'
+      if (activeView === 'client') currentProfile = { ...currentProfile, role: 'client' }
+      if (activeView === 'solo')   currentProfile = { ...currentProfile, role: 'solo' }
       document.getElementById('view-switcher').style.display = 'block'
-      // mobile-view-switcher visibility is handled by CSS media query
-      updateViewSwitcherButtons(storedView === 'client' ? 'client' : 'coach')
+      updateViewSwitcherButtons(activeView)
     }
   }
   await _loadBranding()
@@ -173,8 +181,9 @@ function _applyBrandingToSidebar() {
 }
 
 const _NAV_ICONS = {
-  dashboard:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+  dashboard:          `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
   'client-dashboard': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+  'solo-dashboard':   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
   clients:          `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
   workouts:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>`,
   calendar:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
@@ -199,6 +208,14 @@ const _NAV_ITEMS = {
     { page: 'progress',         label: 'Progress'  },
     { page: 'settings',         label: 'Settings'  },
   ],
+  solo: [
+    { page: 'solo-dashboard', label: 'Dashboard' },
+    { page: 'workouts',       label: 'Workouts'  },
+    { page: 'programs',       label: 'Programs'  },
+    { page: 'calendar',       label: 'Calendar'  },
+    { page: 'progress',       label: 'Progress'  },
+    { page: 'settings',       label: 'Settings'  },
+  ],
 }
 
 function renderNav(role) {
@@ -220,23 +237,29 @@ function renderNav(role) {
 }
 
 function applyRoleUI() {
-  renderNav(currentProfile?.role === 'client' ? 'client' : 'coach')
+  const role = currentProfile?.role
+  renderNav(role === 'client' ? 'client' : role === 'solo' ? 'solo' : 'coach')
 }
 
 function updateViewSwitcherButtons(activeView) {
   const active   = 'background:var(--accent);color:#fff'
   const inactive = 'background:transparent;color:var(--text-muted)'
-  const base     = ';border:none;cursor:pointer;font-weight:700;transition:all .15s'
+  const sBase    = ';border:none;cursor:pointer;font-weight:700;transition:all .15s;flex:1;padding:5px 8px;border-radius:6px;font-size:12px'
+  const mBase    = ';border:none;cursor:pointer;font-weight:700;transition:all .15s;padding:5px 16px;border-radius:16px;font-size:12px'
 
-  // Sidebar buttons
-  const sc = document.getElementById('vs-coach'), sk = document.getElementById('vs-client')
-  if (sc) { sc.style.cssText  = (activeView==='coach'  ? active : inactive) + base + ';flex:1;padding:5px 8px;border-radius:6px;font-size:12px' }
-  if (sk) { sk.style.cssText  = (activeView==='client' ? active : inactive) + base + ';flex:1;padding:5px 8px;border-radius:6px;font-size:12px' }
+  const sc = document.getElementById('vs-coach')
+  const sk = document.getElementById('vs-client')
+  const sp = document.getElementById('vs-personal')
+  const mc = document.getElementById('mvs-coach')
+  const mk = document.getElementById('mvs-client')
+  const mp = document.getElementById('mvs-personal')
 
-  // Mobile pill buttons
-  const mc = document.getElementById('mvs-coach'), mk = document.getElementById('mvs-client')
-  if (mc) { mc.style.cssText = (activeView==='coach'  ? active : inactive) + base + ';padding:5px 16px;border-radius:16px;font-size:12px' }
-  if (mk) { mk.style.cssText = (activeView==='client' ? active : inactive) + base + ';padding:5px 16px;border-radius:16px;font-size:12px' }
+  if (sc) sc.style.cssText = (activeView==='coach'  ? active : inactive) + sBase
+  if (sk) { sk.style.cssText = (activeView==='client' ? active : inactive) + sBase; sk.style.display = window._masterClientId ? 'block' : 'none' }
+  if (sp) { sp.style.cssText = (activeView==='solo'   ? active : inactive) + sBase; sp.style.display = window._soloClientId   ? 'block' : 'none' }
+  if (mc) mc.style.cssText = (activeView==='coach'  ? active : inactive) + mBase
+  if (mk) { mk.style.cssText = (activeView==='client' ? active : inactive) + mBase; mk.style.display = window._masterClientId ? 'block' : 'none' }
+  if (mp) { mp.style.cssText = (activeView==='solo'   ? active : inactive) + mBase; mp.style.display = window._soloClientId   ? 'block' : 'none' }
 }
 
 function switchView(view) {
@@ -245,7 +268,9 @@ function switchView(view) {
   localStorage.setItem('_activeView', view)
   updateViewSwitcherButtons(view)
   applyRoleUI()
-  navigate(view === 'client' ? 'client-dashboard' : 'dashboard')
+  if (view === 'client') navigate('client-dashboard')
+  else if (view === 'solo') navigate('solo-dashboard')
+  else navigate('dashboard')
 }
 
 // ─── AUTH FORMS ───────────────────────────────────────────────────────────────
@@ -351,6 +376,7 @@ function navigate(page, _historyOp = 'push') {
   switch (page) {
     case 'dashboard':        _catch('dashboard',        renderDashboard);        break
     case 'client-dashboard': _catch('client-dashboard', renderClientDashboard);  break
+    case 'solo-dashboard':   _catch('solo-dashboard',   renderSoloDashboard);    break
     case 'programs':         _catch('programs',         renderPrograms);         break
     case 'clients':          _catch('clients',          renderClients);          break
     case 'workouts':         _catch('workouts',         renderWorkouts);         break
@@ -359,6 +385,14 @@ function navigate(page, _historyOp = 'push') {
     case 'progress':         _catch('progress',         renderProgress);         break
     default: container.innerHTML = '<div class="loading-state">Page not found</div>'
   }
+}
+
+// Returns the client_id for the current view context
+// Solo view → personal record. Client view → coached record.
+async function _getCurrentClientId() {
+  if (currentProfile?.role === 'solo') return window._soloClientId || null
+  const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle()
+  return data?.id || null
 }
 
 // Browser back/forward — re-render without pushing another history entry
@@ -592,12 +626,13 @@ async function renderClientDashboard(el) {
 
   const todayStr = new Date().toISOString().split('T')[0]
 
-  // Find this client's record via user_id
+  // Find coached client record (coach_id is not null = has a PT)
   const { data: clientRow, error: clientErr } = await db
     .from('clients')
     .select('id, full_name, coach_id')
     .eq('user_id', currentUser.id)
-    .single()
+    .not('coach_id', 'is', null)
+    .maybeSingle()
 
   if (clientErr || !clientRow) {
     log.error('renderClientDashboard', 'client record not found', clientErr)
@@ -950,6 +985,237 @@ async function renderClientDashboard(el) {
 }
 
 
+// ─── SOLO / PERSONAL DASHBOARD ────────────────────────────────────────────────
+async function renderSoloDashboard(el) {
+  log.info('renderSoloDashboard', 'loading personal dashboard')
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  const clientId = window._soloClientId
+  if (!clientId) { el.innerHTML = '<div class="loading-state">Personal account not set up yet.</div>'; return }
+
+  const todayStr   = new Date().toISOString().split('T')[0]
+  const weekAgoStr = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+  const [
+    { data: goals },
+    { data: events },
+    { data: weights },
+    { data: perfLogs },
+    { data: assignedPrograms },
+    { data: recentSessions },
+  ] = await Promise.all([
+    db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
+    db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
+    db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
+    db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
+    db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
+    db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
+  ])
+
+  const latestWeight = weights?.[0] ?? null
+  const prevWeight   = weights?.[1] ?? null
+  let weightTrend = '→'
+  if (latestWeight && prevWeight) {
+    if (latestWeight.weight_kg < prevWeight.weight_kg) weightTrend = '↓'
+    else if (latestWeight.weight_kg > prevWeight.weight_kg) weightTrend = '↑'
+  }
+  const trendColour = weightTrend === '↓' ? '#22c55e' : weightTrend === '↑' ? '#ef4444' : 'var(--text-muted)'
+
+  const pbMap = {}
+  ;(perfLogs || []).forEach(p => {
+    if (!pbMap[p.name]) { pbMap[p.name] = p; return }
+    const better = p.category === 'cardio' ? p.value < pbMap[p.name].value : p.value > pbMap[p.name].value
+    if (better) pbMap[p.name] = p
+  })
+  const pbs = Object.values(pbMap)
+
+  const sessionsThisWeek = (recentSessions || []).filter(s => s.date >= weekAgoStr).length
+
+  function formatDate(dateStr) {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+  }
+  function daysUntil(dateStr) {
+    const d = Math.round((new Date(dateStr) - new Date(todayStr)) / 86400000)
+    if (d === 0) return 'Today'; if (d === 1) return 'Tomorrow'; return `In ${d} days`
+  }
+  function eventColour(type) {
+    return { session:'#6366f1', review:'#f59e0b', competition:'#ef4444', holiday:'#22c55e', gym:'#3b82f6' }[type] || 'var(--text-muted)'
+  }
+
+  const firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
+
+  el.innerHTML = `
+    <div class="dashboard-header">
+      <div>
+        <h1 class="dashboard-greeting">My Training 💪</h1>
+        <p style="color:var(--text-muted);font-size:14px;margin:2px 0 0">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px;background:var(--accent);border-radius:12px;padding:14px 16px;color:#fff">
+        <div style="font-size:28px;font-weight:800">${sessionsThisWeek}</div>
+        <div style="font-size:12px;font-weight:600;opacity:.85;margin-top:2px">Sessions this week</div>
+      </div>
+      <div style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+        <div style="font-size:28px;font-weight:800">${latestWeight ? latestWeight.weight_kg+' kg' : '—'}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-top:2px">Latest weight <span style="color:${trendColour}">${latestWeight ? weightTrend : ''}</span></div>
+      </div>
+      <div style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+        <div style="font-size:28px;font-weight:800">${goals?.length || 0}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-top:2px">Active goals</div>
+      </div>
+      <div style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+        <div style="font-size:28px;font-weight:800">${pbs.length}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-top:2px">Personal bests</div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+
+      <!-- Recent Sessions -->
+      <div class="dashboard-card" style="grid-column:span 2">
+        <div class="card-header">
+          <h2 class="card-title">Recent Sessions</h2>
+          <button class="btn-primary" style="font-size:12px;padding:4px 12px" onclick="startWorkoutRunner('${clientId}')">▶ Start</button>
+        </div>
+        ${!recentSessions?.length ? `<p style="color:var(--text-muted);font-size:13px">No sessions logged yet. Hit Start to begin.</p>` : `
+        <div class="list">
+          ${recentSessions.map(s => {
+            const exCount = s.workout_log_exercises?.length || 0
+            return `
+            <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${s.id}','${clientId}')">
+              <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
+              <div class="row-info">
+                <div class="row-name">${s.name}</div>
+                <div class="row-meta">${formatDate(s.date)} · ${exCount} exercise${exCount!==1?'s':''}</div>
+              </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>`
+          }).join('')}
+        </div>`}
+      </div>
+
+      <!-- Weight -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <h2 class="card-title">Weight</h2>
+          <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log</button>
+        </div>
+        ${latestWeight ? `
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+            <span style="font-size:32px;font-weight:700">${latestWeight.weight_kg}</span>
+            <span style="font-size:16px;color:var(--text-muted)">kg</span>
+            <span style="font-size:22px;color:${trendColour};margin-left:4px">${weightTrend}</span>
+          </div>
+          <p style="font-size:12px;color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
+          ${prevWeight ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">Previous: ${prevWeight.weight_kg} kg</p>` : ''}
+        ` : `<p style="color:var(--text-muted);font-size:13px">No weight logged yet.</p>`}
+        <div id="client-weight-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div><label class="form-label">Date</label><input type="date" id="cwf-date" class="form-input" value="${todayStr}"></div>
+            <div><label class="form-label">Weight (kg)</label><input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div><label class="form-label">Body fat % <span style="color:var(--text-muted)">(opt)</span></label><input type="number" id="cwf-bf" class="form-input" placeholder="e.g. 19.5" step="0.1"></div>
+            <div><label class="form-label">Notes <span style="color:var(--text-muted)">(opt)</span></label><input type="text" id="cwf-notes" class="form-input" placeholder="Any notes…"></div>
+          </div>
+          <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
+            <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upcoming -->
+      <div class="dashboard-card">
+        <div class="card-header"><h2 class="card-title">Upcoming</h2></div>
+        ${!events?.length ? `<p style="color:var(--text-muted);font-size:13px">No upcoming events.</p>` : events.map(ev => `
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+            <div style="width:3px;min-width:3px;height:36px;border-radius:2px;background:${eventColour(ev.type)};margin-top:2px"></div>
+            <div>
+              <div style="font-size:13px;font-weight:500">${ev.title}</div>
+              <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${formatDate(ev.date)} · ${daysUntil(ev.date)}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Goals -->
+      <div class="dashboard-card" style="grid-column:span 2">
+        <div class="card-header"><h2 class="card-title">Goals</h2></div>
+        ${!goals?.length ? `<p style="color:var(--text-muted);font-size:13px">No active goals.</p>` : goals.map(goal => {
+          const milestones = (goal.goal_milestones || []).sort((a,b) => a.order - b.order)
+          const pct = (() => {
+            const sv=parseFloat(goal.start_value), cv=parseFloat(goal.current_value), tv=parseFloat(goal.target_value)
+            if (!isNaN(sv)&&!isNaN(cv)&&!isNaN(tv)&&sv!==tv) return Math.min(100,Math.max(0,Math.round(((cv-sv)/(tv-sv))*100)))
+            if (!isNaN(cv)&&!isNaN(tv)&&tv!==0) return Math.min(100,Math.max(0,Math.round((cv/tv)*100)))
+            return milestones.length ? Math.round((milestones.filter(m=>m.completed_at).length/milestones.length)*100) : 0
+          })()
+          const daysLeft = goal.target_date ? daysUntil(goal.target_date) : null
+          return `
+          <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+              <div style="font-size:14px;font-weight:600">${goal.title}</div>
+              ${daysLeft ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
+            </div>
+            ${goal.target_value != null ? `
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">
+              Current: <strong style="color:var(--text)">${goal.current_value ?? '—'}</strong> → Target: <strong style="color:var(--accent)">${goal.target_value}</strong>
+            </div>` : ''}
+            <div style="height:4px;background:var(--surface-2);border-radius:4px;overflow:hidden;margin-bottom:8px">
+              <div style="height:100%;width:${pct}%;background:var(--accent);border-radius:4px;transition:width .3s"></div>
+            </div>
+            ${milestones.length ? `
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${milestones.map(m => `
+                <button onclick="toggleClientMilestone('${m.id}')" style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:3px 8px;border-radius:20px;border:none;cursor:pointer;background:${m.completed_at?'var(--accent)':'var(--surface-2)'};color:${m.completed_at?'#fff':'var(--text-muted)'}">
+                  ${m.completed_at?'✓':'○'} ${m.title}
+                </button>`).join('')}
+            </div>` : ''}
+          </div>`
+        }).join('')}
+      </div>
+
+      <!-- Personal Bests -->
+      <div class="dashboard-card" style="grid-column:span 2">
+        <div class="card-header">
+          <h2 class="card-title">Personal Bests</h2>
+          <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log PB</button>
+        </div>
+        ${!pbs.length ? `<p style="color:var(--text-muted);font-size:13px">No records yet.</p>` : `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+          ${pbs.map(pb => `
+            <div style="background:var(--surface-2);border-radius:8px;padding:12px">
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${pb.category}</div>
+              <div style="font-size:13px;font-weight:600;margin-bottom:2px">${pb.name}</div>
+              <div style="font-size:20px;font-weight:700;color:var(--accent)">${pb.value} <span style="font-size:12px;font-weight:400;color:var(--text-muted)">${pb.unit}</span></div>
+            </div>`).join('')}
+        </div>`}
+        <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div><label class="form-label">Exercise</label><input type="text" id="cpb-name" class="form-input" placeholder="e.g. Deadlift"></div>
+            <div><label class="form-label">Category</label><select id="cpb-category" class="form-input"><option value="strength">Strength</option><option value="cardio">Cardio</option><option value="body_metric">Body metric</option><option value="benchmark">Benchmark</option></select></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+            <div><label class="form-label">Value</label><input type="number" id="cpb-value" class="form-input" step="0.1"></div>
+            <div><label class="form-label">Unit</label><input type="text" id="cpb-unit" class="form-input" placeholder="kg / min / reps"></div>
+            <div><label class="form-label">Date</label><input type="date" id="cpb-date" class="form-input" value="${todayStr}"></div>
+          </div>
+          <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${clientId}')">Save</button>
+            <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+    </div>`
+
+  log.ok('renderSoloDashboard', 'rendered', { clientId, goals: goals?.length, pbs: pbs.length, sessions: recentSessions?.length })
+}
+
 // ─── CLIENT PROFILE: PROGRAMS TAB ─────────────────────────────────────────────
 async function renderClientPrograms(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
@@ -1096,6 +1362,9 @@ function showAssignProgramModal(clientId) {
   const existing = document.getElementById('assign-program-modal')
   if (existing) existing.remove()
 
+  // Solo view: auto-assign to personal account — no client picker needed
+  const targetClientId = (currentProfile?.role === 'solo' && window._soloClientId) ? window._soloClientId : clientId
+
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'assign-program-modal'
@@ -1104,7 +1373,7 @@ function showAssignProgramModal(clientId) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">Assign program</h2>
+        <h2 class="modal-title">${currentProfile?.role === 'solo' ? 'Add to my plan' : 'Assign program'}</h2>
         <button class="modal-close" onclick="closeModal('assign-program-modal')">✕</button>
       </div>
       <div class="field">
@@ -1120,7 +1389,7 @@ function showAssignProgramModal(clientId) {
       <p class="modal-error" id="ap-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="closeModal('assign-program-modal')">Cancel</button>
-        <button class="btn-primary" onclick="saveAssignProgram('${clientId}')">Assign</button>
+        <button class="btn-primary" onclick="saveAssignProgram('${targetClientId}')">Assign</button>
       </div>
     </div>
   `
@@ -2234,14 +2503,14 @@ async function renderCalendar(el) {
   const from = localDate(firstDay)
   const to   = localDate(lastDay)
 
-  const isClient = currentProfile?.role === 'client' || currentView === 'client'
+  const isClient = currentProfile?.role === 'client' || currentProfile?.role === 'solo' || currentView === 'client'
   let events, clientMap = {}, programWorkoutsByDate = {}
 
   if (isClient) {
-    // Step 1: get clients.id — needed to scope client_programs correctly
-    const cidRes = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-    window._calClientId = cidRes.data?.id
-    const clientsId = cidRes.data?.id
+    // Step 1: get clients.id — solo uses personal record, coached client uses coached record
+    const resolvedId = await _getCurrentClientId()
+    window._calClientId = resolvedId
+    const clientsId = resolvedId
 
     // Step 2: events + client_programs in parallel (client_programs uses clients.id not auth uid)
     const [evRes, cpRes] = await Promise.all([
@@ -6889,8 +7158,10 @@ async function renderProgress(el) {
 
 async function renderProgressWeight(el) {
   el.innerHTML = '<div class="loading-state">Loading weight data…</div>'
+  const clientId = await _getCurrentClientId()
+  if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
   const { data: logs } = await db.from('weight_logs').select('date, weight_kg, body_fat_pct')
-    .eq('user_id', currentUser.id).order('date', { ascending: true })
+    .eq('client_id', clientId).order('date', { ascending: true })
   if (!logs?.length) { el.innerHTML = '<div class="empty-state"><p>No weight logs yet.</p></div>'; return }
   const latest = logs[logs.length - 1]
   const first  = logs[0]
@@ -6929,8 +7200,9 @@ async function renderProgressWeight(el) {
 
 async function renderProgressStrength(el) {
   el.innerHTML = '<div class="loading-state">Loading exercise data…</div>'
-  const { data: client } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-  if (!client) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
+  const clientId = await _getCurrentClientId()
+  if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
+  const client = { id: clientId }
   const { data: exRows } = await db.from('workout_log_exercises')
     .select('exercise_name, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved)')
     .eq('workout_logs.client_id', client.id).eq('exercise_type', 'strength').order('exercise_name')
@@ -6973,8 +7245,9 @@ async function renderProgressStrength(el) {
 
 async function renderProgressCardio(el) {
   el.innerHTML = '<div class="loading-state">Loading cardio data…</div>'
-  const { data: client } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-  if (!client) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
+  const clientId = await _getCurrentClientId()
+  if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
+  const client = { id: clientId }
   const { data: exRows } = await db.from('workout_log_exercises')
     .select('exercise_name, workout_logs!inner(date, client_id), workout_log_sets(distance_m, duration_seconds)')
     .eq('workout_logs.client_id', client.id).eq('exercise_type', 'cardio').order('exercise_name')
@@ -7022,8 +7295,7 @@ async function renderProgressCardio(el) {
 
 async function renderProgressPBs(el) {
   el.innerHTML = '<div class="loading-state">Loading personal bests…</div>'
-  const { data: client } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-  const clientId = client?.id
+  const clientId = await _getCurrentClientId()
   const { data: logs } = await db.from('performance_logs')
     .select('*, performance_exercises(name, category, unit)')
     .eq('client_id', clientId).order('date', { ascending: false })
