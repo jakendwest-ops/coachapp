@@ -4649,6 +4649,38 @@ async function _applyToAllSessions(sourceTemplateId) {
       await db.from('workout_template_exercises').insert(copies)
     }
   }
+
+  // If propagating from master program, also sync client plan copies
+  // (client_program_workouts links back to program_phase_workouts via program_phase_workout_id)
+  if (window._templateCtx?.programId) {
+    const allMasterIds = [sourceTemplateId, ...targetIds]
+    const { data: ppws } = await db.from('program_phase_workouts')
+      .select('id').in('template_id', allMasterIds)
+    if (ppws?.length) {
+      const { data: cpws } = await db.from('client_program_workouts')
+        .select('workout_template_id').in('program_phase_workout_id', ppws.map(r => r.id))
+      const clientTmplIds = (cpws || []).map(r => r.workout_template_id).filter(Boolean)
+      for (const clientTmplId of clientTmplIds) {
+        await db.from('workout_template_exercises').delete().eq('template_id', clientTmplId)
+        if (sourceExs?.length) {
+          const copies = sourceExs.map(ex => ({
+            template_id: clientTmplId,
+            exercise_id: ex.exercise_id || null,
+            exercise_name: ex.exercise_name,
+            exercise_type: ex.exercise_type,
+            order_index: ex.order_index,
+            sets: ex.sets || null,
+            sets_json: ex.sets_json || null,
+            notes: ex.notes || null,
+            superset_group: ex.superset_group || null
+          }))
+          await db.from('workout_template_exercises').insert(copies)
+        }
+      }
+      log.ok('_applyToAllSessions', `synced ${clientTmplIds.length} client plan copies`)
+    }
+  }
+
   log.ok('_applyToAllSessions', `propagated to ${targetIds.length} sessions`)
   openTemplate(sourceTemplateId, window._templateCtx)
 }
