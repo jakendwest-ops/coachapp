@@ -103,6 +103,35 @@ Run these checks before writing any SQL. Do not skip steps.
 
 ---
 
+## When adding a new role or account type
+
+Any time a new role (e.g. solo/personal account) writes to existing tables, audit RLS coverage for that role explicitly. Existing policies are written for coach and client — a third role is not automatically covered.
+
+**Mandatory steps:**
+1. List every `db.from(` call in the new role's code paths
+2. For each table touched, run:
+   ```sql
+   select policyname, cmd, qual, with_check
+   from pg_policies
+   where tablename = '<table>';
+   ```
+3. Confirm there is a matching INSERT policy for every INSERT, and SELECT policy for every SELECT+returning
+4. The solo/personal pattern: `coach_id is null` records need their own policies — existing `coach_id = auth.uid()` policies do NOT cover them
+5. Write missing policies before testing the feature — not after a user reports a 403
+
+**Solo (personal account) anchor pattern:**
+```sql
+-- Personal account: client_id is null-coached, user_id bridges to auth
+using (
+  client_id in (
+    select id from public.clients
+    where user_id = auth.uid() and coach_id is null
+  )
+)
+```
+
+---
+
 ## Silent failure audit checklist (app.js)
 
 After adding any new error-handling code, grep for gaps:

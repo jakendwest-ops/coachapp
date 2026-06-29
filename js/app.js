@@ -4061,9 +4061,14 @@ async function openTemplate(id, ctx = {}) {
         <h1 class="page-title">${t.name}</h1>
         ${t.description ? `<p class="page-subtitle">${t.description}</p>` : ''}
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-secondary" onclick="showEditTemplateModal('${id}')">Edit</button>
-        <button class="btn-primary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
+        <button class="btn-secondary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
+        ${currentProfile?.role === 'solo'
+          ? `<button class="btn-primary" onclick="startWorkoutRunner('${window._soloClientId}','${id}')">▶ Start</button>`
+          : _ctx.clientId
+            ? `<button class="btn-primary" onclick="startWorkoutRunner('${_ctx.clientId}','${id}')">▶ Start</button>`
+            : ''}
       </div>
     </div>
 
