@@ -34,11 +34,11 @@ test.describe('Solo / Personal account', () => {
 
   test('solo nav shows Dashboard, Workouts, Programs, Calendar, Progress', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await expect(page.locator('[data-page="dashboard"]')).toBeVisible()
-    await expect(page.locator('[data-page="workouts"]')).toBeVisible()
-    await expect(page.locator('[data-page="programs"]')).toBeVisible()
-    await expect(page.locator('[data-page="calendar"]')).toBeVisible()
-    await expect(page.locator('[data-page="progress"]')).toBeVisible()
+    await expect(page.locator('[data-page="solo-dashboard"]').first()).toBeVisible()
+    await expect(page.locator('[data-page="workouts"]').first()).toBeVisible()
+    await expect(page.locator('[data-page="programs"]').first()).toBeVisible()
+    await expect(page.locator('[data-page="calendar"]').first()).toBeVisible()
+    await expect(page.locator('[data-page="progress"]').first()).toBeVisible()
   })
 
   test('solo Workouts page shows program accordion, not template builder', async ({ page }) => {
@@ -79,6 +79,6 @@ test.describe('Solo / Personal account', () => {
     await page.evaluate(() => switchView('coach'))
     await page.waitForTimeout(800)
     await expect(page.locator('h1')).toContainText('Welcome back', { timeout: 8000 })
-    await expect(page.locator('[data-page="clients"]')).toBeVisible()
+    await expect(page.locator('[data-page="clients"]').first()).toBeVisible()
   })
 })
