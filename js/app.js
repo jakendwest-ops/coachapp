@@ -3514,7 +3514,7 @@ function fmtSet(s, type) {
 
 // ─── WORKOUTS PAGE ────────────────────────────────────────────────────────────
 async function renderWorkouts(el) {
-  if (currentProfile?.role === 'client') { await renderClientWorkoutsPage(el); return }
+  if (currentProfile?.role === 'client' || currentProfile?.role === 'solo') { await renderClientWorkoutsPage(el); return }
   el.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Workouts</h1>
@@ -3544,7 +3544,7 @@ async function renderClientWorkoutsPage(el) {
   const clientId = clientRecord.id
 
   const [{ data: templates }, { data: logs }, { data: oneRMRows }, { data: cpAssignments }] = await Promise.all([
-    db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id).is('client_id', null).is('program_id', null).order('name'),
+    db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).order('name'),
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
     db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').eq('client_id', clientId).order('recorded_at', { ascending: false }),
     db.from('client_programs').select('id, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
@@ -3707,7 +3707,7 @@ async function renderWorkoutTemplates(el) {
   log.info('renderWorkoutTemplates', 'fetching templates')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
   const [{ data: templates, error }, { data: programs }] = await Promise.all([
-    db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).order('name'),
+    db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).order('name'),
     db.from('programs').select('id, name').eq('coach_id', currentUser.id).order('name')
   ])
 
