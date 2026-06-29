@@ -5202,6 +5202,7 @@ function renderRunner() {
 
 function logRunnerSet() {
   _unlockAudio() // user gesture — unlock AudioContext for iOS
+  _unlockSpeech() // prime speechSynthesis for iOS mid-timer calls
   if (_runner._restInterval) return // block LOG during rest
   const ex = _runner.exercises[_runner.exIdx]
   let setData
@@ -5300,6 +5301,23 @@ function _unlockAudio() {
   try {
     if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
     if (_audioCtx.state === 'suspended') _audioCtx.resume()
+  } catch(e) {}
+}
+
+function _unlockSpeech() {
+  // Prime speechSynthesis on first user gesture so iOS allows mid-timer calls.
+  if (!window.speechSynthesis) return
+  try { window.speechSynthesis.cancel() } catch(e) {}
+}
+
+function speakCue(text) {
+  if (!window.speechSynthesis) return
+  try {
+    window.speechSynthesis.cancel()
+    const utt = new SpeechSynthesisUtterance(text)
+    utt.rate = 1.1
+    utt.volume = 1
+    window.speechSynthesis.speak(utt)
   } catch(e) {}
 }
 
@@ -5458,12 +5476,13 @@ function startRestTimer(secs) {
       if (cb) { _runner._afterRest = null; cb() }
     } else {
       _unlockAudio()
-      if (_runner.restRemaining <= 5) playBeep(880, 0.15, 0.75)
+      if (_runner.restRemaining === 10) speakCue('10 seconds')
+      if (_runner.restRemaining <= 3) playBeep(880, 0.15, 0.75)
       const el = document.getElementById('rt-countdown')
       if (el) {
         const r = _runner.restRemaining
         el.textContent = r < 60 ? r+'s' : fmtRestCountdown(r)
-        el.style.color = r <= 5 ? '#ef4444' : 'var(--accent)'
+        el.style.color = r <= 3 ? '#ef4444' : 'var(--accent)'
       }
       const ring = document.getElementById('rt-ring')
       if (ring) {
