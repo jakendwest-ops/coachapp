@@ -7280,7 +7280,7 @@ db.auth.onAuthStateChange((event, session) => {
 async function renderProgress(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const tabs = ['Body Weight', 'Strength', 'Cardio', 'Personal Bests']
+  const tabs = ['Body Weight', 'Strength', 'Cardio', 'Personal Bests', '1RMs']
   const activeTab = window._progressTab || 'Body Weight'
 
   el.innerHTML = `
@@ -7301,6 +7301,10 @@ async function renderProgress(el) {
   if (activeTab === 'Strength')        await renderProgressStrength(document.getElementById('progress-tab-content'))
   if (activeTab === 'Cardio')          await renderProgressCardio(document.getElementById('progress-tab-content'))
   if (activeTab === 'Personal Bests')  await renderProgressPBs(document.getElementById('progress-tab-content'))
+  if (activeTab === '1RMs') {
+    const clientId = await _getCurrentClientId()
+    if (clientId) renderClient1RMs(clientId, document.getElementById('progress-tab-content'))
+  }
 }
 
 async function renderProgressWeight(el) {
