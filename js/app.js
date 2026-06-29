@@ -6657,7 +6657,9 @@ async function save1RM(clientId, existingId = null) {
   }
   if (error) { errEl.textContent = 'Save failed — try again'; return }
   document.getElementById('modal-1rm').remove()
-  renderClient1RMs(clientId, document.getElementById('tab-content'))
+  const perfEl = document.getElementById('perf-1rms-content')
+  if (perfEl) renderClient1RMs(clientId, perfEl)
+  else renderClient1RMs(clientId, document.getElementById('tab-content'))
 }
 
 async function delete1RM(id, clientId) {
@@ -7280,7 +7282,7 @@ db.auth.onAuthStateChange((event, session) => {
 async function renderProgress(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const tabs = ['Body Weight', 'Strength', 'Cardio', 'Personal Bests', '1RMs']
+  const tabs = ['Body Weight', 'Cardio', 'Personal Bests', 'Performance']
   const activeTab = window._progressTab || 'Body Weight'
 
   el.innerHTML = `
@@ -7297,13 +7299,42 @@ async function renderProgress(el) {
     <div id="progress-tab-content"><div class="loading-state">Coming soon</div></div>
   `
 
-  if (activeTab === 'Body Weight')     await renderProgressWeight(document.getElementById('progress-tab-content'))
-  if (activeTab === 'Strength')        await renderProgressStrength(document.getElementById('progress-tab-content'))
-  if (activeTab === 'Cardio')          await renderProgressCardio(document.getElementById('progress-tab-content'))
-  if (activeTab === 'Personal Bests')  await renderProgressPBs(document.getElementById('progress-tab-content'))
-  if (activeTab === '1RMs') {
-    const clientId = await _getCurrentClientId()
-    if (clientId) renderClient1RMs(clientId, document.getElementById('progress-tab-content'))
+  if (activeTab === 'Body Weight')    await renderProgressWeight(document.getElementById('progress-tab-content'))
+  if (activeTab === 'Cardio')         await renderProgressCardio(document.getElementById('progress-tab-content'))
+  if (activeTab === 'Personal Bests') await renderProgressPBs(document.getElementById('progress-tab-content'))
+  if (activeTab === 'Performance')    await renderPerformance(document.getElementById('progress-tab-content'))
+}
+
+async function renderPerformance(el) {
+  const clientId = await _getCurrentClientId()
+  if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
+
+  const subTab = window._perfTab || '1RMs'
+
+  el.innerHTML = `
+    <div style="display:flex;gap:6px;margin-bottom:16px">
+      ${['1RMs', 'Progressions'].map(t => `
+        <button onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))"
+          style="padding:6px 16px;border:none;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;
+                 background:${t===subTab?'var(--accent)':'var(--surface-2)'};
+                 color:${t===subTab?'#fff':'var(--text-muted)'}">
+          ${t}
+        </button>`).join('')}
+    </div>
+    <div id="perf-sub-content"></div>
+  `
+
+  const subEl = document.getElementById('perf-sub-content')
+  if (subTab === '1RMs') {
+    subEl.innerHTML = `
+      <div style="font-size:13px;color:var(--text-muted);background:var(--surface-2);border-radius:10px;padding:12px 14px;margin-bottom:16px;line-height:1.5">
+        Enter your 1 rep maxes here. Once added, the workout runner and programs automatically calculate target weights for any % 1RM sets.
+      </div>
+      <div id="perf-1rms-content"></div>
+    `
+    await renderClient1RMs(clientId, document.getElementById('perf-1rms-content'))
+  } else {
+    await renderProgressStrength(subEl)
   }
 }
 
@@ -7743,15 +7774,17 @@ async function downloadMyData() {
       const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
       if (clientRow) {
         const cid = clientRow.id
-        const [{ data: weights }, { data: workouts }, { data: perf }, { data: goals }, { data: events }] = await Promise.all([
+        const [{ data: weights }, { data: workouts }, { data: perf }, { data: goals }, { data: events }, { data: oneRMs }] = await Promise.all([
           db.from('weight_logs').select('date, weight_kg, body_fat_pct').eq('client_id', cid).order('date'),
           db.from('workout_logs').select('name, date').eq('client_id', cid).order('date'),
           db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', cid).order('date'),
           db.from('goals').select('title, target_date, status').eq('client_id', cid),
           db.from('events').select('title, date, type').eq('client_id', cid).order('date'),
+          db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').eq('client_id', cid).order('recorded_at'),
         ])
         bundle.weightLogs = weights; bundle.workoutLogs = workouts
         bundle.performanceLogs = perf; bundle.goals = goals; bundle.events = events
+        bundle.oneRepMaxes = oneRMs
       }
     }
 

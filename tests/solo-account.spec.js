@@ -69,10 +69,9 @@ test.describe('Solo / Personal account', () => {
     await page.waitForTimeout(1000)
     await expect(page.locator('h1')).toContainText('My Progress', { timeout: 8000 })
     await expect(page.locator('button:has-text("Body Weight")')).toBeVisible()
-    await expect(page.locator('button:has-text("Strength")')).toBeVisible()
     await expect(page.locator('button:has-text("Cardio")')).toBeVisible()
     await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()
-    await expect(page.locator('button:has-text("1RMs")')).toBeVisible()
+    await expect(page.locator('button:has-text("Performance")')).toBeVisible()
   })
 
   test('switching back to PT restores coach dashboard', async ({ page }) => {
