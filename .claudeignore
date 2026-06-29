@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Test output
+test-results/
+playwright-report/
+
+# Lock files
+package-lock.json
+
+# Git internals
+.git/
+
+# Scripts (one-off SQL — not needed in sessions)
+scripts/
