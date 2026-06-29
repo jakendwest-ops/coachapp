@@ -5183,11 +5183,13 @@ function renderRunner() {
                  </div>`}
             <!-- Duration (timed) or Reps / Distance -->
             ${tgt.timed
-              ? `<div style="flex:1;display:flex;flex-direction:column">
-                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Duration</div>
-                  <input id="wr-duration-input" type="text" inputmode="numeric" placeholder="${tgt.duration||'0:00'}" oninput="this.value=fmtRestInput(this.value)"
-                    style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box">
-                 </div>`
+              ? (_runner._setTimerDone
+                  ? `<div style="flex:1;display:flex;flex-direction:column">
+                      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Duration</div>
+                      <input id="wr-duration-input" type="text" inputmode="numeric" placeholder="${tgt.duration||'0:00'}" oninput="this.value=fmtRestInput(this.value)"
+                        style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box">
+                     </div>`
+                  : '')
               : `<div style="flex:1;display:flex;flex-direction:column">
                   <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${isDistance ? 'Metres' : 'Reps'}</div>
                   ${isDistance
@@ -5196,9 +5198,11 @@ function renderRunner() {
                     : `<input id="wr-reps-input" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
                         style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`}
                  </div>`}
-            <!-- LOG / Skip -->
+            <!-- LOG / Start / Skip -->
             <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
-              <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
+              ${tgt.timed && !_runner._setTimerDone
+                ? `<button onclick="event.stopPropagation();startStrengthSetTimer()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:13px;font-weight:800;cursor:pointer">▶ Start</button>`
+                : `<button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>`}
               ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
             </div>
           </div>`}
@@ -5248,6 +5252,7 @@ function logRunnerSet() {
       const dur = document.getElementById('wr-duration-input')?.value?.trim()
       if (!dur || dur === '0:00') return
       setData = { weight: weight || null, duration: dur }
+      _runner._setTimerDone = false
     } else if (tgt.unilateral && !isDistance) {
       const leftWeight = document.getElementById('wr-left-weight')?.value?.trim() || ''
       const leftReps   = document.getElementById('wr-left-reps')?.value?.trim()   || ''
@@ -5355,6 +5360,84 @@ function playBeep(freq = 880, duration = 0.15, volume = 0.8) {
       _fire()
     }
   } catch(e) {}
+}
+
+function startStrengthSetTimer() {
+  _unlockAudio()
+  _unlockSpeech()
+  const ex = _runner.exercises[_runner.exIdx]
+  const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+  const secs = tgt.duration ? (parseRest(tgt.duration) || 0) : 0
+  if (!secs) return
+  stopStrengthSetTimer()
+  _runner._setTimerSecs = secs
+  _runner._setTimerRemaining = secs
+  _runner._setTimerActive = true
+  _runner._setTimerDone = false
+  renderStrengthSetTimer()
+  _runner._setTimerInterval = setInterval(() => {
+    _runner._setTimerRemaining--
+    if (_runner._setTimerRemaining <= 0) {
+      _runner._setTimerInterval = clearTimer(_runner._setTimerInterval)
+      _runner._setTimerActive = false
+      _runner._setTimerDone = true
+      document.getElementById('wr-set-timer-overlay')?.remove()
+      playBeep(1046, 0.5, 0.95)
+      renderRunner()
+      // pre-fill duration after render
+      const dur = normalizeDuration(tgt.duration)
+      const durInput = document.getElementById('wr-duration-input')
+      if (durInput && dur) durInput.value = dur
+      return
+    }
+    if (_runner._setTimerRemaining === 10) speakCue('10 seconds')
+    if (_runner._setTimerRemaining <= 3) playBeep(880, 0.15, 0.75)
+    const el = document.getElementById('wr-set-countdown')
+    if (el) {
+      el.textContent = fmtRestCountdown(_runner._setTimerRemaining)
+      el.style.color = _runner._setTimerRemaining <= 3 ? '#ef4444' : 'var(--accent)'
+    }
+    const ring = document.getElementById('wr-set-ring')
+    if (ring) {
+      const circ = 2 * Math.PI * 54
+      ring.style.strokeDashoffset = circ * (1 - _runner._setTimerRemaining / _runner._setTimerSecs)
+    }
+  }, 1000)
+}
+
+function stopStrengthSetTimer() {
+  _runner._setTimerInterval = clearTimer(_runner._setTimerInterval)
+  _runner._setTimerActive = false
+  _runner._setTimerDone = false
+  document.getElementById('wr-set-timer-overlay')?.remove()
+}
+
+function renderStrengthSetTimer() {
+  document.getElementById('wr-set-timer-overlay')?.remove()
+  const secs = _runner._setTimerRemaining
+  const total = _runner._setTimerSecs
+  const circ = 2 * Math.PI * 54
+  const pct = secs / total
+  const ex = _runner.exercises[_runner.exIdx]
+  const setNum = ex.loggedSets.length + 1
+  const overlay = document.createElement('div')
+  overlay.id = 'wr-set-timer-overlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
+  overlay.innerHTML = `
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${ex.name} — Set ${setNum}</div>
+    <div style="position:relative;display:inline-block;margin-bottom:24px">
+      <svg width="140" height="140" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
+        <circle id="wr-set-ring" cx="60" cy="60" r="54" fill="none" stroke="var(--accent)" stroke-width="6"
+          stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - pct)}"
+          stroke-linecap="round" transform="rotate(-90 60 60)"
+          style="transition:stroke-dashoffset .9s linear"/>
+      </svg>
+      <div id="wr-set-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
+    </div>
+    <div style="font-size:13px;color:var(--text-muted)">SET IN PROGRESS</div>
+  `
+  document.body.appendChild(overlay)
 }
 
 function startCardioTimer() {
@@ -5605,6 +5688,7 @@ function skipToNextExercise() {
 function runnerJumpTo(i) {
   if (!_runner || i < 0 || i >= _runner.exercises.length) return
   stopIntervalTimer()
+  stopStrengthSetTimer()
   skipRestTimer()
   _runner.exIdx = i
   renderRunner()
@@ -5612,6 +5696,7 @@ function runnerJumpTo(i) {
 
 function runnerGoBack() {
   stopIntervalTimer()
+  stopStrengthSetTimer()
   skipRestTimer()
   if (_runner.exIdx > 0) {
     _runner.exIdx--
