@@ -74,6 +74,30 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('button:has-text("Performance")')).toBeVisible()
   })
 
+  test('session detail slide-in opens and closes', async ({ page }) => {
+    test.skip(!soloAvailable, 'No solo client record for this PT account')
+    await page.click('[data-page="workouts"]')
+    await page.waitForTimeout(2000)
+    // Expand first phase
+    const phaseBtn = page.locator('button[onclick*="cl-phase"]').first()
+    await phaseBtn.click()
+    await page.waitForTimeout(500)
+    // Expand first day
+    const dayBtn = page.locator('button[onclick*="-d1"]').first()
+    await dayBtn.click()
+    await page.waitForTimeout(500)
+    // Click first session name span
+    const sessionSpan = page.locator('span[onclick*="openSessionDetail"]').first()
+    await sessionSpan.click()
+    await page.waitForTimeout(500)
+    // Slide-in panel must be in DOM
+    await expect(page.locator('#session-detail-panel')).toBeAttached({ timeout: 5000 })
+    await expect(page.locator('#session-detail-drawer')).toBeAttached()
+    // Close via X button
+    await page.locator('button[onclick="closeSessionDetail()"]').click()
+    await page.waitForSelector('#session-detail-panel', { state: 'detached', timeout: 5000 })
+  })
+
   test('switching back to PT restores coach dashboard', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.evaluate(() => switchView('coach'))
