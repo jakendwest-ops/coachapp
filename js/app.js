@@ -612,27 +612,51 @@ function filterCompliance(filter) {
 }
 
 // ─── CLIENT DASHBOARD ─────────────────────────────────────────────────────────
+// ─── SUDO (impersonation) ─────────────────────────────────────────────────────
+function sudoAsClient(clientId, clientName) {
+  window._sudoClientId   = clientId
+  window._sudoClientName = clientName
+  window._sudoFromRole   = currentProfile?.role || 'coach'
+  currentProfile = { ...currentProfile, role: 'client' }
+  navigate('client-dashboard')
+}
+function exitSudo() {
+  currentProfile = { ...currentProfile, role: window._sudoFromRole || 'coach' }
+  delete window._sudoClientId
+  delete window._sudoClientName
+  delete window._sudoFromRole
+  navigate('dashboard')
+}
+
 async function renderClientDashboard(el) {
   log.info('renderClientDashboard', 'fetching data', { userId: currentUser.id })
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const todayStr = new Date().toISOString().split('T')[0]
+  const isSudo = !!window._sudoClientId
 
-  // Find coached client record (coach_id is not null = has a PT)
-  const { data: clientRow, error: clientErr } = await db
-    .from('clients')
-    .select('id, full_name, coach_id')
-    .eq('user_id', currentUser.id)
-    .not('coach_id', 'is', null)
-    .maybeSingle()
+  let clientId, firstName
 
-  if (clientErr || !clientRow) {
-    log.error('renderClientDashboard', 'client record not found', clientErr)
-    el.innerHTML = '<div class="loading-state">Unable to load your profile. Please contact your coach.</div>'
-    return
+  if (isSudo) {
+    clientId  = window._sudoClientId
+    firstName = (window._sudoClientName || 'Client').split(' ')[0]
+  } else {
+    // Find coached client record (coach_id is not null = has a PT)
+    const { data: clientRow, error: clientErr } = await db
+      .from('clients')
+      .select('id, full_name, coach_id')
+      .eq('user_id', currentUser.id)
+      .not('coach_id', 'is', null)
+      .maybeSingle()
+
+    if (clientErr || !clientRow) {
+      log.error('renderClientDashboard', 'client record not found', clientErr)
+      el.innerHTML = '<div class="loading-state">Unable to load your profile. Please contact your coach.</div>'
+      return
+    }
+
+    clientId  = clientRow.id
   }
-
-  const clientId = clientRow.id
 
   const [
     { data: goals },
@@ -699,7 +723,7 @@ async function renderClientDashboard(el) {
     return `In ${d} days`
   }
 
-  const firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
+  if (!isSudo) firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
 
   // This week stats
   const weekAgoStr2 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -728,6 +752,12 @@ async function renderClientDashboard(el) {
       .client-grid{display:grid;grid-template-columns:3fr 2fr;gap:16px}
       @media(max-width:640px){.client-grid{grid-template-columns:1fr}}
     </style>
+
+    ${isSudo ? `
+    <div style="background:#f59e0b;color:#fff;border-radius:10px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <span style="font-size:13px;font-weight:700">👁 Viewing as ${escapeHtml(window._sudoClientName || 'Client')}</span>
+      <button onclick="exitSudo()" style="background:rgba(0,0,0,.18);border:none;color:#fff;font-size:12px;font-weight:700;padding:5px 12px;border-radius:6px;cursor:pointer">Exit ✕</button>
+    </div>` : ''}
 
     ${window._branding?.logoUrl || window._branding?.businessName ? `
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
@@ -2111,6 +2141,7 @@ async function renderClients(el) {
             <span class="badge badge-${c.status}">${c.status}</span>
             <span style="font-size:11px;font-weight:600;color:${lastColour}">${lastText}</span>
           </div>
+          ${currentUser.email === 'jakendwest@gmail.com' ? `<button onclick="event.stopPropagation();sudoAsClient('${c.id}','${escapeHtml(c.full_name)}')" style="font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:#f59e0b;cursor:pointer;white-space:nowrap">View as</button>` : ''}
           <svg style="width:15px;height:15px;color:#d1d5db;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>`
       }).join('')}
