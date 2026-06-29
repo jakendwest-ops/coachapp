@@ -149,13 +149,18 @@ if [ -n "$DUPES" ]; then
 fi
 
 # ── 10. Playwright smoke tests ───────────────────────────────────────────────
-# Run reliable test files only (settings.spec.js excluded — known flaky modal timing)
-echo "Running Playwright smoke tests..."
-if npx playwright test tests/runner.spec.js tests/solo-account.spec.js --reporter=line 2>&1; then
-  echo "  Playwright: passed"
+# Runs locally only — CI skips this (no Supabase credentials or browser install).
+# The pre-push hook ensures tests pass before code reaches CI.
+if [ "${CI}" = "true" ]; then
+  echo "Playwright: skipped in CI (pre-push hook only)"
 else
-  echo ""
-  fail "Playwright smoke tests failed — push blocked. Fix tests before pushing."
+  echo "Running Playwright smoke tests..."
+  if npx playwright test tests/runner.spec.js tests/solo-account.spec.js --reporter=line 2>&1; then
+    echo "  Playwright: passed"
+  else
+    echo ""
+    fail "Playwright smoke tests failed — push blocked. Fix tests before pushing."
+  fi
 fi
 
 # ── Result ────────────────────────────────────────────────────────────────────
