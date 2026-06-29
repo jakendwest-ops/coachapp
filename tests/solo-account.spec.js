@@ -72,6 +72,7 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('button:has-text("Strength")')).toBeVisible()
     await expect(page.locator('button:has-text("Cardio")')).toBeVisible()
     await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()
+    await expect(page.locator('button:has-text("1RMs")')).toBeVisible()
   })
 
   test('switching back to PT restores coach dashboard', async ({ page }) => {
