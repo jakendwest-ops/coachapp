@@ -7347,6 +7347,7 @@ async function downloadMyData() {
 function deleteAccount() {
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
+  overlay.style.cssText = 'align-items:flex-start;padding-top:60px'
   overlay.innerHTML = `
     <div class="modal-box" style="max-width:400px">
       <h2 style="font-size:18px;font-weight:700;margin:0 0 8px;color:var(--danger)">Delete account</h2>
