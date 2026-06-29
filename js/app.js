@@ -64,6 +64,11 @@ window._branding     = { businessName: null, logoPath: null, logoUrl: null }
 window._brandingFile = null
 
 // ─── SHELL HELPERS ────────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  if (!str) return ''
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+}
+
 function showAuth() {
   document.getElementById('auth-screen').style.display = 'flex'
   document.getElementById('app-shell').style.display   = 'none'
@@ -154,13 +159,13 @@ function _applyBrandingToSidebar() {
   if (b.logoUrl) {
     brand.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:4px 0">
-        <img src="${b.logoUrl}" alt="${b.businessName || 'Logo'}" style="height:52px;width:auto;max-width:160px;object-fit:contain;border-radius:6px">
+        <img src="${b.logoUrl}" alt="${escapeHtml(b.businessName) || 'Logo'}" style="height:52px;width:auto;max-width:160px;object-fit:contain;border-radius:6px">
         <span style="font-size:9px;color:var(--text-muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">powered by CoachApp</span>
       </div>`
   } else if (b.businessName) {
     brand.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:4px 0">
-        <span style="font-size:16px;font-weight:700;color:var(--text);line-height:1.2">${b.businessName}</span>
+        <span style="font-size:16px;font-weight:700;color:var(--text);line-height:1.2">${escapeHtml(b.businessName)}</span>
         <span style="font-size:9px;color:var(--text-muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">powered by CoachApp</span>
       </div>`
   }
@@ -448,7 +453,7 @@ async function renderDashboard(el) {
     <div class="page-header">
       <div>
         <h1 class="page-title">Welcome back, ${firstName} 👋</h1>
-        <p class="page-subtitle">${window._branding?.businessName ? window._branding.businessName + ' · ' : ''}${today}</p>
+        <p class="page-subtitle">${window._branding?.businessName ? escapeHtml(window._branding.businessName) + ' · ' : ''}${today}</p>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="showAddClientModal()">+ Add client</button>
@@ -679,9 +684,9 @@ async function renderClientDashboard(el) {
   el.innerHTML = `
     ${window._branding?.logoUrl || window._branding?.businessName ? `
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
-      ${window._branding.logoUrl ? `<img src="${window._branding.logoUrl}" alt="${window._branding.businessName || ''}" style="height:44px;width:auto;max-width:120px;object-fit:contain;border-radius:6px">` : ''}
+      ${window._branding.logoUrl ? `<img src="${window._branding.logoUrl}" alt="${escapeHtml(window._branding.businessName) || ''}" style="height:44px;width:auto;max-width:120px;object-fit:contain;border-radius:6px">` : ''}
       <div>
-        ${window._branding.businessName ? `<div style="font-size:14px;font-weight:700;color:var(--text)">${window._branding.businessName}</div>` : ''}
+        ${window._branding.businessName ? `<div style="font-size:14px;font-weight:700;color:var(--text)">${escapeHtml(window._branding.businessName)}</div>` : ''}
         <div style="font-size:12px;color:var(--text-muted)">Coached by your PT</div>
       </div>
     </div>` : ''}
@@ -7075,7 +7080,7 @@ async function renderSettings(el) {
         <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px">
           <div class="field">
             <label class="field-label">Business name</label>
-            <input class="field-input" type="text" id="branding-business-name" value="${branding?.business_name || ''}" placeholder="e.g. West Performance">
+            <input class="field-input" type="text" id="branding-business-name" value="${escapeHtml(branding?.business_name)}" placeholder="e.g. West Performance">
           </div>
           <div class="field">
             <label class="field-label">Logo</label>
@@ -7297,41 +7302,46 @@ async function downloadMyData() {
   const msg = document.getElementById('settings-data-msg')
   if (msg) msg.textContent = 'Preparing download…'
 
-  const role = currentProfile?.role
-  let bundle = { exportedAt: new Date().toISOString(), profile: null }
+  try {
+    const role = currentProfile?.role
+    let bundle = { exportedAt: new Date().toISOString(), profile: null }
 
-  const { data: profile } = await db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single()
-  bundle.profile = profile
+    const { data: profile } = await db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single()
+    bundle.profile = profile
 
-  if (role === 'coach') {
-    const [{ data: clients }, { data: templates }, { data: programs }] = await Promise.all([
-      db.from('clients').select('full_name, email, created_at').eq('coach_id', currentUser.id),
-      db.from('workout_templates').select('name, created_at').eq('coach_id', currentUser.id),
-      db.from('programs').select('name, created_at').eq('coach_id', currentUser.id),
-    ])
-    bundle.clients = clients; bundle.workoutTemplates = templates; bundle.programs = programs
-  } else {
-    const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-    if (clientRow) {
-      const cid = clientRow.id
-      const [{ data: weights }, { data: workouts }, { data: perf }, { data: goals }, { data: events }] = await Promise.all([
-        db.from('weight_logs').select('date, weight_kg, body_fat_pct').eq('client_id', cid).order('date'),
-        db.from('workout_logs').select('name, date').eq('client_id', cid).order('date'),
-        db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', cid).order('date'),
-        db.from('goals').select('title, target_date, status').eq('client_id', cid),
-        db.from('events').select('title, date, type').eq('client_id', cid).order('date'),
+    if (role === 'coach') {
+      const [{ data: clients }, { data: templates }, { data: programs }] = await Promise.all([
+        db.from('clients').select('full_name, email, created_at').eq('coach_id', currentUser.id),
+        db.from('workout_templates').select('name, created_at').eq('coach_id', currentUser.id),
+        db.from('programs').select('name, created_at').eq('coach_id', currentUser.id),
       ])
-      bundle.weightLogs = weights; bundle.workoutLogs = workouts
-      bundle.performanceLogs = perf; bundle.goals = goals; bundle.events = events
+      bundle.clients = clients; bundle.workoutTemplates = templates; bundle.programs = programs
+    } else {
+      const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+      if (clientRow) {
+        const cid = clientRow.id
+        const [{ data: weights }, { data: workouts }, { data: perf }, { data: goals }, { data: events }] = await Promise.all([
+          db.from('weight_logs').select('date, weight_kg, body_fat_pct').eq('client_id', cid).order('date'),
+          db.from('workout_logs').select('name, date').eq('client_id', cid).order('date'),
+          db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', cid).order('date'),
+          db.from('goals').select('title, target_date, status').eq('client_id', cid),
+          db.from('events').select('title, date, type').eq('client_id', cid).order('date'),
+        ])
+        bundle.weightLogs = weights; bundle.workoutLogs = workouts
+        bundle.performanceLogs = perf; bundle.goals = goals; bundle.events = events
+      }
     }
-  }
 
-  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href = url; a.download = `coachapp-data-${new Date().toISOString().split('T')[0]}.json`
-  a.click(); URL.revokeObjectURL(url)
-  if (msg) { msg.textContent = 'Download started.'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = `coachapp-data-${new Date().toISOString().split('T')[0]}.json`
+    a.click(); URL.revokeObjectURL(url)
+    if (msg) { msg.textContent = 'Download started.'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
+  } catch (err) {
+    log.error('downloadMyData', 'export failed', err)
+    if (msg) { msg.style.color = '#ef4444'; msg.textContent = 'Export failed. Please try again.' }
+  }
 }
 
 function deleteAccount() {
