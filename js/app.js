@@ -3554,7 +3554,7 @@ async function openSessionDetail(templateId, name) {
 
   const panel = document.createElement('div')
   panel.id = 'session-detail-panel'
-  panel.style.cssText = 'position:fixed;inset:0;z-index:1000'
+  panel.style.cssText = 'position:fixed;top:0;right:0;bottom:0;left:0;z-index:1000'
 
   const exHtml = !exercises?.length
     ? '<div class="empty-state"><div class="empty-title">No exercises added yet</div></div>'
@@ -3594,7 +3594,7 @@ async function openSessionDetail(templateId, name) {
       }).join('')
 
   panel.innerHTML = `
-    <div onclick="closeSessionDetail()" style="position:absolute;inset:0;background:rgba(0,0,0,.45)"></div>
+    <div onclick="closeSessionDetail()" style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.45)"></div>
     <div id="session-detail-drawer" style="position:absolute;top:0;right:0;bottom:0;width:min(420px,100vw);background:var(--surface);overflow-y:auto;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .3s cubic-bezier(.32,.72,0,1)">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 16px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
         <h2 style="font-size:17px;font-weight:700;margin:0">${escapeHtml(name)}</h2>
