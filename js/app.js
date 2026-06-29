@@ -1523,6 +1523,7 @@ async function showAssignProgramToClientModal(programId) {
   const existing = document.getElementById('apc-modal')
   if (existing) existing.remove()
 
+  const isSolo = currentProfile?.role === 'solo'
   const todayStr = new Date().toISOString().split('T')[0]
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
@@ -1531,13 +1532,14 @@ async function showAssignProgramToClientModal(programId) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">Assign to client</h2>
+        <h2 class="modal-title">${isSolo ? 'Add to my plan' : 'Assign to client'}</h2>
         <button class="modal-close" onclick="document.getElementById('apc-modal').remove()">✕</button>
       </div>
+      ${isSolo ? '' : `
       <div class="field">
         <label class="field-label">Client <span style="color:var(--danger)">*</span></label>
         <select class="field-input" id="apc-client"><option value="">Loading…</option></select>
-      </div>
+      </div>`}
       <div class="field">
         <label class="field-label">Start date</label>
         <input class="field-input" type="date" id="apc-start" value="${todayStr}">
@@ -1545,27 +1547,30 @@ async function showAssignProgramToClientModal(programId) {
       <p class="modal-error" id="apc-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="document.getElementById('apc-modal').remove()">Cancel</button>
-        <button class="btn-primary" onclick="saveAssignProgramToClient('${programId}')">Assign</button>
+        <button class="btn-primary" onclick="saveAssignProgramToClient('${programId}','${isSolo ? window._soloClientId : ''}')">Assign</button>
       </div>
     </div>`
 
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
   document.body.appendChild(overlay)
 
-  const { data: clients } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).order('full_name')
-  const sel = document.getElementById('apc-client')
-  if (sel) sel.innerHTML = '<option value="">Select client…</option>' + (clients || []).map(c => `<option value="${c.id}">${c.full_name}</option>`).join('')
+  if (!isSolo) {
+    const { data: clients } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).order('full_name')
+    const sel = document.getElementById('apc-client')
+    if (sel) sel.innerHTML = '<option value="">Select client…</option>' + (clients || []).map(c => `<option value="${c.id}">${c.full_name}</option>`).join('')
+  }
 }
 
-async function saveAssignProgramToClient(programId) {
-  const clientId = document.getElementById('apc-client').value
-  const startDate = document.getElementById('apc-start').value || null
+async function saveAssignProgramToClient(programId, soloClientId) {
   const errEl = document.getElementById('apc-error')
+  const clientId = soloClientId || document.getElementById('apc-client')?.value
+  const startDate = document.getElementById('apc-start').value || null
   if (!clientId) { errEl.textContent = 'Please select a client'; return }
   const { data: cp, error } = await db.from('client_programs').insert({ client_id: clientId, program_id: programId, start_date: startDate || null }).select('id').single()
   if (error) { errEl.textContent = error.message; return }
   document.getElementById('apc-modal')?.remove()
   _cloneProgramForClient(cp.id, programId, clientId)
+  if (soloClientId) showToast('Program added to your plan', 'success')
 }
 
 // ─── PROGRAMS ─────────────────────────────────────────────────────────────────
@@ -1593,7 +1598,7 @@ async function renderPrograms(el) {
       <div class="empty-state">
         <div class="empty-icon">📋</div>
         <div class="empty-title">No programs yet</div>
-        <div class="empty-text">Create a program to organise training phases for your clients.</div>
+        <div class="empty-text">${currentProfile?.role === 'solo' ? 'Create a program to plan your own training.' : 'Create a program to organise training phases for your clients.'}</div>
         <button class="btn-primary" onclick="showCreateProgramModal()">+ Create program</button>
       </div>
     ` : `
@@ -1666,7 +1671,7 @@ async function openProgram(programId) {
       <p style="font-size:12px;color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${program.name.replace(/'/g,"\\'")}','${(program.description||'').replace(/'/g,"\\'")}')">Edit</button>
-        <button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">Assign to client</button>
+        <button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">${currentProfile?.role === 'solo' ? 'Add to my plan' : 'Assign to client'}</button>
         <button class="btn btn-danger" onclick="deleteProgram('${program.id}')">Delete</button>
       </div>
     </div>
@@ -3710,7 +3715,7 @@ async function renderWorkoutTemplates(el) {
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
 
   if (!templates.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No templates yet</div><div class="empty-text">Create a workout template to quickly build sessions for your clients</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No templates yet</div><div class="empty-text">${currentProfile?.role === 'solo' ? 'Create a workout template to build your own sessions.' : 'Create a workout template to quickly build sessions for your clients.'}</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
     return
   }
 
