@@ -1,0 +1,157 @@
+{
+  ".claude/launch.json": {
+    "mtime": 1782417687.0797422,
+    "ast_hash": "e4f78e8af0ae55e8752489fc513daf4d",
+    "semantic_hash": ""
+  },
+  ".claude/settings.json": {
+    "mtime": 1782764523.4981685,
+    "ast_hash": "598cb075410bcd95220ac90bbb60344a",
+    "semantic_hash": ""
+  },
+  "js/app.js": {
+    "mtime": 1782762959.225753,
+    "ast_hash": "de019e79547ffcf9015ee9b8e0822021",
+    "semantic_hash": ""
+  },
+  "package.json": {
+    "mtime": 1782326615.0991416,
+    "ast_hash": "8933d1e0f801cfe6f210355c4c9705f1",
+    "semantic_hash": ""
+  },
+  "playwright.config.js": {
+    "mtime": 1782746788.7892654,
+    "ast_hash": "435e7a27b049b5642da8a479d6c0919b",
+    "semantic_hash": ""
+  },
+  "scripts/checks.sh": {
+    "mtime": 1782727895.7475233,
+    "ast_hash": "f2aa8f1e09984766608618f86887a46f",
+    "semantic_hash": ""
+  },
+  "scripts/hyrox_experiment_setup.sql": {
+    "mtime": 1782418983.047985,
+    "ast_hash": "7fc9271a40559f66bc2cdbf61ed1c3e4",
+    "semantic_hash": ""
+  },
+  "scripts/hyrox_lower_b_patch.sql": {
+    "mtime": 1782419102.8017046,
+    "ast_hash": "6d65d1c2d0f3303b48b8414619d7953d",
+    "semantic_hash": ""
+  },
+  "scripts/seed-test-data.js": {
+    "mtime": 1782326646.7967947,
+    "ast_hash": "fc4e9814a43068e825191ea26d2877da",
+    "semantic_hash": ""
+  },
+  "tests/auth.spec.js": {
+    "mtime": 1782747027.1946573,
+    "ast_hash": "25cc5c5473c24266cbdc414a7aabe3a2",
+    "semantic_hash": ""
+  },
+  "tests/client-workout.spec.js": {
+    "mtime": 1782747794.638711,
+    "ast_hash": "6f7d6ed74d0a812605cb03c2376a174c",
+    "semantic_hash": ""
+  },
+  "tests/fixtures.js": {
+    "mtime": 1782327406.9627824,
+    "ast_hash": "30725cadbf55f9c25cd88771ac3c8759",
+    "semantic_hash": ""
+  },
+  "tests/helpers.js": {
+    "mtime": 1782749086.4668014,
+    "ast_hash": "33d073f2323b58b357941febfdf7ff5f",
+    "semantic_hash": ""
+  },
+  "tests/pt-dashboard.spec.js": {
+    "mtime": 1782747023.6945462,
+    "ast_hash": "c9bd96dbabd856a6860c1b05397932a5",
+    "semantic_hash": ""
+  },
+  "tests/runner.spec.js": {
+    "mtime": 1782746372.6973307,
+    "ast_hash": "a77ba85060fbda5824ad45037254d8e7",
+    "semantic_hash": ""
+  },
+  "tests/settings.spec.js": {
+    "mtime": 1782748374.0204568,
+    "ast_hash": "ad68c46bcd210c54531331fb5057d894",
+    "semantic_hash": ""
+  },
+  "tests/solo-account.spec.js": {
+    "mtime": 1782752268.3291168,
+    "ast_hash": "72d4e52caec3c5b965553c3669a3ae2e",
+    "semantic_hash": ""
+  },
+  ".claude/skills/deploy-check/SKILL.md": {
+    "mtime": 1782676394.818756,
+    "ast_hash": "f7d1d6f654e87eae6149a8878e152011",
+    "semantic_hash": ""
+  },
+  ".claude/skills/hello-claude/SKILL.md": {
+    "mtime": 1782706436.0515056,
+    "ast_hash": "80108c6d3688a958a07a96fec15fb3e5",
+    "semantic_hash": ""
+  },
+  ".claude/skills/mobile-check/SKILL.md": {
+    "mtime": 1782678844.8646262,
+    "ast_hash": "4d14aee734f083a0eb17e3ab864529af",
+    "semantic_hash": ""
+  },
+  ".claude/skills/playwright/SKILL.md": {
+    "mtime": 1782678836.083092,
+    "ast_hash": "16eb5db20baf7189e7a6f3a58072d719",
+    "semantic_hash": ""
+  },
+  ".claude/skills/run-coachapp/SKILL.md": {
+    "mtime": 1782678886.421769,
+    "ast_hash": "a85bd8e634067889187261e7bd45789f",
+    "semantic_hash": ""
+  },
+  ".claude/skills/save/SKILL.md": {
+    "mtime": 1782679191.71814,
+    "ast_hash": "937152e30adb1a7de7758042c4b749f8",
+    "semantic_hash": ""
+  },
+  ".claude/skills/security-audit/SKILL.md": {
+    "mtime": 1782676359.2680323,
+    "ast_hash": "02eff2fe7d4a2d3d7ed5fafd2ade6e69",
+    "semantic_hash": ""
+  },
+  ".claude/skills/sql-safety/SKILL.md": {
+    "mtime": 1782717039.2034469,
+    "ast_hash": "db4b75cc38051e850be6e43c741e46db",
+    "semantic_hash": ""
+  },
+  ".github/workflows/deploy.yml": {
+    "mtime": 1782248223.3301227,
+    "ast_hash": "0e232181ee8bfde8f67ec041ee8af9a8",
+    "semantic_hash": ""
+  },
+  "404.html": {
+    "mtime": 1782498440.763157,
+    "ast_hash": "3c106a3b48ecc7d602fbff3c01fb72e7",
+    "semantic_hash": ""
+  },
+  "CLAUDE.md": {
+    "mtime": 1782764523.4981685,
+    "ast_hash": "8a6643a420fdad6bfb583523bc6cef16",
+    "semantic_hash": ""
+  },
+  "index.html": {
+    "mtime": 1782762973.0619063,
+    "ast_hash": "154ed6b71b3c3923dc5ca1416f84e978",
+    "semantic_hash": ""
+  },
+  "modal-preview.html": {
+    "mtime": 1781878847.4127553,
+    "ast_hash": "c97e04cd23d54d4984269d7a7b7b1a29",
+    "semantic_hash": ""
+  },
+  "privacy-policy.html": {
+    "mtime": 1782714622.75629,
+    "ast_hash": "a277bced3f5c06b6a9965c2b99d2689a",
+    "semantic_hash": ""
+  }
+}
