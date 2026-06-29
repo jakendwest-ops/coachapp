@@ -3568,7 +3568,8 @@ async function openSessionDetail(templateId, name) {
             const secs = s.duration ? (parseRest(s.duration) || 0) : (s.repsMin ? parseInt(s.repsMin) : null)
             detail = secs != null ? Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') : '—'
           } else {
-            const reps = s.repsMin ? (s.repsMin + (s.repsMax && s.repsMax !== s.repsMin ? '–' + s.repsMax : '') + ' reps') : null
+            const repsRange = s.repsMin ? s.repsMin + (s.repsMax && s.repsMax !== s.repsMin ? '–' + s.repsMax : '') : null
+            const reps = repsRange ? repsRange + ' reps' : null  // timed guard: only reached in else branch
             const weight = s.weight ? s.weight + 'kg' : null
             const intensity = s.intensityMin ? s.intensityMin + (s.intensityMax && s.intensityMax !== s.intensityMin ? '–' + s.intensityMax : '') + '% 1RM' : null
             const effort = s.effortMin ? ((s.effortType === 'rir' ? 'RIR ' : 'RPE ') + s.effortMin + (s.effortMax && s.effortMax !== s.effortMin ? '–' + s.effortMax : '')) : null
