@@ -193,8 +193,11 @@ Before staging any commit, run this logical sweep — not a grep check, but acti
 5. **What did the old code hide that the new code now exposes?** (Regression sweep — removed overlays, changed navigation, replaced queries.)
 If any item surfaces a risk, fix it before committing. Never defer a known risk to "check on live."
 
-### Before any git push → offer /code-review
-Before pushing to master, check whether `/code-review ultra` has been run this session. If not, offer it — one line: "Want to run `/code-review` before pushing?" Do not push without giving Jake the chance to run it. This is distinct from the session-start grep scan — `/code-review ultra` does a full multi-agent semantic read. See [[feedback-code-review]].
+### After building any new feature → add smoke tests in the same commit
+Every new modal, page section, or interactive feature gets a Playwright smoke test in the same commit — never separate. Modal: test opens, cancel closes (`waitForSelector detached`), validation shows. Page: test sections render. Button: test visible and clickable. Deep data-writing tests need a discussion first. See [[feedback-smoke-tests]].
+
+### Before any git push → run local multi-agent code review
+`/code-review ultra` is NOT available in Jake's desktop app. Before pushing to master, if a multi-agent review hasn't been run this session, run it inline: spawn 3 parallel Agent finders (angles A+B, C+D, E+XSS+cleanup) then a verifier pass. Do not ask Jake to run `/code-review ultra`. See [[feedback-code-review]].
 
 ### Before any beta invite or significant deploy → /deploy-check
 Run `C:\Users\jaken\coachapp\.claude\skills\deploy-check\SKILL.md`. Nine checks: cache bust, /code-review, Playwright suite, Supabase redirect URLs, RLS policies, storage buckets private, GDPR features present, live smoke test, GitHub Pages deploy. Do not declare "ready" without completing it. See [[feedback-deploy-check]].
