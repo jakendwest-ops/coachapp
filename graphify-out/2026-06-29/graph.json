@@ -60,8 +60,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "app.js",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app"
+      "id": "js_app",
+      "community_name": "Community 0"
     },
     {
       "label": "log",
@@ -71,8 +71,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "log",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_log"
+      "id": "js_app_log",
+      "community_name": "Community 0"
     },
     {
       "label": "showToast()",
@@ -82,8 +82,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "showtoast()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_showtoast"
+      "id": "js_app_showtoast",
+      "community_name": "Community 1"
     },
     {
       "label": "dbq()",
@@ -93,8 +93,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "dbq()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_dbq"
+      "id": "js_app_dbq",
+      "community_name": "Community 1"
     },
     {
       "label": "clearTimer()",
@@ -104,8 +104,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "cleartimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_cleartimer"
+      "id": "js_app_cleartimer",
+      "community_name": "Community 2"
     },
     {
       "label": "db",
@@ -115,8 +115,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "db",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_db"
+      "id": "js_app_db",
+      "community_name": "Community 0"
     },
     {
       "label": "escapeHtml()",
@@ -126,8 +126,8 @@
       "_origin": "ast",
       "community": 9,
       "norm_label": "escapehtml()",
-      "community_name": "Branding & Settings",
-      "id": "js_app_escapehtml"
+      "id": "js_app_escapehtml",
+      "community_name": "Community 9"
     },
     {
       "label": "showAuth()",
@@ -137,8 +137,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showauth()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showauth"
+      "id": "js_app_showauth",
+      "community_name": "Community 0"
     },
     {
       "label": "showApp()",
@@ -148,8 +148,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "showapp()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_showapp"
+      "id": "js_app_showapp",
+      "community_name": "Community 8"
     },
     {
       "label": "loadUserInfo()",
@@ -159,8 +159,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "loaduserinfo()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_loaduserinfo"
+      "id": "js_app_loaduserinfo",
+      "community_name": "Community 8"
     },
     {
       "label": "_loadBranding()",
@@ -170,8 +170,8 @@
       "_origin": "ast",
       "community": 9,
       "norm_label": "_loadbranding()",
-      "community_name": "Branding & Settings",
-      "id": "js_app_loadbranding"
+      "id": "js_app_loadbranding",
+      "community_name": "Community 9"
     },
     {
       "label": "_applyBrandingToSidebar()",
@@ -181,8 +181,8 @@
       "_origin": "ast",
       "community": 9,
       "norm_label": "_applybrandingtosidebar()",
-      "community_name": "Branding & Settings",
-      "id": "js_app_applybrandingtosidebar"
+      "id": "js_app_applybrandingtosidebar",
+      "community_name": "Community 9"
     },
     {
       "label": "_NAV_ICONS",
@@ -192,8 +192,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "_nav_icons",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_nav_icons"
+      "id": "js_app_nav_icons",
+      "community_name": "Community 0"
     },
     {
       "label": "_NAV_ITEMS",
@@ -203,8 +203,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "_nav_items",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_nav_items"
+      "id": "js_app_nav_items",
+      "community_name": "Community 0"
     },
     {
       "label": "renderNav()",
@@ -214,8 +214,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "rendernav()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_rendernav"
+      "id": "js_app_rendernav",
+      "community_name": "Community 8"
     },
     {
       "label": "applyRoleUI()",
@@ -225,8 +225,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "applyroleui()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_applyroleui"
+      "id": "js_app_applyroleui",
+      "community_name": "Community 8"
     },
     {
       "label": "updateViewSwitcherButtons()",
@@ -236,8 +236,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "updateviewswitcherbuttons()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_updateviewswitcherbuttons"
+      "id": "js_app_updateviewswitcherbuttons",
+      "community_name": "Community 8"
     },
     {
       "label": "switchView()",
@@ -247,8 +247,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "switchview()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_switchview"
+      "id": "js_app_switchview",
+      "community_name": "Community 8"
     },
     {
       "label": "navigate()",
@@ -258,8 +258,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "navigate()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_navigate"
+      "id": "js_app_navigate",
+      "community_name": "Community 8"
     },
     {
       "label": "_getCurrentClientId()",
@@ -269,8 +269,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "_getcurrentclientid()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_getcurrentclientid"
+      "id": "js_app_getcurrentclientid",
+      "community_name": "Community 7"
     },
     {
       "label": "renderDashboard()",
@@ -280,8 +280,8 @@
       "_origin": "ast",
       "community": 9,
       "norm_label": "renderdashboard()",
-      "community_name": "Branding & Settings",
-      "id": "js_app_renderdashboard"
+      "id": "js_app_renderdashboard",
+      "community_name": "Community 9"
     },
     {
       "label": "filterCompliance()",
@@ -291,8 +291,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "filtercompliance()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_filtercompliance"
+      "id": "js_app_filtercompliance",
+      "community_name": "Community 0"
     },
     {
       "label": "sudoAsClient()",
@@ -302,8 +302,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "sudoasclient()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_sudoasclient"
+      "id": "js_app_sudoasclient",
+      "community_name": "Community 8"
     },
     {
       "label": "exitSudo()",
@@ -313,8 +313,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "exitsudo()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_exitsudo"
+      "id": "js_app_exitsudo",
+      "community_name": "Community 8"
     },
     {
       "label": "renderClientDashboard()",
@@ -324,8 +324,8 @@
       "_origin": "ast",
       "community": 13,
       "norm_label": "renderclientdashboard()",
-      "community_name": "Client Dashboard & Check-ins",
-      "id": "js_app_renderclientdashboard"
+      "id": "js_app_renderclientdashboard",
+      "community_name": "Community 13"
     },
     {
       "label": "renderSoloDashboard()",
@@ -335,8 +335,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "rendersolodashboard()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_rendersolodashboard"
+      "id": "js_app_rendersolodashboard",
+      "community_name": "Community 0"
     },
     {
       "label": "renderClientPrograms()",
@@ -346,8 +346,8 @@
       "_origin": "ast",
       "community": 11,
       "norm_label": "renderclientprograms()",
-      "community_name": "Program Assignment",
-      "id": "js_app_renderclientprograms"
+      "id": "js_app_renderclientprograms",
+      "community_name": "Community 11"
     },
     {
       "label": "toggleClientPhase()",
@@ -357,8 +357,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "toggleclientphase()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_toggleclientphase"
+      "id": "js_app_toggleclientphase",
+      "community_name": "Community 0"
     },
     {
       "label": "showAssignProgramModal()",
@@ -368,8 +368,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showassignprogrammodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showassignprogrammodal"
+      "id": "js_app_showassignprogrammodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveAssignProgram()",
@@ -379,8 +379,8 @@
       "_origin": "ast",
       "community": 11,
       "norm_label": "saveassignprogram()",
-      "community_name": "Program Assignment",
-      "id": "js_app_saveassignprogram"
+      "id": "js_app_saveassignprogram",
+      "community_name": "Community 11"
     },
     {
       "label": "_cloneProgramForClient()",
@@ -390,8 +390,8 @@
       "_origin": "ast",
       "community": 11,
       "norm_label": "_cloneprogramforclient()",
-      "community_name": "Program Assignment",
-      "id": "js_app_cloneprogramforclient"
+      "id": "js_app_cloneprogramforclient",
+      "community_name": "Community 11"
     },
     {
       "label": "unassignProgram()",
@@ -401,8 +401,8 @@
       "_origin": "ast",
       "community": 11,
       "norm_label": "unassignprogram()",
-      "community_name": "Program Assignment",
-      "id": "js_app_unassignprogram"
+      "id": "js_app_unassignprogram",
+      "community_name": "Community 11"
     },
     {
       "label": "showEditStartDateModal()",
@@ -412,8 +412,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showeditstartdatemodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showeditstartdatemodal"
+      "id": "js_app_showeditstartdatemodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveEditStartDate()",
@@ -423,8 +423,8 @@
       "_origin": "ast",
       "community": 11,
       "norm_label": "saveeditstartdate()",
-      "community_name": "Program Assignment",
-      "id": "js_app_saveeditstartdate"
+      "id": "js_app_saveeditstartdate",
+      "community_name": "Community 11"
     },
     {
       "label": "showAssignProgramToClientModal()",
@@ -434,8 +434,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showassignprogramtoclientmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showassignprogramtoclientmodal"
+      "id": "js_app_showassignprogramtoclientmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveAssignProgramToClient()",
@@ -445,8 +445,8 @@
       "_origin": "ast",
       "community": 11,
       "norm_label": "saveassignprogramtoclient()",
-      "community_name": "Program Assignment",
-      "id": "js_app_saveassignprogramtoclient"
+      "id": "js_app_saveassignprogramtoclient",
+      "community_name": "Community 11"
     },
     {
       "label": "renderPrograms()",
@@ -456,8 +456,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "renderprograms()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_renderprograms"
+      "id": "js_app_renderprograms",
+      "community_name": "Community 0"
     },
     {
       "label": "openProgram()",
@@ -467,8 +467,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "openprogram()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_openprogram"
+      "id": "js_app_openprogram",
+      "community_name": "Community 1"
     },
     {
       "label": "showCreateProgramModal()",
@@ -478,8 +478,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showcreateprogrammodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showcreateprogrammodal"
+      "id": "js_app_showcreateprogrammodal",
+      "community_name": "Community 0"
     },
     {
       "label": "showEditProgramModal()",
@@ -489,8 +489,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showeditprogrammodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showeditprogrammodal"
+      "id": "js_app_showeditprogrammodal",
+      "community_name": "Community 0"
     },
     {
       "label": "closeProgramModal()",
@@ -500,8 +500,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "closeprogrammodal()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_closeprogrammodal"
+      "id": "js_app_closeprogrammodal",
+      "community_name": "Community 1"
     },
     {
       "label": "saveProgram()",
@@ -511,8 +511,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "saveprogram()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_saveprogram"
+      "id": "js_app_saveprogram",
+      "community_name": "Community 1"
     },
     {
       "label": "deleteProgram()",
@@ -522,8 +522,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "deleteprogram()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_deleteprogram"
+      "id": "js_app_deleteprogram",
+      "community_name": "Community 8"
     },
     {
       "label": "showAddPhaseForm()",
@@ -533,8 +533,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showaddphaseform()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showaddphaseform"
+      "id": "js_app_showaddphaseform",
+      "community_name": "Community 0"
     },
     {
       "label": "showEditPhaseForm()",
@@ -544,8 +544,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showeditphaseform()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showeditphaseform"
+      "id": "js_app_showeditphaseform",
+      "community_name": "Community 0"
     },
     {
       "label": "savePhase()",
@@ -555,8 +555,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "savephase()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_savephase"
+      "id": "js_app_savephase",
+      "community_name": "Community 1"
     },
     {
       "label": "deletePhase()",
@@ -566,8 +566,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "deletephase()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_deletephase"
+      "id": "js_app_deletephase",
+      "community_name": "Community 1"
     },
     {
       "label": "loadAllPhaseWorkouts()",
@@ -577,8 +577,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "loadallphaseworkouts()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_loadallphaseworkouts"
+      "id": "js_app_loadallphaseworkouts",
+      "community_name": "Community 1"
     },
     {
       "label": "showAddPhaseWorkout()",
@@ -588,8 +588,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showaddphaseworkout()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showaddphaseworkout"
+      "id": "js_app_showaddphaseworkout",
+      "community_name": "Community 0"
     },
     {
       "label": "createWorkoutFromPhaseModal()",
@@ -599,8 +599,8 @@
       "_origin": "ast",
       "community": 21,
       "norm_label": "createworkoutfromphasemodal()",
-      "community_name": "Workout Creation Modals",
-      "id": "js_app_createworkoutfromphasemodal"
+      "id": "js_app_createworkoutfromphasemodal",
+      "community_name": "Community 21"
     },
     {
       "label": "savePhaseWorkout()",
@@ -610,8 +610,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "savephaseworkout()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_savephaseworkout"
+      "id": "js_app_savephaseworkout",
+      "community_name": "Community 1"
     },
     {
       "label": "removePhaseWorkout()",
@@ -621,8 +621,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "removephaseworkout()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_removephaseworkout"
+      "id": "js_app_removephaseworkout",
+      "community_name": "Community 1"
     },
     {
       "label": "showClientPBForm()",
@@ -632,8 +632,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showclientpbform()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showclientpbform"
+      "id": "js_app_showclientpbform",
+      "community_name": "Community 0"
     },
     {
       "label": "saveClientPB()",
@@ -643,8 +643,8 @@
       "_origin": "ast",
       "community": 13,
       "norm_label": "saveclientpb()",
-      "community_name": "Client Dashboard & Check-ins",
-      "id": "js_app_saveclientpb"
+      "id": "js_app_saveclientpb",
+      "community_name": "Community 13"
     },
     {
       "label": "showClientWeightForm()",
@@ -654,8 +654,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showclientweightform()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showclientweightform"
+      "id": "js_app_showclientweightform",
+      "community_name": "Community 0"
     },
     {
       "label": "saveClientCheckIn()",
@@ -665,8 +665,8 @@
       "_origin": "ast",
       "community": 13,
       "norm_label": "saveclientcheckin()",
-      "community_name": "Client Dashboard & Check-ins",
-      "id": "js_app_saveclientcheckin"
+      "id": "js_app_saveclientcheckin",
+      "community_name": "Community 13"
     },
     {
       "label": "saveClientWeight()",
@@ -676,8 +676,8 @@
       "_origin": "ast",
       "community": 13,
       "norm_label": "saveclientweight()",
-      "community_name": "Client Dashboard & Check-ins",
-      "id": "js_app_saveclientweight"
+      "id": "js_app_saveclientweight",
+      "community_name": "Community 13"
     },
     {
       "label": "renderClients()",
@@ -687,8 +687,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "renderclients()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_renderclients"
+      "id": "js_app_renderclients",
+      "community_name": "Community 3"
     },
     {
       "label": "showAddClientModal()",
@@ -698,8 +698,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showaddclientmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showaddclientmodal"
+      "id": "js_app_showaddclientmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveNewClient()",
@@ -709,8 +709,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "savenewclient()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_savenewclient"
+      "id": "js_app_savenewclient",
+      "community_name": "Community 3"
     },
     {
       "label": "openClient()",
@@ -720,8 +720,8 @@
       "_origin": "ast",
       "community": 10,
       "norm_label": "openclient()",
-      "community_name": "Client Overview & Editing",
-      "id": "js_app_openclient"
+      "id": "js_app_openclient",
+      "community_name": "Community 10"
     },
     {
       "label": "switchTab()",
@@ -731,8 +731,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "switchtab()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_switchtab"
+      "id": "js_app_switchtab",
+      "community_name": "Community 1"
     },
     {
       "label": "clientOverviewTab()",
@@ -742,8 +742,8 @@
       "_origin": "ast",
       "community": 10,
       "norm_label": "clientoverviewtab()",
-      "community_name": "Client Overview & Editing",
-      "id": "js_app_clientoverviewtab"
+      "id": "js_app_clientoverviewtab",
+      "community_name": "Community 10"
     },
     {
       "label": "renderClientOverview()",
@@ -753,8 +753,8 @@
       "_origin": "ast",
       "community": 10,
       "norm_label": "renderclientoverview()",
-      "community_name": "Client Overview & Editing",
-      "id": "js_app_renderclientoverview"
+      "id": "js_app_renderclientoverview",
+      "community_name": "Community 10"
     },
     {
       "label": "infoItem()",
@@ -764,8 +764,8 @@
       "_origin": "ast",
       "community": 10,
       "norm_label": "infoitem()",
-      "community_name": "Client Overview & Editing",
-      "id": "js_app_infoitem"
+      "id": "js_app_infoitem",
+      "community_name": "Community 10"
     },
     {
       "label": "showUpdateEmailModal()",
@@ -775,8 +775,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showupdateemailmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showupdateemailmodal"
+      "id": "js_app_showupdateemailmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveUpdateEmail()",
@@ -786,8 +786,8 @@
       "_origin": "ast",
       "community": 10,
       "norm_label": "saveupdateemail()",
-      "community_name": "Client Overview & Editing",
-      "id": "js_app_saveupdateemail"
+      "id": "js_app_saveupdateemail",
+      "community_name": "Community 10"
     },
     {
       "label": "showEditClientModal()",
@@ -797,8 +797,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showeditclientmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showeditclientmodal"
+      "id": "js_app_showeditclientmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveEditClient()",
@@ -808,8 +808,8 @@
       "_origin": "ast",
       "community": 10,
       "norm_label": "saveeditclient()",
-      "community_name": "Client Overview & Editing",
-      "id": "js_app_saveeditclient"
+      "id": "js_app_saveeditclient",
+      "community_name": "Community 10"
     },
     {
       "label": "EVENT_COLOURS",
@@ -819,8 +819,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "event_colours",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_event_colours"
+      "id": "js_app_event_colours",
+      "community_name": "Community 0"
     },
     {
       "label": "renderCalendar()",
@@ -830,8 +830,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "rendercalendar()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_rendercalendar"
+      "id": "js_app_rendercalendar",
+      "community_name": "Community 7"
     },
     {
       "label": "renderEventList()",
@@ -841,8 +841,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "rendereventlist()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_rendereventlist"
+      "id": "js_app_rendereventlist",
+      "community_name": "Community 7"
     },
     {
       "label": "calNav()",
@@ -852,8 +852,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "calnav()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_calnav"
+      "id": "js_app_calnav",
+      "community_name": "Community 7"
     },
     {
       "label": "showDayEvents()",
@@ -863,8 +863,8 @@
       "_origin": "ast",
       "community": 20,
       "norm_label": "showdayevents()",
-      "community_name": "Calendar Event Modals",
-      "id": "js_app_showdayevents"
+      "id": "js_app_showdayevents",
+      "community_name": "Community 20"
     },
     {
       "label": "showClientDayDetail()",
@@ -874,8 +874,8 @@
       "_origin": "ast",
       "community": 20,
       "norm_label": "showclientdaydetail()",
-      "community_name": "Calendar Event Modals",
-      "id": "js_app_showclientdaydetail"
+      "id": "js_app_showclientdaydetail",
+      "community_name": "Community 20"
     },
     {
       "label": "deleteEvent()",
@@ -885,8 +885,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "deleteevent()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_deleteevent"
+      "id": "js_app_deleteevent",
+      "community_name": "Community 7"
     },
     {
       "label": "showAddEventModal()",
@@ -896,8 +896,8 @@
       "_origin": "ast",
       "community": 20,
       "norm_label": "showaddeventmodal()",
-      "community_name": "Calendar Event Modals",
-      "id": "js_app_showaddeventmodal"
+      "id": "js_app_showaddeventmodal",
+      "community_name": "Community 20"
     },
     {
       "label": "saveEvent()",
@@ -907,8 +907,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "saveevent()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_saveevent"
+      "id": "js_app_saveevent",
+      "community_name": "Community 7"
     },
     {
       "label": "showClientAddEventModal()",
@@ -918,8 +918,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showclientaddeventmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showclientaddeventmodal"
+      "id": "js_app_showclientaddeventmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveClientEvent()",
@@ -929,8 +929,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "saveclientevent()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_saveclientevent"
+      "id": "js_app_saveclientevent",
+      "community_name": "Community 7"
     },
     {
       "label": "renderClientGoals()",
@@ -940,8 +940,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "renderclientgoals()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_renderclientgoals"
+      "id": "js_app_renderclientgoals",
+      "community_name": "Community 3"
     },
     {
       "label": "goalCard()",
@@ -951,8 +951,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "goalcard()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_goalcard"
+      "id": "js_app_goalcard",
+      "community_name": "Community 0"
     },
     {
       "label": "showAddGoalModal()",
@@ -962,8 +962,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showaddgoalmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showaddgoalmodal"
+      "id": "js_app_showaddgoalmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveNewGoal()",
@@ -973,8 +973,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "savenewgoal()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_savenewgoal"
+      "id": "js_app_savenewgoal",
+      "community_name": "Community 3"
     },
     {
       "label": "openGoal()",
@@ -984,8 +984,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "opengoal()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_opengoal"
+      "id": "js_app_opengoal",
+      "community_name": "Community 3"
     },
     {
       "label": "backToGoals()",
@@ -995,8 +995,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "backtogoals()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_backtogoals"
+      "id": "js_app_backtogoals",
+      "community_name": "Community 3"
     },
     {
       "label": "showAddMilestoneModal()",
@@ -1006,8 +1006,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showaddmilestonemodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showaddmilestonemodal"
+      "id": "js_app_showaddmilestonemodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveNewMilestone()",
@@ -1017,8 +1017,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "savenewmilestone()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_savenewmilestone"
+      "id": "js_app_savenewmilestone",
+      "community_name": "Community 3"
     },
     {
       "label": "toggleMilestone()",
@@ -1028,8 +1028,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "togglemilestone()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_togglemilestone"
+      "id": "js_app_togglemilestone",
+      "community_name": "Community 3"
     },
     {
       "label": "toggleClientMilestone()",
@@ -1039,8 +1039,8 @@
       "_origin": "ast",
       "community": 13,
       "norm_label": "toggleclientmilestone()",
-      "community_name": "Client Dashboard & Check-ins",
-      "id": "js_app_toggleclientmilestone"
+      "id": "js_app_toggleclientmilestone",
+      "community_name": "Community 13"
     },
     {
       "label": "showGoalProgressForm()",
@@ -1050,8 +1050,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showgoalprogressform()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showgoalprogressform"
+      "id": "js_app_showgoalprogressform",
+      "community_name": "Community 0"
     },
     {
       "label": "saveGoalProgress()",
@@ -1061,8 +1061,8 @@
       "_origin": "ast",
       "community": 13,
       "norm_label": "savegoalprogress()",
-      "community_name": "Client Dashboard & Check-ins",
-      "id": "js_app_savegoalprogress"
+      "id": "js_app_savegoalprogress",
+      "community_name": "Community 13"
     },
     {
       "label": "showAddCheckInModal()",
@@ -1072,8 +1072,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showaddcheckinmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showaddcheckinmodal"
+      "id": "js_app_showaddcheckinmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveCheckIn()",
@@ -1083,8 +1083,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "savecheckin()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_savecheckin"
+      "id": "js_app_savecheckin",
+      "community_name": "Community 3"
     },
     {
       "label": "showEditGoalModal()",
@@ -1094,8 +1094,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showeditgoalmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showeditgoalmodal"
+      "id": "js_app_showeditgoalmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveEditGoal()",
@@ -1105,8 +1105,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "saveeditgoal()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_saveeditgoal"
+      "id": "js_app_saveeditgoal",
+      "community_name": "Community 3"
     },
     {
       "label": "deleteGoal()",
@@ -1116,8 +1116,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "deletegoal()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_deletegoal"
+      "id": "js_app_deletegoal",
+      "community_name": "Community 3"
     },
     {
       "label": "parseDuration()",
@@ -1127,8 +1127,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "parseduration()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_parseduration"
+      "id": "js_app_parseduration",
+      "community_name": "Community 0"
     },
     {
       "label": "normalizeDuration()",
@@ -1138,8 +1138,8 @@
       "_origin": "ast",
       "community": 19,
       "norm_label": "normalizeduration()",
-      "community_name": "Duration & Set Formatting",
-      "id": "js_app_normalizeduration"
+      "id": "js_app_normalizeduration",
+      "community_name": "Community 19"
     },
     {
       "label": "fmtDuration()",
@@ -1149,8 +1149,8 @@
       "_origin": "ast",
       "community": 19,
       "norm_label": "fmtduration()",
-      "community_name": "Duration & Set Formatting",
-      "id": "js_app_fmtduration"
+      "id": "js_app_fmtduration",
+      "community_name": "Community 19"
     },
     {
       "label": "fmtRestInput()",
@@ -1160,8 +1160,8 @@
       "_origin": "ast",
       "community": 18,
       "norm_label": "fmtrestinput()",
-      "community_name": "Pace & Rest Formatting",
-      "id": "js_app_fmtrestinput"
+      "id": "js_app_fmtrestinput",
+      "community_name": "Community 18"
     },
     {
       "label": "fmtSet()",
@@ -1171,8 +1171,8 @@
       "_origin": "ast",
       "community": 19,
       "norm_label": "fmtset()",
-      "community_name": "Duration & Set Formatting",
-      "id": "js_app_fmtset"
+      "id": "js_app_fmtset",
+      "community_name": "Community 19"
     },
     {
       "label": "openSessionDetail()",
@@ -1182,8 +1182,8 @@
       "_origin": "ast",
       "community": 9,
       "norm_label": "opensessiondetail()",
-      "community_name": "Branding & Settings",
-      "id": "js_app_opensessiondetail"
+      "id": "js_app_opensessiondetail",
+      "community_name": "Community 9"
     },
     {
       "label": "closeSessionDetail()",
@@ -1193,8 +1193,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "closesessiondetail()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_closesessiondetail"
+      "id": "js_app_closesessiondetail",
+      "community_name": "Community 0"
     },
     {
       "label": "renderWorkouts()",
@@ -1204,8 +1204,8 @@
       "_origin": "ast",
       "community": 15,
       "norm_label": "renderworkouts()",
-      "community_name": "Client Workouts Pages",
-      "id": "js_app_renderworkouts"
+      "id": "js_app_renderworkouts",
+      "community_name": "Community 15"
     },
     {
       "label": "toggleClientTemplate()",
@@ -1215,8 +1215,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "toggleclienttemplate()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_toggleclienttemplate"
+      "id": "js_app_toggleclienttemplate",
+      "community_name": "Community 0"
     },
     {
       "label": "renderClientWorkoutsPage()",
@@ -1226,8 +1226,8 @@
       "_origin": "ast",
       "community": 15,
       "norm_label": "renderclientworkoutspage()",
-      "community_name": "Client Workouts Pages",
-      "id": "js_app_renderclientworkoutspage"
+      "id": "js_app_renderclientworkoutspage",
+      "community_name": "Community 15"
     },
     {
       "label": "switchWorkoutTab()",
@@ -1237,8 +1237,8 @@
       "_origin": "ast",
       "community": 15,
       "norm_label": "switchworkouttab()",
-      "community_name": "Client Workouts Pages",
-      "id": "js_app_switchworkouttab"
+      "id": "js_app_switchworkouttab",
+      "community_name": "Community 15"
     },
     {
       "label": "renderWorkoutTemplates()",
@@ -1248,8 +1248,8 @@
       "_origin": "ast",
       "community": 15,
       "norm_label": "renderworkouttemplates()",
-      "community_name": "Client Workouts Pages",
-      "id": "js_app_renderworkouttemplates"
+      "id": "js_app_renderworkouttemplates",
+      "community_name": "Community 15"
     },
     {
       "label": "renderExerciseLibrary()",
@@ -1259,8 +1259,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "renderexerciselibrary()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_renderexerciselibrary"
+      "id": "js_app_renderexerciselibrary",
+      "community_name": "Community 3"
     },
     {
       "label": "showAddExerciseModal()",
@@ -1270,8 +1270,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showaddexercisemodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showaddexercisemodal"
+      "id": "js_app_showaddexercisemodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveNewExercise()",
@@ -1281,8 +1281,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "savenewexercise()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_savenewexercise"
+      "id": "js_app_savenewexercise",
+      "community_name": "Community 3"
     },
     {
       "label": "showEditExerciseModal()",
@@ -1292,8 +1292,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showeditexercisemodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showeditexercisemodal"
+      "id": "js_app_showeditexercisemodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveEditExercise()",
@@ -1303,8 +1303,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "saveeditexercise()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_saveeditexercise"
+      "id": "js_app_saveeditexercise",
+      "community_name": "Community 3"
     },
     {
       "label": "deleteExercise()",
@@ -1314,8 +1314,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "deleteexercise()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_deleteexercise"
+      "id": "js_app_deleteexercise",
+      "community_name": "Community 3"
     },
     {
       "label": "showCreateTemplateModal()",
@@ -1325,8 +1325,8 @@
       "_origin": "ast",
       "community": 21,
       "norm_label": "showcreatetemplatemodal()",
-      "community_name": "Workout Creation Modals",
-      "id": "js_app_showcreatetemplatemodal"
+      "id": "js_app_showcreatetemplatemodal",
+      "community_name": "Community 21"
     },
     {
       "label": "saveNewTemplate()",
@@ -1336,8 +1336,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "savenewtemplate()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_savenewtemplate"
+      "id": "js_app_savenewtemplate",
+      "community_name": "Community 3"
     },
     {
       "label": "openTemplate()",
@@ -1347,8 +1347,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "opentemplate()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_opentemplate"
+      "id": "js_app_opentemplate",
+      "community_name": "Community 3"
     },
     {
       "label": "_templateGoBack()",
@@ -1358,8 +1358,8 @@
       "_origin": "ast",
       "community": 10,
       "norm_label": "_templategoback()",
-      "community_name": "Client Overview & Editing",
-      "id": "js_app_templategoback"
+      "id": "js_app_templategoback",
+      "community_name": "Community 10"
     },
     {
       "label": "openClientProgramsTab()",
@@ -1369,8 +1369,8 @@
       "_origin": "ast",
       "community": 10,
       "norm_label": "openclientprogramstab()",
-      "community_name": "Client Overview & Editing",
-      "id": "js_app_openclientprogramstab"
+      "id": "js_app_openclientprogramstab",
+      "community_name": "Community 10"
     },
     {
       "label": "moveTemplateExercise()",
@@ -1380,8 +1380,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "movetemplateexercise()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_movetemplateexercise"
+      "id": "js_app_movetemplateexercise",
+      "community_name": "Community 3"
     },
     {
       "label": "calcPace1000()",
@@ -1391,8 +1391,8 @@
       "_origin": "ast",
       "community": 18,
       "norm_label": "calcpace1000()",
-      "community_name": "Pace & Rest Formatting",
-      "id": "js_app_calcpace1000"
+      "id": "js_app_calcpace1000",
+      "community_name": "Community 18"
     },
     {
       "label": "tsPace500Input()",
@@ -1402,8 +1402,8 @@
       "_origin": "ast",
       "community": 18,
       "norm_label": "tspace500input()",
-      "community_name": "Pace & Rest Formatting",
-      "id": "js_app_tspace500input"
+      "id": "js_app_tspace500input",
+      "community_name": "Community 18"
     },
     {
       "label": "parseRest()",
@@ -1413,8 +1413,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "parserest()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_parserest"
+      "id": "js_app_parserest",
+      "community_name": "Community 2"
     },
     {
       "label": "fmtRest()",
@@ -1424,8 +1424,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "fmtrest()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_fmtrest"
+      "id": "js_app_fmtrest",
+      "community_name": "Community 0"
     },
     {
       "label": "flushTemplateSets()",
@@ -1435,8 +1435,8 @@
       "_origin": "ast",
       "community": 12,
       "norm_label": "flushtemplatesets()",
-      "community_name": "Template Set Management",
-      "id": "js_app_flushtemplatesets"
+      "id": "js_app_flushtemplatesets",
+      "community_name": "Community 12"
     },
     {
       "label": "toggleTsSet()",
@@ -1446,8 +1446,8 @@
       "_origin": "ast",
       "community": 12,
       "norm_label": "toggletsset()",
-      "community_name": "Template Set Management",
-      "id": "js_app_toggletsset"
+      "id": "js_app_toggletsset",
+      "community_name": "Community 12"
     },
     {
       "label": "setTsEffort()",
@@ -1457,8 +1457,8 @@
       "_origin": "ast",
       "community": 12,
       "norm_label": "settseffort()",
-      "community_name": "Template Set Management",
-      "id": "js_app_settseffort"
+      "id": "js_app_settseffort",
+      "community_name": "Community 12"
     },
     {
       "label": "renderTemplateSets()",
@@ -1468,8 +1468,8 @@
       "_origin": "ast",
       "community": 12,
       "norm_label": "rendertemplatesets()",
-      "community_name": "Template Set Management",
-      "id": "js_app_rendertemplatesets"
+      "id": "js_app_rendertemplatesets",
+      "community_name": "Community 12"
     },
     {
       "label": "copyPrevTemplateSet()",
@@ -1479,8 +1479,8 @@
       "_origin": "ast",
       "community": 12,
       "norm_label": "copyprevtemplateset()",
-      "community_name": "Template Set Management",
-      "id": "js_app_copyprevtemplateset"
+      "id": "js_app_copyprevtemplateset",
+      "community_name": "Community 12"
     },
     {
       "label": "showAddExerciseToTemplateModal()",
@@ -1490,8 +1490,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showaddexercisetotemplatemodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showaddexercisetotemplatemodal"
+      "id": "js_app_showaddexercisetotemplatemodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveExerciseToTemplate()",
@@ -1501,8 +1501,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "saveexercisetotemplate()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_saveexercisetotemplate"
+      "id": "js_app_saveexercisetotemplate",
+      "community_name": "Community 3"
     },
     {
       "label": "showEditTemplateExerciseModal()",
@@ -1512,8 +1512,8 @@
       "_origin": "ast",
       "community": 12,
       "norm_label": "showedittemplateexercisemodal()",
-      "community_name": "Template Set Management",
-      "id": "js_app_showedittemplateexercisemodal"
+      "id": "js_app_showedittemplateexercisemodal",
+      "community_name": "Community 12"
     },
     {
       "label": "saveEditTemplateExercise()",
@@ -1523,8 +1523,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "saveedittemplateexercise()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_saveedittemplateexercise"
+      "id": "js_app_saveedittemplateexercise",
+      "community_name": "Community 3"
     },
     {
       "label": "deleteTemplateExercise()",
@@ -1534,8 +1534,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "deletetemplateexercise()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_deletetemplateexercise"
+      "id": "js_app_deletetemplateexercise",
+      "community_name": "Community 3"
     },
     {
       "label": "_checkClientPlanPropagation()",
@@ -1545,8 +1545,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "_checkclientplanpropagation()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_checkclientplanpropagation"
+      "id": "js_app_checkclientplanpropagation",
+      "community_name": "Community 3"
     },
     {
       "label": "_applyToAllSessions()",
@@ -1556,8 +1556,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "_applytoallsessions()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_applytoallsessions"
+      "id": "js_app_applytoallsessions",
+      "community_name": "Community 3"
     },
     {
       "label": "showEditTemplateModal()",
@@ -1567,8 +1567,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showedittemplatemodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showedittemplatemodal"
+      "id": "js_app_showedittemplatemodal",
+      "community_name": "Community 0"
     },
     {
       "label": "saveEditTemplate()",
@@ -1578,8 +1578,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "saveedittemplate()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_saveedittemplate"
+      "id": "js_app_saveedittemplate",
+      "community_name": "Community 3"
     },
     {
       "label": "deleteTemplate()",
@@ -1589,8 +1589,8 @@
       "_origin": "ast",
       "community": 8,
       "norm_label": "deletetemplate()",
-      "community_name": "Navigation & Role UI",
-      "id": "js_app_deletetemplate"
+      "id": "js_app_deletetemplate",
+      "community_name": "Community 8"
     },
     {
       "label": "renderClientWorkouts()",
@@ -1600,8 +1600,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "renderclientworkouts()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_renderclientworkouts"
+      "id": "js_app_renderclientworkouts",
+      "community_name": "Community 1"
     },
     {
       "label": "startWorkoutRunner()",
@@ -1611,8 +1611,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "startworkoutrunner()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_startworkoutrunner"
+      "id": "js_app_startworkoutrunner",
+      "community_name": "Community 2"
     },
     {
       "label": "launchRunner()",
@@ -1622,8 +1622,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "launchrunner()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_launchrunner"
+      "id": "js_app_launchrunner",
+      "community_name": "Community 2"
     },
     {
       "label": "fmtRunnerTime()",
@@ -1633,8 +1633,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "fmtrunnertime()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_fmtrunnertime"
+      "id": "js_app_fmtrunnertime",
+      "community_name": "Community 2"
     },
     {
       "label": "fetchRunnerLastSession()",
@@ -1644,8 +1644,8 @@
       "_origin": "ast",
       "community": 22,
       "norm_label": "fetchrunnerlastsession()",
-      "community_name": "Runner Last Session",
-      "id": "js_app_fetchrunnerlastsession"
+      "id": "js_app_fetchrunnerlastsession",
+      "community_name": "Community 22"
     },
     {
       "label": "renderRunnerLastSession()",
@@ -1655,8 +1655,8 @@
       "_origin": "ast",
       "community": 22,
       "norm_label": "renderrunnerlastsession()",
-      "community_name": "Runner Last Session",
-      "id": "js_app_renderrunnerlastsession"
+      "id": "js_app_renderrunnerlastsession",
+      "community_name": "Community 22"
     },
     {
       "label": "renderRunner()",
@@ -1666,8 +1666,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "renderrunner()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_renderrunner"
+      "id": "js_app_renderrunner",
+      "community_name": "Community 2"
     },
     {
       "label": "logRunnerSet()",
@@ -1677,8 +1677,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "logrunnerset()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_logrunnerset"
+      "id": "js_app_logrunnerset",
+      "community_name": "Community 2"
     },
     {
       "label": "_unlockAudio()",
@@ -1688,8 +1688,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "_unlockaudio()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_unlockaudio"
+      "id": "js_app_unlockaudio",
+      "community_name": "Community 2"
     },
     {
       "label": "_unlockSpeech()",
@@ -1699,8 +1699,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "_unlockspeech()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_unlockspeech"
+      "id": "js_app_unlockspeech",
+      "community_name": "Community 2"
     },
     {
       "label": "speakCue()",
@@ -1710,8 +1710,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "speakcue()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_speakcue"
+      "id": "js_app_speakcue",
+      "community_name": "Community 0"
     },
     {
       "label": "playBeep()",
@@ -1721,8 +1721,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "playbeep()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_playbeep"
+      "id": "js_app_playbeep",
+      "community_name": "Community 0"
     },
     {
       "label": "startStrengthSetTimer()",
@@ -1732,8 +1732,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "startstrengthsettimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_startstrengthsettimer"
+      "id": "js_app_startstrengthsettimer",
+      "community_name": "Community 2"
     },
     {
       "label": "stopStrengthSetTimer()",
@@ -1743,8 +1743,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "stopstrengthsettimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_stopstrengthsettimer"
+      "id": "js_app_stopstrengthsettimer",
+      "community_name": "Community 2"
     },
     {
       "label": "renderStrengthSetTimer()",
@@ -1754,8 +1754,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "renderstrengthsettimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_renderstrengthsettimer"
+      "id": "js_app_renderstrengthsettimer",
+      "community_name": "Community 2"
     },
     {
       "label": "startCardioTimer()",
@@ -1765,8 +1765,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "startcardiotimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_startcardiotimer"
+      "id": "js_app_startcardiotimer",
+      "community_name": "Community 2"
     },
     {
       "label": "startIntervalTimer()",
@@ -1776,8 +1776,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "startintervaltimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_startintervaltimer"
+      "id": "js_app_startintervaltimer",
+      "community_name": "Community 2"
     },
     {
       "label": "stopIntervalTimer()",
@@ -1787,8 +1787,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "stopintervaltimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_stopintervaltimer"
+      "id": "js_app_stopintervaltimer",
+      "community_name": "Community 2"
     },
     {
       "label": "renderIntervalTimer()",
@@ -1798,8 +1798,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "renderintervaltimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_renderintervaltimer"
+      "id": "js_app_renderintervaltimer",
+      "community_name": "Community 2"
     },
     {
       "label": "startRestTimer()",
@@ -1809,8 +1809,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "startresttimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_startresttimer"
+      "id": "js_app_startresttimer",
+      "community_name": "Community 2"
     },
     {
       "label": "fmtRestCountdown()",
@@ -1820,8 +1820,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "fmtrestcountdown()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_fmtrestcountdown"
+      "id": "js_app_fmtrestcountdown",
+      "community_name": "Community 2"
     },
     {
       "label": "skipRestTimer()",
@@ -1831,8 +1831,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "skipresttimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_skipresttimer"
+      "id": "js_app_skipresttimer",
+      "community_name": "Community 2"
     },
     {
       "label": "renderRestTimer()",
@@ -1842,8 +1842,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "renderresttimer()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_renderresttimer"
+      "id": "js_app_renderresttimer",
+      "community_name": "Community 2"
     },
     {
       "label": "editRunnerSet()",
@@ -1853,8 +1853,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "editrunnerset()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_editrunnerset"
+      "id": "js_app_editrunnerset",
+      "community_name": "Community 0"
     },
     {
       "label": "saveEditRunnerSet()",
@@ -1864,8 +1864,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "saveeditrunnerset()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_saveeditrunnerset"
+      "id": "js_app_saveeditrunnerset",
+      "community_name": "Community 2"
     },
     {
       "label": "skipToNextExercise()",
@@ -1875,8 +1875,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "skiptonextexercise()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_skiptonextexercise"
+      "id": "js_app_skiptonextexercise",
+      "community_name": "Community 2"
     },
     {
       "label": "runnerJumpTo()",
@@ -1886,8 +1886,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "runnerjumpto()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_runnerjumpto"
+      "id": "js_app_runnerjumpto",
+      "community_name": "Community 2"
     },
     {
       "label": "runnerGoBack()",
@@ -1897,8 +1897,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "runnergoback()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_runnergoback"
+      "id": "js_app_runnergoback",
+      "community_name": "Community 2"
     },
     {
       "label": "addExtraCardioSet()",
@@ -1908,8 +1908,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "addextracardioset()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_addextracardioset"
+      "id": "js_app_addextracardioset",
+      "community_name": "Community 2"
     },
     {
       "label": "addExtraStrengthSet()",
@@ -1919,8 +1919,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "addextrastrengthset()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_addextrastrengthset"
+      "id": "js_app_addextrastrengthset",
+      "community_name": "Community 2"
     },
     {
       "label": "showRunnerFinish()",
@@ -1930,8 +1930,8 @@
       "_origin": "ast",
       "community": 2,
       "norm_label": "showrunnerfinish()",
-      "community_name": "Workout Runner & Timers",
-      "id": "js_app_showrunnerfinish"
+      "id": "js_app_showrunnerfinish",
+      "community_name": "Community 2"
     },
     {
       "label": "confirmEndRunner()",
@@ -1941,8 +1941,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "confirmendrunner()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_confirmendrunner"
+      "id": "js_app_confirmendrunner",
+      "community_name": "Community 1"
     },
     {
       "label": "discardRunner()",
@@ -1952,8 +1952,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "discardrunner()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_discardrunner"
+      "id": "js_app_discardrunner",
+      "community_name": "Community 1"
     },
     {
       "label": "saveRunnerSession()",
@@ -1963,8 +1963,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "saverunnersession()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_saverunnersession"
+      "id": "js_app_saverunnersession",
+      "community_name": "Community 1"
     },
     {
       "label": "flushLogState()",
@@ -1974,8 +1974,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "flushlogstate()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_flushlogstate"
+      "id": "js_app_flushlogstate",
+      "community_name": "Community 1"
     },
     {
       "label": "_calcWeightFromPct()",
@@ -1985,8 +1985,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "_calcweightfrompct()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_calcweightfrompct"
+      "id": "js_app_calcweightfrompct",
+      "community_name": "Community 0"
     },
     {
       "label": "renderLogExercises()",
@@ -1996,8 +1996,8 @@
       "_origin": "ast",
       "community": 23,
       "norm_label": "renderlogexercises()",
-      "community_name": "Workout Log Rendering",
-      "id": "js_app_renderlogexercises"
+      "id": "js_app_renderlogexercises",
+      "community_name": "Community 23"
     },
     {
       "label": "showLogSessionModal()",
@@ -2007,8 +2007,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showlogsessionmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showlogsessionmodal"
+      "id": "js_app_showlogsessionmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "loadTemplateIntoLog()",
@@ -2018,8 +2018,8 @@
       "_origin": "ast",
       "community": 23,
       "norm_label": "loadtemplateintolog()",
-      "community_name": "Workout Log Rendering",
-      "id": "js_app_loadtemplateintolog"
+      "id": "js_app_loadtemplateintolog",
+      "community_name": "Community 23"
     },
     {
       "label": "saveWorkoutSession()",
@@ -2029,8 +2029,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "saveworkoutsession()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_saveworkoutsession"
+      "id": "js_app_saveworkoutsession",
+      "community_name": "Community 1"
     },
     {
       "label": "openWorkoutLog()",
@@ -2040,8 +2040,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "openworkoutlog()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_openworkoutlog"
+      "id": "js_app_openworkoutlog",
+      "community_name": "Community 0"
     },
     {
       "label": "backToClientWorkouts()",
@@ -2051,8 +2051,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "backtoclientworkouts()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_backtoclientworkouts"
+      "id": "js_app_backtoclientworkouts",
+      "community_name": "Community 1"
     },
     {
       "label": "saveCoachNotes()",
@@ -2062,8 +2062,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "savecoachnotes()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_savecoachnotes"
+      "id": "js_app_savecoachnotes",
+      "community_name": "Community 0"
     },
     {
       "label": "deleteWorkoutLog()",
@@ -2073,8 +2073,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "deleteworkoutlog()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_deleteworkoutlog"
+      "id": "js_app_deleteworkoutlog",
+      "community_name": "Community 1"
     },
     {
       "label": "closeModal()",
@@ -2084,8 +2084,8 @@
       "_origin": "ast",
       "community": 3,
       "norm_label": "closemodal()",
-      "community_name": "Goals & Template Management",
-      "id": "js_app_closemodal"
+      "id": "js_app_closemodal",
+      "community_name": "Community 3"
     },
     {
       "label": "PERF_CATEGORIES",
@@ -2095,8 +2095,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "perf_categories",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_perf_categories"
+      "id": "js_app_perf_categories",
+      "community_name": "Community 0"
     },
     {
       "label": "PERF_COLOURS",
@@ -2106,8 +2106,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "perf_colours",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_perf_colours"
+      "id": "js_app_perf_colours",
+      "community_name": "Community 0"
     },
     {
       "label": "renderClientPhotos()",
@@ -2117,8 +2117,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "renderclientphotos()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_renderclientphotos"
+      "id": "js_app_renderclientphotos",
+      "community_name": "Community 1"
     },
     {
       "label": "uploadProgressPhoto()",
@@ -2128,8 +2128,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "uploadprogressphoto()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_uploadprogressphoto"
+      "id": "js_app_uploadprogressphoto",
+      "community_name": "Community 1"
     },
     {
       "label": "deleteProgressPhoto()",
@@ -2139,8 +2139,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "deleteprogressphoto()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_deleteprogressphoto"
+      "id": "js_app_deleteprogressphoto",
+      "community_name": "Community 1"
     },
     {
       "label": "renderClient1RMs()",
@@ -2150,8 +2150,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "renderclient1rms()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_renderclient1rms"
+      "id": "js_app_renderclient1rms",
+      "community_name": "Community 1"
     },
     {
       "label": "showAdd1RMModal()",
@@ -2161,8 +2161,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showadd1rmmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showadd1rmmodal"
+      "id": "js_app_showadd1rmmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "showEdit1RMModal()",
@@ -2172,8 +2172,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showedit1rmmodal()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showedit1rmmodal"
+      "id": "js_app_showedit1rmmodal",
+      "community_name": "Community 0"
     },
     {
       "label": "save1RM()",
@@ -2183,8 +2183,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "save1rm()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_save1rm"
+      "id": "js_app_save1rm",
+      "community_name": "Community 1"
     },
     {
       "label": "delete1RM()",
@@ -2194,8 +2194,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "delete1rm()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_delete1rm"
+      "id": "js_app_delete1rm",
+      "community_name": "Community 1"
     },
     {
       "label": "renderClientPerformance()",
@@ -2205,8 +2205,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "renderclientperformance()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_renderclientperformance"
+      "id": "js_app_renderclientperformance",
+      "community_name": "Community 1"
     },
     {
       "label": "togglePerfHistory()",
@@ -2216,8 +2216,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "toggleperfhistory()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_toggleperfhistory"
+      "id": "js_app_toggleperfhistory",
+      "community_name": "Community 0"
     },
     {
       "label": "updatePerfUnits()",
@@ -2227,8 +2227,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "updateperfunits()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_updateperfunits"
+      "id": "js_app_updateperfunits",
+      "community_name": "Community 0"
     },
     {
       "label": "savePerformanceLog()",
@@ -2238,8 +2238,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "saveperformancelog()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_saveperformancelog"
+      "id": "js_app_saveperformancelog",
+      "community_name": "Community 1"
     },
     {
       "label": "deletePerfLog()",
@@ -2249,8 +2249,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "deleteperflog()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_deleteperflog"
+      "id": "js_app_deleteperflog",
+      "community_name": "Community 1"
     },
     {
       "label": "renderClientWeight()",
@@ -2260,8 +2260,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "renderclientweight()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_renderclientweight"
+      "id": "js_app_renderclientweight",
+      "community_name": "Community 1"
     },
     {
       "label": "sendClientInvite()",
@@ -2271,8 +2271,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "sendclientinvite()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_sendclientinvite"
+      "id": "js_app_sendclientinvite",
+      "community_name": "Community 0"
     },
     {
       "label": "saveWeightLog()",
@@ -2282,8 +2282,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "saveweightlog()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_saveweightlog"
+      "id": "js_app_saveweightlog",
+      "community_name": "Community 1"
     },
     {
       "label": "deleteWeightLog()",
@@ -2293,8 +2293,8 @@
       "_origin": "ast",
       "community": 1,
       "norm_label": "deleteweightlog()",
-      "community_name": "Database Queries & Modals",
-      "id": "js_app_deleteweightlog"
+      "id": "js_app_deleteweightlog",
+      "community_name": "Community 1"
     },
     {
       "label": "showInviteForm()",
@@ -2304,8 +2304,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "showinviteform()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_showinviteform"
+      "id": "js_app_showinviteform",
+      "community_name": "Community 0"
     },
     {
       "label": "renderProgress()",
@@ -2315,8 +2315,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "renderprogress()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_renderprogress"
+      "id": "js_app_renderprogress",
+      "community_name": "Community 7"
     },
     {
       "label": "renderPerformance()",
@@ -2326,8 +2326,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "renderperformance()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_renderperformance"
+      "id": "js_app_renderperformance",
+      "community_name": "Community 7"
     },
     {
       "label": "renderProgressWeight()",
@@ -2337,8 +2337,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "renderprogressweight()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_renderprogressweight"
+      "id": "js_app_renderprogressweight",
+      "community_name": "Community 7"
     },
     {
       "label": "renderProgressStrength()",
@@ -2348,8 +2348,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "renderprogressstrength()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_renderprogressstrength"
+      "id": "js_app_renderprogressstrength",
+      "community_name": "Community 7"
     },
     {
       "label": "renderProgressCardio()",
@@ -2359,8 +2359,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "renderprogresscardio()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_renderprogresscardio"
+      "id": "js_app_renderprogresscardio",
+      "community_name": "Community 7"
     },
     {
       "label": "renderProgressPBs()",
@@ -2370,8 +2370,8 @@
       "_origin": "ast",
       "community": 7,
       "norm_label": "renderprogresspbs()",
-      "community_name": "Calendar & Client Progress",
-      "id": "js_app_renderprogresspbs"
+      "id": "js_app_renderprogresspbs",
+      "community_name": "Community 7"
     },
     {
       "label": "renderSettings()",
@@ -2381,8 +2381,8 @@
       "_origin": "ast",
       "community": 9,
       "norm_label": "rendersettings()",
-      "community_name": "Branding & Settings",
-      "id": "js_app_rendersettings"
+      "id": "js_app_rendersettings",
+      "community_name": "Community 9"
     },
     {
       "label": "saveSettingsProfile()",
@@ -2392,8 +2392,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "savesettingsprofile()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_savesettingsprofile"
+      "id": "js_app_savesettingsprofile",
+      "community_name": "Community 0"
     },
     {
       "label": "saveSettingsPassword()",
@@ -2403,8 +2403,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "savesettingspassword()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_savesettingspassword"
+      "id": "js_app_savesettingspassword",
+      "community_name": "Community 0"
     },
     {
       "label": "previewBrandingLogo()",
@@ -2414,8 +2414,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "previewbrandinglogo()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_previewbrandinglogo"
+      "id": "js_app_previewbrandinglogo",
+      "community_name": "Community 0"
     },
     {
       "label": "saveBrandingSettings()",
@@ -2425,8 +2425,8 @@
       "_origin": "ast",
       "community": 9,
       "norm_label": "savebrandingsettings()",
-      "community_name": "Branding & Settings",
-      "id": "js_app_savebrandingsettings"
+      "id": "js_app_savebrandingsettings",
+      "community_name": "Community 9"
     },
     {
       "label": "removeBrandingLogo()",
@@ -2436,8 +2436,8 @@
       "_origin": "ast",
       "community": 9,
       "norm_label": "removebrandinglogo()",
-      "community_name": "Branding & Settings",
-      "id": "js_app_removebrandinglogo"
+      "id": "js_app_removebrandinglogo",
+      "community_name": "Community 9"
     },
     {
       "label": "downloadMyData()",
@@ -2447,8 +2447,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "downloadmydata()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_downloadmydata"
+      "id": "js_app_downloadmydata",
+      "community_name": "Community 0"
     },
     {
       "label": "deleteAccount()",
@@ -2458,8 +2458,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "deleteaccount()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_deleteaccount"
+      "id": "js_app_deleteaccount",
+      "community_name": "Community 0"
     },
     {
       "label": "deleteAccountConfirmed()",
@@ -2469,8 +2469,8 @@
       "_origin": "ast",
       "community": 0,
       "norm_label": "deleteaccountconfirmed()",
-      "community_name": "App Core & UI Utilities",
-      "id": "js_app_deleteaccountconfirmed"
+      "id": "js_app_deleteaccountconfirmed",
+      "community_name": "Community 0"
     },
     {
       "label": "package.json",
@@ -2480,8 +2480,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "package.json",
-      "community_name": "Package Configuration",
-      "id": "package"
+      "id": "package",
+      "community_name": "Community 6"
     },
     {
       "label": "name",
@@ -2491,8 +2491,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "name",
-      "community_name": "Package Configuration",
-      "id": "package_name"
+      "id": "package_name",
+      "community_name": "Community 6"
     },
     {
       "label": "version",
@@ -2502,8 +2502,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "version",
-      "community_name": "Package Configuration",
-      "id": "package_version"
+      "id": "package_version",
+      "community_name": "Community 6"
     },
     {
       "label": "description",
@@ -2513,8 +2513,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "description",
-      "community_name": "Package Configuration",
-      "id": "package_description"
+      "id": "package_description",
+      "community_name": "Community 6"
     },
     {
       "label": "scripts",
@@ -2524,8 +2524,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "scripts",
-      "community_name": "Package Configuration",
-      "id": "package_scripts"
+      "id": "package_scripts",
+      "community_name": "Community 6"
     },
     {
       "label": "test",
@@ -2535,8 +2535,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "test",
-      "community_name": "Package Configuration",
-      "id": "package_scripts_test"
+      "id": "package_scripts_test",
+      "community_name": "Community 6"
     },
     {
       "label": "test:headed",
@@ -2546,8 +2546,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "test:headed",
-      "community_name": "Package Configuration",
-      "id": "package_scripts_test_headed"
+      "id": "package_scripts_test_headed",
+      "community_name": "Community 6"
     },
     {
       "label": "test:ui",
@@ -2557,8 +2557,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "test:ui",
-      "community_name": "Package Configuration",
-      "id": "package_scripts_test_ui"
+      "id": "package_scripts_test_ui",
+      "community_name": "Community 6"
     },
     {
       "label": "repository",
@@ -2568,8 +2568,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "repository",
-      "community_name": "Package Configuration",
-      "id": "package_repository"
+      "id": "package_repository",
+      "community_name": "Community 6"
     },
     {
       "label": "type",
@@ -2579,8 +2579,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "type",
-      "community_name": "Package Configuration",
-      "id": "package_repository_type"
+      "id": "package_repository_type",
+      "community_name": "Community 6"
     },
     {
       "label": "url",
@@ -2590,8 +2590,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "url",
-      "community_name": "Package Configuration",
-      "id": "package_repository_url"
+      "id": "package_repository_url",
+      "community_name": "Community 6"
     },
     {
       "label": "license",
@@ -2601,8 +2601,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "license",
-      "community_name": "Package Configuration",
-      "id": "package_license"
+      "id": "package_license",
+      "community_name": "Community 6"
     },
     {
       "label": "devDependencies",
@@ -2612,8 +2612,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "devdependencies",
-      "community_name": "Package Configuration",
-      "id": "package_devdependencies"
+      "id": "package_devdependencies",
+      "community_name": "Community 6"
     },
     {
       "label": "@playwright/test",
@@ -2623,8 +2623,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "@playwright/test",
-      "community_name": "Package Configuration",
-      "id": "package_devdependencies_playwright_test"
+      "id": "package_devdependencies_playwright_test",
+      "community_name": "Community 6"
     },
     {
       "label": "@supabase/supabase-js",
@@ -2634,8 +2634,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "@supabase/supabase-js",
-      "community_name": "Package Configuration",
-      "id": "package_devdependencies_supabase_supabase_js"
+      "id": "package_devdependencies_supabase_supabase_js",
+      "community_name": "Community 6"
     },
     {
       "label": "dotenv",
@@ -2645,8 +2645,8 @@
       "_origin": "ast",
       "community": 6,
       "norm_label": "dotenv",
-      "community_name": "Package Configuration",
-      "id": "package_devdependencies_dotenv"
+      "id": "package_devdependencies_dotenv",
+      "community_name": "Community 6"
     },
     {
       "label": "playwright.config.js",
@@ -2656,8 +2656,8 @@
       "_origin": "ast",
       "community": 24,
       "norm_label": "playwright.config.js",
-      "community_name": "Playwright Config",
-      "id": "playwright_config"
+      "id": "playwright_config",
+      "community_name": "Community 24"
     },
     {
       "label": "{ defineConfig, devices }",
@@ -2667,8 +2667,8 @@
       "_origin": "ast",
       "community": 24,
       "norm_label": "{ defineconfig, devices }",
-      "community_name": "Playwright Config",
-      "id": "playwright_config_defineconfig_devices"
+      "id": "playwright_config_defineconfig_devices",
+      "community_name": "Community 24"
     },
     {
       "label": "checks.sh",
@@ -2682,8 +2682,8 @@
       "_origin": "ast",
       "community": 16,
       "norm_label": "checks.sh",
-      "community_name": "Deploy Checks Script",
-      "id": "scripts_checks"
+      "id": "scripts_checks",
+      "community_name": "Community 16"
     },
     {
       "label": "checks.sh script",
@@ -2697,8 +2697,8 @@
       "_origin": "ast",
       "community": 16,
       "norm_label": "checks.sh script",
-      "community_name": "Deploy Checks Script",
-      "id": "scripts_checks_sh__entry"
+      "id": "scripts_checks_sh__entry",
+      "community_name": "Community 16"
     },
     {
       "label": "fail()",
@@ -2712,8 +2712,8 @@
       "_origin": "ast",
       "community": 16,
       "norm_label": "fail()",
-      "community_name": "Deploy Checks Script",
-      "id": "scripts_checks_fail"
+      "id": "scripts_checks_fail",
+      "community_name": "Community 16"
     },
     {
       "label": "warn()",
@@ -2727,8 +2727,8 @@
       "_origin": "ast",
       "community": 16,
       "norm_label": "warn()",
-      "community_name": "Deploy Checks Script",
-      "id": "scripts_checks_warn"
+      "id": "scripts_checks_warn",
+      "community_name": "Community 16"
     },
     {
       "label": "seed-test-data.js",
@@ -2738,8 +2738,8 @@
       "_origin": "ast",
       "community": 17,
       "norm_label": "seed-test-data.js",
-      "community_name": "Test Data Seeding",
-      "id": "scripts_seed_test_data"
+      "id": "scripts_seed_test_data",
+      "community_name": "Community 17"
     },
     {
       "label": "{ createClient }",
@@ -2749,8 +2749,8 @@
       "_origin": "ast",
       "community": 17,
       "norm_label": "{ createclient }",
-      "community_name": "Test Data Seeding",
-      "id": "scripts_seed_test_data_createclient"
+      "id": "scripts_seed_test_data_createclient",
+      "community_name": "Community 17"
     },
     {
       "label": "signUpOrSignIn()",
@@ -2760,8 +2760,8 @@
       "_origin": "ast",
       "community": 17,
       "norm_label": "signuporsignin()",
-      "community_name": "Test Data Seeding",
-      "id": "scripts_seed_test_data_signuporsignin"
+      "id": "scripts_seed_test_data_signuporsignin",
+      "community_name": "Community 17"
     },
     {
       "label": "run()",
@@ -2771,8 +2771,8 @@
       "_origin": "ast",
       "community": 17,
       "norm_label": "run()",
-      "community_name": "Test Data Seeding",
-      "id": "scripts_seed_test_data_run"
+      "id": "scripts_seed_test_data_run",
+      "community_name": "Community 17"
     },
     {
       "label": "auth.spec.js",
@@ -2782,8 +2782,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "auth.spec.js",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_auth_spec"
+      "id": "tests_auth_spec",
+      "community_name": "Community 4"
     },
     {
       "label": "{ test, expect }",
@@ -2793,8 +2793,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ test, expect }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_auth_spec_test_expect"
+      "id": "tests_auth_spec_test_expect",
+      "community_name": "Community 4"
     },
     {
       "label": "{ loginAsPT, loginAsClient }",
@@ -2804,8 +2804,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ loginaspt, loginasclient }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_auth_spec_loginaspt_loginasclient"
+      "id": "tests_auth_spec_loginaspt_loginasclient",
+      "community_name": "Community 4"
     },
     {
       "label": "client-workout.spec.js",
@@ -2815,8 +2815,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "client-workout.spec.js",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_client_workout_spec"
+      "id": "tests_client_workout_spec",
+      "community_name": "Community 4"
     },
     {
       "label": "{ test, expect }",
@@ -2826,8 +2826,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ test, expect }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_client_workout_spec_test_expect"
+      "id": "tests_client_workout_spec_test_expect",
+      "community_name": "Community 4"
     },
     {
       "label": "{ loginAsClient }",
@@ -2837,8 +2837,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ loginasclient }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_client_workout_spec_loginasclient"
+      "id": "tests_client_workout_spec_loginasclient",
+      "community_name": "Community 4"
     },
     {
       "label": "fixtures.js",
@@ -2848,8 +2848,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "fixtures.js",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_fixtures"
+      "id": "tests_fixtures",
+      "community_name": "Community 4"
     },
     {
       "label": "{ test: base, expect }",
@@ -2859,8 +2859,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ test: base, expect }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_fixtures_test_base_expect"
+      "id": "tests_fixtures_test_base_expect",
+      "community_name": "Community 4"
     },
     {
       "label": "helpers.js",
@@ -2870,8 +2870,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "helpers.js",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_helpers"
+      "id": "tests_helpers",
+      "community_name": "Community 4"
     },
     {
       "label": "loginAs()",
@@ -2881,8 +2881,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "loginas()",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_helpers_loginas"
+      "id": "tests_helpers_loginas",
+      "community_name": "Community 4"
     },
     {
       "label": "loginAsPT()",
@@ -2892,8 +2892,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "loginaspt()",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_helpers_loginaspt"
+      "id": "tests_helpers_loginaspt",
+      "community_name": "Community 4"
     },
     {
       "label": "loginAsClient()",
@@ -2903,8 +2903,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "loginasclient()",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_helpers_loginasclient"
+      "id": "tests_helpers_loginasclient",
+      "community_name": "Community 4"
     },
     {
       "label": "pt-dashboard.spec.js",
@@ -2914,8 +2914,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "pt-dashboard.spec.js",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_pt_dashboard_spec"
+      "id": "tests_pt_dashboard_spec",
+      "community_name": "Community 4"
     },
     {
       "label": "{ test, expect }",
@@ -2925,8 +2925,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ test, expect }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_pt_dashboard_spec_test_expect"
+      "id": "tests_pt_dashboard_spec_test_expect",
+      "community_name": "Community 4"
     },
     {
       "label": "{ loginAsPT }",
@@ -2936,8 +2936,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ loginaspt }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_pt_dashboard_spec_loginaspt"
+      "id": "tests_pt_dashboard_spec_loginaspt",
+      "community_name": "Community 4"
     },
     {
       "label": "runner.spec.js",
@@ -2947,8 +2947,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "runner.spec.js",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_runner_spec"
+      "id": "tests_runner_spec",
+      "community_name": "Community 4"
     },
     {
       "label": "{ test, expect }",
@@ -2958,8 +2958,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ test, expect }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_runner_spec_test_expect"
+      "id": "tests_runner_spec_test_expect",
+      "community_name": "Community 4"
     },
     {
       "label": "{ loginAsPT, loginAsClient }",
@@ -2969,8 +2969,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ loginaspt, loginasclient }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_runner_spec_loginaspt_loginasclient"
+      "id": "tests_runner_spec_loginaspt_loginasclient",
+      "community_name": "Community 4"
     },
     {
       "label": "settings.spec.js",
@@ -2980,8 +2980,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "settings.spec.js",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_settings_spec"
+      "id": "tests_settings_spec",
+      "community_name": "Community 4"
     },
     {
       "label": "{ test, expect }",
@@ -2991,8 +2991,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ test, expect }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_settings_spec_test_expect"
+      "id": "tests_settings_spec_test_expect",
+      "community_name": "Community 4"
     },
     {
       "label": "{ loginAsPT }",
@@ -3002,8 +3002,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ loginaspt }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_settings_spec_loginaspt"
+      "id": "tests_settings_spec_loginaspt",
+      "community_name": "Community 4"
     },
     {
       "label": "solo-account.spec.js",
@@ -3013,8 +3013,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "solo-account.spec.js",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_solo_account_spec"
+      "id": "tests_solo_account_spec",
+      "community_name": "Community 4"
     },
     {
       "label": "{ test, expect }",
@@ -3024,8 +3024,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ test, expect }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_solo_account_spec_test_expect"
+      "id": "tests_solo_account_spec_test_expect",
+      "community_name": "Community 4"
     },
     {
       "label": "{ loginAsPT }",
@@ -3035,8 +3035,8 @@
       "_origin": "ast",
       "community": 4,
       "norm_label": "{ loginaspt }",
-      "community_name": "E2E Test Helpers & Fixtures",
-      "id": "tests_solo_account_spec_loginaspt"
+      "id": "tests_solo_account_spec_loginaspt",
+      "community_name": "Community 4"
     },
     {
       "label": "index.html",
@@ -3049,8 +3049,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "index.html",
-      "community_name": "Project Skills & Docs",
-      "id": "index"
+      "id": "index",
+      "community_name": "Community 5"
     },
     {
       "label": "404.html (SPA Redirect)",
@@ -3063,8 +3063,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "404.html (spa redirect)",
-      "community_name": "Project Skills & Docs",
-      "id": "404"
+      "id": "404",
+      "community_name": "Community 5"
     },
     {
       "label": "modal-preview.html",
@@ -3077,8 +3077,8 @@
       "contributor": null,
       "community": 25,
       "norm_label": "modal-preview.html",
-      "community_name": "Modal Preview Page",
-      "id": "modal_preview"
+      "id": "modal_preview",
+      "community_name": "Community 25"
     },
     {
       "label": "privacy-policy.html",
@@ -3091,8 +3091,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "privacy-policy.html",
-      "community_name": "Project Skills & Docs",
-      "id": "privacy_policy"
+      "id": "privacy_policy",
+      "community_name": "Community 5"
     },
     {
       "label": "CLAUDE.md",
@@ -3105,8 +3105,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "claude.md",
-      "community_name": "Project Skills & Docs",
-      "id": "claude_md"
+      "id": "claude_md",
+      "community_name": "Community 5"
     },
     {
       "label": "deploy-check SKILL.md",
@@ -3119,8 +3119,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "deploy-check skill.md",
-      "community_name": "Project Skills & Docs",
-      "id": "claude_skills_deploy_check_skill_deploy_check"
+      "id": "claude_skills_deploy_check_skill_deploy_check",
+      "community_name": "Community 5"
     },
     {
       "label": "hello-claude SKILL.md",
@@ -3133,8 +3133,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "hello-claude skill.md",
-      "community_name": "Project Skills & Docs",
-      "id": "claude_skills_hello_claude_skill_hello_claude"
+      "id": "claude_skills_hello_claude_skill_hello_claude",
+      "community_name": "Community 5"
     },
     {
       "label": "mobile-check SKILL.md",
@@ -3147,8 +3147,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "mobile-check skill.md",
-      "community_name": "Project Skills & Docs",
-      "id": "claude_skills_mobile_check_skill_mobile_check"
+      "id": "claude_skills_mobile_check_skill_mobile_check",
+      "community_name": "Community 5"
     },
     {
       "label": "playwright SKILL.md",
@@ -3161,8 +3161,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "playwright skill.md",
-      "community_name": "Project Skills & Docs",
-      "id": "claude_skills_playwright_skill_playwright"
+      "id": "claude_skills_playwright_skill_playwright",
+      "community_name": "Community 5"
     },
     {
       "label": "run-coachapp SKILL.md",
@@ -3175,8 +3175,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "run-coachapp skill.md",
-      "community_name": "Project Skills & Docs",
-      "id": "claude_skills_run_coachapp_skill_run_coachapp"
+      "id": "claude_skills_run_coachapp_skill_run_coachapp",
+      "community_name": "Community 5"
     },
     {
       "label": "save SKILL.md",
@@ -3189,8 +3189,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "save skill.md",
-      "community_name": "Project Skills & Docs",
-      "id": "claude_skills_save_skill_save"
+      "id": "claude_skills_save_skill_save",
+      "community_name": "Community 5"
     },
     {
       "label": "security-audit SKILL.md",
@@ -3203,8 +3203,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "security-audit skill.md",
-      "community_name": "Project Skills & Docs",
-      "id": "claude_skills_security_audit_skill_security_audit"
+      "id": "claude_skills_security_audit_skill_security_audit",
+      "community_name": "Community 5"
     },
     {
       "label": "sql-safety SKILL.md",
@@ -3217,8 +3217,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "sql-safety skill.md",
-      "community_name": "Project Skills & Docs",
-      "id": "claude_skills_sql_safety_skill_sql_safety"
+      "id": "claude_skills_sql_safety_skill_sql_safety",
+      "community_name": "Community 5"
     },
     {
       "label": "GitHub Actions deploy.yml",
@@ -3231,8 +3231,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "github actions deploy.yml",
-      "community_name": "Project Skills & Docs",
-      "id": "github_deploy_yml"
+      "id": "github_deploy_yml",
+      "community_name": "Community 5"
     },
     {
       "label": "js/app.js",
@@ -3245,8 +3245,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "js/app.js",
-      "community_name": "Project Skills & Docs",
-      "id": "index_app_js"
+      "id": "index_app_js",
+      "community_name": "Community 5"
     },
     {
       "label": "css/main.css",
@@ -3259,8 +3259,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "css/main.css",
-      "community_name": "Project Skills & Docs",
-      "id": "index_main_css"
+      "id": "index_main_css",
+      "community_name": "Community 5"
     },
     {
       "label": "Supabase (Auth + DB)",
@@ -3273,8 +3273,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "supabase (auth + db)",
-      "community_name": "Project Skills & Docs",
-      "id": "concept_supabase"
+      "id": "concept_supabase",
+      "community_name": "Community 5"
     },
     {
       "label": "GitHub Pages Hosting",
@@ -3287,8 +3287,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "github pages hosting",
-      "community_name": "Project Skills & Docs",
-      "id": "concept_github_pages"
+      "id": "concept_github_pages",
+      "community_name": "Community 5"
     },
     {
       "label": "UK GDPR Compliance",
@@ -3301,8 +3301,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "uk gdpr compliance",
-      "community_name": "Project Skills & Docs",
-      "id": "concept_gdpr"
+      "id": "concept_gdpr",
+      "community_name": "Community 5"
     },
     {
       "label": "Row-Level Security (RLS)",
@@ -3315,8 +3315,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "row-level security (rls)",
-      "community_name": "Project Skills & Docs",
-      "id": "concept_rls"
+      "id": "concept_rls",
+      "community_name": "Community 5"
     },
     {
       "label": "Cache Busting (app.js version)",
@@ -3329,8 +3329,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "cache busting (app.js version)",
-      "community_name": "Project Skills & Docs",
-      "id": "concept_cache_bust"
+      "id": "concept_cache_bust",
+      "community_name": "Community 5"
     },
     {
       "label": "loadTemplate()",
@@ -3343,8 +3343,8 @@
       "contributor": null,
       "community": 14,
       "norm_label": "loadtemplate()",
-      "community_name": "Exercise & Template Loading",
-      "id": "modal_preview_loadtemplate"
+      "id": "modal_preview_loadtemplate",
+      "community_name": "Community 14"
     },
     {
       "label": "addExercise()",
@@ -3357,8 +3357,8 @@
       "contributor": null,
       "community": 14,
       "norm_label": "addexercise()",
-      "community_name": "Exercise & Template Loading",
-      "id": "modal_preview_addexercise"
+      "id": "modal_preview_addexercise",
+      "community_name": "Community 14"
     },
     {
       "label": "render()",
@@ -3371,8 +3371,8 @@
       "contributor": null,
       "community": 14,
       "norm_label": "render()",
-      "community_name": "Exercise & Template Loading",
-      "id": "modal_preview_render"
+      "id": "modal_preview_render",
+      "community_name": "Community 14"
     },
     {
       "label": "flush()",
@@ -3385,8 +3385,8 @@
       "contributor": null,
       "community": 14,
       "norm_label": "flush()",
-      "community_name": "Exercise & Template Loading",
-      "id": "modal_preview_flush"
+      "id": "modal_preview_flush",
+      "community_name": "Community 14"
     },
     {
       "label": "calcWeight()",
@@ -3399,8 +3399,8 @@
       "contributor": null,
       "community": 14,
       "norm_label": "calcweight()",
-      "community_name": "Exercise & Template Loading",
-      "id": "modal_preview_calcweight"
+      "id": "modal_preview_calcweight",
+      "community_name": "Community 14"
     },
     {
       "label": "fmtRest()",
@@ -3413,8 +3413,8 @@
       "contributor": null,
       "community": 14,
       "norm_label": "fmtrest()",
-      "community_name": "Exercise & Template Loading",
-      "id": "modal_preview_fmtrest"
+      "id": "modal_preview_fmtrest",
+      "community_name": "Community 14"
     },
     {
       "label": "scripts/checks.sh",
@@ -3427,8 +3427,8 @@
       "contributor": null,
       "community": 5,
       "norm_label": "scripts/checks.sh",
-      "community_name": "Project Skills & Docs",
-      "id": "scripts_checks_sh"
+      "id": "scripts_checks_sh",
+      "community_name": "Community 5"
     }
   ],
   "links": [

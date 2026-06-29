@@ -1,0 +1,495 @@
+{
+  "communities": {
+    "0": [
+      "js_app",
+      "js_app_calcweightfrompct",
+      "js_app_closesessiondetail",
+      "js_app_db",
+      "js_app_deleteaccount",
+      "js_app_deleteaccountconfirmed",
+      "js_app_downloadmydata",
+      "js_app_editrunnerset",
+      "js_app_event_colours",
+      "js_app_filtercompliance",
+      "js_app_fmtrest",
+      "js_app_goalcard",
+      "js_app_log",
+      "js_app_nav_icons",
+      "js_app_nav_items",
+      "js_app_openworkoutlog",
+      "js_app_parseduration",
+      "js_app_perf_categories",
+      "js_app_perf_colours",
+      "js_app_playbeep",
+      "js_app_previewbrandinglogo",
+      "js_app_renderprograms",
+      "js_app_rendersolodashboard",
+      "js_app_savecoachnotes",
+      "js_app_savesettingspassword",
+      "js_app_savesettingsprofile",
+      "js_app_sendclientinvite",
+      "js_app_showadd1rmmodal",
+      "js_app_showaddcheckinmodal",
+      "js_app_showaddclientmodal",
+      "js_app_showaddexercisemodal",
+      "js_app_showaddexercisetotemplatemodal",
+      "js_app_showaddgoalmodal",
+      "js_app_showaddmilestonemodal",
+      "js_app_showaddphaseform",
+      "js_app_showaddphaseworkout",
+      "js_app_showassignprogrammodal",
+      "js_app_showassignprogramtoclientmodal",
+      "js_app_showauth",
+      "js_app_showclientaddeventmodal",
+      "js_app_showclientpbform",
+      "js_app_showclientweightform",
+      "js_app_showcreateprogrammodal",
+      "js_app_showedit1rmmodal",
+      "js_app_showeditclientmodal",
+      "js_app_showeditexercisemodal",
+      "js_app_showeditgoalmodal",
+      "js_app_showeditphaseform",
+      "js_app_showeditprogrammodal",
+      "js_app_showeditstartdatemodal",
+      "js_app_showedittemplatemodal",
+      "js_app_showgoalprogressform",
+      "js_app_showinviteform",
+      "js_app_showlogsessionmodal",
+      "js_app_showupdateemailmodal",
+      "js_app_speakcue",
+      "js_app_toggleclientphase",
+      "js_app_toggleclienttemplate",
+      "js_app_toggleperfhistory",
+      "js_app_updateperfunits"
+    ],
+    "1": [
+      "js_app_backtoclientworkouts",
+      "js_app_closeprogrammodal",
+      "js_app_confirmendrunner",
+      "js_app_dbq",
+      "js_app_delete1rm",
+      "js_app_deleteperflog",
+      "js_app_deletephase",
+      "js_app_deleteprogressphoto",
+      "js_app_deleteweightlog",
+      "js_app_deleteworkoutlog",
+      "js_app_discardrunner",
+      "js_app_flushlogstate",
+      "js_app_loadallphaseworkouts",
+      "js_app_openprogram",
+      "js_app_removephaseworkout",
+      "js_app_renderclient1rms",
+      "js_app_renderclientperformance",
+      "js_app_renderclientphotos",
+      "js_app_renderclientweight",
+      "js_app_renderclientworkouts",
+      "js_app_save1rm",
+      "js_app_saveperformancelog",
+      "js_app_savephase",
+      "js_app_savephaseworkout",
+      "js_app_saveprogram",
+      "js_app_saverunnersession",
+      "js_app_saveweightlog",
+      "js_app_saveworkoutsession",
+      "js_app_showtoast",
+      "js_app_switchtab",
+      "js_app_uploadprogressphoto"
+    ],
+    "2": [
+      "js_app_addextracardioset",
+      "js_app_addextrastrengthset",
+      "js_app_cleartimer",
+      "js_app_fmtrestcountdown",
+      "js_app_fmtrunnertime",
+      "js_app_launchrunner",
+      "js_app_logrunnerset",
+      "js_app_parserest",
+      "js_app_renderintervaltimer",
+      "js_app_renderresttimer",
+      "js_app_renderrunner",
+      "js_app_renderstrengthsettimer",
+      "js_app_runnergoback",
+      "js_app_runnerjumpto",
+      "js_app_saveeditrunnerset",
+      "js_app_showrunnerfinish",
+      "js_app_skipresttimer",
+      "js_app_skiptonextexercise",
+      "js_app_startcardiotimer",
+      "js_app_startintervaltimer",
+      "js_app_startresttimer",
+      "js_app_startstrengthsettimer",
+      "js_app_startworkoutrunner",
+      "js_app_stopintervaltimer",
+      "js_app_stopstrengthsettimer",
+      "js_app_unlockaudio",
+      "js_app_unlockspeech"
+    ],
+    "3": [
+      "js_app_applytoallsessions",
+      "js_app_backtogoals",
+      "js_app_checkclientplanpropagation",
+      "js_app_closemodal",
+      "js_app_deleteexercise",
+      "js_app_deletegoal",
+      "js_app_deletetemplateexercise",
+      "js_app_movetemplateexercise",
+      "js_app_opengoal",
+      "js_app_opentemplate",
+      "js_app_renderclientgoals",
+      "js_app_renderclients",
+      "js_app_renderexerciselibrary",
+      "js_app_savecheckin",
+      "js_app_saveeditexercise",
+      "js_app_saveeditgoal",
+      "js_app_saveedittemplate",
+      "js_app_saveedittemplateexercise",
+      "js_app_saveexercisetotemplate",
+      "js_app_savenewclient",
+      "js_app_savenewexercise",
+      "js_app_savenewgoal",
+      "js_app_savenewmilestone",
+      "js_app_savenewtemplate",
+      "js_app_togglemilestone"
+    ],
+    "4": [
+      "tests_auth_spec",
+      "tests_auth_spec_loginaspt_loginasclient",
+      "tests_auth_spec_test_expect",
+      "tests_client_workout_spec",
+      "tests_client_workout_spec_loginasclient",
+      "tests_client_workout_spec_test_expect",
+      "tests_fixtures",
+      "tests_fixtures_test_base_expect",
+      "tests_helpers",
+      "tests_helpers_loginas",
+      "tests_helpers_loginasclient",
+      "tests_helpers_loginaspt",
+      "tests_pt_dashboard_spec",
+      "tests_pt_dashboard_spec_loginaspt",
+      "tests_pt_dashboard_spec_test_expect",
+      "tests_runner_spec",
+      "tests_runner_spec_loginaspt_loginasclient",
+      "tests_runner_spec_test_expect",
+      "tests_settings_spec",
+      "tests_settings_spec_loginaspt",
+      "tests_settings_spec_test_expect",
+      "tests_solo_account_spec",
+      "tests_solo_account_spec_loginaspt",
+      "tests_solo_account_spec_test_expect"
+    ],
+    "5": [
+      "404",
+      "claude_md",
+      "claude_skills_deploy_check_skill_deploy_check",
+      "claude_skills_hello_claude_skill_hello_claude",
+      "claude_skills_mobile_check_skill_mobile_check",
+      "claude_skills_playwright_skill_playwright",
+      "claude_skills_run_coachapp_skill_run_coachapp",
+      "claude_skills_save_skill_save",
+      "claude_skills_security_audit_skill_security_audit",
+      "claude_skills_sql_safety_skill_sql_safety",
+      "concept_cache_bust",
+      "concept_gdpr",
+      "concept_github_pages",
+      "concept_rls",
+      "concept_supabase",
+      "github_deploy_yml",
+      "index",
+      "index_app_js",
+      "index_main_css",
+      "privacy_policy",
+      "scripts_checks_sh"
+    ],
+    "6": [
+      "package",
+      "package_description",
+      "package_devdependencies",
+      "package_devdependencies_dotenv",
+      "package_devdependencies_playwright_test",
+      "package_devdependencies_supabase_supabase_js",
+      "package_license",
+      "package_name",
+      "package_repository",
+      "package_repository_type",
+      "package_repository_url",
+      "package_scripts",
+      "package_scripts_test",
+      "package_scripts_test_headed",
+      "package_scripts_test_ui",
+      "package_version"
+    ],
+    "7": [
+      "js_app_calnav",
+      "js_app_deleteevent",
+      "js_app_getcurrentclientid",
+      "js_app_rendercalendar",
+      "js_app_rendereventlist",
+      "js_app_renderperformance",
+      "js_app_renderprogress",
+      "js_app_renderprogresscardio",
+      "js_app_renderprogresspbs",
+      "js_app_renderprogressstrength",
+      "js_app_renderprogressweight",
+      "js_app_saveclientevent",
+      "js_app_saveevent"
+    ],
+    "8": [
+      "js_app_applyroleui",
+      "js_app_deleteprogram",
+      "js_app_deletetemplate",
+      "js_app_exitsudo",
+      "js_app_loaduserinfo",
+      "js_app_navigate",
+      "js_app_rendernav",
+      "js_app_showapp",
+      "js_app_sudoasclient",
+      "js_app_switchview",
+      "js_app_updateviewswitcherbuttons"
+    ],
+    "9": [
+      "js_app_applybrandingtosidebar",
+      "js_app_escapehtml",
+      "js_app_loadbranding",
+      "js_app_opensessiondetail",
+      "js_app_removebrandinglogo",
+      "js_app_renderdashboard",
+      "js_app_rendersettings",
+      "js_app_savebrandingsettings"
+    ],
+    "10": [
+      "js_app_clientoverviewtab",
+      "js_app_infoitem",
+      "js_app_openclient",
+      "js_app_openclientprogramstab",
+      "js_app_renderclientoverview",
+      "js_app_saveeditclient",
+      "js_app_saveupdateemail",
+      "js_app_templategoback"
+    ],
+    "11": [
+      "js_app_cloneprogramforclient",
+      "js_app_renderclientprograms",
+      "js_app_saveassignprogram",
+      "js_app_saveassignprogramtoclient",
+      "js_app_saveeditstartdate",
+      "js_app_unassignprogram"
+    ],
+    "12": [
+      "js_app_copyprevtemplateset",
+      "js_app_flushtemplatesets",
+      "js_app_rendertemplatesets",
+      "js_app_settseffort",
+      "js_app_showedittemplateexercisemodal",
+      "js_app_toggletsset"
+    ],
+    "13": [
+      "js_app_renderclientdashboard",
+      "js_app_saveclientcheckin",
+      "js_app_saveclientpb",
+      "js_app_saveclientweight",
+      "js_app_savegoalprogress",
+      "js_app_toggleclientmilestone"
+    ],
+    "14": [
+      "modal_preview_addexercise",
+      "modal_preview_calcweight",
+      "modal_preview_flush",
+      "modal_preview_fmtrest",
+      "modal_preview_loadtemplate",
+      "modal_preview_render"
+    ],
+    "15": [
+      "js_app_renderclientworkoutspage",
+      "js_app_renderworkouts",
+      "js_app_renderworkouttemplates",
+      "js_app_switchworkouttab"
+    ],
+    "16": [
+      "scripts_checks",
+      "scripts_checks_fail",
+      "scripts_checks_sh__entry",
+      "scripts_checks_warn"
+    ],
+    "17": [
+      "scripts_seed_test_data",
+      "scripts_seed_test_data_createclient",
+      "scripts_seed_test_data_run",
+      "scripts_seed_test_data_signuporsignin"
+    ],
+    "18": [
+      "js_app_calcpace1000",
+      "js_app_fmtrestinput",
+      "js_app_tspace500input"
+    ],
+    "19": [
+      "js_app_fmtduration",
+      "js_app_fmtset",
+      "js_app_normalizeduration"
+    ],
+    "20": [
+      "js_app_showaddeventmodal",
+      "js_app_showclientdaydetail",
+      "js_app_showdayevents"
+    ],
+    "21": [
+      "js_app_createworkoutfromphasemodal",
+      "js_app_showcreatetemplatemodal"
+    ],
+    "22": [
+      "js_app_fetchrunnerlastsession",
+      "js_app_renderrunnerlastsession"
+    ],
+    "23": [
+      "js_app_loadtemplateintolog",
+      "js_app_renderlogexercises"
+    ],
+    "24": [
+      "playwright_config",
+      "playwright_config_defineconfig_devices"
+    ],
+    "25": [
+      "modal_preview"
+    ]
+  },
+  "cohesion": {
+    "0": 0.03333333333333333,
+    "1": 0.07956989247311828,
+    "2": 0.13105413105413105,
+    "3": 0.11333333333333333,
+    "4": 0.13768115942028986,
+    "5": 0.20952380952380953,
+    "6": 0.125,
+    "7": 0.20512820512820512,
+    "8": 0.21818181818181817,
+    "9": 0.2857142857142857,
+    "10": 0.25,
+    "11": 0.3333333333333333,
+    "12": 0.4666666666666667,
+    "13": 0.3333333333333333,
+    "14": 0.3333333333333333,
+    "15": 0.5,
+    "16": 0.8333333333333334,
+    "17": 0.6666666666666666,
+    "18": 0.6666666666666666,
+    "19": 0.6666666666666666,
+    "20": 0.6666666666666666,
+    "21": 1.0,
+    "22": 1.0,
+    "23": 1.0,
+    "24": 1.0,
+    "25": 1.0
+  },
+  "gods": [
+    {
+      "id": "js_app_closemodal",
+      "label": "closeModal()",
+      "degree": 23
+    },
+    {
+      "id": "claude_skills_hello_claude_skill_hello_claude",
+      "label": "hello-claude SKILL.md",
+      "degree": 12
+    },
+    {
+      "id": "js_app_renderrunner",
+      "label": "renderRunner()",
+      "degree": 11
+    },
+    {
+      "id": "js_app_navigate",
+      "label": "navigate()",
+      "degree": 10
+    },
+    {
+      "id": "js_app_dbq",
+      "label": "dbq()",
+      "degree": 9
+    },
+    {
+      "id": "js_app_switchtab",
+      "label": "switchTab()",
+      "degree": 9
+    },
+    {
+      "id": "claude_skills_deploy_check_skill_deploy_check",
+      "label": "deploy-check SKILL.md",
+      "degree": 9
+    },
+    {
+      "id": "js_app_showtoast",
+      "label": "showToast()",
+      "degree": 8
+    },
+    {
+      "id": "js_app_renderclientdashboard",
+      "label": "renderClientDashboard()",
+      "degree": 8
+    },
+    {
+      "id": "js_app_logrunnerset",
+      "label": "logRunnerSet()",
+      "degree": 8
+    }
+  ],
+  "surprises": [
+    {
+      "source": "deploy-check SKILL.md",
+      "target": "UK GDPR Compliance",
+      "source_files": [
+        ".claude/skills/deploy-check/SKILL.md",
+        "privacy-policy.html"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "connects across different repos/directories"
+    },
+    {
+      "source": "deploy-check SKILL.md",
+      "target": "GitHub Pages Hosting",
+      "source_files": [
+        ".claude/skills/deploy-check/SKILL.md",
+        ".github/workflows/deploy.yml"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "connects across different repos/directories"
+    },
+    {
+      "source": "deploy-check SKILL.md",
+      "target": "Supabase (Auth + DB)",
+      "source_files": [
+        ".claude/skills/deploy-check/SKILL.md",
+        "index.html"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "connects across different repos/directories"
+    },
+    {
+      "source": "deploy-check SKILL.md",
+      "target": "scripts/checks.sh",
+      "source_files": [
+        ".claude/skills/deploy-check/SKILL.md",
+        ".github/workflows/deploy.yml"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "connects across different repos/directories"
+    },
+    {
+      "source": "hello-claude SKILL.md",
+      "target": "UK GDPR Compliance",
+      "source_files": [
+        ".claude/skills/hello-claude/SKILL.md",
+        "privacy-policy.html"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "connects across different repos/directories"
+    }
+  ],
+  "tokens": {
+    "input": 26612,
+    "output": 4995
+  }
+}
