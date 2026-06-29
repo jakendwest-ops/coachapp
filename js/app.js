@@ -4440,9 +4440,12 @@ function copyPrevTemplateSet(i, containerId, tid) {
 }
 
 function showAddExerciseToTemplateModal(templateId) {
+  const _addOrmClientId = currentProfile?.role === 'solo' ? window._soloClientId : null
   Promise.all([
     db.from('exercises').select('*').order('name'),
-    db.from('client_1rms').select('exercise_name').order('exercise_name')
+    _addOrmClientId
+      ? db.from('client_1rms').select('exercise_name').eq('client_id', _addOrmClientId).order('exercise_name')
+      : db.from('client_1rms').select('exercise_name').order('exercise_name')
   ]).then(([{ data: exercises }, { data: ormRows }]) => {
     window._templateSets = [{ effortType: 'rpe' }]
     // Deduplicate 1RM exercise names across all clients (RLS scopes to coach's clients)
@@ -4564,10 +4567,11 @@ async function saveExerciseToTemplate(templateId) {
 
 async function showEditTemplateExerciseModal(templateExId, templateId) {
   const ctx = window._templateCtx
+  const ormClientId = ctx.clientId || (currentProfile?.role === 'solo' ? window._soloClientId : null)
   const [{ data: ex }, { data: ormRows }, { data: libraryExercises }] = await Promise.all([
     db.from('workout_template_exercises').select('*').eq('id', templateExId).single(),
-    ctx?.isClientPlan && ctx.clientId
-      ? db.from('client_1rms').select('exercise_name').eq('client_id', ctx.clientId).order('exercise_name')
+    ormClientId
+      ? db.from('client_1rms').select('exercise_name').eq('client_id', ormClientId).order('exercise_name')
       : Promise.resolve({ data: [] }),
     db.from('exercises').select('id, name, muscle_group').order('name')
   ])
@@ -4718,7 +4722,18 @@ async function _checkClientPlanPropagation(templateId) {
     const matching = (pws || []).filter(r =>
       r.template_id !== templateId && r.workout_templates?.name === tmpl.name
     )
-    if (!matching.length) return openTemplate(templateId, ctx)
+    if (!matching.length) {
+      // Template may be shared across multiple weeks — edits already apply to all
+      const sharedCount = pws.filter(r => r.template_id === templateId).length
+      if (sharedCount > 1) {
+        const toast = document.createElement('div')
+        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;color:var(--text);z-index:9999;pointer-events:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)'
+        toast.textContent = `✓ Changes apply to all ${sharedCount} "${tmpl.name}" sessions — they share this template`
+        document.body.appendChild(toast)
+        setTimeout(() => toast.remove(), 3500)
+      }
+      return openTemplate(templateId, ctx)
+    }
     window._propagateTargets = matching.map(r => r.template_id)
     _showPropagateModal(tmpl.name, matching.length, 'this program')
     return
