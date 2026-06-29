@@ -6,10 +6,9 @@ test.describe('Client workout flow', () => {
     await loginAsClient(page)
   })
 
-  test('client dashboard loads with sessions stat', async ({ page }) => {
+  test('client dashboard loads with hero card', async ({ page }) => {
     await expect(page.locator('h1')).toContainText('Hi,')
-    await expect(page.locator('text=Sessions this week')).toBeVisible()
-    await expect(page.locator('text=Active goals')).toBeVisible()
+    await expect(page.locator('text=UP NEXT')).toBeVisible()
   })
 
   test('client can navigate to Workouts page', async ({ page }) => {
@@ -83,8 +82,14 @@ test.describe('Client workout flow', () => {
 
   test('client can start and cancel a workout', async ({ page }) => {
     await page.click('[data-page="workouts"]')
-    await page.waitForSelector('button:has-text("Start")', { timeout: 10000 })
-    // Click first Start button — launches runner directly (no modal when template is pre-selected)
+    await page.waitForTimeout(1500)
+    // If program accordion is present, expand first phase to reveal Start buttons
+    const firstPhaseBtn = page.locator('button').filter({ hasText: /session/i }).first()
+    if (await firstPhaseBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await firstPhaseBtn.click()
+    }
+    await page.waitForSelector('button:has-text("Start"):visible, button:has-text("▶ Start"):visible', { timeout: 10000 })
+    // Click first visible Start button — launches runner
     await page.locator('button:has-text("Start")').first().click()
     // Runner renders with a red End button
     const endBtn = page.locator('button:has-text("End")')
@@ -101,8 +106,8 @@ test.describe('Client workout flow', () => {
   })
 
   test('client weight log form works', async ({ page }) => {
-    // Weight log form is on dashboard
-    await expect(page.locator('text=Sessions this week')).toBeVisible()
+    // Weight section is on dashboard
+    await expect(page.locator('h1')).toContainText('Hi,', { timeout: 8000 })
     // Scroll to weight section and click Log
     const logBtn = page.locator('button:has-text("+ Log")').first()
     if (await logBtn.isVisible()) {

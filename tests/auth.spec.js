@@ -14,8 +14,8 @@ test.describe('Auth', () => {
     await loginAsClient(page)
     // Client dashboard shows "Hi,"
     await expect(page.locator('h1')).toContainText('Hi,')
-    // Sessions this week stat is visible
-    await expect(page.locator('text=Sessions this week')).toBeVisible()
+    // Hero "up next" card is visible
+    await expect(page.locator('text=UP NEXT')).toBeVisible()
   })
 
   test('PT can sign out', async ({ page }) => {

@@ -4,8 +4,9 @@ const { defineConfig, devices } = require('@playwright/test')
 module.exports = defineConfig({
   testDir: './tests',
   fullyParallel: false,      // auth state must be sequential
+  workers: 1,                // one worker — prevents Supabase contention between test files
   retries: 1,
-  timeout: 30000,
+  timeout: 60000,
   use: {
     baseURL: process.env.BASE_URL || 'http://localhost:3001',
     headless: true,

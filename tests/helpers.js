@@ -18,10 +18,14 @@ async function loginAs(page, email, password) {
 }
 
 async function loginAsPT(page) {
+  // Set _activeView before app loads so it always starts in coach mode
+  // (a previous test may have left _activeView=solo in localStorage)
+  await page.goto('/')
+  await page.evaluate(() => localStorage.setItem('_activeView', 'coach'))
   await loginAs(page, PT_EMAIL, PT_PASSWORD)
-  // Reset to coach view — a previous test in the same worker may have left _activeView=solo
-  await page.evaluate(() => { localStorage.setItem('_activeView', 'coach'); if (typeof switchView === 'function') switchView('coach') })
-  await page.waitForTimeout(300)
+  // #app-shell is visible before loadUserInfo finishes rendering the dashboard.
+  // Wait for the PT dashboard h1 — only renders after loadUserInfo completes.
+  await page.waitForSelector('h1:has-text("Welcome back")', { timeout: 15000 })
 }
 
 async function loginAsClient(page) {

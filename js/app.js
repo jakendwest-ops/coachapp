@@ -3540,6 +3540,80 @@ function fmtSet(s, type) {
   return parts.filter(Boolean).join(' · ') || '—'
 }
 
+// ─── SESSION DETAIL SLIDE-IN ──────────────────────────────────────────────────
+async function openSessionDetail(templateId, name) {
+  const existing = document.getElementById('session-detail-panel')
+  if (existing) existing.remove()
+
+  const { data: exercises } = await db
+    .from('workout_template_exercises')
+    .select('exercise_name, exercise_type, order_index, sets_json, notes')
+    .eq('template_id', templateId)
+    .order('order_index')
+
+  const panel = document.createElement('div')
+  panel.id = 'session-detail-panel'
+
+  const exHtml = !exercises?.length
+    ? '<div class="empty-state"><div class="empty-title">No exercises added yet</div></div>'
+    : exercises.map((ex, i) => {
+        const sets = ex.sets_json || []
+        const isLast = i === exercises.length - 1
+        const setsHtml = sets.map((s, si) => {
+          let label = `Set ${si + 1}`
+          if (s.amrap) label = 'AMRAP'
+
+          let detail = ''
+          if (s.timed) {
+            const secs = s.duration ? (parseRest(s.duration) || 0) : (s.repsMin ? parseInt(s.repsMin) : null)
+            detail = secs != null ? Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') : '—'
+          } else {
+            const reps = s.repsMin ? (s.repsMin + (s.repsMax && s.repsMax !== s.repsMin ? '–' + s.repsMax : '') + ' reps') : null
+            const weight = s.weight ? s.weight + 'kg' : null
+            const intensity = s.intensityMin ? s.intensityMin + (s.intensityMax && s.intensityMax !== s.intensityMin ? '–' + s.intensityMax : '') + '% 1RM' : null
+            const effort = s.effortMin ? ((s.effortType === 'rir' ? 'RIR ' : 'RPE ') + s.effortMin + (s.effortMax && s.effortMax !== s.effortMin ? '–' + s.effortMax : '')) : null
+            detail = [reps, weight || intensity, effort].filter(Boolean).join(' · ') || '—'
+          }
+          const rest = s.restMin && s.restMin !== '0:00' ? s.restMin + (s.restMax && s.restMax !== s.restMin ? '–' + s.restMax : '') + ' rest' : null
+
+          return `<div style="display:flex;align-items:baseline;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);width:56px;flex-shrink:0">${label}</span>
+            <span style="font-size:13px;flex:1">${detail}</span>
+            ${rest ? `<span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${rest}</span>` : ''}
+          </div>`
+        }).join('')
+
+        return `<div style="margin-bottom:${isLast ? 0 : 16}px;padding-bottom:${isLast ? 0 : 16}px;border-bottom:${isLast ? 'none' : '1px solid var(--border)'}">
+          <div style="font-size:14px;font-weight:700;margin-bottom:6px">${escapeHtml(ex.exercise_name)}</div>
+          ${setsHtml || '<span style="font-size:12px;color:var(--text-muted)">No sets defined</span>'}
+          ${ex.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:6px;font-style:italic">${escapeHtml(ex.notes)}</div>` : ''}
+        </div>`
+      }).join('')
+
+  panel.innerHTML = `
+    <div onclick="closeSessionDetail()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000"></div>
+    <div id="session-detail-drawer" style="position:fixed;top:0;right:0;bottom:0;width:min(420px,100vw);background:var(--surface);z-index:1001;overflow-y:auto;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .3s cubic-bezier(.32,.72,0,1)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 16px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <h2 style="font-size:17px;font-weight:700;margin:0">${escapeHtml(name)}</h2>
+        <button onclick="closeSessionDetail()" style="border:none;background:none;cursor:pointer;padding:4px 8px;color:var(--text-muted);font-size:22px;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px;flex:1">${exHtml}</div>
+    </div>`
+
+  document.body.appendChild(panel)
+  setTimeout(() => {
+    const d = document.getElementById('session-detail-drawer')
+    if (d) d.style.transform = 'translateX(0)'
+  }, 16)
+}
+
+function closeSessionDetail() {
+  const drawer = document.getElementById('session-detail-drawer')
+  if (!drawer) return
+  drawer.style.transform = 'translateX(100%)'
+  setTimeout(() => { const p = document.getElementById('session-detail-panel'); if (p) p.remove() }, 300)
+}
+
 // ─── WORKOUTS PAGE ────────────────────────────────────────────────────────────
 async function renderWorkouts(el) {
   if (currentProfile?.role === 'client' || currentProfile?.role === 'solo') { await renderClientWorkoutsPage(el); return }
@@ -3637,7 +3711,7 @@ async function renderClientWorkoutsPage(el) {
                         return `<div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
                           ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
                           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '0'}">
-                            <span style="font-size:13px;font-weight:600">${name}</span>
+                            ${templateId ? `<span style="font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)" onclick="openSessionDetail('${templateId}','${name.replace(/'/g,"\\'")}')">` : `<span style="font-size:13px;font-weight:600">`}${name}</span>
                             ${templateId ? `<button class="btn-primary" style="font-size:12px;padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
                           </div>
                           ${exs.length ? `
@@ -3669,9 +3743,9 @@ async function renderClientWorkoutsPage(el) {
           const exs = (t.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
           return `<div style="border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--surface)">
             <div style="display:flex;align-items:center;gap:12px;padding:12px 14px">
-              <div class="row-info" style="flex:1;min-width:0">
+              <div class="row-info" style="flex:1;min-width:0;cursor:pointer" onclick="openSessionDetail('${t.id}','${t.name.replace(/'/g,"\\'")}')">
                 <div class="row-name">${t.name}</div>
-                <div class="row-meta">${exs.length} exercise${exs.length!==1?'s':''}</div>
+                <div class="row-meta">${exs.length} exercise${exs.length!==1?'s':''} · tap to preview</div>
               </div>
               <button class="btn-primary" style="font-size:13px;padding:6px 14px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
             </div>

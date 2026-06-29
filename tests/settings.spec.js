@@ -5,7 +5,8 @@ test.describe('Settings page', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
     await page.click('[data-page="settings"]')
-    await page.waitForSelector('text=Settings', { timeout: 8000 })
+    // Wait for async profile/branding data — page re-renders after Supabase fetch
+    await page.waitForSelector('text=Profile', { timeout: 10000 })
   })
 
   test('settings page renders all sections', async ({ page }) => {

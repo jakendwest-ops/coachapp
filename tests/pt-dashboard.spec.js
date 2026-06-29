@@ -7,9 +7,9 @@ test.describe('PT Dashboard', () => {
   })
 
   test('shows stats row with client count and sessions', async ({ page }) => {
-    await expect(page.locator('.stat-card').first()).toBeVisible()
-    await expect(page.locator('text=Total clients')).toBeVisible()
-    await expect(page.locator('text=Sessions this week')).toBeVisible()
+    await expect(page.locator('text=TOTAL CLIENTS')).toBeVisible()
+    await expect(page.locator('text=SESSIONS THIS WEEK')).toBeVisible()
+    await expect(page.locator('text=ACTIVE GOALS')).toBeVisible()
   })
 
   test('shows compliance filter tabs', async ({ page }) => {
