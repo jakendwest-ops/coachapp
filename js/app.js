@@ -1937,7 +1937,7 @@ async function loadAllPhaseWorkouts(phases) {
             <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
               ${wks.length > 1 ? `<span style="font-size:9px;font-weight:700;color:var(--accent);min-width:18px">${w.session_order===2?'PM':'AM'}</span>` : ''}
               <span style="font-size:12px;font-weight:600">${w.workout_templates?.name || 'Unknown'}</span>
-              <button onclick="openTemplate('${w.template_id}',{backLabel:'Back to program',backFn:()=>openProgram('${window._openProgramId}')})" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0 2px">Edit</button>
+              <button onclick="openTemplate('${w.template_id}',{backLabel:'Back to program',backFn:()=>openProgram('${window._openProgramId}'),programId:'${window._openProgramId}'})" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0 2px">Edit</button>
               <button onclick="removePhaseWorkout('${w.id}','${ph.id}')" style="font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0">✕</button>
             </div>`).join('')}
         </div>`).join('')}
@@ -4033,6 +4033,7 @@ async function openTemplate(id, ctx = {}) {
     clientId: ctx.clientId || null,
     clientName: ctx.clientName || null,
     clientProgramId: ctx.clientProgramId || null,
+    programId: ctx.programId || null,
     isClientPlan: !!ctx.clientId
   }
   const el = document.getElementById('main-content')
@@ -4564,41 +4565,63 @@ async function deleteTemplateExercise(texId, templateId) {
 
 async function _checkClientPlanPropagation(templateId) {
   const ctx = window._templateCtx
-  if (!ctx?.isClientPlan || !ctx.clientProgramId) return openTemplate(templateId, ctx)
 
-  const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
-  if (!tmpl) return openTemplate(templateId, ctx)
-
-  const { data: siblings } = await db.from('client_program_workouts')
-    .select('workout_template_id, workout_templates(id, name)')
-    .eq('client_program_id', ctx.clientProgramId)
-
-  const matching = (siblings || []).filter(r =>
-    r.workout_template_id !== templateId &&
-    r.workout_templates?.name === tmpl.name
-  )
-
-  if (!matching.length) return openTemplate(templateId, ctx)
-
-  window._propagateTargets = matching.map(r => r.workout_template_id)
-
-  const overlay = document.createElement('div')
-  overlay.className = 'modal-overlay'
-  overlay.id = 'propagate-modal'
-  overlay.innerHTML = `
-    <div class="modal">
-      <div class="modal-header">
-        <h2 class="modal-title">Apply to other sessions?</h2>
-        <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
+  const _showPropagateModal = (name, count, label) => {
+    const overlay = document.createElement('div')
+    overlay.className = 'modal-overlay'
+    overlay.id = 'propagate-modal'
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <h2 class="modal-title">Apply to other sessions?</h2>
+          <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
+        </div>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 20px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other session${count === 1 ? '' : 's'} named "<strong>${name}</strong>" in ${label}.</p>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
+          <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">Update all "${name}"</button>
+        </div>
       </div>
-      <p style="font-size:14px;line-height:1.6;margin:0 0 20px">There ${matching.length === 1 ? 'is' : 'are'} <strong>${matching.length}</strong> other session${matching.length === 1 ? '' : 's'} named "<strong>${tmpl.name}</strong>" in ${ctx.clientName || 'this client'}'s plan.</p>
-      <div class="modal-footer">
-        <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
-        <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">Update all "${tmpl.name}"</button>
-      </div>
-    </div>
-  `
-  document.body.appendChild(overlay)
+    `
+    document.body.appendChild(overlay)
+  }
+
+  // Client plan propagation
+  if (ctx?.isClientPlan && ctx.clientProgramId) {
+    const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
+    if (!tmpl) return openTemplate(templateId, ctx)
+    const { data: siblings } = await db.from('client_program_workouts')
+      .select('workout_template_id, workout_templates(id, name)')
+      .eq('client_program_id', ctx.clientProgramId)
+    const matching = (siblings || []).filter(r =>
+      r.workout_template_id !== templateId && r.workout_templates?.name === tmpl.name
+    )
+    if (!matching.length) return openTemplate(templateId, ctx)
+    window._propagateTargets = matching.map(r => r.workout_template_id)
+    _showPropagateModal(tmpl.name, matching.length, `${ctx.clientName || 'this client'}'s plan`)
+    return
+  }
+
+  // Master program propagation (Programs builder — solo and PT)
+  if (ctx?.programId) {
+    const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
+    if (!tmpl) return openTemplate(templateId, ctx)
+    const { data: phases } = await db.from('program_phases').select('id').eq('program_id', ctx.programId)
+    const phaseIds = (phases || []).map(p => p.id)
+    if (!phaseIds.length) return openTemplate(templateId, ctx)
+    const { data: pws } = await db.from('program_phase_workouts')
+      .select('template_id, workout_templates(id, name)')
+      .in('phase_id', phaseIds)
+    const matching = (pws || []).filter(r =>
+      r.template_id !== templateId && r.workout_templates?.name === tmpl.name
+    )
+    if (!matching.length) return openTemplate(templateId, ctx)
+    window._propagateTargets = matching.map(r => r.template_id)
+    _showPropagateModal(tmpl.name, matching.length, 'this program')
+    return
+  }
+
+  openTemplate(templateId, ctx)
 }
 
 async function _applyToAllSessions(sourceTemplateId) {
@@ -5298,7 +5321,7 @@ function playBeep(freq = 880, duration = 0.15, volume = 0.8) {
         osc.stop(ctx.currentTime + duration)
       } catch(e) {}
     }
-    if (_audioCtx.state === 'suspended') {
+    if (_audioCtx.state !== 'running') {
       _audioCtx.resume().then(_fire).catch(() => {})
     } else {
       _fire()
