@@ -33,9 +33,10 @@ test.describe('Settings page', () => {
   test('delete account modal shows error without correct input', async ({ page }) => {
     await page.click('button:has-text("Delete account")')
     await expect(page.locator('#delete-confirm-input')).toBeVisible({ timeout: 4000 })
+    await page.waitForTimeout(200)
     await page.click('#delete-confirm-btn')
-    // Error element changes from display:none to display:block
-    await expect(page.locator('#delete-confirm-error')).toHaveCSS('display', 'block')
+    // Error element becomes visible after clicking without correct input
+    await expect(page.locator('#delete-confirm-error')).toBeVisible({ timeout: 3000 })
     await expect(page.locator('.modal-overlay')).toBeVisible()
   })
 

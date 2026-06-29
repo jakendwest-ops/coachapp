@@ -7285,12 +7285,12 @@ async function renderProgress(el) {
 
   el.innerHTML = `
     <div class="page-header"><h1 class="page-title">My Progress</h1></div>
-    <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px;overflow-x:auto">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
       ${tabs.map(t => `
         <button onclick="window._progressTab='${t}';renderProgress(document.getElementById('main-content'))"
-          style="flex:0 0 auto;padding:10px 16px;border:none;background:transparent;font-size:13px;font-weight:600;cursor:pointer;
-                 color:${t===activeTab?'var(--accent)':'var(--text-muted)'};
-                 border-bottom:${t===activeTab?'2px solid var(--accent)':'2px solid transparent'};margin-bottom:-2px;white-space:nowrap">
+          style="padding:8px 16px;border:none;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;
+                 background:${t===activeTab?'var(--accent)':'var(--surface-2)'};
+                 color:${t===activeTab?'#fff':'var(--text-muted)'}">
           ${t}
         </button>`).join('')}
     </div>
