@@ -158,26 +158,16 @@ test.describe('Workout runner (client)', () => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    // Handle timed sets (v169+): click ▶ Start first, then wait for LOG
-    const timedStart = page.locator('button:has-text("▶ Start")')
-    if (await timedStart.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await timedStart.click()
-      await page.evaluate(() => { if (_runner) { _runner._setTimerRemaining = 1 } })
-      await page.waitForTimeout(1500)
-    }
-
-    // Log one set so the runner has data
+    // Log one set — scoped to #workout-runner to avoid matching the workouts-page
+    // Start/LOG buttons still in the DOM behind the runner overlay
     const weightInput = page.locator('#wr-weight-input')
     const repsInput   = page.locator('#wr-reps-input')
-    const durInput    = page.locator('#wr-duration-input')
-    if (await weightInput.isVisible()) await weightInput.fill('80')
+    if (await weightInput.isVisible({ timeout: 5000 }).catch(() => false)) await weightInput.fill('80')
     if (await repsInput.isVisible())   await repsInput.fill('8')
-    if (await durInput.isVisible())    await durInput.fill('1:30')
-    const logBtn = page.locator('button:has-text("LOG")')
-    if (await logBtn.isVisible({ timeout: 3000 }).catch(() => false)) await logBtn.click()
+    await page.locator('#workout-runner button:has-text("LOG")').click({ timeout: 8000 })
     await page.waitForTimeout(300)
 
-    // Skip rest timer if running, then trigger finish screen
+    // Skip rest timer, then trigger finish screen directly
     await page.evaluate(() => { if (typeof skipRestTimer === 'function') skipRestTimer() })
     await page.evaluate(() => showRunnerFinish())
 
@@ -188,23 +178,12 @@ test.describe('Workout runner (client)', () => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    // Handle timed sets (v169+): click ▶ Start first, then fast-forward timer
-    const timedStart = page.locator('button:has-text("▶ Start")')
-    if (await timedStart.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await timedStart.click()
-      await page.evaluate(() => { if (_runner) { _runner._setTimerRemaining = 1 } })
-      await page.waitForTimeout(1500)
-    }
-
-    // Log one set
+    // Log one set — scoped to #workout-runner to avoid the workouts-page buttons behind overlay
     const weightInput = page.locator('#wr-weight-input')
     const repsInput   = page.locator('#wr-reps-input')
-    const durInput    = page.locator('#wr-duration-input')
-    if (await weightInput.isVisible()) await weightInput.fill('80')
+    if (await weightInput.isVisible({ timeout: 5000 }).catch(() => false)) await weightInput.fill('80')
     if (await repsInput.isVisible())   await repsInput.fill('8')
-    if (await durInput.isVisible())    await durInput.fill('1:30')
-    const logBtn = page.locator('button:has-text("LOG")')
-    if (await logBtn.isVisible({ timeout: 3000 }).catch(() => false)) await logBtn.click()
+    await page.locator('#workout-runner button:has-text("LOG")').click({ timeout: 8000 })
 
     // Skip rest timer so End button works cleanly
     await page.evaluate(() => { if (typeof skipRestTimer === 'function') skipRestTimer() })
