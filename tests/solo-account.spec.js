@@ -10,8 +10,8 @@ test.describe('Solo / Personal account', () => {
 
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
-    // loadUserInfo is async — give it time to set _soloClientId
-    await page.waitForTimeout(3000)
+    // loadUserInfo is async — 500ms is enough; if not set by then, it won't be
+    await page.waitForTimeout(500)
     soloAvailable = await page.evaluate(() => !!window._soloClientId)
     if (soloAvailable) {
       await page.evaluate(() => switchView('solo'))

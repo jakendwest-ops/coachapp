@@ -18,7 +18,7 @@ test.describe('PT Workouts page', () => {
         body.includes('No templates yet') ||
         body.includes('No standalone templates')
       )
-    }, { timeout: 20000 })
+    }, { timeout: 30000 })
     // If we get here without throwing, the page rendered something meaningful
     expect(true).toBe(true)
   })

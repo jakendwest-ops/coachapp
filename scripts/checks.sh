@@ -148,6 +148,16 @@ if [ -n "$DUPES" ]; then
   fail "duplicate function definition(s) found: $DUPES"
 fi
 
+# ── 10. Playwright smoke tests ───────────────────────────────────────────────
+# Run reliable test files only (settings.spec.js excluded — known flaky modal timing)
+echo "Running Playwright smoke tests..."
+if npx playwright test tests/runner.spec.js tests/solo-account.spec.js --reporter=line 2>&1; then
+  echo "  Playwright: passed"
+else
+  echo ""
+  fail "Playwright smoke tests failed — push blocked. Fix tests before pushing."
+fi
+
 # ── Result ────────────────────────────────────────────────────────────────────
 echo ""
 if [ "$ERRORS" -gt 0 ]; then
