@@ -1,0 +1,1575 @@
+﻿async function launchRunner(clientId) {
+  const name     = document.getElementById('rs-name')?.value.trim() || window._fakeRsName || 'Workout'
+  const tmplId   = document.getElementById('rs-template')?.value || window._fakeRsTemplate || ''
+  window._fakeRsName = null; window._fakeRsTemplate = null
+  const template = window._runnerTemplates?.find(t => t.id === tmplId)
+
+  // Fetch stored 1RMs for this client — used to compute kg targets from %1RM sets
+  const { data: oneRMRows } = await db.from('client_1rms').select('exercise_name, one_rm_kg').eq('client_id', clientId)
+  const oneRMMap = Object.fromEntries((oneRMRows || []).map(r => [r.exercise_name.trim().toLowerCase(), parseFloat(r.one_rm_kg)]))
+
+  let exercises = []
+  if (template) {
+    exercises = (template.workout_template_exercises || [])
+      .sort((a, b) => a.order_index - b.order_index)
+      .map(ex => {
+        const repsStr = String(ex.reps || '')
+        const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.[0]?.restMin || '') || 90
+        const s0 = ex.sets_json?.[0] || {}
+        const oneRM = oneRMMap[ex.exercise_name.trim().toLowerCase()] || null
+        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets_json?.length || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
+      })
+  }
+  if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
+
+  document.getElementById('runner-setup')?.remove()
+
+  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null }
+  renderRunner()
+  _runner._timerInterval = setInterval(() => {
+    if (!_runner) return
+    const t = fmtRunnerTime(_runner.startTime)
+    const el = document.getElementById('wr-timer')
+    if (el) el.textContent = t
+    const el2 = document.getElementById('rt-session-timer')
+    if (el2) el2.textContent = t
+  }, 1000)
+}
+
+function fmtRunnerTime(startTime) {
+  const s = Math.floor((Date.now() - startTime) / 1000)
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`
+}
+
+async function fetchRunnerLastSession(exName) {
+  if (!_runner || !exName) return
+  _runner.lastSession = _runner.lastSession || {}
+  if (_runner.lastSession[exName] !== undefined) { renderRunnerLastSession(exName); return }
+  _runner.lastSession[exName] = null
+
+  const { data: logs } = await db.from('workout_logs')
+    .select('id, date').eq('client_id', _runner.clientId)
+    .order('date', { ascending: false }).limit(20)
+  if (!logs?.length) { _runner.lastSession[exName] = null; return }
+
+  const { data: exRows } = await db.from('workout_log_exercises')
+    .select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)')
+    .eq('exercise_name', exName).in('log_id', logs.map(l => l.id))
+  if (!exRows?.length) { _runner.lastSession[exName] = null; return }
+
+  // Pick the occurrence from the most recent log (logs is already date-desc ordered)
+  const best = exRows.sort((a, b) =>
+    logs.findIndex(l => l.id === a.log_id) - logs.findIndex(l => l.id === b.log_id)
+  )[0]
+  const date = logs.find(l => l.id === best.log_id)?.date
+  const sets = (best.workout_log_sets || [])
+    .filter(s => s.weight_kg || s.reps_achieved)
+    .sort((a, b) => a.set_number - b.set_number)
+
+  _runner.lastSession[exName] = sets.length ? { date, sets } : null
+  renderRunnerLastSession(exName)
+}
+
+function renderRunnerLastSession(exName) {
+  const el = document.getElementById('wr-last-session')
+  if (!el) return
+  const data = _runner?.lastSession?.[exName]
+  if (!data?.sets?.length) { el.innerHTML = ''; return }
+  const dateStr = new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);white-space:nowrap">↑ Beat · ${dateStr}</span>
+      ${data.sets.map(s => `
+        <span style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap">
+          <span style="color:var(--text-muted)">S${s.set_number}</span>
+          ${s.weight_kg ? s.weight_kg + 'kg' : ''}${s.weight_kg && s.reps_achieved ? ' × ' : ''}${s.reps_achieved ? s.reps_achieved : ''}
+        </span>`).join('')}
+    </div>
+  `
+}
+
+function renderRunner() {
+  const ex      = _runner.exercises[_runner.exIdx]
+  const setNum  = ex.loggedSets.length + 1
+  const isLast  = _runner.exIdx === _runner.exercises.length - 1
+  const nextEx  = _runner.exercises[_runner.exIdx + 1]
+  const lastSet = ex.loggedSets[ex.loggedSets.length - 1]
+
+  let el = document.getElementById('workout-runner')
+  if (!el) { el = document.createElement('div'); el.id = 'workout-runner'; document.body.appendChild(el) }
+
+  el.innerHTML = `
+    <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
+
+      <!-- Header -->
+      <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+          ${_runner.exIdx > 0 ? `<button onclick="runnerGoBack()" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:13px;font-weight:700;cursor:pointer;color:var(--text-muted);flex-shrink:0">← Back</button>` : ''}
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}</span>
+              <span style="font-size:11px;font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
+            </div>
+            <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${ex.name||'Exercise name'}</div>
+            ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?ex.targetReps+' reps':null,ex.targetWeight?'@ '+ex.targetWeight+'kg':null].filter(Boolean).join(' · ')}</div>` : ''}
+            ${nextEx ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${nextEx.name}</span></div>` : ''}
+          </div>
+          <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
+        </div>
+        ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${e.name||'Exercise '+(i+1)}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
+        ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:8px;font-size:11.5px;color:var(--text-muted);line-height:1.5">${_runner.templateDesc}</div>` : ''}
+      </div>
+
+      <!-- Scrollable area: logged sets + PT note + client notes -->
+      <div style="flex:1;overflow-y:auto;padding:12px 16px">
+        <!-- Logged sets -->
+        ${!ex.loggedSets.length
+          ? `<p style="color:var(--text-muted);font-size:13px;margin:0 0 8px">No sets logged yet.</p>`
+          : `<div style="margin-bottom:8px">${ex.loggedSets.map((s,i) => `
+            <div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px">
+              <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:48px;flex-shrink:0">Set ${i+1}</span>
+              <span style="flex:1;display:flex;gap:10px;align-items:center">
+                ${ex.type === 'cardio'
+                  ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : s.distance ? s.distance+' km' : '—'}</span>`
+                  : s.distance_m
+                    ? `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
+                    : s.duration
+                    ? `<span style="font-size:15px;font-weight:700">⏱ ${s.duration}</span>${s.weight?`<span style="font-size:14px;font-weight:600;color:var(--text-muted)">${s.weight} kg</span>`:''}`
+                    : s.leftReps != null
+                    ? `<span style="font-size:13px;font-weight:700">L: ${s.leftReps||'—'}${s.leftWeight?' @ '+s.leftWeight+'kg':''}</span><span style="font-size:13px;font-weight:700">R: ${s.rightReps||'—'}${s.rightWeight?' @ '+s.rightWeight+'kg':''}</span>`
+                    : `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
+              </span>
+              <button onclick="editRunnerSet(${_runner.exIdx},${i})" style="flex-shrink:0;padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--accent)">✎ Edit</button>
+            </div>`).join('')}</div>`}
+
+        <!-- PT note (always shown if exists, label prefix stripped) -->
+        ${(() => {
+          if (!ex.notes) return ''
+          const noteMatch = ex.notes.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
+          const label = noteMatch ? noteMatch[1] : 'Coach note'
+          const noteText = noteMatch ? noteMatch[2] : ex.notes
+          if (!noteText.trim()) return ''
+          return `<div style="margin:8px 0 4px;padding:10px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)">
+            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">${label}</span>
+            <div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.5">${noteText}</div>
+          </div>`
+        })()}
+
+        <!-- Client notes -->
+        <div style="margin-top:14px">
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Your notes</label>
+          <textarea id="wr-client-notes" placeholder="e.g. wide grip felt comfortable…" rows="2"
+            oninput="_runner.exercises[${_runner.exIdx}].clientNotes=this.value"
+            style="width:100%;margin-top:6px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);resize:none;box-sizing:border-box;font-family:inherit;line-height:1.5">${ex.clientNotes||''}</textarea>
+        </div>
+      </div>
+
+      <!-- Last session strip — persistent reference -->
+      ${ex.type !== 'cardio' ? `<div id="wr-last-session" style="border-top:1px solid var(--border);padding:6px 12px;background:var(--bg);min-height:28px"></div>` : ''}
+
+      <!-- Set counter — above stats bar -->
+      ${ex.targetSets ? `<div style="padding:6px 14px;border-top:1px solid var(--border);background:var(--bg);display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;font-weight:700;color:var(--accent)">Set ${setNum} of ${ex.targetSets}</span>
+        <div style="display:flex;gap:4px">${Array.from({length:ex.targetSets},(_,i)=>`<div style="width:20px;height:6px;border-radius:3px;background:${i<ex.loggedSets.length?'var(--accent)':i===ex.loggedSets.length?'rgba(99,102,241,0.4)':'var(--border)'}"></div>`).join('')}</div>
+      </div>` : ''}
+
+
+      <!-- Set input -->
+      <div style="padding:10px 12px 12px;background:var(--surface)">
+        ${_runner._restInterval ? `
+          <div style="padding:14px;text-align:center;border-radius:10px;background:var(--surface-2)">
+            <div style="font-size:13px;font-weight:600;color:var(--text-muted)">Resting — inputs available after rest</div>
+          </div>
+        ` : ex.type === 'cardio' ? (() => {
+          const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+          const lastCardio = ex.loggedSets[ex.loggedSets.length - 1]
+          const distBased = tgt.isDistanceBased
+          return `
+          <!-- Cardio targets -->
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+            ${distBased && tgt.distance ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${tgt.distance} km</span>` : ''}
+            ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${normalizeDuration(tgt.duration)}</span>` : ''}
+            ${tgt.pace500Min ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.pace500Min}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+tgt.pace500Max:''} /500m</span>` : ''}
+            ${tgt.paceKmMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.paceKmMin}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+tgt.paceKmMax:''} /km</span>` : ''}
+            ${tgt.hrZoneMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${tgt.hrZoneMin}${tgt.hrZoneMax?'–'+tgt.hrZoneMax:''} bpm</span>` : ''}
+            ${tgt.restMin && tgt.restMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof tgt.restMin === 'number' ? fmtDuration(tgt.restMin) : tgt.restMin}</span>` : ''}
+            ${tgt.strokeRateMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">${tgt.strokeRateMin}${tgt.strokeRateMax?'–'+tgt.strokeRateMax:''} spm</span>` : ''}
+            ${tgt.restHrMax ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest HR &lt;${tgt.restHrMax}</span>` : ''}
+          </div>
+          <!-- Set label -->
+          <div style="text-align:center;font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Set ${setNum}</div>
+          <!-- Cardio input -->
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
+            ${distBased ? `
+              <div>
+                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance achieved (km)</div>
+                <input id="wr-cardio-dist" type="number" step="0.01" inputmode="decimal" placeholder="${tgt.distance||'0'}" value="${lastCardio?.distance||tgt.distance||''}"
+                  style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+              </div>
+              <div>
+                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Pace /500m achieved — optional</div>
+                <input id="wr-cardio-pace" type="text" inputmode="numeric" placeholder="e.g. 2:32" value="${lastCardio?.paceAchieved||''}"
+                  oninput="this.value=fmtRestInput(this.value)"
+                  style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+              </div>` : `
+              <div>
+                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Duration (MM:SS)</div>
+                <input id="wr-cardio-dur" type="text" inputmode="numeric" placeholder="${normalizeDuration(tgt.duration)||'0:00'}" value="${normalizeDuration(lastCardio?.duration||tgt.duration||'')}"
+                  oninput="this.value=fmtRestInput(this.value)"
+                  style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+              </div>`}
+          </div>
+          <!-- Buttons -->
+          <div style="display:flex;gap:8px;margin-bottom:6px">
+            ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
+            ${!distBased ? `<button onclick="event.stopPropagation();startCardioTimer()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--surface-2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
+            <button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
+          </div>
+          <button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>`
+        })() : `
+        <!-- Strength input -->
+        ${(() => {
+          const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+          const cols = []
+          if (tgt.timed) {
+            const secs = tgt.duration ? (parseRest(tgt.duration)||0) : (tgt.repsMin ? parseInt(tgt.repsMin) : null)
+            const durDisplay = secs != null ? (Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0')) : null
+            if (durDisplay) cols.push({ val: durDisplay, label: 'DURATION', accent: true })
+          }
+          const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
+          if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
+          if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
+          if (tgt.intensityMin) {
+            if (ex.oneRM) {
+              const kgLo = _calcWeightFromPct(ex.oneRM, tgt.intensityMin)
+              const kgHi = tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? _calcWeightFromPct(ex.oneRM, tgt.intensityMax) : null
+              cols.push({ val: kgLo + (kgHi ? '–'+kgHi : '') + ' kg', label: '1RM TARGET', accent: true })
+            } else {
+              cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
+            }
+          }
+          if (tgt.effortMin) cols.push({ val: (tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
+          if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
+          if (tgt.tempo) cols.push({ val: tgt.tempo, label: 'TEMPO' })
+          const targetBar = cols.length ? `<div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:10px">${cols.map((c, i) =>
+            `<div style="flex:1;text-align:center;padding:8px 4px${i < cols.length-1 ? ';border-right:1px solid var(--border)' : ''}">
+              <div style="font-size:18px;font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'};line-height:1.1">${c.val}</div>
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
+            </div>`
+          ).join('')}</div>` : ''
+          const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
+          const distTarget = ex.notes?.match(/(\d+)[–\-](\d+)\s*m/)?.[0] || tgt.distance || ''
+          const weightPlaceholder = tgt.weight || '—'
+          const repsPlaceholder = repsStr ? repsStr.replace('–', '-') : '—'
+          return `
+          ${targetBar}
+          ${tgt.unilateral && !isDistance ? `
+          <!-- Unilateral L/R input -->
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
+              <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;text-align:center;color:var(--accent)">Left</div>
+              <input id="wr-left-weight" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
+                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+              <input id="wr-left-reps" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
+                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>kg</span><span>reps</span></div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;text-align:center;color:var(--accent)">Right</div>
+              <input id="wr-right-weight" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
+                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+              <input id="wr-right-reps" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
+                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>kg</span><span>reps</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
+              <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
+              ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
+            </div>
+          </div>` : `
+          <div style="display:flex;align-items:stretch;gap:6px">
+            <!-- Set number -->
+            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
+              <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
+            </div>
+            <!-- Weight input (always shown, optional for timed) -->
+            ${ex.bodyweight
+              ? `<div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg)">
+                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Weight</div>
+                  <div style="font-size:20px;font-weight:700;color:var(--text)">BW</div>
+                 </div>`
+              : `<div style="flex:1;display:flex;flex-direction:column">
+                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${ex.assisted?'Assist (kg)':'Kilograms'}</div>
+                  <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
+                    style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+                 </div>`}
+            <!-- Duration (timed) or Reps / Distance -->
+            ${tgt.timed
+              ? (_runner._setTimerDone
+                  ? `<div style="flex:1;display:flex;flex-direction:column">
+                      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Duration</div>
+                      <input id="wr-duration-input" type="text" inputmode="numeric" placeholder="${tgt.duration||'0:00'}" oninput="this.value=fmtRestInput(this.value)"
+                        style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box">
+                     </div>`
+                  : '')
+              : `<div style="flex:1;display:flex;flex-direction:column">
+                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${isDistance ? 'Metres' : 'Reps'}</div>
+                  ${isDistance
+                    ? `<input id="wr-dist-input" type="number" inputmode="decimal" step="1" placeholder="${distTarget||'m'}"
+                        style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
+                    : `<input id="wr-reps-input" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
+                        style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`}
+                 </div>`}
+            <!-- LOG / Start / Skip -->
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
+              ${tgt.timed && !_runner._setTimerDone
+                ? `<button onclick="event.stopPropagation();startStrengthSetTimer()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:13px;font-weight:800;cursor:pointer">▶ Start</button>`
+                : `<button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>`}
+              ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
+            </div>
+          </div>`}
+          ${ex.loggedSets.length > 0 && ex.loggedSets.length >= ex.targetSets ? `<button onclick="addExtraStrengthSet()" style="width:100%;margin-top:6px;padding:7px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
+        })()}`}
+      </div>
+    </div>
+  `
+  if (ex.type !== 'cardio') setTimeout(() => fetchRunnerLastSession(ex.name), 0)
+}
+
+function logRunnerSet() {
+  _unlockAudio() // user gesture — unlock AudioContext for iOS
+  _unlockSpeech() // prime speechSynthesis for iOS mid-timer calls
+  if (_runner._restInterval) return // block LOG during rest
+  const ex = _runner.exercises[_runner.exIdx]
+  let setData
+  if (ex.type === 'cardio') {
+    const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+    if (tgt.isDistanceBased) {
+      const dist = document.getElementById('wr-cardio-dist')?.value?.trim()
+      if (!dist) return
+      const paceEl = document.getElementById('wr-cardio-pace')
+      setData = { distance: dist, paceAchieved: paceEl?.value?.trim() || null }
+    } else {
+      // If interval timer is running, compute elapsed time; otherwise read the manual input field
+      let dur
+      if (_runner._intervalRunning && _runner._intervalSecs != null && _runner._intervalRemaining != null) {
+        const elapsedSecs = _runner._intervalSecs - _runner._intervalRemaining
+        dur = elapsedSecs > 0 ? fmtRestCountdown(elapsedSecs) : tgt.duration || null
+      } else {
+        dur = document.getElementById('wr-cardio-dur')?.value?.trim()
+      }
+      if (!dur || dur === '0:00') return
+      // Overlay inputs take priority over runner-form inputs (interval overlay is still mounted here)
+      const distEl = document.getElementById('wr-cardio-dist-opt')
+      const paceEl = document.getElementById('wr-cardio-pace')
+      setData = { duration: dur, distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null }
+    }
+    // stop any running interval timer
+    stopIntervalTimer()
+  } else {
+    const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+    const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
+    const weight = ex.bodyweight ? 'BW' : (document.getElementById('wr-weight-input')?.value?.trim() || '')
+    if (tgt.timed) {
+      const dur = document.getElementById('wr-duration-input')?.value?.trim()
+      if (!dur || dur === '0:00') return
+      setData = { weight: weight || null, duration: dur }
+      _runner._setTimerDone = false
+    } else if (tgt.unilateral && !isDistance) {
+      const leftWeight = document.getElementById('wr-left-weight')?.value?.trim() || ''
+      const leftReps   = document.getElementById('wr-left-reps')?.value?.trim()   || ''
+      const rightWeight = document.getElementById('wr-right-weight')?.value?.trim() || ''
+      const rightReps   = document.getElementById('wr-right-reps')?.value?.trim()   || ''
+      if (!leftReps && !rightReps) return
+      setData = { leftWeight: leftWeight || null, leftReps: leftReps || null, rightWeight: rightWeight || null, rightReps: rightReps || null }
+    } else if (isDistance) {
+      const dist = document.getElementById('wr-dist-input')?.value?.trim() || ''
+      if (!dist) return
+      setData = { weight, distance_m: dist }
+    } else {
+      const reps = document.getElementById('wr-reps-input')?.value?.trim() || ''
+      if (!reps) return
+      setData = { weight, reps }
+      if (ex.assisted) setData.assistWeight = weight
+    }
+  }
+  ex.loggedSets.push(setData)
+  // Superset: if next exercise shares a superset group, switch to it instead of resting
+  if (ex.supersetGroup) {
+    const nextIdx = _runner.exercises.findIndex((e, i) => i !== _runner.exIdx && e.supersetGroup === ex.supersetGroup)
+    if (nextIdx !== -1) {
+      _runner.exIdx = nextIdx
+      renderRunner()
+      return
+    }
+  }
+  // If all target sets for this exercise are done, advance or finish
+  const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
+  if (hitTarget) {
+    const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+    if (nextExIdx !== -1) {
+      // More exercises — rest then advance
+      _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
+      renderRunner()
+      startRestTimer(ex.restSecs || 90)
+      return
+    } else {
+      // All done — go straight to finish
+      showRunnerFinish()
+      return
+    }
+  }
+  renderRunner()
+  const restSecs = ex.restSecs || 90
+  if (ex.type === 'cardio') {
+    const nextTgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+    if (!nextTgt.isDistanceBased) {
+      _runner._afterRest = () => startIntervalTimer(parseRest(nextTgt.duration) || 300)
+    }
+  }
+  startRestTimer(restSecs)
+}
+
+let _audioCtx = null
+
+function _unlockAudio() {
+  // Must be called from a user gesture (tap). Once resumed, iOS keeps the
+  // context unlocked so timer-fired playBeep calls work for the session.
+  try {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    if (_audioCtx.state === 'suspended') _audioCtx.resume()
+  } catch(e) {}
+}
+
+function _unlockSpeech() {
+  // Prime speechSynthesis on first user gesture so iOS allows mid-timer calls.
+  if (!window.speechSynthesis) return
+  try { window.speechSynthesis.cancel() } catch(e) {}
+}
+
+function speakCue(text) {
+  if (!window.speechSynthesis) return
+  try {
+    window.speechSynthesis.cancel()
+    const utt = new SpeechSynthesisUtterance(text)
+    utt.rate = 1.1
+    utt.volume = 1
+    window.speechSynthesis.speak(utt)
+  } catch(e) {}
+}
+
+function playBeep(freq = 880, duration = 0.15, volume = 0.8) {
+  try {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const _fire = () => {
+      try {
+        const ctx = _audioCtx
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.type = 'sine'
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(volume, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + duration)
+      } catch(e) {}
+    }
+    if (_audioCtx.state !== 'running') {
+      _audioCtx.resume().then(_fire).catch(() => {})
+    } else {
+      _fire()
+    }
+  } catch(e) {}
+}
+
+function startStrengthSetTimer() {
+  _unlockAudio()
+  _unlockSpeech()
+  const ex = _runner.exercises[_runner.exIdx]
+  const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+  const secs = tgt.duration ? (parseRest(tgt.duration) || 0) : 0
+  if (!secs) return
+  stopStrengthSetTimer()
+  _runner._setTimerSecs = secs
+  _runner._setTimerRemaining = secs
+  _runner._setTimerActive = true
+  _runner._setTimerDone = false
+  renderStrengthSetTimer()
+  _runner._setTimerInterval = setInterval(() => {
+    _runner._setTimerRemaining--
+    if (_runner._setTimerRemaining <= 0) {
+      _runner._setTimerInterval = clearTimer(_runner._setTimerInterval)
+      _runner._setTimerActive = false
+      _runner._setTimerDone = true
+      document.getElementById('wr-set-timer-overlay')?.remove()
+      playBeep(1046, 0.5, 0.95)
+      renderRunner()
+      // pre-fill duration after render
+      const dur = normalizeDuration(tgt.duration)
+      const durInput = document.getElementById('wr-duration-input')
+      if (durInput && dur) durInput.value = dur
+      return
+    }
+    if (_runner._setTimerRemaining === 10) speakCue('10 seconds')
+    if (_runner._setTimerRemaining <= 3) playBeep(880, 0.15, 0.75)
+    const el = document.getElementById('wr-set-countdown')
+    if (el) {
+      el.textContent = fmtRestCountdown(_runner._setTimerRemaining)
+      el.style.color = _runner._setTimerRemaining <= 3 ? '#ef4444' : 'var(--accent)'
+    }
+    const ring = document.getElementById('wr-set-ring')
+    if (ring) {
+      const circ = 2 * Math.PI * 54
+      ring.style.strokeDashoffset = circ * (1 - _runner._setTimerRemaining / _runner._setTimerSecs)
+    }
+  }, 1000)
+}
+
+function stopStrengthSetTimer() {
+  _runner._setTimerInterval = clearTimer(_runner._setTimerInterval)
+  _runner._setTimerActive = false
+  _runner._setTimerDone = false
+  document.getElementById('wr-set-timer-overlay')?.remove()
+}
+
+function renderStrengthSetTimer() {
+  document.getElementById('wr-set-timer-overlay')?.remove()
+  const secs = _runner._setTimerRemaining
+  const total = _runner._setTimerSecs
+  const circ = 2 * Math.PI * 54
+  const pct = secs / total
+  const ex = _runner.exercises[_runner.exIdx]
+  const setNum = ex.loggedSets.length + 1
+  const overlay = document.createElement('div')
+  overlay.id = 'wr-set-timer-overlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
+  overlay.innerHTML = `
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${ex.name} — Set ${setNum}</div>
+    <div style="position:relative;display:inline-block;margin-bottom:24px">
+      <svg width="140" height="140" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
+        <circle id="wr-set-ring" cx="60" cy="60" r="54" fill="none" stroke="var(--accent)" stroke-width="6"
+          stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - pct)}"
+          stroke-linecap="round" transform="rotate(-90 60 60)"
+          style="transition:stroke-dashoffset .9s linear"/>
+      </svg>
+      <div id="wr-set-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
+    </div>
+    <div style="font-size:13px;color:var(--text-muted)">SET IN PROGRESS</div>
+  `
+  document.body.appendChild(overlay)
+}
+
+function startCardioTimer() {
+  _unlockAudio() // user gesture — unlock AudioContext for iOS
+  const ex = _runner.exercises[_runner.exIdx]
+  const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+  const durEl = document.getElementById('wr-cardio-dur')
+  const secs = (durEl?.value?.trim() ? parseRest(durEl.value.trim()) : 0) || parseRest(tgt.duration) || 300
+  startIntervalTimer(secs)
+}
+
+function startIntervalTimer(secs) {
+  stopIntervalTimer()
+  _runner._intervalSecs = secs
+  _runner._intervalRemaining = secs
+  _runner._intervalRunning = true
+  renderIntervalTimer()
+  _runner._intervalInterval = setInterval(() => {
+    _runner._intervalRemaining--
+    if (_runner._intervalRemaining <= 0) {
+      stopIntervalTimer()
+      playBeep(1046, 0.5, 0.95)
+      // auto-log with the target duration
+      const ex = _runner.exercises[_runner.exIdx]
+      const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+      const distEl = document.getElementById('wr-cardio-dist-opt')
+      const paceEl = document.getElementById('wr-cardio-pace')
+      const setData = { duration: tgt.duration || fmtRestCountdown(secs), distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null }
+      ex.loggedSets.push(setData)
+      renderRunner()
+      const restSecs = ex.restSecs || 90
+      const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
+      if (hitTarget) {
+        const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+        if (nextExIdx !== -1) {
+          _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
+          startRestTimer(restSecs)
+        } else {
+          startRestTimer(restSecs)
+          _runner._afterRest = () => showRunnerFinish()
+        }
+      } else {
+        const nextTgt2 = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+        if (!nextTgt2.isDistanceBased) {
+          _runner._afterRest = () => startIntervalTimer(parseRest(nextTgt2.duration) || 300)
+        }
+        startRestTimer(restSecs)
+      }
+      return
+    }
+    if (_runner._intervalRemaining <= 5) playBeep(880, 0.15, 0.75)
+    const el = document.getElementById('wr-interval-countdown')
+    if (el) {
+      el.textContent = fmtRestCountdown(_runner._intervalRemaining)
+      el.style.color = _runner._intervalRemaining <= 5 ? '#ef4444' : 'var(--accent)'
+    }
+    const ring = document.getElementById('wr-interval-ring')
+    if (ring) {
+      const circ = 2 * Math.PI * 54
+      const pct = _runner._intervalRemaining / _runner._intervalSecs
+      ring.style.strokeDashoffset = circ * (1 - pct)
+    }
+  }, 1000)
+}
+
+function stopIntervalTimer() {
+  _runner._intervalInterval = clearTimer(_runner._intervalInterval)
+  _runner._intervalRunning = false
+  _runner._intervalRemaining = null
+  document.getElementById('wr-interval-overlay')?.remove()
+}
+
+function renderIntervalTimer() {
+  document.getElementById('wr-interval-overlay')?.remove()
+  const secs = _runner._intervalRemaining
+  const total = _runner._intervalSecs
+  const circ = 2 * Math.PI * 54
+  const pct = secs / total
+  const ex = _runner.exercises[_runner.exIdx]
+  const setNum = ex.loggedSets.length + 1
+
+  const overlay = document.createElement('div')
+  overlay.id = 'wr-interval-overlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
+  overlay.innerHTML = `
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${ex.name} — Set ${setNum}</div>
+    <div style="position:relative;display:inline-block;margin-bottom:24px">
+      <svg width="140" height="140" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
+        <circle id="wr-interval-ring" cx="60" cy="60" r="54" fill="none" stroke="var(--accent)" stroke-width="6"
+          stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - pct)}"
+          stroke-linecap="round" transform="rotate(-90 60 60)"
+          style="transition:stroke-dashoffset .9s linear"/>
+      </svg>
+      <div id="wr-interval-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
+    </div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:24px">INTERVAL IN PROGRESS</div>
+    <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
+      <div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance covered (km) — optional</div>
+        <input id="wr-cardio-dist-opt" type="number" step="0.01" inputmode="decimal" placeholder="e.g. 1.24"
+          style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--surface);color:var(--text)">
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Pace /500m achieved — optional</div>
+        <input id="wr-cardio-pace" type="text" inputmode="numeric" placeholder="e.g. 2:07"
+          oninput="this.value=fmtRestInput(this.value)"
+          style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--surface);color:var(--text)">
+      </div>
+    </div>
+    <button onclick="event.stopPropagation();logRunnerSet()" style="width:100%;max-width:340px;padding:16px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">Done early — LOG</button>
+  `
+  document.body.appendChild(overlay)
+}
+
+function startRestTimer(secs) {
+  _runner._restInterval = clearTimer(_runner._restInterval)
+  _runner.restRemaining = secs
+  _runner.restTotal     = secs
+  renderRestTimer()
+  _runner._restInterval = setInterval(() => {
+    _runner.restRemaining--
+    if (_runner.restRemaining <= 0) {
+      _runner._restInterval = clearTimer(_runner._restInterval)
+      _runner.restRemaining = null
+      playBeep(1046, 0.5, 0.95) // higher, longer beep on finish
+      document.getElementById('rest-timer-overlay')?.remove()
+      const cb = _runner._afterRest
+      if (cb) { _runner._afterRest = null; cb() }
+    } else {
+      _unlockAudio()
+      if (_runner.restRemaining === 10) speakCue('10 seconds')
+      if (_runner.restRemaining <= 3) playBeep(880, 0.15, 0.75)
+      const el = document.getElementById('rt-countdown')
+      if (el) {
+        const r = _runner.restRemaining
+        el.textContent = r < 60 ? r+'s' : fmtRestCountdown(r)
+        el.style.color = r <= 3 ? '#ef4444' : 'var(--accent)'
+      }
+      const ring = document.getElementById('rt-ring')
+      if (ring) {
+        const pct = _runner.restRemaining / _runner.restTotal
+        const circ = 2 * Math.PI * 18
+        ring.style.strokeDashoffset = circ * (1 - pct)
+      }
+    }
+  }, 1000)
+}
+
+function fmtRestCountdown(secs) {
+  return `${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`
+}
+
+function skipRestTimer() {
+  _runner._restInterval = clearTimer(_runner._restInterval)
+  _runner.restRemaining = null
+  document.getElementById('rest-timer-overlay')?.remove()
+  const cb = _runner._afterRest
+  if (cb) { _runner._afterRest = null; cb() }
+  else if (_runner) renderRunner()
+}
+
+function renderRestTimer() {
+  document.getElementById('rest-timer-overlay')?.remove()
+  const secs  = _runner.restRemaining
+  const total = _runner.restTotal
+  const circ  = 2 * Math.PI * 18
+  const pct   = secs / total
+  const curEx    = _runner.exercises[_runner.exIdx]
+  const hitTarget = curEx.targetSets > 0 && curEx.loggedSets.length >= curEx.targetSets
+  const nextEx   = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name)
+  const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (curEx.loggedSets.length + 1)
+
+  const overlay = document.createElement('div')
+  overlay.id = 'rest-timer-overlay'
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:400;background:var(--surface);border-bottom:2px solid var(--accent);display:flex;align-items:center;gap:12px;padding:10px 16px;max-width:480px;margin:0 auto;box-shadow:0 2px 12px rgba(0,0,0,.15)'
+  overlay.innerHTML = `
+    <div style="position:relative;width:44px;height:44px;flex-shrink:0">
+      <svg width="44" height="44" viewBox="0 0 44 44">
+        <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" stroke-width="3"/>
+        <circle id="rt-ring" cx="22" cy="22" r="18" fill="none" stroke="var(--accent)" stroke-width="3"
+          stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - pct)}"
+          stroke-linecap="round" transform="rotate(-90 22 22)"
+          style="transition:stroke-dashoffset .9s linear"/>
+      </svg>
+      <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--accent)">${secs < 60 ? secs+'s' : fmtRestCountdown(secs)}</div>
+    </div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
+      <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nextLabel}</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;margin-right:4px">
+      <div style="font-size:10px;color:var(--text-muted)">Session</div>
+      <div id="rt-session-timer" style="font-size:13px;font-weight:700">${fmtRunnerTime(_runner.startTime)}</div>
+    </div>
+    <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:8px;background:var(--surface-2);font-size:13px;font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
+  `
+  document.body.appendChild(overlay)
+}
+
+
+function editRunnerSet(exIdx, setIdx) {
+  const s = _runner.exercises[exIdx].loggedSets[setIdx]
+  if (!s) return
+  const overlay = document.createElement('div')
+  overlay.id = 'wr-edit-overlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center'
+  overlay.innerHTML = `
+    <div style="width:100%;max-width:480px;background:var(--surface);border-radius:24px 24px 0 0;padding:24px 20px 36px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:16px">Edit Set ${setIdx+1}</div>
+      <div style="display:flex;gap:10px;margin-bottom:16px">
+        <div style="flex:1">
+          <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">kg</label>
+          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.weight||''}" placeholder="—">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">Reps</label>
+          <input id="wr-edit-reps" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.reps||''}" placeholder="—" type="number">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="document.getElementById('wr-edit-overlay').remove()" style="flex:1;padding:13px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:14px;font-weight:600;cursor:pointer">Cancel</button>
+        <button onclick="saveEditRunnerSet(${exIdx},${setIdx})" style="flex:2;padding:13px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Save</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+}
+
+function saveEditRunnerSet(exIdx, setIdx) {
+  const weight = document.getElementById('wr-edit-weight')?.value.trim()
+  const reps   = document.getElementById('wr-edit-reps')?.value.trim()
+  if (!reps) return
+  _runner.exercises[exIdx].loggedSets[setIdx] = { ..._runner.exercises[exIdx].loggedSets[setIdx], weight, reps }
+  document.getElementById('wr-edit-overlay')?.remove()
+  renderRunner()
+}
+
+function skipToNextExercise() {
+  stopIntervalTimer()
+  if (_runner.exIdx < _runner.exercises.length - 1) {
+    _runner.exIdx++
+    renderRunner()
+  } else {
+    showRunnerFinish()
+  }
+}
+
+function runnerJumpTo(i) {
+  if (!_runner || i < 0 || i >= _runner.exercises.length) return
+  stopIntervalTimer()
+  stopStrengthSetTimer()
+  skipRestTimer()
+  _runner.exIdx = i
+  renderRunner()
+}
+
+function runnerGoBack() {
+  stopIntervalTimer()
+  stopStrengthSetTimer()
+  skipRestTimer()
+  if (_runner.exIdx > 0) {
+    _runner.exIdx--
+    renderRunner()
+  }
+}
+
+function addExtraCardioSet() {
+  const ex = _runner.exercises[_runner.exIdx]
+  ex.targetSets = (ex.targetSets || 0) + 1
+  if (ex.sets_json?.length) ex.sets_json.push({ ...ex.sets_json[ex.sets_json.length - 1] })
+  renderRunner()
+}
+
+function addExtraStrengthSet() {
+  const ex = _runner.exercises[_runner.exIdx]
+  ex.targetSets = (ex.targetSets || 0) + 1
+  renderRunner()
+}
+
+async function showRunnerFinish() {
+  _runner._timerInterval = clearTimer(_runner._timerInterval)
+  const el = document.getElementById('workout-runner')
+  if (!el) return
+
+  // Snapshot runner state before any await
+  const clientId   = _runner.clientId
+  const runnerName = _runner.name
+  const startTime  = _runner.startTime
+  const exercises  = _runner.exercises
+
+  const duration  = fmtRunnerTime(startTime)
+  const doneExs   = exercises.filter(e => e.loggedSets.length)
+  const totalSets = doneExs.reduce((s,e) => s + e.loggedSets.length, 0)
+  const totalReps = doneExs.reduce((s,e) => s + e.loggedSets.reduce((sr,set) => sr + (parseInt(set.reps,10)||0), 0), 0)
+  const totalVol  = doneExs.reduce((s,e) => s + e.loggedSets.reduce((sv,set) => {
+    const w = parseFloat(set.weight), r = parseInt(set.reps,10)
+    return sv + (isNaN(w)||isNaN(r) ? 0 : w * r)
+  }, 0), 0)
+  const totalDist = doneExs.filter(e=>e.type==='cardio').reduce((s,e) => s + e.loggedSets.reduce((sd,set) => sd + (parseFloat(set.distance)||0), 0), 0)
+
+  // Show screen immediately while PR query runs
+  const renderScreen = (prevBests = {}) => {
+    const prCount = doneExs.filter(e => e.type !== 'cardio').filter(e => {
+      const best = Math.max(...e.loggedSets.map(s => parseFloat(s.weight)||0))
+      return best > 0 && best > (prevBests[e.name] || 0)
+    }).length
+
+    el.innerHTML = `
+      <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:20px 16px 16px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <h2 style="font-size:20px;font-weight:700;margin:0">Workout complete</h2>
+            ${prCount > 0 ? `<span style="background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px">🏆 ${prCount} PR${prCount>1?'s':''}</span>` : ''}
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(${totalVol>0&&totalDist>0?4:3},1fr);gap:8px">
+            <div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800">${duration}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Time</div>
+            </div>
+            <div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800">${totalSets}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Sets</div>
+            </div>
+            ${totalReps > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800">${totalReps.toLocaleString()}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Reps</div>
+            </div>` : ''}
+            ${totalVol > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800;color:var(--accent)">${totalVol>=1000?(totalVol/1000).toFixed(1)+'t':totalVol.toLocaleString()+'kg'}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Volume</div>
+            </div>` : ''}
+            ${totalDist > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
+              <div style="font-size:17px;font-weight:800;color:var(--accent)">${totalDist.toFixed(1)} km</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Distance</div>
+            </div>` : ''}
+          </div>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;padding:16px">
+          ${doneExs.map(e => {
+            const isCardio = e.type === 'cardio'
+            const bestWeight = isCardio ? 0 : Math.max(...e.loggedSets.map(s => parseFloat(s.weight)||0))
+            const isPR = !isCardio && bestWeight > 0 && bestWeight > (prevBests[e.name] || 0)
+            const exVol = isCardio ? 0 : e.loggedSets.reduce((s,set) => {
+              const w = parseFloat(set.weight), r = parseInt(set.reps,10)
+              return s + (isNaN(w)||isNaN(r) ? 0 : w*r)
+            }, 0)
+            const exDist = isCardio ? e.loggedSets.reduce((s,set)=>s+(parseFloat(set.distance)||0),0) : 0
+            return `
+            <div style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
+                <span style="font-weight:600;font-size:14px">${e.name}</span>
+                <div style="display:flex;align-items:center;gap:6px">
+                  ${isPR ? `<span style="font-size:10px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.12);padding:2px 7px;border-radius:10px">🏆 PR</span>` : ''}
+                  <span style="font-size:12px;color:var(--text-muted)">${e.loggedSets.length} set${e.loggedSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+exVol.toLocaleString()+'kg':''} ${isCardio&&exDist>0?'· '+exDist.toFixed(1)+'km':''}</span>
+                </div>
+              </div>
+              ${e.loggedSets.map((s,i) => {
+                const w = parseFloat(s.weight), r = parseInt(s.reps,10)
+                const isSetPR = !isCardio && w > 0 && w === bestWeight && isPR
+                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);font-size:13px${isSetPR?' background:rgba(245,158,11,.06)':''}">
+                  <span style="color:var(--text-muted)">Set ${i+1}</span>
+                  <span style="font-weight:600${isSetPR?';color:#d97706':''}">
+                    ${isCardio
+                      ? [s.duration, s.distance ? s.distance+' km' : ''].filter(Boolean).join(' · ')
+                      : [s.weight&&s.weight!=='BW'?s.weight+' kg':s.weight==='BW'?'BW':'', s.reps?s.reps+' reps':''].filter(Boolean).join(' × ')
+                    }
+                    ${isSetPR ? ' 🏆' : ''}
+                  </span>
+                </div>`
+              }).join('')}
+            </div>`
+          }).join('')}
+
+          <div class="field" style="margin-top:4px">
+            <label class="field-label">Session name</label>
+            <input class="field-input" id="rf-name" value="${runnerName}">
+          </div>
+          <div class="field">
+            <label class="field-label">Notes</label>
+            <textarea class="field-input" id="rf-notes" rows="2" placeholder="How did it go?"></textarea>
+          </div>
+        </div>
+
+        <div style="padding:12px 16px 24px;border-top:1px solid var(--border);display:flex;gap:8px">
+          <button onclick="discardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:13px;font-weight:600;cursor:pointer;color:var(--danger)">Discard</button>
+          <button onclick="saveRunnerSession()" style="flex:1;height:48px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:700;cursor:pointer">Save workout</button>
+        </div>
+      </div>
+    `
+  }
+
+  // Render immediately with no PR data, then re-render once PRs are fetched
+  renderScreen()
+
+  const strengthNames = doneExs.filter(e=>e.type!=='cardio').map(e=>e.name)
+  if (strengthNames.length && clientId) {
+    const { data: prevExs } = await dbq('showRunnerFinish:prevExercises',
+      db.from('workout_log_exercises')
+        .select('id, exercise_name, workout_logs!inner(client_id)')
+        .eq('workout_logs.client_id', clientId)
+        .in('exercise_name', strengthNames),
+      { showUserError: false }
+    )
+    if (prevExs?.length) {
+      const { data: prevSets } = await dbq('showRunnerFinish:prevSets',
+        db.from('workout_log_sets')
+          .select('workout_log_exercise_id, weight_kg')
+          .in('workout_log_exercise_id', prevExs.map(e=>e.id))
+          .not('weight_kg', 'is', null),
+        { showUserError: false }
+      )
+      const exMap = Object.fromEntries(prevExs.map(e=>[e.id, e.exercise_name]))
+      const prevBests = {}
+      prevSets?.forEach(s => {
+        const name = exMap[s.workout_log_exercise_id]
+        if (name) prevBests[name] = Math.max(prevBests[name]||0, s.weight_kg)
+      })
+      if (document.getElementById('workout-runner')) renderScreen(prevBests)
+    }
+  }
+}
+
+function confirmEndRunner() {
+  if (_runner.exercises.some(e=>e.loggedSets.length)) showRunnerFinish()
+  else discardRunner()
+}
+
+function discardRunner() {
+  clearInterval(_runner?._timerInterval)
+  clearInterval(_runner?._intervalInterval)
+  clearInterval(_runner?._restInterval)
+  document.getElementById('workout-runner')?.remove()
+  document.getElementById('wr-interval-overlay')?.remove()
+  document.getElementById('rest-timer-overlay')?.remove()
+  _runner = null
+}
+
+async function saveRunnerSession() {
+  if (!_runner) return
+  // Capture all _runner fields into locals before any await — discardRunner() can null _runner mid-save
+  const name      = document.getElementById('rf-name')?.value.trim() || _runner.name
+  const notes     = document.getElementById('rf-notes')?.value.trim() || null
+  const clientId  = _runner.clientId
+  const date      = _runner.date
+  const exercises = _runner.exercises.filter(e => e.name && e.loggedSets.length)
+  if (!exercises.length) { showToast('No sets logged — nothing to save.', 'warn', 3000); return }
+
+  const saveBtn = document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…' }
+
+  const { data: clientRecord } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single())
+  const coachId = clientRecord?.coach_id || currentUser.id
+
+  const { data: sessionLog, error } = await db.from('workout_logs').insert({
+    coach_id: coachId, client_id: clientId, name, date, notes
+  }).select().single()
+  if (error) {
+    log.error('saveRunnerSession', 'workout_logs insert failed', error)
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
+    return
+  }
+
+  let setsHadError = false
+  for (let bi = 0; bi < exercises.length; bi++) {
+    const ex = exercises[bi]
+    const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
+      log_id: sessionLog.id, exercise_name: ex.name, exercise_type: ex.type, order_index: bi,
+      client_notes: ex.clientNotes || null
+    }).select().single()
+    if (exErr) { log.error('saveRunnerSession', `exercise ${bi+1} insert failed`, exErr); return }
+
+    const sets = ex.loggedSets.map((s, si) => {
+      const row = { workout_log_exercise_id: logEx.id, set_number: si+1 }
+      if (ex.type === 'cardio') {
+        if (s.duration) row.duration_seconds = parseDuration(s.duration)
+        if (s.distance) row.distance_m = Math.round(parseFloat(s.distance)*1000)
+      } else {
+        if (s.reps) row.reps_achieved = parseInt(s.reps)
+        if (s.weight && s.weight !== 'BW') row.weight_kg = parseFloat(s.weight)
+        if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
+      }
+      return row
+    }).filter(s => Object.keys(s).length > 2)
+
+    if (sets.length) {
+      const { error: setsErr } = await db.from('workout_log_sets').insert(sets)
+      if (setsErr) { log.error('saveRunnerSession', `sets insert failed for exercise ${bi+1}`, setsErr); setsHadError = true }
+    }
+  }
+  if (setsHadError) {
+    showToast('Session saved — but some set data failed to save. Check the session log.', 'warn', 6000)
+    log.warn('saveRunnerSession', 'session saved with set errors', { name })
+  } else {
+    log.ok('saveRunnerSession', 'session saved', { name, exercises: exercises.length })
+    showToast('Workout saved!', 'success', 2500)
+  }
+
+  discardRunner()
+  if (currentProfile?.role === 'client') navigate('workouts')
+  else openClient(clientId)
+}
+
+// ─── LOG SESSION ──────────────────────────────────────────────────────────────
+// _logBlocks: [{name, type, defaultSets, defaultReps, defaultWeight, sets:[{reps,weight,duration,distance,effort}]}]
+window._logBlocks = []
+
+function flushLogState() {
+  window._logBlocks.forEach((block, bi) => {
+    const orm = document.getElementById(`ls-orm-${bi}`)
+    if (orm) block.oneRM = orm.value
+    block.sets.forEach((set, si) => {
+      const g = (id) => document.getElementById(id)?.value ?? ''
+      if (block.type === 'cardio') {
+        set.duration = g(`ls-dur-${bi}-${si}`)
+        set.distance = g(`ls-dist-${bi}-${si}`)
+      } else {
+        set.repsMin = g(`ls-rmin-${bi}-${si}`)
+        set.repsMax = g(`ls-rmax-${bi}-${si}`) || set.repsMin
+        set.weight  = g(`ls-weight-${bi}-${si}`)
+        set.pctMin  = g(`ls-pmin-${bi}-${si}`)
+        set.pctMax  = g(`ls-pmax-${bi}-${si}`)
+        set.effort  = g(`ls-effort-${bi}-${si}`)
+        set.rest    = g(`ls-rest-${bi}-${si}`)
+      }
+    })
+  })
+}
+
+function _calcWeightFromPct(oneRM, pct) {
+  if (!oneRM || !pct) return ''
+  return (Math.round(parseFloat(oneRM) * parseFloat(pct) / 100 * 2) / 2).toFixed(1)
+}
+
+function renderLogExercises() {
+  const container = document.getElementById('ls-exercises')
+  if (!container) return
+
+  const isMobile = window.innerWidth < 520
+  const hdr = (txt) => `<span style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);text-align:center">${txt}</span>`
+  const si_style = `class="field-input" style="padding:${isMobile?'8px 6px':'4px 5px'};font-size:${isMobile?'16px':'12px'};text-align:center;min-width:0"`
+
+  container.innerHTML = window._logBlocks.map((block, bi) => {
+    const isCardio = block.type === 'cardio'
+    const isRIR = block.effortMode === 'RIR'
+    const orm = parseFloat(block.oneRM) || 0
+
+    // Mobile: Set | Reps | Weight | RPE | ×
+    // Desktop: Set | RepsMin | RepsMax | Weight | PctMin | PctMax | Effort | Rest | ×
+    const GRID = isCardio
+      ? (isMobile ? '24px 1fr 1fr 28px' : '28px 1fr 1fr 22px')
+      : (isMobile ? '24px 1fr 1fr 56px 28px' : '28px 42px 42px 58px 42px 42px 52px 54px 22px')
+
+    const colHeaders = isCardio ? `
+      ${hdr('')}
+      ${hdr('Duration')}
+      ${hdr('Distance (km)')}
+      <span></span>
+    ` : isMobile ? `
+      ${hdr('#')}
+      ${hdr('Reps')}
+      ${hdr('Weight (kg)')}
+      ${hdr('RPE')}
+      <span></span>
+    ` : `
+      ${hdr('')}
+      <div style="grid-column:span 2;display:flex;flex-direction:column;align-items:center;gap:1px">
+        ${hdr('Reps')}
+        <div style="display:flex;gap:3px;width:100%">
+          ${hdr('min')}${hdr('max')}
+        </div>
+      </div>
+      ${hdr('Weight (kg)')}
+      <div style="grid-column:span 2;display:flex;flex-direction:column;align-items:center;gap:1px">
+        ${hdr('% 1RM')}
+        <div style="display:flex;gap:3px;width:100%">
+          ${hdr('min')}${hdr('max')}
+        </div>
+      </div>
+      <div style="text-align:center">
+        <div style="display:flex;border-radius:5px;border:1px solid var(--border);overflow:hidden">
+          <button onclick="window._logBlocks[${bi}].effortMode='RPE';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${!isRIR?'var(--accent)':'transparent'};color:${!isRIR?'#fff':'var(--text-muted)'}">RPE</button>
+          <button onclick="window._logBlocks[${bi}].effortMode='RIR';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${isRIR?'var(--accent)':'transparent'};color:${isRIR?'#fff':'var(--text-muted)'}">RIR</button>
+        </div>
+      </div>
+      ${hdr('Rest')}
+      <span></span>
+    `
+
+    const setsHtml = block.sets.map((s, si) => {
+      const wFromPct = orm
+        ? `<div style="font-size:9px;color:var(--accent);text-align:center;margin-top:1px">${_calcWeightFromPct(orm, s.pctMin) || ''}${s.pctMax && s.pctMax !== s.pctMin ? '–' + _calcWeightFromPct(orm, s.pctMax) : ''}${orm && (s.pctMin || s.pctMax) ? 'kg' : ''}</div>`
+        : ''
+      const delBtn = `<button onclick="flushLogState();window._logBlocks[${bi}].sets.splice(${si},1);renderLogExercises()" style="width:${isMobile?'28px':'22px'};height:${isMobile?'36px':'22px'};border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;padding:0">×</button>`
+      return `
+        <div style="display:grid;grid-template-columns:${GRID};gap:${isMobile?'5px':'3px'};align-items:center;margin-bottom:${isMobile?'6px':'3px'}">
+          <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">${si + 1}</span>
+          ${isCardio ? `
+            <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.duration || '0:00'}" oninput="this.value=fmtRestInput(this.value)">
+            <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="0.01" placeholder="km" value="${s.distance || ''}">
+          ` : isMobile ? `
+            <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${s.repsMin || ''}">
+            <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="kg" value="${s.weight || ''}">
+            <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="RPE" value="${s.effort || ''}">
+          ` : `
+            <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${s.repsMin || ''}">
+            <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${s.repsMax || ''}">
+            <div>
+              <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="kg" value="${orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||s.weight||'') : (s.weight||'')}">
+            </div>
+            <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${s.pctMin || ''}" oninput="flushLogState();renderLogExercises()">
+            <div>
+              <input id="ls-pmax-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${s.pctMax || ''}" oninput="flushLogState();renderLogExercises()">
+              ${wFromPct}
+            </div>
+            <input id="ls-effort-${bi}-${si}" ${si_style} type="number" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${s.effort || ''}">
+            <input id="ls-rest-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.rest || '0:00'}" oninput="this.value=fmtRestInput(this.value)">
+          `}
+          ${delBtn}
+        </div>
+      `
+    }).join('')
+
+    return `
+      <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(99,102,241,.06);border-bottom:1px solid var(--border)">
+          <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">${String.fromCharCode(65+bi)}</div>
+          <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:13px;font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${block.name}" oninput="window._logBlocks[${bi}].name=this.value">
+          <select id="ls-extype-${bi}" class="field-input" style="padding:5px 8px;font-size:12px;width:100px;flex-shrink:0" onchange="flushLogState();window._logBlocks[${bi}].type=this.value;renderLogExercises()">
+            <option value="strength" ${!isCardio?'selected':''}>Strength</option>
+            <option value="cardio" ${isCardio?'selected':''}>Cardio</option>
+          </select>
+          <button onclick="flushLogState();window._logBlocks.splice(${bi},1);renderLogExercises()" style="font-size:16px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0 2px;flex-shrink:0">×</button>
+        </div>
+        ${!isCardio ? `
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)">
+          <span style="font-size:11px;font-weight:500;color:var(--text-muted);white-space:nowrap">1 Rep Max</span>
+          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:12px;text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM || ''}" oninput="block.oneRM=this.value;renderLogExercises()">
+          <span style="font-size:11px;color:var(--text-muted)">kg</span>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:2px">${orm ? '— % 1RM will auto-fill weight' : '— enter to enable % 1RM'}</span>
+        </div>
+        ` : ''}
+        <div style="padding:8px 12px 2px">
+          <div style="display:grid;grid-template-columns:${GRID};gap:3px;margin-bottom:5px;align-items:end">
+            ${colHeaders}
+          </div>
+          ${setsHtml}
+          <button onclick="flushLogState();window._logBlocks[${bi}].sets.push({});renderLogExercises()" style="margin-top:5px;font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600">+ Add set</button>
+        </div>
+      </div>
+    `
+  }).join('')
+}
+
+async function showLogSessionModal(clientId) {
+  const { data: templates } = await db
+    .from('workout_templates')
+    .select('*, workout_template_exercises(*)')
+    .order('name')
+
+  window._logBlocks = []
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'log-session-modal'
+  overlay.innerHTML = `
+    <div class="modal modal-fullscreen-mobile" style="max-width:580px;max-height:90vh;overflow-y:auto">
+      <div class="modal-header">
+        <h2 class="modal-title">Log session</h2>
+        <button class="modal-close" onclick="closeModal('log-session-modal')">✕</button>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label class="field-label">Session name <span style="color:var(--danger)">*</span></label>
+          <input class="field-input" id="ls-name" placeholder="e.g. Upper Body A">
+        </div>
+        <div class="field">
+          <label class="field-label">Date</label>
+          <input class="field-input" id="ls-date" type="date" value="${new Date().toISOString().split('T')[0]}">
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Load from template</label>
+        <select class="field-input" id="ls-template" onchange="loadTemplateIntoLog(this.value)">
+          <option value="">— No template / custom —</option>
+          ${(templates || []).map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+        </select>
+      </div>
+
+      <div id="ls-exercises" style="margin-top:4px"></div>
+
+      <button onclick="flushLogState();window._logBlocks.push({name:'',type:'strength',sets:[{}]});renderLogExercises();setTimeout(()=>{const blocks=document.querySelectorAll('#ls-exercises > div');const last=blocks[blocks.length-1];if(last){const inp=last.querySelector('input');if(inp)inp.focus()}},50)" style="margin:4px 0 12px;font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600;display:block">+ Add exercise</button>
+
+      <div class="field">
+        <label class="field-label">Session notes</label>
+        <textarea class="field-input" id="ls-notes" rows="2" style="resize:vertical" placeholder="How did the session go?"></textarea>
+      </div>
+      <p class="modal-error" id="ls-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('log-session-modal')">Cancel</button>
+        <button class="btn-primary" onclick="saveWorkoutSession('${clientId}')">Save session</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  window._logTemplates = templates || []
+}
+
+function loadTemplateIntoLog(templateId) {
+  const t = (window._logTemplates || []).find(t => t.id === templateId)
+  window._logBlocks = []
+  if (t) {
+    document.getElementById('ls-name').value = t.name
+    const sorted = (t.workout_template_exercises || []).sort((a, b) => a.order_index - b.order_index)
+    sorted.forEach(ex => {
+      const isCardio = ex.exercise_type === 'cardio'
+      let sets = []
+      if (ex.sets_json?.length) {
+        sets = ex.sets_json.map(s => {
+          if (isCardio) return { duration: s.duration || '', distance: s.distance || '' }
+          const repsStr = String(s.reps || '')
+          const [rMin, rMax] = repsStr.includes('-') ? repsStr.split('-') : [repsStr, '']
+          return { repsMin: rMin, repsMax: rMax, weight: s.weight || '', pctMin: '', pctMax: '', effort: s.rpe || '', rest: s.rest ? fmtDuration(s.rest) : '' }
+        })
+      } else {
+        const count = ex.sets || 3
+        const repsStr = String(ex.reps || '')
+        const [rMin, rMax] = repsStr.includes('-') ? repsStr.split('-') : [repsStr, '']
+        for (let i = 0; i < count; i++) {
+          if (isCardio) sets.push({ duration: '', distance: '' })
+          else sets.push({ repsMin: rMin, repsMax: rMax, weight: ex.weight_kg || '', pctMin: '', pctMax: '', effort: '', rest: '' })
+        }
+      }
+      window._logBlocks.push({ name: ex.exercise_name, type: ex.exercise_type || 'strength', effortMode: 'RPE', oneRM: '', sets })
+    })
+  }
+  renderLogExercises()
+}
+
+async function saveWorkoutSession(clientId) {
+  flushLogState()
+  const name = document.getElementById('ls-name').value.trim()
+  const errorEl = document.getElementById('ls-error')
+  if (!name) { errorEl.textContent = 'Session name is required'; return }
+
+  const blocks = window._logBlocks.filter(b => b.name.trim())
+  if (blocks.length === 0) { errorEl.textContent = 'Add at least one exercise'; return }
+
+  // Derive coach_id from the client record — works for both coach and client self-logging
+  const { data: clientRecord } = await dbq('saveWorkoutSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single())
+  const coachId = clientRecord?.coach_id || currentUser.id
+
+  log.info('saveWorkoutSession', 'saving session', { clientId, name, exerciseCount: blocks.length })
+  const { data: sessionLog, error } = await db.from('workout_logs').insert({
+    coach_id:    coachId,
+    client_id:   clientId,
+    template_id: document.getElementById('ls-template').value || null,
+    name,
+    date:        document.getElementById('ls-date').value,
+    notes:       document.getElementById('ls-notes').value.trim() || null
+  }).select().single()
+
+  if (error) { log.error('saveWorkoutSession', 'workout_logs insert failed', error); errorEl.textContent = error.message; return }
+  log.ok('saveWorkoutSession', 'workout log created', { logId: sessionLog.id })
+
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const block = blocks[bi]
+    log.info('saveWorkoutSession', `saving exercise ${bi + 1}/${blocks.length}`, { sets: block.sets.length })
+    const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
+      log_id:        sessionLog.id,
+      exercise_name: block.name.trim(),
+      exercise_type: block.type,
+      order_index:   bi
+    }).select().single()
+
+    if (exErr) { log.error('saveWorkoutSession', `exercise ${bi + 1} insert failed`, exErr); errorEl.textContent = exErr.message; return }
+
+    const setsToInsert = block.sets.map((s, si) => {
+      const row = {
+        workout_log_exercise_id: logEx.id,
+        set_number: si + 1
+      }
+      if (block.type === 'cardio') {
+        if (s.duration) row.duration_seconds = parseDuration(s.duration)
+        if (s.distance) row.distance_m = Math.round(parseFloat(s.distance) * 1000)
+      } else {
+        const rMin = parseInt(s.repsMin), rMax = parseInt(s.repsMax)
+        if (!isNaN(rMin)) row.reps_achieved = rMin
+        if (s.weight) row.weight_kg = parseFloat(s.weight)
+        if (s.effort) {
+          row.effort_type = block.effortMode === 'RIR' ? 'rir' : 'rpe'
+          row.effort_value = parseFloat(s.effort)
+        }
+        if (s.rest) row.notes = (row.notes || '') + `rest:${s.rest}`
+      }
+      return row
+    }).filter(s => Object.keys(s).length > 2)
+
+    if (setsToInsert.length) {
+      const { error: setsErr } = await db.from('workout_log_sets').insert(setsToInsert)
+      if (setsErr) { log.error('saveWorkoutSession', `sets insert failed for exercise ${bi + 1}`, setsErr); errorEl.textContent = setsErr.message; return }
+      log.ok('saveWorkoutSession', `sets saved for exercise ${bi + 1}`, { count: setsToInsert.length })
+    }
+  }
+
+  log.ok('saveWorkoutSession', 'session fully saved', { clientId, name })
+  showToast('Session saved ✓', 'success', 2000)
+  closeModal('log-session-modal')
+  window._logBlocks = []
+  const tabContent = document.getElementById('tab-content')
+  if (tabContent) renderClientWorkouts(clientId, tabContent)
+  else renderClientDashboard(document.getElementById('main-content'))
+}
+
+async function openWorkoutLog(logId, clientId) {
+  const el = document.getElementById('tab-content') || document.getElementById('main-content')
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  // Fetch log + exercises. workout_log_sets lacks an FK to workout_log_exercises in the schema,
+  // so we fetch sets separately and merge rather than using nested PostgREST join.
+  const { data: logRow, error: logErr } = await db
+    .from('workout_logs')
+    .select('*, workout_log_exercises(*)')
+    .eq('id', logId)
+    .single()
+  if (logErr) { log.error('openWorkoutLog', 'fetch failed', logErr); el.innerHTML = `<div class="empty-state"><div class="empty-text">Error loading session: ${logErr.message}</div></div>`; return }
+
+  const exIds = (logRow?.workout_log_exercises || []).map(e => e.id)
+  const { data: allSets, error: setsErr } = exIds.length
+    ? await db.from('workout_log_sets').select('*').in('workout_log_exercise_id', exIds).order('set_number')
+    : { data: [], error: null }
+  if (setsErr) log.error('openWorkoutLog', 'sets fetch failed', setsErr)
+
+  // Merge sets back onto exercises — rename to `session` to avoid shadowing the log utility
+  const session = { ...logRow, workout_log_exercises: (logRow?.workout_log_exercises || []).map(ex => ({ ...ex, workout_log_sets: (allSets || []).filter(s => s.workout_log_exercise_id === ex.id) })) }
+
+  const exercises = (session.workout_log_exercises || []).sort((a, b) => a.order_index - b.order_index)
+  const dateStr = new Date(session.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+
+  // Fetch previous session with same name for comparison
+  let prevSession = null
+  const { data: prevLog } = await db.from('workout_logs')
+    .select('id, date, workout_log_exercises(*)')
+    .eq('client_id', clientId).eq('name', session.name)
+    .lt('date', session.date).order('date', { ascending: false }).limit(1).single()
+  if (prevLog) {
+    const prevExIds = (prevLog.workout_log_exercises || []).map(e => e.id)
+    const { data: prevSets } = prevExIds.length
+      ? await db.from('workout_log_sets').select('*').in('workout_log_exercise_id', prevExIds)
+      : { data: [] }
+    prevSession = { ...prevLog, workout_log_exercises: (prevLog.workout_log_exercises || []).map(ex => ({ ...ex, workout_log_sets: (prevSets || []).filter(s => s.workout_log_exercise_id === ex.id) })) }
+  }
+
+  // Compute summary stats
+  const allSetsFlat = exercises.flatMap(ex => ex.workout_log_sets || [])
+  const totalSets   = allSetsFlat.length
+  const totalVol    = allSetsFlat.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
+  const prevSetsFlat = prevSession ? (prevSession.workout_log_exercises || []).flatMap(ex => ex.workout_log_sets || []) : []
+  const prevVol      = prevSetsFlat.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
+  const volDelta     = prevSession ? totalVol - prevVol : null
+
+  // Build a map of exercise name → prev sets for per-exercise comparison
+  const prevExMap = {}
+  if (prevSession) {
+    for (const ex of (prevSession.workout_log_exercises || [])) {
+      prevExMap[ex.exercise_name] = ex.workout_log_sets || []
+    }
+  }
+
+  const thStyle = `text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 12px 8px 0`
+
+  el.innerHTML = `
+    <a class="back-btn" href="#" onclick="backToClientWorkouts('${clientId}');return false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      All sessions
+    </a>
+
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${session.name}</h2>
+        <p style="color:var(--text-muted)">${dateStr}</p>
+      </div>
+      <button class="btn-danger" style="font-size:13px;padding:6px 12px" onclick="deleteWorkoutLog('${logId}','${clientId}')">Delete</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
+        <div style="font-size:17px;font-weight:700">${totalVol > 0 ? Math.round(totalVol).toLocaleString()+' kg' : '—'}</div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Volume</div>
+        ${volDelta !== null && totalVol > 0 ? `<div style="font-size:11px;font-weight:600;margin-top:3px;color:${volDelta >= 0 ? '#10b981' : '#ef4444'}">${volDelta >= 0 ? '+' : ''}${Math.round(volDelta).toLocaleString()} kg</div>` : ''}
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
+        <div style="font-size:17px;font-weight:700">${totalSets}</div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Sets</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
+        <div style="font-size:17px;font-weight:700">${exercises.length}</div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Exercises</div>
+      </div>
+    </div>
+
+    ${exercises.length === 0 ? `<div class="empty-state"><div class="empty-text">No exercises recorded</div></div>` :
+      exercises.map((ex, i) => {
+        const sets = (ex.workout_log_sets || []).sort((a, b) => a.set_number - b.set_number)
+        const isCardio = ex.exercise_type === 'cardio'
+        const hasRpe   = !isCardio && sets.some(s => s.effort_value != null)
+        const prevSets = prevExMap[ex.exercise_name] || []
+        const prevVol  = prevSets.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
+        const prevSummary = prevSets.length
+          ? (isCardio
+              ? `${prevSets.length} set${prevSets.length > 1 ? 's' : ''}`
+              : prevVol > 0 ? `${Math.round(prevVol).toLocaleString()} kg volume` : `${prevSets.length} set${prevSets.length > 1 ? 's' : ''}`)
+          : null
+        return `
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-body">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0">${i+1}</div>
+                <span style="font-weight:600;font-size:15px">${ex.exercise_name}</span>
+                ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
+              </div>
+              ${prevSummary ? `<div style="font-size:11px;color:var(--text-muted);margin-left:36px;margin-bottom:10px">Last time: ${prevSummary}</div>` : `<div style="margin-bottom:10px"></div>`}
+              ${sets.length === 0 ? `<div style="color:var(--text-muted);font-size:13px">No sets recorded</div>` : `
+                <table style="width:100%;border-collapse:collapse">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border)">
+                      <th style="${thStyle}">Set</th>
+                      ${isCardio
+                        ? `<th style="${thStyle}">Duration</th><th style="${thStyle}">Distance</th>`
+                        : `<th style="${thStyle}">Reps</th><th style="${thStyle}">Weight</th>${hasRpe ? `<th style="${thStyle}">RPE</th>` : ''}`
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${sets.map(s => `
+                      <tr style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px 12px 8px 0;font-size:13px;color:var(--text-muted);font-weight:600">Set ${s.set_number}</td>
+                        ${isCardio
+                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.distance_m ? (s.distance_m/1000).toFixed(2)+' km' : '—'}</td>`
+                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${s.weight_kg ? s.weight_kg+' kg' : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? 'RPE '+s.effort_value : '—'}</td>` : ''}`
+                        }
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              `}
+            </div>
+          </div>
+        `
+      }).join('')
+    }
+    <div class="card" style="margin-top:8px">
+      <div class="card-body">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Coach notes</div>
+        <textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${session.notes||''}</textarea>
+        <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:13px;padding:7px 16px">Save notes</button>
+        <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:12px;color:#10b981;font-weight:600">Saved ✓</span>
+      </div>
+    </div>
+  `
+}
+
+function backToClientWorkouts(clientId) {
+  if (document.getElementById('tab-content')) {
+    renderClientWorkouts(clientId, document.getElementById('tab-content'))
+  } else {
+    navigate('workouts')
+  }
+}
+
+async function saveCoachNotes(logId) {
+  const notes = document.getElementById('wl-coach-notes')?.value.trim() || null
+  const { error } = await db.from('workout_logs').update({ notes }).eq('id', logId)
+  if (error) { log.error('saveCoachNotes', 'update failed', error); return }
+  const saved = document.getElementById('wl-notes-saved')
+  if (saved) { saved.style.display = 'inline'; setTimeout(() => saved.style.display = 'none', 2000) }
+}
+
+async function deleteWorkoutLog(logId, clientId) {
+  if (!confirm('Delete this session? This cannot be undone.')) return
+  log.info('deleteWorkoutLog', 'deleting session', { logId })
+  const { error } = await db.from('workout_logs').delete().eq('id', logId)
+  if (error) { log.error('deleteWorkoutLog', 'delete failed', error); return }
+  log.ok('deleteWorkoutLog', 'session deleted', { logId })
+  renderClientWorkouts(clientId, document.getElementById('tab-content'))
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+function closeModal(id) {
+  document.getElementById(id)?.remove()
+}
+
+// ─── PERFORMANCE TRACKING ─────────────────────────────────────────────────────
+
+const PERF_CATEGORIES = [
+  { id: 'strength',    label: 'Strength',     units: ['kg', 'lbs'],              placeholder: 'e.g. Squat 1RM, Bench Press' },
+  { id: 'cardio',      label: 'Cardio',       units: ['min', 'sec', 'km', 'mi'], placeholder: 'e.g. 5k Run, 400m Sprint' },
+  { id: 'body_metric', label: 'Body Metric',  units: ['cm', 'in', 'kg', 'lbs'],  placeholder: 'e.g. Vertical Jump, Broad Jump' },
+  { id: 'benchmark',   label: 'Benchmark',    units: ['min', 'sec', 'reps'],     placeholder: 'e.g. Fran, Cindy, Murph' },
+]
+
+const PERF_COLOURS = {
+  strength:    '#6366f1',
+  cardio:      '#06b6d4',
+  body_metric: '#f59e0b',
+  benchmark:   '#22c55e',
+}
+
