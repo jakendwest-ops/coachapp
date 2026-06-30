@@ -2,3 +2,9 @@ node_modules/
 .env
 playwright-report/
 test-results/
+
+# Windows system files
+desktop.ini
+
+# Reference PDFs
+*.pdf
