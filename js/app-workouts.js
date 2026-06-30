@@ -1450,7 +1450,7 @@ async function startWorkoutRunner(clientId, templateId) {
     return
   }
 
-  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('coach_id', coachId).order('name')
+  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('coach_id', coachId).order('name').limit(2000)
   window._runnerTemplates = templates || []
 
   const overlay = document.createElement('div')
