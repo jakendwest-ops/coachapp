@@ -1438,18 +1438,20 @@ async function startWorkoutRunner(clientId, templateId) {
   const coachId = currentProfile?.role === 'client'
     ? (await db.from('clients').select('coach_id').eq('user_id', currentUser.id).single()).data?.coach_id
     : currentUser.id
-  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('coach_id', coachId).order('name')
-  window._runnerTemplates = templates || []
 
-  // If a specific template was chosen, skip the setup modal and go straight in
+  // When a templateId is provided, fetch only that template to avoid max_rows truncation
   if (templateId) {
-    const tmpl = templates?.find(t => t.id === templateId)
+    const { data: tmpl } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('id', templateId).single()
+    window._runnerTemplates = tmpl ? [tmpl] : []
     const name = tmpl?.name || new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) + ' workout'
     _fakeRsTemplate = templateId
     _fakeRsName = name
     launchRunner(clientId)
     return
   }
+
+  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('coach_id', coachId).order('name')
+  window._runnerTemplates = templates || []
 
   const overlay = document.createElement('div')
   overlay.id = 'runner-setup'
