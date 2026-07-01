@@ -142,7 +142,7 @@ async function renderClientWorkoutsPage(el) {
     db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).order('name'),
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
     db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').eq('client_id', clientId).order('recorded_at', { ascending: false }),
-    db.from('client_programs').select('id, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
+    db.from('client_programs').select('id, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
   ])
   const oneRMMap = {}
   ;(oneRMRows || []).forEach(r => { const k = r.exercise_name.trim().toLowerCase(); if (!oneRMMap[k]) oneRMMap[k] = parseFloat(r.one_rm_kg) })
@@ -168,58 +168,70 @@ async function renderClientWorkoutsPage(el) {
       return `<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px">${prog?.name || 'My Program'}</div>
         <div style="margin-bottom:28px">
           ${phases.map((phase, pi) => {
-            const allSessions = [...(phase.program_phase_workouts || [])].sort((a, b) => a.day_of_week - b.day_of_week || a.session_order - b.session_order)
-            const dayMap = {}
-            allSessions.forEach(pw => { if (!dayMap[pw.day_of_week]) dayMap[pw.day_of_week] = []; dayMap[pw.day_of_week].push(pw) })
-            const days = Object.keys(dayMap).map(Number).sort((a,b) => a - b)
+            const allSessions = [...(phase.program_phase_workouts || [])].sort((a, b) => a.week_number - b.week_number || a.day_of_week - b.day_of_week || a.session_order - b.session_order)
+            const weekMap = {}
+            allSessions.forEach(pw => { (weekMap[pw.week_number || 1] = weekMap[pw.week_number || 1] || []).push(pw) })
+            const weekNums = Object.keys(weekMap).map(Number).sort((a, b) => a - b)
+            const showWeeks = weekNums.length > 1
             const panelId = `cl-phase-${activeAssignment.id}-${pi}`
+
+            const renderDays = (sessions, idPrefix) => {
+              const dayMap = {}
+              sessions.forEach(pw => { (dayMap[pw.day_of_week] = dayMap[pw.day_of_week] || []).push(pw) })
+              const days = Object.keys(dayMap).map(Number).sort((a,b) => a - b)
+              return days.map(day => {
+                const daySessions = dayMap[day]
+                const multi = daySessions.length > 1
+                const dayPanelId = `${idPrefix}-d${day}`
+                const sessionSummary = daySessions.map(pw => (cpwMap[pw.id]?.name || 'Session').replace(/ — W\d+/, '')).join(', ')
+                return `<div style="border-top:1px solid var(--border)">
+                  <button onclick="toggleClientPhase('${dayPanelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:none;border:none;cursor:pointer;text-align:left">
+                    <div>
+                      <span style="font-size:12px;font-weight:700;color:var(--accent)">DAY ${day}</span>
+                      <span style="font-size:13px;font-weight:500;color:var(--text);margin-left:8px">${sessionSummary}</span>
+                    </div>
+                    <svg id="${dayPanelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <div id="${dayPanelId}" style="display:none;padding:0 14px 12px">
+                    ${daySessions.map((pw, si) => {
+                      const cpw = cpwMap[pw.id]
+                      const name = (cpw?.name || 'Session').replace(/ — W\d+/, '')
+                      const templateId = cpw?.templateId
+                      const exs = (cpw?.exercises || []).sort((a,b) => a.order_index - b.order_index)
+                      return `<div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
+                        ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '0'}">
+                          ${templateId ? `<span style="font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)" onclick="openSessionDetail('${templateId}','${name.replace(/'/g,"\\'")}')">` : `<span style="font-size:13px;font-weight:600">`}${name}</span>
+                          ${templateId ? `<button class="btn-primary" style="font-size:12px;padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
+                        </div>
+                        ${exs.length ? `
+                        <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
+                          ${exs.map(ex => `
+                            <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+                              <span style="font-size:12px">${ex.exercise_name}</span>
+                              <span style="font-size:11px;color:var(--text-muted)">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
+                            </div>`).join('')}
+                        </div>` : ''}
+                      </div>`
+                    }).join('')}
+                  </div>
+                </div>`
+              }).join('')
+            }
+
             return `<div style="margin-bottom:6px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
               <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
                 <div>
                   <span style="font-size:13px;font-weight:700;color:var(--text)">${phase.name}</span>
-                  <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${phase.duration_weeks}w · ${days.length} day${days.length !== 1 ? 's' : ''} · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
+                  <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${phase.duration_weeks}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
                 </div>
                 <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
               <div id="${panelId}" style="display:none">
-                ${days.map(day => {
-                  const daySessions = dayMap[day]
-                  const multi = daySessions.length > 1
-                  const dayPanelId = `${panelId}-d${day}`
-                  const sessionSummary = daySessions.map(pw => (cpwMap[pw.id]?.name || 'Session').replace(/ — W\d+/, '')).join(', ')
-                  return `<div style="border-top:1px solid var(--border)">
-                    <button onclick="toggleClientPhase('${dayPanelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:none;border:none;cursor:pointer;text-align:left">
-                      <div>
-                        <span style="font-size:12px;font-weight:700;color:var(--accent)">DAY ${day}</span>
-                        <span style="font-size:13px;font-weight:500;color:var(--text);margin-left:8px">${sessionSummary}</span>
-                      </div>
-                      <svg id="${dayPanelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
-                    </button>
-                    <div id="${dayPanelId}" style="display:none;padding:0 14px 12px">
-                      ${daySessions.map((pw, si) => {
-                        const cpw = cpwMap[pw.id]
-                        const name = (cpw?.name || 'Session').replace(/ — W\d+/, '')
-                        const templateId = cpw?.templateId
-                        const exs = (cpw?.exercises || []).sort((a,b) => a.order_index - b.order_index)
-                        return `<div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
-                          ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
-                          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '0'}">
-                            ${templateId ? `<span style="font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)" onclick="openSessionDetail('${templateId}','${name.replace(/'/g,"\\'")}')">` : `<span style="font-size:13px;font-weight:600">`}${name}</span>
-                            ${templateId ? `<button class="btn-primary" style="font-size:12px;padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
-                          </div>
-                          ${exs.length ? `
-                          <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
-                            ${exs.map(ex => `
-                              <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-                                <span style="font-size:12px">${ex.exercise_name}</span>
-                                <span style="font-size:11px;color:var(--text-muted)">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
-                              </div>`).join('')}
-                          </div>` : ''}
-                        </div>`
-                      }).join('')}
-                    </div>
-                  </div>`
-                }).join('')}
+                ${!showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : weekNums.map(w => `
+                  <div style="padding:8px 14px 2px;font-size:11px;font-weight:700;color:var(--accent);background:var(--surface-2);border-top:1px solid var(--border)">WEEK ${w}</div>
+                  ${renderDays(weekMap[w], `${panelId}-w${w}`)}
+                `).join('')}
               </div>
             </div>`
           }).join('')}
@@ -611,9 +623,9 @@ async function saveNewTemplate() {
   log.ok('saveNewTemplate', 'template created', { id: data.id, name })
   closeModal('create-template-modal')
 
-  if (window._phaseWorkoutContext) {
+  if (ctx?.programId) {
     window._phaseWorkoutContext = null
-    openTemplate(data.id)
+    openTemplate(data.id, { backLabel: 'Back to program', backFn: () => openProgram(ctx.programId), programId: ctx.programId })
     return
   }
 

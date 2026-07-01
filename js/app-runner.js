@@ -239,12 +239,14 @@ function renderRunner() {
           const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
           if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
           if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
+          let needsOneRM = false
           if (tgt.intensityMin) {
             if (ex.oneRM) {
               const kgLo = _calcWeightFromPct(ex.oneRM, tgt.intensityMin)
               const kgHi = tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? _calcWeightFromPct(ex.oneRM, tgt.intensityMax) : null
               cols.push({ val: kgLo + (kgHi ? '–'+kgHi : '') + ' kg', label: '1RM TARGET', accent: true })
             } else {
+              needsOneRM = true
               cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
             }
           }
@@ -257,11 +259,17 @@ function renderRunner() {
               <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
             </div>`
           ).join('')}</div>` : ''
+          const oneRMBanner = needsOneRM ? `
+          <div id="wr-onerm-banner" onclick="showRunnerOneRMSheet(${_runner.exIdx})" style="background:rgba(245,158,11,.1);border:1.5px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;cursor:pointer;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700;color:#b45309">⚠ Set your 1RM to see target weight</div>
+            <div style="font-size:11px;color:#b45309;margin-top:2px">Tap to add</div>
+          </div>` : ''
           const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
           const distTarget = ex.notes?.match(/(\d+)[–\-](\d+)\s*m/)?.[0] || tgt.distance || ''
           const weightPlaceholder = tgt.weight || '—'
           const repsPlaceholder = repsStr ? repsStr.replace('–', '-') : '—'
           return `
+          ${oneRMBanner}
           ${targetBar}
           ${tgt.unilateral && !isDistance ? `
           <!-- Unilateral L/R input -->
@@ -1063,9 +1071,70 @@ async function saveRunnerSession() {
     showToast('Workout saved!', 'success', 2500)
   }
 
+  const candidates = exercises
+    .filter(ex => ex.type !== 'cardio')
+    .map(ex => {
+      let best = null
+      ex.loggedSets.forEach(s => {
+        const w = parseFloat(s.weight)
+        const r = parseInt(s.reps)
+        if (!w || !r || r < 1 || r > 10) return
+        const est = _epley1RM(w, r)
+        if (est && (!best || est > best.estimate)) best = { estimate: est, weight: w, reps: r }
+      })
+      if (!best) return null
+      const currentOneRM = ex.oneRM ? parseFloat(ex.oneRM) : 0
+      if (best.estimate <= currentOneRM) return null
+      return { name: ex.name, ...best }
+    })
+    .filter(Boolean)
+
   discardRunner()
+  if (candidates.length) showPostSessionOneRMModal(clientId, candidates)
+  else _afterRunnerSave(clientId)
+}
+
+function _afterRunnerSave(clientId) {
   if (currentProfile?.role === 'client') navigate('workouts')
   else openClient(clientId)
+}
+
+function showPostSessionOneRMModal(clientId, candidates) {
+  const overlay = document.createElement('div')
+  overlay.id = 'modal-post-session-1rm'
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">New 1RM estimates from today</h2>
+        <button class="modal-close" onclick="document.getElementById('modal-post-session-1rm').remove();_afterRunnerSave('${clientId}')">✕</button>
+      </div>
+      <div id="psorm-rows">
+        ${candidates.map((c, i) => `
+          <div id="psorm-row-${i}" style="background:rgba(99,102,241,.07);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700;color:var(--accent)">${c.name} — ${c.weight}kg × ${c.reps} reps</div>
+            <div style="font-size:12px;color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${c.estimate.toFixed(1)} kg</div>
+            <div style="display:flex;gap:6px">
+              <button class="btn-primary" style="flex:1;font-size:12px;padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${c.name.replace(/'/g,"\\'")}',${c.estimate})">Save as my 1RM</button>
+              <button class="btn-secondary" style="flex:1;font-size:12px;padding:8px" onclick="document.getElementById('psorm-row-${i}').remove()">Skip</button>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" style="width:100%" onclick="document.getElementById('modal-post-session-1rm').remove();_afterRunnerSave('${clientId}')">Done</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+}
+
+async function _savePostSessionOneRM(i, clientId, exerciseName, estimate) {
+  const { error } = await dbq('savePostSessionOneRM', db.from('client_1rms').insert({
+    client_id: clientId, exercise_name: exerciseName, one_rm_kg: estimate, recorded_at: new Date().toISOString().split('T')[0]
+  }), { showUserError: false })
+  if (error) { showToast(`Couldn't save 1RM for ${exerciseName} — try again`, 'error'); return }
+  document.getElementById(`psorm-row-${i}`)?.remove()
+  showToast(`1RM saved for ${exerciseName}`, 'success', 2000)
 }
 
 // ─── LOG SESSION ──────────────────────────────────────────────────────────────
@@ -1097,6 +1166,95 @@ function flushLogState() {
 function _calcWeightFromPct(oneRM, pct) {
   if (!oneRM || !pct) return ''
   return (Math.round(parseFloat(oneRM) * parseFloat(pct) / 100 * 2) / 2).toFixed(1)
+}
+
+// Epley formula — estimates 1RM from a sub-max weight x reps performance
+function _epley1RM(weight, reps) {
+  if (!weight || !reps) return null
+  return weight * (1 + reps / 30)
+}
+
+function showRunnerOneRMSheet(exIdx) {
+  const ex = _runner.exercises[exIdx]
+  const existing = document.getElementById('modal-runner-1rm')
+  if (existing) existing.remove()
+  const overlay = document.createElement('div')
+  overlay.id = 'modal-runner-1rm'
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">${ex.name} — set your 1RM</h2>
+        <button class="modal-close" onclick="document.getElementById('modal-runner-1rm').remove()">✕</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <button id="rorm-mode-direct" onclick="_setRunnerOneRMMode('direct')" class="btn-primary" style="flex:1;font-size:12px;padding:8px">I know it (kg)</button>
+        <button id="rorm-mode-epley" onclick="_setRunnerOneRMMode('epley')" class="btn-secondary" style="flex:1;font-size:12px;padding:8px">Estimate from a set</button>
+      </div>
+      <div id="rorm-direct-fields">
+        <div class="field">
+          <label class="field-label">1RM (kg)</label>
+          <input class="field-input" id="rorm-weight" type="number" step="0.5" inputmode="decimal" placeholder="e.g. 120">
+        </div>
+      </div>
+      <div id="rorm-epley-fields" style="display:none">
+        <div class="field">
+          <label class="field-label">Weight lifted (kg)</label>
+          <input class="field-input" id="rorm-est-weight" type="number" step="0.5" inputmode="decimal" oninput="_updateRunnerEpleyPreview()">
+        </div>
+        <div class="field">
+          <label class="field-label">Reps</label>
+          <input class="field-input" id="rorm-est-reps" type="number" inputmode="numeric" oninput="_updateRunnerEpleyPreview()">
+        </div>
+        <p id="rorm-epley-preview" style="font-size:12px;color:var(--text-muted)"></p>
+      </div>
+      <p class="modal-error" id="rorm-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('modal-runner-1rm').remove()">Cancel</button>
+        <button class="btn-primary" onclick="saveRunnerOneRM(${exIdx})">Save & recalculate</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+}
+
+function _setRunnerOneRMMode(mode) {
+  document.getElementById('rorm-direct-fields').style.display = mode === 'direct' ? 'block' : 'none'
+  document.getElementById('rorm-epley-fields').style.display = mode === 'epley' ? 'block' : 'none'
+  document.getElementById('rorm-mode-direct').className = mode === 'direct' ? 'btn-primary' : 'btn-secondary'
+  document.getElementById('rorm-mode-epley').className = mode === 'epley' ? 'btn-primary' : 'btn-secondary'
+}
+
+function _updateRunnerEpleyPreview() {
+  const w = parseFloat(document.getElementById('rorm-est-weight')?.value)
+  const r = parseInt(document.getElementById('rorm-est-reps')?.value)
+  const preview = document.getElementById('rorm-epley-preview')
+  const est = _epley1RM(w, r)
+  preview.textContent = est ? `≈ Epley estimate: ${est.toFixed(1)} kg` : ''
+}
+
+async function saveRunnerOneRM(exIdx) {
+  const ex = _runner.exercises[exIdx]
+  const errEl = document.getElementById('rorm-error')
+  const mode = document.getElementById('rorm-epley-fields').style.display === 'block' ? 'epley' : 'direct'
+  let oneRM
+  if (mode === 'direct') {
+    oneRM = parseFloat(document.getElementById('rorm-weight')?.value)
+  } else {
+    const w = parseFloat(document.getElementById('rorm-est-weight')?.value)
+    const r = parseInt(document.getElementById('rorm-est-reps')?.value)
+    oneRM = _epley1RM(w, r)
+  }
+  if (!oneRM || oneRM <= 0) { errEl.textContent = 'Enter a valid value'; return }
+
+  const { error } = await dbq('saveRunnerOneRM', db.from('client_1rms').insert({
+    client_id: _runner.clientId, exercise_name: ex.name, one_rm_kg: oneRM, recorded_at: new Date().toISOString().split('T')[0]
+  }))
+  if (error) { errEl.textContent = 'Save failed — try again'; return }
+
+  ex.oneRM = oneRM
+  document.getElementById('modal-runner-1rm').remove()
+  renderRunner()
 }
 
 function renderLogExercises() {

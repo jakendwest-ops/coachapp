@@ -74,6 +74,23 @@ async function deleteProgressPhoto(clientId, fileName) {
 
 // ─── 1RMs ────────────────────────────────────────────────────────────────────
 
+const BIG_5_EXERCISES = ['Back Squat', 'Deadlift', 'Bench Press', 'Overhead Press', 'Barbell Row']
+
+async function saveBig5OneRMs(clientId) {
+  const errEl = document.getElementById('big5-error')
+  const today = new Date().toISOString().split('T')[0]
+  const rows = BIG_5_EXERCISES
+    .map(name => ({ name, weight: parseFloat(document.getElementById(`big5-${name.replace(/\s+/g,'-')}`)?.value) }))
+    .filter(r => r.weight && r.weight > 0)
+    .map(r => ({ client_id: clientId, exercise_name: r.name, one_rm_kg: r.weight, recorded_at: today }))
+  if (!rows.length) { errEl.textContent = 'Enter at least one value'; return }
+  const { error } = await dbq('saveBig5OneRMs', db.from('client_1rms').insert(rows))
+  if (error) { errEl.textContent = 'Save failed — try again'; return }
+  const perfEl = document.getElementById('perf-1rms-content')
+  if (perfEl) renderClient1RMs(clientId, perfEl)
+  else renderClient1RMs(clientId, document.getElementById('tab-content'))
+}
+
 async function renderClient1RMs(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading 1RMs…</div>'
   const [{ data: rows }, { data: exercises }] = await Promise.all([
@@ -92,10 +109,19 @@ async function renderClient1RMs(clientId, el) {
       <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add 1RM</button>
     </div>
     ${!Object.keys(byEx).length ? `
-      <div class="empty-state">
-        <div class="empty-icon">🏋️</div>
-        <div class="empty-title">No 1RMs recorded yet</div>
-        <div class="empty-text">Add a 1RM to unlock automatic weight targets in the workout runner.</div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:18px;background:var(--surface)">
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px">Quick-start your 1RMs</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">The Big 5 — fill in what you know, leave the rest blank</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${BIG_5_EXERCISES.map(name => `
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="flex:1;font-size:13px;font-weight:600">${name}</span>
+              <input class="field-input" id="big5-${name.replace(/\s+/g,'-')}" type="number" step="0.5" inputmode="decimal" placeholder="kg" style="width:80px">
+            </div>`).join('')}
+        </div>
+        <p class="modal-error" id="big5-error" style="margin-top:10px"></p>
+        <button class="btn-primary" style="width:100%;margin-top:8px" onclick="saveBig5OneRMs('${clientId}')">Save all</button>
+        <div style="text-align:center;margin-top:8px"><button onclick="showAdd1RMModal('${clientId}')" style="background:none;border:none;font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">+ Add a different exercise</button></div>
       </div>` : Object.entries(byEx).map(([exName, entries]) => {
         const latest = entries[0]
         const history = entries.slice(1)
@@ -141,9 +167,29 @@ function showAdd1RMModal(clientId, prefillExercise = '') {
         <label class="field-label">Exercise</label>
         <input class="field-input" id="1rm-exercise" list="ex-names-list" placeholder="e.g. Back Squat" autocomplete="off" value="${prefillExercise}">
       </div>
-      <div class="field">
-        <label class="field-label">1RM (kg)</label>
-        <input class="field-input" id="1rm-weight" type="number" step="0.5" inputmode="decimal" placeholder="e.g. 120">
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <button id="orm-mode-direct" onclick="_setAdd1RMMode('direct')" class="btn-primary" style="flex:1;font-size:12px;padding:8px">I know my 1RM</button>
+        <button id="orm-mode-epley" onclick="_setAdd1RMMode('epley')" class="btn-secondary" style="flex:1;font-size:12px;padding:8px">Estimate from a set</button>
+      </div>
+      <div id="orm-direct-fields">
+        <div class="field">
+          <label class="field-label">1RM (kg)</label>
+          <input class="field-input" id="1rm-weight" type="number" step="0.5" inputmode="decimal" placeholder="e.g. 120">
+        </div>
+      </div>
+      <div id="orm-epley-fields" style="display:none">
+        <div class="field">
+          <label class="field-label">Weight (kg)</label>
+          <input class="field-input" id="orm-est-weight" type="number" step="0.5" inputmode="decimal" oninput="_updateAdd1RMEpleyPreview()">
+        </div>
+        <div class="field">
+          <label class="field-label">Reps</label>
+          <input class="field-input" id="orm-est-reps" type="number" inputmode="numeric" oninput="_updateAdd1RMEpleyPreview()">
+        </div>
+        <div id="orm-epley-result" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;margin-bottom:14px">
+          <div style="font-size:11px;color:#15803d">Estimated 1RM (Epley)</div>
+          <div id="orm-epley-value" style="font-size:20px;font-weight:800;color:#15803d"></div>
+        </div>
       </div>
       <div class="field">
         <label class="field-label">Date recorded</label>
@@ -157,6 +203,27 @@ function showAdd1RMModal(clientId, prefillExercise = '') {
     </div>
   `
   document.body.appendChild(overlay)
+}
+
+function _setAdd1RMMode(mode) {
+  document.getElementById('orm-direct-fields').style.display = mode === 'direct' ? 'block' : 'none'
+  document.getElementById('orm-epley-fields').style.display = mode === 'epley' ? 'block' : 'none'
+  document.getElementById('orm-mode-direct').className = mode === 'direct' ? 'btn-primary' : 'btn-secondary'
+  document.getElementById('orm-mode-epley').className = mode === 'epley' ? 'btn-primary' : 'btn-secondary'
+}
+
+function _updateAdd1RMEpleyPreview() {
+  const w = parseFloat(document.getElementById('orm-est-weight')?.value)
+  const r = parseInt(document.getElementById('orm-est-reps')?.value)
+  const resultEl = document.getElementById('orm-epley-result')
+  const valueEl = document.getElementById('orm-epley-value')
+  if (w && r) {
+    const est = w * (1 + r / 30)
+    valueEl.textContent = est.toFixed(1) + ' kg'
+    resultEl.style.display = 'block'
+  } else {
+    resultEl.style.display = 'none'
+  }
 }
 
 function showEdit1RMModal(id, clientId, exerciseName, weight, date) {
@@ -194,8 +261,16 @@ function showEdit1RMModal(id, clientId, exerciseName, weight, date) {
 }
 
 async function save1RM(clientId, existingId = null) {
-  const exercise = document.getElementById('1rm-exercise')?.value.trim()
-  const weight   = parseFloat(document.getElementById('1rm-weight')?.value)
+  const exercise   = document.getElementById('1rm-exercise')?.value.trim()
+  const epleyMode  = document.getElementById('orm-epley-fields') && document.getElementById('orm-epley-fields').style.display === 'block'
+  let weight
+  if (epleyMode) {
+    const w = parseFloat(document.getElementById('orm-est-weight')?.value)
+    const r = parseInt(document.getElementById('orm-est-reps')?.value)
+    weight = (w && r) ? w * (1 + r / 30) : null
+  } else {
+    weight = parseFloat(document.getElementById('1rm-weight')?.value)
+  }
   const date     = document.getElementById('1rm-date')?.value
   const errEl    = document.getElementById('1rm-error')
   if (!exercise) { errEl.textContent = 'Exercise name is required'; return }

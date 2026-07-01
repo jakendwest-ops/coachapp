@@ -24,7 +24,7 @@
     const [evRes, cpRes] = await Promise.all([
       db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
       clientsId
-        ? db.from('client_programs').select('id, start_date, programs(program_phases(duration_weeks, program_phase_workouts(id, day_of_week, session_order, workout_templates(id, name, workout_template_exercises(exercise_name, exercise_type, order_index, sets_json)))))').eq('client_id', clientsId).order('created_at', { ascending: false }).limit(1)
+        ? db.from('client_programs').select('id, start_date, programs(program_phases(duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, workout_templates(id, name, workout_template_exercises(exercise_name, exercise_type, order_index, sets_json)))))').eq('client_id', clientsId).order('created_at', { ascending: false }).limit(1)
         : Promise.resolve({ data: [] })
     ])
     events = evRes.data
@@ -47,11 +47,19 @@
       const weekStart = new Date(programStart)
       weekStart.setDate(programStart.getDate() - daysFromMon)
 
-      const phases = cp0.programs?.program_phases || []
+      const phases = [...(cp0.programs?.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
       let weekOffset = 0
       phases.forEach(phase => {
+        // Group this phase's workouts by week_number. Phases without generated periodization
+        // only have week_number=1 rows — those repeat identically across every week of the phase
+        // (unchanged legacy behaviour). Once periodization generates weeks 2+, each week's own
+        // rows are placed only on their own week — no repeating.
+        const pwsByWeek = {}
+        ;(phase.program_phase_workouts || []).forEach(pw => { (pwsByWeek[pw.week_number || 1] = pwsByWeek[pw.week_number || 1] || []).push(pw) })
+        const generated = Object.keys(pwsByWeek).length > 1
         for (let w = 0; w < (phase.duration_weeks || 1); w++) {
-          ;(phase.program_phase_workouts || []).forEach(pw => {
+          const weekPws = generated ? (pwsByWeek[w + 1] || []) : (pwsByWeek[1] || [])
+          weekPws.forEach(pw => {
             const offset = ((weekOffset + w) * 7) + (pw.day_of_week - 1)
             const d = new Date(weekStart)
             d.setDate(weekStart.getDate() + offset)
