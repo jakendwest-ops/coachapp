@@ -1089,10 +1089,19 @@ function _computePeriodizedPct(type, config, week, totalWeeks, tier) {
 async function loadAllPhaseWorkouts(phases) {
   const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
   const tierColor = { heavy: '#ef4444', moderate: '#f59e0b', light: '#10b981' }
+
+  // One batched fetch for all phases instead of a sequential per-phase round-trip —
+  // programs with many phases (e.g. Hyrox Hero's 12) were queuing up 12 awaits in a row.
+  const phaseIds = phases.map(ph => ph.id)
+  const { data: allPws, error: pwsError } = await db.from('program_phase_workouts').select('*, workout_templates(name)').in('phase_id', phaseIds).order('week_number').order('day_of_week').order('session_order')
+  if (pwsError) log.error('loadAllPhaseWorkouts', 'fetch failed', pwsError)
+  const pwsByPhase = {}
+  ;(allPws || []).forEach(pw => { (pwsByPhase[pw.phase_id] = pwsByPhase[pw.phase_id] || []).push(pw) })
+
   for (const ph of phases) {
     const el = document.getElementById(`phase-workouts-${ph.id}`)
     if (!el) continue
-    const { data: pws } = await db.from('program_phase_workouts').select('*, workout_templates(name)').eq('phase_id', ph.id).order('week_number').order('day_of_week').order('session_order')
+    const pws = pwsByPhase[ph.id]
     if (!pws?.length) { el.innerHTML = renderEditableWeek1Grid(ph, []); continue }
 
     const byWeek = {}

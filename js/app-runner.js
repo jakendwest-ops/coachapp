@@ -1707,7 +1707,7 @@ async function deleteWorkoutLog(logId, clientId) {
   const { error } = await db.from('workout_logs').delete().eq('id', logId)
   if (error) { log.error('deleteWorkoutLog', 'delete failed', error); return }
   log.ok('deleteWorkoutLog', 'session deleted', { logId })
-  renderClientWorkouts(clientId, document.getElementById('tab-content'))
+  backToClientWorkouts(clientId)
 }
 
 // ─── UTILS ────────────────────────────────────────────────────────────────────

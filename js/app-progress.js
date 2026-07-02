@@ -292,7 +292,9 @@ async function save1RM(clientId, existingId = null) {
 async function delete1RM(id, clientId) {
   if (!confirm('Delete this 1RM?')) return
   await dbq('delete1RM', db.from('client_1rms').delete().eq('id', id))
-  renderClient1RMs(clientId, document.getElementById('tab-content'))
+  const perfEl = document.getElementById('perf-1rms-content')
+  if (perfEl) renderClient1RMs(clientId, perfEl)
+  else renderClient1RMs(clientId, document.getElementById('tab-content'))
 }
 
 async function renderClientPerformance(clientId, el) {

@@ -30,10 +30,10 @@ test.describe('Client workout flow', () => {
     await page.waitForTimeout(1500)
 
     // Only run if this client has a program assigned (accordion will be present)
-    const hasAccordion = await page.locator('button').filter({ hasText: /session/ }).first().isVisible({ timeout: 3000 }).catch(() => false)
+    const hasAccordion = await page.locator('button[onclick*="toggleClientPhase(\'cl-phase-"]').first().isVisible({ timeout: 3000 }).catch(() => false)
     if (!hasAccordion) return // test client has no program — skip
 
-    const firstPhaseBtn = page.locator('button').filter({ hasText: /session/ }).first()
+    const firstPhaseBtn = page.locator('button[onclick*="toggleClientPhase(\'cl-phase-"]').first()
     await firstPhaseBtn.click()
 
     // A session row should appear showing exercise count
@@ -45,11 +45,11 @@ test.describe('Client workout flow', () => {
     await page.waitForTimeout(1500)
 
     // Only run if this client has a program assigned
-    const hasAccordion = await page.locator('button').filter({ hasText: /session/ }).first().isVisible({ timeout: 3000 }).catch(() => false)
+    const hasAccordion = await page.locator('button[onclick*="toggleClientPhase(\'cl-phase-"]').first().isVisible({ timeout: 3000 }).catch(() => false)
     if (!hasAccordion) return
 
     // Expand the first phase
-    const firstPhaseBtn = page.locator('button').filter({ hasText: /session/ }).first()
+    const firstPhaseBtn = page.locator('button[onclick*="toggleClientPhase(\'cl-phase-"]').first()
     await firstPhaseBtn.click()
     await page.waitForSelector('[id^="cl-sess-"]', { timeout: 5000 })
 
@@ -64,9 +64,22 @@ test.describe('Client workout flow', () => {
     expect(detailText?.trim().length).toBeGreaterThan(0)
   })
 
+  test('session history is collapsed by default and expands on click', async ({ page }) => {
+    await page.click('[data-page="workouts"]')
+    const historyToggle = page.locator('button:has-text("Session history")')
+    if (await historyToggle.count() === 0) return // no sessions yet — nothing to expand
+    const panel = page.locator('#client-session-history')
+    await expect(panel).toBeHidden()
+    await historyToggle.click()
+    await expect(panel).toBeVisible()
+  })
+
   test('session history rows are tappable', async ({ page }) => {
     await page.click('[data-page="workouts"]')
-    // Wait for session list to render
+    // Session history is a collapsible section — expand it before checking rows
+    const historyToggle = page.locator('button:has-text("Session history")')
+    if (await historyToggle.count() === 0) return // no sessions yet — nothing to expand
+    await historyToggle.click()
     await page.waitForSelector('#client-session-list', { timeout: 10000 })
     const rows = page.locator('#client-session-list .list-row')
     const count = await rows.count()

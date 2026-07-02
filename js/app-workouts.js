@@ -278,26 +278,32 @@ async function renderClientWorkoutsPage(el) {
         }).join('')
       })()}
     </div>` : ''}
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Session history</div>
-      ${(logs?.length || 0) > 0 ? `<span style="font-size:12px;color:var(--text-muted)">${logs.length} logged</span>` : ''}
-    </div>
     ${!(logs?.length) ? `
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Session history</div>
       <div class="empty-state">
         <div class="empty-icon">📋</div>
         <div class="empty-title">No sessions yet</div>
         <div class="empty-text">Complete a workout to see your history here.</div>
       </div>` : `
-      <div class="list" id="client-session-list">
-        ${logs.map(l => `
-          <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${l.id}','${clientId}')">
-            <div style="width:36px;height:36px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">✓</div>
-            <div class="row-info">
-              <div class="row-name">${l.name || 'Workout'}</div>
-              <div class="row-meta">${new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
-            </div>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
-          </div>`).join('')}
+      <button onclick="toggleClientPhase('client-session-history')" style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;background:none;border:none;padding:0;cursor:pointer;text-align:left">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Session history</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:12px;color:var(--text-muted)">${logs.length} sessions</span>
+          <svg id="client-session-history-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text-muted);transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </button>
+      <div id="client-session-history" style="display:none">
+        <div class="list" id="client-session-list">
+          ${logs.map(l => `
+            <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${l.id}','${clientId}')">
+              <div style="width:36px;height:36px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">✓</div>
+              <div class="row-info">
+                <div class="row-name">${l.name || 'Workout'}</div>
+                <div class="row-meta">${new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
+              </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>`).join('')}
+        </div>
       </div>`}
   `
 }
@@ -313,27 +319,15 @@ function switchWorkoutTab(tab) {
 async function renderWorkoutTemplates(el) {
   log.info('renderWorkoutTemplates', 'fetching templates')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
-  const [{ data: templates, error }, { data: programs }] = await Promise.all([
-    db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).order('name'),
-    db.from('programs').select('id, name').eq('coach_id', currentUser.id).order('name')
-  ])
+  const { data: templates, error } = await db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).order('name')
 
   if (error) { log.error('renderWorkoutTemplates', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
 
   if (!templates.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No templates yet</div><div class="empty-text">${currentProfile?.role === 'solo' ? 'Create a workout template to build your own sessions.' : 'Create a workout template to quickly build sessions for your clients.'}</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No standalone templates</div><div class="empty-text">Create one below, or if it's part of a phased plan, add it via Programs → phase view.</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
     return
   }
-
-  const standalone = templates.filter(t => !t.program_id)
-
-  if (!standalone.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No standalone templates</div><div class="empty-text">All your templates are linked to programs. Manage them via Programs → phase view, or create a standalone template below.</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
-    return
-  }
-  const adHoc = standalone
-  const byProgram = {}
 
   const templateRow = t => `
     <div class="list-row" onclick="openTemplate('${t.id}')">
@@ -348,19 +342,7 @@ async function renderWorkoutTemplates(el) {
       </div>
     </div>`
 
-  const sectionHeader = label => `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:20px 0 8px">${label}</div>`
-
-  let html = ''
-  Object.entries(byProgram).forEach(([progId, tmplts]) => {
-    html += sectionHeader(programMap[progId])
-    html += `<div class="list">${tmplts.map(templateRow).join('')}</div>`
-  })
-  if (adHoc.length) {
-    if (Object.keys(byProgram).length) html += sectionHeader('Ad-hoc sessions')
-    html += `<div class="list">${adHoc.map(templateRow).join('')}</div>`
-  }
-
-  el.innerHTML = html
+  el.innerHTML = `<div class="list">${templates.map(templateRow).join('')}</div>`
 }
 
 async function renderExerciseLibrary(el) {
@@ -1371,7 +1353,7 @@ async function renderClientWorkouts(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const [{ data: logs, error }, { data: clientProgs }, { data: clientData }] = await Promise.all([
-    db.from('workout_logs').select('*, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }),
+    db.from('workout_logs').select('*, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
     db.from('client_programs').select('id, programs(id, name)').eq('client_id', clientId).order('created_at', { ascending: false }),
     db.from('clients').select('full_name').eq('id', clientId).single()
   ])
@@ -1415,31 +1397,43 @@ async function renderClientWorkouts(clientId, el) {
       <button class="btn-primary" onclick="startWorkoutRunner('${clientId}')">▶ Start workout</button>
     </div>
     ${programWorkoutsHtml}
-    ${logs?.length ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Session history</div>` : ''}
-    <div class="list">
-      ${!logs?.length ? `
+    ${!logs?.length ? `
+      <div class="list">
         <div class="empty-state">
           <div class="empty-icon">💪</div>
           <div class="empty-title">No sessions logged yet</div>
           <div class="empty-text">Log a workout to start tracking this client's training</div>
           <button class="btn-primary" onclick="showLogSessionModal('${clientId}')">+ Log first session</button>
         </div>
-      ` : logs.map(l => {
-        const dateStr = new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-        return `
-          <div class="list-row" onclick="openWorkoutLog('${l.id}','${clientId}')">
-            <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
-            <div class="row-info">
-              <div class="row-name">${l.name}</div>
-              <div class="row-meta">${dateStr} · ${l.workout_log_exercises.length} exercise${l.workout_log_exercises.length !== 1 ? 's' : ''}</div>
-            </div>
-            <div class="row-right">
-              <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            </div>
-          </div>
-        `
-      }).join('')}
-    </div>
+      </div>
+    ` : `
+      <button onclick="toggleClientPhase('pt-session-history')" style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;background:none;border:none;padding:0;cursor:pointer;text-align:left">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Session history</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:12px;color:var(--text-muted)">${logs.length} sessions</span>
+          <svg id="pt-session-history-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text-muted);transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </button>
+      <div id="pt-session-history" style="display:none">
+        <div class="list">
+          ${logs.map(l => {
+            const dateStr = new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+            return `
+              <div class="list-row" onclick="openWorkoutLog('${l.id}','${clientId}')">
+                <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
+                <div class="row-info">
+                  <div class="row-name">${l.name}</div>
+                  <div class="row-meta">${dateStr} · ${l.workout_log_exercises.length} exercise${l.workout_log_exercises.length !== 1 ? 's' : ''}</div>
+                </div>
+                <div class="row-right">
+                  <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+              </div>
+            `
+          }).join('')}
+        </div>
+      </div>
+    `}
   `
 }
 
