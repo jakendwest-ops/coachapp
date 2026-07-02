@@ -1441,6 +1441,11 @@ async function renderClientWorkouts(clientId, el) {
 let _runner = null
 
 async function startWorkoutRunner(clientId, templateId) {
+  // Unlock audio/speech here (the earliest real user gesture) instead of waiting for
+  // the first LOG tap — gives the AudioContext maximum time to resume before the
+  // first rest period needs it.
+  _unlockAudio()
+  _unlockSpeech()
   const coachId = currentProfile?.role === 'client'
     ? (await db.from('clients').select('coach_id').eq('user_id', currentUser.id).single()).data?.coach_id
     : currentUser.id

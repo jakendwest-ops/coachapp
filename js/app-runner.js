@@ -1,4 +1,8 @@
 ﻿async function launchRunner(clientId) {
+  // Unlock audio/speech here too — this function can be reached directly from the
+  // runner setup modal's Start button, bypassing startWorkoutRunner entirely.
+  _unlockAudio()
+  _unlockSpeech()
   const name     = document.getElementById('rs-name')?.value.trim() || window._fakeRsName || 'Workout'
   const tmplId   = document.getElementById('rs-template')?.value || window._fakeRsTemplate || ''
   window._fakeRsName = null; window._fakeRsTemplate = null
@@ -90,7 +94,7 @@ function renderRunnerLastSession(exName) {
 
 function renderRunner() {
   const ex      = _runner.exercises[_runner.exIdx]
-  const setNum  = ex.loggedSets.length + 1
+  const setNum  = Math.min(ex.loggedSets.length + 1, ex.targetSets || Infinity)
   const isLast  = _runner.exIdx === _runner.exercises.length - 1
   const nextEx  = _runner.exercises[_runner.exIdx + 1]
   const lastSet = ex.loggedSets[ex.loggedSets.length - 1]
@@ -421,10 +425,12 @@ function logRunnerSet() {
   if (hitTarget) {
     const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
     if (nextExIdx !== -1) {
-      // More exercises — rest then advance
+      // More exercises — rest then advance. Start the rest timer (which sets
+      // _restInterval) before re-rendering, so the page shows the "resting"
+      // placeholder instead of a phantom next-set input for a set that doesn't exist.
       _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
-      renderRunner()
       startRestTimer(ex.restSecs || 90)
+      renderRunner()
       return
     } else {
       // All done — go straight to finish
@@ -432,7 +438,6 @@ function logRunnerSet() {
       return
     }
   }
-  renderRunner()
   const restSecs = ex.restSecs || 90
   if (ex.type === 'cardio') {
     const nextTgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
@@ -441,6 +446,7 @@ function logRunnerSet() {
     }
   }
   startRestTimer(restSecs)
+  renderRunner()
 }
 
 let _audioCtx = null
@@ -602,9 +608,10 @@ function startIntervalTimer(secs) {
       const paceEl = document.getElementById('wr-cardio-pace')
       const setData = { duration: tgt.duration || fmtRestCountdown(secs), distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null }
       ex.loggedSets.push(setData)
-      renderRunner()
       const restSecs = ex.restSecs || 90
       const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
+      // startRestTimer runs before renderRunner in every branch below so the
+      // page shows the "resting" placeholder instead of a stale/phantom set input.
       if (hitTarget) {
         const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
         if (nextExIdx !== -1) {
@@ -621,6 +628,7 @@ function startIntervalTimer(secs) {
         }
         startRestTimer(restSecs)
       }
+      renderRunner()
       return
     }
     if (_runner._intervalRemaining <= 5) playBeep(880, 0.15, 0.75)
@@ -705,7 +713,7 @@ function startRestTimer(secs) {
     } else {
       _unlockAudio()
       if (_runner.restRemaining === 10) speakCue('10 seconds')
-      if (_runner.restRemaining <= 3) playBeep(880, 0.15, 0.75)
+      if (_runner.restRemaining <= 5) playBeep(880, 0.15, 0.75)
       const el = document.getElementById('rt-countdown')
       if (el) {
         const r = _runner.restRemaining
