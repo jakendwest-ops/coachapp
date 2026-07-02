@@ -174,6 +174,51 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('button:has-text("Save workout")')).toBeVisible({ timeout: 8000 })
   })
 
+  test('strength table renders for a plain-strength exercise with SET/PREVIOUS/KG/REPS columns', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    // Jump to the first plain-strength exercise — cardio/timed/unilateral/%1RM stay on the wizard,
+    // so the template's exercise order determines which view loads first.
+    const found = await page.evaluate(() => {
+      const idx = _runner.exercises.findIndex(e => typeof _isPlainStrengthExercise === 'function' && _isPlainStrengthExercise(e))
+      if (idx === -1) return false
+      runnerJumpTo(idx)
+      return true
+    })
+    if (!found) return // this template has no plain-strength exercise — nothing to assert
+
+    await expect(page.locator('#workout-runner >> text=PREVIOUS')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('#workout-runner >> text=KG')).toBeVisible()
+    await expect(page.locator('#workout-runner >> text=REPS')).toBeVisible()
+    await expect(page.locator('#workout-runner button[onclick="toggleTableSet(0)"]')).toBeVisible()
+  })
+
+  test('checking a set in the strength table logs it and starts rest — without leaving the table', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    const found = await page.evaluate(() => {
+      const idx = _runner.exercises.findIndex(e => typeof _isPlainStrengthExercise === 'function' && _isPlainStrengthExercise(e))
+      if (idx === -1) return false
+      runnerJumpTo(idx)
+      return true
+    })
+    if (!found) return
+
+    const kgInput   = page.locator('#workout-runner input[oninput*="tableRows[0].weight"]')
+    const repsInput = page.locator('#workout-runner input[oninput*="tableRows[0].reps"]')
+    if (await kgInput.count() > 0) await kgInput.fill('60')
+    await repsInput.fill('10')
+    await page.locator('#workout-runner button[onclick="toggleTableSet(0)"]').click()
+
+    // Rest starts (non-blocking bar), and the table itself stays visible underneath —
+    // this is the core design difference from the wizard's blocking "Resting…" placeholder.
+    await expect(page.locator('#rest-timer-overlay')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('#workout-runner >> text=REPS')).toBeVisible()
+    await expect(page.locator('#workout-runner button[onclick="toggleTableSet(0)"][aria-label="Mark set incomplete"]')).toBeVisible()
+  })
+
   test('save session lands on workouts page — not PT view', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })

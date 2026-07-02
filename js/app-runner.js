@@ -75,20 +75,148 @@ async function fetchRunnerLastSession(exName) {
 }
 
 function renderRunnerLastSession(exName) {
-  const el = document.getElementById('wr-last-session')
-  if (!el) return
   const data = _runner?.lastSession?.[exName]
-  if (!data?.sets?.length) { el.innerHTML = ''; return }
-  const dateStr = new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-  el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);white-space:nowrap">↑ Beat · ${dateStr}</span>
-      ${data.sets.map(s => `
-        <span style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap">
-          <span style="color:var(--text-muted)">S${s.set_number}</span>
-          ${s.weight_kg ? s.weight_kg + 'kg' : ''}${s.weight_kg && s.reps_achieved ? ' × ' : ''}${s.reps_achieved ? s.reps_achieved : ''}
-        </span>`).join('')}
+  const el = document.getElementById('wr-last-session')
+  if (el) {
+    if (!data?.sets?.length) {
+      el.innerHTML = ''
+    } else {
+      const dateStr = new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+      el.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);white-space:nowrap">↑ Beat · ${dateStr}</span>
+          ${data.sets.map(s => `
+            <span style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap">
+              <span style="color:var(--text-muted)">S${s.set_number}</span>
+              ${s.weight_kg ? s.weight_kg + 'kg' : ''}${s.weight_kg && s.reps_achieved ? ' × ' : ''}${s.reps_achieved ? s.reps_achieved : ''}
+            </span>`).join('')}
+        </div>
+      `
+    }
+  }
+  // Strength table view: previous-session data can arrive after the table's already
+  // rendered (async fetch) — backfill blank, untouched rows so 1-tap repeat still works.
+  const ex = _runner?.exercises?.[_runner.exIdx]
+  if (ex?.name === exName && ex.tableRows && data?.sets?.length) {
+    const prevMap = _prevSetsByIndex(ex)
+    let changed = false
+    ex.tableRows.forEach((row, i) => {
+      if (row.done || row.weight !== '' || row.reps !== '') return
+      const prev = prevMap[i]
+      if (prev) {
+        row.weight = ex.bodyweight ? 'BW' : (prev.weight_kg != null ? String(prev.weight_kg) : '')
+        row.reps = prev.reps_achieved != null ? String(prev.reps_achieved) : ''
+        changed = true
+      }
+    })
+    if (changed) renderRunner()
+  }
+}
+
+// --- Strength table (Hevy-style) — plain strength sets only.
+// Cardio / timed / unilateral / %1RM exercises stay on the wizard in renderRunner() below.
+
+function _isPlainStrengthExercise(ex) {
+  if (!ex || ex.type === 'cardio' || !ex.sets_json?.length) return false
+  if (/carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)) return false
+  return ex.sets_json.every(s => !s.timed && !s.unilateral && !s.intensityMin)
+}
+
+function _prevSetsByIndex(ex) {
+  const sets = _runner?.lastSession?.[ex.name]?.sets
+  const map = {}
+  if (sets) sets.forEach(s => { map[s.set_number - 1] = s })
+  return map
+}
+
+function _ensureTableRows(ex) {
+  if (ex.tableRows) return
+  const n = ex.targetSets || ex.sets_json.length || 3
+  const prevMap = _prevSetsByIndex(ex)
+  ex.tableRows = Array.from({ length: n }, (_, i) => {
+    const prev = prevMap[i]
+    return {
+      weight: ex.bodyweight ? 'BW' : (prev?.weight_kg != null ? String(prev.weight_kg) : ''),
+      reps: prev?.reps_achieved != null ? String(prev.reps_achieved) : '',
+      done: false
+    }
+  })
+}
+
+function _syncLoggedSetsFromTable(ex) {
+  ex.loggedSets = ex.tableRows.filter(r => r.done).map(r => ({ weight: r.weight || null, reps: r.reps }))
+}
+
+function toggleTableSet(rowIdx) {
+  const ex = _runner.exercises[_runner.exIdx]
+  const row = ex.tableRows?.[rowIdx]
+  if (!row) return
+  if (!row.done) {
+    if (!row.reps) return // require reps, same minimum as the wizard's LOG validation
+    _unlockAudio()
+    _unlockSpeech()
+    row.done = true
+    _syncLoggedSetsFromTable(ex)
+    startRestTimer(ex.restSecs || 90)
+    renderRunner()
+  } else {
+    row.done = false
+    _syncLoggedSetsFromTable(ex)
+    renderRunner()
+  }
+}
+
+function addTableRow() {
+  const ex = _runner.exercises[_runner.exIdx]
+  _ensureTableRows(ex)
+  const prevMap = _prevSetsByIndex(ex)
+  const i = ex.tableRows.length
+  const prev = prevMap[i]
+  ex.tableRows.push({
+    weight: ex.bodyweight ? 'BW' : (prev?.weight_kg != null ? String(prev.weight_kg) : ''),
+    reps: prev?.reps_achieved != null ? String(prev.reps_achieved) : '',
+    done: false
+  })
+  ex.targetSets = ex.tableRows.length
+  renderRunner()
+}
+
+function renderStrengthTable(ex) {
+  _ensureTableRows(ex)
+  const prevMap = _prevSetsByIndex(ex)
+  const rows = ex.tableRows.map((row, i) => {
+    const prev = prevMap[i]
+    const prevLabel = prev
+      ? `${prev.weight_kg ? prev.weight_kg + 'kg' : ''}${prev.weight_kg && prev.reps_achieved ? ' × ' : ''}${prev.reps_achieved || ''}`
+      : '—'
+    return `
+    <div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:var(--text-muted);text-align:center">${i+1}</span>
+      <span style="width:62px;flex-shrink:0;font-size:11px;color:var(--text-muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${prevLabel}</span>
+      ${ex.bodyweight
+        ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>`
+        : `<input type="number" inputmode="decimal" step="0.5" value="${row.weight}" placeholder="—"
+            oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].weight=this.value"
+            style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
+      }
+      <input type="number" inputmode="numeric" value="${row.reps}" placeholder="—"
+        oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].reps=this.value"
+        style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+      <button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}"
+        style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:none;font-size:16px;font-weight:800;cursor:pointer;background:${row.done?'var(--accent)':'var(--surface-2)'};color:${row.done?'#fff':'var(--text-muted)'}">${row.done?'✓':''}</button>
+    </div>`
+  }).join('')
+
+  return `
+    <div style="display:flex;gap:6px;padding:0 0 6px">
+      <span style="width:22px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Set</span>
+      <span style="width:62px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Previous</span>
+      <span style="flex:1;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Kg</span>
+      <span style="flex:1;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Reps</span>
+      <span style="width:44px"></span>
     </div>
+    ${rows}
+    <button onclick="addTableRow()" style="width:100%;margin-top:8px;padding:8px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add set</button>
   `
 }
 
@@ -98,6 +226,7 @@ function renderRunner() {
   const isLast  = _runner.exIdx === _runner.exercises.length - 1
   const nextEx  = _runner.exercises[_runner.exIdx + 1]
   const lastSet = ex.loggedSets[ex.loggedSets.length - 1]
+  const isTable = _isPlainStrengthExercise(ex)
 
   let el = document.getElementById('workout-runner')
   if (!el) { el = document.createElement('div'); el.id = 'workout-runner'; document.body.appendChild(el) }
@@ -127,7 +256,7 @@ function renderRunner() {
       <!-- Scrollable area: logged sets + PT note + client notes -->
       <div style="flex:1;overflow-y:auto;padding:12px 16px">
         <!-- Logged sets -->
-        ${!ex.loggedSets.length
+        ${isTable ? renderStrengthTable(ex) : !ex.loggedSets.length
           ? `<p style="color:var(--text-muted);font-size:13px;margin:0 0 8px">No sets logged yet.</p>`
           : `<div style="margin-bottom:8px">${ex.loggedSets.map((s,i) => `
             <div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px">
@@ -168,11 +297,11 @@ function renderRunner() {
         </div>
       </div>
 
-      <!-- Last session strip — persistent reference -->
-      ${ex.type !== 'cardio' ? `<div id="wr-last-session" style="border-top:1px solid var(--border);padding:6px 12px;background:var(--bg);min-height:28px"></div>` : ''}
+      <!-- Last session strip — persistent reference (table view shows this per-row instead) -->
+      ${!isTable && ex.type !== 'cardio' ? `<div id="wr-last-session" style="border-top:1px solid var(--border);padding:6px 12px;background:var(--bg);min-height:28px"></div>` : ''}
 
-      <!-- Set counter — above stats bar -->
-      ${ex.targetSets ? `<div style="padding:6px 14px;border-top:1px solid var(--border);background:var(--bg);display:flex;align-items:center;gap:8px">
+      <!-- Set counter — above stats bar (table view shows this per-row instead) -->
+      ${!isTable && ex.targetSets ? `<div style="padding:6px 14px;border-top:1px solid var(--border);background:var(--bg);display:flex;align-items:center;gap:8px">
         <span style="font-size:13px;font-weight:700;color:var(--accent)">Set ${setNum} of ${ex.targetSets}</span>
         <div style="display:flex;gap:4px">${Array.from({length:ex.targetSets},(_,i)=>`<div style="width:20px;height:6px;border-radius:3px;background:${i<ex.loggedSets.length?'var(--accent)':i===ex.loggedSets.length?'rgba(99,102,241,0.4)':'var(--border)'}"></div>`).join('')}</div>
       </div>` : ''}
@@ -180,7 +309,11 @@ function renderRunner() {
 
       <!-- Set input -->
       <div style="padding:10px 12px 12px;background:var(--surface)">
-        ${_runner._restInterval ? `
+        ${isTable ? `
+          ${ex.loggedSets.length > 0
+            ? `<button onclick="skipToNextExercise()" style="width:100%;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">${isLast?'Finish 🏁':'Next exercise →'}</button>`
+            : `<div style="text-align:center;padding:14px;font-size:12px;color:var(--text-muted)">Check off a set to continue</div>`}
+        ` : _runner._restInterval ? `
           <div style="padding:14px;text-align:center;border-radius:10px;background:var(--surface-2)">
             <div style="font-size:13px;font-weight:600;color:var(--text-muted)">Resting — inputs available after rest</div>
           </div>
