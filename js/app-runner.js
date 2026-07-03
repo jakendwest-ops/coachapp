@@ -1739,9 +1739,14 @@ function renderLogExercises() {
 }
 
 async function showLogSessionModal(clientId) {
+  const { data: clientRecord } = await dbq('showLogSessionModal:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single())
+  const coachId = clientRecord?.coach_id || currentUser.id
   const { data: templates } = await db
     .from('workout_templates')
     .select('*, workout_template_exercises(*)')
+    .eq('coach_id', coachId)
+    .is('client_id', null)
+    .is('program_id', null)
     .order('name')
 
   window._logBlocks = []

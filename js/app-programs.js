@@ -755,7 +755,7 @@ async function saveProgram(programId) {
 async function deleteProgram(programId) {
   if (!confirm('Delete this program and all its phases?')) return
   log.info('deleteProgram', 'deleting', { programId })
-  const { error } = await db.from('programs').delete().eq('id', programId)
+  const { error } = await db.from('programs').delete().eq('id', programId).eq('coach_id', currentUser.id)
   if (error) { log.error('deleteProgram', 'failed', error); return }
   log.ok('deleteProgram', 'deleted', { programId })
   navigate('programs')
