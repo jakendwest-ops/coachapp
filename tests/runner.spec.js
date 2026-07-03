@@ -250,4 +250,39 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 12000 })
     await expect(page.locator('text=Overview')).not.toBeVisible({ timeout: 3000 }).catch(() => {})
   })
+
+  test('swap exercise picker opens and swapping updates the current exercise name', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    await page.locator('button:has-text("Swap exercise")').click()
+    await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
+
+    const count = await page.locator('#ep-list .list-row').count()
+    if (count === 0) { await page.locator('#exercise-picker-modal .modal-close').click(); return } // empty library — nothing to pick
+    const newName = await page.locator('#ep-list .list-row').first().locator('.row-name').textContent()
+    await page.locator('#ep-list .list-row').first().click()
+
+    await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
+    const currentName = await page.evaluate(() => _runner.exercises[_runner.exIdx].name)
+    expect(currentName).toBe(newName)
+  })
+
+  test('add exercise picker opens and adding appends a new exercise and jumps to it', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    const before = await page.evaluate(() => _runner.exercises.length)
+    await page.locator('button:has-text("+ Add exercise")').click()
+    await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
+
+    const count = await page.locator('#ep-list .list-row').count()
+    if (count === 0) { await page.locator('#exercise-picker-modal .modal-close').click(); return }
+    await page.locator('#ep-list .list-row').first().click()
+
+    await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
+    const after = await page.evaluate(() => ({ len: _runner.exercises.length, idx: _runner.exIdx }))
+    expect(after.len).toBe(before + 1)
+    expect(after.idx).toBe(after.len - 1)
+  })
 })

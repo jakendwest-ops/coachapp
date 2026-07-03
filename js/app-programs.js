@@ -635,7 +635,11 @@ async function openProgram(programId) {
               <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--surface-2);border-radius:8px;padding:8px 12px;margin-bottom:10px">
                 <div style="font-size:12px">
                   <span style="font-weight:600;color:var(--text-muted)">Periodization:</span>
-                  <span style="font-weight:700;margin-left:4px">${ph.periodization_type === 'linear' ? 'Linear' : ph.periodization_type === 'undulating' ? 'Undulating' : 'None'}</span>
+                  <span style="font-weight:700;margin-left:4px">${ph.periodization_type === 'linear'
+                    ? `Linear${ph.periodization_config?.startPct != null && ph.periodization_config?.endPct != null ? ` (${ph.periodization_config.startPct}→${ph.periodization_config.endPct}%)` : ''}`
+                    : ph.periodization_type === 'undulating'
+                    ? `Undulating${ph.periodization_config?.tiers ? ` (${['heavy','moderate','light'].filter(t=>ph.periodization_config.tiers[t]?.pct != null).map(t=>ph.periodization_config.tiers[t].pct+'%').join('/')})` : ''}`
+                    : 'None'}</span>
                 </div>
                 <div style="display:flex;gap:6px">
                   <button class="btn-secondary" style="font-size:11px;padding:3px 9px" onclick="showPeriodizationModal('${ph.id}','${program.id}')">Configure</button>
@@ -1160,11 +1164,11 @@ function renderEditableWeek1Grid(phase, sessions) {
           ${daySessions.map(pw => `
             <div style="display:flex;align-items:center;gap:4px;background:var(--surface);border-radius:6px;padding:5px 6px;margin-bottom:4px">
               ${pw.tier ? `<span style="font-size:8px;font-weight:700;color:${tierColor[pw.tier]};flex-shrink:0">${pw.tier[0].toUpperCase()}</span>` : ''}
-              <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openSessionDetail('${pw.template_id}','${(pw.workout_templates?.name || 'Session').replace(/'/g, "\\'")}')">${escapeHtml(pw.workout_templates?.name || 'Unknown')}</span>
+              <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openSessionDetail('${pw.template_id}','${(pw.workout_templates?.name || 'Session').replace(/'/g, "\\'")}',{backLabel:'Back to program',backFn:()=>openProgram('${window._openProgramId}'),programId:'${window._openProgramId}'})">${escapeHtml(pw.workout_templates?.name || 'Unknown')}</span>
               <button onclick="removePhaseWorkout('${pw.id}','${phase.id}')" style="font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0;flex-shrink:0">✕</button>
             </div>`).join('')}
           ${canAdd ? `
-            <input class="field-input pwg-search" placeholder="Search…" style="font-size:11px;padding:4px 6px;margin-bottom:3px;width:100%" oninput="_filterPwgOptions(this)">
+            <input class="field-input pwg-search" placeholder="Filter workouts below…" title="Type to filter the workout list below" style="font-size:11px;padding:4px 6px;margin-bottom:3px;width:100%" oninput="_filterPwgOptions(this)">
             <select class="field-input pwg-select" style="font-size:11px;padding:4px 6px;width:100%" data-phase="${phase.id}" data-day="${dayNum}" data-session="${nextSessionOrder}" onchange="_quickAssignPhaseWorkout(this)">
               <option value="">+ Add workout…</option>
               <option value="__new__">＋ Create new workout</option>

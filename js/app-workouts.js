@@ -32,9 +32,10 @@ function fmtSet(s, type) {
 }
 
 // ─── SESSION DETAIL SLIDE-IN ──────────────────────────────────────────────────
-async function openSessionDetail(templateId, name) {
+async function openSessionDetail(templateId, name, ctx = {}) {
   const existing = document.getElementById('session-detail-panel')
   if (existing) existing.remove()
+  window._sessionDetailCtx = ctx
 
   const { data: exercises } = await db
     .from('workout_template_exercises')
@@ -83,12 +84,18 @@ async function openSessionDetail(templateId, name) {
         </div>`
       }).join('')
 
+  // Clients view their own prescribed program read-only; coach and solo (self-coached) can edit.
+  const canEdit = currentProfile?.role !== 'client'
+
   panel.innerHTML = `
     <div onclick="closeSessionDetail()" style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.45)"></div>
     <div id="session-detail-drawer" style="position:absolute;top:0;right:0;bottom:0;width:min(420px,100vw);background:var(--surface);overflow-y:auto;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .3s cubic-bezier(.32,.72,0,1)">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 16px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
         <h2 style="font-size:17px;font-weight:700;margin:0">${escapeHtml(name)}</h2>
-        <button onclick="closeSessionDetail()" style="border:none;background:none;cursor:pointer;padding:4px 8px;color:var(--text-muted);font-size:22px;line-height:1">✕</button>
+        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+          ${canEdit ? `<button onclick="_editFromSessionDetail('${templateId}')" style="border:1px solid var(--border);background:none;cursor:pointer;padding:5px 12px;border-radius:8px;color:var(--accent);font-size:13px;font-weight:700">Edit</button>` : ''}
+          <button onclick="closeSessionDetail()" style="border:none;background:none;cursor:pointer;padding:4px 8px;color:var(--text-muted);font-size:22px;line-height:1">✕</button>
+        </div>
       </div>
       <div style="padding:16px;flex:1">${exHtml}</div>
     </div>`
@@ -98,6 +105,14 @@ async function openSessionDetail(templateId, name) {
     const d = document.getElementById('session-detail-drawer')
     if (d) d.style.transform = 'translateX(0)'
   }, 16)
+}
+
+// Session-detail drawer is a read-only preview; editing hands off to the full template
+// editor (openTemplate), reusing its existing propagate-to-all-sessions prompt on save.
+function _editFromSessionDetail(templateId) {
+  const ctx = window._sessionDetailCtx || {}
+  closeSessionDetail()
+  openTemplate(templateId, ctx)
 }
 
 function closeSessionDetail() {
@@ -201,7 +216,7 @@ async function renderClientWorkoutsPage(el) {
                       return `<div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
                         ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '0'}">
-                          ${templateId ? `<span style="font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)" onclick="openSessionDetail('${templateId}','${name.replace(/'/g,"\\'")}')">` : `<span style="font-size:13px;font-weight:600">`}${name}</span>
+                          ${templateId ? `<span style="font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)" onclick="openSessionDetail('${templateId}','${name.replace(/'/g,"\\'")}',{clientId:'${clientId}',clientProgramId:'${activeAssignment.id}',isClientPlan:true,backLabel:'Workouts'})">` : `<span style="font-size:13px;font-weight:600">`}${name}</span>
                           ${templateId ? `<button class="btn-primary" style="font-size:12px;padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
                         </div>
                         ${exs.length ? `
@@ -607,6 +622,17 @@ async function saveNewTemplate() {
 
   if (ctx?.programId) {
     window._phaseWorkoutContext = null
+    // Assign the new template straight back into the day slot it was created from —
+    // without this, "Create new workout" left the slot empty and the coach had to
+    // navigate back to the phase and re-pick it from the dropdown.
+    if (ctx.phaseId && ctx.dayOfWeek) {
+      const { data: existingSlots } = await db.from('program_phase_workouts').select('id').eq('phase_id', ctx.phaseId).eq('week_number', 1).eq('day_of_week', ctx.dayOfWeek)
+      const dayLabels = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+      const { error: pwErr } = await db.from('program_phase_workouts').insert({
+        phase_id: ctx.phaseId, day_of_week: ctx.dayOfWeek, day_label: dayLabels[ctx.dayOfWeek], template_id: data.id, session_order: (existingSlots?.length || 0) + 1, week_number: 1
+      })
+      if (pwErr) { log.error('saveNewTemplate', 'auto-assign to slot failed', pwErr); showToast('Workout created, but could not auto-assign to the slot — add it from the phase page', 'error') }
+    }
     openTemplate(data.id, { backLabel: 'Back to program', backFn: () => openProgram(ctx.programId), programId: ctx.programId })
     return
   }
@@ -908,7 +934,7 @@ function renderTemplateSets(containerId, type) {
         ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${s.intensityMin}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${s.intensityMax}"`:'')))}
         ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
         ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
-        ${row('Tempo', mini(`ts-tempo-${i}`,'type="text" placeholder="e.g. 3011"'+(s.tempo?` value="${s.tempo}"`:'')))}
+        ${row('Tempo', mini(`ts-tempo-${i}`,'type="text" maxlength="4" placeholder="e.g. 3011"'+(s.tempo?` value="${s.tempo}"`:'')))}
         ${row('Countdown (s)', mini(`ts-cd-${i}`,'type="number" placeholder="Optional"'+(s.countdown?` value="${s.countdown}"`:'')))}
       `}
     </div>`

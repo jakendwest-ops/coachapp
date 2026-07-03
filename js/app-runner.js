@@ -181,9 +181,74 @@ function addTableRow() {
   renderRunner()
 }
 
+// Shared with the wizard's per-set target chips (see the strength IIFE further down) —
+// kept as a standalone pair here so the table can show the same prescription info
+// (rep range/RPE-RIR/tempo/rest/%1RM) that the table previously dropped.
+function _buildTargetCols(tgt, ex) {
+  const cols = []
+  if (tgt.timed) {
+    const secs = tgt.duration ? (parseRest(tgt.duration)||0) : (tgt.repsMin ? parseInt(tgt.repsMin) : null)
+    const durDisplay = secs != null ? (Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0')) : null
+    if (durDisplay) cols.push({ val: durDisplay, label: 'DURATION', accent: true })
+  }
+  const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
+  if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
+  if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
+  let needsOneRM = false
+  if (tgt.intensityMin) {
+    if (ex.oneRM) {
+      const kgLo = _calcWeightFromPct(ex.oneRM, tgt.intensityMin)
+      const kgHi = tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? _calcWeightFromPct(ex.oneRM, tgt.intensityMax) : null
+      cols.push({ val: kgLo + (kgHi ? '–'+kgHi : '') + ' kg', label: '1RM TARGET', accent: true })
+    } else {
+      needsOneRM = true
+      cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
+    }
+  }
+  if (tgt.effortMin) cols.push({ val: (tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
+  if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
+  if (tgt.tempo) cols.push({ val: tgt.tempo, label: 'TEMPO' })
+  return { cols, needsOneRM }
+}
+
+function _renderTargetBarHtml(cols) {
+  if (!cols.length) return ''
+  return `<div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:10px">${cols.map((c, i) =>
+    `<div style="flex:1;text-align:center;padding:8px 4px${i < cols.length-1 ? ';border-right:1px solid var(--border)' : ''}">
+      <div style="font-size:18px;font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'};line-height:1.1">${c.val}</div>
+      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
+    </div>`
+  ).join('')}</div>`
+}
+
 function renderStrengthTable(ex) {
   _ensureTableRows(ex)
   const prevMap = _prevSetsByIndex(ex)
+  const tgt = ex.sets_json?.[0] || {}
+  const { cols, needsOneRM } = _buildTargetCols(tgt, ex)
+  const targetBar = _renderTargetBarHtml(cols)
+  const oneRMBanner = needsOneRM ? `
+    <div id="wr-onerm-banner" onclick="showRunnerOneRMSheet(${_runner.exIdx})" style="background:rgba(245,158,11,.1);border:1.5px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;cursor:pointer;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:#b45309">⚠ Set your 1RM to see target weight</div>
+      <div style="font-size:11px;color:#b45309;margin-top:2px">Tap to add</div>
+    </div>` : ''
+
+  let restBar = ''
+  if (_runner.restRemaining != null) {
+    const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
+    const nextEx = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name)
+    const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (ex.loggedSets.length + 1)
+    restBar = `
+    <div id="rest-timer-overlay" style="display:flex;align-items:center;gap:12px;padding:10px 12px;margin-bottom:10px;border-radius:10px;background:var(--surface-2);border:1.5px solid var(--accent)">
+      <div id="rt-countdown" style="font-size:24px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;min-width:56px;text-align:center">${fmtRestCountdown(_runner.restRemaining)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
+        <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nextLabel}</div>
+      </div>
+      <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:8px;background:var(--surface);font-size:13px;font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
+    </div>`
+  }
+
   const rows = ex.tableRows.map((row, i) => {
     const prev = prevMap[i]
     const prevLabel = prev
@@ -203,11 +268,14 @@ function renderStrengthTable(ex) {
         oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].reps=this.value"
         style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
       <button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}"
-        style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:none;font-size:16px;font-weight:800;cursor:pointer;background:${row.done?'var(--accent)':'var(--surface-2)'};color:${row.done?'#fff':'var(--text-muted)'}">${row.done?'✓':''}</button>
+        style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:${row.done?'none':'1.5px solid var(--border-strong)'};font-size:16px;font-weight:800;cursor:pointer;background:${row.done?'var(--accent)':'var(--surface-2)'};color:${row.done?'#fff':'var(--text-muted)'}">${row.done?'✓':''}</button>
     </div>`
   }).join('')
 
   return `
+    ${targetBar}
+    ${oneRMBanner}
+    ${restBar}
     <div style="display:flex;gap:6px;padding:0 0 6px">
       <span style="width:22px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Set</span>
       <span style="width:62px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Previous</span>
@@ -250,6 +318,10 @@ function renderRunner() {
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
         </div>
         ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${e.name||'Exercise '+(i+1)}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
+        <div style="display:flex;gap:14px;margin-top:8px">
+          <button onclick="showExercisePicker('swap')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">⇄ Swap exercise</button>
+          <button onclick="showExercisePicker('add')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">+ Add exercise</button>
+        </div>
         ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:8px;font-size:11.5px;color:var(--text-muted);line-height:1.5">${_runner.templateDesc}</div>` : ''}
       </div>
 
@@ -594,9 +666,20 @@ function _unlockAudio() {
 }
 
 function _unlockSpeech() {
-  // Prime speechSynthesis on first user gesture so iOS allows mid-timer calls.
+  // Prime speechSynthesis on first user gesture so iOS/Chrome allow mid-timer calls —
+  // an actual speak() tied to the gesture is required, cancel() alone doesn't register it.
   if (!window.speechSynthesis) return
-  try { window.speechSynthesis.cancel() } catch(e) {}
+  try {
+    window.speechSynthesis.cancel()
+    const utt = new SpeechSynthesisUtterance(' ')
+    utt.volume = 0
+    window.speechSynthesis.speak(utt)
+  } catch(e) {}
+}
+
+function _pickFemaleVoice() {
+  const voices = window.speechSynthesis?.getVoices() || []
+  return voices.find(v => /hazel|susan|zira|female|samantha|victoria|karen/i.test(v.name)) || null
 }
 
 function speakCue(text) {
@@ -606,6 +689,8 @@ function speakCue(text) {
     const utt = new SpeechSynthesisUtterance(text)
     utt.rate = 1.1
     utt.volume = 1
+    const voice = _pickFemaleVoice()
+    if (voice) utt.voice = voice
     window.speechSynthesis.speak(utt)
   } catch(e) {}
 }
@@ -833,7 +918,11 @@ function startRestTimer(secs) {
   _runner._restInterval = clearTimer(_runner._restInterval)
   _runner.restRemaining = secs
   _runner.restTotal     = secs
-  renderRestTimer()
+  // Table-mode rest renders inline inside renderStrengthTable (via the caller's imminent
+  // renderRunner() call right after this), so the non-blocking table stays visible/editable
+  // underneath — it never gets the floating page-top overlay that wizard mode still uses.
+  const tableMode = _isPlainStrengthExercise(_runner.exercises[_runner.exIdx])
+  if (!tableMode) renderRestTimer()
   _runner._restInterval = setInterval(() => {
     _runner.restRemaining--
     if (_runner.restRemaining <= 0) {
@@ -843,6 +932,7 @@ function startRestTimer(secs) {
       document.getElementById('rest-timer-overlay')?.remove()
       const cb = _runner._afterRest
       if (cb) { _runner._afterRest = null; cb() }
+      else renderRunner() // clears the inline rest bar (table mode) / stale "Resting…" state
     } else {
       _unlockAudio()
       if (_runner.restRemaining === 10) speakCue('10 seconds')
@@ -850,7 +940,8 @@ function startRestTimer(secs) {
       const el = document.getElementById('rt-countdown')
       if (el) {
         const r = _runner.restRemaining
-        el.textContent = r < 60 ? r+'s' : fmtRestCountdown(r)
+        const inTableMode = _isPlainStrengthExercise(_runner.exercises[_runner.exIdx])
+        el.textContent = inTableMode ? fmtRestCountdown(r) : (r < 60 ? r+'s' : fmtRestCountdown(r))
         el.style.color = r <= 3 ? '#ef4444' : 'var(--accent)'
       }
       const ring = document.getElementById('rt-ring')
@@ -978,6 +1069,70 @@ function runnerGoBack() {
     _runner.exIdx--
     renderRunner()
   }
+}
+
+// Swap/add exercise are both session-only — neither writes to workout_templates.
+// They change what gets logged for today; the coach's template is untouched.
+async function showExercisePicker(mode) {
+  window._exercisePickerMode = mode
+  const { data: exercises, error } = await db.from('exercises').select('id, name, muscle_group').order('name')
+  if (error) { log.error('showExercisePicker', 'fetch failed', error); showToast('Could not load the exercise library', 'error'); return }
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'exercise-picker-modal'
+  // .modal-overlay is z-index:200 in main.css — the runner itself is a fullscreen
+  // z-index:300 layer, so a plain modal-overlay would render behind it and silently
+  // eat clicks. Needs to sit above the runner, same tier as session-detail-panel (1000).
+  overlay.style.zIndex = '1000'
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px;max-height:80vh;overflow-y:auto">
+      <div class="modal-header">
+        <h2 class="modal-title">${mode === 'swap' ? 'Swap exercise' : 'Add exercise'}</h2>
+        <button class="modal-close" onclick="closeModal('exercise-picker-modal')">✕</button>
+      </div>
+      <input class="field-input" id="ep-search" placeholder="Search exercises…" oninput="_filterExercisePicker(this)" style="margin-bottom:10px;width:100%;box-sizing:border-box">
+      <div id="ep-list" class="list">
+        ${(exercises || []).map(e => `<div class="list-row" data-search="${escapeHtml(e.name.toLowerCase())}" onclick="_pickRunnerExercise('${e.name.replace(/'/g,"\\'")}')" style="cursor:pointer">
+          <div class="row-name">${escapeHtml(e.name)}</div>
+          ${e.muscle_group ? `<div class="row-meta">${escapeHtml(e.muscle_group)}</div>` : ''}
+        </div>`).join('')}
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+}
+
+function _filterExercisePicker(inputEl) {
+  const q = inputEl.value.trim().toLowerCase()
+  document.querySelectorAll('#ep-list .list-row').forEach(row => {
+    row.style.display = !q || row.dataset.search.includes(q) ? '' : 'none'
+  })
+}
+
+function _pickRunnerExercise(name) {
+  closeModal('exercise-picker-modal')
+  if (window._exercisePickerMode === 'swap') _swapRunnerExercise(name)
+  else _addRunnerExercise(name)
+}
+
+function _swapRunnerExercise(name) {
+  const ex = _runner.exercises[_runner.exIdx]
+  ex.name = name
+  ex.loggedSets = []
+  ex.oneRM = null
+  delete ex.tableRows
+  if (ex.type !== 'cardio') fetchRunnerLastSession(name)
+  renderRunner()
+}
+
+function _addRunnerExercise(name) {
+  _runner.exercises.push({
+    name, type: 'strength', targetSets: 3, targetReps: '', targetWeight: '',
+    restSecs: 90, loggedSets: [], bodyweight: false, assisted: false,
+    supersetGroup: null, sets_json: [], notes: null, oneRM: null
+  })
+  _runner.exIdx = _runner.exercises.length - 1
+  fetchRunnerLastSession(name)
+  renderRunner()
 }
 
 function addExtraCardioSet() {
