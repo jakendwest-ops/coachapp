@@ -753,8 +753,26 @@ async function saveProgram(programId) {
 }
 
 async function deleteProgram(programId) {
-  if (!confirm('Delete this program and all its phases?')) return
+  const { count: assignedCount } = await db.from('client_programs').select('id', { count: 'exact', head: true }).eq('program_id', programId)
+  if (assignedCount > 0) {
+    showToast(`${assignedCount} client${assignedCount === 1 ? ' is' : 's are'} assigned to this program — remove their assignment first.`, 'warn', 4500)
+    return
+  }
+
+  if (!confirm('Delete this program, its phases, and its workout templates? This cannot be undone.')) return
   log.info('deleteProgram', 'deleting', { programId })
+
+  const { data: phases } = await db.from('program_phases').select('id').eq('program_id', programId)
+  const phaseIds = (phases || []).map(p => p.id)
+  if (phaseIds.length) {
+    const { data: pws } = await db.from('program_phase_workouts').select('template_id').in('phase_id', phaseIds)
+    const templateIds = [...new Set((pws || []).map(p => p.template_id).filter(Boolean))]
+    if (templateIds.length) {
+      const { error: tErr } = await db.from('workout_templates').delete().in('id', templateIds)
+      if (tErr) { log.error('deleteProgram', 'template cleanup failed', tErr); return }
+    }
+  }
+
   const { error } = await db.from('programs').delete().eq('id', programId).eq('coach_id', currentUser.id)
   if (error) { log.error('deleteProgram', 'failed', error); return }
   log.ok('deleteProgram', 'deleted', { programId })
