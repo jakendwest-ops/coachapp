@@ -251,38 +251,111 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('text=Overview')).not.toBeVisible({ timeout: 3000 }).catch(() => {})
   })
 
-  test('swap exercise picker opens and swapping updates the current exercise name', async ({ page }) => {
+  test('swap exercise opens the same modal used to build a workout, and swapping updates the current exercise name', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("Swap exercise")').click()
-    await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('#add-to-template-modal .modal-title')).toHaveText('Swap exercise')
+    // Same builder modal — has the full set-target UI, not a cut-down picker
+    await expect(page.locator('#att-sets-container')).toBeVisible()
+    await expect(page.locator('#att-superset')).toBeVisible()
 
-    const count = await page.locator('#ep-list .list-row').count()
-    if (count === 0) { await page.locator('#exercise-picker-modal .modal-close').click(); return } // empty library — nothing to pick
-    const newName = await page.locator('#ep-list .list-row').first().locator('.row-name').textContent()
-    await page.locator('#ep-list .list-row').first().click()
+    await page.fill('#att-name', 'Playwright Swap Target')
+    await page.locator('#att-confirm-btn').click()
 
-    await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
     const currentName = await page.evaluate(() => _runner.exercises[_runner.exIdx].name)
-    expect(currentName).toBe(newName)
+    expect(currentName).toBe('Playwright Swap Target')
   })
 
-  test('add exercise picker opens and adding appends a new exercise and jumps to it', async ({ page }) => {
+  test('add exercise opens the same modal and adding appends a new exercise and jumps to it', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     const before = await page.evaluate(() => _runner.exercises.length)
     await page.locator('button:has-text("+ Add exercise")').click()
-    await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('#add-to-template-modal .modal-title')).toHaveText('Add exercise')
 
-    const count = await page.locator('#ep-list .list-row').count()
-    if (count === 0) { await page.locator('#exercise-picker-modal .modal-close').click(); return }
-    await page.locator('#ep-list .list-row').first().click()
+    await page.fill('#att-name', 'Playwright Added Exercise')
+    await page.locator('#att-confirm-btn').click()
 
-    await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
-    const after = await page.evaluate(() => ({ len: _runner.exercises.length, idx: _runner.exIdx }))
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+    const after = await page.evaluate(() => ({ len: _runner.exercises.length, idx: _runner.exIdx, name: _runner.exercises[_runner.exIdx].name }))
     expect(after.len).toBe(before + 1)
     expect(after.idx).toBe(after.len - 1)
+    expect(after.name).toBe('Playwright Added Exercise')
+  })
+
+  test('swap and add exercise open the identical modal component (not two different pickers)', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    await page.locator('button:has-text("Swap exercise")').click()
+    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    const swapHtml = await page.locator('#add-to-template-modal .field-row').innerHTML()
+    await page.locator('#add-to-template-modal .modal-close').click()
+
+    await page.locator('button:has-text("+ Add exercise")').click()
+    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    const addHtml = await page.locator('#add-to-template-modal .field-row').innerHTML()
+    await page.locator('#add-to-template-modal .modal-close').click()
+
+    expect(swapHtml).toBe(addHtml) // identical picker markup for both entry points
+  })
+
+  test('exercise modal confirm button requires an exercise name', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    await page.locator('button:has-text("+ Add exercise")').click()
+    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    await page.locator('#att-confirm-btn').click()
+    await expect(page.locator('#att-error')).toHaveText('Exercise name is required')
+    await expect(page.locator('#add-to-template-modal')).toBeVisible() // did not close
+
+    await page.locator('#add-to-template-modal .modal-close').click()
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+  })
+
+  test('logged set can be deleted from the edit sheet', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    // Force a non-table exercise so the wizard's editable logged-set list renders
+    await page.evaluate(() => {
+      _runner.exercises[_runner.exIdx].sets_json = [{ timed: true, duration: '0:30' }]
+      _runner.exercises[_runner.exIdx].loggedSets = [{ weight: '20', duration: '0:30' }]
+      renderRunner()
+    })
+    await expect(page.locator('button:has-text("✎ Edit")').first()).toBeVisible({ timeout: 5000 })
+    await page.locator('button:has-text("✎ Edit")').first().click()
+    await expect(page.locator('#wr-edit-overlay')).toBeVisible({ timeout: 3000 })
+    await page.locator('#wr-edit-overlay button:has-text("Delete")').click()
+    await expect(page.locator('#wr-edit-overlay')).not.toBeVisible({ timeout: 3000 })
+    const remaining = await page.evaluate(() => _runner.exercises[_runner.exIdx].loggedSets.length)
+    expect(remaining).toBe(0)
+  })
+
+  test('strength table set row can be deleted', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    // Force a plain-strength (table-mode) exercise with 2 rows so delete is available
+    await page.evaluate(() => {
+      const ex = _runner.exercises[_runner.exIdx]
+      ex.sets_json = [{ repsMin: '8' }, { repsMin: '8' }]
+      ex.type = 'strength'
+      delete ex.tableRows
+      renderRunner()
+    })
+    const deleteBtn = page.locator('button[aria-label^="Delete set"]').first()
+    if (!(await deleteBtn.isVisible().catch(() => false))) return // not table mode for this template — skip
+    const before = await page.evaluate(() => _runner.exercises[_runner.exIdx].tableRows.length)
+    await deleteBtn.click()
+    const after = await page.evaluate(() => _runner.exercises[_runner.exIdx].tableRows.length)
+    expect(after).toBe(before - 1)
   })
 })

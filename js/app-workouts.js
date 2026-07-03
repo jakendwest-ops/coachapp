@@ -951,8 +951,15 @@ function copyPrevTemplateSet(i, containerId, tid) {
   renderTemplateSets(containerId, document.getElementById(tid)?.value || 'strength')
 }
 
-function showAddExerciseToTemplateModal(templateId) {
-  const _addOrmClientId = currentProfile?.role === 'solo' ? window._soloClientId : null
+// runnerCtx = { mode: 'add'|'swap' } — set when opened from the workout runner's
+// Swap/Add exercise buttons. Same modal, same set-target builder, either mode: the runner
+// context saves session-only into _runner.exercises (via _confirmRunnerExerciseFromModal
+// in app-runner.js) instead of writing a workout_template_exercises row — matches the
+// existing session-only swap/add behaviour, just via the identical picking UI Jake builds
+// workouts with, per his 2026-07-03 instruction that both buttons must open "the same modal".
+function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
+  const isRunner = !!runnerCtx
+  const _addOrmClientId = isRunner ? _runner.clientId : (currentProfile?.role === 'solo' ? window._soloClientId : null)
   Promise.all([
     db.from('exercises').select('*').order('name'),
     _addOrmClientId
@@ -962,13 +969,19 @@ function showAddExerciseToTemplateModal(templateId) {
     window._templateSets = [{ effortType: 'rpe' }]
     // Deduplicate 1RM exercise names across all clients (RLS scopes to coach's clients)
     const ormNames = [...new Set((ormRows || []).map(r => r.exercise_name))].sort()
+    const title = isRunner ? (runnerCtx.mode === 'swap' ? 'Swap exercise' : 'Add exercise') : 'Add exercise'
+    const confirmLabel = isRunner ? (runnerCtx.mode === 'swap' ? 'Swap' : 'Add') : 'Add exercise'
+    const confirmAction = isRunner ? `_confirmRunnerExerciseFromModal('${runnerCtx.mode}')` : `saveExerciseToTemplate('${templateId}')`
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.id = 'add-to-template-modal'
+    // .modal-overlay is z-index:200 in main.css — the runner is a fullscreen z-index:300
+    // layer, so opened from the runner this needs to sit above it (matches session-detail-panel, 1000).
+    if (isRunner) overlay.style.zIndex = '1000'
     overlay.innerHTML = `
       <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto">
         <div class="modal-header">
-          <h2 class="modal-title">Add exercise</h2>
+          <h2 class="modal-title">${title}</h2>
           <button class="modal-close" onclick="closeModal('add-to-template-modal')">✕</button>
         </div>
         <div class="field-row">
@@ -1007,7 +1020,7 @@ function showAddExerciseToTemplateModal(templateId) {
         <p class="modal-error" id="att-error"></p>
         <div class="modal-footer">
           <button class="btn-secondary" onclick="closeModal('add-to-template-modal')">Cancel</button>
-          <button class="btn-primary" onclick="saveExerciseToTemplate('${templateId}')">Add exercise</button>
+          <button class="btn-primary" id="att-confirm-btn" onclick="${confirmAction}">${confirmLabel}</button>
         </div>
       </div>
     `

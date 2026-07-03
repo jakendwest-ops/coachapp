@@ -181,6 +181,43 @@ function addTableRow() {
   renderRunner()
 }
 
+function deleteTableRow(rowIdx) {
+  const ex = _runner.exercises[_runner.exIdx]
+  if (!ex.tableRows || ex.tableRows.length <= 1) return // always leave at least one row
+  ex.tableRows.splice(rowIdx, 1)
+  ex.targetSets = ex.tableRows.length
+  _syncLoggedSetsFromTable(ex)
+  renderRunner()
+}
+
+// Running rep total for the exercise currently being logged, and the equivalent total
+// from the last time this exercise was logged — lets the client see live whether they've
+// beaten last session's total reps, updating with every set registered.
+function _currentRepsTotal(ex) {
+  if (ex.tableRows) return ex.tableRows.filter(r => r.done).reduce((s, r) => s + (parseInt(r.reps, 10) || 0), 0)
+  return ex.loggedSets.reduce((s, st) => {
+    if (st.leftReps != null || st.rightReps != null) return s + (parseInt(st.leftReps, 10) || 0) + (parseInt(st.rightReps, 10) || 0)
+    return s + (parseInt(st.reps, 10) || 0)
+  }, 0)
+}
+
+function _previousRepsTotal(ex) {
+  const sets = _runner?.lastSession?.[ex.name]?.sets
+  if (!sets) return null
+  return sets.reduce((s, st) => s + (parseInt(st.reps_achieved, 10) || 0), 0)
+}
+
+function _renderRepsTallyHtml(ex) {
+  const curTotal = _currentRepsTotal(ex)
+  const prevTotal = _previousRepsTotal(ex)
+  if (!curTotal && prevTotal == null) return ''
+  const beat = prevTotal != null && curTotal > prevTotal
+  return `<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--surface-2);display:flex;justify-content:space-between;align-items:center">
+    <span style="font-size:11px;font-weight:600;color:var(--text-muted)">This exercise</span>
+    <span style="font-size:13px;font-weight:800;color:${beat ? 'var(--accent)' : 'var(--text)'}">${curTotal} reps${prevTotal != null ? ` <span style="font-size:11px;font-weight:600;color:var(--text-muted)">· last time ${prevTotal}</span>` : ''}</span>
+  </div>`
+}
+
 // Shared with the wizard's per-set target chips (see the strength IIFE further down) —
 // kept as a standalone pair here so the table can show the same prescription info
 // (rep range/RPE-RIR/tempo/rest/%1RM) that the table previously dropped.
@@ -224,7 +261,10 @@ function _renderTargetBarHtml(cols) {
 function renderStrengthTable(ex) {
   _ensureTableRows(ex)
   const prevMap = _prevSetsByIndex(ex)
-  const tgt = ex.sets_json?.[0] || {}
+  // Current working set's target — tracks progress (loggedSets.length), same formula the
+  // wizard uses, instead of always reading set 1's prescription regardless of which set is next.
+  const curIdx = ex.loggedSets.length
+  const tgt = ex.sets_json?.[curIdx] ?? ex.sets_json?.[ex.sets_json.length - 1] ?? {}
   const { cols, needsOneRM } = _buildTargetCols(tgt, ex)
   const targetBar = _renderTargetBarHtml(cols)
   const oneRMBanner = needsOneRM ? `
@@ -254,21 +294,28 @@ function renderStrengthTable(ex) {
     const prevLabel = prev
       ? `${prev.weight_kg ? prev.weight_kg + 'kg' : ''}${prev.weight_kg && prev.reps_achieved ? ' × ' : ''}${prev.reps_achieved || ''}`
       : '—'
+    // The row for the set you're currently on is highlighted so it's visually obvious which
+    // row the target bar above applies to — no separate caption text (Jake: "highlighted or
+    // stand out, not entered as text underneath — ugly UI").
+    const isCurrent = i === curIdx
     return `
-    <div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--border)">
-      <span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:var(--text-muted);text-align:center">${i+1}</span>
-      <span style="width:62px;flex-shrink:0;font-size:11px;color:var(--text-muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${prevLabel}</span>
-      ${ex.bodyweight
-        ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>`
-        : `<input type="number" inputmode="decimal" step="0.5" value="${row.weight}" placeholder="—"
-            oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].weight=this.value"
-            style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
-      }
-      <input type="number" inputmode="numeric" value="${row.reps}" placeholder="—"
-        oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].reps=this.value"
-        style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-      <button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}"
-        style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:${row.done?'none':'1.5px solid var(--border-strong)'};font-size:16px;font-weight:800;cursor:pointer;background:${row.done?'var(--accent)':'var(--surface-2)'};color:${row.done?'#fff':'var(--text-muted)'}">${row.done?'✓':''}</button>
+    <div style="padding:7px 6px;margin:0 -6px;border-radius:8px;border-bottom:1px solid var(--border);${isCurrent ? 'background:rgba(99,102,241,.08)' : ''}">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text-muted)'};text-align:center">${i+1}</span>
+        <span style="width:54px;flex-shrink:0;font-size:11px;color:var(--text-muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${prevLabel}</span>
+        ${ex.bodyweight
+          ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>`
+          : `<input type="number" inputmode="decimal" step="0.5" value="${row.weight}" placeholder="—"
+              oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].weight=this.value"
+              style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
+        }
+        <input type="number" inputmode="numeric" value="${row.reps}" placeholder="—"
+          oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].reps=this.value"
+          style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+        <button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}"
+          style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:${row.done?'none':'2px solid #9ca3af'};font-size:18px;font-weight:800;cursor:pointer;background:${row.done?'var(--success)':'#fff'};color:${row.done?'#fff':'transparent'}">✓</button>
+        ${ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="height:44px;flex-shrink:0;padding:0 8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:11px;font-weight:700">Delete</button>` : ''}
+      </div>
     </div>`
   }).join('')
 
@@ -276,15 +323,16 @@ function renderStrengthTable(ex) {
     ${targetBar}
     ${oneRMBanner}
     ${restBar}
-    <div style="display:flex;gap:6px;padding:0 0 6px">
+    <div style="display:flex;gap:6px;padding:0 6px 6px">
       <span style="width:22px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Set</span>
-      <span style="width:62px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Previous</span>
+      <span style="width:54px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Previous</span>
       <span style="flex:1;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Kg</span>
       <span style="flex:1;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Reps</span>
       <span style="width:44px"></span>
     </div>
     ${rows}
     <button onclick="addTableRow()" style="width:100%;margin-top:8px;padding:8px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add set</button>
+    ${_renderRepsTallyHtml(ex)}
   `
 }
 
@@ -550,7 +598,8 @@ function renderRunner() {
               ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
             </div>
           </div>`}
-          ${ex.loggedSets.length > 0 && ex.loggedSets.length >= ex.targetSets ? `<button onclick="addExtraStrengthSet()" style="width:100%;margin-top:6px;padding:7px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
+          ${ex.loggedSets.length > 0 && ex.loggedSets.length >= ex.targetSets ? `<button onclick="addExtraStrengthSet()" style="width:100%;margin-top:6px;padding:7px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}
+          ${!tgt.timed && !isDistance ? _renderRepsTallyHtml(ex) : ''}`
         })()}`}
       </div>
     </div>
@@ -1027,6 +1076,7 @@ function editRunnerSet(exIdx, setIdx) {
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="document.getElementById('wr-edit-overlay').remove()" style="flex:1;padding:13px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:14px;font-weight:600;cursor:pointer">Cancel</button>
+        <button onclick="deleteRunnerSet(${exIdx},${setIdx})" style="flex:1;padding:13px;border:1px solid #ef4444;border-radius:10px;background:transparent;color:#ef4444;font-size:14px;font-weight:600;cursor:pointer">Delete</button>
         <button onclick="saveEditRunnerSet(${exIdx},${setIdx})" style="flex:2;padding:13px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Save</button>
       </div>
     </div>`
@@ -1038,6 +1088,12 @@ function saveEditRunnerSet(exIdx, setIdx) {
   const reps   = document.getElementById('wr-edit-reps')?.value.trim()
   if (!reps) return
   _runner.exercises[exIdx].loggedSets[setIdx] = { ..._runner.exercises[exIdx].loggedSets[setIdx], weight, reps }
+  document.getElementById('wr-edit-overlay')?.remove()
+  renderRunner()
+}
+
+function deleteRunnerSet(exIdx, setIdx) {
+  _runner.exercises[exIdx].loggedSets.splice(setIdx, 1)
   document.getElementById('wr-edit-overlay')?.remove()
   renderRunner()
 }
@@ -1073,66 +1129,75 @@ function runnerGoBack() {
 
 // Swap/add exercise are both session-only — neither writes to workout_templates.
 // They change what gets logged for today; the coach's template is untouched.
-async function showExercisePicker(mode) {
-  window._exercisePickerMode = mode
-  const { data: exercises, error } = await db.from('exercises').select('id, name, muscle_group').order('name')
-  if (error) { log.error('showExercisePicker', 'fetch failed', error); showToast('Could not load the exercise library', 'error'); return }
-  const overlay = document.createElement('div')
-  overlay.className = 'modal-overlay'
-  overlay.id = 'exercise-picker-modal'
-  // .modal-overlay is z-index:200 in main.css — the runner itself is a fullscreen
-  // z-index:300 layer, so a plain modal-overlay would render behind it and silently
-  // eat clicks. Needs to sit above the runner, same tier as session-detail-panel (1000).
-  overlay.style.zIndex = '1000'
-  overlay.innerHTML = `
-    <div class="modal" style="max-width:420px;max-height:80vh;overflow-y:auto">
-      <div class="modal-header">
-        <h2 class="modal-title">${mode === 'swap' ? 'Swap exercise' : 'Add exercise'}</h2>
-        <button class="modal-close" onclick="closeModal('exercise-picker-modal')">✕</button>
-      </div>
-      <input class="field-input" id="ep-search" placeholder="Search exercises…" oninput="_filterExercisePicker(this)" style="margin-bottom:10px;width:100%;box-sizing:border-box">
-      <div id="ep-list" class="list">
-        ${(exercises || []).map(e => `<div class="list-row" data-search="${escapeHtml(e.name.toLowerCase())}" onclick="_pickRunnerExercise('${e.name.replace(/'/g,"\\'")}')" style="cursor:pointer">
-          <div class="row-name">${escapeHtml(e.name)}</div>
-          ${e.muscle_group ? `<div class="row-meta">${escapeHtml(e.muscle_group)}</div>` : ''}
-        </div>`).join('')}
-      </div>
-    </div>`
-  document.body.appendChild(overlay)
+// Opens the exact same modal used when building a workout (showAddExerciseToTemplateModal
+// in app-workouts.js) — full library picker + 1RM group + set-target builder — rather than
+// a cut-down picker, per Jake's 2026-07-03 instruction that both buttons must open that modal.
+function showExercisePicker(mode) {
+  showAddExerciseToTemplateModal(null, { mode })
 }
 
-function _filterExercisePicker(inputEl) {
-  const q = inputEl.value.trim().toLowerCase()
-  document.querySelectorAll('#ep-list .list-row').forEach(row => {
-    row.style.display = !q || row.dataset.search.includes(q) ? '' : 'none'
-  })
+// Looks up the client's most recent 1RM for an exercise name (case-insensitive) — used so a
+// swapped/added exercise immediately gets its %1RM target weight calculated, instead of
+// requiring the client to re-enter it via the "set your 1RM" banner.
+async function _lookupClientOneRM(name) {
+  const { data } = await db.from('client_1rms').select('one_rm_kg')
+    .eq('client_id', _runner.clientId).ilike('exercise_name', name)
+    .order('recorded_at', { ascending: false }).limit(1).maybeSingle()
+  return data?.one_rm_kg ? parseFloat(data.one_rm_kg) : null
 }
 
-function _pickRunnerExercise(name) {
-  closeModal('exercise-picker-modal')
-  if (window._exercisePickerMode === 'swap') _swapRunnerExercise(name)
-  else _addRunnerExercise(name)
-}
+// Confirm handler for the shared modal when opened from the runner (mode: 'add'|'swap').
+// Reads the same fields/set-target builder the workout builder reads, but pushes the result
+// into _runner.exercises in-memory instead of inserting a workout_template_exercises row —
+// keeps swap/add session-only per the existing decision, while giving the same full set-target
+// expressiveness (reps/%1RM/RPE/rest/tempo/AMRAP/Uni/Timed/BW/Assist) the builder has.
+async function _confirmRunnerExerciseFromModal(mode) {
+  flushTemplateSets('att-sets-container')
+  const name = document.getElementById('att-name').value.trim()
+  const errorEl = document.getElementById('att-error')
+  if (!name) { errorEl.textContent = 'Exercise name is required'; return }
+  const type = document.getElementById('att-type').value
+  const notes = document.getElementById('att-notes').value.trim() || null
+  const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
+  const sets = window._templateSets || []
+  const cleanSets = sets.map(s => ({
+    amrap: !!s.amrap, unilateral: !!s.unilateral, timed: !!s.timed,
+    bodyweight: !!s.bodyweight, assisted: !!s.assisted, assistWeight: s.assistWeight||null,
+    repsMin: s.repsMin||null, repsMax: s.repsMax||null, weight: s.weight||null,
+    intensityMin: s.intensityMin||null, intensityMax: s.intensityMax||null,
+    restMin: s.restMin||null, restMax: s.restMax||null,
+    effortType: s.effortType||'rpe', effortMin: s.effortMin||null, effortMax: s.effortMax||null,
+    tempo: s.tempo||null, countdown: s.countdown||null,
+    duration: s.duration||null, distance: s.distance||null
+  }))
+  const oneRM = await _lookupClientOneRM(name)
+  closeModal('add-to-template-modal')
 
-function _swapRunnerExercise(name) {
-  const ex = _runner.exercises[_runner.exIdx]
-  ex.name = name
-  ex.loggedSets = []
-  ex.oneRM = null
-  delete ex.tableRows
-  if (ex.type !== 'cardio') fetchRunnerLastSession(name)
-  renderRunner()
-}
-
-function _addRunnerExercise(name) {
-  _runner.exercises.push({
-    name, type: 'strength', targetSets: 3, targetReps: '', targetWeight: '',
-    restSecs: 90, loggedSets: [], bodyweight: false, assisted: false,
-    supersetGroup: null, sets_json: [], notes: null, oneRM: null
-  })
-  _runner.exIdx = _runner.exercises.length - 1
-  fetchRunnerLastSession(name)
-  renderRunner()
+  if (mode === 'swap') {
+    const ex = _runner.exercises[_runner.exIdx]
+    ex.name = name
+    ex.type = type
+    ex.sets_json = cleanSets
+    ex.targetSets = cleanSets.length || ex.targetSets
+    ex.bodyweight = !!cleanSets[0]?.bodyweight
+    ex.assisted = !!cleanSets[0]?.assisted
+    ex.notes = notes
+    ex.supersetGroup = supersetGroup
+    ex.loggedSets = []
+    delete ex.tableRows
+    ex.oneRM = oneRM
+    if (type !== 'cardio') fetchRunnerLastSession(name)
+    renderRunner()
+  } else {
+    _runner.exercises.push({
+      name, type, targetSets: cleanSets.length || 3, targetReps: '', targetWeight: '',
+      restSecs: 90, loggedSets: [], bodyweight: !!cleanSets[0]?.bodyweight, assisted: !!cleanSets[0]?.assisted,
+      supersetGroup, sets_json: cleanSets, notes, oneRM
+    })
+    _runner.exIdx = _runner.exercises.length - 1
+    fetchRunnerLastSession(name)
+    renderRunner()
+  }
 }
 
 function addExtraCardioSet() {
