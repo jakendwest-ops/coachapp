@@ -294,3 +294,117 @@ test.describe('Assignment-time 1RM check', () => {
     }, { programId: setup.programId, templateId: setup.templateId, clientId: setup.clientId })
   })
 })
+
+test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+    await page.click('[data-page="programs"]')
+    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+  })
+
+  test('duplicating a week copies its day/workout assignments into the next empty week', async ({ page }) => {
+    await page.click('button:has-text("New program")')
+    await page.fill('#pm-name', '[E2E] Duplicate Week Test')
+    await page.click('#pm-save-btn')
+    await page.waitForSelector('h1:has-text("[E2E] Duplicate Week Test")', { timeout: 8000 })
+
+    await page.click('button:has-text("Add phase")')
+    await page.fill('#pf-name', 'Block 1')
+    await page.fill('#pf-weeks', '2')
+    await page.click('#pf-save-btn')
+    await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
+
+    const mondaySelect = 'select.pwg-select[data-day="1"]'
+    await expect(page.locator(mondaySelect)).toBeVisible({ timeout: 8000 })
+    const templateOptions = await page.locator(`${mondaySelect} option`).evaluateAll(opts => opts.filter(o => o.value && o.value !== '__new__').map(o => o.value))
+    test.skip(templateOptions.length === 0, 'E2E PT account has no workout templates to assign')
+    const phaseId = await page.locator(mondaySelect).getAttribute('data-phase')
+    await page.selectOption(mondaySelect, templateOptions[0])
+    await expect(page.locator('[id^="phase-workouts-"] button[onclick*="removePhaseWorkout"]').first()).toBeVisible({ timeout: 8000 })
+
+    await expect(page.locator('button:has-text("Duplicate week")')).toBeVisible({ timeout: 4000 })
+    await page.click('button:has-text("Duplicate week")')
+    await expect(page.locator('[id^="phase-workouts-"]').locator('text=WEEK 2')).toBeVisible({ timeout: 8000 })
+
+    const weeks = await page.evaluate(async (phaseId) => {
+      const { data } = await db.from('program_phase_workouts').select('week_number, template_id').eq('phase_id', phaseId)
+      return data
+    }, phaseId)
+    const week1 = weeks.find(w => w.week_number === 1)
+    const week2Rows = weeks.filter(w => w.week_number === 2)
+    expect(week2Rows.length).toBe(1)
+    expect(week2Rows[0].template_id).toBe(week1.template_id)
+
+    page.once('dialog', d => d.accept())
+    await page.click('button:has-text("Delete")')
+    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+  })
+
+  test('editing a workout assigned to two slots forks a copy instead of overwriting the shared one', async ({ page }) => {
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Fork Test Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] Shared Workout' }).select('id').single()
+      const { data: mon } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
+      const { data: tue } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 2, day_label: 'Tuesday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
+      return { programId: prog.id, templateId: tmpl.id, mondayPwId: mon.id, tuesdayPwId: tue.id }
+    })
+
+    await page.reload()
+    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.click('text=[E2E] Fork Test Program')
+    await page.waitForSelector('text=[E2E] Shared Workout', { timeout: 8000 })
+
+    // Open Monday's session (first occurrence in Mon→Sun order) and rename it
+    await page.locator('text=[E2E] Shared Workout').first().click()
+    await expect(page.locator('#session-detail-drawer')).toBeVisible({ timeout: 4000 })
+    await page.click('#session-detail-drawer button:has-text("Edit")')
+    await expect(page.locator('h1:has-text("[E2E] Shared Workout")')).toBeVisible({ timeout: 8000 })
+    await page.click('button:has-text("Edit")')
+    await expect(page.locator('#edit-template-modal')).toBeVisible({ timeout: 4000 })
+    await page.fill('#et-name', '[E2E] Shared Workout (Monday only)')
+    await page.click('#edit-template-modal button:has-text("Save")')
+    await page.waitForSelector('#edit-template-modal', { state: 'detached', timeout: 8000 })
+
+    const rows = await page.evaluate(async ({ mondayPwId, tuesdayPwId }) => {
+      const { data: mon } = await db.from('program_phase_workouts').select('template_id').eq('id', mondayPwId).single()
+      const { data: tue } = await db.from('program_phase_workouts').select('template_id').eq('id', tuesdayPwId).single()
+      return { monTemplateId: mon.template_id, tueTemplateId: tue.template_id }
+    }, { mondayPwId: setup.mondayPwId, tuesdayPwId: setup.tuesdayPwId })
+
+    expect(rows.tueTemplateId).toBe(setup.templateId) // Tuesday untouched — still the shared original
+    expect(rows.monTemplateId).not.toBe(setup.templateId) // Monday forked to its own copy
+
+    // Cleanup
+    await page.evaluate(async ({ programId, templateId, monTemplateId }) => {
+      await db.from('workout_template_exercises').delete().eq('template_id', monTemplateId)
+      await db.from('workout_templates').delete().eq('id', monTemplateId)
+      await db.from('workout_templates').delete().eq('id', templateId)
+      await db.from('programs').delete().eq('id', programId)
+    }, { programId: setup.programId, templateId: setup.templateId, monTemplateId: rows.monTemplateId })
+  })
+
+  test('deleting a program with an assigned client names them in the block toast', async ({ page }) => {
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Delete Block Test' }).select('id').single()
+      const { data: clients } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).limit(1)
+      const client = clients?.[0]
+      if (client) await db.from('client_programs').insert({ client_id: client.id, program_id: prog.id })
+      return { programId: prog.id, clientId: client?.id || null, clientName: client?.full_name || null }
+    })
+    test.skip(!setup.clientId, 'E2E PT account has no clients to assign to')
+
+    await page.reload()
+    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.click('text=[E2E] Delete Block Test')
+    await page.waitForSelector('button:has-text("Delete")', { timeout: 8000 })
+    await page.click('button:has-text("Delete")')
+    await expect(page.locator('#app-toast')).toContainText(setup.clientName, { timeout: 4000 })
+
+    // Cleanup
+    await page.evaluate(async ({ programId, clientId }) => {
+      await db.from('client_programs').delete().eq('client_id', clientId).eq('program_id', programId)
+      await db.from('programs').delete().eq('id', programId)
+    }, { programId: setup.programId, clientId: setup.clientId })
+  })
+})

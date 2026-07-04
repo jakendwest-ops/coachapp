@@ -625,15 +625,18 @@ async function saveNewTemplate() {
     // Assign the new template straight back into the day slot it was created from —
     // without this, "Create new workout" left the slot empty and the coach had to
     // navigate back to the phase and re-pick it from the dropdown.
+    let newPwId = null
     if (ctx.phaseId && ctx.dayOfWeek) {
-      const { data: existingSlots } = await db.from('program_phase_workouts').select('id').eq('phase_id', ctx.phaseId).eq('week_number', 1).eq('day_of_week', ctx.dayOfWeek)
+      const weekNumber = ctx.weekNumber || 1
+      const { data: existingSlots } = await db.from('program_phase_workouts').select('id').eq('phase_id', ctx.phaseId).eq('week_number', weekNumber).eq('day_of_week', ctx.dayOfWeek)
       const dayLabels = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-      const { error: pwErr } = await db.from('program_phase_workouts').insert({
-        phase_id: ctx.phaseId, day_of_week: ctx.dayOfWeek, day_label: dayLabels[ctx.dayOfWeek], template_id: data.id, session_order: (existingSlots?.length || 0) + 1, week_number: 1
-      })
+      const { data: newPw, error: pwErr } = await db.from('program_phase_workouts').insert({
+        phase_id: ctx.phaseId, day_of_week: ctx.dayOfWeek, day_label: dayLabels[ctx.dayOfWeek], template_id: data.id, session_order: (existingSlots?.length || 0) + 1, week_number: weekNumber
+      }).select('id').single()
       if (pwErr) { log.error('saveNewTemplate', 'auto-assign to slot failed', pwErr); showToast('Workout created, but could not auto-assign to the slot — add it from the phase page', 'error') }
+      else newPwId = newPw.id
     }
-    openTemplate(data.id, { backLabel: 'Back to program', backFn: () => openProgram(ctx.programId), programId: ctx.programId })
+    openTemplate(data.id, { backLabel: 'Back to program', backFn: () => openProgram(ctx.programId), programId: ctx.programId, phaseWorkoutId: newPwId })
     return
   }
 
@@ -649,6 +652,7 @@ async function openTemplate(id, ctx = {}) {
     clientName: ctx.clientName || null,
     clientProgramId: ctx.clientProgramId || null,
     programId: ctx.programId || null,
+    phaseWorkoutId: ctx.phaseWorkoutId || null,
     isClientPlan: !!ctx.clientId
   }
   const el = document.getElementById('main-content')
@@ -785,21 +789,22 @@ async function openClientProgramsTab(clientId) {
 }
 
 async function moveTemplateExercise(templateId, exId, dir) {
+  const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, exId)
   const { data: all } = await db
     .from('workout_template_exercises')
     .select('id, order_index')
-    .eq('template_id', templateId)
+    .eq('template_id', targetId)
     .order('order_index')
 
-  const idx = all.findIndex(e => e.id === exId)
+  const idx = all.findIndex(e => e.id === targetExId)
   const swapIdx = idx + dir
-  if (swapIdx < 0 || swapIdx >= all.length) return
+  if (idx < 0 || swapIdx < 0 || swapIdx >= all.length) return
 
   await Promise.all([
     db.from('workout_template_exercises').update({ order_index: all[swapIdx].order_index }).eq('id', all[idx].id),
     db.from('workout_template_exercises').update({ order_index: all[idx].order_index }).eq('id', all[swapIdx].id)
   ])
-  openTemplate(templateId)
+  openTemplate(targetId, window._templateCtx)
 }
 
 // ─── TEMPLATE SET HELPERS ─────────────────────────────────────────────────────
@@ -1050,12 +1055,13 @@ async function saveExerciseToTemplate(templateId) {
   const name = document.getElementById('att-name').value.trim()
   const errorEl = document.getElementById('att-error')
   if (!name) { errorEl.textContent = 'Exercise name is required'; return }
-  log.info('saveExerciseToTemplate', 'adding exercise to template', { templateId, name })
+  const { templateId: targetId } = await _resolveEditableTemplateId(templateId)
+  log.info('saveExerciseToTemplate', 'adding exercise to template', { templateId: targetId, name })
 
   const { data: existing } = await db
     .from('workout_template_exercises')
     .select('order_index')
-    .eq('template_id', templateId)
+    .eq('template_id', targetId)
     .order('order_index', { ascending: false })
     .limit(1)
 
@@ -1073,7 +1079,7 @@ async function saveExerciseToTemplate(templateId) {
     duration: s.duration||null, distance: s.distance||null
   }))
   const { error } = await db.from('workout_template_exercises').insert({
-    template_id:   templateId,
+    template_id:   targetId,
     exercise_id:   exerciseId || null,
     exercise_name: name,
     exercise_type: document.getElementById('att-type').value,
@@ -1085,9 +1091,9 @@ async function saveExerciseToTemplate(templateId) {
   })
 
   if (error) { log.error('saveExerciseToTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveExerciseToTemplate', 'exercise added to template', { templateId, name })
+  log.ok('saveExerciseToTemplate', 'exercise added to template', { templateId: targetId, name })
   closeModal('add-to-template-modal')
-  _checkClientPlanPropagation(templateId)
+  _checkClientPlanPropagation(targetId)
 }
 
 async function showEditTemplateExerciseModal(templateExId, templateId) {
@@ -1171,7 +1177,8 @@ async function saveEditTemplateExercise(texId, templateId) {
   if (!name) { errorEl.textContent = 'Name is required'; return }
   const sets = window._templateSets || []
 
-  log.info('saveEditTemplateExercise', 'updating template exercise', { texId, name })
+  const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
+  log.info('saveEditTemplateExercise', 'updating template exercise', { texId: targetExId, name })
   const { error } = await db.from('workout_template_exercises').update({
     exercise_name: name,
     exercise_type: document.getElementById('ett-type').value,
@@ -1179,20 +1186,21 @@ async function saveEditTemplateExercise(texId, templateId) {
     sets_json:      sets.length ? sets : null,
     notes:          document.getElementById('etex-notes').value.trim() || null,
     superset_group: document.getElementById('etex-superset')?.value.trim().toUpperCase() || null
-  }).eq('id', texId)
+  }).eq('id', targetExId)
   if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveEditTemplateExercise', 'template exercise updated', { texId })
+  log.ok('saveEditTemplateExercise', 'template exercise updated', { texId: targetExId })
   closeModal('edit-tex-modal')
-  _checkClientPlanPropagation(templateId)
+  _checkClientPlanPropagation(targetId)
 }
 
 async function deleteTemplateExercise(texId, templateId) {
-  log.info('deleteTemplateExercise', 'removing exercise from template', { texId, templateId })
-  const { error } = await db.from('workout_template_exercises').delete().eq('id', texId)
+  const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
+  log.info('deleteTemplateExercise', 'removing exercise from template', { texId: targetExId, templateId: targetId })
+  const { error } = await db.from('workout_template_exercises').delete().eq('id', targetExId)
   if (error) { log.error('deleteTemplateExercise', 'delete failed', error); return }
-  log.ok('deleteTemplateExercise', 'exercise removed', { texId })
+  log.ok('deleteTemplateExercise', 'exercise removed', { texId: targetExId })
   closeModal('edit-tex-modal')
-  openTemplate(templateId)
+  openTemplate(targetId, window._templateCtx)
 }
 
 async function _checkClientPlanPropagation(templateId) {
@@ -1247,18 +1255,10 @@ async function _checkClientPlanPropagation(templateId) {
     const matching = (pws || []).filter(r =>
       r.template_id !== templateId && r.workout_templates?.name === tmpl.name
     )
-    if (!matching.length) {
-      // Template may be shared across multiple weeks — edits already apply to all
-      const sharedCount = pws.filter(r => r.template_id === templateId).length
-      if (sharedCount > 1) {
-        const toast = document.createElement('div')
-        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;color:var(--text);z-index:9999;pointer-events:none;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.15)'
-        toast.textContent = `✓ Changes apply to all ${sharedCount} "${tmpl.name}" sessions — they share this template`
-        document.body.appendChild(toast)
-        setTimeout(() => toast.remove(), 3500)
-      }
-      return openTemplate(templateId, ctx)
-    }
+    // Note: a template still shared across multiple phase slots at this point would mean
+    // _resolveEditableTemplateId's fork didn't run (e.g. edited with no phaseWorkoutId context) —
+    // that's a pre-existing edge case, not one this check needs to warn about separately.
+    if (!matching.length) return openTemplate(templateId, ctx)
     window._propagateTargets = matching.map(r => r.template_id)
     _showPropagateModal(tmpl.name, matching.length, 'this program')
     return
@@ -1328,6 +1328,54 @@ async function _applyToAllSessions(sourceTemplateId) {
   openTemplate(sourceTemplateId, window._templateCtx)
 }
 
+// Clones a shared master template (name + description + exercises), preserving its coach/program
+// ownership. Used by _resolveEditableTemplateId so an edit made via one phase slot never silently
+// changes the same template reused by another slot (or another program).
+async function _cloneSharedMasterTemplate(tmpl) {
+  const { data: newTmpl, error } = await db.from('workout_templates').insert({
+    coach_id: tmpl.coach_id, client_id: null, program_id: tmpl.program_id || null,
+    name: tmpl.name, description: tmpl.description || null
+  }).select('id').single()
+  if (error || !newTmpl) { log.error('_cloneSharedMasterTemplate', 'clone failed', error); return null }
+
+  const origExs = tmpl.workout_template_exercises || []
+  const exMap = {}
+  if (origExs.length) {
+    const { data: insertedExs, error: exErr } = await db.from('workout_template_exercises').insert(origExs.map(ex => ({
+      template_id: newTmpl.id, exercise_id: ex.exercise_id || null, exercise_name: ex.exercise_name,
+      exercise_type: ex.exercise_type, order_index: ex.order_index, sets: ex.sets || null,
+      sets_json: ex.sets_json || null, notes: ex.notes || null, superset_group: ex.superset_group || null
+    }))).select('id, order_index')
+    if (exErr) log.error('_cloneSharedMasterTemplate', 'exercise clone failed', exErr)
+    const origByOrder = {}
+    origExs.forEach(ex => { origByOrder[ex.order_index] = ex.id })
+    ;(insertedExs || []).forEach(newEx => { const oldId = origByOrder[newEx.order_index]; if (oldId) exMap[oldId] = newEx.id })
+  }
+  return { id: newTmpl.id, exerciseIdMap: exMap }
+}
+
+// If this template is currently assigned to more than one program-phase slot, clones it and
+// repoints only the slot this edit came from (window._templateCtx.phaseWorkoutId) — so an edit made
+// from a phase never leaks into other slots/programs that happen to reuse the same template row.
+// Client-plan templates are never shared this way (each slot already gets its own clone at
+// assignment time), so this only applies to master-side (non-client-plan) edits.
+async function _resolveEditableTemplateId(templateId, exerciseId = null) {
+  const ctx = window._templateCtx || {}
+  if (!ctx.phaseWorkoutId || ctx.isClientPlan) return { templateId, exerciseId }
+
+  const { count } = await db.from('program_phase_workouts').select('id', { count: 'exact', head: true }).eq('template_id', templateId)
+  if ((count || 0) <= 1) return { templateId, exerciseId }
+
+  const { data: tmpl } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('id', templateId).single()
+  if (!tmpl) return { templateId, exerciseId }
+  const cloned = await _cloneSharedMasterTemplate(tmpl)
+  if (!cloned) return { templateId, exerciseId }
+
+  await db.from('program_phase_workouts').update({ template_id: cloned.id }).eq('id', ctx.phaseWorkoutId)
+  showToast('This workout is used in other slots — your changes now apply only to this one', 'success', 4000)
+  return { templateId: cloned.id, exerciseId: exerciseId ? (cloned.exerciseIdMap[exerciseId] || exerciseId) : exerciseId }
+}
+
 async function showEditTemplateModal(id) {
   const { data: t } = await db.from('workout_templates').select('*').eq('id', id).single()
   const overlay = document.createElement('div')
@@ -1363,16 +1411,17 @@ async function saveEditTemplate(id) {
   const errorEl = document.getElementById('et-error')
   const name = document.getElementById('et-name').value.trim()
   if (!name) { errorEl.textContent = 'Name is required'; return }
-  log.info('saveEditTemplate', 'updating template', { id, name })
+  const { templateId: targetId } = await _resolveEditableTemplateId(id)
+  log.info('saveEditTemplate', 'updating template', { id: targetId })
   const { data, error } = await db.from('workout_templates').update({
     name,
     description: document.getElementById('et-desc').value.trim() || null
-  }).eq('id', id).eq('coach_id', currentUser.id).select()
+  }).eq('id', targetId).eq('coach_id', currentUser.id).select()
   if (error) { log.error('saveEditTemplate', 'update failed', error); errorEl.textContent = error.message; return }
-  if (!data?.length) { log.error('saveEditTemplate', 'no rows updated — permission denied?', { id }); errorEl.textContent = 'Save failed — template not found or permission denied.'; return }
-  log.ok('saveEditTemplate', 'template updated', { id })
+  if (!data?.length) { log.error('saveEditTemplate', 'no rows updated — permission denied?', { id: targetId }); errorEl.textContent = 'Save failed — template not found or permission denied.'; return }
+  log.ok('saveEditTemplate', 'template updated', { id: targetId })
   closeModal('edit-template-modal')
-  openTemplate(id)
+  openTemplate(targetId, window._templateCtx)
 }
 
 async function deleteTemplate(id) {
