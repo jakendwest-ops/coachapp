@@ -367,8 +367,8 @@ function renderRunner() {
         </div>
         ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${e.name||'Exercise '+(i+1)}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
         <div style="display:flex;gap:14px;margin-top:8px">
-          <button onclick="showExercisePicker('swap')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">⇄ Swap exercise</button>
-          <button onclick="showExercisePicker('add')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">+ Add exercise</button>
+          <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">⇄ Swap exercise</button>
+          <button id="wr-add-btn" onclick="showExercisePicker('add')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">+ Add exercise</button>
         </div>
         ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:8px;font-size:11.5px;color:var(--text-muted);line-height:1.5">${_runner.templateDesc}</div>` : ''}
       </div>
@@ -799,7 +799,7 @@ function startStrengthSetTimer() {
       return
     }
     if (_runner._setTimerRemaining === 10) speakCue('10 seconds')
-    if (_runner._setTimerRemaining <= 3) playBeep(880, 0.15, 0.75)
+    if (_runner._setTimerRemaining <= 3) speakCue(String(_runner._setTimerRemaining))
     const el = document.getElementById('wr-set-countdown')
     if (el) {
       el.textContent = fmtRestCountdown(_runner._setTimerRemaining)
@@ -850,6 +850,7 @@ function renderStrengthSetTimer() {
 
 function startCardioTimer() {
   _unlockAudio() // user gesture — unlock AudioContext for iOS
+  _unlockSpeech() // prime speechSynthesis for the interval timer's spoken countdown
   const ex = _runner.exercises[_runner.exIdx]
   const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
   const durEl = document.getElementById('wr-cardio-dur')
@@ -898,7 +899,7 @@ function startIntervalTimer(secs) {
       renderRunner()
       return
     }
-    if (_runner._intervalRemaining <= 5) playBeep(880, 0.15, 0.75)
+    if (_runner._intervalRemaining <= 5) speakCue(String(_runner._intervalRemaining))
     const el = document.getElementById('wr-interval-countdown')
     if (el) {
       el.textContent = fmtRestCountdown(_runner._intervalRemaining)
@@ -985,7 +986,7 @@ function startRestTimer(secs) {
     } else {
       _unlockAudio()
       if (_runner.restRemaining === 10) speakCue('10 seconds')
-      if (_runner.restRemaining <= 5) playBeep(880, 0.15, 0.75)
+      if (_runner.restRemaining <= 5) speakCue(String(_runner.restRemaining))
       const el = document.getElementById('rt-countdown')
       if (el) {
         const r = _runner.restRemaining

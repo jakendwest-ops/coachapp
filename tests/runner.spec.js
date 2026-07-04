@@ -306,6 +306,36 @@ test.describe('Workout runner (client)', () => {
     expect(swapHtml).toBe(addHtml) // identical picker markup for both entry points
   })
 
+  test('rapid swap-then-add tap does not open two overlapping modals (regression, 2026-07-04 runner freeze)', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    // Fire both picker calls back-to-back, before the exercise-list fetch resolves —
+    // reproduces the exact race that used to open two overlays sharing one hardcoded id,
+    // which left the visible modal impossible to close (getElementById only ever finds
+    // the first match) and forced a reload that lost the whole session.
+    const midFetch = await page.evaluate(() => {
+      showExercisePicker('add')
+      showExercisePicker('swap')
+      return {
+        swapDisabled: document.getElementById('wr-swap-btn')?.disabled,
+        addDisabled: document.getElementById('wr-add-btn')?.disabled
+      }
+    })
+    expect(midFetch.swapDisabled).toBe(true)
+    expect(midFetch.addDisabled).toBe(true)
+
+    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    expect(await page.locator('#add-to-template-modal').count()).toBe(1)
+    // The first call (Add) wins — the second (Swap) must be a dropped no-op
+    await expect(page.locator('#add-to-template-modal .modal-title')).toHaveText('Add exercise')
+
+    await page.locator('#add-to-template-modal .modal-close').click()
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.locator('button:has-text("Swap exercise")')).toBeEnabled()
+    await expect(page.locator('button:has-text("+ Add exercise")')).toBeEnabled()
+  })
+
   test('exercise modal confirm button requires an exercise name', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })

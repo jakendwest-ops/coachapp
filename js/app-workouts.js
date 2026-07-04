@@ -962,8 +962,18 @@ function copyPrevTemplateSet(i, containerId, tid) {
 // in app-runner.js) instead of writing a workout_template_exercises row — matches the
 // existing session-only swap/add behaviour, just via the identical picking UI Jake builds
 // workouts with, per his 2026-07-03 instruction that both buttons must open "the same modal".
+let _addExerciseModalPending = false
+
+// Guards against the picker's own fetch-latency race: showExercisePicker fires this
+// on tap, but the overlay isn't appended until the Promise.all below resolves — a fast
+// Swap-then-Add (or same-button double-tap) in that gap used to spawn two overlays
+// sharing the hardcoded id 'add-to-template-modal', and getElementById/closeModal only
+// ever operate on the first one, permanently freezing the second (visible) modal.
 function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
+  if (_addExerciseModalPending || document.getElementById('add-to-template-modal')) return
+  _addExerciseModalPending = true
   const isRunner = !!runnerCtx
+  if (isRunner) _setExercisePickerButtonsDisabled(true)
   const _addOrmClientId = isRunner ? _runner.clientId : (currentProfile?.role === 'solo' ? window._soloClientId : null)
   Promise.all([
     db.from('exercises').select('*').order('name'),
@@ -971,6 +981,8 @@ function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
       ? db.from('client_1rms').select('exercise_name').eq('client_id', _addOrmClientId).order('exercise_name')
       : db.from('client_1rms').select('exercise_name').order('exercise_name')
   ]).then(([{ data: exercises }, { data: ormRows }]) => {
+    _addExerciseModalPending = false
+    if (isRunner) _setExercisePickerButtonsDisabled(false)
     window._templateSets = [{ effortType: 'rpe' }]
     // Deduplicate 1RM exercise names across all clients (RLS scopes to coach's clients)
     const ormNames = [...new Set((ormRows || []).map(r => r.exercise_name))].sort()
@@ -1046,6 +1058,21 @@ function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
         }
       }
     })
+  }).catch(err => {
+    _addExerciseModalPending = false
+    if (isRunner) _setExercisePickerButtonsDisabled(false)
+    log.error('showAddExerciseToTemplateModal', 'failed to load exercise picker data', err)
+    showToast('Could not open exercise picker — try again.', 'error', 3000)
+  })
+}
+
+function _setExercisePickerButtonsDisabled(disabled) {
+  ['wr-swap-btn', 'wr-add-btn'].forEach(id => {
+    const btn = document.getElementById(id)
+    if (!btn) return
+    btn.disabled = disabled
+    btn.style.opacity = disabled ? '0.4' : '1'
+    btn.style.pointerEvents = disabled ? 'none' : ''
   })
 }
 
