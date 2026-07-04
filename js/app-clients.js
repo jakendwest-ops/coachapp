@@ -215,6 +215,7 @@ async function openClient(id) {
     .from('clients')
     .select('*')
     .eq('id', id)
+    .eq('coach_id', currentUser.id)
     .single()
 
   if (error) { log.error('openClient', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
@@ -308,7 +309,7 @@ function clientOverviewTab(client, programName = null) {
 
 async function renderClientOverview(id, el) {
   const [{ data: client }, { data: checkIns }, { data: progAssign }] = await Promise.all([
-    db.from('clients').select('*').eq('id', id).single(),
+    db.from('clients').select('*').eq('id', id).eq('coach_id', currentUser.id).single(),
     db.from('client_check_ins').select('*').eq('client_id', id).order('created_at', { ascending: false }).limit(4),
     db.from('client_programs').select('id, programs(name)').eq('client_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle()
   ])
@@ -398,7 +399,7 @@ async function saveUpdateEmail(clientId) {
   if (!email) { errorEl.textContent = 'Email is required'; return }
 
   log.info('saveUpdateEmail', 'updating client email', { clientId })
-  const { error } = await db.from('clients').update({ email, updated_at: new Date().toISOString() }).eq('id', clientId)
+  const { error } = await db.from('clients').update({ email, updated_at: new Date().toISOString() }).eq('id', clientId).eq('coach_id', currentUser.id)
   if (error) { log.error('saveUpdateEmail', 'update failed', error); errorEl.textContent = error.message; return }
   log.ok('saveUpdateEmail', 'email updated', { clientId })
 
@@ -408,7 +409,7 @@ async function saveUpdateEmail(clientId) {
 
 // ─── EDIT CLIENT MODAL ────────────────────────────────────────────────────────
 async function showEditClientModal(id) {
-  const { data: c } = await db.from('clients').select('*').eq('id', id).single()
+  const { data: c } = await db.from('clients').select('*').eq('id', id).eq('coach_id', currentUser.id).single()
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'edit-client-modal'
@@ -479,7 +480,7 @@ async function saveEditClient(id) {
     status:        document.getElementById('ec-status').value,
     notes:         document.getElementById('ec-notes').value.trim()  || null,
     updated_at:    new Date().toISOString()
-  }).eq('id', id)
+  }).eq('id', id).eq('coach_id', currentUser.id)
 
   if (error) { log.error('saveEditClient', 'update failed', error); errorEl.textContent = error.message; return }
   log.ok('saveEditClient', 'client updated', { clientId: id })

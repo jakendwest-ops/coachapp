@@ -66,7 +66,7 @@ test.describe('Client workout flow', () => {
 
   test('session history is collapsed by default and expands on click', async ({ page }) => {
     await page.click('[data-page="workouts"]')
-    const historyToggle = page.locator('button:has-text("Session history")')
+    const historyToggle = page.locator('button[onclick="toggleClientPhase(\'client-session-history\')"]')
     if (await historyToggle.count() === 0) return // no sessions yet — nothing to expand
     const panel = page.locator('#client-session-history')
     await expect(panel).toBeHidden()
@@ -77,7 +77,7 @@ test.describe('Client workout flow', () => {
   test('session history rows are tappable', async ({ page }) => {
     await page.click('[data-page="workouts"]')
     // Session history is a collapsible section — expand it before checking rows
-    const historyToggle = page.locator('button:has-text("Session history")')
+    const historyToggle = page.locator('button[onclick="toggleClientPhase(\'client-session-history\')"]')
     if (await historyToggle.count() === 0) return // no sessions yet — nothing to expand
     await historyToggle.click()
     await page.waitForSelector('#client-session-list', { timeout: 10000 })
