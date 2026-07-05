@@ -36,6 +36,11 @@ test.describe('PT Dashboard', () => {
     await expect(page.locator('.page-header, [class*="client"]')).toBeVisible({ timeout: 8000 })
   })
 
+  test('dashboard cards have a real background (not the undefined-class bug)', async ({ page }) => {
+    const bg = await page.locator('.dashboard-card').first().evaluate(el => getComputedStyle(el).backgroundColor)
+    expect(bg).not.toBe('rgba(0, 0, 0, 0)')
+  })
+
   test('clients list shows last session recency', async ({ page }) => {
     await page.click('[data-page="clients"]')
     await page.waitForSelector('#client-list', { timeout: 8000 })

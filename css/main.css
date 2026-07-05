@@ -434,6 +434,20 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 
 .card-body { padding: 20px; }
 
+.dashboard-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 20px;
+}
+.dashboard-card .card-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:14px; }
+.dashboard-card .card-title { font-size:15px; font-weight:600; }
+
+.dashboard-split-grid { display:grid; grid-template-columns:3fr 2fr; gap:16px; }
+.pt-stats   { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
+.solo-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
+
 /* ─── Client List ────────────────────────────────────────────────────────────── */
 .list {
   display: flex;
@@ -661,6 +675,12 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   .field-row { grid-template-columns: 1fr; }
   .modal { border-radius: var(--radius); }
   .page-title { font-size: 20px; }
+}
+
+@media (max-width: 640px) {
+  .dashboard-split-grid { grid-template-columns: 1fr; }
+  .pt-stats   { grid-template-columns: repeat(2, 1fr); }
+  .solo-stats { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 540px) {

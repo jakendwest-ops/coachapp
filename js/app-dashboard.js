@@ -76,11 +76,6 @@
   }
 
   el.innerHTML = `
-    <style>
-      .pt-grid{display:grid;grid-template-columns:3fr 2fr;gap:16px}
-      @media(max-width:640px){.pt-grid{grid-template-columns:1fr}}
-    </style>
-
     <div class="page-header">
       <div>
         <h1 class="page-title">Welcome back, ${firstName}</h1>
@@ -92,7 +87,7 @@
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px">
+    <div class="pt-stats">
       ${[
         [clientCount ?? 0, 'Total clients'],
         [sessionsThisWeekTotal, 'Sessions this week'],
@@ -104,7 +99,7 @@
         </div>`).join('')}
     </div>
 
-    <div class="pt-grid">
+    <div class="dashboard-split-grid">
 
       <!-- Left: recent activity -->
       <div class="dashboard-card">
@@ -141,8 +136,8 @@
                 const atRisk = complianceRows.filter(c => c.sessions === 0).length
                 const onTrack = complianceRows.filter(c => c.sessions >= 2).length
                 const parts = []
-                if (atRisk > 0) parts.push(`<span style="color:#ef4444;font-weight:600">${atRisk} at risk</span>`)
-                if (onTrack > 0) parts.push(`<span style="color:#22c55e;font-weight:600">${onTrack} on track</span>`)
+                if (atRisk > 0) parts.push(`<span style="color:var(--danger);font-weight:600">${atRisk} at risk</span>`)
+                if (onTrack > 0) parts.push(`<span style="color:var(--success);font-weight:600">${onTrack} on track</span>`)
                 return parts.length ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">${parts.join(' · ')}</p>` : ''
               })() : ''}
             </div>
@@ -153,7 +148,7 @@
           <div id="compliance-rows">
             ${complianceRows.length === 0 ? `<p style="color:var(--text-muted);font-size:13px">No active clients.</p>` :
               complianceRows.map(c => {
-                const dot = c.sessions === 0 ? '#ef4444' : c.sessions === 1 ? '#f59e0b' : '#22c55e'
+                const dot = c.sessions === 0 ? 'var(--danger)' : c.sessions === 1 ? 'var(--warning)' : 'var(--success)'
                 const label = c.sessions === 0 ? 'No sessions' : `${c.sessions} session${c.sessions !== 1 ? 's' : ''}`
                 const zone = c.sessions === 0 ? 'at-risk' : 'active'
                 return `
@@ -277,7 +272,7 @@ async function renderClientDashboard(el) {
     if (latestWeight.weight_kg < prevWeight.weight_kg) weightTrend = '↓'
     else if (latestWeight.weight_kg > prevWeight.weight_kg) weightTrend = '↑'
   }
-  const trendColour = weightTrend === '↓' ? '#22c55e' : weightTrend === '↑' ? '#ef4444' : 'var(--text-muted)'
+  const trendColour = weightTrend === '↓' ? 'var(--success)' : weightTrend === '↑' ? 'var(--danger)' : 'var(--text-muted)'
 
   // PBs — best value per exercise (max for strength/benchmark, min for cardio time)
   const pbMap = {}
@@ -294,11 +289,11 @@ async function renderClientDashboard(el) {
   // Event type label + colour
   function eventStyle(type) {
     const map = {
-      session:     { label: 'PT Session',   colour: '#6366f1' },
-      review:      { label: 'Review',       colour: '#f59e0b' },
-      competition: { label: 'Competition',  colour: '#ef4444' },
-      holiday:     { label: 'Holiday',      colour: '#22c55e' },
-      gym:         { label: 'Gym',          colour: '#3b82f6' },
+      session:     { label: 'PT Session',   colour: 'var(--accent)' },
+      review:      { label: 'Review',       colour: 'var(--warning)' },
+      competition: { label: 'Competition',  colour: 'var(--danger)' },
+      holiday:     { label: 'Holiday',      colour: 'var(--success)' },
+      gym:         { label: 'Gym',          colour: '#3b82f6' }, /* TODO(Jake): no design token for this blue */
       other:       { label: 'Event',        colour: 'var(--text-muted)' },
     }
     return map[type] || map.other
@@ -341,11 +336,6 @@ async function renderClientDashboard(el) {
   }
 
   el.innerHTML = `
-    <style>
-      .client-grid{display:grid;grid-template-columns:3fr 2fr;gap:16px}
-      @media(max-width:640px){.client-grid{grid-template-columns:1fr}}
-    </style>
-
     ${isSudo ? `
     <div style="background:#f59e0b;color:#fff;border-radius:10px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
       <span style="font-size:13px;font-weight:700">👁 Viewing as ${escapeHtml(window._sudoClientName || 'Client')}</span>
@@ -379,7 +369,7 @@ async function renderClientDashboard(el) {
       </div>
     </div>
 
-    <div class="client-grid">
+    <div class="dashboard-split-grid">
 
       <!-- Left: goals + recent sessions -->
       <div style="display:flex;flex-direction:column;gap:16px">
@@ -498,7 +488,7 @@ async function renderClientDashboard(el) {
           <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
           <div style="display:flex;gap:8px">
             <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
-            <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
+            <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
           </div>
         </div>
       </div>
@@ -543,7 +533,7 @@ async function renderClientDashboard(el) {
             <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
             <div style="display:flex;gap:8px">
               <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${clientId}')">Save</button>
-              <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
+              <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
             </div>
           </div>
         </div>
@@ -623,7 +613,7 @@ async function renderSoloDashboard(el) {
     if (latestWeight.weight_kg < prevWeight.weight_kg) weightTrend = '↓'
     else if (latestWeight.weight_kg > prevWeight.weight_kg) weightTrend = '↑'
   }
-  const trendColour = weightTrend === '↓' ? '#22c55e' : weightTrend === '↑' ? '#ef4444' : 'var(--text-muted)'
+  const trendColour = weightTrend === '↓' ? 'var(--success)' : weightTrend === '↑' ? 'var(--danger)' : 'var(--text-muted)'
 
   const pbMap = {}
   ;(perfLogs || []).forEach(p => {
@@ -643,7 +633,7 @@ async function renderSoloDashboard(el) {
     if (d === 0) return 'Today'; if (d === 1) return 'Tomorrow'; return `In ${d} days`
   }
   function eventColour(type) {
-    return { session:'#6366f1', review:'#f59e0b', competition:'#ef4444', holiday:'#22c55e', gym:'#3b82f6' }[type] || 'var(--text-muted)'
+    return { session:'var(--accent)', review:'var(--warning)', competition:'var(--danger)', holiday:'var(--success)', gym:'#3b82f6' /* TODO(Jake): no design token for this blue */ }[type] || 'var(--text-muted)'
   }
 
   const firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
@@ -664,12 +654,6 @@ async function renderSoloDashboard(el) {
   }
 
   el.innerHTML = `
-    <style>
-      .solo-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
-      .solo-grid{display:grid;grid-template-columns:3fr 2fr;gap:16px}
-      @media(max-width:640px){.solo-stats{display:none}.solo-grid{grid-template-columns:1fr}}
-    </style>
-
     <div class="page-header" style="margin-bottom:16px">
       <div>
         <h1 class="page-title">My Training</h1>
@@ -693,7 +677,7 @@ async function renderSoloDashboard(el) {
         </div>`).join('')}
     </div>
 
-    <div class="solo-grid">
+    <div class="dashboard-split-grid">
 
       <div style="display:flex;flex-direction:column;gap:16px">
 
@@ -778,7 +762,7 @@ async function renderSoloDashboard(el) {
             <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
             <div style="display:flex;gap:8px">
               <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
-              <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
+              <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
             </div>
           </div>
         </div>
@@ -807,7 +791,7 @@ async function renderSoloDashboard(el) {
             <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
             <div style="display:flex;gap:8px">
               <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${clientId}')">Save</button>
-              <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
+              <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
             </div>
           </div>
         </div>

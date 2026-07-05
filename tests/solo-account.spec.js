@@ -97,6 +97,13 @@ test.describe('Solo / Personal account', () => {
     await page.waitForSelector('#session-detail-panel', { state: 'detached', timeout: 5000 })
   })
 
+  test('solo stats strip stays visible (not display:none) on mobile', async ({ page }) => {
+    test.skip(!soloAvailable, 'No solo client record for this PT account')
+    await page.setViewportSize({ width: 400, height: 844 })
+    await page.waitForTimeout(300)
+    await expect(page.locator('.solo-stats')).toBeVisible()
+  })
+
   test('switching back to PT restores coach dashboard', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.evaluate(() => switchView('coach'))
