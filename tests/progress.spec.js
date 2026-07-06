@@ -30,9 +30,12 @@ test.describe('Progress page regressions (2026-07-05)', () => {
   })
 
   test('Add 1RM modal uses the styled .modal class, not the undefined .modal-box', async ({ page }) => {
+    // Prefill an exercise name (2026-07-06 picker rewrite: a bare showAdd1RMModal(cid) with no
+    // prefill now opens the exercise picker first, not this modal directly — passing a prefill
+    // matches the "+ Update" button's call shape and isolates this test to the .modal CSS check).
     await page.evaluate(async () => {
       const cid = await _getCurrentClientId()
-      showAdd1RMModal(cid)
+      showAdd1RMModal(cid, 'Playwright Test Exercise')
     })
 
     const box = page.locator('#modal-1rm .modal')

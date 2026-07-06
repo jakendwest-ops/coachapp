@@ -380,25 +380,17 @@ async function renderExerciseLibrary(el) {
 
   if (error) { log.error('renderExerciseLibrary', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
-  const groups = {}
-  exercises.forEach(e => {
-    const g = e.muscle_group || 'Other'
-    if (!groups[g]) groups[g] = []
-    groups[g].push(e)
-  })
+  const active = exercises.filter(e => !e.is_archived)
+  const archived = exercises.filter(e => e.is_archived)
 
-  el.innerHTML = `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
-      <button class="btn-primary" onclick="showAddExerciseModal()">+ Add exercise</button>
-    </div>
-    ${exercises.length === 0 ? `
-      <div class="empty-state">
-        <div class="empty-icon">🏋️</div>
-        <div class="empty-title">No exercises yet</div>
-        <div class="empty-text">Build your exercise library to use in workout templates</div>
-        <button class="btn-primary" onclick="showAddExerciseModal()">+ Add exercise</button>
-      </div>
-    ` : Object.entries(groups).sort().map(([group, exs]) => `
+  const groupRows = (list) => {
+    const groups = {}
+    list.forEach(e => {
+      const g = e.muscle_group || 'Other'
+      if (!groups[g]) groups[g] = []
+      groups[g].push(e)
+    })
+    return Object.entries(groups).sort().map(([group, exs]) => `
       <div style="margin-bottom:24px">
         <div class="section-header"><h3 class="section-title">${group}</h3></div>
         <div class="list">
@@ -413,8 +405,40 @@ async function renderExerciseLibrary(el) {
           `).join('')}
         </div>
       </div>
-    `).join('')}
+    `).join('')
+  }
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+      <button class="btn-primary" onclick="showAddExerciseModal()">+ Add exercise</button>
+    </div>
+    ${exercises.length === 0 ? `
+      <div class="empty-state">
+        <div class="empty-icon">🏋️</div>
+        <div class="empty-title">No exercises yet</div>
+        <div class="empty-text">Build your exercise library to use in workout templates</div>
+        <button class="btn-primary" onclick="showAddExerciseModal()">+ Add exercise</button>
+      </div>
+    ` : groupRows(active)}
+    ${archived.length ? `
+      <div style="margin-top:8px">
+        <button type="button" onclick="_toggleArchivedExerciseLibrary()" style="width:100%;text-align:left;padding:10px 4px;background:none;border:none;color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer">Archived Exercises (${archived.length}) ▾</button>
+        <div id="exl-archived-list" style="display:none">${groupRows(archived)}</div>
+      </div>
+    ` : ''}
   `
+}
+
+function _toggleArchivedExerciseLibrary() {
+  const el = document.getElementById('exl-archived-list')
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none'
+}
+
+async function toggleExerciseArchived(id, archive) {
+  const { error } = await db.from('exercises').update({ is_archived: archive }).eq('id', id)
+  if (error) { log.error('toggleExerciseArchived', 'update failed', error); showToast('Could not update — try again.', 'error'); return }
+  closeModal('edit-exercise-modal')
+  renderExerciseLibrary(document.getElementById('workout-tab-content'))
 }
 
 // ─── EXERCISE MODALS ──────────────────────────────────────────────────────────
@@ -546,6 +570,7 @@ async function showEditExerciseModal(id) {
       <p class="modal-error" id="ee-error"></p>
       <div class="modal-footer">
         <button class="btn-danger" onclick="deleteExercise('${id}')">Delete</button>
+        <button class="btn-secondary" onclick="toggleExerciseArchived('${id}', ${!e.is_archived})">${e.is_archived ? 'Unarchive' : 'Archive'}</button>
         <div style="flex:1"></div>
         <button class="btn-secondary" onclick="closeModal('edit-exercise-modal')">Cancel</button>
         <button class="btn-primary" onclick="saveEditExercise('${id}')">Save</button>
@@ -577,10 +602,15 @@ async function saveEditExercise(id) {
 }
 
 async function deleteExercise(id) {
-  if (!confirm('Delete this exercise? It will be removed from any templates that use it.')) return
+  if (!confirm('Delete this exercise? This only works if it has never been used in a template, log, or 1RM entry — use Archive instead for exercises with history.')) return
   log.info('deleteExercise', 'deleting exercise', { id })
   const { error } = await db.from('exercises').delete().eq('id', id)
-  if (error) { log.error('deleteExercise', 'delete failed', error); return }
+  if (error) {
+    // 23503 = foreign_key_violation — this exercise is still referenced by real history
+    if (error.code === '23503') { showToast('This exercise has history attached — archive it instead of deleting.', 'warn', 5000); return }
+    log.error('deleteExercise', 'delete failed', error)
+    return
+  }
   log.ok('deleteExercise', 'exercise deleted', { id })
   closeModal('edit-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
@@ -983,100 +1013,122 @@ let _addExerciseModalPending = false
 // Swap-then-Add (or same-button double-tap) in that gap used to spawn two overlays
 // sharing the hardcoded id 'add-to-template-modal', and getElementById/closeModal only
 // ever operate on the first one, permanently freezing the second (visible) modal.
-function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
-  if (_addExerciseModalPending || document.getElementById('add-to-template-modal')) return
+async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
+  if (_addExerciseModalPending || document.getElementById('add-to-template-modal') || document.getElementById('exercise-picker-modal')) return
   _addExerciseModalPending = true
   const isRunner = !!runnerCtx
   if (isRunner) _setExercisePickerButtonsDisabled(true)
-  const _addOrmClientId = isRunner ? _runner.clientId : (currentProfile?.role === 'solo' ? window._soloClientId : null)
-  Promise.all([
-    db.from('exercises').select('*').order('name'),
-    _addOrmClientId
-      ? db.from('client_1rms').select('exercise_name').eq('client_id', _addOrmClientId).order('exercise_name')
-      : db.from('client_1rms').select('exercise_name').order('exercise_name')
-  ]).then(([{ data: exercises }, { data: ormRows }]) => {
+
+  let coachId, targetId
+  try {
+    if (isRunner) {
+      const { data: clientRecord } = await db.from('clients').select('coach_id').eq('id', _runner.clientId).single()
+      coachId = clientRecord?.coach_id || currentUser.id
+      targetId = templateId
+    } else {
+      const resolved = await _resolveEditableTemplateId(templateId)
+      targetId = resolved.templateId
+      const { data: tmplRow } = await db.from('workout_templates').select('coach_id').eq('id', targetId).single()
+      coachId = tmplRow?.coach_id || currentUser.id
+    }
+  } catch (err) {
     _addExerciseModalPending = false
     if (isRunner) _setExercisePickerButtonsDisabled(false)
-    window._templateSets = [{ effortType: 'rpe' }]
-    // Deduplicate 1RM exercise names across all clients (RLS scopes to coach's clients)
-    const ormNames = [...new Set((ormRows || []).map(r => r.exercise_name))].sort()
-    const title = isRunner ? (runnerCtx.mode === 'swap' ? 'Swap exercise' : 'Add exercise') : 'Add exercise'
-    const confirmLabel = isRunner ? (runnerCtx.mode === 'swap' ? 'Swap' : 'Add') : 'Add exercise'
-    const confirmAction = isRunner ? `_confirmRunnerExerciseFromModal('${runnerCtx.mode}')` : `saveExerciseToTemplate('${templateId}')`
-    const overlay = document.createElement('div')
-    overlay.className = 'modal-overlay'
-    overlay.id = 'add-to-template-modal'
-    // .modal-overlay is z-index:200 in main.css — the runner is a fullscreen z-index:300
-    // layer, so opened from the runner this needs to sit above it (matches session-detail-panel, 1000).
-    if (isRunner) overlay.style.zIndex = '1000'
-    overlay.innerHTML = `
-      <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto">
-        <div class="modal-header">
-          <h2 class="modal-title">${title}</h2>
-          <button class="modal-close" onclick="closeModal('add-to-template-modal')">✕</button>
-        </div>
-        <div class="field-row">
-          <div class="field" style="flex:2">
-            <label class="field-label">Pick from library</label>
-            <select class="field-input" id="att-exercise">
-              <option value="">— or type a custom name below —</option>
-              ${ormNames.length ? `<optgroup label="── 1RM lifts ──">${ormNames.map(n => `<option value="" data-name="${n}" data-is-orm="1">${n}</option>`).join('')}</optgroup>` : ''}
-              ${(exercises || []).map(e => `<option value="${e.id}" data-name="${e.name}">${e.name}${e.muscle_group ? ' · '+e.muscle_group : ''}</option>`).join('')}
-            </select>
-          </div>
-          <div class="field">
-            <label class="field-label">Type</label>
-            <select class="field-input" id="att-type" onchange="flushTemplateSets('att-sets-container');renderTemplateSets('att-sets-container',this.value)">
-              <option value="strength">Strength</option>
-              <option value="cardio">Cardio</option>
-            </select>
-          </div>
-        </div>
-        <div class="field">
-          <label class="field-label">Exercise name <span style="color:var(--danger)">*</span></label>
-          <input class="field-input" id="att-name" placeholder="e.g. Barbell Back Squat">
-        </div>
+    log.error('showAddExerciseToTemplateModal', 'failed to resolve coach', err)
+    showToast('Could not open exercise picker — try again.', 'error', 3000)
+    return
+  }
+  _addExerciseModalPending = false
+  if (isRunner) _setExercisePickerButtonsDisabled(false)
+  _openExercisePicker(coachId, picked => {
+    _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked })
+  })
+}
 
-        <div style="margin:16px 0 10px;font-size:13px;font-weight:600;color:var(--text)">Set targets</div>
-        <div id="att-sets-container"></div>
+// Step 2 of add/swap/edit — sets/reps/notes screen, shown once an exercise has been picked.
+// Shared by the workout builder (add + edit) and the runner swap/add modal.
+function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingTexId = null, existingSets = null, existingType = 'strength', existingNotes = '', existingSuperset = '' }) {
+  const isRunner = !!runnerCtx
+  const title = editingTexId ? `Edit: ${picked.name}` : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap exercise' : 'Add exercise') : 'Add exercise')
+  const confirmLabel = editingTexId ? 'Save' : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap' : 'Add') : 'Add exercise')
+  const modalId = editingTexId ? 'edit-tex-modal' : 'add-to-template-modal'
+  const confirmAction = editingTexId
+    ? `saveEditTemplateExercise('${editingTexId}','${targetId}')`
+    : (isRunner ? `_confirmRunnerExerciseFromModal('${runnerCtx.mode}')` : `saveExerciseToTemplate('${targetId}')`)
 
-        <div class="field" style="margin-top:14px">
-          <label class="field-label">Notes / coaching cues</label>
-          <textarea class="field-input" id="att-notes" placeholder="e.g. Pause 1s at bottom, 3s eccentric" rows="2" style="resize:vertical"></textarea>
-        </div>
-        <div class="field">
-          <label class="field-label">Superset group <span style="font-weight:400;color:var(--text-muted)">(optional — enter same letter, e.g. A, to link exercises)</span></label>
-          <input class="field-input" id="att-superset" placeholder="e.g. A" maxlength="3" style="width:80px">
-        </div>
-        <p class="modal-error" id="att-error"></p>
-        <div class="modal-footer">
-          <button class="btn-secondary" onclick="closeModal('add-to-template-modal')">Cancel</button>
-          <button class="btn-primary" id="att-confirm-btn" onclick="${confirmAction}">${confirmLabel}</button>
+  window._exerciseDetailPicked = picked
+  window._exerciseDetailReopenCtx = { targetId, runnerCtx, editingTexId, coachId }
+
+  document.getElementById(modalId)?.remove()
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = modalId
+  // .modal-overlay is z-index:200 in main.css — the runner is a fullscreen z-index:300
+  // layer, so opened from the runner this needs to sit above it (matches session-detail-panel, 1000).
+  if (isRunner) overlay.style.zIndex = '1000'
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto">
+      <div class="modal-header">
+        <h2 class="modal-title">${title}</h2>
+        <button class="modal-close" onclick="closeModal('${modalId}')">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label">Exercise</label>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
+          <span id="att-name-display" style="font-size:15px;font-weight:700">${escapeHtml(picked.name)}</span>
+          <button type="button" class="btn-secondary" style="font-size:12px;padding:5px 12px;flex-shrink:0" onclick="_reopenExercisePickerFromDetail()">Change</button>
         </div>
       </div>
-    `
-    document.body.appendChild(overlay)
-    renderTemplateSets('att-sets-container', 'strength')
-    document.getElementById('att-name').focus()
+      <div class="field">
+        <label class="field-label">Type</label>
+        <select class="field-input" id="att-type" onchange="flushTemplateSets('att-sets-container');renderTemplateSets('att-sets-container',this.value)">
+          <option value="strength" ${existingType !== 'cardio' ? 'selected' : ''}>Strength</option>
+          <option value="cardio" ${existingType === 'cardio' ? 'selected' : ''}>Cardio</option>
+        </select>
+      </div>
 
-    document.getElementById('att-exercise').addEventListener('change', function() {
-      const opt = this.options[this.selectedIndex]
-      if (opt.value || opt.dataset.name) {
-        document.getElementById('att-name').value = opt.dataset.name || ''
-        // If it's a 1RM lift, switch type to strength and scroll intensity fields into view
-        if (opt.dataset.isOrm) {
-          document.getElementById('att-type').value = 'strength'
-          flushTemplateSets('att-sets-container')
-          renderTemplateSets('att-sets-container', 'strength')
-          setTimeout(() => document.querySelector('[id^="ts-imin-"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
-        }
-      }
+      <div style="margin:16px 0 10px;font-size:13px;font-weight:600;color:var(--text)">Set targets</div>
+      <div id="att-sets-container"></div>
+
+      <div class="field" style="margin-top:14px">
+        <label class="field-label">Notes / coaching cues</label>
+        <textarea class="field-input" id="att-notes" placeholder="e.g. Pause 1s at bottom, 3s eccentric" rows="2" style="resize:vertical">${escapeHtml(existingNotes || '')}</textarea>
+      </div>
+      <div class="field">
+        <label class="field-label">Superset group <span style="font-weight:400;color:var(--text-muted)">(optional — enter same letter, e.g. A, to link exercises)</span></label>
+        <input class="field-input" id="att-superset" placeholder="e.g. A" maxlength="3" style="width:80px" value="${escapeHtml(existingSuperset || '')}">
+      </div>
+      <p class="modal-error" id="att-error"></p>
+      <div class="modal-footer">
+        ${editingTexId ? `<button class="btn-danger" onclick="deleteTemplateExercise('${editingTexId}','${targetId}')">Remove</button><div style="flex:1"></div>` : ''}
+        <button class="btn-secondary" onclick="closeModal('${modalId}')">Cancel</button>
+        <button class="btn-primary" id="att-confirm-btn" onclick="${confirmAction}">${confirmLabel}</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  window._templateSets = existingSets && existingSets.length ? existingSets.map(s => ({...s})) : [{ effortType: 'rpe' }]
+  renderTemplateSets('att-sets-container', existingType)
+}
+
+// "Change" link on the sets/reps screen — reopens the picker without losing whatever the user
+// has already entered for sets/type/notes/superset.
+function _reopenExercisePickerFromDetail() {
+  const ctx = window._exerciseDetailReopenCtx
+  if (!ctx) return
+  const modalId = ctx.editingTexId ? 'edit-tex-modal' : 'add-to-template-modal'
+  flushTemplateSets('att-sets-container')
+  const currentType = document.getElementById('att-type')?.value || 'strength'
+  const currentNotes = document.getElementById('att-notes')?.value || ''
+  const currentSuperset = document.getElementById('att-superset')?.value || ''
+  const currentSets = window._templateSets
+  document.getElementById(modalId)?.remove()
+  _openExercisePicker(ctx.coachId, picked => {
+    _showExerciseSetsModal({
+      targetId: ctx.targetId, runnerCtx: ctx.runnerCtx, coachId: ctx.coachId, picked,
+      editingTexId: ctx.editingTexId, existingSets: currentSets, existingType: currentType,
+      existingNotes: currentNotes, existingSuperset: currentSuperset
     })
-  }).catch(err => {
-    _addExerciseModalPending = false
-    if (isRunner) _setExercisePickerButtonsDisabled(false)
-    log.error('showAddExerciseToTemplateModal', 'failed to load exercise picker data', err)
-    showToast('Could not open exercise picker — try again.', 'error', 3000)
   })
 }
 
@@ -1090,12 +1142,126 @@ function _setExercisePickerButtonsDisabled(disabled) {
   })
 }
 
+// Resolves the effective coach_id for a client row — for a normal client this is coach_id
+// directly; for a solo/personal client record coach_id is null by design (severed from any
+// PT), so the owning "coach" is the same person's own account (clients.user_id).
+async function _effectiveCoachIdForClient(clientId) {
+  const { data: clientRow } = await db.from('clients').select('coach_id, user_id').eq('id', clientId).single()
+  return clientRow?.coach_id || clientRow?.user_id || currentUser.id
+}
+
+// Silent resolve-or-create — kept only for the Big 5 quick-start 1RM form, which has no free
+// text entry at all (fixed labelled inputs), so there's nothing for a user to explicitly pick.
+// Every other exercise-identity entry point goes through the explicit picker below instead.
+async function _resolveExerciseIdForSave(name, coachId) {
+  const trimmed = (name || '').trim()
+  if (!trimmed || !coachId) return null
+  const { data: existing } = await db.from('exercises').select('id').eq('coach_id', coachId).ilike('name', trimmed).maybeSingle()
+  if (existing) return existing.id
+  const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, name: trimmed }).select('id').single()
+  if (error) { log.error('_resolveExerciseIdForSave', 'auto-create failed', error); return null }
+  return created.id
+}
+
+// ─── Exercise picker (shared: workout builder, runner swap/add, 1RM entry) ──
+// Search-as-you-type over the coach's exercise library, with an explicit "create new" action
+// and a collapsible archived section — replaces the old dropdown+free-text combo everywhere.
+
+let _exercisePickerState = null
+
+async function _openExercisePicker(coachId, onPick) {
+  if (document.getElementById('exercise-picker-modal')) return
+  _exercisePickerState = { coachId, onPick, allExercises: [] }
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'exercise-picker-modal'
+  overlay.style.zIndex = '1001' // above the runner (300) and the sets/reps detail modal (1000)
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px;max-height:85vh;display:flex;flex-direction:column">
+      <div class="modal-header">
+        <h2 class="modal-title">Exercises</h2>
+        <button class="modal-close" onclick="_closeExercisePicker()">✕</button>
+      </div>
+      <input class="field-input" id="exp-search" placeholder="Find or create exercise with name…" style="margin-bottom:14px" autocomplete="off" oninput="_renderExercisePickerResults(this.value)">
+      <div id="exp-results" style="overflow-y:auto;flex:1"><div class="loading-state">Loading…</div></div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  document.getElementById('exp-search').focus()
+  const { data } = await db.from('exercises').select('id, name, muscle_group, is_archived').eq('coach_id', coachId).order('name')
+  if (!_exercisePickerState) return // closed before the fetch resolved
+  _exercisePickerState.allExercises = data || []
+  // Re-render using whatever is CURRENTLY typed, not '' — the user may have already started
+  // typing while this fetch was in flight, and blindly re-rendering with an empty query would
+  // wipe their input's visible results out from under them.
+  _renderExercisePickerResults(document.getElementById('exp-search')?.value || '')
+}
+
+function _renderExercisePickerResults(query) {
+  const resultsEl = document.getElementById('exp-results')
+  if (!resultsEl || !_exercisePickerState) return
+  const q = query.trim().toLowerCase()
+  const all = _exercisePickerState.allExercises || []
+  const filterList = list => q ? list.filter(e => e.name.toLowerCase().includes(q)) : list
+  const activeMatches = filterList(all.filter(e => !e.is_archived))
+  const archivedMatches = filterList(all.filter(e => e.is_archived))
+  // JS-string-escape the RAW name for the onclick argument — escapeHtml() converts ' to &#39;
+  // first, which the browser then decodes back to a raw ' inside the attribute, breaking the
+  // inline handler for any name with an apostrophe (e.g. "Farmer's Carry"). Keep escapeHtml()
+  // only for the separately-rendered visible text.
+  const jsArg = s => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  const rowHtml = e => `<div onclick="_pickExercise('${e.id}','${jsArg(e.name)}')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px">${escapeHtml(e.name)}${e.muscle_group ? `<span style="color:var(--text-muted);font-size:12px"> · ${escapeHtml(e.muscle_group)}</span>` : ''}</div>`
+  const createRow = query.trim() ? `<div onclick="_createExerciseFromPicker('${jsArg(query.trim())}')" style="padding:12px;border:1.5px dashed var(--accent);border-radius:10px;background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:12px">+ Create new exercise: "${escapeHtml(query.trim())}"</div>` : ''
+  resultsEl.innerHTML = `
+    ${createRow}
+    ${activeMatches.length ? activeMatches.map(rowHtml).join('') : (!q ? '<div class="empty-state" style="padding:20px 0"><div class="empty-text">No exercises yet — search above to create your first one.</div></div>' : '')}
+    ${archivedMatches.length ? `
+    <div style="margin-top:10px">
+      <button type="button" onclick="_toggleArchivedExercisePicks()" style="width:100%;text-align:left;padding:8px 4px;background:none;border:none;color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer">Archived Exercises (${archivedMatches.length}) ▾</button>
+      <div id="exp-archived-list" style="display:none">${archivedMatches.map(rowHtml).join('')}</div>
+    </div>` : ''}
+  `
+}
+
+function _toggleArchivedExercisePicks() {
+  const el = document.getElementById('exp-archived-list')
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none'
+}
+
+function _pickExercise(id, name) {
+  const cb = _exercisePickerState?.onPick
+  _closeExercisePicker()
+  if (cb) cb({ id, name })
+}
+
+let _createExerciseFromPickerPending = false
+
+async function _createExerciseFromPicker(name) {
+  // Guards against a fast double-tap firing two concurrent inserts before either resolves —
+  // same failure class as the exercise-picker-modal race fixed 2026-07-04 (les-013/pth pattern).
+  if (_createExerciseFromPickerPending) return
+  _createExerciseFromPickerPending = true
+  const coachId = _exercisePickerState?.coachId
+  const trimmed = (name || '').trim()
+  if (!trimmed || !coachId) { _createExerciseFromPickerPending = false; return }
+  const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, name: trimmed }).select('id, name').single()
+  _createExerciseFromPickerPending = false
+  if (error) { log.error('_createExerciseFromPicker', 'insert failed', error); showToast('Could not create exercise — try again.', 'error'); return }
+  _pickExercise(created.id, created.name)
+}
+
+function _closeExercisePicker() {
+  document.getElementById('exercise-picker-modal')?.remove()
+  _exercisePickerState = null
+}
+
 async function saveExerciseToTemplate(templateId) {
   flushTemplateSets('att-sets-container')
-  const exerciseId = document.getElementById('att-exercise').value
-  const name = document.getElementById('att-name').value.trim()
+  const picked = window._exerciseDetailPicked
   const errorEl = document.getElementById('att-error')
-  if (!name) { errorEl.textContent = 'Exercise name is required'; return }
+  if (!picked?.name) { errorEl.textContent = 'Exercise name is required'; return }
+  const name = picked.name
+  const exerciseId = picked.id || null
   const { templateId: targetId } = await _resolveEditableTemplateId(templateId)
   log.info('saveExerciseToTemplate', 'adding exercise to template', { templateId: targetId, name })
 
@@ -1138,95 +1304,37 @@ async function saveExerciseToTemplate(templateId) {
 }
 
 async function showEditTemplateExerciseModal(templateExId, templateId) {
-  const ctx = window._templateCtx
-  const ormClientId = ctx.clientId || (currentProfile?.role === 'solo' ? window._soloClientId : null)
-  const [{ data: ex }, { data: ormRows }, { data: libraryExercises }] = await Promise.all([
-    db.from('workout_template_exercises').select('*').eq('id', templateExId).single(),
-    ormClientId
-      ? db.from('client_1rms').select('exercise_name').eq('client_id', ormClientId).order('exercise_name')
-      : Promise.resolve({ data: [] }),
-    db.from('exercises').select('id, name, muscle_group').order('name')
-  ])
-  window._templateSets = ex.sets_json?.length ? ex.sets_json.map(s => ({...s})) : (ex.sets ? Array.from({length: ex.sets}, () => ({})) : [{}])
-
-  const ormNames = [...new Set((ormRows || []).map(r => r.exercise_name))].sort()
-  const libExercises = libraryExercises || []
-  const ormDropdown = `
-    <div class="field-row" style="margin-bottom:8px">
-      <div class="field" style="flex:2">
-        <label class="field-label">Pick from library</label>
-        <select class="field-input" id="etex-lib-pick" onchange="if(this.value){document.getElementById('etex-name').value=this.value}">
-          <option value="">— or type a custom name below —</option>
-          ${ormNames.length ? `<optgroup label="── Client 1RM lifts ──">${ormNames.map(n => `<option value="${n}" ${n === ex.exercise_name ? 'selected' : ''}>${n}</option>`).join('')}</optgroup>` : ''}
-          ${libExercises.map(e => `<option value="${e.name}" ${e.name === ex.exercise_name ? 'selected' : ''}>${e.name}${e.muscle_group ? ' · '+e.muscle_group : ''}</option>`).join('')}
-        </select>
-      </div>
-    </div>`
-
-  const overlay = document.createElement('div')
-  overlay.className = 'modal-overlay'
-  overlay.id = 'edit-tex-modal'
-  overlay.innerHTML = `
-    <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto">
-      <div class="modal-header">
-        <h2 class="modal-title">Edit: ${ex.exercise_name}</h2>
-        <button class="modal-close" onclick="closeModal('edit-tex-modal')">✕</button>
-      </div>
-      ${ormDropdown}
-      <div class="field-row">
-        <div class="field">
-          <label class="field-label">Exercise name</label>
-          <input class="field-input" id="etex-name" value="${ex.exercise_name}">
-        </div>
-        <div class="field">
-          <label class="field-label">Type</label>
-          <select class="field-input" id="ett-type" onchange="flushTemplateSets('ett-sets-container');renderTemplateSets('ett-sets-container',this.value)">
-            <option value="strength" ${ex.exercise_type !== 'cardio' ? 'selected' : ''}>Strength</option>
-            <option value="cardio" ${ex.exercise_type === 'cardio' ? 'selected' : ''}>Cardio</option>
-          </select>
-        </div>
-      </div>
-
-      <div style="margin:16px 0 10px;font-size:13px;font-weight:600;color:var(--text)">Set targets</div>
-      <div id="ett-sets-container"></div>
-
-      <div class="field" style="margin-top:14px">
-        <label class="field-label">Notes / coaching cues</label>
-        <input class="field-input" id="etex-notes" value="${ex.notes || ''}">
-      </div>
-      <div class="field">
-        <label class="field-label">Superset group <span style="font-weight:400;color:var(--text-muted)">(optional — same letter links exercises, e.g. A)</span></label>
-        <input class="field-input" id="etex-superset" value="${ex.superset_group || ''}" placeholder="e.g. A" maxlength="3" style="width:80px">
-      </div>
-      <p class="modal-error" id="etex-error"></p>
-      <div class="modal-footer">
-        <button class="btn-danger" onclick="deleteTemplateExercise('${templateExId}','${templateId}')">Remove</button>
-        <div style="flex:1"></div>
-        <button class="btn-secondary" onclick="closeModal('edit-tex-modal')">Cancel</button>
-        <button class="btn-primary" onclick="saveEditTemplateExercise('${templateExId}','${templateId}')">Save</button>
-      </div>
-    </div>
-  `
-  document.body.appendChild(overlay)
-  renderTemplateSets('ett-sets-container', ex.exercise_type || 'strength')
+  const { data: ex } = await db.from('workout_template_exercises').select('*').eq('id', templateExId).single()
+  const { data: tmplRow } = await db.from('workout_templates').select('coach_id').eq('id', templateId).single()
+  const coachId = tmplRow?.coach_id || currentUser.id
+  _showExerciseSetsModal({
+    targetId: templateId, runnerCtx: null, coachId,
+    picked: { id: ex.exercise_id || null, name: ex.exercise_name },
+    editingTexId: templateExId,
+    existingSets: ex.sets_json?.length ? ex.sets_json : (ex.sets ? Array.from({ length: ex.sets }, () => ({})) : [{}]),
+    existingType: ex.exercise_type || 'strength',
+    existingNotes: ex.notes || '',
+    existingSuperset: ex.superset_group || ''
+  })
 }
 
 async function saveEditTemplateExercise(texId, templateId) {
-  flushTemplateSets('ett-sets-container')
-  const errorEl = document.getElementById('etex-error')
-  const name = document.getElementById('etex-name').value.trim()
-  if (!name) { errorEl.textContent = 'Name is required'; return }
+  flushTemplateSets('att-sets-container')
+  const errorEl = document.getElementById('att-error')
+  const picked = window._exerciseDetailPicked
+  if (!picked?.name) { errorEl.textContent = 'Name is required'; return }
   const sets = window._templateSets || []
 
   const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
-  log.info('saveEditTemplateExercise', 'updating template exercise', { texId: targetExId, name })
+  log.info('saveEditTemplateExercise', 'updating template exercise', { texId: targetExId, name: picked.name })
   const { error } = await db.from('workout_template_exercises').update({
-    exercise_name: name,
-    exercise_type: document.getElementById('ett-type').value,
+    exercise_id:    picked.id || null,
+    exercise_name: picked.name,
+    exercise_type: document.getElementById('att-type').value,
     sets:           sets.length || null,
     sets_json:      sets.length ? sets : null,
-    notes:          document.getElementById('etex-notes').value.trim() || null,
-    superset_group: document.getElementById('etex-superset')?.value.trim().toUpperCase() || null
+    notes:          document.getElementById('att-notes').value.trim() || null,
+    superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   }).eq('id', targetExId)
   if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
   log.ok('saveEditTemplateExercise', 'template exercise updated', { texId: targetExId })

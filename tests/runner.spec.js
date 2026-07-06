@@ -1,6 +1,21 @@
 const { test, expect } = require('./fixtures')
 const { loginAsPT, loginAsClient } = require('./helpers')
 
+// Drives the exercise picker (2026-07-06): type a name, tap "Create new exercise", land on
+// the sets/reps screen with that exercise locked in. Shared by every add/swap test below.
+// Appends a timestamp to the given prefix and returns the actual name used, so repeated test
+// runs never collide with a same-named exercise a previous (possibly failed) run already
+// created — the picker has no de-dupe-by-identical-name UI, each run needs its own name.
+async function pickOrCreateExercise(page, namePrefix) {
+  const name = `${namePrefix} ${Date.now()}`
+  await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
+  await page.fill('#exp-search', name)
+  await page.getByText('Create new exercise', { exact: false }).click()
+  await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
+  await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+  return name
+}
+
 // ─── PT: Workouts page regression ────────────────────────────────────────────
 
 test.describe('PT Workouts page', () => {
@@ -31,6 +46,37 @@ test.describe('PT Workouts page', () => {
     if (count === 0) return // no standalone templates — skip
     await templateRow.click()
     await expect(page.locator('text=Exercises')).toBeVisible({ timeout: 8000 })
+  })
+})
+
+// ─── Exercise identity — resolve/auto-create (2026-07-06) ───────────────────
+
+test.describe('Exercise identity resolver', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+  })
+
+  test('_resolveExerciseIdForSave links to an existing library exercise by case-insensitive name match', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const uniqueName = `PW Test Exercise ${Date.now()}`
+      const { data: created } = await db.from('exercises').insert({ coach_id: currentUser.id, name: uniqueName }).select('id').single()
+      const resolvedId = await _resolveExerciseIdForSave(uniqueName.toUpperCase(), currentUser.id)
+      await db.from('exercises').delete().eq('id', created.id)
+      return { createdId: created.id, resolvedId }
+    })
+    expect(result.resolvedId).toBe(result.createdId)
+  })
+
+  test('_resolveExerciseIdForSave auto-creates a new library entry when no match exists', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const uniqueName = `PW Auto-Create Test ${Date.now()}`
+      const resolvedId = await _resolveExerciseIdForSave(uniqueName, currentUser.id)
+      const { data: found } = await db.from('exercises').select('id, name').eq('id', resolvedId).single()
+      if (found) await db.from('exercises').delete().eq('id', found.id)
+      return { resolvedId, uniqueName, foundName: found?.name }
+    })
+    expect(result.resolvedId).toBeTruthy()
+    expect(result.foundName).toBe(result.uniqueName)
   })
 })
 
@@ -287,69 +333,68 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('text=Overview')).not.toBeVisible({ timeout: 3000 }).catch(() => {})
   })
 
-  test('swap exercise opens the same modal used to build a workout, and swapping updates the current exercise name', async ({ page }) => {
+  test('swap exercise opens the picker first, then the sets/reps screen with the exercise locked in, and swapping updates the current exercise name', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("Swap exercise")').click()
-    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    const name = await pickOrCreateExercise(page, 'Playwright Swap Target')
     await expect(page.locator('#add-to-template-modal .modal-title')).toHaveText('Swap exercise')
-    // Same builder modal — has the full set-target UI, not a cut-down picker
+    await expect(page.locator('#att-name-display')).toHaveText(name)
+    // Same builder screen — has the full set-target UI, not a cut-down picker
     await expect(page.locator('#att-sets-container')).toBeVisible()
     await expect(page.locator('#att-superset')).toBeVisible()
 
-    await page.fill('#att-name', 'Playwright Swap Target')
     await page.locator('#att-confirm-btn').click()
 
-    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 6000 })
     const currentName = await page.evaluate(() => _runner.exercises[_runner.exIdx].name)
-    expect(currentName).toBe('Playwright Swap Target')
+    expect(currentName).toBe(name)
   })
 
-  test('add exercise opens the same modal and adding appends a new exercise and jumps to it', async ({ page }) => {
+  test('add exercise opens the picker first, then the sets/reps screen, and adding appends a new exercise and jumps to it', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     const before = await page.evaluate(() => _runner.exercises.length)
     await page.locator('button:has-text("+ Add exercise")').click()
-    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    const name = await pickOrCreateExercise(page, 'Playwright Added Exercise')
     await expect(page.locator('#add-to-template-modal .modal-title')).toHaveText('Add exercise')
 
-    await page.fill('#att-name', 'Playwright Added Exercise')
     await page.locator('#att-confirm-btn').click()
 
-    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 6000 })
     const after = await page.evaluate(() => ({ len: _runner.exercises.length, idx: _runner.exIdx, name: _runner.exercises[_runner.exIdx].name }))
     expect(after.len).toBe(before + 1)
     expect(after.idx).toBe(after.len - 1)
-    expect(after.name).toBe('Playwright Added Exercise')
+    expect(after.name).toBe(name)
   })
 
-  test('swap and add exercise open the identical modal component (not two different pickers)', async ({ page }) => {
+  test('swap and add exercise land on the identical sets/reps screen component (not two different builders)', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("Swap exercise")').click()
-    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
-    const swapHtml = await page.locator('#add-to-template-modal .field-row').innerHTML()
+    await pickOrCreateExercise(page, 'Playwright Identity Check')
+    const swapHtml = await page.locator('#att-sets-container').innerHTML()
     await page.locator('#add-to-template-modal .modal-close').click()
 
     await page.locator('button:has-text("+ Add exercise")').click()
-    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
-    const addHtml = await page.locator('#add-to-template-modal .field-row').innerHTML()
+    await pickOrCreateExercise(page, 'Playwright Identity Check 2')
+    const addHtml = await page.locator('#att-sets-container').innerHTML()
     await page.locator('#add-to-template-modal .modal-close').click()
 
-    expect(swapHtml).toBe(addHtml) // identical picker markup for both entry points
+    expect(swapHtml).toBe(addHtml) // identical set-builder markup for both entry points
   })
 
-  test('rapid swap-then-add tap does not open two overlapping modals (regression, 2026-07-04 runner freeze)', async ({ page }) => {
+  test('rapid swap-then-add tap does not open two overlapping pickers (regression, 2026-07-04 runner freeze)', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    // Fire both picker calls back-to-back, before the exercise-list fetch resolves —
-    // reproduces the exact race that used to open two overlays sharing one hardcoded id,
-    // which left the visible modal impossible to close (getElementById only ever finds
-    // the first match) and forced a reload that lost the whole session.
+    // Fire both picker calls back-to-back, before the coach-id lookup resolves — reproduces
+    // the exact race that used to open two overlays sharing one hardcoded id, which left the
+    // visible modal impossible to close (getElementById only ever finds the first match) and
+    // forced a reload that lost the whole session.
     const midFetch = await page.evaluate(() => {
       showExercisePicker('add')
       showExercisePicker('swap')
@@ -361,29 +406,13 @@ test.describe('Workout runner (client)', () => {
     expect(midFetch.swapDisabled).toBe(true)
     expect(midFetch.addDisabled).toBe(true)
 
-    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
-    expect(await page.locator('#add-to-template-modal').count()).toBe(1)
-    // The first call (Add) wins — the second (Swap) must be a dropped no-op
-    await expect(page.locator('#add-to-template-modal .modal-title')).toHaveText('Add exercise')
+    await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
+    expect(await page.locator('#exercise-picker-modal').count()).toBe(1)
 
-    await page.locator('#add-to-template-modal .modal-close').click()
-    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+    await page.locator('#exercise-picker-modal .modal-close').click()
+    await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
     await expect(page.locator('button:has-text("Swap exercise")')).toBeEnabled()
     await expect(page.locator('button:has-text("+ Add exercise")')).toBeEnabled()
-  })
-
-  test('exercise modal confirm button requires an exercise name', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
-    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
-
-    await page.locator('button:has-text("+ Add exercise")').click()
-    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
-    await page.locator('#att-confirm-btn').click()
-    await expect(page.locator('#att-error')).toHaveText('Exercise name is required')
-    await expect(page.locator('#add-to-template-modal')).toBeVisible() // did not close
-
-    await page.locator('#add-to-template-modal .modal-close').click()
-    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
   })
 
   test('logged set can be deleted from the edit sheet', async ({ page }) => {
@@ -447,13 +476,12 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("Swap exercise")').click()
-    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
-    await page.fill('#att-name', 'Playwright Rest Swap Target')
+    await pickOrCreateExercise(page, 'Playwright Rest Swap Target')
     const restInput = page.locator('#ts-restmin-0')
     const hasRestField = (await restInput.count()) > 0
     if (hasRestField) await restInput.fill('3:00')
     await page.locator('#att-confirm-btn').click()
-    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 6000 })
 
     const restSecs = await page.evaluate(() => _runner.exercises[_runner.exIdx].restSecs)
     if (hasRestField) expect(restSecs).toBe(180)
@@ -465,16 +493,51 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("+ Add exercise")').click()
-    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
-    await page.fill('#att-name', 'Playwright Rest Add Target')
+    await pickOrCreateExercise(page, 'Playwright Rest Add Target')
     const restInput = page.locator('#ts-restmin-0')
     const hasRestField = (await restInput.count()) > 0
     if (hasRestField) await restInput.fill('2:30')
     await page.locator('#att-confirm-btn').click()
-    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 6000 })
 
     const restSecs = await page.evaluate(() => _runner.exercises[_runner.exIdx].restSecs)
     if (hasRestField) expect(restSecs).toBe(150)
     else expect(restSecs).toBe(90)
+  })
+
+  test('exercise picker: typing a name shows a "Create new exercise" option, and creating it reaches the sets/reps screen with that name locked in', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    await page.locator('button:has-text("+ Add exercise")').click()
+    const name = `Playwright Picker Create Test ${Date.now()}`
+    await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
+    await page.fill('#exp-search', name)
+    await expect(page.getByText('Create new exercise', { exact: false })).toBeVisible()
+    await page.getByText('Create new exercise', { exact: false }).click()
+
+    await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('#att-name-display')).toHaveText(name)
+    await page.locator('#add-to-template-modal .modal-close').click()
+  })
+
+  test('exercise picker: "Change" link on the sets/reps screen reopens the picker without losing entered notes', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    await page.locator('button:has-text("+ Add exercise")').click()
+    await pickOrCreateExercise(page, 'Playwright Change Test A')
+    await page.fill('#att-notes', 'keep this note')
+    await page.locator('button:has-text("Change")').click()
+
+    await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
+    const nameB = `Playwright Change Test B ${Date.now()}`
+    await page.fill('#exp-search', nameB)
+    await page.getByText('Create new exercise', { exact: false }).click()
+
+    await expect(page.locator('#att-name-display')).toHaveText(nameB)
+    await expect(page.locator('#att-notes')).toHaveValue('keep this note')
+    await page.locator('#add-to-template-modal .modal-close').click()
   })
 })

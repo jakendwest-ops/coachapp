@@ -8,9 +8,12 @@
   window._fakeRsName = null; window._fakeRsTemplate = null
   const template = window._runnerTemplates?.find(t => t.id === tmplId)
 
-  // Fetch stored 1RMs for this client — used to compute kg targets from %1RM sets
-  const { data: oneRMRows } = await db.from('client_1rms').select('exercise_name, one_rm_kg').eq('client_id', clientId)
-  const oneRMMap = Object.fromEntries((oneRMRows || []).map(r => [r.exercise_name.trim().toLowerCase(), parseFloat(r.one_rm_kg)]))
+  // Fetch stored 1RMs for this client — used to compute kg targets from %1RM sets.
+  // Keyed by both exercise_id (preferred — survives a name being retyped/renamed) and
+  // trimmed-lowercase name (fallback for rows that predate the exercise_id link).
+  const { data: oneRMRows } = await db.from('client_1rms').select('exercise_id, exercise_name, one_rm_kg').eq('client_id', clientId)
+  const oneRMByName = Object.fromEntries((oneRMRows || []).map(r => [r.exercise_name.trim().toLowerCase(), parseFloat(r.one_rm_kg)]))
+  const oneRMById   = Object.fromEntries((oneRMRows || []).filter(r => r.exercise_id).map(r => [r.exercise_id, parseFloat(r.one_rm_kg)]))
 
   let exercises = []
   if (template) {
@@ -20,8 +23,8 @@
         const repsStr = String(ex.reps || '')
         const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.[0]?.restMin || '') || 90
         const s0 = ex.sets_json?.[0] || {}
-        const oneRM = oneRMMap[ex.exercise_name.trim().toLowerCase()] || null
-        return { name: ex.exercise_name, type: ex.exercise_type || 'strength', targetSets: ex.sets_json?.length || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
+        const oneRM = (ex.exercise_id && oneRMById[ex.exercise_id] != null) ? oneRMById[ex.exercise_id] : (oneRMByName[ex.exercise_name.trim().toLowerCase()] || null)
+        return { name: ex.exercise_name, exerciseId: ex.exercise_id || null, type: ex.exercise_type || 'strength', targetSets: ex.sets_json?.length || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
       })
   }
   if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
@@ -45,7 +48,7 @@ function fmtRunnerTime(startTime) {
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`
 }
 
-async function fetchRunnerLastSession(exName) {
+async function fetchRunnerLastSession(exName, exerciseId) {
   if (!_runner || !exName) return
   _runner.lastSession = _runner.lastSession || {}
   if (_runner.lastSession[exName] !== undefined) { renderRunnerLastSession(exName); return }
@@ -56,9 +59,15 @@ async function fetchRunnerLastSession(exName) {
     .order('date', { ascending: false }).limit(20)
   if (!logs?.length) { _runner.lastSession[exName] = null; return }
 
-  const { data: exRows } = await db.from('workout_log_exercises')
-    .select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)')
-    .eq('exercise_name', exName).in('log_id', logs.map(l => l.id))
+  const logIds = logs.map(l => l.id)
+  // Prefer matching by exercise_id (survives the name being retyped/renamed since); fall back
+  // to the exact-name match for rows logged before this exercise had a library link.
+  let exRows = exerciseId
+    ? (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)').eq('exercise_id', exerciseId).in('log_id', logIds)).data
+    : null
+  if (!exRows?.length) {
+    exRows = (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)').eq('exercise_name', exName).in('log_id', logIds)).data
+  }
   if (!exRows?.length) { _runner.lastSession[exName] = null; return }
 
   // Pick the occurrence from the most recent log (logs is already date-desc ordered)
@@ -612,7 +621,7 @@ function renderRunner() {
       </div>
     </div>
   `
-  if (ex.type !== 'cardio') setTimeout(() => fetchRunnerLastSession(ex.name), 0)
+  if (ex.type !== 'cardio') setTimeout(() => fetchRunnerLastSession(ex.name, ex.exerciseId), 0)
 }
 
 function logRunnerSet() {
@@ -1145,10 +1154,18 @@ function showExercisePicker(mode) {
   showAddExerciseToTemplateModal(null, { mode })
 }
 
-// Looks up the client's most recent 1RM for an exercise name (case-insensitive) — used so a
-// swapped/added exercise immediately gets its %1RM target weight calculated, instead of
-// requiring the client to re-enter it via the "set your 1RM" banner.
-async function _lookupClientOneRM(name) {
+// Looks up the client's most recent 1RM for an exercise — prefers exercise_id (survives a
+// name being retyped/renamed since), falls back to a case-insensitive name match for rows
+// that predate the exercise_id link. Used so a swapped/added exercise immediately gets its
+// %1RM target weight calculated, instead of requiring the client to re-enter it via the
+// "set your 1RM" banner.
+async function _lookupClientOneRM(name, exerciseId) {
+  if (exerciseId) {
+    const { data } = await db.from('client_1rms').select('one_rm_kg')
+      .eq('client_id', _runner.clientId).eq('exercise_id', exerciseId)
+      .order('recorded_at', { ascending: false }).limit(1).maybeSingle()
+    if (data?.one_rm_kg) return parseFloat(data.one_rm_kg)
+  }
   const { data } = await db.from('client_1rms').select('one_rm_kg')
     .eq('client_id', _runner.clientId).ilike('exercise_name', name)
     .order('recorded_at', { ascending: false }).limit(1).maybeSingle()
@@ -1162,9 +1179,11 @@ async function _lookupClientOneRM(name) {
 // expressiveness (reps/%1RM/RPE/rest/tempo/AMRAP/Uni/Timed/BW/Assist) the builder has.
 async function _confirmRunnerExerciseFromModal(mode) {
   flushTemplateSets('att-sets-container')
-  const name = document.getElementById('att-name').value.trim()
+  const picked = window._exerciseDetailPicked
   const errorEl = document.getElementById('att-error')
-  if (!name) { errorEl.textContent = 'Exercise name is required'; return }
+  if (!picked?.name) { errorEl.textContent = 'Exercise name is required'; return }
+  const name = picked.name
+  const exerciseId = picked.id || null
   const type = document.getElementById('att-type').value
   const notes = document.getElementById('att-notes').value.trim() || null
   const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
@@ -1179,7 +1198,7 @@ async function _confirmRunnerExerciseFromModal(mode) {
     tempo: s.tempo||null, countdown: s.countdown||null,
     duration: s.duration||null, distance: s.distance||null
   }))
-  const oneRM = await _lookupClientOneRM(name)
+  const oneRM = await _lookupClientOneRM(name, exerciseId)
   closeModal('add-to-template-modal')
 
   const restSecs = parseRest(cleanSets[0]?.restMin || '') || 90
@@ -1187,6 +1206,7 @@ async function _confirmRunnerExerciseFromModal(mode) {
   if (mode === 'swap') {
     const ex = _runner.exercises[_runner.exIdx]
     ex.name = name
+    ex.exerciseId = exerciseId
     ex.type = type
     ex.sets_json = cleanSets
     ex.targetSets = cleanSets.length || ex.targetSets
@@ -1198,16 +1218,16 @@ async function _confirmRunnerExerciseFromModal(mode) {
     ex.loggedSets = []
     delete ex.tableRows
     ex.oneRM = oneRM
-    if (type !== 'cardio') fetchRunnerLastSession(name)
+    if (type !== 'cardio') fetchRunnerLastSession(name, exerciseId)
     renderRunner()
   } else {
     _runner.exercises.push({
-      name, type, targetSets: cleanSets.length || 3, targetReps: '', targetWeight: '',
+      name, exerciseId, type, targetSets: cleanSets.length || 3, targetReps: '', targetWeight: '',
       restSecs, loggedSets: [], bodyweight: !!cleanSets[0]?.bodyweight, assisted: !!cleanSets[0]?.assisted,
       supersetGroup, sets_json: cleanSets, notes, oneRM
     })
     _runner.exIdx = _runner.exercises.length - 1
-    fetchRunnerLastSession(name)
+    fetchRunnerLastSession(name, exerciseId)
     renderRunner()
   }
 }
@@ -1416,7 +1436,7 @@ async function saveRunnerSession() {
   for (let bi = 0; bi < exercises.length; bi++) {
     const ex = exercises[bi]
     const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
-      log_id: sessionLog.id, exercise_name: ex.name, exercise_type: ex.type, order_index: bi,
+      log_id: sessionLog.id, exercise_id: ex.exerciseId || null, exercise_name: ex.name, exercise_type: ex.type, order_index: bi,
       client_notes: ex.clientNotes || null
     }).select().single()
     if (exErr) {
@@ -1891,8 +1911,10 @@ async function saveWorkoutSession(clientId) {
   for (let bi = 0; bi < blocks.length; bi++) {
     const block = blocks[bi]
     log.info('saveWorkoutSession', `saving exercise ${bi + 1}/${blocks.length}`, { sets: block.sets.length })
+    const exerciseId = await _resolveExerciseIdForSave(block.name, coachId)
     const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
       log_id:        sessionLog.id,
+      exercise_id:   exerciseId,
       exercise_name: block.name.trim(),
       exercise_type: block.type,
       order_index:   bi

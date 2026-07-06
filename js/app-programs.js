@@ -274,28 +274,35 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
 // periodization weeks (2+) always reuse the same exercise names, just different %1RM values.
 async function _getProgramOneRMStatus(programId, clientId) {
   const { data: phases } = await db.from('program_phases')
-    .select('program_phase_workouts(week_number, workout_templates(workout_template_exercises(exercise_name, sets_json)))')
+    .select('program_phase_workouts(week_number, workout_templates(workout_template_exercises(exercise_id, exercise_name, sets_json)))')
     .eq('program_id', programId)
 
-  const neededNames = new Set()
+  // Keyed by name (needed regardless of ID availability, since that's what gets displayed/matched
+  // against). exercise_id is carried alongside so the have/missing check can prefer it over name.
+  const neededByName = new Map()
   ;(phases || []).forEach(phase => {
     ;(phase.program_phase_workouts || []).filter(pw => (pw.week_number || 1) === 1).forEach(pw => {
       ;(pw.workout_templates?.workout_template_exercises || []).forEach(ex => {
         const usesPct = (ex.sets_json || []).some(s => s.intensityMin != null || s.intensityMax != null)
-        if (usesPct) neededNames.add(ex.exercise_name)
+        if (usesPct) neededByName.set(ex.exercise_name, ex.exercise_id || null)
       })
     })
   })
-  if (!neededNames.size) return { have: [], missing: [] }
+  if (!neededByName.size) return { have: [], missing: [] }
 
-  const { data: existing } = await db.from('client_1rms').select('exercise_name, one_rm_kg').eq('client_id', clientId).order('recorded_at', { ascending: false })
-  const haveMap = {}
-  ;(existing || []).forEach(r => { const k = r.exercise_name.trim().toLowerCase(); if (!(k in haveMap)) haveMap[k] = r.one_rm_kg })
+  const { data: existing } = await db.from('client_1rms').select('exercise_id, exercise_name, one_rm_kg').eq('client_id', clientId).order('recorded_at', { ascending: false })
+  const haveByName = {}, haveById = {}
+  ;(existing || []).forEach(r => {
+    const k = r.exercise_name.trim().toLowerCase()
+    if (!(k in haveByName)) haveByName[k] = r.one_rm_kg
+    if (r.exercise_id && !(r.exercise_id in haveById)) haveById[r.exercise_id] = r.one_rm_kg
+  })
 
   const have = [], missing = []
-  neededNames.forEach(name => {
+  neededByName.forEach((exerciseId, name) => {
     const k = name.trim().toLowerCase()
-    if (k in haveMap) have.push({ name, kg: haveMap[k] })
+    if (exerciseId && exerciseId in haveById) have.push({ name, kg: haveById[exerciseId] })
+    else if (k in haveByName) have.push({ name, kg: haveByName[k] })
     else missing.push(name)
   })
   return { have, missing }

@@ -76,15 +76,27 @@ async function deleteProgressPhoto(clientId, fileName) {
 
 const BIG_5_EXERCISES = ['Back Squat', 'Deadlift', 'Bench Press', 'Overhead Press', 'Barbell Row']
 
+let _saveBig5Pending = false
+
 async function saveBig5OneRMs(clientId) {
+  // Guards against a double-tap: _resolveExerciseIdForSave does a non-atomic select-then-insert,
+  // so two concurrent calls for the same exercise name can both miss the not-yet-inserted row
+  // and create duplicate library entries.
+  if (_saveBig5Pending) return
+  _saveBig5Pending = true
   const errEl = document.getElementById('big5-error')
   const today = new Date().toISOString().split('T')[0]
-  const rows = BIG_5_EXERCISES
+  const named = BIG_5_EXERCISES
     .map(name => ({ name, weight: parseFloat(document.getElementById(`big5-${name.replace(/\s+/g,'-')}`)?.value) }))
     .filter(r => r.weight && r.weight > 0)
-    .map(r => ({ client_id: clientId, exercise_name: r.name, one_rm_kg: r.weight, recorded_at: today }))
-  if (!rows.length) { errEl.textContent = 'Enter at least one value'; return }
+  if (!named.length) { errEl.textContent = 'Enter at least one value'; _saveBig5Pending = false; return }
+  const coachId = await _effectiveCoachIdForClient(clientId)
+  const rows = await Promise.all(named.map(async r => ({
+    client_id: clientId, exercise_id: await _resolveExerciseIdForSave(r.name, coachId),
+    exercise_name: r.name, one_rm_kg: r.weight, recorded_at: today
+  })))
   const { error } = await dbq('saveBig5OneRMs', db.from('client_1rms').insert(rows))
+  _saveBig5Pending = false
   if (error) { errEl.textContent = 'Save failed — try again'; return }
   const perfEl = document.getElementById('perf-1rms-content')
   if (perfEl) renderClient1RMs(clientId, perfEl)
@@ -93,11 +105,7 @@ async function saveBig5OneRMs(clientId) {
 
 async function renderClient1RMs(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading 1RMs…</div>'
-  const [{ data: rows }, { data: exercises }] = await Promise.all([
-    db.from('client_1rms').select('*').eq('client_id', clientId).order('recorded_at', { ascending: false }),
-    db.from('exercises').select('name').eq('coach_id', currentUser.id).order('name')
-  ])
-  const exNames = (exercises || []).map(e => e.name)
+  const { data: rows } = await db.from('client_1rms').select('*').eq('client_id', clientId).order('recorded_at', { ascending: false })
 
   // Group by exercise name, newest first within each group
   const byEx = {}
@@ -134,7 +142,7 @@ async function renderClient1RMs(clientId, el) {
             </div>
             <div style="display:flex;align-items:center;gap:10px">
               <span style="font-size:22px;font-weight:800;color:var(--accent)">${parseFloat(latest.one_rm_kg).toFixed(1)} kg</span>
-              <button onclick="showAdd1RMModal('${clientId}','${exName.replace(/'/g,"\\'")}')" style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Update</button>
+              <button onclick="showAdd1RMModal('${clientId}','${exName.replace(/'/g,"\\'")}'${latest.exercise_id ? `,'${latest.exercise_id}'` : ''})" style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Update</button>
               <button onclick="delete1RM('${latest.id}','${clientId}')" style="padding:5px 10px;border:1px solid #ef4444;border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:#ef4444">Delete</button>
             </div>
           </div>
@@ -147,25 +155,41 @@ async function renderClient1RMs(clientId, el) {
           </div>` : ''}
         </div>`
       }).join('')}
-    <datalist id="ex-names-list">${exNames.map(n=>`<option value="${n}">`).join('')}</datalist>
   `
 }
 
-function showAdd1RMModal(clientId, prefillExercise = '') {
+function showAdd1RMModal(clientId, prefillExercise = '', prefillExerciseId = null) {
+  if (prefillExercise) {
+    _showOneRMDetailModal(clientId, { id: prefillExerciseId || null, name: prefillExercise })
+  } else {
+    _effectiveCoachIdForClient(clientId).then(coachId => {
+      _openExercisePicker(coachId, picked => _showOneRMDetailModal(clientId, picked))
+    })
+  }
+}
+
+// Weight/date/Epley entry screen — shown once an exercise has been picked (or was already
+// known, e.g. the "+ Update" button on an existing 1RM row).
+function _showOneRMDetailModal(clientId, picked, opts = {}) {
+  const { existingId = null, weight = '', date = new Date().toISOString().split('T')[0] } = opts
   const existing = document.getElementById('modal-1rm')
   if (existing) existing.remove()
+  window._oneRMDetailPicked = picked
   const overlay = document.createElement('div')
   overlay.id = 'modal-1rm'
   overlay.className = 'modal-overlay'
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">${prefillExercise ? 'Update 1RM' : 'Add 1RM'}</h2>
+        <h2 class="modal-title">${existingId ? 'Edit 1RM' : 'Add 1RM'}</h2>
         <button class="modal-close" onclick="document.getElementById('modal-1rm').remove()">✕</button>
       </div>
       <div class="field">
         <label class="field-label">Exercise</label>
-        <input class="field-input" id="1rm-exercise" list="ex-names-list" placeholder="e.g. Back Squat" autocomplete="off" value="${prefillExercise}">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
+          <span style="font-size:15px;font-weight:700">${escapeHtml(picked.name)}</span>
+          <button type="button" class="btn-secondary" style="font-size:12px;padding:5px 12px;flex-shrink:0" onclick="_reopenExercisePickerFor1RM('${clientId}'${existingId ? `,'${existingId}'` : ',null'})">Change</button>
+        </div>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:14px">
         <button id="orm-mode-direct" onclick="_setAdd1RMMode('direct')" class="btn-primary" style="flex:1;font-size:12px;padding:8px">I know my 1RM</button>
@@ -174,7 +198,7 @@ function showAdd1RMModal(clientId, prefillExercise = '') {
       <div id="orm-direct-fields">
         <div class="field">
           <label class="field-label">1RM (kg)</label>
-          <input class="field-input" id="1rm-weight" type="number" step="0.5" inputmode="decimal" placeholder="e.g. 120">
+          <input class="field-input" id="1rm-weight" type="number" step="0.5" inputmode="decimal" placeholder="e.g. 120" value="${weight}">
         </div>
       </div>
       <div id="orm-epley-fields" style="display:none">
@@ -193,16 +217,26 @@ function showAdd1RMModal(clientId, prefillExercise = '') {
       </div>
       <div class="field">
         <label class="field-label">Date recorded</label>
-        <input class="field-input" id="1rm-date" type="date" value="${new Date().toISOString().split('T')[0]}">
+        <input class="field-input" id="1rm-date" type="date" value="${date}">
       </div>
       <p class="modal-error" id="1rm-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="document.getElementById('modal-1rm').remove()">Cancel</button>
-        <button class="btn-primary" onclick="save1RM('${clientId}')">Save</button>
+        <button class="btn-primary" onclick="save1RM('${clientId}'${existingId ? `,'${existingId}'` : ''})">Save</button>
       </div>
     </div>
   `
   document.body.appendChild(overlay)
+}
+
+// "Change" link on the 1RM detail screen — reopens the picker without losing weight/date entry.
+function _reopenExercisePickerFor1RM(clientId, existingId) {
+  const weight = document.getElementById('1rm-weight')?.value || ''
+  const date = document.getElementById('1rm-date')?.value || new Date().toISOString().split('T')[0]
+  document.getElementById('modal-1rm')?.remove()
+  _effectiveCoachIdForClient(clientId).then(coachId => {
+    _openExercisePicker(coachId, picked => _showOneRMDetailModal(clientId, picked, { existingId, weight, date }))
+  })
 }
 
 function _setAdd1RMMode(mode) {
@@ -226,42 +260,12 @@ function _updateAdd1RMEpleyPreview() {
   }
 }
 
-function showEdit1RMModal(id, clientId, exerciseName, weight, date) {
-  const existing = document.getElementById('modal-1rm')
-  if (existing) existing.remove()
-  const overlay = document.createElement('div')
-  overlay.id = 'modal-1rm'
-  overlay.className = 'modal-overlay'
-  overlay.innerHTML = `
-    <div class="modal">
-      <div class="modal-header">
-        <h2 class="modal-title">Edit 1RM</h2>
-        <button class="modal-close" onclick="document.getElementById('modal-1rm').remove()">✕</button>
-      </div>
-      <div class="field">
-        <label class="field-label">Exercise</label>
-        <input class="field-input" id="1rm-exercise" list="ex-names-list" value="${exerciseName}" autocomplete="off">
-      </div>
-      <div class="field">
-        <label class="field-label">1RM (kg)</label>
-        <input class="field-input" id="1rm-weight" type="number" step="0.5" inputmode="decimal" value="${weight}">
-      </div>
-      <div class="field">
-        <label class="field-label">Date recorded</label>
-        <input class="field-input" id="1rm-date" type="date" value="${date}">
-      </div>
-      <p class="modal-error" id="1rm-error"></p>
-      <div class="modal-footer">
-        <button class="btn-secondary" onclick="document.getElementById('modal-1rm').remove()">Cancel</button>
-        <button class="btn-primary" onclick="save1RM('${clientId}','${id}')">Save</button>
-      </div>
-    </div>
-  `
-  document.body.appendChild(overlay)
+function showEdit1RMModal(id, clientId, exerciseName, exerciseId, weight, date) {
+  _showOneRMDetailModal(clientId, { id: exerciseId || null, name: exerciseName }, { existingId: id, weight, date })
 }
 
 async function save1RM(clientId, existingId = null) {
-  const exercise   = document.getElementById('1rm-exercise')?.value.trim()
+  const picked     = window._oneRMDetailPicked
   const epleyMode  = document.getElementById('orm-epley-fields') && document.getElementById('orm-epley-fields').style.display === 'block'
   let weight
   if (epleyMode) {
@@ -273,9 +277,9 @@ async function save1RM(clientId, existingId = null) {
   }
   const date     = document.getElementById('1rm-date')?.value
   const errEl    = document.getElementById('1rm-error')
-  if (!exercise) { errEl.textContent = 'Exercise name is required'; return }
+  if (!picked?.name) { errEl.textContent = 'Exercise name is required'; return }
   if (!weight || weight <= 0) { errEl.textContent = 'Enter a valid weight'; return }
-  const row = { client_id: clientId, exercise_name: exercise, one_rm_kg: weight, recorded_at: date }
+  const row = { client_id: clientId, exercise_id: picked.id || null, exercise_name: picked.name, one_rm_kg: weight, recorded_at: date }
   let error
   if (existingId) {
     ;({ error } = await dbq('save1RM:update', db.from('client_1rms').update(row).eq('id', existingId)))
