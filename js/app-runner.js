@@ -119,7 +119,9 @@ function renderRunnerLastSession(exName) {
 function _isPlainStrengthExercise(ex) {
   if (!ex || ex.type === 'cardio' || !ex.sets_json?.length) return false
   if (/carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)) return false
-  return ex.sets_json.every(s => !s.timed && !s.unilateral && !s.intensityMin)
+  // %1RM exercises are allowed into the table — the target bar already computes the
+  // kg target from intensityMin/oneRM (_buildTargetCols), same as the wizard does.
+  return ex.sets_json.every(s => !s.timed && !s.unilateral)
 }
 
 function _prevSetsByIndex(ex) {
@@ -298,6 +300,12 @@ function renderStrengthTable(ex) {
     // row the target bar above applies to — no separate caption text (Jake: "highlighted or
     // stand out, not entered as text underneath — ugly UI").
     const isCurrent = i === curIdx
+    // %1RM-derived suggested weight for this specific row's prescription — placeholder only,
+    // same calculation the target bar above already shows (_buildTargetCols), never auto-filled.
+    const rowTgt = ex.sets_json?.[i]
+    const wPlaceholder = (rowTgt?.intensityMin && ex.oneRM)
+      ? _calcWeightFromPct(ex.oneRM, rowTgt.intensityMin) + (rowTgt.intensityMax && rowTgt.intensityMax !== rowTgt.intensityMin ? '–' + _calcWeightFromPct(ex.oneRM, rowTgt.intensityMax) : '')
+      : '—'
     return `
     <div style="padding:7px 6px;margin:0 -6px;border-radius:8px;border-bottom:1px solid var(--border);${isCurrent ? 'background:rgba(99,102,241,.08)' : ''}">
       <div style="display:flex;align-items:center;gap:6px">
@@ -305,7 +313,7 @@ function renderStrengthTable(ex) {
         <span style="width:54px;flex-shrink:0;font-size:11px;color:var(--text-muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${prevLabel}</span>
         ${ex.bodyweight
           ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>`
-          : `<input type="number" inputmode="decimal" step="0.5" value="${row.weight}" placeholder="—"
+          : `<input type="number" inputmode="decimal" step="0.5" value="${row.weight}" placeholder="${wPlaceholder}"
               oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].weight=this.value"
               style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
         }
@@ -314,7 +322,7 @@ function renderStrengthTable(ex) {
           style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
         <button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}"
           style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:${row.done?'none':'2px solid #9ca3af'};font-size:18px;font-weight:800;cursor:pointer;background:${row.done?'var(--success)':'#fff'};color:${row.done?'#fff':'transparent'}">✓</button>
-        ${ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="height:44px;flex-shrink:0;padding:0 8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:11px;font-weight:700">Delete</button>` : ''}
+        ${ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="height:44px;flex-shrink:0;padding:0 8px;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:11px;font-weight:700">Delete</button>` : ''}
       </div>
     </div>`
   }).join('')
@@ -1174,12 +1182,15 @@ async function _confirmRunnerExerciseFromModal(mode) {
   const oneRM = await _lookupClientOneRM(name)
   closeModal('add-to-template-modal')
 
+  const restSecs = parseRest(cleanSets[0]?.restMin || '') || 90
+
   if (mode === 'swap') {
     const ex = _runner.exercises[_runner.exIdx]
     ex.name = name
     ex.type = type
     ex.sets_json = cleanSets
     ex.targetSets = cleanSets.length || ex.targetSets
+    ex.restSecs = restSecs
     ex.bodyweight = !!cleanSets[0]?.bodyweight
     ex.assisted = !!cleanSets[0]?.assisted
     ex.notes = notes
@@ -1192,7 +1203,7 @@ async function _confirmRunnerExerciseFromModal(mode) {
   } else {
     _runner.exercises.push({
       name, type, targetSets: cleanSets.length || 3, targetReps: '', targetWeight: '',
-      restSecs: 90, loggedSets: [], bodyweight: !!cleanSets[0]?.bodyweight, assisted: !!cleanSets[0]?.assisted,
+      restSecs, loggedSets: [], bodyweight: !!cleanSets[0]?.bodyweight, assisted: !!cleanSets[0]?.assisted,
       supersetGroup, sets_json: cleanSets, notes, oneRM
     })
     _runner.exIdx = _runner.exercises.length - 1
@@ -1386,7 +1397,9 @@ async function saveRunnerSession() {
   const saveBtn = document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…' }
 
-  const { data: clientRecord } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single())
+  // showUserError: false — a failure here already has a safe fallback (currentUser.id) and the
+  // save continues normally, so surfacing a "Save failed" toast here would be a false positive.
+  const { data: clientRecord } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
   const coachId = clientRecord?.coach_id || currentUser.id
 
   const { data: sessionLog, error } = await db.from('workout_logs').insert({
@@ -1399,13 +1412,27 @@ async function saveRunnerSession() {
   }
 
   let setsHadError = false
+  const insertedExerciseIds = []
   for (let bi = 0; bi < exercises.length; bi++) {
     const ex = exercises[bi]
     const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
       log_id: sessionLog.id, exercise_name: ex.name, exercise_type: ex.type, order_index: bi,
       client_notes: ex.clientNotes || null
     }).select().single()
-    if (exErr) { log.error('saveRunnerSession', `exercise ${bi+1} insert failed`, exErr); return }
+    if (exErr) {
+      log.error('saveRunnerSession', `exercise ${bi+1} insert failed`, exErr)
+      // Roll back this attempt entirely (sets -> exercises -> log) so a retry starts clean instead
+      // of creating a second workout_logs row and re-inserting the exercises that already succeeded.
+      if (insertedExerciseIds.length) {
+        await db.from('workout_log_sets').delete().in('workout_log_exercise_id', insertedExerciseIds)
+        await db.from('workout_log_exercises').delete().in('id', insertedExerciseIds)
+      }
+      await db.from('workout_logs').delete().eq('id', sessionLog.id)
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
+      showToast(`Save failed — ${exErr.message}. Please try again.`, 'error')
+      return
+    }
+    insertedExerciseIds.push(logEx.id)
 
     const sets = ex.loggedSets.map((s, si) => {
       const row = { workout_log_exercise_id: logEx.id, set_number: si+1 }
@@ -1466,7 +1493,7 @@ function showPostSessionOneRMModal(clientId, candidates) {
   overlay.id = 'modal-post-session-1rm'
   overlay.className = 'modal-overlay'
   overlay.innerHTML = `
-    <div class="modal-box">
+    <div class="modal">
       <div class="modal-header">
         <h2 class="modal-title">New 1RM estimates from today</h2>
         <button class="modal-close" onclick="document.getElementById('modal-post-session-1rm').remove();_afterRunnerSave('${clientId}')">✕</button>
@@ -1543,8 +1570,10 @@ function showRunnerOneRMSheet(exIdx) {
   const overlay = document.createElement('div')
   overlay.id = 'modal-runner-1rm'
   overlay.className = 'modal-overlay'
+  // Opens while the runner (z-index:300) is still up — needs to sit above it, same fix as showExercisePicker.
+  overlay.style.zIndex = '1000'
   overlay.innerHTML = `
-    <div class="modal-box">
+    <div class="modal">
       <div class="modal-header">
         <h2 class="modal-title">${ex.name} — set your 1RM</h2>
         <button class="modal-close" onclick="document.getElementById('modal-runner-1rm').remove()">✕</button>
@@ -1647,7 +1676,7 @@ function renderLogExercises() {
       ${hdr('#')}
       ${hdr('Reps')}
       ${hdr('Weight (kg)')}
-      ${hdr('RPE')}
+      ${hdr(isRIR ? 'RIR' : 'RPE')}
       <span></span>
     ` : `
       ${hdr('')}
@@ -1688,7 +1717,7 @@ function renderLogExercises() {
           ` : isMobile ? `
             <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${s.repsMin || ''}">
             <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="kg" value="${s.weight || ''}">
-            <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="RPE" value="${s.effort || ''}">
+            <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${s.effort || ''}">
           ` : `
             <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${s.repsMin || ''}">
             <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${s.repsMax || ''}">
@@ -1740,7 +1769,9 @@ function renderLogExercises() {
 }
 
 async function showLogSessionModal(clientId) {
-  const { data: clientRecord } = await dbq('showLogSessionModal:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single())
+  // showUserError: false — same false-positive-toast fix as saveRunnerSession: a failure here
+  // already has a safe fallback (currentUser.id) and the modal still opens normally.
+  const { data: clientRecord } = await dbq('showLogSessionModal:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
   const coachId = clientRecord?.coach_id || currentUser.id
   const { data: templates } = await db
     .from('workout_templates')
@@ -1838,8 +1869,10 @@ async function saveWorkoutSession(clientId) {
   const blocks = window._logBlocks.filter(b => b.name.trim())
   if (blocks.length === 0) { errorEl.textContent = 'Add at least one exercise'; return }
 
-  // Derive coach_id from the client record — works for both coach and client self-logging
-  const { data: clientRecord } = await dbq('saveWorkoutSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single())
+  // Derive coach_id from the client record — works for both coach and client self-logging.
+  // showUserError: false — same false-positive-toast fix as saveRunnerSession: a failure here
+  // already has a safe fallback (currentUser.id) and the save continues normally.
+  const { data: clientRecord } = await dbq('saveWorkoutSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
   const coachId = clientRecord?.coach_id || currentUser.id
 
   log.info('saveWorkoutSession', 'saving session', { clientId, name, exerciseCount: blocks.length })

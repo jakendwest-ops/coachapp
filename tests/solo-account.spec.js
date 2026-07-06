@@ -111,4 +111,14 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('h1')).toContainText('Welcome back', { timeout: 8000 })
     await expect(page.locator('[data-page="clients"]').first()).toBeVisible()
   })
+
+  test('solo dashboard shows a "Current program" header with a View program button, when a program is assigned (2026-07-05)', async ({ page }) => {
+    test.skip(!soloAvailable, 'No solo client record for this PT account')
+    const hasProgram = await page.locator('text=Current program').isVisible({ timeout: 3000 }).catch(() => false)
+    test.skip(!hasProgram, 'No program assigned to this solo account')
+    await expect(page.locator('text=Current program')).toBeVisible()
+    await expect(page.locator('button:has-text("View program")')).toBeVisible()
+    await page.locator('button:has-text("View program")').click()
+    await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
+  })
 })

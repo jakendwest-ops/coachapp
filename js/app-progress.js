@@ -158,7 +158,7 @@ function showAdd1RMModal(clientId, prefillExercise = '') {
   overlay.id = 'modal-1rm'
   overlay.className = 'modal-overlay'
   overlay.innerHTML = `
-    <div class="modal-box">
+    <div class="modal">
       <div class="modal-header">
         <h2 class="modal-title">${prefillExercise ? 'Update 1RM' : 'Add 1RM'}</h2>
         <button class="modal-close" onclick="document.getElementById('modal-1rm').remove()">✕</button>
@@ -233,7 +233,7 @@ function showEdit1RMModal(id, clientId, exerciseName, weight, date) {
   overlay.id = 'modal-1rm'
   overlay.className = 'modal-overlay'
   overlay.innerHTML = `
-    <div class="modal-box">
+    <div class="modal">
       <div class="modal-header">
         <h2 class="modal-title">Edit 1RM</h2>
         <button class="modal-close" onclick="document.getElementById('modal-1rm').remove()">✕</button>
@@ -570,14 +570,16 @@ async function renderClientWeight(clientId, el) {
   log.info('renderClientWeight', 'fetching weight logs', { clientId })
   el.innerHTML = '<div style="padding:24px;color:var(--text-muted);text-align:center">Loading…</div>'
 
-  const { data: logs, error } = await db
-    .from('weight_logs')
-    .select('*')
-    .eq('client_id', clientId)
-    .order('date', { ascending: false })
+  const [{ data: logs, error }, { data: clientRow }] = await Promise.all([
+    db.from('weight_logs').select('*').eq('client_id', clientId).order('date', { ascending: false }),
+    db.from('clients').select('starting_weight_kg, goal_weight_kg').eq('id', clientId).single()
+  ])
 
   if (error) { log.error('renderClientWeight', 'fetch failed', error); el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading weight data</div></div>`; return }
   log.ok('renderClientWeight', `loaded ${logs.length} entries`)
+
+  const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
+  const goalWeightKg     = clientRow?.goal_weight_kg != null ? parseFloat(clientRow.goal_weight_kg) : null
 
   const fmt = kg => `${parseFloat(kg).toFixed(1)} kg`
   const latest = logs[0]
@@ -611,6 +613,24 @@ async function renderClientWeight(clientId, el) {
         </div>
         <p id="wl-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
         <button onclick="saveWeightLog('${clientId}')" class="btn-primary" style="width:100%">Save entry</button>
+      </div>
+
+      <!-- Weight goals — sets the chart's Y-axis range below -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:20px">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (kg)</label>
+            <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg ?? ''}">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (kg)</label>
+            <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg ?? ''}">
+          </div>
+        </div>
+        <p id="wg-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
+        <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>
       </div>
 
       <!-- Stats row -->
@@ -729,6 +749,12 @@ async function renderClientWeight(clientId, el) {
       const existing = Chart.getChart('weight-chart')
       if (existing) existing.destroy()
 
+      // Y-axis range from the goal/starting weight fields, if both are set — else Chart.js auto-scales as before.
+      // Math.min/max (not "goal is always below starting") so a weight-gain goal doesn't invert the axis.
+      const yRange = (goalWeightKg != null && startingWeightKg != null)
+        ? { min: Math.floor(Math.min(goalWeightKg, startingWeightKg) * 2) / 2, max: Math.ceil((Math.max(goalWeightKg, startingWeightKg) + 1) * 2) / 2 }
+        : {}
+
       new Chart(document.getElementById('weight-chart'), {
         type: 'line',
         data: { labels: filtered.map(l => fmtLabel(l.date)), datasets },
@@ -741,7 +767,7 @@ async function renderClientWeight(clientId, el) {
           },
           scales: {
             x: { ticks: { color: '#9ca3af', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
-            y: { position: 'left', ticks: { color: '#6366f1', font: { size: 11 }, callback: v => v + ' kg' }, grid: { color: 'rgba(0,0,0,0.05)' } },
+            y: { position: 'left', ...yRange, ticks: { color: '#6366f1', font: { size: 11 }, stepSize: 0.5, callback: v => v + ' kg' }, grid: { color: 'rgba(0,0,0,0.05)' } },
             ...(hasBf ? { y2: { position: 'right', ticks: { color: '#f59e0b', font: { size: 11 }, callback: v => v + '%' }, grid: { drawOnChartArea: false } } } : {})
           }
         }
@@ -825,6 +851,27 @@ async function saveWeightLog(clientId) {
   log.ok('saveWeightLog', 'weight entry saved', { clientId, date })
   showToast('Weight logged ✓', 'success', 2000)
   renderClientWeight(clientId, document.getElementById('tab-content'))
+}
+
+async function saveWeightGoals(clientId) {
+  const startingRaw = document.getElementById('wg-starting')?.value
+  const goalRaw      = document.getElementById('wg-goal')?.value
+  const errEl = document.getElementById('wg-error')
+
+  log.info('saveWeightGoals', 'updating weight goals', { clientId })
+  const { error } = await db.from('clients').update({
+    starting_weight_kg: startingRaw ? parseFloat(startingRaw) : null,
+    goal_weight_kg:      goalRaw ? parseFloat(goalRaw) : null
+  }).eq('id', clientId)
+
+  if (error) { log.error('saveWeightGoals', 'update failed', error); if (errEl) errEl.textContent = error.message; return }
+  log.ok('saveWeightGoals', 'weight goals saved', { clientId })
+  showToast('Weight goals saved ✓', 'success', 2000)
+  // Refresh whichever view is actually showing this form — the client/solo "My Progress" page
+  // (progress-tab-content) or the PT's client-profile Weight tab (tab-content).
+  const progressEl = document.getElementById('progress-tab-content')
+  if (progressEl) renderProgressWeight(progressEl)
+  else renderClientWeight(clientId, document.getElementById('tab-content'))
 }
 
 async function deleteWeightLog(id, clientId) {
@@ -971,16 +1018,38 @@ async function renderProgressWeight(el) {
   el.innerHTML = '<div class="loading-state">Loading weight data…</div>'
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
-  const { data: logs } = await db.from('weight_logs').select('date, weight_kg, body_fat_pct')
-    .eq('client_id', clientId).order('date', { ascending: true })
+  const [{ data: logs }, { data: clientRow }] = await Promise.all([
+    db.from('weight_logs').select('date, weight_kg, body_fat_pct').eq('client_id', clientId).order('date', { ascending: true }),
+    db.from('clients').select('starting_weight_kg, goal_weight_kg').eq('id', clientId).single()
+  ])
+  const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
+  const goalWeightKg     = clientRow?.goal_weight_kg != null ? parseFloat(clientRow.goal_weight_kg) : null
   const addWeightBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Body weight log</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log weight</button></div>`
-  if (!logs?.length) { el.innerHTML = addWeightBtn + '<div class="empty-state"><p>No weight logs yet. Tap + Log weight to add your first entry.</p></div>'; return }
+  const goalsCard = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
+      <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (kg)</label>
+          <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg ?? ''}">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (kg)</label>
+          <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg ?? ''}">
+        </div>
+      </div>
+      <p id="wg-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
+      <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>
+    </div>`
+  if (!logs?.length) { el.innerHTML = addWeightBtn + goalsCard + '<div class="empty-state"><p>No weight logs yet. Tap + Log weight to add your first entry.</p></div>'; return }
   const latest = logs[logs.length - 1]
   const first  = logs[0]
   const change = (latest.weight_kg - first.weight_kg).toFixed(1)
   const sign   = change > 0 ? '+' : ''
   el.innerHTML = `
     ${addWeightBtn}
+    ${goalsCard}
     <div style="display:flex;gap:12px;margin-bottom:16px">
       ${[['Current', latest.weight_kg + ' kg'], ['Starting', first.weight_kg + ' kg'], ['Change', sign + change + ' kg']].map(([l,v])=>`
         <div style="flex:1;padding:12px;border-radius:12px;background:var(--surface);text-align:center">
@@ -999,6 +1068,11 @@ async function renderProgressWeight(el) {
   `
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
   const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
+  // Y-axis range from the goal/starting weight fields, if both are set — else Chart.js auto-scales as before.
+  // Math.min/max (not "goal is always below starting") so a weight-gain goal doesn't invert the axis.
+  const yRange = (goalWeightKg != null && startingWeightKg != null)
+    ? { min: Math.floor(Math.min(goalWeightKg, startingWeightKg) * 2) / 2, max: Math.ceil((Math.max(goalWeightKg, startingWeightKg) + 1) * 2) / 2 }
+    : {}
   new Chart(document.getElementById('pw-chart').getContext('2d'), {
     type: 'line',
     data: { labels: logs.map(l => new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
@@ -1007,7 +1081,7 @@ async function renderProgressWeight(el) {
     options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
       plugins: { legend: { display: false } },
       scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 9 }, maxRotation: 0 } },
-                y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 9 }, callback: v => v + 'kg' } } } }
+                y: { ...yRange, grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 9 }, stepSize: 0.5, callback: v => v + 'kg' } } } }
   })
 }
 
@@ -1437,7 +1511,7 @@ function deleteAccount() {
   overlay.className = 'modal-overlay'
   overlay.style.cssText = 'align-items:flex-start;padding-top:60px'
   overlay.innerHTML = `
-    <div class="modal-box" style="max-width:400px">
+    <div class="modal" style="max-width:400px">
       <h2 style="font-size:18px;font-weight:700;margin:0 0 8px;color:var(--danger)">Delete account</h2>
       <p style="font-size:14px;color:var(--text-muted);margin:0 0 16px;line-height:1.5">This will permanently delete your account and all your data. This cannot be undone.</p>
       <p style="font-size:14px;color:var(--text);margin:0 0 8px;font-weight:600">Type <strong>DELETE</strong> to confirm:</p>

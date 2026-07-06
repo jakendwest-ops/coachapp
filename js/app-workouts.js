@@ -52,12 +52,26 @@ async function openSessionDetail(templateId, name, ctx = {}) {
     : exercises.map((ex, i) => {
         const sets = ex.sets_json || []
         const isLast = i === exercises.length - 1
+        const isCardio = ex.exercise_type === 'cardio'
         const setsHtml = sets.map((s, si) => {
           let label = `Set ${si + 1}`
           if (s.amrap) label = 'AMRAP'
 
           let detail = ''
-          if (s.timed) {
+          if (isCardio) {
+            // Same field set/formatting as the template card preview (openTemplate) — reused for consistency.
+            const paceStr   = (s.pace500Min || s.pace500Max) ? `${s.pace500Min||'?'}–${s.pace500Max||'?'}/500m` : null
+            const paceKmStr = (s.paceKmMin  || s.paceKmMax)  ? `${s.paceKmMin||'?'}–${s.paceKmMax||'?'}/km`   : null
+            const strokeStr = (s.strokeRateMin || s.strokeRateMax) ? `${s.strokeRateMin||'?'}–${s.strokeRateMax||'?'} spm` : null
+            const hrStr     = (s.hrZoneMin || s.hrZoneMax) ? `HR ${s.hrZoneMin||'?'}–${s.hrZoneMax||'?'}` : null
+            const restHrStr = s.restHrMax ? `rest HR <${s.restHrMax}` : null
+            const durStr    = s.duration ? Math.floor((parseRest(s.duration)||0) / 60) + ':' + String((parseRest(s.duration)||0) % 60).padStart(2, '0') : null
+            const distStr   = s.distance ? s.distance + ' km' : null
+            const parts = s.isDistanceBased
+              ? [distStr, paceStr || paceKmStr, strokeStr, hrStr, restHrStr]
+              : [durStr, paceStr || paceKmStr, strokeStr, hrStr, restHrStr]
+            detail = parts.filter(Boolean).join(' · ') || '—'
+          } else if (s.timed) {
             const secs = s.duration ? (parseRest(s.duration) || 0) : (s.repsMin ? parseInt(s.repsMin) : null)
             detail = secs != null ? Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') : '—'
           } else {

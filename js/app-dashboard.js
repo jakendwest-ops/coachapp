@@ -358,6 +358,16 @@ async function renderClientDashboard(el) {
       </div>
     </div>
 
+    <!-- Current program header -->
+    ${assignedPrograms?.[0] ? `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px">
+      <div style="min-width:0">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Current program</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(cHeroTitle)}</div>
+      </div>
+      <button onclick="navigate('workouts')" class="btn-secondary" style="font-size:12px;padding:6px 14px;flex-shrink:0">View program</button>
+    </div>` : ''}
+
     <!-- Hero card -->
     <div style="background:var(--accent);border-radius:12px;padding:18px 20px;margin-bottom:16px;color:#fff">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
@@ -660,6 +670,15 @@ async function renderSoloDashboard(el) {
         <p style="font-size:13px;color:var(--text-muted);margin-top:2px">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
       </div>
     </div>
+
+    ${assignedPrograms?.[0] ? `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px">
+      <div style="min-width:0">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Current program</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(heroTitle)}</div>
+      </div>
+      <button onclick="navigate('workouts')" class="btn-secondary" style="font-size:12px;padding:6px 14px;flex-shrink:0">View program</button>
+    </div>` : ''}
 
     <div style="background:var(--accent);border-radius:12px;padding:18px 20px;margin-bottom:16px;color:#fff">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>

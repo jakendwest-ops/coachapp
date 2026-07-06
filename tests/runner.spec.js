@@ -77,6 +77,42 @@ test.describe('Timed set render regression', () => {
     expect(result).toBe('5 reps')
     expect(result).not.toContain('1:')
   })
+
+  test('%1RM exercises now route to the strength table, not the wizard (Runner Phase 2 — %1RM only, 2026-07-05)', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pctExercise = { type: 'strength', sets_json: [{ intensityMin: 20, intensityMax: 20 }] }
+      const timedExercise = { type: 'strength', sets_json: [{ timed: true }] }
+      const uniExercise = { type: 'strength', sets_json: [{ unilateral: true }] }
+      const plainExercise = { type: 'strength', sets_json: [{ repsMin: '5' }] }
+      return {
+        pctIsTable: _isPlainStrengthExercise(pctExercise),
+        timedIsTable: _isPlainStrengthExercise(timedExercise),
+        uniIsTable: _isPlainStrengthExercise(uniExercise),
+        plainIsTable: _isPlainStrengthExercise(plainExercise),
+      }
+    })
+    expect(result.pctIsTable).toBe(true)   // the fix — %1RM now gets the table
+    expect(result.timedIsTable).toBe(false) // unchanged — still wizard
+    expect(result.uniIsTable).toBe(false)   // unchanged — still wizard
+    expect(result.plainIsTable).toBe(true)  // unchanged — plain strength always table
+  })
+
+  test('mobile log-session RPE field no longer repeats the header label (regression, 2026-07-05)', async ({ page }) => {
+    // Mobile-first default viewport (390px) — isMobile branch of renderLogExercises.
+    const result = await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'ls-exercises'
+      document.body.appendChild(container)
+      window._logBlocks = [{ name: 'Bench Press', type: 'strength', effortMode: 'RPE', oneRM: 0, sets: [{}] }]
+      renderLogExercises()
+      const headerText = container.textContent
+      const effortInput = container.querySelector('input[id^="ls-effort-"]')
+      return { headerHasRPE: headerText.includes('RPE'), placeholder: effortInput?.placeholder }
+    })
+    expect(result.headerHasRPE).toBe(true) // header still shows the label
+    expect(result.placeholder).not.toBe('RPE') // field itself no longer repeats it
+    expect(result.placeholder).toBe('1–10') // now shows the useful numeric range instead
+  })
 })
 
 // ─── Client runner ────────────────────────────────────────────────────────────
@@ -387,5 +423,58 @@ test.describe('Workout runner (client)', () => {
     await deleteBtn.click()
     const after = await page.evaluate(() => _runner.exercises[_runner.exIdx].tableRows.length)
     expect(after).toBe(before - 1)
+  })
+
+  test('delete-set button has deliberate spacing from the complete-set button (regression, 2026-07-05)', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    await page.evaluate(() => {
+      const ex = _runner.exercises[_runner.exIdx]
+      ex.sets_json = [{ repsMin: '8' }, { repsMin: '8' }]
+      ex.type = 'strength'
+      delete ex.tableRows
+      renderRunner()
+    })
+    const deleteBtn = page.locator('button[aria-label^="Delete set"]').first()
+    if (!(await deleteBtn.isVisible().catch(() => false))) return // not table mode for this template — skip
+    const marginLeft = await deleteBtn.evaluate(el => parseInt(getComputedStyle(el).marginLeft))
+    expect(marginLeft).toBeGreaterThanOrEqual(8)
+  })
+
+  test('swap exercise with a specified rest time overwrites the original rest, not hardcoded 90s (regression, 2026-07-05)', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    await page.locator('button:has-text("Swap exercise")').click()
+    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    await page.fill('#att-name', 'Playwright Rest Swap Target')
+    const restInput = page.locator('#ts-restmin-0')
+    const hasRestField = (await restInput.count()) > 0
+    if (hasRestField) await restInput.fill('3:00')
+    await page.locator('#att-confirm-btn').click()
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+
+    const restSecs = await page.evaluate(() => _runner.exercises[_runner.exIdx].restSecs)
+    if (hasRestField) expect(restSecs).toBe(180)
+    else expect(restSecs).toBe(90) // no rest field on this set type — default fallback is fine
+  })
+
+  test('add exercise with a specified rest time is honored, not hardcoded 90s (regression, 2026-07-05)', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    await page.locator('button:has-text("+ Add exercise")').click()
+    await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
+    await page.fill('#att-name', 'Playwright Rest Add Target')
+    const restInput = page.locator('#ts-restmin-0')
+    const hasRestField = (await restInput.count()) > 0
+    if (hasRestField) await restInput.fill('2:30')
+    await page.locator('#att-confirm-btn').click()
+    await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 3000 })
+
+    const restSecs = await page.evaluate(() => _runner.exercises[_runner.exIdx].restSecs)
+    if (hasRestField) expect(restSecs).toBe(150)
+    else expect(restSecs).toBe(90)
   })
 })

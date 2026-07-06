@@ -11,6 +11,15 @@ test.describe('Client workout flow', () => {
     await expect(page.locator('text=UP NEXT')).toBeVisible()
   })
 
+  test('client dashboard shows a "Current program" header with a View program button, when a program is assigned (2026-07-05)', async ({ page }) => {
+    const hasProgram = await page.locator('text=Current program').isVisible({ timeout: 3000 }).catch(() => false)
+    test.skip(!hasProgram, 'No program assigned to this test client')
+    await expect(page.locator('text=Current program')).toBeVisible()
+    await expect(page.locator('button:has-text("View program")')).toBeVisible()
+    await page.locator('button:has-text("View program")').click()
+    await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
+  })
+
   test('client can navigate to Workouts page', async ({ page }) => {
     await page.click('[data-page="workouts"]')
     // Page renders the Workouts h1 and either a program accordion or templates list
