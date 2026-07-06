@@ -30,6 +30,12 @@ async function loginAsPT(page) {
 
 async function loginAsClient(page) {
   await loginAs(page, CLIENT_EMAIL, CLIENT_PASSWORD)
+  // #app-shell is visible before renderClientDashboard finishes (it shows a "Loading…"
+  // placeholder first, then swaps in the real dashboard once several parallel Supabase
+  // fetches resolve) — same race loginAsPT already guards against below. Without this,
+  // a test's first click (e.g. on [data-page="workouts"]) can land before the client
+  // dashboard/nav has finished rendering and get silently overwritten.
+  await page.waitForSelector('h1:has-text("Hi,")', { timeout: 15000 })
 }
 
 module.exports = { loginAsPT, loginAsClient }
