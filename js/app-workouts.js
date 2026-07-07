@@ -1181,7 +1181,7 @@ async function _openExercisePicker(coachId, onPick) {
   overlay.id = 'exercise-picker-modal'
   overlay.style.zIndex = '1001' // above the runner (300) and the sets/reps detail modal (1000)
   overlay.innerHTML = `
-    <div class="modal" style="max-width:480px;max-height:85vh;display:flex;flex-direction:column">
+    <div class="modal" style="max-width:480px;height:70vh;max-height:85vh;display:flex;flex-direction:column">
       <div class="modal-header">
         <h2 class="modal-title">Exercises</h2>
         <button class="modal-close" onclick="_closeExercisePicker()">✕</button>
