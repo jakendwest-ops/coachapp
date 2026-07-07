@@ -1431,31 +1431,32 @@ async function saveRunnerSession() {
     return
   }
 
-  let setsHadError = false
-  const insertedExerciseIds = []
-  for (let bi = 0; bi < exercises.length; bi++) {
-    const ex = exercises[bi]
-    const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
-      log_id: sessionLog.id, exercise_id: ex.exerciseId || null, exercise_name: ex.name, exercise_type: ex.type, order_index: bi,
-      client_notes: ex.clientNotes || null
-    }).select().single()
-    if (exErr) {
-      log.error('saveRunnerSession', `exercise ${bi+1} insert failed`, exErr)
-      // Roll back this attempt entirely (sets -> exercises -> log) so a retry starts clean instead
-      // of creating a second workout_logs row and re-inserting the exercises that already succeeded.
-      if (insertedExerciseIds.length) {
-        await db.from('workout_log_sets').delete().in('workout_log_exercise_id', insertedExerciseIds)
-        await db.from('workout_log_exercises').delete().in('id', insertedExerciseIds)
-      }
-      await db.from('workout_logs').delete().eq('id', sessionLog.id)
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
-      showToast(`Save failed — ${exErr.message}. Please try again.`, 'error')
-      return
-    }
-    insertedExerciseIds.push(logEx.id)
+  // Batched: one insert for all exercise rows, then one insert for all set rows across every
+  // exercise — replaces the old one-exercise-at-a-time loop (N sequential round trips) that was
+  // the main cause of "save feels slow" on multi-exercise sessions.
+  const exerciseRows = exercises.map((ex, bi) => ({
+    log_id: sessionLog.id, exercise_id: ex.exerciseId || null, exercise_name: ex.name, exercise_type: ex.type, order_index: bi,
+    client_notes: ex.clientNotes || null
+  }))
+  const { data: insertedExercises, error: exErr } = await db.from('workout_log_exercises').insert(exerciseRows).select()
+  if (exErr) {
+    log.error('saveRunnerSession', 'exercises batch insert failed', exErr)
+    await db.from('workout_logs').delete().eq('id', sessionLog.id)
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
+    showToast(`Save failed — ${exErr.message}. Please try again.`, 'error')
+    return
+  }
+  // Correlate by order_index, not response array position — a multi-row insert's response order
+  // isn't a documented PostgREST guarantee, and getting this wrong would silently attach sets to
+  // the wrong exercise.
+  const exerciseIdByOrderIndex = Object.fromEntries(insertedExercises.map(r => [r.order_index, r.id]))
+  const insertedExerciseIds = insertedExercises.map(r => r.id)
 
-    const sets = ex.loggedSets.map((s, si) => {
-      const row = { workout_log_exercise_id: logEx.id, set_number: si+1 }
+  const allSets = []
+  exercises.forEach((ex, bi) => {
+    const logExId = exerciseIdByOrderIndex[bi]
+    ex.loggedSets.forEach((s, si) => {
+      const row = { workout_log_exercise_id: logExId, set_number: si+1 }
       if (ex.type === 'cardio') {
         if (s.duration) row.duration_seconds = parseDuration(s.duration)
         if (s.distance) row.distance_m = Math.round(parseFloat(s.distance)*1000)
@@ -1464,21 +1465,27 @@ async function saveRunnerSession() {
         if (s.weight && s.weight !== 'BW') row.weight_kg = parseFloat(s.weight)
         if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
       }
-      return row
-    }).filter(s => Object.keys(s).length > 2)
+      if (Object.keys(row).length > 2) allSets.push(row)
+    })
+  })
 
-    if (sets.length) {
-      const { error: setsErr } = await db.from('workout_log_sets').insert(sets)
-      if (setsErr) { log.error('saveRunnerSession', `sets insert failed for exercise ${bi+1}`, setsErr); setsHadError = true }
+  if (allSets.length) {
+    const { error: setsErr } = await db.from('workout_log_sets').insert(allSets)
+    if (setsErr) {
+      log.error('saveRunnerSession', 'sets batch insert failed', setsErr)
+      // Sets are one batched insert now, so a failure here means none of the session's sets
+      // saved (not just one exercise's, as in the old per-exercise loop) -- roll back the
+      // exercises + log too rather than leave a log with zero real data behind a misleading
+      // "partially saved" toast.
+      await db.from('workout_log_exercises').delete().in('id', insertedExerciseIds)
+      await db.from('workout_logs').delete().eq('id', sessionLog.id)
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
+      showToast(`Save failed — ${setsErr.message}. Please try again.`, 'error')
+      return
     }
   }
-  if (setsHadError) {
-    showToast('Session saved — but some set data failed to save. Check the session log.', 'warn', 6000)
-    log.warn('saveRunnerSession', 'session saved with set errors', { name })
-  } else {
-    log.ok('saveRunnerSession', 'session saved', { name, exercises: exercises.length })
-    showToast('Workout saved!', 'success', 2500)
-  }
+  log.ok('saveRunnerSession', 'session saved', { name, exercises: exercises.length })
+  showToast('Workout saved!', 'success', 2500)
 
   const candidates = exercises
     .filter(ex => ex.type !== 'cardio')
@@ -1908,30 +1915,41 @@ async function saveWorkoutSession(clientId) {
   if (error) { log.error('saveWorkoutSession', 'workout_logs insert failed', error); errorEl.textContent = error.message; return }
   log.ok('saveWorkoutSession', 'workout log created', { logId: sessionLog.id })
 
-  for (let bi = 0; bi < blocks.length; bi++) {
-    const block = blocks[bi]
-    log.info('saveWorkoutSession', `saving exercise ${bi + 1}/${blocks.length}`, { sets: block.sets.length })
-    const exerciseId = await _resolveExerciseIdForSave(block.name, coachId)
-    const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
-      log_id:        sessionLog.id,
-      exercise_id:   exerciseId,
-      exercise_name: block.name.trim(),
-      exercise_type: block.type,
-      order_index:   bi
-    }).select().single()
+  // Resolve exercise names to library ids in parallel, not one lookup-per-block -- dedupe by
+  // trimmed/lowercased name first so two blocks sharing a name (e.g. two "Bench Press" blocks)
+  // don't race the same resolve-or-create check and risk creating a duplicate library entry.
+  const uniqueNames = [...new Set(blocks.map(b => b.name.trim().toLowerCase()))]
+  const resolvedIds = await Promise.all(uniqueNames.map(n => _resolveExerciseIdForSave(n, coachId)))
+  const idByName = Object.fromEntries(uniqueNames.map((n, i) => [n, resolvedIds[i]]))
 
-    if (exErr) { log.error('saveWorkoutSession', `exercise ${bi + 1} insert failed`, exErr); errorEl.textContent = exErr.message; return }
+  const exerciseRows = blocks.map((block, bi) => ({
+    log_id:        sessionLog.id,
+    exercise_id:   idByName[block.name.trim().toLowerCase()],
+    exercise_name: block.name.trim(),
+    exercise_type: block.type,
+    order_index:   bi
+  }))
+  const { data: insertedExercises, error: exErr } = await db.from('workout_log_exercises').insert(exerciseRows).select()
+  if (exErr) {
+    log.error('saveWorkoutSession', 'exercises batch insert failed', exErr)
+    await db.from('workout_logs').delete().eq('id', sessionLog.id)
+    errorEl.textContent = exErr.message
+    return
+  }
+  // Correlate by order_index, not response array position -- see saveRunnerSession for why.
+  const exerciseIdByOrderIndex = Object.fromEntries(insertedExercises.map(r => [r.order_index, r.id]))
+  const insertedExerciseIds = insertedExercises.map(r => r.id)
 
-    const setsToInsert = block.sets.map((s, si) => {
-      const row = {
-        workout_log_exercise_id: logEx.id,
-        set_number: si + 1
-      }
+  const allSets = []
+  blocks.forEach((block, bi) => {
+    const logExId = exerciseIdByOrderIndex[bi]
+    block.sets.forEach((s, si) => {
+      const row = { workout_log_exercise_id: logExId, set_number: si + 1 }
       if (block.type === 'cardio') {
         if (s.duration) row.duration_seconds = parseDuration(s.duration)
         if (s.distance) row.distance_m = Math.round(parseFloat(s.distance) * 1000)
       } else {
-        const rMin = parseInt(s.repsMin), rMax = parseInt(s.repsMax)
+        const rMin = parseInt(s.repsMin)
         if (!isNaN(rMin)) row.reps_achieved = rMin
         if (s.weight) row.weight_kg = parseFloat(s.weight)
         if (s.effort) {
@@ -1940,14 +1958,22 @@ async function saveWorkoutSession(clientId) {
         }
         if (s.rest) row.notes = (row.notes || '') + `rest:${s.rest}`
       }
-      return row
-    }).filter(s => Object.keys(s).length > 2)
+      if (Object.keys(row).length > 2) allSets.push(row)
+    })
+  })
 
-    if (setsToInsert.length) {
-      const { error: setsErr } = await db.from('workout_log_sets').insert(setsToInsert)
-      if (setsErr) { log.error('saveWorkoutSession', `sets insert failed for exercise ${bi + 1}`, setsErr); errorEl.textContent = setsErr.message; return }
-      log.ok('saveWorkoutSession', `sets saved for exercise ${bi + 1}`, { count: setsToInsert.length })
+  if (allSets.length) {
+    const { error: setsErr } = await db.from('workout_log_sets').insert(allSets)
+    if (setsErr) {
+      log.error('saveWorkoutSession', 'sets batch insert failed', setsErr)
+      // Batched sets means an all-or-nothing failure now -- roll back the exercises + log too,
+      // matching saveRunnerSession, instead of leaving a log with zero real set data behind.
+      await db.from('workout_log_exercises').delete().in('id', insertedExerciseIds)
+      await db.from('workout_logs').delete().eq('id', sessionLog.id)
+      errorEl.textContent = setsErr.message
+      return
     }
+    log.ok('saveWorkoutSession', 'sets saved', { count: allSets.length })
   }
 
   log.ok('saveWorkoutSession', 'session fully saved', { clientId, name })

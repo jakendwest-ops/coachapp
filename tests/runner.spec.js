@@ -541,3 +541,81 @@ test.describe('Workout runner (client)', () => {
     await page.locator('#add-to-template-modal .modal-close').click()
   })
 })
+
+// ─── saveWorkoutSession rollback (2026-07-07 perf refactor) ─────────────────
+// The N+1 per-exercise save loop was replaced with two batched inserts (all exercises, then all
+// sets). saveWorkoutSession previously had no rollback at all on failure; the refactor added one,
+// matching saveRunnerSession's existing log->exercises->sets rollback chain. This test proves the
+// new rollback actually cleans up, not just that the happy path still saves.
+
+test.describe('saveWorkoutSession rollback', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+  })
+
+  test('rolls back workout_logs and workout_log_exercises when the sets batch insert fails', async ({ page }) => {
+    const setup = await page.evaluate(async () => {
+      const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      return { clientId: clients?.[0]?.id || null }
+    })
+    test.skip(!setup.clientId, 'E2E PT account has no clients to log a session for')
+
+    const sessionName = `[E2E] Rollback Test ${Date.now()}`
+    const exerciseName = `[E2E] Rollback Exercise ${Date.now()}`
+
+    const result = await page.evaluate(async ({ clientId, sessionName, exerciseName }) => {
+      await showLogSessionModal(clientId)
+      document.getElementById('ls-name').value = sessionName
+      window._logBlocks = [{ name: exerciseName, type: 'strength', sets: [{ repsMin: '5', weight: '50' }] }]
+      // saveWorkoutSession calls flushLogState() first, which reads set values back out of the
+      // rendered #ls-exercises inputs by id -- without an actual render, those inputs don't
+      // exist, and flushLogState silently overwrites the sets above with empty strings.
+      renderLogExercises()
+
+      // Force the workout_log_sets batch insert to fail — everything else (exercise
+      // resolve/create, workout_logs insert, workout_log_exercises batch insert) runs for real,
+      // so this exercises the actual rollback path, not a fully mocked one.
+      const originalFrom = db.from.bind(db)
+      db.from = (table) => {
+        if (table === 'workout_log_sets') {
+          return { insert: async () => ({ error: { message: 'Simulated failure for rollback test' } }) }
+        }
+        return originalFrom(table)
+      }
+
+      try {
+        await saveWorkoutSession(clientId)
+      } finally {
+        // Restore even if saveWorkoutSession throws unexpectedly, so a broken run doesn't leave
+        // the monkey-patched db.from active for the rest of this page.
+        db.from = originalFrom
+      }
+
+      const { data: logs } = await db.from('workout_logs').select('id').eq('name', sessionName)
+      const { data: exercises } = await db.from('workout_log_exercises').select('id').eq('exercise_name', exerciseName)
+      const errorText = document.getElementById('ls-error')?.textContent || ''
+
+      // Unconditional cleanup — captured logCount/exerciseCount above already reflect whatever the
+      // rollback under test actually did, so cleaning up here regardless doesn't weaken the
+      // assertions. This matters specifically because if a future regression breaks the rollback
+      // (the exact failure this test exists to catch), the test would otherwise both fail AND
+      // permanently leave a "[E2E] Rollback Test ..." row behind in the real account.
+      try {
+        for (const ex of exercises || []) {
+          await db.from('workout_log_sets').delete().eq('workout_log_exercise_id', ex.id)
+        }
+        if (exercises?.length) await db.from('workout_log_exercises').delete().in('id', exercises.map(e => e.id))
+        if (logs?.length) await db.from('workout_logs').delete().in('id', logs.map(l => l.id))
+        // The exercise-library auto-create isn't part of the rollback (it's a legitimate library
+        // entry, not orphaned session data) — remove the test artifact directly.
+        await db.from('exercises').delete().eq('coach_id', currentUser.id).eq('name', exerciseName)
+      } catch (_) { /* best-effort cleanup — never let it mask the real assertion results */ }
+
+      return { logCount: logs.length, exerciseCount: exercises.length, errorText }
+    }, { clientId: setup.clientId, sessionName, exerciseName })
+
+    expect(result.logCount).toBe(0)
+    expect(result.exerciseCount).toBe(0)
+    expect(result.errorText).toContain('Simulated failure')
+  })
+})

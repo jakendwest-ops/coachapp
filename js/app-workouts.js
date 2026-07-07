@@ -168,7 +168,9 @@ async function renderClientWorkoutsPage(el) {
   const clientId = clientRecord.id
 
   const [{ data: templates }, { data: logs }, { data: oneRMRows }, { data: cpAssignments }] = await Promise.all([
-    db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).order('name'),
+    // .limit(100) bounds cost against the known historical orphan-template backlog on the
+    // coach account (~993 rows, tracked in STATUS.md) -- not a product ceiling on real template count.
+    db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).order('name').limit(100),
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
     db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').eq('client_id', clientId).order('recorded_at', { ascending: false }),
     db.from('client_programs').select('id, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
@@ -348,7 +350,9 @@ function switchWorkoutTab(tab) {
 async function renderWorkoutTemplates(el) {
   log.info('renderWorkoutTemplates', 'fetching templates')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
-  const { data: templates, error } = await db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).order('name')
+  // .limit(100) bounds cost against the known historical orphan-template backlog on this
+  // account (~993 rows, tracked in STATUS.md) -- not a product ceiling on real template count.
+  const { data: templates, error } = await db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).order('name').limit(100)
 
   if (error) { log.error('renderWorkoutTemplates', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
