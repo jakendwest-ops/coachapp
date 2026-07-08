@@ -167,16 +167,13 @@ async function renderClientWorkoutsPage(el) {
   if (!clientRecord) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
   const clientId = clientRecord.id
 
-  const [{ data: templates }, { data: logs }, { data: oneRMRows }, { data: cpAssignments }] = await Promise.all([
+  const [{ data: templates }, { data: logs }, { data: cpAssignments }] = await Promise.all([
     // .limit(100) bounds cost against the known historical orphan-template backlog on the
     // coach account (~993 rows, tracked in STATUS.md) -- not a product ceiling on real template count.
     db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).order('name').limit(100),
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
-    db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').eq('client_id', clientId).order('recorded_at', { ascending: false }),
     db.from('client_programs').select('id, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
   ])
-  const oneRMMap = {}
-  ;(oneRMRows || []).forEach(r => { const k = r.exercise_name.trim().toLowerCase(); if (!oneRMMap[k]) oneRMMap[k] = parseFloat(r.one_rm_kg) })
 
   let cpwMap = {}
   const activeAssignment = cpAssignments?.[0]
@@ -290,25 +287,6 @@ async function renderClientWorkoutsPage(el) {
       `
     })()}
 
-    ${oneRMRows?.length ? `
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Your 1RMs</div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:28px">
-      ${(() => {
-        const byEx = {}
-        ;(oneRMRows || []).forEach(r => { if (!byEx[r.exercise_name]) byEx[r.exercise_name] = []; byEx[r.exercise_name].push(r) })
-        return Object.entries(byEx).map(([name, entries]) => {
-          const latest = entries[0]
-          const history = entries.slice(1).map(e => parseFloat(e.one_rm_kg).toFixed(1)+' kg').join(' → ')
-          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
-            <div>
-              <div style="font-size:13px;font-weight:600">${name}</div>
-              ${history ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${history} → current</div>` : ''}
-            </div>
-            <span style="font-size:20px;font-weight:800;color:var(--accent)">${parseFloat(latest.one_rm_kg).toFixed(1)} kg</span>
-          </div>`
-        }).join('')
-      })()}
-    </div>` : ''}
     ${!(logs?.length) ? `
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Session history</div>
       <div class="empty-state">

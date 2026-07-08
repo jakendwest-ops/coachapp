@@ -98,8 +98,11 @@ async function saveBig5OneRMs(clientId) {
   const { error } = await dbq('saveBig5OneRMs', db.from('client_1rms').insert(rows))
   _saveBig5Pending = false
   if (error) { errEl.textContent = 'Save failed — try again'; return }
-  const perfEl = document.getElementById('perf-1rms-content')
-  if (perfEl) renderClient1RMs(clientId, perfEl)
+  // Refresh whichever container is actually showing the 1RMs list — the client/solo Personal
+  // Bests page (pb-1rms-section, since the 2026-07-08 restructure moved 1RMs there from a
+  // dedicated Performance sub-tab) or the PT-facing client-profile 1RMs tab (tab-content).
+  const pbEl = document.getElementById('pb-1rms-section')
+  if (pbEl) renderClient1RMs(clientId, pbEl)
   else renderClient1RMs(clientId, document.getElementById('tab-content'))
 }
 
@@ -288,16 +291,22 @@ async function save1RM(clientId, existingId = null) {
   }
   if (error) { errEl.textContent = 'Save failed — try again'; return }
   document.getElementById('modal-1rm').remove()
-  const perfEl = document.getElementById('perf-1rms-content')
-  if (perfEl) renderClient1RMs(clientId, perfEl)
+  // Refresh whichever container is actually showing the 1RMs list — the client/solo Personal
+  // Bests page (pb-1rms-section, since the 2026-07-08 restructure moved 1RMs there from a
+  // dedicated Performance sub-tab) or the PT-facing client-profile 1RMs tab (tab-content).
+  const pbEl = document.getElementById('pb-1rms-section')
+  if (pbEl) renderClient1RMs(clientId, pbEl)
   else renderClient1RMs(clientId, document.getElementById('tab-content'))
 }
 
 async function delete1RM(id, clientId) {
   if (!confirm('Delete this 1RM?')) return
   await dbq('delete1RM', db.from('client_1rms').delete().eq('id', id))
-  const perfEl = document.getElementById('perf-1rms-content')
-  if (perfEl) renderClient1RMs(clientId, perfEl)
+  // Refresh whichever container is actually showing the 1RMs list — the client/solo Personal
+  // Bests page (pb-1rms-section, since the 2026-07-08 restructure moved 1RMs there from a
+  // dedicated Performance sub-tab) or the PT-facing client-profile 1RMs tab (tab-content).
+  const pbEl = document.getElementById('pb-1rms-section')
+  if (pbEl) renderClient1RMs(clientId, pbEl)
   else renderClient1RMs(clientId, document.getElementById('tab-content'))
 }
 
@@ -965,7 +974,9 @@ db.auth.onAuthStateChange((event, session) => {
 async function renderProgress(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const tabs = ['Body Weight', 'Cardio', 'Personal Bests', 'Performance']
+  // 2026-07-08 restructure: "Cardio" folded into Personal Bests (alongside 1RMs) instead of its
+  // own top-level tab — see renderProgressPBs.
+  const tabs = ['Body Weight', 'Personal Bests', 'Performance']
   const activeTab = window._progressTab || 'Body Weight'
 
   el.innerHTML = `
@@ -983,7 +994,6 @@ async function renderProgress(el) {
   `
 
   if (activeTab === 'Body Weight')    await renderProgressWeight(document.getElementById('progress-tab-content'))
-  if (activeTab === 'Cardio')         await renderProgressCardio(document.getElementById('progress-tab-content'))
   if (activeTab === 'Personal Bests') await renderProgressPBs(document.getElementById('progress-tab-content'))
   if (activeTab === 'Performance')    await renderPerformance(document.getElementById('progress-tab-content'))
 }
@@ -992,11 +1002,15 @@ async function renderPerformance(el) {
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
 
-  const subTab = window._perfTab || '1RMs'
+  // 2026-07-08 restructure: was ['1RMs', 'Progressions'] — 1RMs moved into Personal Bests
+  // (renderProgressPBs), and "Progressions" (endless flat list) split into a searchable
+  // per-exercise view and a new per-session comparison view.
+  const subTab = window._perfTab || 'Per session'
+  if (subTab === '1RMs' || subTab === 'Progressions') window._perfTab = subTab = 'Per session'
 
   el.innerHTML = `
     <div style="display:flex;gap:6px;margin-bottom:16px">
-      ${['1RMs', 'Progressions'].map(t => `
+      ${['Per session', 'Per exercise'].map(t => `
         <button onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))"
           style="padding:6px 16px;border:none;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;
                  background:${t===subTab?'var(--accent)':'var(--surface-2)'};
@@ -1008,17 +1022,137 @@ async function renderPerformance(el) {
   `
 
   const subEl = document.getElementById('perf-sub-content')
-  if (subTab === '1RMs') {
-    subEl.innerHTML = `
-      <div style="font-size:13px;color:var(--text-muted);background:var(--surface-2);border-radius:10px;padding:12px 14px;margin-bottom:16px;line-height:1.5">
-        Enter your 1 rep maxes here. Once added, the workout runner and programs automatically calculate target weights for any % 1RM sets.
-      </div>
-      <div id="perf-1rms-content"></div>
-    `
-    await renderClient1RMs(clientId, document.getElementById('perf-1rms-content'))
+  if (subTab === 'Per session') {
+    await renderProgressPerSession(clientId, subEl)
   } else {
     await renderProgressStrength(subEl)
   }
+}
+
+// "Per session" tab (Performance, 2026-07-08 — net new, replaces the old flat endless-list
+// "Progressions" view for this half). Lists completed sessions most-recent-first; expanding a
+// session compares each of its exercises against that exercise's own previous occurrence (not
+// just "the previous session", which may not have included it at all); expanding an exercise
+// further shows the same progression-over-time chart the "Per exercise" tab already builds.
+// Token-guarded (same pattern as _oneRMRefreshToken, app-programs.js): if the master account
+// switches Client/Personal view while this fetch is still in flight, the slower request's
+// now-stale result is discarded instead of overwriting the newer view's cache with the wrong
+// client's data.
+let _perfSessionToken = 0
+async function renderProgressPerSession(clientId, el) {
+  el.innerHTML = '<div class="loading-state">Loading sessions…</div>'
+  const myToken = ++_perfSessionToken
+  // Any chart expanded on the previous render is about to be detached — destroy it first so it
+  // doesn't leak (mirrors the same fix applied to _renderPerfExerciseList below).
+  _perfSessionCharts.forEach(c => c.destroy())
+  _perfSessionCharts = []
+  const { data: sessions } = await db.from('workout_logs')
+    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds))')
+    .eq('client_id', clientId).order('date', { ascending: false }).limit(20)
+  if (myToken !== _perfSessionToken) return
+  if (!sessions?.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>'; return }
+
+  const valueFor = (ex) => {
+    const sets = ex.workout_log_sets || []
+    if (ex.exercise_type === 'cardio') {
+      const dist = sets.reduce((s, st) => s + (parseFloat(st.distance_m) || 0), 0)
+      const secs = sets.reduce((s, st) => s + (parseInt(st.duration_seconds) || 0), 0)
+      return dist > 0 ? { display: (dist / 1000).toFixed(1) + ' km', raw: dist } : { display: fmtRestCountdown(secs), raw: secs }
+    }
+    const maxW = Math.max(0, ...sets.map(st => parseFloat(st.weight_kg) || 0))
+    return { display: maxW + ' kg', raw: maxW }
+  }
+
+  // Chronological (ascending) per-exercise history, so any session's exercise can look up its
+  // own immediately-prior occurrence regardless of what else was logged in between.
+  const history = {}
+  ;[...sessions].reverse().forEach(s => {
+    ;(s.workout_log_exercises || []).forEach(ex => {
+      if (!ex.exercise_name) return
+      if (!history[ex.exercise_name]) history[ex.exercise_name] = []
+      history[ex.exercise_name].push({ date: s.date, ...valueFor(ex) })
+    })
+  })
+
+  window._perfSessionData = { sessions, history }
+
+  el.innerHTML = sessions.map((s, i) => {
+    const exCount = (s.workout_log_exercises || []).length
+    return `
+    <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden">
+      <button onclick="_togglePerfSession(${i})" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
+        <div>
+          <span style="font-size:13px;font-weight:700">${escapeHtml(s.name || 'Session')}</span>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${exCount} exercise${exCount !== 1 ? 's' : ''}</span>
+        </div>
+        <span style="font-size:12px;color:var(--text-muted)">${new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+      </button>
+      <div id="perf-sess-${i}" style="display:none;padding:6px 14px 12px"></div>
+    </div>`
+  }).join('')
+}
+
+function _togglePerfSession(i) {
+  const panel = document.getElementById(`perf-sess-${i}`)
+  if (!panel) return
+  const open = panel.style.display === 'none'
+  panel.style.display = open ? 'block' : 'none'
+  if (open && !panel.dataset.rendered) {
+    panel.dataset.rendered = '1'
+    _renderPerfSessionDetail(i)
+  }
+}
+
+function _renderPerfSessionDetail(i) {
+  const { sessions, history } = window._perfSessionData || {}
+  const s = sessions?.[i]
+  const panel = document.getElementById(`perf-sess-${i}`)
+  if (!s || !panel) return
+  panel.innerHTML = (s.workout_log_exercises || []).filter(ex => ex.exercise_name).map((ex, ei) => {
+    const hist = history[ex.exercise_name] || []
+    const idx = hist.findIndex(h => h.date === s.date)
+    const current = idx >= 0 ? hist[idx] : null
+    const previous = idx > 0 ? hist[idx - 1] : null
+    const diff = previous && current ? current.raw - previous.raw : null
+    const diffLabel = diff == null || diff === 0 ? '' : (diff > 0 ? ` (+${diff.toFixed(ex.exercise_type === 'cardio' ? 0 : 1)})` : ` (${diff.toFixed(ex.exercise_type === 'cardio' ? 0 : 1)})`)
+    return `
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="_expandPerfSessionExercise(${i},${ei})">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:13px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
+          <span style="font-size:13px;font-weight:700">${current?.display || '—'}${diffLabel}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted)">${previous ? `Previous: ${previous.display}` : 'First time logged'}</div>
+        <div id="perf-sess-${i}-ex-${ei}-chart" style="display:none;position:relative;height:80px;margin-top:8px"></div>
+      </div>`
+  }).join('')
+}
+
+let _perfSessionCharts = []
+function _expandPerfSessionExercise(i, ei) {
+  const container = document.getElementById(`perf-sess-${i}-ex-${ei}-chart`)
+  if (!container) return
+  const isOpen = container.style.display !== 'none'
+  if (isOpen) { container.style.display = 'none'; return }
+  container.style.display = 'block'
+  if (container.dataset.rendered) return
+  container.dataset.rendered = '1'
+  const { sessions, history } = window._perfSessionData || {}
+  const ex = sessions?.[i]?.workout_log_exercises?.[ei]
+  const hist = ex ? (history[ex.exercise_name] || []) : []
+  if (hist.length < 2) { container.innerHTML = '<p style="font-size:11px;color:var(--text-muted);margin:0">Not enough history yet for a graph.</p>'; return }
+  container.innerHTML = '<canvas></canvas>'
+  const canvas = container.querySelector('canvas')
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+  const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
+  _perfSessionCharts.push(new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: hist.map(h => new Date(h.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+            datasets: [{ data: hist.map(h => h.raw), borderColor: accent, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+      plugins: { legend: { display: false } },
+      scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
+                y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 } } } } }
+  }))
 }
 
 async function renderProgressWeight(el) {
@@ -1100,14 +1234,24 @@ async function renderProgressWeight(el) {
   })
 }
 
+// "Per exercise" tab (Performance). Fetches once into window._perfExerciseCache so the search
+// box (2026-07-08) can re-filter/re-render on every keystroke without re-hitting the DB — same
+// reasoning as the exercise-picker's live-filter pattern (_renderExercisePickerResults,
+// app-workouts.js), just against a locally-cached list instead of the exercise library.
+// Token-guarded (same pattern as _oneRMRefreshToken, app-programs.js): if the master account
+// switches Client/Personal view while this fetch is still in flight, the slower request's
+// now-stale result is discarded instead of overwriting the newer view's cache with the wrong
+// client's data.
+let _perfExerciseToken = 0
 async function renderProgressStrength(el) {
   el.innerHTML = '<div class="loading-state">Loading exercise data…</div>'
+  const myToken = ++_perfExerciseToken
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
-  const client = { id: clientId }
   const { data: exRows } = await db.from('workout_log_exercises')
     .select('exercise_name, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved)')
-    .eq('workout_logs.client_id', client.id).eq('exercise_type', 'strength').order('exercise_name')
+    .eq('workout_logs.client_id', clientId).eq('exercise_type', 'strength').order('exercise_name')
+  if (myToken !== _perfExerciseToken) return
   if (!exRows?.length) { el.innerHTML = '<div class="empty-state"><p>No strength sessions logged yet.</p></div>'; return }
   const byExercise = {}
   for (const row of exRows) {
@@ -1116,12 +1260,33 @@ async function renderProgressStrength(el) {
     const maxW = Math.max(...(row.workout_log_sets||[]).map(s => parseFloat(s.weight_kg)||0).filter(w=>w>0))
     if (maxW > 0) byExercise[name].push({ date: row.workout_logs.date, weight: maxW })
   }
+  // Already alphabetical — the query above orders by exercise_name.
   const exercises = Object.entries(byExercise).filter(([,pts]) => pts.length > 0)
     .map(([name, pts]) => ({ name, pts: pts.sort((a,b)=>new Date(a.date)-new Date(b.date)) }))
   if (!exercises.length) { el.innerHTML = '<div class="empty-state"><p>No strength data yet.</p></div>'; return }
-  el.innerHTML = exercises.map((ex, i) => `
+  window._perfExerciseCache = exercises
+  el.innerHTML = `
+    <input class="field-input" id="perf-ex-search" placeholder="Search exercises…" style="margin-bottom:14px" autocomplete="off" oninput="_renderPerfExerciseList(this.value)">
+    <div id="perf-ex-list"></div>
+  `
+  _renderPerfExerciseList('')
+}
+
+// Destroys the previous render's Chart.js instances before rebuilding — this fires on every
+// keystroke, so without this each keystroke would leak another full set of chart instances
+// bound to canvases that just got detached by the innerHTML rebuild below.
+let _perfExerciseCharts = []
+function _renderPerfExerciseList(query) {
+  const listEl = document.getElementById('perf-ex-list')
+  if (!listEl) return
+  _perfExerciseCharts.forEach(c => c.destroy())
+  _perfExerciseCharts = []
+  const q = (query || '').trim().toLowerCase()
+  const exercises = (window._perfExerciseCache || []).filter(ex => !q || ex.name.toLowerCase().includes(q))
+  if (!exercises.length) { listEl.innerHTML = '<div class="empty-state"><p>No matching exercises.</p></div>'; return }
+  listEl.innerHTML = exercises.map((ex, i) => `
     <div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
-      <div style="font-size:14px;font-weight:700;margin-bottom:8px">${ex.name}</div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:8px">${escapeHtml(ex.name)}</div>
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">
         Best: ${Math.max(...ex.pts.map(p=>p.weight))} kg · ${ex.pts.length} session${ex.pts.length===1?'':'s'}
       </div>
@@ -1132,7 +1297,7 @@ async function renderProgressStrength(el) {
   exercises.forEach((ex, i) => {
     const canvas = document.getElementById(`ps-chart-${i}`)
     if (!canvas || ex.pts.length < 2) return
-    new Chart(canvas.getContext('2d'), {
+    _perfExerciseCharts.push(new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: { labels: ex.pts.map(p => new Date(p.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
               datasets: [{ data: ex.pts.map(p=>p.weight), borderColor: accent, borderWidth: 2,
@@ -1141,7 +1306,7 @@ async function renderProgressStrength(el) {
         plugins: { legend: { display: false } },
         scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
                   y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 }, callback: v => v+'kg' } } } }
-    })
+    }))
   })
 }
 
@@ -1195,6 +1360,10 @@ async function renderProgressCardio(el) {
   })
 }
 
+// 2026-07-08 restructure: Personal Bests now also hosts the 1RMs and Cardio bests sections that
+// used to be their own separate places (a standalone Cardio tab, a Performance > 1RMs sub-tab) —
+// one combined "bests" surface instead of 3. Each section keeps its own existing render function,
+// just mounted into a sub-container here instead of being reached independently.
 async function renderProgressPBs(el) {
   el.innerHTML = '<div class="loading-state">Loading personal bests…</div>'
   const clientId = await _getCurrentClientId()
@@ -1219,27 +1388,42 @@ async function renderProgressPBs(el) {
   const { data: logs } = await db.from('performance_logs')
     .select('*, performance_exercises(name, category, unit)')
     .eq('client_id', clientId).order('date', { ascending: false })
-  if (!logs?.length) { el.innerHTML = addPBBtn + '<div class="empty-state"><p>No personal bests logged yet. Tap + Log PB to add your first record.</p></div>'; return }
-  const byExercise = {}
-  for (const l of logs) {
-    const name = l.performance_exercises?.name || 'Unknown'
-    if (!byExercise[name]) byExercise[name] = { best: l, all: [], unit: l.performance_exercises?.unit || '', category: l.performance_exercises?.category || '' }
-    byExercise[name].all.push(l)
+
+  let pbListHtml
+  if (!logs?.length) {
+    pbListHtml = '<div class="empty-state"><p>No personal bests logged yet. Tap + Log PB to add your first record.</p></div>'
+  } else {
+    const byExercise = {}
+    for (const l of logs) {
+      const name = l.performance_exercises?.name || 'Unknown'
+      if (!byExercise[name]) byExercise[name] = { best: l, all: [], unit: l.performance_exercises?.unit || '', category: l.performance_exercises?.category || '' }
+      byExercise[name].all.push(l)
+    }
+    pbListHtml = Object.entries(byExercise).map(([name, { best, all, unit, category }]) => `
+      <div style="margin-bottom:12px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:14px;font-weight:700">${name}</div>
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${category}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:20px;font-weight:800;color:var(--accent)">${best.value} <span style="font-size:12px">${unit}</span></div>
+            <div style="font-size:11px;color:var(--text-muted)">${new Date(best.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+          </div>
+        </div>
+        ${all.length > 1 ? `<div style="margin-top:8px;font-size:11px;color:var(--text-muted)">${all.length} entries</div>` : ''}
+      </div>`).join('')
   }
-  el.innerHTML = addPBBtn + Object.entries(byExercise).map(([name, { best, all, unit, category }]) => `
-    <div style="margin-bottom:12px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div>
-          <div style="font-size:14px;font-weight:700">${name}</div>
-          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${category}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:20px;font-weight:800;color:var(--accent)">${best.value} <span style="font-size:12px">${unit}</span></div>
-          <div style="font-size:11px;color:var(--text-muted)">${new Date(best.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
-        </div>
-      </div>
-      ${all.length > 1 ? `<div style="margin-top:8px;font-size:11px;color:var(--text-muted)">${all.length} entries</div>` : ''}
-    </div>`).join('')
+
+  el.innerHTML = `
+    ${addPBBtn}
+    ${pbListHtml}
+    <div id="pb-1rms-section" style="margin-top:28px"></div>
+    <div style="margin-top:28px;margin-bottom:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Cardio bests</div>
+    <div id="pb-cardio-section"></div>
+  `
+  await renderClient1RMs(clientId, document.getElementById('pb-1rms-section'))
+  await renderProgressCardio(document.getElementById('pb-cardio-section'))
 }
 
 async function renderSettings(el) {

@@ -98,3 +98,58 @@ test.describe('Progress page bug fixes (2026-07-08)', () => {
     expect(result.min).toBeLessThanOrEqual(82)
   })
 })
+
+test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsClient(page)
+  })
+
+  test('Progress page top-level tabs are Body Weight / Personal Bests / Performance — Cardio is no longer its own tab', async ({ page }) => {
+    await page.click('[data-page="progress"]')
+    await page.waitForTimeout(500)
+    await expect(page.locator('h1')).toContainText('My Progress')
+    await expect(page.locator('button:has-text("Body Weight")')).toBeVisible()
+    await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()
+    await expect(page.locator('button:has-text("Performance")')).toBeVisible()
+    // Exact-text match on any button, page-wide — "Cardio bests" is a heading div, not a button,
+    // so this can't false-pass against Personal Bests' new sub-section label.
+    await expect(page.locator('button', { hasText: /^Cardio$/ })).toHaveCount(0)
+  })
+
+  test('Personal Bests tab mounts the 1RMs and Cardio-bests sections (folded in from their old standalone locations)', async ({ page }) => {
+    await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
+    await page.waitForTimeout(800)
+    await expect(page.locator('#pb-1rms-section')).toBeAttached()
+    await expect(page.locator('#pb-cardio-section')).toBeAttached()
+    await expect(page.locator('text=Cardio bests')).toBeVisible()
+  })
+
+  test('Performance tab shows "Per session" / "Per exercise" sub-tabs, not the old "1RMs" / "Progressions"', async ({ page }) => {
+    await page.evaluate(() => { window._progressTab = 'Performance'; renderProgress(document.getElementById('main-content')) })
+    await page.waitForTimeout(800)
+    await expect(page.locator('button:has-text("Per session")')).toBeVisible()
+    await expect(page.locator('button:has-text("Per exercise")')).toBeVisible()
+    await expect(page.locator('#perf-sub-content button:has-text("1RMs")')).toHaveCount(0)
+  })
+
+  test('Performance > Per exercise search bar filters the exercise list without a DB re-fetch (regression-proof of the live-filter logic)', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      window._perfExerciseCache = [{ name: 'Back Squat', pts: [{ date: '2026-01-01', weight: 100 }] }, { name: 'Bench Press', pts: [{ date: '2026-01-01', weight: 60 }] }]
+      const div = document.createElement('div')
+      div.id = 'perf-ex-list'
+      document.body.appendChild(div)
+      _renderPerfExerciseList('bench')
+      const html = document.getElementById('perf-ex-list').innerHTML
+      document.body.removeChild(div)
+      return html
+    })
+    expect(result).toContain('Bench Press')
+    expect(result).not.toContain('Back Squat')
+  })
+
+  test('Workouts page no longer shows a standalone "Your 1RMs" section (moved into Personal Bests)', async ({ page }) => {
+    await page.click('[data-page="workouts"]')
+    await page.waitForTimeout(1500)
+    await expect(page.locator('text=Your 1RMs')).toHaveCount(0)
+  })
+})

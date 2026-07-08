@@ -73,13 +73,12 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('h1')).toContainText('Calendar', { timeout: 8000 })
   })
 
-  test('solo Progress page loads with tabs', async ({ page }) => {
+  test('solo Progress page loads with tabs (2026-07-08: Cardio folded into Personal Bests, no longer its own top-level tab)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.click('[data-page="progress"]')
     await page.waitForTimeout(1000)
     await expect(page.locator('h1')).toContainText('My Progress', { timeout: 8000 })
     await expect(page.locator('button:has-text("Body Weight")')).toBeVisible()
-    await expect(page.locator('button:has-text("Cardio")')).toBeVisible()
     await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()
     await expect(page.locator('button:has-text("Performance")')).toBeVisible()
   })
