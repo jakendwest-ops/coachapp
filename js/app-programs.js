@@ -676,7 +676,7 @@ async function openProgram(programId) {
       <p id="pf-error" style="color:#ef4444;font-size:12px;margin:0 0 8px"></p>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" id="pf-save-btn" onclick="savePhase('${program.id}')">Add phase</button>
-        <button class="btn" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('phase-form').style.display='none'">Cancel</button>
+        <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('phase-form').style.display='none'">Cancel</button>
       </div>
     </div>
 
