@@ -1181,7 +1181,7 @@ async function _openExercisePicker(coachId, onPick) {
   overlay.id = 'exercise-picker-modal'
   overlay.style.zIndex = '1001' // above the runner (300) and the sets/reps detail modal (1000)
   overlay.innerHTML = `
-    <div class="modal" style="max-width:480px;height:70vh;max-height:85vh;display:flex;flex-direction:column">
+    <div class="modal" id="exp-modal-box" style="max-width:480px;height:70vh;max-height:85vh;display:flex;flex-direction:column">
       <div class="modal-header">
         <h2 class="modal-title">Exercises</h2>
         <button class="modal-close" onclick="_closeExercisePicker()">✕</button>
@@ -1192,6 +1192,15 @@ async function _openExercisePicker(coachId, onPick) {
   `
   document.body.appendChild(overlay)
   document.getElementById('exp-search').focus()
+  // vh units are sized against the layout viewport, which most mobile browsers do NOT shrink
+  // when the on-screen keyboard opens — so a plain height:70vh box can end up partly hidden
+  // behind the keyboard instead of resizing to fit above it. window.visualViewport DOES track
+  // the actual visible area, so sync to that when available (falls back to the vh sizing above
+  // on browsers without VisualViewport support).
+  if (window.visualViewport) {
+    _syncExercisePickerHeight()
+    window.visualViewport.addEventListener('resize', _syncExercisePickerHeight)
+  }
   const { data } = await db.from('exercises').select('id, name, muscle_group, is_archived').eq('coach_id', coachId).order('name')
   if (!_exercisePickerState) return // closed before the fetch resolved
   _exercisePickerState.allExercises = data || []
@@ -1254,9 +1263,18 @@ async function _createExerciseFromPicker(name) {
   _pickExercise(created.id, created.name)
 }
 
+function _syncExercisePickerHeight() {
+  const box = document.getElementById('exp-modal-box')
+  if (!box || !window.visualViewport) return
+  const vh = window.visualViewport.height
+  box.style.height = Math.round(vh * 0.7) + 'px'
+  box.style.maxHeight = Math.round(vh * 0.85) + 'px'
+}
+
 function _closeExercisePicker() {
   document.getElementById('exercise-picker-modal')?.remove()
   _exercisePickerState = null
+  if (window.visualViewport) window.visualViewport.removeEventListener('resize', _syncExercisePickerHeight)
 }
 
 async function saveExerciseToTemplate(templateId) {
