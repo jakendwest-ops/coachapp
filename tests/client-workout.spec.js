@@ -137,4 +137,16 @@ test.describe('Client workout flow', () => {
       await expect(page.locator('#cwf-weight')).toBeVisible()
     }
   })
+
+  test('_resolveTemplateOwnerCoachId looks up the client\'s own coach_id for role "client" (2026-07-08 defensive fix)', async ({ page }) => {
+    // saveEditTemplate/deleteTemplate previously always filtered by currentUser.id, which is
+    // never a valid coach_id for a real client account — this helper is the fix, matching the
+    // same role-check pattern already used by startWorkoutRunner.
+    const { resolved, expected } = await page.evaluate(async () => {
+      const resolved = await _resolveTemplateOwnerCoachId()
+      const { data } = await db.from('clients').select('coach_id').eq('user_id', currentUser.id).single()
+      return { resolved, expected: data?.coach_id || currentUser.id }
+    })
+    expect(resolved).toBe(expected)
+  })
 })

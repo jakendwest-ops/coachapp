@@ -753,10 +753,13 @@ async function renderClientWeight(clientId, el) {
       const existing = Chart.getChart('weight-chart')
       if (existing) existing.destroy()
 
-      // Y-axis range from the goal/starting weight fields, if both are set — else Chart.js auto-scales as before.
-      // Math.min/max (not "goal is always below starting") so a weight-gain goal doesn't invert the axis.
-      const yRange = (goalWeightKg != null && startingWeightKg != null)
-        ? { min: Math.floor(Math.min(goalWeightKg, startingWeightKg) * 2) / 2, max: Math.ceil((Math.max(goalWeightKg, startingWeightKg) + 1) * 2) / 2 }
+      // Y-axis range blends whichever of goal/starting weight are set with the actual logged data —
+      // previously this only activated when BOTH fields were set, so entering just one (the common
+      // case) silently had zero visible effect. Math.min/max (not "goal is always below starting") so
+      // a weight-gain goal doesn't invert the axis.
+      const anchors = [goalWeightKg, startingWeightKg, ...weights].filter(v => v != null)
+      const yRange = (goalWeightKg != null || startingWeightKg != null)
+        ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
         : {}
 
       new Chart(document.getElementById('weight-chart'), {
@@ -1049,13 +1052,17 @@ async function renderProgressWeight(el) {
   if (!logs?.length) { el.innerHTML = addWeightBtn + goalsCard + '<div class="empty-state"><p>No weight logs yet. Tap + Log weight to add your first entry.</p></div>'; return }
   const latest = logs[logs.length - 1]
   const first  = logs[0]
-  const change = (latest.weight_kg - first.weight_kg).toFixed(1)
+  // "Starting" prefers the user's own starting_weight_kg goal field over the earliest logged
+  // entry — the goal field is meant to represent where they actually started (which may predate
+  // their first in-app log), so entering it should visibly move this tile, not just the chart axis.
+  const effectiveStarting = startingWeightKg ?? first.weight_kg
+  const change = (latest.weight_kg - effectiveStarting).toFixed(1)
   const sign   = change > 0 ? '+' : ''
   el.innerHTML = `
     ${addWeightBtn}
     ${goalsCard}
     <div style="display:flex;gap:12px;margin-bottom:16px">
-      ${[['Current', latest.weight_kg + ' kg'], ['Starting', first.weight_kg + ' kg'], ['Change', sign + change + ' kg']].map(([l,v])=>`
+      ${[['Starting', effectiveStarting + ' kg'], ['Current', latest.weight_kg + ' kg'], ['Change', sign + change + ' kg']].map(([l,v])=>`
         <div style="flex:1;padding:12px;border-radius:12px;background:var(--surface);text-align:center">
           <div style="font-size:18px;font-weight:800;color:var(--accent)">${v}</div>
           <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${l}</div>
@@ -1072,10 +1079,14 @@ async function renderProgressWeight(el) {
   `
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
   const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
-  // Y-axis range from the goal/starting weight fields, if both are set — else Chart.js auto-scales as before.
-  // Math.min/max (not "goal is always below starting") so a weight-gain goal doesn't invert the axis.
-  const yRange = (goalWeightKg != null && startingWeightKg != null)
-    ? { min: Math.floor(Math.min(goalWeightKg, startingWeightKg) * 2) / 2, max: Math.ceil((Math.max(goalWeightKg, startingWeightKg) + 1) * 2) / 2 }
+  // Y-axis range blends whichever of goal/starting weight are set with the actual logged data —
+  // previously this only activated when BOTH fields were set, so entering just one (the common
+  // case) silently had zero visible effect. Math.min/max (not "goal is always below starting") so
+  // a weight-gain goal doesn't invert the axis.
+  const loggedWeights = logs.map(l => l.weight_kg)
+  const anchors = [goalWeightKg, startingWeightKg, ...loggedWeights].filter(v => v != null)
+  const yRange = (goalWeightKg != null || startingWeightKg != null)
+    ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
     : {}
   new Chart(document.getElementById('pw-chart').getContext('2d'), {
     type: 'line',
@@ -1187,7 +1198,24 @@ async function renderProgressCardio(el) {
 async function renderProgressPBs(el) {
   el.innerHTML = '<div class="loading-state">Loading personal bests…</div>'
   const clientId = await _getCurrentClientId()
-  const addPBBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Personal bests</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log PB</button></div>`
+  const addPBBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Personal bests</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log PB</button></div>
+    <div id="client-pb-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><label class="form-label">Exercise name</label><input type="text" id="cpb-name" class="form-input" placeholder="e.g. Deadlift"></div>
+        <div><label class="form-label">Category</label><select id="cpb-category" class="form-input"><option value="strength">Strength</option><option value="cardio">Cardio</option><option value="body_metric">Body metric</option><option value="benchmark">Benchmark</option></select></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><label class="form-label">Value</label><input type="number" id="cpb-value" class="form-input" step="0.1"></div>
+        <div><label class="form-label">Unit</label><input type="text" id="cpb-unit" class="form-input" placeholder="kg / min / reps"></div>
+        <div><label class="form-label">Date</label><input type="date" id="cpb-date" class="form-input" value="${new Date().toISOString().split('T')[0]}"></div>
+      </div>
+      <div style="margin-bottom:8px"><label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label><input type="text" id="cpb-notes" class="form-input" placeholder="Any notes…"></div>
+      <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${clientId}')">Save</button>
+        <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
+      </div>
+    </div>`
   const { data: logs } = await db.from('performance_logs')
     .select('*, performance_exercises(name, category, unit)')
     .eq('client_id', clientId).order('date', { ascending: false })

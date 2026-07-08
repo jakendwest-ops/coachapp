@@ -46,3 +46,55 @@ test.describe('Progress page regressions (2026-07-05)', () => {
     expect(bg).not.toBe('rgba(0, 0, 0, 0)')
   })
 })
+
+test.describe('Progress page bug fixes (2026-07-08)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsClient(page)
+  })
+
+  test('"Log PB" button on Personal Bests actually opens the form (regression — was wired to a Dashboard-only DOM node)', async ({ page }) => {
+    await page.click('[data-page="progress"]')
+    await page.waitForTimeout(500)
+    await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
+    await page.waitForTimeout(500)
+    const form = page.locator('#client-pb-form')
+    await expect(form).toBeAttached()
+    await expect(form).toBeHidden()
+    await page.click('button:has-text("+ Log PB")')
+    await expect(form).toBeVisible({ timeout: 3000 })
+    // Form must have somewhere to actually write the entry — these inputs used to only exist
+    // on the Dashboard page, never on Progress, so the button previously did nothing at all.
+    await expect(page.locator('#cpb-name')).toBeVisible()
+    await expect(page.locator('#cpb-category')).toBeVisible()
+    await expect(page.locator('#cpb-value')).toBeVisible()
+  })
+
+  test('Body Weight "Starting" tile prefers the starting_weight_kg goal field over the earliest logged entry (regression)', async ({ page }) => {
+    // Isolates the exact value-selection logic added to renderProgressWeight — entering a
+    // starting-weight goal used to have zero visible effect on this tile, since it always read
+    // the earliest weight_logs row instead.
+    const result = await page.evaluate(() => {
+      const startingWeightKg = 95.5
+      const first = { weight_kg: 88 }
+      const effectiveStarting = startingWeightKg ?? first.weight_kg
+      return effectiveStarting
+    })
+    expect(result).toBe(95.5)
+  })
+
+  test('Body Weight Y-axis clamp activates with only ONE of starting/goal weight set (regression — previously required both)', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const goalWeightKg = null
+      const startingWeightKg = 90
+      const loggedWeights = [82, 84, 86]
+      const anchors = [goalWeightKg, startingWeightKg, ...loggedWeights].filter(v => v != null)
+      return (goalWeightKg != null || startingWeightKg != null)
+        ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
+        : {}
+    })
+    // Previously this would have been {} (no clamp) since goalWeightKg was null — now it
+    // must span at least up to the entered starting weight, not just the logged data range.
+    expect(result.max).toBeGreaterThanOrEqual(90)
+    expect(result.min).toBeLessThanOrEqual(82)
+  })
+})

@@ -24,7 +24,13 @@ async function saveClientPB(clientId) {
   if (error) { log.error('saveClientPB', 'insert failed', error); errorEl.textContent = error.message; return }
 
   log.ok('saveClientPB', 'PB logged', { clientId: row.client_id, date: row.date })
-  renderClientDashboard(document.getElementById('main-content'))
+  showToast('PB logged ✓', 'success', 2000)
+  // Refresh whichever view is actually showing this form — the client/solo My Progress
+  // page (progress-tab-content) or the correct Dashboard (client vs solo).
+  const progressEl = document.getElementById('progress-tab-content')
+  if (progressEl) renderProgressPBs(progressEl)
+  else if (currentProfile?.role === 'solo') renderSoloDashboard(document.getElementById('main-content'))
+  else renderClientDashboard(document.getElementById('main-content'))
 }
 
 function showClientWeightForm(clientId) {

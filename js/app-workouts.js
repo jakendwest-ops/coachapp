@@ -1578,16 +1578,27 @@ async function showEditTemplateModal(id) {
   document.body.appendChild(overlay)
 }
 
+// Resolves the coach_id that should own this template's row, matching the same role-check
+// already used by startWorkoutRunner: a 'client' role's currentUser.id is the client's own auth
+// id, never a coach_id, so it must be looked up via their client record; 'coach' and 'solo' share
+// one login where currentUser.id already is the correct coach_id.
+async function _resolveTemplateOwnerCoachId() {
+  if (currentProfile?.role !== 'client') return currentUser.id
+  const { data } = await db.from('clients').select('coach_id').eq('user_id', currentUser.id).single()
+  return data?.coach_id || currentUser.id
+}
+
 async function saveEditTemplate(id) {
   const errorEl = document.getElementById('et-error')
   const name = document.getElementById('et-name').value.trim()
   if (!name) { errorEl.textContent = 'Name is required'; return }
   const { templateId: targetId } = await _resolveEditableTemplateId(id)
+  const coachId = await _resolveTemplateOwnerCoachId()
   log.info('saveEditTemplate', 'updating template', { id: targetId })
   const { data, error } = await db.from('workout_templates').update({
     name,
     description: document.getElementById('et-desc').value.trim() || null
-  }).eq('id', targetId).eq('coach_id', currentUser.id).select()
+  }).eq('id', targetId).eq('coach_id', coachId).select()
   if (error) { log.error('saveEditTemplate', 'update failed', error); errorEl.textContent = error.message; return }
   if (!data?.length) { log.error('saveEditTemplate', 'no rows updated — permission denied?', { id: targetId }); errorEl.textContent = 'Save failed — template not found or permission denied.'; return }
   log.ok('saveEditTemplate', 'template updated', { id: targetId })
@@ -1597,8 +1608,9 @@ async function saveEditTemplate(id) {
 
 async function deleteTemplate(id) {
   if (!confirm('Delete this template? This cannot be undone.')) return
+  const coachId = await _resolveTemplateOwnerCoachId()
   log.info('deleteTemplate', 'deleting template', { id })
-  const { data, error } = await db.from('workout_templates').delete().eq('id', id).eq('coach_id', currentUser.id).select()
+  const { data, error } = await db.from('workout_templates').delete().eq('id', id).eq('coach_id', coachId).select()
   if (error) { log.error('deleteTemplate', 'delete failed', error); return }
   if (!data?.length) { log.error('deleteTemplate', 'no rows deleted — permission denied or already gone', { id }); return }
   log.ok('deleteTemplate', 'template deleted', { id })
