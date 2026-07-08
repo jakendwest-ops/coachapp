@@ -50,6 +50,16 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('button:has-text("New template")')).not.toBeVisible()
   })
 
+  test('finishing a runner session as solo lands on Workouts, not a broken client-profile fetch (regression, 2026-07-08)', async ({ page }) => {
+    test.skip(!soloAvailable, 'No solo client record for this PT account')
+    // _afterRunnerSave used to only branch for role 'client', so 'solo' fell through to
+    // openClient() — which queries clients.coach_id = currentUser.id, but a solo client
+    // record has coach_id = NULL, so that query returns 0 rows and errors.
+    await page.evaluate(() => _afterRunnerSave(window._soloClientId))
+    await page.waitForTimeout(1000)
+    await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
+  })
+
   test('solo Programs page loads', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.click('[data-page="programs"]')

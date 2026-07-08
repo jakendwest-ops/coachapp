@@ -1511,7 +1511,7 @@ async function saveRunnerSession() {
 }
 
 function _afterRunnerSave(clientId) {
-  if (currentProfile?.role === 'client') navigate('workouts')
+  if (currentProfile?.role === 'client' || currentProfile?.role === 'solo') navigate('workouts')
   else openClient(clientId)
 }
 
