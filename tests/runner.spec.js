@@ -151,6 +151,44 @@ test.describe('%1RM target weight rounding', () => {
   })
 })
 
+// ─── Plate calculator (2026-07-02 research, built 2026-07-10) ────────────────
+
+test.describe('Plate calculator', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+  })
+
+  test('breaks a total weight down into plates per side, on a 20kg bar', async ({ page }) => {
+    // 100kg total -> 80kg to load -> 40kg per side -> 25+15
+    const result = await page.evaluate(() => _calcPlateBreakdown(100))
+    expect(result).toBe('Per side: 25+15kg')
+  })
+
+  test('a weight at or below the bar shows "Bar only"', async ({ page }) => {
+    const atBar = await page.evaluate(() => _calcPlateBreakdown(20))
+    const belowBar = await page.evaluate(() => _calcPlateBreakdown(15))
+    expect(atBar).toBe('Bar only (20kg)')
+    expect(belowBar).toBe('Bar only (20kg)')
+  })
+
+  test('a weight not exactly achievable with standard plates is flagged, not silently wrong', async ({ page }) => {
+    // 21kg total -> 0.5kg per side -> smaller than the smallest plate (1.25kg)
+    const result = await page.evaluate(() => _calcPlateBreakdown(21))
+    expect(result).toContain('not exact')
+  })
+
+  test('empty or invalid input returns empty string, not NaN', async ({ page }) => {
+    const result = await page.evaluate(() => ({
+      empty: _calcPlateBreakdown(''),
+      nullVal: _calcPlateBreakdown(null),
+      zero: _calcPlateBreakdown(0)
+    }))
+    expect(result.empty).toBe('')
+    expect(result.nullVal).toBe('')
+    expect(result.zero).toBe('')
+  })
+})
+
 // ─── Render regression: timed sets ───────────────────────────────────────────
 
 test.describe('Timed set render regression', () => {
@@ -629,6 +667,16 @@ test.describe('Workout runner (client)', () => {
 
     await page.locator('#modal-runner-1rm .modal-close').click()
     await expect(page.locator('#modal-runner-1rm')).not.toBeVisible({ timeout: 3000 })
+  })
+
+  test('typing a weight in the wizard live-updates the plate hint beneath it (2026-07-10)', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    const weightInput = page.locator('#wr-weight-input')
+    test.skip(!(await weightInput.isVisible({ timeout: 3000 }).catch(() => false)), 'First exercise is in table mode, not the wizard')
+    await weightInput.fill('100')
+    await expect(page.locator('#wr-plates-hint')).toHaveText('Per side: 25+15kg', { timeout: 3000 })
   })
 
   // ─── Session-state persistence (2026-07-10) ───────────────────────────────

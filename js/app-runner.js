@@ -258,6 +258,35 @@ function renderRunnerLastSession(exName) {
 // --- Strength table (Hevy-style) — plain strength sets only.
 // Cardio / timed / unilateral / %1RM exercises stay on the wizard in renderRunner() below.
 
+// ─── Plate calculator ──────────────────────────────────────────────────────
+// What to actually load on the bar for a given total weight — repeatedly requested (2026-07-02
+// research), small and self-contained. Standard Olympic bar (20kg) + a standard plate set;
+// no per-gym bar-weight setting yet (out of scope for this pass, same "ship small" call as the
+// rest of the runner's target displays).
+const _PLATE_SIZES = [25, 20, 15, 10, 5, 2.5, 1.25]
+const _BAR_WEIGHT_KG = 20
+
+function _calcPlateBreakdown(totalWeight) {
+  const total = parseFloat(totalWeight)
+  if (!total || isNaN(total)) return ''
+  if (total <= _BAR_WEIGHT_KG) return `Bar only (${_BAR_WEIGHT_KG}kg)`
+  let perSide = (total - _BAR_WEIGHT_KG) / 2
+  const plates = []
+  for (const p of _PLATE_SIZES) {
+    while (perSide >= p - 0.001) { plates.push(p); perSide -= p }
+  }
+  if (perSide > 0.01) return `~${total}kg — not exact with standard plates`
+  if (!plates.length) return `Bar only (${_BAR_WEIGHT_KG}kg)`
+  return `Per side: ${plates.join('+')}kg`
+}
+
+function _updatePlateBreakdown(inputId, hintId) {
+  const input = document.getElementById(inputId)
+  const hint = document.getElementById(hintId)
+  if (!input || !hint) return
+  hint.textContent = _calcPlateBreakdown(input.value)
+}
+
 function _isPlainStrengthExercise(ex) {
   if (!ex || ex.type === 'cardio' || !ex.sets_json?.length) return false
   if (/carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)) return false
@@ -374,13 +403,15 @@ function _buildTargetCols(tgt, ex) {
   }
   const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
   if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
-  if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
+  let kgTarget = null
+  if (tgt.weight) { cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true }); kgTarget = tgt.weight }
   let needsOneRM = false
   if (tgt.intensityMin) {
     if (ex.oneRM) {
       const kgLo = _calcWeightFromPct(ex.oneRM, tgt.intensityMin)
       const kgHi = tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? _calcWeightFromPct(ex.oneRM, tgt.intensityMax) : null
       cols.push({ val: kgLo + (kgHi ? '–'+kgHi : '') + ' kg', label: '1RM TARGET', accent: true })
+      kgTarget = kgLo
     } else {
       needsOneRM = true
       cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
@@ -389,6 +420,15 @@ function _buildTargetCols(tgt, ex) {
   if (tgt.effortMin) cols.push({ val: (tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
   if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
   if (tgt.tempo) cols.push({ val: tgt.tempo, label: 'TEMPO' })
+  // Plate breakdown for whichever kg target is known (fixed weight or %1RM-derived, whichever
+  // resolved above) -- repeatedly requested (2026-07-02 research). Belongs in the target bar
+  // alongside the other computed info, not as new text under each table row (an area Jake
+  // explicitly asked to keep caption-free: "highlighted or stand out, not entered as text
+  // underneath — ugly UI").
+  if (kgTarget) {
+    const breakdown = _calcPlateBreakdown(kgTarget)
+    if (breakdown && !breakdown.startsWith('~')) cols.push({ val: breakdown.replace('Per side: ', ''), label: 'PLATES/SIDE' })
+  }
   return { cols, needsOneRM }
 }
 
@@ -722,7 +762,9 @@ function renderRunner() {
               : `<div style="flex:1;display:flex;flex-direction:column">
                   <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${ex.assisted?'Assist (kg)':'Kilograms'}</div>
                   <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
+                    oninput="_updatePlateBreakdown('wr-weight-input','wr-plates-hint')"
                     style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+                  <div id="wr-plates-hint" style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:2px;min-height:12px"></div>
                  </div>`}
             <!-- Duration (timed) or Reps / Distance -->
             ${tgt.timed
