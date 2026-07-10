@@ -162,6 +162,11 @@ function _showRunnerResumeModal(clientId, draft) {
 }
 
 async function _resumeRunnerFromDraft(clientId) {
+  // The "Resume" tap is itself a valid user gesture -- unlock here too, same as
+  // _startFreshRunner does, or a resumed session's rest-timer beeps/voice cues can silently
+  // never fire on iOS Safari / strict-autoplay Chrome. Found by multi-agent review 2026-07-10.
+  _unlockAudio()
+  _unlockSpeech()
   document.getElementById('runner-resume-modal')?.remove()
   const draft = _loadRunnerDraft(clientId)
   if (!draft) { await _startFreshRunner(clientId); return } // vanished between modal open and tap

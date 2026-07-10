@@ -532,4 +532,42 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       }, setup)
     }
   })
+
+  test('deleting an un-forked duplicated week never destroys the template a sibling week still points at (2026-07-10, found by multi-agent review)', async ({ page }) => {
+    // duplicatePhaseWeek is "cheap by design" -- the new week's row points at the SAME
+    // template_id as the source week, only forking into an independent copy once someone edits
+    // one (_resolveEditableTemplateId). deletePhaseWeek's ownership check alone ("does the coach
+    // own this template") isn't enough here: the template IS owned by this program, but it's
+    // still referenced by the surviving week's row. First version of the fix missed this and
+    // would have silently emptied the surviving week's session.
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Delete Week Duplicate Test' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single()
+      const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] DW Duplicated Session' }).select('id').single()
+      // Both weeks point at the SAME template_id -- exactly what "Duplicate week" produces before a fork.
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 })
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 2 })
+      return { programId: prog.id, phaseId: phase.id, templateId: tmpl.id }
+    })
+
+    try {
+      page.once('dialog', d => d.accept())
+      await page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 2), setup)
+      await page.waitForTimeout(800)
+
+      const result = await page.evaluate(async ({ phaseId, templateId }) => {
+        const { data: templateStillExists } = await db.from('workout_templates').select('id').eq('id', templateId).maybeSingle()
+        const { data: week1Row } = await db.from('program_phase_workouts').select('template_id').eq('phase_id', phaseId).eq('week_number', 1).single()
+        return { templateExists: !!templateStillExists, week1TemplateId: week1Row?.template_id }
+      }, setup)
+
+      expect(result.templateExists).toBe(true)
+      expect(result.week1TemplateId).toBe(setup.templateId)
+    } finally {
+      await page.evaluate(async ({ programId, templateId }) => {
+        await db.from('programs').delete().eq('id', programId)
+        await db.from('workout_templates').delete().eq('id', templateId)
+      }, setup)
+    }
+  })
 })

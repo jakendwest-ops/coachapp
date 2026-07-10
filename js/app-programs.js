@@ -1298,7 +1298,17 @@ async function deletePhaseWeek(phaseId, weekNumber) {
         .in('id', staleTemplateIds)
         .or(`program_id.eq.${programId},generated_from_phase_id.eq.${phaseId}`)
       const ownedIds = (owned || []).map(t => t.id)
-      if (ownedIds.length) await db.from('workout_templates').delete().in('id', ownedIds)
+      if (ownedIds.length) {
+        // "Duplicate week" is cheap by design -- the new week's rows point at the SAME
+        // template_id as the source week, only forking into an independent copy once someone
+        // actually edits one (_resolveEditableTemplateId). Deleting this week must not destroy a
+        // template a sibling week's row (already deleted above, so only surviving rows remain)
+        // still references. Found by multi-agent review 2026-07-10, not by inspection.
+        const { data: stillUsed } = await db.from('program_phase_workouts').select('template_id').in('template_id', ownedIds)
+        const stillUsedIds = new Set((stillUsed || []).map(r => r.template_id))
+        const safeToDeleteIds = ownedIds.filter(id => !stillUsedIds.has(id))
+        if (safeToDeleteIds.length) await db.from('workout_templates').delete().in('id', safeToDeleteIds)
+      }
     }
   }
 

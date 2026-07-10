@@ -351,6 +351,12 @@ document.getElementById('signup-form').addEventListener('submit', async e => {
 })
 
 document.getElementById('sign-out-btn').addEventListener('click', async () => {
+  // Runner drafts hold PII (client name, exercise names, weights/reps) and are only cleared on
+  // explicit discard/save or a same-day staleness check the next time that exact client's runner
+  // is opened -- on a shared/gym device, signing out one account and into another otherwise
+  // leaves a prior client's in-progress workout sitting in localStorage indefinitely, readable
+  // via devtools. Found by multi-agent review 2026-07-10.
+  Object.keys(localStorage).filter(k => k.startsWith('_runnerDraft_')).forEach(k => localStorage.removeItem(k))
   await db.auth.signOut()
 })
 
