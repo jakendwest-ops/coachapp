@@ -130,13 +130,12 @@ function _clearRunnerDraft(clientId) {
 }
 
 function _startRunnerDraftSafetyNet() {
-  clearInterval(_runnerDraftSafetyNetInterval)
+  _runnerDraftSafetyNetInterval = clearTimer(_runnerDraftSafetyNetInterval)
   _runnerDraftSafetyNetInterval = setInterval(() => { if (_runner) _saveRunnerDraft() }, 10000)
 }
 
 function _stopRunnerDraftSafetyNet() {
-  clearInterval(_runnerDraftSafetyNetInterval)
-  _runnerDraftSafetyNetInterval = null
+  _runnerDraftSafetyNetInterval = clearTimer(_runnerDraftSafetyNetInterval)
 }
 
 function _showRunnerResumeModal(clientId, draft) {
