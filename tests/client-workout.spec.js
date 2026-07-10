@@ -156,22 +156,14 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     await loginAsClient(page)
   })
 
-  test.fixme('Workouts page renders a hero card with title, meta, and a Start button — BLOCKED: client_programs has no client-read RLS policy (found 2026-07-10)', async ({ page, browser }) => {
-    // Investigating this test's flakiness surfaced a real RLS gap, not a test or app bug: the
-    // "client" role has NO select policy on client_programs at all (verified directly — a
-    // genuine client account reads back zero rows even completely unfiltered, while the exact
-    // same account correctly reads workout_logs/weight_logs rows). This means any real
-    // (non-solo) client with an assigned program currently cannot see it on their Dashboard or
-    // Workouts page in production -- app-dashboard.js and app-workouts.js both query
-    // client_programs directly client-side with no other access path. It's invisible in normal
-    // testing because solo accounts share the coach's own auth.uid() and never hit this RLS
-    // check. Needs a Supabase SQL policy fix before this test can run for real, e.g.:
-    //   CREATE POLICY "Clients can view their own program assignments" ON client_programs
-    //   FOR SELECT USING (client_id IN (SELECT id FROM clients WHERE user_id = auth.uid()));
-    // The underlying hero-card logic itself IS covered without this gap by the two
-    // _buildWorkoutsHero unit-style tests below, which construct their fixture in-memory.
-    // Wrapped in try/finally so a leaked browser context can't survive an assertion failure --
-    // dormant while this test is fixme'd, but activates the moment it's un-fixme'd otherwise.
+  test('Workouts page renders a hero card with title, meta, and a Start button', async ({ page, browser }) => {
+    // Was test.fixme'd 2026-07-10 pending a real RLS gap: the "client" role had NO select
+    // policy on client_programs at all (verified directly — a genuine client account read back
+    // zero rows even completely unfiltered, while the exact same account correctly read
+    // workout_logs/weight_logs rows). Fixed 2026-07-10 via a new Supabase policy
+    // ("Clients can view their own program assignments", confirmed live in pg_policies) — this
+    // test now runs for real. Wrapped in try/finally so a leaked browser context can't survive
+    // an assertion failure.
     const ptContext = await browser.newContext()
     try {
       const ptPage = await ptContext.newPage()
@@ -219,15 +211,14 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     }
   })
 
-  test.fixme('a phase with no sessions assigned yet renders an empty-phase message, not a crash — BLOCKED: client_programs has no client-read RLS policy (found 2026-07-10)', async ({ page, browser }) => {
+  test('a phase with no sessions assigned yet renders an empty-phase message, not a crash', async ({ page, browser }) => {
     // Regression test for a real live crash Jake hit 2026-07-10: a phase with zero
     // program_phase_workouts (a phase the coach hasn't finished building day-slots for yet --
     // a totally normal, valid state) made `renderDays(weekMap[weekNums[0]], panelId)` call
     // renderDays with `sessions: undefined` (weekNums was `[]`, so weekNums[0] was undefined),
     // crashing on `sessions.forEach`. Fixed by guarding `!weekNums.length` before that call.
-    // Blocked from running for real by the same RLS gap as the hero-card test above -- see that
-    // test's comment for the fix. This test will start actually exercising the fix the moment
-    // that RLS policy lands; until then, `js/app-workouts.js`'s fix is verified by code reading only.
+    // Was blocked from running for real by the same RLS gap as the hero-card test above -- fixed
+    // 2026-07-10 (see that test's comment), this test now runs for real.
     const ptContext = await browser.newContext()
     try {
       const ptPage = await ptContext.newPage()
@@ -253,9 +244,78 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
         await page.waitForTimeout(1000)
         const consoleErrors = []
         page.on('pageerror', err => consoleErrors.push(err.message))
-        await page.click('text=Deload')
+        // The hero card also shows the phase name in its meta line ("Deload · Week 1"), so a
+        // plain text=Deload locator is ambiguous and can land on that instead of the actual
+        // accordion toggle button — scope to the button specifically.
+        await page.click('button:has-text("Deload")')
         await expect(page.locator('text=No sessions added to this phase yet')).toBeVisible({ timeout: 5000 })
         expect(consoleErrors).toEqual([])
+      } finally {
+        await ptPage.evaluate(async ({ progId, cpId }) => {
+          await db.from('client_program_workouts').delete().eq('client_program_id', cpId)
+          await db.from('client_programs').delete().eq('id', cpId)
+          const { data: phases } = await db.from('program_phases').select('id').eq('program_id', progId)
+          const phaseIds = (phases || []).map(p => p.id)
+          if (phaseIds.length) {
+            const { data: pws } = await db.from('program_phase_workouts').select('id, template_id').in('phase_id', phaseIds)
+            await db.from('program_phase_workouts').delete().in('id', (pws || []).map(p => p.id))
+            const templateIds = [...new Set((pws || []).map(p => p.template_id).filter(Boolean))]
+            if (templateIds.length) await db.from('workout_templates').delete().in('id', templateIds)
+          }
+          await db.from('program_phases').delete().eq('program_id', progId)
+          await db.from('programs').delete().eq('id', progId)
+        }, setup)
+      }
+    } finally {
+      await ptContext.close()
+    }
+  })
+
+  test('client_programs embed chain (programs > program_phases > program_phase_workouts) resolves fully for the client role, not just the outer table', async ({ page, browser }) => {
+    // Regression test for 2026-07-10: an RLS fix on client_programs alone looked complete
+    // (verified by reading that one table directly as the client) but wasn't -- the app's real
+    // queries (app-dashboard.js, app-workouts.js) embed programs(program_phases(program_phase_
+    // workouts(...))) *inside* client_programs, and three of those four tables had no
+    // client-read policy at all. PostgREST doesn't error on an unreadable embed level -- it
+    // silently returns null/[], which crashed the dashboard the moment a real client's own
+    // `programs` embed resolved to null. This test queries the exact same nested shape the app
+    // uses and asserts every level is populated, not just the entry table.
+    const ptContext = await browser.newContext()
+    try {
+      const ptPage = await ptContext.newPage()
+      await loginAsPT(ptPage)
+
+      const setup = await ptPage.evaluate(async () => {
+        const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        const clientId = clients[0].id
+        const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Embed Chain Program' }).select('id').single()
+        const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 4, order_index: 0 }).select('id').single()
+        const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: '[E2E] Embed Chain Session' }).select('id').single()
+        const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
+        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] }).select('id').single()
+        await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: tmpl.id, week_number: 1 })
+        return { progId: prog.id, cpId: cp.id }
+      })
+
+      try {
+        // Query as the CLIENT (the fixture's own `page`, already logged in via beforeEach) using
+        // the exact nested embed shape app-dashboard.js/app-workouts.js actually use.
+        const result = await page.evaluate(async () => {
+          const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+          const { data } = await db.from('client_programs')
+            .select('id, start_date, programs(id, name, program_phases(id, name, program_phase_workouts(id)))')
+            .eq('client_id', clientRow.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+          return data?.[0] || null
+        })
+        expect(result).not.toBeNull()
+        expect(result.programs).not.toBeNull() // this is the exact level that silently nulled out
+        expect(result.programs.name).toBe('[E2E] Embed Chain Program')
+        expect(result.programs.program_phases).toBeInstanceOf(Array)
+        expect(result.programs.program_phases.length).toBeGreaterThan(0)
+        expect(result.programs.program_phases[0].program_phase_workouts).toBeInstanceOf(Array)
+        expect(result.programs.program_phases[0].program_phase_workouts.length).toBeGreaterThan(0)
       } finally {
         await ptPage.evaluate(async ({ progId, cpId }) => {
           await db.from('client_program_workouts').delete().eq('client_program_id', cpId)
