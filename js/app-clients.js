@@ -71,8 +71,14 @@ async function saveClientWeight(clientId) {
   if (error) { log.error('saveClientWeight', 'insert failed', error); errorEl.textContent = error.message; return }
 
   log.ok('saveClientWeight', 'weight logged', { clientId: row.client_id, date: row.date })
-  // Refresh the client dashboard to show the new entry
-  renderClientDashboard(document.getElementById('main-content'))
+  showToast('Weight logged ✓', 'success', 2000)
+  // Refresh whichever view is actually showing this form — the client/solo My Progress page
+  // (progress-tab-content) or the correct Dashboard (client vs solo) — same fix shape as
+  // saveClientPB earlier this session, which had the identical wrong-dashboard bug.
+  const progressEl = document.getElementById('progress-tab-content')
+  if (progressEl) renderProgressWeight(progressEl)
+  else if (currentProfile?.role === 'solo') renderSoloDashboard(document.getElementById('main-content'))
+  else renderClientDashboard(document.getElementById('main-content'))
 }
 
 // ─── CLIENTS LIST ─────────────────────────────────────────────────────────────

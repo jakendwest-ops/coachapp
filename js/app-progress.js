@@ -1165,7 +1165,26 @@ async function renderProgressWeight(el) {
   ])
   const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
   const goalWeightKg     = clientRow?.goal_weight_kg != null ? parseFloat(clientRow.goal_weight_kg) : null
-  const addWeightBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Body weight log</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log weight</button></div>`
+  // 2026-07-08 BUG FIX: the button below called showClientWeightForm(), which only toggles a DOM
+  // node (#client-weight-form) that existed on the Dashboard pages — never on this Progress page
+  // it's actually clicked from. Silent no-op, same bug shape as the "Log PB" fix earlier this
+  // session. Adding the form here (same markup as app-dashboard.js) makes the button real.
+  const addWeightBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Body weight log</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log weight</button></div>
+    <div id="client-weight-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><label class="form-label">Date</label><input type="date" id="cwf-date" class="form-input" value="${new Date().toISOString().split('T')[0]}"></div>
+        <div><label class="form-label">Weight (kg)</label><input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><label class="form-label">Body fat % <span style="color:var(--text-muted)">(optional)</span></label><input type="number" id="cwf-bf" class="form-input" placeholder="e.g. 19.5" step="0.1" min="1" max="60"></div>
+        <div><label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label><input type="text" id="cwf-notes" class="form-input" placeholder="Any notes…"></div>
+      </div>
+      <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
+        <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
+      </div>
+    </div>`
   const goalsCard = `
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>

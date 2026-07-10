@@ -786,8 +786,22 @@ async function deleteProgram(programId) {
     const { data: pws } = await db.from('program_phase_workouts').select('template_id').in('phase_id', phaseIds)
     const templateIds = [...new Set((pws || []).map(p => p.template_id).filter(Boolean))]
     if (templateIds.length) {
-      const { error: tErr } = await db.from('workout_templates').delete().in('id', templateIds)
-      if (tErr) { log.error('deleteProgram', 'template cleanup failed', tErr); return }
+      // Only delete templates actually owned by this program -- either created for it directly
+      // (program_id set to this program) or periodization-generated week clones from one of its
+      // own phases (generated_from_phase_id in phaseIds; generatePhasePeriodization always
+      // inserts these with program_id: null, so they need their own ownership check here or
+      // they'd silently survive as orphans every time a periodized program is deleted). A slot
+      // can also reference a shared standalone template (program_id AND generated_from_phase_id
+      // both null) that the coach reuses elsewhere; deleting this program must not destroy that.
+      const { data: owned, error: ownedErr } = await db.from('workout_templates').select('id')
+        .in('id', templateIds)
+        .or(`program_id.eq.${programId},generated_from_phase_id.in.(${phaseIds.join(',')})`)
+      if (ownedErr) { log.error('deleteProgram', 'owned-template lookup failed', ownedErr); return }
+      const ownedIds = (owned || []).map(t => t.id)
+      if (ownedIds.length) {
+        const { error: tErr } = await db.from('workout_templates').delete().in('id', ownedIds).or(`program_id.eq.${programId},generated_from_phase_id.in.(${phaseIds.join(',')})`)
+        if (tErr) { log.error('deleteProgram', 'template cleanup failed', tErr); return }
+      }
     }
   }
 

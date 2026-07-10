@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsClient } = require('./helpers')
+const { loginAsClient, loginAsPT } = require('./helpers')
 
 test.describe('Client workout flow', () => {
   test.beforeEach(async ({ page }) => {
@@ -148,5 +148,109 @@ test.describe('Client workout flow', () => {
       return { resolved, expected: data?.coach_id || currentUser.id }
     })
     expect(resolved).toBe(expected)
+  })
+})
+
+test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsClient(page)
+  })
+
+  test.fixme('Workouts page renders a hero card with title, meta, and a Start button — BLOCKED: client_programs has no client-read RLS policy (found 2026-07-10)', async ({ page, browser }) => {
+    // Investigating this test's flakiness surfaced a real RLS gap, not a test or app bug: the
+    // "client" role has NO select policy on client_programs at all (verified directly — a
+    // genuine client account reads back zero rows even completely unfiltered, while the exact
+    // same account correctly reads workout_logs/weight_logs rows). This means any real
+    // (non-solo) client with an assigned program currently cannot see it on their Dashboard or
+    // Workouts page in production -- app-dashboard.js and app-workouts.js both query
+    // client_programs directly client-side with no other access path. It's invisible in normal
+    // testing because solo accounts share the coach's own auth.uid() and never hit this RLS
+    // check. Needs a Supabase SQL policy fix before this test can run for real, e.g.:
+    //   CREATE POLICY "Clients can view their own program assignments" ON client_programs
+    //   FOR SELECT USING (client_id IN (SELECT id FROM clients WHERE user_id = auth.uid()));
+    // The underlying hero-card logic itself IS covered without this gap by the two
+    // _buildWorkoutsHero unit-style tests below, which construct their fixture in-memory.
+    // Wrapped in try/finally so a leaked browser context can't survive an assertion failure --
+    // dormant while this test is fixme'd, but activates the moment it's un-fixme'd otherwise.
+    const ptContext = await browser.newContext()
+    try {
+      const ptPage = await ptContext.newPage()
+      await loginAsPT(ptPage)
+
+      const setup = await ptPage.evaluate(async () => {
+        const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        const clientId = clients[0].id
+        const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Hero Card Program' }).select('id').single()
+        const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 4, order_index: 0 }).select('id').single()
+        // client_program_workouts always points at a client-owned clone of the master template
+        // (client_id set, program_id null) -- matches _cloneProgramForClient's real shape, since
+        // the client-side read of this row goes through RLS as the client, not the coach.
+        const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: '[E2E] Hero Card Session' }).select('id').single()
+        const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
+        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] }).select('id').single()
+        await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: tmpl.id, week_number: 1 })
+        return { progId: prog.id, cpId: cp.id }
+      })
+
+      try {
+        await page.click('[data-page="workouts"]')
+        await page.waitForTimeout(1000)
+        await expect(page.locator('text=Up next')).toBeVisible({ timeout: 8000 })
+        await expect(page.locator('button', { hasText: /Start/ }).first()).toBeVisible()
+      } finally {
+        // Cleanup — this fixture is entirely self-owned, so tear it down completely
+        await ptPage.evaluate(async ({ progId, cpId }) => {
+          await db.from('client_program_workouts').delete().eq('client_program_id', cpId)
+          await db.from('client_programs').delete().eq('id', cpId)
+          const { data: phases } = await db.from('program_phases').select('id').eq('program_id', progId)
+          const phaseIds = (phases || []).map(p => p.id)
+          if (phaseIds.length) {
+            const { data: pws } = await db.from('program_phase_workouts').select('id, template_id').in('phase_id', phaseIds)
+            await db.from('program_phase_workouts').delete().in('id', (pws || []).map(p => p.id))
+            const templateIds = [...new Set((pws || []).map(p => p.template_id).filter(Boolean))]
+            if (templateIds.length) await db.from('workout_templates').delete().in('id', templateIds)
+          }
+          await db.from('program_phases').delete().eq('program_id', progId)
+          await db.from('programs').delete().eq('id', progId)
+        }, setup)
+      }
+    } finally {
+      await ptContext.close()
+    }
+  })
+
+  test('_buildWorkoutsHero falls back to a freeform start action when no program is assigned', async ({ page }) => {
+    const hero = await page.evaluate(() => _buildWorkoutsHero('fake-client-id', null, {}))
+    expect(hero.title).toBe('No program assigned')
+    expect(hero.action).toContain("startWorkoutRunner('fake-client-id')")
+  })
+
+  test('_buildWorkoutsHero resolves the next scheduled session\'s real templateId when one exists', async ({ page }) => {
+    const hero = await page.evaluate(() => {
+      const activeAssignment = {
+        start_date: new Date().toISOString().split('T')[0], // starts today -> weeksSinceStart 0, weekInPhase 1
+        programs: { name: 'Test Program', program_phases: [{ order_index: 0, name: 'Phase 1', duration_weeks: 4,
+          program_phase_workouts: [{ id: 'pw-1', day_of_week: 1, session_order: 1, week_number: 1 }] }] }
+      }
+      const cpwMap = { 'pw-1': { templateId: 'tmpl-abc' } }
+      return _buildWorkoutsHero('client-1', activeAssignment, cpwMap)
+    })
+    expect(hero.title).toBe('Test Program')
+    expect(hero.meta).toContain('Phase 1')
+    expect(hero.action).toContain("startWorkoutRunner('client-1','tmpl-abc')")
+  })
+
+  test('"Recent sessions" replaces "Session history", capped to 5, date-only rows', async ({ page }) => {
+    await page.click('[data-page="workouts"]')
+    await page.waitForTimeout(1000)
+    const toggle = page.locator('button[onclick="toggleClientPhase(\'client-session-history\')"]')
+    if (await toggle.count() === 0) return // no sessions yet
+    await expect(page.locator('text=Recent sessions')).toBeVisible()
+    await expect(page.locator('text=Session history')).toHaveCount(0)
+    await toggle.click()
+    await page.waitForSelector('#client-session-list', { timeout: 10000 })
+    const rows = page.locator('#client-session-list .list-row')
+    const count = await rows.count()
+    expect(count).toBeLessThanOrEqual(5)
   })
 })

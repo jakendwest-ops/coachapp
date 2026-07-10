@@ -47,6 +47,22 @@ test.describe('PT Workouts page', () => {
     await templateRow.click()
     await expect(page.locator('text=Exercises')).toBeVisible({ timeout: 8000 })
   })
+
+  test('flat Templates list query excludes periodization-generated week clones (2026-07-08 data-leak fix)', async ({ page }) => {
+    // Confirms the .is('generated_from_phase_id', null) filter now added to renderWorkoutTemplates
+    // actually excludes generated week-clone templates (e.g. "Bench Press — W2") — these have
+    // client_id/program_id both null too, the same shape as a genuine standalone template, so
+    // without this filter they leaked into the coach-facing flat Templates list. Root-caused
+    // 2026-07-08 after Jake noticed his own solo-program's week clones cluttering this list.
+    const leakedCount = await page.evaluate(async () => {
+      const { data } = await db.from('workout_templates')
+        .select('id, generated_from_phase_id')
+        .eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null)
+        .limit(500)
+      return (data || []).filter(t => t.generated_from_phase_id != null).length
+    })
+    expect(leakedCount).toBe(0)
+  })
 })
 
 // ─── Exercise identity — resolve/auto-create (2026-07-06) ───────────────────

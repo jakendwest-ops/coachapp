@@ -162,17 +162,64 @@ function toggleClientTemplate(id) {
   if (chevron) chevron.style.transform = open ? 'rotate(90deg)' : ''
 }
 
+// Hero card for the Workouts page (2026-07-08) — same phase/week math the dashboards' own
+// "Up next" hero already computes (app-dashboard.js:324-336 client, :652-663 solo), extended one
+// step further since we're already ON the Workouts page: also resolves the actual next session's
+// templateId (first program_phase_workouts row in the current phase/week, by day_of_week/
+// session_order) so the Start button can jump straight into it instead of just linking back here.
+// Deliberately a standalone pair of functions, not shared with the dashboards' inline copies —
+// avoids touching two already-shipped, already-tested renders for a pure dedup benefit.
+function _buildWorkoutsHero(clientId, activeAssignment, cpwMap) {
+  if (!activeAssignment?.programs) {
+    return { title: 'No program assigned', meta: 'Start a freeform session below, or ask your PT to assign a program.', action: `startWorkoutRunner('${clientId}')`, btnLabel: 'Start a session' }
+  }
+  const prog = activeAssignment.programs
+  // start_date is nullable (the assign form doesn't require it) -- treat unset as "just started"
+  // (week 1 of phase 1) rather than letting `new Date(null + ...)` produce NaN, which silently
+  // fell through to the LAST phase/week instead of the real current one.
+  const weeksSinceStart = activeAssignment.start_date
+    ? Math.max(0, Math.floor((Date.now() - new Date(activeAssignment.start_date + 'T00:00:00')) / (7 * 24 * 60 * 60 * 1000)))
+    : 0
+  const phases = [...(prog.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
+  let cumWeeks = 0, currentPhase = phases[phases.length - 1] || null, weekInPhase = 1
+  for (const p of phases) {
+    if (weeksSinceStart < cumWeeks + p.duration_weeks) { currentPhase = p; weekInPhase = weeksSinceStart - cumWeeks + 1; break }
+    cumWeeks += p.duration_weeks
+  }
+  const title = prog.name || 'Your program'
+  const meta = currentPhase ? currentPhase.name + ' · Week ' + weekInPhase : (prog.description || '')
+  // "Next up": first day/session in the current phase's current week; falls back to the phase's
+  // first available week if that exact week has no rows yet (e.g. periodization not generated
+  // that far, or a non-periodized phase where everything sits at week_number 1).
+  const allRows = [...(currentPhase?.program_phase_workouts || [])].sort((a, b) => a.day_of_week - b.day_of_week || a.session_order - b.session_order)
+  const thisWeekRows = allRows.filter(pw => (pw.week_number || 1) === weekInPhase)
+  const next = thisWeekRows[0] || allRows[0] || null
+  const nextTemplateId = next ? cpwMap[next.id]?.templateId : null
+  return {
+    title, meta,
+    action: nextTemplateId ? `startWorkoutRunner('${clientId}','${nextTemplateId}')` : `startWorkoutRunner('${clientId}')`,
+    btnLabel: '▶ Start'
+  }
+}
+
+function _renderWorkoutsHeroHtml(hero) {
+  return `
+    <div style="background:var(--accent);border-radius:12px;padding:18px 20px;margin-bottom:16px;color:#fff">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
+      <div style="font-size:19px;font-weight:700;margin-bottom:3px">${escapeHtml(hero.title)}</div>
+      <div style="font-size:13px;opacity:.8;margin-bottom:14px">${escapeHtml(hero.meta)}</div>
+      <button onclick="${hero.action}" style="padding:8px 20px;border-radius:8px;background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:13px;font-weight:700;cursor:pointer">${hero.btnLabel} →</button>
+    </div>`
+}
+
 async function renderClientWorkoutsPage(el) {
   const { data: clientRecord } = await db.from('clients').select('id, coach_id').eq('user_id', currentUser.id).single()
   if (!clientRecord) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
   const clientId = clientRecord.id
 
-  const [{ data: templates }, { data: logs }, { data: cpAssignments }] = await Promise.all([
-    // .limit(100) bounds cost against the known historical orphan-template backlog on the
-    // coach account (~993 rows, tracked in STATUS.md) -- not a product ceiling on real template count.
-    db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).order('name').limit(100),
+  const [{ data: logs }, { data: cpAssignments }] = await Promise.all([
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
-    db.from('client_programs').select('id, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
+    db.from('client_programs').select('id, start_date, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
   ])
 
   let cpwMap = {}
@@ -185,10 +232,31 @@ async function renderClientWorkoutsPage(el) {
   }
   const hasProgram = activeAssignment && Object.keys(cpwMap).length > 0
 
+  // The flat template list below is only ever rendered as a fallback when there's no active
+  // program -- skip this fetch entirely when it won't be used. It matters: it joins nested
+  // workout_template_exercises across up to 100 rows against a coach_id account known to carry
+  // a large historical orphan-template backlog (~993 rows, tracked in STATUS.md), and was
+  // previously always fetched via Promise.all above even when hasProgram made it dead weight.
+  // Found 2026-07-10 investigating reported slowness opening the Workouts page on a personal
+  // (solo) account, which shares coach_id with the orphan-heavy PT account and almost always
+  // has an active program (making this the common, not edge, case for that account).
+  let templates = null
+  if (!hasProgram) {
+    // .limit(100) bounds cost against that same orphan backlog -- not a product ceiling on
+    // real template count. .is('generated_from_phase_id', null) excludes periodization-generated
+    // week clones (e.g. "Bench Press — W2") -- these have client_id/program_id both null too
+    // (same shape as a genuine standalone template), so without this they'd leak into this flat
+    // fallback list. Same fix as renderWorkoutTemplates below.
+    const { data } = await db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('name').limit(100)
+    templates = data
+  }
+
   el.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Workouts</h1>
     </div>
+
+    ${hasProgram ? _renderWorkoutsHeroHtml(_buildWorkoutsHero(clientId, activeAssignment, cpwMap)) : ''}
 
     ${hasProgram ? (() => {
       const prog = activeAssignment.programs
@@ -288,29 +356,26 @@ async function renderClientWorkoutsPage(el) {
     })()}
 
     ${!(logs?.length) ? `
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Session history</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Recent sessions</div>
       <div class="empty-state">
         <div class="empty-icon">📋</div>
         <div class="empty-title">No sessions yet</div>
         <div class="empty-text">Complete a workout to see your history here.</div>
       </div>` : `
       <button onclick="toggleClientPhase('client-session-history')" style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;background:none;border:none;padding:0;cursor:pointer;text-align:left">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Session history</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Recent sessions</div>
         <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:12px;color:var(--text-muted)">${logs.length} sessions</span>
           <svg id="client-session-history-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text-muted);transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
       </button>
       <div id="client-session-history" style="display:none">
         <div class="list" id="client-session-list">
-          ${logs.map(l => `
+          ${logs.slice(0, 5).map(l => `
             <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${l.id}','${clientId}')">
               <div style="width:36px;height:36px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">✓</div>
               <div class="row-info">
-                <div class="row-name">${l.name || 'Workout'}</div>
-                <div class="row-meta">${new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
+                <div class="row-name">${new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</div>
               </div>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
             </div>`).join('')}
         </div>
       </div>`}
@@ -330,7 +395,13 @@ async function renderWorkoutTemplates(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
   // .limit(100) bounds cost against the known historical orphan-template backlog on this
   // account (~993 rows, tracked in STATUS.md) -- not a product ceiling on real template count.
-  const { data: templates, error } = await db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).order('name').limit(100)
+  // .is('generated_from_phase_id', null) excludes periodization-generated week clones (e.g.
+  // "Bench Press — W2") -- these have client_id/program_id both null too (same shape as a genuine
+  // standalone template), so without this filter they leak into the flat coach-facing Templates
+  // list. Confirmed root cause 2026-07-08: Jake's own solo-program week-clones were cluttering
+  // this list, since solo shares coach_id with the PT account. Matches the filter already used
+  // correctly elsewhere (the phase day-slot assign picker, app-programs.js).
+  const { data: templates, error } = await db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('name').limit(100)
 
   if (error) { log.error('renderWorkoutTemplates', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
@@ -1657,25 +1728,20 @@ async function renderClientWorkouts(clientId, el) {
       </div>
     ` : `
       <button onclick="toggleClientPhase('pt-session-history')" style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;background:none;border:none;padding:0;cursor:pointer;text-align:left">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Session history</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Recent sessions</div>
         <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:12px;color:var(--text-muted)">${logs.length} sessions</span>
           <svg id="pt-session-history-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text-muted);transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
       </button>
       <div id="pt-session-history" style="display:none">
         <div class="list">
-          ${logs.map(l => {
+          ${logs.slice(0, 5).map(l => {
             const dateStr = new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
             return `
               <div class="list-row" onclick="openWorkoutLog('${l.id}','${clientId}')">
                 <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
                 <div class="row-info">
-                  <div class="row-name">${l.name}</div>
-                  <div class="row-meta">${dateStr} · ${l.workout_log_exercises.length} exercise${l.workout_log_exercises.length !== 1 ? 's' : ''}</div>
-                </div>
-                <div class="row-right">
-                  <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                  <div class="row-name">${dateStr}</div>
                 </div>
               </div>
             `

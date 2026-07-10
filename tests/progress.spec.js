@@ -97,6 +97,22 @@ test.describe('Progress page bug fixes (2026-07-08)', () => {
     expect(result.max).toBeGreaterThanOrEqual(90)
     expect(result.min).toBeLessThanOrEqual(82)
   })
+
+  test('"Log weight" button on the Body Weight tab actually opens the form (regression — was wired to a Dashboard-only DOM node)', async ({ page }) => {
+    await page.click('[data-page="progress"]')
+    await page.waitForTimeout(500)
+    await page.evaluate(() => { window._progressTab = 'Body Weight'; renderProgress(document.getElementById('main-content')) })
+    await page.waitForTimeout(500)
+    const form = page.locator('#client-weight-form')
+    await expect(form).toBeAttached()
+    await expect(form).toBeHidden()
+    await page.click('button:has-text("+ Log weight")')
+    await expect(form).toBeVisible({ timeout: 3000 })
+    // Form must have somewhere to actually write the entry — these inputs used to only exist
+    // on the Dashboard page, never on Progress, so the button previously did nothing at all.
+    await expect(page.locator('#cwf-date')).toBeVisible()
+    await expect(page.locator('#cwf-weight')).toBeVisible()
+  })
 })
 
 test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
