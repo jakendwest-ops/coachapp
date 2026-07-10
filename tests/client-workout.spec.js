@@ -219,6 +219,64 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     }
   })
 
+  test.fixme('a phase with no sessions assigned yet renders an empty-phase message, not a crash — BLOCKED: client_programs has no client-read RLS policy (found 2026-07-10)', async ({ page, browser }) => {
+    // Regression test for a real live crash Jake hit 2026-07-10: a phase with zero
+    // program_phase_workouts (a phase the coach hasn't finished building day-slots for yet --
+    // a totally normal, valid state) made `renderDays(weekMap[weekNums[0]], panelId)` call
+    // renderDays with `sessions: undefined` (weekNums was `[]`, so weekNums[0] was undefined),
+    // crashing on `sessions.forEach`. Fixed by guarding `!weekNums.length` before that call.
+    // Blocked from running for real by the same RLS gap as the hero-card test above -- see that
+    // test's comment for the fix. This test will start actually exercising the fix the moment
+    // that RLS policy lands; until then, `js/app-workouts.js`'s fix is verified by code reading only.
+    const ptContext = await browser.newContext()
+    try {
+      const ptPage = await ptContext.newPage()
+      await loginAsPT(ptPage)
+
+      const setup = await ptPage.evaluate(async () => {
+        const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        const clientId = clients[0].id
+        const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Empty Phase Program' }).select('id').single()
+        // Phase 1: no sessions at all -- the exact crash condition
+        const { data: emptyPhase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Deload', duration_weeks: 1, order_index: 0 }).select('id').single()
+        // Phase 2: one real session, so the rest of the accordion still has something to render
+        const { data: phase2 } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 4, order_index: 1 }).select('id').single()
+        const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: '[E2E] Empty Phase Session' }).select('id').single()
+        const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase2.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
+        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] }).select('id').single()
+        await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: tmpl.id, week_number: 1 })
+        return { progId: prog.id, cpId: cp.id }
+      })
+
+      try {
+        await page.click('[data-page="workouts"]')
+        await page.waitForTimeout(1000)
+        const consoleErrors = []
+        page.on('pageerror', err => consoleErrors.push(err.message))
+        await page.click('text=Deload')
+        await expect(page.locator('text=No sessions added to this phase yet')).toBeVisible({ timeout: 5000 })
+        expect(consoleErrors).toEqual([])
+      } finally {
+        await ptPage.evaluate(async ({ progId, cpId }) => {
+          await db.from('client_program_workouts').delete().eq('client_program_id', cpId)
+          await db.from('client_programs').delete().eq('id', cpId)
+          const { data: phases } = await db.from('program_phases').select('id').eq('program_id', progId)
+          const phaseIds = (phases || []).map(p => p.id)
+          if (phaseIds.length) {
+            const { data: pws } = await db.from('program_phase_workouts').select('id, template_id').in('phase_id', phaseIds)
+            await db.from('program_phase_workouts').delete().in('id', (pws || []).map(p => p.id))
+            const templateIds = [...new Set((pws || []).map(p => p.template_id).filter(Boolean))]
+            if (templateIds.length) await db.from('workout_templates').delete().in('id', templateIds)
+          }
+          await db.from('program_phases').delete().eq('program_id', progId)
+          await db.from('programs').delete().eq('id', progId)
+        }, setup)
+      }
+    } finally {
+      await ptContext.close()
+    }
+  })
+
   test('_buildWorkoutsHero falls back to a freeform start action when no program is assigned', async ({ page }) => {
     const hero = await page.evaluate(() => _buildWorkoutsHero('fake-client-id', null, {}))
     expect(hero.title).toBe('No program assigned')

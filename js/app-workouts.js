@@ -324,7 +324,8 @@ async function renderClientWorkoutsPage(el) {
                 <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
               <div id="${panelId}" style="display:none">
-                ${!showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : weekNums.map(w => `
+                ${!weekNums.length ? '<div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">No sessions added to this phase yet</div>' :
+                  !showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : weekNums.map(w => `
                   <div style="padding:8px 14px 2px;font-size:11px;font-weight:700;color:var(--accent);background:var(--surface-2);border-top:1px solid var(--border)">WEEK ${w}</div>
                   ${renderDays(weekMap[w], `${panelId}-w${w}`)}
                 `).join('')}
