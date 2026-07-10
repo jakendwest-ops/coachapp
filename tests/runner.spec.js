@@ -63,6 +63,24 @@ test.describe('PT Workouts page', () => {
     })
     expect(leakedCount).toBe(0)
   })
+
+  test('startWorkoutRunner\'s freeform "Load from template" list excludes client clones, phase-slot templates, and week clones (2026-07-10)', async ({ page }) => {
+    // Regression: startWorkoutRunner's freeform-picker query (shown when no specific templateId
+    // is passed) had no client_id/program_id/generated_from_phase_id filtering at all -- same
+    // leak class already fixed on the flat Templates list and the client Workouts-page fallback.
+    // Calls the real function (not a re-implemented query) so a future regression here is caught.
+    const clientId = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      return data[0].id
+    })
+    await page.evaluate((clientId) => { startWorkoutRunner(clientId) }, clientId)
+    await page.waitForSelector('#runner-setup', { timeout: 8000 })
+    const leaked = await page.evaluate(() =>
+      (window._runnerTemplates || []).filter(t => t.client_id || t.program_id || t.generated_from_phase_id).length
+    )
+    expect(leaked).toBe(0)
+    await page.evaluate(() => document.getElementById('runner-setup')?.remove())
+  })
 })
 
 // ─── Exercise identity — resolve/auto-create (2026-07-06) ───────────────────
@@ -592,6 +610,25 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('#att-name-display')).toHaveText(nameB)
     await expect(page.locator('#att-notes')).toHaveValue('keep this note')
     await page.locator('#add-to-template-modal .modal-close').click()
+  })
+
+  test('showRunnerOneRMSheet renders above the runner and is interactive (2026-07-10 live verification)', async ({ page }) => {
+    // The z-index:1000 fix on this modal was reasoned from the exercise-picker pattern but never
+    // actually reproduced live. If it sat BEHIND the runner (z-index:300), interacting with its
+    // own input would throw a pointer-interception error -- the same failure mode les-013 caught
+    // for the exercise picker. A clean fill proves the fix actually renders, not just that the
+    // JS sets the property.
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    await page.evaluate(() => showRunnerOneRMSheet(_runner.exIdx))
+    await expect(page.locator('#modal-runner-1rm')).toBeVisible({ timeout: 5000 })
+    await page.locator('#rorm-weight').click({ timeout: 5000 })
+    await page.locator('#rorm-weight').fill('120')
+    await expect(page.locator('#rorm-weight')).toHaveValue('120')
+
+    await page.locator('#modal-runner-1rm .modal-close').click()
+    await expect(page.locator('#modal-runner-1rm')).not.toBeVisible({ timeout: 3000 })
   })
 
   // ─── Session-state persistence (2026-07-10) ───────────────────────────────

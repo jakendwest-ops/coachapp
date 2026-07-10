@@ -1779,7 +1779,10 @@ async function startWorkoutRunner(clientId, templateId) {
     return
   }
 
-  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('coach_id', coachId).order('name').limit(2000)
+  // Same leak class fixed 2026-07-08/2026-07-10 in renderWorkoutTemplates/renderClientWorkoutsPage:
+  // without these filters, client-owned clones, program-phase slot templates, and periodization
+  // week clones (e.g. "Bench Press — W2") all leak into this freeform "Load from template" list.
+  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('coach_id', coachId).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('name').limit(2000)
   window._runnerTemplates = templates || []
 
   const overlay = document.createElement('div')
