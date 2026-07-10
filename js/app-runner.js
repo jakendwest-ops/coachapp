@@ -1717,7 +1717,10 @@ function flushLogState() {
 
 function _calcWeightFromPct(oneRM, pct) {
   if (!oneRM || !pct) return ''
-  return (Math.round(parseFloat(oneRM) * parseFloat(pct) / 100 * 2) / 2).toFixed(1)
+  // Rounded DOWN (not to nearest) to the nearest 2.5kg -- an exact %1RM figure like 71.25kg
+  // isn't loadable on a real bar, and rounding up would ask for more than the prescribed %.
+  const rounded = Math.floor(parseFloat(oneRM) * parseFloat(pct) / 100 / 2.5) * 2.5
+  return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1)
 }
 
 // Epley formula — estimates 1RM from a sub-max weight x reps performance

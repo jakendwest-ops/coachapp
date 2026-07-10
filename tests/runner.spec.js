@@ -96,6 +96,43 @@ test.describe('Exercise identity resolver', () => {
   })
 })
 
+// ─── %1RM target weight rounding (2026-07-10) ────────────────────────────────
+// _calcWeightFromPct is the single source for every %1RM-derived kg display in the runner
+// (target bar, table pre-fill placeholder, wizard live-preview and placeholder) -- fixing it
+// here fixes all of them at once, not just one display site.
+
+test.describe('%1RM target weight rounding', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+  })
+
+  test('rounds DOWN to the nearest 2.5kg, not to the nearest 2.5kg', async ({ page }) => {
+    // 74% of 100kg = 74kg. Nearest-2.5 rounding would give 75 (closer than 72.5).
+    // Round-down must give 72.5 -- this is the case that actually distinguishes the two.
+    const result = await page.evaluate(() => _calcWeightFromPct(100, 74))
+    expect(result).toBe('72.5')
+  })
+
+  test('whole-number results display without a trailing .0', async ({ page }) => {
+    const result = await page.evaluate(() => _calcWeightFromPct(100, 70))
+    expect(result).toBe('70')
+  })
+
+  test('non-whole results still show one decimal place', async ({ page }) => {
+    const result = await page.evaluate(() => _calcWeightFromPct(142.5, 80))
+    expect(result).toBe('112.5')
+  })
+
+  test('missing 1RM or percentage returns empty string, not NaN', async ({ page }) => {
+    const result = await page.evaluate(() => ({
+      noOneRM: _calcWeightFromPct(null, 70),
+      noPct: _calcWeightFromPct(100, null)
+    }))
+    expect(result.noOneRM).toBe('')
+    expect(result.noPct).toBe('')
+  })
+})
+
 // ─── Render regression: timed sets ───────────────────────────────────────────
 
 test.describe('Timed set render regression', () => {
