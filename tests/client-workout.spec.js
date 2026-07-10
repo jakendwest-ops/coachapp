@@ -371,4 +371,116 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     const count = await rows.count()
     expect(count).toBeLessThanOrEqual(5)
   })
+
+  test('workout_template_exercises resolves for the client role, both directly and via the nested client_program_workouts embed (regression, 2026-07-10)', async ({ page, browser }) => {
+    // Regression for a second, deeper instance of this morning's embed-chain miss:
+    // workout_template_exercises had NO select policy for the client role at all -- the only
+    // select-capable policy was "coaches manage own template exercises" (coach_id = auth.uid()),
+    // which never matches a real client's own auth.uid(). Solo was invisible to this because
+    // solo's auth.uid() IS the coach's own id. This broke openSessionDetail (direct query --
+    // showed "No exercises added yet" on every real session) and the client Workouts-page
+    // accordion (nested embed silently nulled the exercises level). Fixed via a new client-read
+    // policy on workout_template_exercises mirroring the two existing workout_templates policies.
+    const ptContext = await browser.newContext()
+    try {
+      const ptPage = await ptContext.newPage()
+      await loginAsPT(ptPage)
+
+      const setup = await ptPage.evaluate(async () => {
+        const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        const clientId = clients[0].id
+        const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Exercises Chain Program' }).select('id').single()
+        const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+        const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: '[E2E] Exercises Chain Session' }).select('id').single()
+        await db.from('workout_template_exercises').insert({ template_id: tmpl.id, exercise_name: '[E2E] Chain Squat', exercise_type: 'strength', order_index: 0, sets_json: [{ repsMin: '5', repsMax: '5' }] })
+        const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
+        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] }).select('id').single()
+        await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: tmpl.id, week_number: 1 })
+        return { progId: prog.id, cpId: cp.id, templateId: tmpl.id }
+      })
+
+      try {
+        const result = await page.evaluate(async (templateId) => {
+          // Direct query -- exact shape openSessionDetail uses.
+          const { data: direct } = await db.from('workout_template_exercises')
+            .select('exercise_name, exercise_type, order_index, sets_json, notes')
+            .eq('template_id', templateId)
+            .order('order_index')
+          // Nested embed -- exact shape renderClientWorkoutsPage/renderClientPrograms use.
+          const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+          const { data: cpw } = await db.from('client_program_workouts')
+            .select('workout_template_id, workout_templates(id, name, workout_template_exercises(exercise_name, order_index, sets_json))')
+            .eq('workout_template_id', templateId)
+          return { direct, nested: cpw?.[0]?.workout_templates?.workout_template_exercises }
+        }, setup.templateId)
+
+        expect(result.direct).toBeInstanceOf(Array)
+        expect(result.direct.length).toBeGreaterThan(0)
+        expect(result.direct[0].exercise_name).toBe('[E2E] Chain Squat')
+
+        expect(result.nested).toBeInstanceOf(Array) // this is the exact level that silently nulled out
+        expect(result.nested.length).toBeGreaterThan(0)
+        expect(result.nested[0].exercise_name).toBe('[E2E] Chain Squat')
+      } finally {
+        await ptPage.evaluate(async ({ progId, cpId, templateId }) => {
+          await db.from('client_program_workouts').delete().eq('client_program_id', cpId)
+          await db.from('client_programs').delete().eq('id', cpId)
+          const { data: phases } = await db.from('program_phases').select('id').eq('program_id', progId)
+          const phaseIds = (phases || []).map(p => p.id)
+          if (phaseIds.length) await db.from('program_phase_workouts').delete().in('phase_id', phaseIds)
+          await db.from('workout_template_exercises').delete().eq('template_id', templateId)
+          await db.from('workout_templates').delete().eq('id', templateId)
+          await db.from('program_phases').delete().eq('program_id', progId)
+          await db.from('programs').delete().eq('id', progId)
+        }, setup)
+      }
+    } finally {
+      await ptContext.close()
+    }
+  })
+
+  test('client can insert, update, and delete their own client_1rms row (regression, 2026-07-10)', async ({ page }) => {
+    // client_1rms had write policies for solo (coach_id IS NULL) but none at all for a real
+    // coached client writing their own 1RM -- e.g. via the runner's mid-workout/post-session
+    // prompts or the My Progress "Add 1RM" form. A real insert attempt failed with an RLS
+    // violation (manual testing, 2026-07-03). Fixed via 3 new client-scoped write policies.
+    const clientId = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+      return data.id
+    })
+
+    let rowId = null
+    try {
+      const inserted = await page.evaluate(async (clientId) => {
+        const { data, error } = await db.from('client_1rms')
+          .insert({ client_id: clientId, exercise_name: '[E2E] 1RM Write Test', one_rm_kg: 100, recorded_at: new Date().toISOString().split('T')[0] })
+          .select('id')
+          .single()
+        return { data, error: error?.message }
+      }, clientId)
+      expect(inserted.error).toBeUndefined()
+      expect(inserted.data?.id).toBeTruthy()
+      rowId = inserted.data.id
+
+      const updated = await page.evaluate(async (rowId) => {
+        const { error } = await db.from('client_1rms').update({ one_rm_kg: 105 }).eq('id', rowId)
+        return error?.message
+      }, rowId)
+      expect(updated).toBeUndefined()
+
+      const readBack = await page.evaluate(async (rowId) => {
+        const { data } = await db.from('client_1rms').select('one_rm_kg').eq('id', rowId).single()
+        return data?.one_rm_kg
+      }, rowId)
+      expect(readBack).toBe(105)
+    } finally {
+      if (rowId) {
+        const deleteErr = await page.evaluate(async (rowId) => {
+          const { error } = await db.from('client_1rms').delete().eq('id', rowId)
+          return error?.message
+        }, rowId)
+        expect(deleteErr).toBeUndefined()
+      }
+    }
+  })
 })
