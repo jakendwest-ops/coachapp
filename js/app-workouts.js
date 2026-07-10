@@ -430,7 +430,7 @@ async function renderWorkoutTemplates(el) {
 
 async function renderExerciseLibrary(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
-  const { data: exercises, error } = await db.from('exercises').select('*').order('name')
+  const { data: exercises, error } = await db.from('exercises').select('*').eq('coach_id', currentUser.id).eq('is_personal', false).order('name')
 
   if (error) { log.error('renderExerciseLibrary', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
@@ -562,6 +562,7 @@ async function saveNewExercise() {
   log.info('saveNewExercise', 'inserting exercise', { name })
   const { error } = await db.from('exercises').insert({
     coach_id:      currentUser.id,
+    is_personal:   currentProfile?.role === 'solo',
     name,
     muscle_group:  document.getElementById('ae-muscle').value   || null,
     category:      document.getElementById('ae-category').value || null,
@@ -1210,9 +1211,10 @@ async function _effectiveCoachIdForClient(clientId) {
 async function _resolveExerciseIdForSave(name, coachId) {
   const trimmed = (name || '').trim()
   if (!trimmed || !coachId) return null
-  const { data: existing } = await db.from('exercises').select('id').eq('coach_id', coachId).ilike('name', trimmed).maybeSingle()
+  const isPersonal = currentProfile?.role === 'solo'
+  const { data: existing } = await db.from('exercises').select('id').eq('coach_id', coachId).eq('is_personal', isPersonal).ilike('name', trimmed).maybeSingle()
   if (existing) return existing.id
-  const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, name: trimmed }).select('id').single()
+  const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, is_personal: isPersonal, name: trimmed }).select('id').single()
   if (error) { log.error('_resolveExerciseIdForSave', 'auto-create failed', error); return null }
   return created.id
 }
@@ -1251,7 +1253,7 @@ async function _openExercisePicker(coachId, onPick) {
     _syncExercisePickerHeight()
     window.visualViewport.addEventListener('resize', _syncExercisePickerHeight)
   }
-  const { data } = await db.from('exercises').select('id, name, muscle_group, is_archived').eq('coach_id', coachId).order('name')
+  const { data } = await db.from('exercises').select('id, name, muscle_group, is_archived').eq('coach_id', coachId).eq('is_personal', currentProfile?.role === 'solo').order('name')
   if (!_exercisePickerState) return // closed before the fetch resolved
   _exercisePickerState.allExercises = data || []
   // Re-render using whatever is CURRENTLY typed, not '' — the user may have already started
@@ -1307,7 +1309,7 @@ async function _createExerciseFromPicker(name) {
   const coachId = _exercisePickerState?.coachId
   const trimmed = (name || '').trim()
   if (!trimmed || !coachId) { _createExerciseFromPickerPending = false; return }
-  const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, name: trimmed }).select('id, name').single()
+  const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, is_personal: currentProfile?.role === 'solo', name: trimmed }).select('id, name').single()
   _createExerciseFromPickerPending = false
   if (error) { log.error('_createExerciseFromPicker', 'insert failed', error); showToast('Could not create exercise — try again.', 'error'); return }
   _pickExercise(created.id, created.name)

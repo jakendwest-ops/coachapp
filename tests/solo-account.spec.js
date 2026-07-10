@@ -130,4 +130,41 @@ test.describe('Solo / Personal account', () => {
     await page.locator('button:has-text("View program")').click()
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
   })
+
+  test('exercise created in Personal view never appears in the PT-facing Exercise Library, and vice versa (regression, 2026-07-10)', async ({ page }) => {
+    test.skip(!soloAvailable, 'No solo client record for this PT account')
+    // Personal and PT share the same coach_id (same auth.uid()) — exercises used to be
+    // distinguished by nothing at all, so a lift created in either context leaked into both.
+    const fixture = await page.evaluate(async () => {
+      const { data: personalEx } = await db.from('exercises').insert({ coach_id: currentUser.id, is_personal: true, name: '[E2E] Personal-Only Lift' }).select('id').single()
+      const { data: ptEx } = await db.from('exercises').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] PT-Only Lift' }).select('id').single()
+      return { personalId: personalEx.id, ptId: ptEx.id }
+    })
+    try {
+      await page.evaluate(() => switchView('coach'))
+      await page.waitForTimeout(800)
+      await page.click('[data-page="workouts"]')
+      await page.waitForTimeout(1000)
+      await page.click('button:has-text("Exercise Library")')
+      await page.waitForTimeout(500)
+      await expect(page.locator('text=[E2E] PT-Only Lift')).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=[E2E] Personal-Only Lift')).not.toBeVisible()
+
+      await page.evaluate(() => switchView('solo'))
+      await page.waitForTimeout(800)
+      const picked = await page.evaluate(async () => {
+        await _openExercisePicker(currentUser.id, () => {})
+        const names = (_exercisePickerState?.allExercises || []).map(e => e.name)
+        _closeExercisePicker()
+        return names
+      })
+      expect(picked).toContain('[E2E] Personal-Only Lift')
+      expect(picked).not.toContain('[E2E] PT-Only Lift')
+    } finally {
+      await page.evaluate(async ({ personalId, ptId }) => {
+        await db.from('exercises').delete().eq('id', personalId)
+        await db.from('exercises').delete().eq('id', ptId)
+      }, fixture)
+    }
+  })
 })
