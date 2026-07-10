@@ -556,6 +556,161 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('#att-notes')).toHaveValue('keep this note')
     await page.locator('#add-to-template-modal .modal-close').click()
   })
+
+  // ─── Session-state persistence (2026-07-10) ───────────────────────────────
+  // The 2026-07-04 live incident: a runner freeze forced a reload mid-session and wiped an
+  // entire in-progress gym session (no persistence existed at all). This is a localStorage-only
+  // draft, checkpointed on every render + a 10s safety net, offering resume on relaunch.
+
+  test('logging a set checkpoints a resumable draft to localStorage', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    const weightInput = page.locator('#wr-weight-input')
+    const repsInput   = page.locator('#wr-reps-input')
+    if (await weightInput.isVisible({ timeout: 5000 }).catch(() => false)) await weightInput.fill('80')
+    if (await repsInput.isVisible())   await repsInput.fill('8')
+    await page.locator('#workout-runner button:has-text("LOG")').click({ timeout: 8000 })
+    await page.waitForTimeout(300)
+
+    const draft = await page.evaluate(() => {
+      const raw = localStorage.getItem(`_runnerDraft_${_runner.clientId}`)
+      return raw ? JSON.parse(raw) : null
+    })
+    expect(draft).not.toBeNull()
+    expect(draft.exercises.some(ex => ex.loggedSets?.length > 0)).toBe(true)
+
+    // Cleanup — abandon this session so it doesn't linger as a real orphaned draft
+    await page.evaluate(() => discardRunner())
+  })
+
+  test('relaunching with a same-day in-progress draft offers Resume, and Resume restores exercise index + logged sets', async ({ page }) => {
+    const clientId = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+      return data.id
+    })
+    try {
+      await page.evaluate((clientId) => {
+        const draft = {
+          clientId, name: '[E2E] Draft Resume Test', date: new Date().toISOString().split('T')[0],
+          startTime: Date.now() - 60000, exIdx: 1,
+          exercises: [
+            { name: '[E2E] Draft Ex 1', type: 'strength', targetSets: 3, loggedSets: [{ weight: '50', reps: '10' }] },
+            { name: '[E2E] Draft Ex 2', type: 'strength', targetSets: 3, loggedSets: [] }
+          ],
+          savedAt: Date.now()
+        }
+        localStorage.setItem(`_runnerDraft_${clientId}`, JSON.stringify(draft))
+      }, clientId)
+
+      await page.evaluate((clientId) => launchRunner(clientId), clientId)
+      await expect(page.locator('#runner-resume-modal')).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=Resume in-progress workout?')).toBeVisible()
+
+      await page.locator('#runner-resume-modal button:has-text("Resume")').click()
+      await expect(page.locator('#runner-resume-modal')).not.toBeVisible({ timeout: 5000 })
+
+      const state = await page.evaluate(() => ({
+        exIdx: _runner.exIdx,
+        firstExLogged: _runner.exercises[0].loggedSets.length,
+        name: _runner.name
+      }))
+      expect(state.exIdx).toBe(1)
+      expect(state.firstExLogged).toBe(1)
+      expect(state.name).toBe('[E2E] Draft Resume Test')
+      await expect(page.locator('text=/Exercise 2 of \\d+/')).toBeVisible({ timeout: 5000 })
+    } finally {
+      await page.evaluate(() => { if (typeof discardRunner === 'function') discardRunner() })
+      await page.evaluate((clientId) => localStorage.removeItem(`_runnerDraft_${clientId}`), clientId)
+    }
+  })
+
+  test('Discard & start fresh clears the draft and begins a clean session at exercise 0', async ({ page }) => {
+    const clientId = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+      return data.id
+    })
+    try {
+      await page.evaluate((clientId) => {
+        const draft = {
+          clientId, name: '[E2E] Draft Discard Test', date: new Date().toISOString().split('T')[0],
+          startTime: Date.now(), exIdx: 1,
+          exercises: [
+            { name: '[E2E] Discard Ex 1', type: 'strength', targetSets: 3, loggedSets: [{ weight: '50', reps: '10' }] },
+            { name: '[E2E] Discard Ex 2', type: 'strength', targetSets: 3, loggedSets: [] }
+          ],
+          savedAt: Date.now()
+        }
+        localStorage.setItem(`_runnerDraft_${clientId}`, JSON.stringify(draft))
+      }, clientId)
+
+      await page.evaluate((clientId) => launchRunner(clientId), clientId)
+      await expect(page.locator('#runner-resume-modal')).toBeVisible({ timeout: 5000 })
+      await page.locator('#runner-resume-modal button:has-text("Discard")').click()
+      await expect(page.locator('#runner-resume-modal')).not.toBeVisible({ timeout: 5000 })
+      await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+      const clearedFromStorage = await page.evaluate((clientId) => localStorage.getItem(`_runnerDraft_${clientId}`) === null, clientId)
+      // A fresh checkpoint may already have re-written a (now-empty) draft on the first render --
+      // what matters is the OLD progress is gone, not that the key is strictly absent.
+      const state = await page.evaluate(() => ({ exIdx: _runner.exIdx, name: _runner.name }))
+      expect(state.exIdx).toBe(0)
+      expect(state.name).not.toBe('[E2E] Draft Discard Test')
+    } finally {
+      await page.evaluate(() => { if (typeof discardRunner === 'function') discardRunner() })
+      await page.evaluate((clientId) => localStorage.removeItem(`_runnerDraft_${clientId}`), clientId)
+    }
+  })
+
+  test('a draft from a previous calendar day is never offered for resume', async ({ page }) => {
+    const clientId = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+      return data.id
+    })
+    try {
+      await page.evaluate((clientId) => {
+        const yesterday = Date.now() - 24 * 60 * 60 * 1000
+        const draft = {
+          clientId, name: '[E2E] Stale Draft Test', date: 'yesterday', startTime: yesterday, exIdx: 0,
+          exercises: [{ name: '[E2E] Stale Ex', type: 'strength', targetSets: 3, loggedSets: [{ weight: '50', reps: '10' }] }],
+          savedAt: yesterday
+        }
+        localStorage.setItem(`_runnerDraft_${clientId}`, JSON.stringify(draft))
+      }, clientId)
+
+      await page.evaluate((clientId) => launchRunner(clientId), clientId)
+      await page.waitForTimeout(500)
+      await expect(page.locator('#runner-resume-modal')).not.toBeVisible()
+      // Stale draft must also be purged from storage, not just skipped
+      const stillThere = await page.evaluate((clientId) => localStorage.getItem(`_runnerDraft_${clientId}`), clientId)
+      // If a fresh runner did launch, some draft may exist again (from the fresh checkpoint) --
+      // what must NOT be true is the stale one surviving with yesterday's name intact.
+      if (stillThere) expect(JSON.parse(stillThere).name).not.toBe('[E2E] Stale Draft Test')
+    } finally {
+      await page.evaluate(() => { if (typeof discardRunner === 'function') discardRunner() })
+      await page.evaluate((clientId) => localStorage.removeItem(`_runnerDraft_${clientId}`), clientId)
+    }
+  })
+
+  test('discardRunner() clears the current client\'s draft (covers both abandon and post-save cleanup)', async ({ page }) => {
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+
+    const weightInput = page.locator('#wr-weight-input')
+    const repsInput   = page.locator('#wr-reps-input')
+    if (await weightInput.isVisible({ timeout: 5000 }).catch(() => false)) await weightInput.fill('80')
+    if (await repsInput.isVisible())   await repsInput.fill('8')
+    await page.locator('#workout-runner button:has-text("LOG")').click({ timeout: 8000 })
+    await page.waitForTimeout(300)
+
+    const clientId = await page.evaluate(() => _runner.clientId)
+    const beforeDiscard = await page.evaluate((clientId) => localStorage.getItem(`_runnerDraft_${clientId}`) !== null, clientId)
+    expect(beforeDiscard).toBe(true)
+
+    await page.evaluate(() => discardRunner())
+    const afterDiscard = await page.evaluate((clientId) => localStorage.getItem(`_runnerDraft_${clientId}`), clientId)
+    expect(afterDiscard).toBeNull()
+  })
 })
 
 // ─── saveWorkoutSession rollback (2026-07-07 perf refactor) ─────────────────

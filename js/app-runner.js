@@ -1,4 +1,17 @@
 ﻿async function launchRunner(clientId) {
+  // Resume-check happens here, not in startWorkoutRunner -- this is the one true choke point
+  // both the fast templateId path (startWorkoutRunner) and the setup modal's own Start button
+  // funnel through before _runner gets overwritten, so checking here catches both in one hook.
+  const draft = _loadRunnerDraft(clientId)
+  if (draft) {
+    document.getElementById('runner-setup')?.remove()
+    _showRunnerResumeModal(clientId, draft)
+    return
+  }
+  await _startFreshRunner(clientId)
+}
+
+async function _startFreshRunner(clientId) {
   // Unlock audio/speech here too — this function can be reached directly from the
   // runner setup modal's Start button, bypassing startWorkoutRunner entirely.
   _unlockAudio()
@@ -33,6 +46,11 @@
 
   _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null }
   renderRunner()
+  _startRunnerTimerTick()
+  _startRunnerDraftSafetyNet()
+}
+
+function _startRunnerTimerTick() {
   _runner._timerInterval = setInterval(() => {
     if (!_runner) return
     const t = fmtRunnerTime(_runner.startTime)
@@ -46,6 +64,121 @@
 function fmtRunnerTime(startTime) {
   const s = Math.floor((Date.now() - startTime) / 1000)
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`
+}
+
+// ─── Session-state persistence (localStorage draft) ──────────────────────
+// The live runner has no DB persistence until "Save workout" is tapped -- a crash, forced
+// reload, or killed tab loses every set logged so far. This is a deliberately simple
+// localStorage-only draft (a DB-backed cross-device version is out of scope for this pass) --
+// checkpointed on every renderRunner() call plus a 10s safety-net tick (covers state changes
+// that don't trigger a full re-render, e.g. typing into a strength-table input before tapping
+// its ✓). Keyed per client so a PT logging for multiple clients can't cross-contaminate drafts.
+
+let _runnerDraftSafetyNetInterval = null
+
+function _runnerDraftKey(clientId) {
+  return `_runnerDraft_${clientId}`
+}
+
+function _saveRunnerDraft() {
+  if (!_runner) return
+  try {
+    const draft = {
+      clientId: _runner.clientId,
+      name: _runner.name,
+      date: _runner.date,
+      startTime: _runner.startTime,
+      exIdx: _runner.exIdx,
+      templateDesc: _runner.templateDesc || null,
+      exercises: _runner.exercises,
+      savedAt: Date.now()
+    }
+    localStorage.setItem(_runnerDraftKey(_runner.clientId), JSON.stringify(draft))
+  } catch (e) {
+    // A draft is a nice-to-have -- never let a persistence failure (quota, private browsing,
+    // an unexpected serialization issue) break the actual live runner.
+    log.error('_saveRunnerDraft', 'failed to persist draft', e)
+  }
+}
+
+function _loadRunnerDraft(clientId) {
+  try {
+    const raw = localStorage.getItem(_runnerDraftKey(clientId))
+    if (!raw) return null
+    const draft = JSON.parse(raw)
+    // Same-day staleness cutoff -- a draft from a previous calendar day is presumed abandoned
+    // and never offered for resume.
+    if (new Date(draft.savedAt).toDateString() !== new Date().toDateString()) {
+      localStorage.removeItem(_runnerDraftKey(clientId))
+      return null
+    }
+    // Must have at least one logged set (wizard) or completed table row to be worth resuming --
+    // an empty draft (e.g. the runner was opened then immediately backed out of) offers nothing
+    // over just starting fresh.
+    const hasProgress = (draft.exercises || []).some(ex => ex.loggedSets?.length || ex.tableRows?.some(r => r.done))
+    if (!hasProgress) { localStorage.removeItem(_runnerDraftKey(clientId)); return null }
+    return draft
+  } catch (e) {
+    log.error('_loadRunnerDraft', 'failed to parse draft', e)
+    localStorage.removeItem(_runnerDraftKey(clientId))
+    return null
+  }
+}
+
+function _clearRunnerDraft(clientId) {
+  if (clientId) localStorage.removeItem(_runnerDraftKey(clientId))
+}
+
+function _startRunnerDraftSafetyNet() {
+  clearInterval(_runnerDraftSafetyNetInterval)
+  _runnerDraftSafetyNetInterval = setInterval(() => { if (_runner) _saveRunnerDraft() }, 10000)
+}
+
+function _stopRunnerDraftSafetyNet() {
+  clearInterval(_runnerDraftSafetyNetInterval)
+  _runnerDraftSafetyNetInterval = null
+}
+
+function _showRunnerResumeModal(clientId, draft) {
+  const loggedCount = (draft.exercises || []).reduce((n, ex) =>
+    n + (ex.loggedSets?.length || 0) + (ex.tableRows?.filter(r => r.done).length || 0), 0)
+  const overlay = document.createElement('div')
+  overlay.id = 'runner-resume-modal'
+  overlay.className = 'modal-overlay'
+  overlay.style.zIndex = '1001' // nothing else is open at this point, but matches the picker's defensive stacking pattern
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Resume in-progress workout?</h2>
+      </div>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 20px">You have an unsaved workout from earlier today (${escapeHtml(draft.name || 'Workout')}${loggedCount ? `, ${loggedCount} set${loggedCount === 1 ? '' : 's'} logged` : ''}). Resume where you left off, or discard it and start fresh?</p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="_discardRunnerDraftAndStartFresh('${clientId}')">Discard &amp; start fresh</button>
+        <button class="btn-primary" onclick="_resumeRunnerFromDraft('${clientId}')">Resume</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+}
+
+async function _resumeRunnerFromDraft(clientId) {
+  document.getElementById('runner-resume-modal')?.remove()
+  const draft = _loadRunnerDraft(clientId)
+  if (!draft) { await _startFreshRunner(clientId); return } // vanished between modal open and tap
+  _runner = {
+    clientId: draft.clientId, name: draft.name, date: draft.date, exercises: draft.exercises,
+    exIdx: draft.exIdx || 0, startTime: draft.startTime, _timerInterval: null,
+    templateDesc: draft.templateDesc || null
+  }
+  renderRunner()
+  _startRunnerTimerTick()
+  _startRunnerDraftSafetyNet()
+}
+
+async function _discardRunnerDraftAndStartFresh(clientId) {
+  document.getElementById('runner-resume-modal')?.remove()
+  _clearRunnerDraft(clientId)
+  await _startFreshRunner(clientId)
 }
 
 async function fetchRunnerLastSession(exName, exerciseId) {
@@ -354,6 +487,7 @@ function renderStrengthTable(ex) {
 }
 
 function renderRunner() {
+  _saveRunnerDraft()
   const ex      = _runner.exercises[_runner.exIdx]
   const setNum  = Math.min(ex.loggedSets.length + 1, ex.targetSets || Infinity)
   const isLast  = _runner.exIdx === _runner.exercises.length - 1
@@ -1398,6 +1532,8 @@ function discardRunner() {
   clearInterval(_runner?._timerInterval)
   clearInterval(_runner?._intervalInterval)
   clearInterval(_runner?._restInterval)
+  _stopRunnerDraftSafetyNet()
+  _clearRunnerDraft(_runner?.clientId)
   document.getElementById('workout-runner')?.remove()
   document.getElementById('wr-interval-overlay')?.remove()
   document.getElementById('rest-timer-overlay')?.remove()
