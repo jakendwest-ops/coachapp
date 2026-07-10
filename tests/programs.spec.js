@@ -197,6 +197,47 @@ test.describe('Inline assign grid', () => {
     await page.click('button:has-text("Delete")')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
+
+  test('a template created inline for one day slot does not clutter the picker for other slots or programs (2026-07-10)', async ({ page }) => {
+    // Regression: openProgram's template query had no .is('program_id', null) filter, so every
+    // one-off "+ Create new workout" template stayed in the reuse pool forever -- found live when
+    // a 12-phase program's picker showed the same name 4+ times with no way to tell which day
+    // each already belonged to. The inline "__new__" option is also relabeled "(this day only)"
+    // to make the distinction clear at the point of choice.
+    await page.click('button:has-text("New program")')
+    await page.fill('#pm-name', '[E2E] Picker Scope Test')
+    await page.click('#pm-save-btn')
+    await page.waitForSelector('h1:has-text("[E2E] Picker Scope Test")', { timeout: 8000 })
+
+    await page.click('button:has-text("Add phase")')
+    await page.fill('#pf-name', 'Block 1')
+    await page.fill('#pf-weeks', '1')
+    await page.click('#pf-save-btn')
+    await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
+
+    await expect(page.locator('select.pwg-select option[value="__new__"]').first()).toHaveText('＋ Create new workout (this day only)')
+
+    const programId = await page.evaluate(async () => {
+      const { data } = await db.from('programs').select('id').eq('name', '[E2E] Picker Scope Test').single()
+      return data.id
+    })
+    const templateId = await page.evaluate(async (programId) => {
+      const { data } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: programId, client_id: null, name: '[E2E] Day-Only Template' }).select('id').single()
+      return data.id
+    }, programId)
+
+    try {
+      await page.evaluate(async (programId) => { await openProgram(programId) }, programId)
+      await page.waitForTimeout(800)
+      const appears = await page.evaluate(() => (window._programTemplates || []).some(t => t.name === '[E2E] Day-Only Template'))
+      expect(appears).toBe(false)
+    } finally {
+      await page.evaluate(async (templateId) => { await db.from('workout_templates').delete().eq('id', templateId) }, templateId)
+      page.once('dialog', d => d.accept())
+      await page.click('button:has-text("Delete")')
+      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    }
+  })
 })
 
 test.describe('Assignment-time 1RM check', () => {
@@ -406,5 +447,89 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       await db.from('client_programs').delete().eq('client_id', clientId).eq('program_id', programId)
       await db.from('programs').delete().eq('id', programId)
     }, { programId: setup.programId, clientId: setup.clientId })
+  })
+
+  test('deleting a week removes its sessions and renumbers later weeks down by 1 (2026-07-10)', async ({ page }) => {
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Delete Week Test' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 3, order_index: 0 }).select('id').single()
+      const mk = async (name) => (await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name }).select('id').single()).data.id
+      const tmplW1 = await mk('[E2E] DW Week1 Session')
+      const tmplW2 = await mk('[E2E] DW Week2 Session')
+      const tmplW3 = await mk('[E2E] DW Week3 Session')
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmplW1, week_number: 1 })
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmplW2, week_number: 2 })
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmplW3, week_number: 3 })
+      return { programId: prog.id, phaseId: phase.id, tmplW1, tmplW2, tmplW3 }
+    })
+
+    try {
+      await page.click('[data-page="programs"]')
+      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.evaluate((programId) => openProgram(programId), setup.programId)
+      await page.waitForSelector('text=WEEK 3', { timeout: 8000 })
+      await expect(page.locator('button:has-text("Delete week")').first()).toBeVisible({ timeout: 4000 })
+
+      page.once('dialog', d => d.accept())
+      await page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 2), setup)
+      await page.waitForTimeout(1000)
+
+      const result = await page.evaluate(async ({ phaseId }) => {
+        const { data: rows } = await db.from('program_phase_workouts').select('week_number, template_id').eq('phase_id', phaseId)
+        const { data: phaseRow } = await db.from('program_phases').select('duration_weeks').eq('id', phaseId).single()
+        return { rows, duration: phaseRow.duration_weeks }
+      }, setup)
+
+      expect(result.duration).toBe(2)
+      expect(result.rows.length).toBe(2)
+      const week1 = result.rows.find(r => r.week_number === 1)
+      const week2 = result.rows.find(r => r.week_number === 2)
+      expect(week1?.template_id).toBe(setup.tmplW1) // untouched
+      expect(week2?.template_id).toBe(setup.tmplW3) // old week 3 shifted down into week 2's slot
+      expect(result.rows.some(r => r.week_number === 3)).toBe(false)
+
+      // The deleted week's own template is gone; the shifted-down week's template survives
+      const remainingTemplates = await page.evaluate(async ({ tmplW2, tmplW3 }) => {
+        const { data } = await db.from('workout_templates').select('id').in('id', [tmplW2, tmplW3])
+        return (data || []).map(t => t.id)
+      }, setup)
+      expect(remainingTemplates).not.toContain(setup.tmplW2)
+      expect(remainingTemplates).toContain(setup.tmplW3)
+    } finally {
+      await page.evaluate(async ({ programId, tmplW1, tmplW2, tmplW3 }) => {
+        await db.from('programs').delete().eq('id', programId) // cascades program_phases -> program_phase_workouts
+        await db.from('workout_templates').delete().in('id', [tmplW1, tmplW2, tmplW3])
+      }, setup)
+    }
+  })
+
+  test('deleting a week never destroys a shared standalone template also assigned to that slot (2026-07-10)', async ({ page }) => {
+    // Regression guard for the exact bug deleteProgram() was fixed for this morning: a slot can
+    // reference a template with program_id/generated_from_phase_id both null (a genuine
+    // standalone template the coach reuses elsewhere) -- deleting the week must not delete it.
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Delete Week Shared Test' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      const { data: shared } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] DW Shared Template' }).select('id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: shared.id, week_number: 1 })
+      return { programId: prog.id, phaseId: phase.id, sharedTemplateId: shared.id }
+    })
+
+    try {
+      page.once('dialog', d => d.accept())
+      await page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 1), setup)
+      await page.waitForTimeout(800)
+
+      const stillExists = await page.evaluate(async (sharedTemplateId) => {
+        const { data } = await db.from('workout_templates').select('id').eq('id', sharedTemplateId).maybeSingle()
+        return !!data
+      }, setup.sharedTemplateId)
+      expect(stillExists).toBe(true)
+    } finally {
+      await page.evaluate(async ({ programId, sharedTemplateId }) => {
+        await db.from('programs').delete().eq('id', programId)
+        await db.from('workout_templates').delete().eq('id', sharedTemplateId)
+      }, setup)
+    }
   })
 })

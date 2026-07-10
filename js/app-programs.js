@@ -586,7 +586,13 @@ async function openProgram(programId) {
 
   const [{ data: program, error }, { data: templates }] = await Promise.all([
     db.from('programs').select('id, name, description, created_at, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)').eq('id', programId).single(),
-    db.from('workout_templates').select('id, name, workout_template_exercises(exercise_name, order_index)').eq('coach_id', currentUser.id).is('client_id', null).is('generated_from_phase_id', null).order('name'),
+    // .is('program_id', null) excludes templates already created inline for a specific day slot
+    // ("+ Create new workout") -- without it, every one-off slot creation stayed in this reuse
+    // pool forever, ballooning the picker with indistinguishable same-named entries the coach had
+    // no way to tell apart (found live, 2026-07-10: a 12-phase program's picker showed the same
+    // "Lower Body - Dynamic Effort" name 4+ times with no indication which day each belonged to).
+    // To genuinely reuse one workout across multiple days, build it once in the Workouts library.
+    db.from('workout_templates').select('id, name, workout_template_exercises(exercise_name, order_index)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('name'),
   ])
 
   if (error) { log.error('openProgram', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
@@ -1183,7 +1189,10 @@ function renderPhaseWeekGrid(phase, weekNum, sessions, canDuplicateAny) {
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
       <div style="font-size:11px;font-weight:700;color:var(--accent)">WEEK ${weekNum}</div>
-      ${canDuplicateAny && sessions.length ? `<button class="btn-secondary" style="font-size:11px;padding:3px 9px" onclick="duplicatePhaseWeek('${phase.id}',${weekNum})">Duplicate week</button>` : ''}
+      <div style="display:flex;gap:6px">
+        ${canDuplicateAny && sessions.length ? `<button class="btn-secondary" style="font-size:11px;padding:3px 9px" onclick="duplicatePhaseWeek('${phase.id}',${weekNum})">Duplicate week</button>` : ''}
+        ${sessions.length ? `<button class="btn-secondary" style="font-size:11px;padding:3px 9px;color:#ef4444" onclick="deletePhaseWeek('${phase.id}',${weekNum})">Delete week</button>` : ''}
+      </div>
     </div>
     <div style="display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:4px;-webkit-overflow-scrolling:touch">
       ${dayLabels.map((label, i) => {
@@ -1202,9 +1211,9 @@ function renderPhaseWeekGrid(phase, weekNum, sessions, canDuplicateAny) {
             </div>`).join('')}
           ${canAdd ? `
             <input class="field-input pwg-search" placeholder="Filter workouts below…" title="Type to filter the workout list below" style="font-size:11px;padding:4px 6px;margin-bottom:3px;width:100%" oninput="_filterPwgOptions(this)">
-            <select class="field-input pwg-select" style="font-size:11px;padding:4px 6px;width:100%" data-phase="${phase.id}" data-day="${dayNum}" data-session="${nextSessionOrder}" data-week="${weekNum}" onchange="_quickAssignPhaseWorkout(this)">
+            <select class="field-input pwg-select" style="font-size:11px;padding:4px 6px;width:100%" data-phase="${phase.id}" data-day="${dayNum}" data-session="${nextSessionOrder}" data-week="${weekNum}" onchange="_quickAssignPhaseWorkout(this)" title="Pick an existing reusable template below, or create one for just this day. To build a template you can reuse across multiple days, add it in Workouts → Templates instead.">
               <option value="">+ Add workout…</option>
-              <option value="__new__">＋ Create new workout</option>
+              <option value="__new__">＋ Create new workout (this day only)</option>
               ${(window._programTemplates || []).map(t => `<option value="${t.id}" data-search="${escapeHtml((t.name + ' ' + (t._exPreview || '')).toLowerCase())}">${escapeHtml(t.name)}${t._exPreview ? ' — ' + escapeHtml(t._exPreview) : ''}</option>`).join('')}
             </select>` : ''}
         </div>`
@@ -1257,6 +1266,64 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
   }
 
   showToast(`Week ${sourceWeek} duplicated to Week ${targetWeek}`, 'success')
+  loadAllPhaseWorkouts([{ id: phaseId }])
+}
+
+// Deletes one week from a phase entirely — its own program_phase_workouts (+ the templates it
+// actually owns) and any client-propagated copies + their clones, then renumbers every later
+// week down by 1 so slots stay contiguous (matches "Duplicate week"'s existing expectation).
+// Same 4-step cleanup pattern as _cleanupPhaseWeeksBeyond, filtered to exactly this week instead
+// of everything beyond a cutoff -- plus the same ownership check deleteProgram() uses (program_id
+// or generated_from_phase_id match), since a slot can reference a shared standalone template the
+// coach reuses elsewhere; deleting this week must not destroy that.
+async function deletePhaseWeek(phaseId, weekNumber) {
+  if (!confirm(`Delete Week ${weekNumber}? This removes every session in this week and cannot be undone. Later weeks will shift down.`)) return
+
+  const programId = window._openProgramId
+  const { data: staleRows } = await db.from('program_phase_workouts').select('id, template_id').eq('phase_id', phaseId).eq('week_number', weekNumber)
+  const stalePwIds = (staleRows || []).map(r => r.id)
+  const staleTemplateIds = [...new Set((staleRows || []).map(r => r.template_id).filter(Boolean))]
+
+  if (stalePwIds.length) {
+    const { data: staleCpws } = await db.from('client_program_workouts').select('id, workout_template_id').in('program_phase_workout_id', stalePwIds)
+    if (staleCpws?.length) {
+      await db.from('client_program_workouts').delete().in('id', staleCpws.map(c => c.id))
+      const staleClientTemplateIds = staleCpws.map(c => c.workout_template_id).filter(Boolean)
+      if (staleClientTemplateIds.length) await db.from('workout_templates').delete().in('id', staleClientTemplateIds)
+    }
+    await db.from('program_phase_workouts').delete().eq('phase_id', phaseId).eq('week_number', weekNumber)
+
+    if (staleTemplateIds.length) {
+      const { data: owned } = await db.from('workout_templates').select('id')
+        .in('id', staleTemplateIds)
+        .or(`program_id.eq.${programId},generated_from_phase_id.eq.${phaseId}`)
+      const ownedIds = (owned || []).map(t => t.id)
+      if (ownedIds.length) await db.from('workout_templates').delete().in('id', ownedIds)
+    }
+  }
+
+  // Renumber every later week down by 1 -- master rows first, then any client-propagated copies
+  // of those same rows. client_program_workouts carries its own week_number column (used by
+  // periodization display), kept in sync via program_phase_workout_id rather than re-derived,
+  // since a client copy can be created at a different time than the master row it points at.
+  const { data: laterMaster } = await db.from('program_phase_workouts').select('id, week_number').eq('phase_id', phaseId).gt('week_number', weekNumber)
+  for (const row of laterMaster || []) {
+    await db.from('program_phase_workouts').update({ week_number: row.week_number - 1 }).eq('id', row.id)
+  }
+  const laterPwIds = (laterMaster || []).map(r => r.id)
+  if (laterPwIds.length) {
+    const { data: laterCpws } = await db.from('client_program_workouts').select('id, week_number').in('program_phase_workout_id', laterPwIds)
+    for (const cpw of laterCpws || []) {
+      await db.from('client_program_workouts').update({ week_number: cpw.week_number - 1 }).eq('id', cpw.id)
+    }
+  }
+
+  const phase = (window._openProgramPhases || []).find(p => p.id === phaseId)
+  const newDuration = Math.max(1, (phase?.duration_weeks || 1) - 1)
+  await db.from('program_phases').update({ duration_weeks: newDuration }).eq('id', phaseId)
+  if (phase) phase.duration_weeks = newDuration
+
+  showToast(`Week ${weekNumber} deleted`, 'success')
   loadAllPhaseWorkouts([{ id: phaseId }])
 }
 
