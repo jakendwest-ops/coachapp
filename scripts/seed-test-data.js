@@ -52,9 +52,6 @@ async function run() {
     { name: 'Pull-up',        category: 'back',      equipment: 'bodyweight', muscle_groups: ['lats', 'biceps'] },
     { name: 'Overhead Press', category: 'shoulders', equipment: 'barbell', muscle_groups: ['shoulders', 'triceps'] },
     { name: 'Row 500m',       category: 'cardio',    equipment: 'rower',   muscle_groups: ['back', 'legs'], exercise_type: 'cardio' },
-    // Name deliberately matches _isPlainStrengthExercise's carry regex, so it routes to the wizard
-    // (the view that owns the LOG button) — runner.spec.js's first-exercise tests depend on it.
-    { name: "Farmer's Carry", category: 'full body', equipment: 'dumbbell', muscle_groups: ['forearms', 'core'] },
   ]
   const { data: existingEx } = await db.from('exercises').select('name').eq('coach_id', ptId)
   const existingNames = new Set((existingEx || []).map(e => e.name))
@@ -101,28 +98,25 @@ async function run() {
     // table tests to jump to.
     const templateExercises = [
       {
-        template_id: templateId, exercise_id: exMap['Farmer\'s Carry'] || null,
-        exercise_name: 'Farmer\'s Carry', exercise_type: 'strength', order_index: 0,
-        sets_json: [
-          { repsMin: '10', repsMax: '10', weight: '40', rest: '90' },
-          { repsMin: '10', repsMax: '10', weight: '40', rest: '90' },
-        ],
-      },
-      {
+        // Exercise 0 must render the WIZARD (it owns the LOG button — runner.spec.js clicks it
+        // immediately). An empty sets_json is what routes it there: _isPlainStrengthExercise bails
+        // on `!ex.sets_json?.length`, so the exercise falls to the one-set wizard.
+        // Do NOT reach for a carry/sled/lunge NAME to force the wizard instead — logRunnerSet()
+        // regex-matches those same names as DISTANCE-based and then demands a distance input, so a
+        // weight/reps LOG silently no-ops and the rest timer never starts.
         template_id: templateId, exercise_id: exMap['Bench Press'] || null,
-        exercise_name: 'Bench Press', exercise_type: 'strength', order_index: 1,
-        sets_json: [
-          { repsMin: '8', repsMax: '8', weight: '80', rest: '120' },
-          { repsMin: '8', repsMax: '8', weight: '80', rest: '120' },
-          { repsMin: '8', repsMax: '8', weight: '80', rest: '120' },
-        ],
+        exercise_name: 'Bench Press', exercise_type: 'strength', order_index: 0,
+        sets_json: [],
       },
       {
+        // Exercise 1 is plain strength WITH sets, so it renders the strength TABLE — the table tests
+        // scan _runner.exercises for the first _isPlainStrengthExercise and jump to it.
         template_id: templateId, exercise_id: exMap['Overhead Press'] || null,
-        exercise_name: 'Overhead Press', exercise_type: 'strength', order_index: 2,
+        exercise_name: 'Overhead Press', exercise_type: 'strength', order_index: 1,
         sets_json: [
-          { repsMin: '10', repsMax: '10', weight: '50', rest: '90' },
-          { repsMin: '10', repsMax: '10', weight: '50', rest: '90' },
+          { repsMin: '10', repsMax: '10', weight: '50', restMin: '90' },
+          { repsMin: '10', repsMax: '10', weight: '50', restMin: '90' },
+          { repsMin: '10', repsMax: '10', weight: '50', restMin: '90' },
         ],
       },
     ]

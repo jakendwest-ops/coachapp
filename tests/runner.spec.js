@@ -379,9 +379,14 @@ test.describe('Workout runner (client)', () => {
     })
     if (!found) return // this template has no plain-strength exercise — nothing to assert
 
-    await expect(page.locator('#workout-runner >> text=PREVIOUS')).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('#workout-runner >> text=KG')).toBeVisible()
-    await expect(page.locator('#workout-runner >> text=REPS')).toBeVisible()
+    // Match the column headers EXACTLY. `text=KG` is a case-insensitive SUBSTRING match, so it also
+    // hits the target bar's "50 kg" and the PREVIOUS column's "80kg" — a strict-mode violation the
+    // moment the exercise has a weight target or any previous-session data. The headers render as
+    // "Set / Previous / Kg / Reps" in the DOM (uppercased by CSS, not in the markup).
+    const runner = page.locator('#workout-runner')
+    await expect(runner.getByText('Previous', { exact: true })).toBeVisible({ timeout: 5000 })
+    await expect(runner.getByText('Kg', { exact: true })).toBeVisible()
+    await expect(runner.getByText('Reps', { exact: true })).toBeVisible()
     await expect(page.locator('#workout-runner button[onclick="toggleTableSet(0)"]')).toBeVisible()
   })
 
@@ -406,7 +411,8 @@ test.describe('Workout runner (client)', () => {
     // Rest starts (non-blocking bar), and the table itself stays visible underneath —
     // this is the core design difference from the wizard's blocking "Resting…" placeholder.
     await expect(page.locator('#rest-timer-overlay')).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('#workout-runner >> text=REPS')).toBeVisible()
+    // Exact match — see the note above; a loose `text=REPS` also matches logged rep values.
+    await expect(page.locator('#workout-runner').getByText('Reps', { exact: true })).toBeVisible()
     await expect(page.locator('#workout-runner button[onclick="toggleTableSet(0)"][aria-label="Mark set incomplete"]')).toBeVisible()
   })
 
