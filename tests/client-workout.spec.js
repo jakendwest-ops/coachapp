@@ -483,4 +483,114 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       }
     }
   })
+
+  test('a client cannot read another client\'s workout_template clones (cross-client RLS leak, 2026-07-11)', async ({ page, browser }) => {
+    // The "Client reads workout templates" policy scoped by coach_id ALONE, with no client_id
+    // restriction. Client-plan clones are written with coach_id = the coach and client_id = the
+    // client (_cloneTemplateForClient, app-programs.js), so every client of the same coach matched
+    // that policy and could read every OTHER client's personalised template clones via a direct
+    // API call. A client's own clones are covered separately by `client_read_own_templates`
+    // (client_id-scoped), so the coach_id policy only ever needed the coach's non-client-owned
+    // rows -- it is now restricted with `client_id is null`.
+    const ptContext = await browser.newContext()
+    try {
+      const ptPage = await ptContext.newPage()
+      await loginAsPT(ptPage)
+
+      // Own the fixture: create a throwaway OTHER client, and a template clone belonging to them.
+      const setup = await ptPage.evaluate(async () => {
+        const { data: other } = await db.from('clients')
+          .insert({ coach_id: currentUser.id, full_name: '[E2E] Other Client (RLS leak test)' })
+          .select('id').single()
+        const { data: tmpl } = await db.from('workout_templates')
+          .insert({ coach_id: currentUser.id, client_id: other.id, program_id: null, name: '[E2E] Other Client Private Session' })
+          .select('id').single()
+        return { otherClientId: other.id, otherTemplateId: tmpl.id }
+      })
+
+      try {
+        // As the REAL client (fixture `page`, logged in via beforeEach), try to read it directly.
+        const leaked = await page.evaluate(async (otherTemplateId) => {
+          const { data } = await db.from('workout_templates').select('id, name').eq('id', otherTemplateId)
+          return data || []
+        }, setup.otherTemplateId)
+        expect(leaked).toHaveLength(0)
+
+        // And it must not appear in an unfiltered listing either.
+        const names = await page.evaluate(async () => {
+          const { data } = await db.from('workout_templates').select('name').limit(1000)
+          return (data || []).map(t => t.name)
+        })
+        expect(names).not.toContain('[E2E] Other Client Private Session')
+      } finally {
+        await ptPage.evaluate(async ({ otherClientId, otherTemplateId }) => {
+          await db.from('workout_templates').delete().eq('id', otherTemplateId)
+          await db.from('clients').delete().eq('id', otherClientId)
+        }, setup)
+      }
+    } finally {
+      await ptContext.close()
+    }
+  })
+
+  test('tightening the coach_id policy does not break a client reading their program\'s MASTER templates via the dashboard/calendar embed (2026-07-11)', async ({ page, browser }) => {
+    // Guard against the session-23/24 failure mode. The client Dashboard hero (app-dashboard.js)
+    // and client Calendar (app-calendar-goals.js) embed workout_templates through
+    // client_programs > programs > program_phases > program_phase_workouts -- i.e. the MASTER
+    // templates (client_id null), NOT the client's own clones. Those masters are readable only
+    // via the coach_id policy, so `client_id is null` must stay permitted or PostgREST silently
+    // nulls the embed and the client's dashboard/calendar break with no error.
+    const ptContext = await browser.newContext()
+    try {
+      const ptPage = await ptContext.newPage()
+      await loginAsPT(ptPage)
+
+      const setup = await ptPage.evaluate(async () => {
+        const { data: clientRow } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        const clientId = clientRow[0].id
+        const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Master Embed Program' }).select('id').single()
+        const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 4, order_index: 0 }).select('id').single()
+        // The MASTER template: coach-owned, client_id null (this is the row under test).
+        const { data: master } = await db.from('workout_templates')
+          .insert({ coach_id: currentUser.id, client_id: null, program_id: prog.id, name: '[E2E] Master Session' })
+          .select('id').single()
+        const { data: pw } = await db.from('program_phase_workouts')
+          .insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: master.id, week_number: 1 })
+          .select('id').single()
+        const { data: cp } = await db.from('client_programs')
+          .insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] })
+          .select('id').single()
+        return { progId: prog.id, cpId: cp.id, masterId: master.id, pwId: pw.id }
+      })
+
+      try {
+        // Query as the CLIENT using the exact embed shape app-dashboard.js:262 uses.
+        const result = await page.evaluate(async () => {
+          const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+          const { data } = await db.from('client_programs')
+            .select('start_date, programs(name, program_phases(id, name, program_phase_workouts(id, day_of_week, workout_templates(id, name))))')
+            .eq('client_id', clientRow.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+          return data?.[0] || null
+        })
+        expect(result).not.toBeNull()
+        const pws = result.programs?.program_phases?.[0]?.program_phase_workouts || []
+        expect(pws.length).toBeGreaterThan(0)
+        // The exact level that would silently null out if the coach_id policy over-restricted.
+        expect(pws[0].workout_templates).not.toBeNull()
+        expect(pws[0].workout_templates.name).toBe('[E2E] Master Session')
+      } finally {
+        await ptPage.evaluate(async ({ progId, cpId, masterId, pwId }) => {
+          await db.from('client_programs').delete().eq('id', cpId)
+          await db.from('program_phase_workouts').delete().eq('id', pwId)
+          await db.from('workout_templates').delete().eq('id', masterId)
+          await db.from('program_phases').delete().eq('program_id', progId)
+          await db.from('programs').delete().eq('id', progId)
+        }, setup)
+      }
+    } finally {
+      await ptContext.close()
+    }
+  })
 })
