@@ -151,43 +151,10 @@ test.describe('%1RM target weight rounding', () => {
   })
 })
 
-// ─── Plate calculator (2026-07-02 research, built 2026-07-10) ────────────────
-
-test.describe('Plate calculator', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsPT(page)
-  })
-
-  test('breaks a total weight down into plates per side, on a 20kg bar', async ({ page }) => {
-    // 100kg total -> 80kg to load -> 40kg per side -> 25+15
-    const result = await page.evaluate(() => _calcPlateBreakdown(100))
-    expect(result).toBe('Per side: 25+15kg')
-  })
-
-  test('a weight at or below the bar shows "Bar only"', async ({ page }) => {
-    const atBar = await page.evaluate(() => _calcPlateBreakdown(20))
-    const belowBar = await page.evaluate(() => _calcPlateBreakdown(15))
-    expect(atBar).toBe('Bar only (20kg)')
-    expect(belowBar).toBe('Bar only (20kg)')
-  })
-
-  test('a weight not exactly achievable with standard plates is flagged, not silently wrong', async ({ page }) => {
-    // 21kg total -> 0.5kg per side -> smaller than the smallest plate (1.25kg)
-    const result = await page.evaluate(() => _calcPlateBreakdown(21))
-    expect(result).toContain('not exact')
-  })
-
-  test('empty or invalid input returns empty string, not NaN', async ({ page }) => {
-    const result = await page.evaluate(() => ({
-      empty: _calcPlateBreakdown(''),
-      nullVal: _calcPlateBreakdown(null),
-      zero: _calcPlateBreakdown(0)
-    }))
-    expect(result.empty).toBe('')
-    expect(result.nullVal).toBe('')
-    expect(result.zero).toBe('')
-  })
-})
+// The "Plate calculator" describe block that sat here was removed 2026-07-11 along with the feature
+// itself (Jake: "Remove plate calculator"). It shipped 2026-07-10 as a PLATES/SIDE column in the
+// strength table's target bar plus a live hint under the wizard's weight input; in real use it was
+// noise. _calcPlateBreakdown/_updatePlateBreakdown no longer exist.
 
 // ─── Render regression: timed sets ───────────────────────────────────────────
 
@@ -365,11 +332,11 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('button:has-text("Save workout")')).toBeVisible({ timeout: 8000 })
   })
 
-  test('strength table renders for a plain-strength exercise with SET/PREVIOUS/KG/REPS columns', async ({ page }) => {
+  test('strength table renders SET/KG/REPS columns, and rows start EMPTY with last session as ghost text (2026-07-11)', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    // Jump to the first plain-strength exercise — cardio/timed/unilateral/%1RM stay on the wizard,
+    // Jump to the first plain-strength exercise — cardio/timed/unilateral stay on the wizard,
     // so the template's exercise order determines which view loads first.
     const found = await page.evaluate(() => {
       const idx = _runner.exercises.findIndex(e => typeof _isPlainStrengthExercise === 'function' && _isPlainStrengthExercise(e))
@@ -379,15 +346,42 @@ test.describe('Workout runner (client)', () => {
     })
     if (!found) return // this template has no plain-strength exercise — nothing to assert
 
-    // Match the column headers EXACTLY. `text=KG` is a case-insensitive SUBSTRING match, so it also
-    // hits the target bar's "50 kg" and the PREVIOUS column's "80kg" — a strict-mode violation the
-    // moment the exercise has a weight target or any previous-session data. The headers render as
-    // "Set / Previous / Kg / Reps" in the DOM (uppercased by CSS, not in the markup).
+    // Headers matched EXACTLY: `text=KG` is a case-insensitive SUBSTRING match, so it would also hit
+    // the target bar's "50 kg" — a strict-mode violation. Headers render as "Set / Kg / Reps" in the
+    // DOM (uppercased by CSS). The separate PREVIOUS column was removed 2026-07-11.
     const runner = page.locator('#workout-runner')
-    await expect(runner.getByText('Previous', { exact: true })).toBeVisible({ timeout: 5000 })
-    await expect(runner.getByText('Kg', { exact: true })).toBeVisible()
+    await expect(runner.getByText('Kg', { exact: true })).toBeVisible({ timeout: 5000 })
     await expect(runner.getByText('Reps', { exact: true })).toBeVisible()
+    await expect(runner.getByText('Previous', { exact: true })).toHaveCount(0)
     await expect(page.locator('#workout-runner button[onclick="toggleTableSet(0)"]')).toBeVisible()
+
+    // Rows must NOT be pre-filled — last session is shown as ghost text (placeholder) only, so a
+    // ticked set always reflects what you actually typed rather than a value you never confirmed.
+    const row0 = await page.evaluate(() => {
+      const ex = _runner.exercises[_runner.exIdx]
+      return { weight: ex.tableRows[0].weight, reps: ex.tableRows[0].reps }
+    })
+    expect(row0.weight).toBe('')
+    expect(row0.reps).toBe('')
+  })
+
+  test('ticking a set with no reps entered warns instead of silently doing nothing (2026-07-11)', async ({ page }) => {
+    // Rows no longer pre-fill, so an untouched row is empty and this guard is hit routinely rather
+    // than never — a silent no-op would read as a broken button to someone mid-set.
+    await page.locator('button:has-text("Start")').first().click()
+    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+    const found = await page.evaluate(() => {
+      const idx = _runner.exercises.findIndex(e => typeof _isPlainStrengthExercise === 'function' && _isPlainStrengthExercise(e))
+      if (idx === -1) return false
+      runnerJumpTo(idx)
+      return true
+    })
+    if (!found) return
+
+    await page.locator('#workout-runner button[onclick="toggleTableSet(0)"]').click()
+    await expect(page.locator('text=Enter reps first')).toBeVisible({ timeout: 4000 })
+    const done = await page.evaluate(() => _runner.exercises[_runner.exIdx].tableRows[0].done)
+    expect(done).toBe(false) // and the set is NOT marked complete
   })
 
   test('checking a set in the strength table logs it and starts rest — without leaving the table', async ({ page }) => {
@@ -675,15 +669,7 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('#modal-runner-1rm')).not.toBeVisible({ timeout: 3000 })
   })
 
-  test('typing a weight in the wizard live-updates the plate hint beneath it (2026-07-10)', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
-    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
-
-    const weightInput = page.locator('#wr-weight-input')
-    test.skip(!(await weightInput.isVisible({ timeout: 3000 }).catch(() => false)), 'First exercise is in table mode, not the wizard')
-    await weightInput.fill('100')
-    await expect(page.locator('#wr-plates-hint')).toHaveText('Per side: 25+15kg', { timeout: 3000 })
-  })
+  // The wizard plate-hint test that sat here was removed 2026-07-11 with the plate calculator itself.
 
   // ─── Session-state persistence (2026-07-10) ───────────────────────────────
   // The 2026-07-04 live incident: a runner freeze forced a reload mid-session and wiped an

@@ -240,56 +240,28 @@ function renderRunnerLastSession(exName) {
       `
     }
   }
-  // Strength table view: previous-session data can arrive after the table's already
-  // rendered (async fetch) — backfill blank, untouched rows so 1-tap repeat still works.
+  // Strength table view: previous-session data can arrive AFTER the table has already painted
+  // (async fetch). It is now shown only as ghost text in the KG/REPS inputs, so this just needs to
+  // repaint once the data lands — it must NOT write the values into tableRows, which would be
+  // auto-filling them again through the back door (the exact behaviour removed 2026-07-11).
+  // Guarded on _prevTablePaintKey so a repaint can't re-trigger itself into a render loop.
   const ex = _runner?.exercises?.[_runner.exIdx]
   if (ex?.name === exName && ex.tableRows && data?.sets?.length) {
-    const prevMap = _prevSetsByIndex(ex)
-    let changed = false
-    ex.tableRows.forEach((row, i) => {
-      if (row.done || row.weight !== '' || row.reps !== '') return
-      const prev = prevMap[i]
-      if (prev) {
-        row.weight = ex.bodyweight ? 'BW' : (prev.weight_kg != null ? String(prev.weight_kg) : '')
-        row.reps = prev.reps_achieved != null ? String(prev.reps_achieved) : ''
-        changed = true
-      }
-    })
-    if (changed) renderRunner()
+    const key = exName + ':' + data.sets.length
+    if (_runner._prevTablePaintKey !== key) {
+      _runner._prevTablePaintKey = key
+      renderRunner()
+    }
   }
 }
 
 // --- Strength table (Hevy-style) — plain strength sets only.
 // Cardio / timed / unilateral / %1RM exercises stay on the wizard in renderRunner() below.
 
-// ─── Plate calculator ──────────────────────────────────────────────────────
-// What to actually load on the bar for a given total weight — repeatedly requested (2026-07-02
-// research), small and self-contained. Standard Olympic bar (20kg) + a standard plate set;
-// no per-gym bar-weight setting yet (out of scope for this pass, same "ship small" call as the
-// rest of the runner's target displays).
-const _PLATE_SIZES = [25, 20, 15, 10, 5, 2.5, 1.25]
-const _BAR_WEIGHT_KG = 20
-
-function _calcPlateBreakdown(totalWeight) {
-  const total = parseFloat(totalWeight)
-  if (!total || isNaN(total)) return ''
-  if (total <= _BAR_WEIGHT_KG) return `Bar only (${_BAR_WEIGHT_KG}kg)`
-  let perSide = (total - _BAR_WEIGHT_KG) / 2
-  const plates = []
-  for (const p of _PLATE_SIZES) {
-    while (perSide >= p - 0.001) { plates.push(p); perSide -= p }
-  }
-  if (perSide > 0.01) return `~${total}kg — not exact with standard plates`
-  if (!plates.length) return `Bar only (${_BAR_WEIGHT_KG}kg)`
-  return `Per side: ${plates.join('+')}kg`
-}
-
-function _updatePlateBreakdown(inputId, hintId) {
-  const input = document.getElementById(inputId)
-  const hint = document.getElementById(hintId)
-  if (!input || !hint) return
-  hint.textContent = _calcPlateBreakdown(input.value)
-}
+// Plate calculator removed 2026-07-11 (Jake: "Remove plate calculator"). It shipped 2026-07-10 as a
+// PLATES/SIDE column in the strength table's target bar plus a live hint under the wizard's weight
+// input; in real use it was noise rather than help. Deliberately deleted outright rather than
+// hidden behind a flag — nothing else referenced _calcPlateBreakdown/_updatePlateBreakdown.
 
 function _isPlainStrengthExercise(ex) {
   if (!ex || ex.type === 'cardio' || !ex.sets_json?.length) return false
@@ -309,15 +281,16 @@ function _prevSetsByIndex(ex) {
 function _ensureTableRows(ex) {
   if (ex.tableRows) return
   const n = ex.targetSets || ex.sets_json.length || 3
-  const prevMap = _prevSetsByIndex(ex)
-  ex.tableRows = Array.from({ length: n }, (_, i) => {
-    const prev = prevMap[i]
-    return {
-      weight: ex.bodyweight ? 'BW' : (prev?.weight_kg != null ? String(prev.weight_kg) : ''),
-      reps: prev?.reps_achieved != null ? String(prev.reps_achieved) : '',
-      done: false
-    }
-  })
+  // Rows start EMPTY. Last session's numbers used to be pre-filled here (the Hevy-style "1-tap
+  // repeat"), but a pre-filled value is indistinguishable from one you actually entered — you can
+  // tick a set off without ever confirming the weight was right. They are now shown as grey ghost
+  // text in the inputs instead (renderStrengthTable), so the reference is still there but nothing
+  // is logged until you type it. Jake, 2026-07-11.
+  ex.tableRows = Array.from({ length: n }, () => ({
+    weight: ex.bodyweight ? 'BW' : '',
+    reps: '',
+    done: false
+  }))
 }
 
 function _syncLoggedSetsFromTable(ex) {
@@ -329,7 +302,10 @@ function toggleTableSet(rowIdx) {
   const row = ex.tableRows?.[rowIdx]
   if (!row) return
   if (!row.done) {
-    if (!row.reps) return // require reps, same minimum as the wizard's LOG validation
+    // Require reps, same minimum as the wizard's LOG validation. Now that rows no longer pre-fill
+    // from last session (2026-07-11), an untouched row is empty — so this guard is hit routinely
+    // rather than never, and a silent no-op would read as a broken button to someone mid-set.
+    if (!row.reps) { showToast('Enter reps first', 'warn'); return }
     _unlockAudio()
     _unlockSpeech()
     row.done = true
@@ -407,32 +383,23 @@ function _buildTargetCols(tgt, ex) {
   }
   const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
   if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
-  let kgTarget = null
-  if (tgt.weight) { cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true }); kgTarget = tgt.weight }
+  if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
   let needsOneRM = false
   if (tgt.intensityMin) {
     if (ex.oneRM) {
       const kgLo = _calcWeightFromPct(ex.oneRM, tgt.intensityMin)
       const kgHi = tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? _calcWeightFromPct(ex.oneRM, tgt.intensityMax) : null
       cols.push({ val: kgLo + (kgHi ? '–'+kgHi : '') + ' kg', label: '1RM TARGET', accent: true })
-      kgTarget = kgLo
     } else {
       needsOneRM = true
       cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
     }
   }
-  if (tgt.effortMin) cols.push({ val: (tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
+  // Value carries the NUMBER only — the column's own label already says RPE or RIR, so prefixing
+  // the value with it just says the same word twice ("RPE / RPE 8–9"). Jake, 2026-07-11.
+  if (tgt.effortMin) cols.push({ val: tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
   if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
   if (tgt.tempo) cols.push({ val: tgt.tempo, label: 'TEMPO' })
-  // Plate breakdown for whichever kg target is known (fixed weight or %1RM-derived, whichever
-  // resolved above) -- repeatedly requested (2026-07-02 research). Belongs in the target bar
-  // alongside the other computed info, not as new text under each table row (an area Jake
-  // explicitly asked to keep caption-free: "highlighted or stand out, not entered as text
-  // underneath — ugly UI").
-  if (kgTarget) {
-    const breakdown = _calcPlateBreakdown(kgTarget)
-    if (breakdown && !breakdown.startsWith('~')) cols.push({ val: breakdown.replace('Per side: ', ''), label: 'PLATES/SIDE' })
-  }
   return { cols, needsOneRM }
 }
 
@@ -479,31 +446,33 @@ function renderStrengthTable(ex) {
 
   const rows = ex.tableRows.map((row, i) => {
     const prev = prevMap[i]
-    const prevLabel = prev
-      ? `${prev.weight_kg ? prev.weight_kg + 'kg' : ''}${prev.weight_kg && prev.reps_achieved ? ' × ' : ''}${prev.reps_achieved || ''}`
-      : '—'
     // The row for the set you're currently on is highlighted so it's visually obvious which
     // row the target bar above applies to — no separate caption text (Jake: "highlighted or
     // stand out, not entered as text underneath — ugly UI").
     const isCurrent = i === curIdx
-    // %1RM-derived suggested weight for this specific row's prescription — placeholder only,
-    // same calculation the target bar above already shows (_buildTargetCols), never auto-filled.
+    // Ghost text = what you lifted for THIS set last time, sitting directly in the column it belongs
+    // to (weight under KG, reps under REPS) — which is what the old separate 54px PREVIOUS column
+    // was trying to convey while squashing both numbers into one cramped cell. Nothing is
+    // pre-filled: you have to type it, so a ticked set always reflects what you actually did.
+    // Falls back to the %1RM-derived target when there's no history for this set, so the input is
+    // never blank when the prescription is known. Jake, 2026-07-11.
     const rowTgt = ex.sets_json?.[i]
-    const wPlaceholder = (rowTgt?.intensityMin && ex.oneRM)
+    const oneRMPlaceholder = (rowTgt?.intensityMin && ex.oneRM)
       ? _calcWeightFromPct(ex.oneRM, rowTgt.intensityMin) + (rowTgt.intensityMax && rowTgt.intensityMax !== rowTgt.intensityMin ? '–' + _calcWeightFromPct(ex.oneRM, rowTgt.intensityMax) : '')
-      : '—'
+      : ''
+    const wPlaceholder = (prev?.weight_kg != null ? String(prev.weight_kg) : oneRMPlaceholder) || '—'
+    const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || '—'
     return `
     <div style="padding:7px 6px;margin:0 -6px;border-radius:8px;border-bottom:1px solid var(--border);${isCurrent ? 'background:rgba(99,102,241,.08)' : ''}">
       <div style="display:flex;align-items:center;gap:6px">
         <span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text-muted)'};text-align:center">${i+1}</span>
-        <span style="width:54px;flex-shrink:0;font-size:11px;color:var(--text-muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${prevLabel}</span>
         ${ex.bodyweight
           ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>`
           : `<input type="number" inputmode="decimal" step="0.5" value="${row.weight}" placeholder="${wPlaceholder}"
               oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].weight=this.value"
               style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
         }
-        <input type="number" inputmode="numeric" value="${row.reps}" placeholder="—"
+        <input type="number" inputmode="numeric" value="${row.reps}" placeholder="${rPlaceholder}"
           oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].reps=this.value"
           style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
         <button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}"
@@ -519,7 +488,6 @@ function renderStrengthTable(ex) {
     ${restBar}
     <div style="display:flex;gap:6px;padding:0 6px 6px">
       <span style="width:22px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Set</span>
-      <span style="width:54px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Previous</span>
       <span style="flex:1;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Kg</span>
       <span style="flex:1;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Reps</span>
       <span style="width:44px"></span>
@@ -766,9 +734,7 @@ function renderRunner() {
               : `<div style="flex:1;display:flex;flex-direction:column">
                   <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${ex.assisted?'Assist (kg)':'Kilograms'}</div>
                   <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
-                    oninput="_updatePlateBreakdown('wr-weight-input','wr-plates-hint')"
                     style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-                  <div id="wr-plates-hint" style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:2px;min-height:12px"></div>
                  </div>`}
             <!-- Duration (timed) or Reps / Distance -->
             ${tgt.timed
