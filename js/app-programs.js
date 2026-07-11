@@ -223,7 +223,7 @@ async function _cloneTemplateForClient(tmpl, clientId) {
   if (!tmpl) return null
   const { data: newTmpl, error: tErr } = await db
     .from('workout_templates')
-    .insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: tmpl.name, description: tmpl.description || null })
+    .insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, is_personal: tmpl.is_personal, name: tmpl.name, description: tmpl.description || null })
     .select('id').single()
   if (tErr || !newTmpl) { log.error('_cloneTemplateForClient', 'template clone failed', tErr); return null }
 
@@ -245,7 +245,7 @@ async function _cloneTemplateForClient(tmpl, clientId) {
 async function _cloneProgramForClient(clientProgramId, programId, clientId) {
   const { data: phases, error: phErr } = await db
     .from('program_phases')
-    .select('id, program_phase_workouts(id, template_id, week_number, workout_templates(id, name, description, workout_template_exercises(*)))')
+    .select('id, program_phase_workouts(id, template_id, week_number, workout_templates(id, name, description, is_personal, workout_template_exercises(*)))')
     .eq('program_id', programId)
     .order('order_index')
 
@@ -592,7 +592,7 @@ async function openProgram(programId) {
     // no way to tell apart (found live, 2026-07-10: a 12-phase program's picker showed the same
     // "Lower Body - Dynamic Effort" name 4+ times with no indication which day each belonged to).
     // To genuinely reuse one workout across multiple days, build it once in the Workouts library.
-    db.from('workout_templates').select('id, name, workout_template_exercises(exercise_name, order_index)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('name'),
+    db.from('workout_templates').select('id, name, workout_template_exercises(exercise_name, order_index)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name'),
   ])
 
   if (error) { log.error('openProgram', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
@@ -1033,7 +1033,7 @@ async function generatePhasePeriodization(phaseId, programId) {
   if (phase.duration_weeks < 2) { showToast('Phase must be at least 2 weeks to generate', 'error'); return }
 
   const { data: baseWorkouts, error: bwErr } = await db.from('program_phase_workouts')
-    .select('*, workout_templates(id, name, description, workout_template_exercises(*))')
+    .select('*, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
     .eq('phase_id', phaseId).eq('week_number', 1)
   if (bwErr || !baseWorkouts?.length) { showToast('Add Week 1 sessions before generating', 'error'); return }
 
@@ -1052,7 +1052,7 @@ async function generatePhasePeriodization(phaseId, programId) {
       if (!tmpl) continue
 
       const { data: newTmpl, error: tErr } = await db.from('workout_templates')
-        .insert({ coach_id: currentUser.id, program_id: null, client_id: null, generated_from_phase_id: phaseId, name: `${tmpl.name} — W${week}`, description: tmpl.description || null })
+        .insert({ coach_id: currentUser.id, program_id: null, client_id: null, generated_from_phase_id: phaseId, is_personal: tmpl.is_personal, name: `${tmpl.name} — W${week}`, description: tmpl.description || null })
         .select('id').single()
       if (tErr || !newTmpl) { log.error('generatePhasePeriodization', 'template clone failed', tErr); continue }
 
@@ -1088,7 +1088,7 @@ async function generatePhasePeriodization(phaseId, programId) {
     const { data: assignments } = await db.from('client_programs').select('id, client_id').eq('program_id', programId)
     if (assignments?.length && insertedPws?.length) {
       const { data: fullPws } = await db.from('program_phase_workouts')
-        .select('id, week_number, workout_templates(id, name, description, workout_template_exercises(*))')
+        .select('id, week_number, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
         .in('id', insertedPws.map(p => p.id))
 
       for (const assignment of assignments) {

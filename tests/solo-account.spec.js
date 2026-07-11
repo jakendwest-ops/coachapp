@@ -32,13 +32,24 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('[data-page="clients"]')).not.toBeVisible()
   })
 
-  test('solo nav shows Dashboard, Workouts, Programs, Calendar, Progress', async ({ page }) => {
+  test('solo nav shows Dashboard, Workouts, Library, Programs, Calendar, Progress', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await expect(page.locator('[data-page="solo-dashboard"]').first()).toBeVisible()
     await expect(page.locator('[data-page="workouts"]').first()).toBeVisible()
+    await expect(page.locator('[data-page="library"]').first()).toBeVisible()
     await expect(page.locator('[data-page="programs"]').first()).toBeVisible()
     await expect(page.locator('[data-page="calendar"]').first()).toBeVisible()
     await expect(page.locator('[data-page="progress"]').first()).toBeVisible()
+  })
+
+  test('solo can reach the Library nav item and see Templates/Exercise Library tabs (2026-07-11)', async ({ page }) => {
+    test.skip(!soloAvailable, 'No solo client record for this PT account')
+    await page.click('[data-page="library"]')
+    await page.waitForTimeout(1000)
+    await expect(page.locator('h1')).toContainText('Library', { timeout: 8000 })
+    await expect(page.locator('#wt-tab-templates')).toBeVisible()
+    await expect(page.locator('#wt-tab-exercises')).toBeVisible()
+    await expect(page.locator('button:has-text("New template")')).toBeVisible()
   })
 
   test('solo Workouts page shows program accordion, not template builder', async ({ page }) => {
@@ -165,6 +176,67 @@ test.describe('Solo / Personal account', () => {
         await db.from('exercises').delete().eq('id', personalId)
         await db.from('exercises').delete().eq('id', ptId)
       }, fixture)
+    }
+  })
+
+  test('workout template created in Personal view never appears in the PT-facing Templates list, and vice versa (regression, 2026-07-11)', async ({ page }) => {
+    test.skip(!soloAvailable, 'No solo client record for this PT account')
+    // Same coach_id-sharing issue as exercises (fixed 2026-07-10) -- workout_templates had no
+    // equivalent is_personal split until now, so a standalone template built in either context
+    // leaked into both the PT's real Templates list and the Personal Library.
+    // Cleanup is by-name (not by captured id) so a partial-failure during fixture creation still
+    // leaves no orphaned [E2E] rows -- see feedback_test_fixture_isolation.
+    try {
+      await page.evaluate(async () => {
+        await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: true, name: '[E2E] Personal-Only Template' })
+        await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] PT-Only Template' })
+      })
+      await page.evaluate(() => switchView('coach'))
+      await page.waitForTimeout(800)
+      await page.click('[data-page="workouts"]')
+      await page.waitForTimeout(1000)
+      await expect(page.locator('text=[E2E] PT-Only Template')).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=[E2E] Personal-Only Template')).not.toBeVisible()
+
+      await page.evaluate(() => switchView('solo'))
+      await page.waitForTimeout(800)
+      await page.click('[data-page="library"]')
+      await page.waitForTimeout(1000)
+      await expect(page.locator('text=[E2E] Personal-Only Template')).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=[E2E] PT-Only Template')).not.toBeVisible()
+    } finally {
+      await page.evaluate(async () => {
+        await db.from('workout_templates').delete().eq('coach_id', currentUser.id).in('name', ['[E2E] Personal-Only Template', '[E2E] PT-Only Template'])
+      })
+    }
+  })
+
+  test('program day-slot picker only offers Personal templates in Personal view, and vice versa (regression, 2026-07-11)', async ({ page }) => {
+    test.skip(!soloAvailable, 'No solo client record for this PT account')
+    // Pre-existing bug independent of the Library nav feature: openProgram's day-slot picker had
+    // no is_personal split either, so solo already saw the PT's real template pool in this dropdown.
+    // Cleanup is by-name (not by captured id) so a partial-failure -- e.g. the New program flow
+    // throwing after the program row is already inserted -- still leaves no orphaned [E2E] rows.
+    try {
+      await page.evaluate(async () => {
+        await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: true, name: '[E2E] Personal Picker Template' })
+        await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] PT Picker Template' })
+      })
+      await page.click('[data-page="programs"]')
+      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.click('button:has-text("New program")')
+      await page.fill('#pm-name', '[E2E] Personal Picker Program')
+      await page.click('#pm-save-btn')
+      await page.waitForSelector('h1:has-text("[E2E] Personal Picker Program")', { timeout: 8000 })
+
+      const names = await page.evaluate(() => (window._programTemplates || []).map(t => t.name))
+      expect(names).toContain('[E2E] Personal Picker Template')
+      expect(names).not.toContain('[E2E] PT Picker Template')
+    } finally {
+      await page.evaluate(async () => {
+        await db.from('workout_templates').delete().eq('coach_id', currentUser.id).in('name', ['[E2E] Personal Picker Template', '[E2E] PT Picker Template'])
+        await db.from('programs').delete().eq('coach_id', currentUser.id).eq('name', '[E2E] Personal Picker Program')
+      })
     }
   })
 })

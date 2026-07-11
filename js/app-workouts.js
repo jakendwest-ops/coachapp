@@ -139,9 +139,14 @@ function closeSessionDetail() {
 // ─── WORKOUTS PAGE ────────────────────────────────────────────────────────────
 async function renderWorkouts(el) {
   if (currentProfile?.role === 'client' || currentProfile?.role === 'solo') { await renderClientWorkoutsPage(el); return }
+  await renderWorkoutLibrary(el)
+}
+
+async function renderWorkoutLibrary(el) {
+  const title = currentProfile?.role === 'solo' ? 'Library' : 'Workouts'
   el.innerHTML = `
     <div class="page-header">
-      <h1 class="page-title">Workouts</h1>
+      <h1 class="page-title">${title}</h1>
       <button class="btn-primary" onclick="showCreateTemplateModal()">+ New template</button>
     </div>
     <div class="tabs">
@@ -247,7 +252,7 @@ async function renderClientWorkoutsPage(el) {
     // week clones (e.g. "Bench Press — W2") -- these have client_id/program_id both null too
     // (same shape as a genuine standalone template), so without this they'd leak into this flat
     // fallback list. Same fix as renderWorkoutTemplates below.
-    const { data } = await db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('name').limit(100)
+    const { data } = await db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(100)
     templates = data
   }
 
@@ -402,7 +407,7 @@ async function renderWorkoutTemplates(el) {
   // list. Confirmed root cause 2026-07-08: Jake's own solo-program week-clones were cluttering
   // this list, since solo shares coach_id with the PT account. Matches the filter already used
   // correctly elsewhere (the phase day-slot assign picker, app-programs.js).
-  const { data: templates, error } = await db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('name').limit(100)
+  const { data: templates, error } = await db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(100)
 
   if (error) { log.error('renderWorkoutTemplates', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
@@ -430,7 +435,7 @@ async function renderWorkoutTemplates(el) {
 
 async function renderExerciseLibrary(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
-  const { data: exercises, error } = await db.from('exercises').select('*').eq('coach_id', currentUser.id).eq('is_personal', false).order('name')
+  const { data: exercises, error } = await db.from('exercises').select('*').eq('coach_id', currentUser.id).eq('is_personal', currentProfile?.role === 'solo').order('name')
 
   if (error) { log.error('renderExerciseLibrary', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
@@ -710,6 +715,7 @@ async function saveNewTemplate() {
   const ctx = window._phaseWorkoutContext
   const { data, error } = await db.from('workout_templates').insert({
     coach_id:    currentUser.id,
+    is_personal: currentProfile?.role === 'solo',
     name,
     description: document.getElementById('ct-desc').value.trim() || null,
     program_id:  ctx?.programId || null
@@ -1557,7 +1563,7 @@ async function _applyToAllSessions(sourceTemplateId) {
 async function _cloneSharedMasterTemplate(tmpl) {
   const { data: newTmpl, error } = await db.from('workout_templates').insert({
     coach_id: tmpl.coach_id, client_id: null, program_id: tmpl.program_id || null,
-    name: tmpl.name, description: tmpl.description || null
+    is_personal: tmpl.is_personal, name: tmpl.name, description: tmpl.description || null
   }).select('id').single()
   if (error || !newTmpl) { log.error('_cloneSharedMasterTemplate', 'clone failed', error); return null }
 
@@ -1782,7 +1788,7 @@ async function startWorkoutRunner(clientId, templateId) {
   // Same leak class fixed 2026-07-08/2026-07-10 in renderWorkoutTemplates/renderClientWorkoutsPage:
   // without these filters, client-owned clones, program-phase slot templates, and periodization
   // week clones (e.g. "Bench Press — W2") all leak into this freeform "Load from template" list.
-  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('coach_id', coachId).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('name').limit(2000)
+  const { data: templates } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('coach_id', coachId).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(2000)
   window._runnerTemplates = templates || []
 
   const overlay = document.createElement('div')
