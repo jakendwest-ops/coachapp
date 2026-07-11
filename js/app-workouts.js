@@ -100,6 +100,11 @@ async function openSessionDetail(templateId, name, ctx = {}) {
 
   // Clients view their own prescribed program read-only; coach and solo (self-coached) can edit.
   const canEdit = currentProfile?.role !== 'client'
+  // Only offer "Save to Library" when this drawer was opened from inside a program phase slot
+  // (ctx.programId is set by renderPhaseWeekGrid) — that's precisely the case where the workout is
+  // program-owned and therefore NOT reusable elsewhere. Opened from the Library or a client's plan,
+  // the action is meaningless. Gating on ctx avoids a second fetch just to read program_id.
+  const canSaveToLibrary = canEdit && !!ctx.programId && !ctx.isClientPlan
 
   panel.innerHTML = `
     <div onclick="closeSessionDetail()" style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.45)"></div>
@@ -111,6 +116,11 @@ async function openSessionDetail(templateId, name, ctx = {}) {
           <button onclick="closeSessionDetail()" style="border:none;background:none;cursor:pointer;padding:4px 8px;color:var(--text-muted);font-size:22px;line-height:1">✕</button>
         </div>
       </div>
+      ${canSaveToLibrary ? `
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <button id="sd-save-library" class="btn-secondary" style="width:100%;min-height:44px;font-size:13px;font-weight:600" onclick="saveTemplateToLibrary('${templateId}')">Save to Library</button>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:5px;text-align:center">Makes this workout reusable in any program</div>
+      </div>` : ''}
       <div style="padding:16px;flex:1">${exHtml}</div>
     </div>`
 
@@ -1558,12 +1568,16 @@ async function _applyToAllSessions(sourceTemplateId) {
 }
 
 // Clones a shared master template (name + description + exercises), preserving its coach/program
-// ownership. Used by _resolveEditableTemplateId so an edit made via one phase slot never silently
-// changes the same template reused by another slot (or another program).
-async function _cloneSharedMasterTemplate(tmpl) {
+// ownership by default. Used by _resolveEditableTemplateId so an edit made via one phase slot never
+// silently changes the same template reused by another slot (or another program).
+// `overrides` lets a caller redirect where the clone lands without duplicating the exercise-copy
+// logic — _copyTemplateToLibrary passes { program_id: null, generated_from_phase_id: null } to lift
+// a program-owned workout out into the standalone (reusable) library pool.
+async function _cloneSharedMasterTemplate(tmpl, overrides = {}) {
   const { data: newTmpl, error } = await db.from('workout_templates').insert({
     coach_id: tmpl.coach_id, client_id: null, program_id: tmpl.program_id || null,
-    is_personal: tmpl.is_personal, name: tmpl.name, description: tmpl.description || null
+    is_personal: tmpl.is_personal, name: tmpl.name, description: tmpl.description || null,
+    ...overrides
   }).select('id').single()
   if (error || !newTmpl) { log.error('_cloneSharedMasterTemplate', 'clone failed', error); return null }
 
@@ -1581,6 +1595,108 @@ async function _cloneSharedMasterTemplate(tmpl) {
     ;(insertedExs || []).forEach(newEx => { const oldId = origByOrder[newEx.order_index]; if (oldId) exMap[oldId] = newEx.id })
   }
   return { id: newTmpl.id, exerciseIdMap: exMap }
+}
+
+// Lifts a workout built inside a program (program_id set, so it's locked to that one day slot and
+// deliberately excluded from the reuse pool — see openProgram's picker filter) out into the
+// standalone, reusable library. This is the missing bridge between "+ Create new workout (this day
+// only)" and Workouts → Templates; without it the only way to reuse a program-built workout was to
+// retype it by hand.
+// Returns 'copied' | 'exists' | 'failed' so the bulk caller can report honestly.
+async function _copyTemplateToLibrary(templateId) {
+  const { data: tmpl, error } = await db.from('workout_templates')
+    .select('*, workout_template_exercises(*)')
+    .eq('id', templateId)
+    .single()
+  if (error || !tmpl) { log.error('_copyTemplateToLibrary', 'source fetch failed', error); return 'failed' }
+
+  const isPersonal = currentProfile?.role === 'solo'
+
+  // Idempotency guard: a library workout with this name already exists, so don't make a second one.
+  // Matters because the bulk "Copy all" action must be safe to click twice — silently creating
+  // duplicate-named templates is exactly the clutter the picker filter was fixed to prevent.
+  // Compared in JS rather than in the query on purpose:
+  //   • .ilike() would treat the name as a LIKE PATTERN — "Day_1" would match "Day-1", and a name
+  //     containing % would match unrelated rows, wrongly reporting 'exists' and refusing to copy.
+  //   • .maybeSingle() ERRORS when more than one row matches, and a discarded error yields null —
+  //     i.e. the anti-duplicate guard would fail open precisely when duplicates already exist.
+  const { data: libraryRows } = await db.from('workout_templates')
+    .select('name')
+    .eq('coach_id', tmpl.coach_id)
+    .eq('is_personal', isPersonal)
+    .is('client_id', null)
+    .is('program_id', null)
+    .is('generated_from_phase_id', null)
+  const norm = s => (s || '').trim().toLowerCase()
+  if ((libraryRows || []).some(r => norm(r.name) === norm(tmpl.name))) return 'exists'
+
+  const cloned = await _cloneSharedMasterTemplate(
+    { ...tmpl, is_personal: isPersonal },
+    { program_id: null, generated_from_phase_id: null }
+  )
+  return cloned ? 'copied' : 'failed'
+}
+
+// Per-workout entry point — the button lives in the session-detail drawer (openSessionDetail),
+// which already has the template in context and room for it; the phase-grid row is just name + ✕.
+async function saveTemplateToLibrary(templateId) {
+  const btn = document.getElementById('sd-save-library')
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…' }
+  const result = await _copyTemplateToLibrary(templateId)
+  if (btn) { btn.disabled = false; btn.textContent = 'Save to Library' }
+  if (result === 'copied') {
+    showToast('Saved to your Library — you can now reuse it in any program', 'success')
+    await _refreshProgramTemplates() // or the picker behind this drawer wouldn't list it until reload
+  }
+  else if (result === 'exists') showToast('A workout with this name is already in your Library', 'warn')
+  else showToast('Could not save to Library — try again.', 'error')
+}
+
+// Bulk entry point — solves the real case that prompted this: a program built entirely with
+// "+ Create new workout (this day only)", whose workouts are all trapped in that program.
+async function copyProgramWorkoutsToLibrary(programId) {
+  const { data: phases } = await db.from('program_phases').select('id').eq('program_id', programId)
+  const phaseIds = (phases || []).map(p => p.id)
+  if (!phaseIds.length) { showToast('This program has no workouts yet', 'warn'); return }
+
+  // Exclude periodization week-clones (generated_from_phase_id set) — they're derivatives of Week 1,
+  // not source workouts, and copying them would litter the library with "Bench Press — W2" entries.
+  const { data: rows } = await db.from('program_phase_workouts')
+    .select('template_id, workout_templates(id, name, generated_from_phase_id)')
+    .in('phase_id', phaseIds)
+
+  // Dedupe by template_id, NOT by name. A duplicated week shares its source week's template_id, so
+  // id-dedupe already collapses those. Deduping by name instead would silently DROP genuinely
+  // different workouts that happen to share a name (three distinct "Upper Body" days) — the exact
+  // case that motivated the picker rewrite — and they'd be reported as neither copied nor skipped.
+  const seenIds = new Set()
+  const sources = []
+  for (const r of (rows || [])) {
+    const t = r.workout_templates
+    if (!t || t.generated_from_phase_id) continue
+    if (seenIds.has(t.id)) continue
+    seenIds.add(t.id)
+    sources.push(t.id)
+  }
+  if (!sources.length) { showToast('This program has no workouts to copy', 'warn'); return }
+
+  // Sequential, not Promise.all: each copy's name guard must see the rows written by the ones before
+  // it, or two same-named workouts in the same program would both pass the check and both be created.
+  const results = []
+  for (const id of sources) results.push(await _copyTemplateToLibrary(id))
+  const copied = results.filter(r => r === 'copied').length
+  const exists = results.filter(r => r === 'exists').length
+  const failed = results.filter(r => r === 'failed').length
+
+  const parts = [`${copied} copied`]
+  // Worded as "skipped — same name" rather than "already in your Library": that's true both when
+  // you click twice AND when a genuinely different workout collides on name, where claiming it was
+  // already there would be a lie. Renaming it in the program and re-copying is the way through.
+  if (exists) parts.push(`${exists} skipped (same name already in Library)`)
+  if (failed) parts.push(`${failed} failed`)
+  showToast(parts.join(' · '), failed ? 'error' : 'success')
+  log.ok('copyProgramWorkoutsToLibrary', 'done', { programId, copied, exists, failed })
+  if (copied) await _refreshProgramTemplates()
 }
 
 // If this template is currently assigned to more than one program-phase slot, clones it and

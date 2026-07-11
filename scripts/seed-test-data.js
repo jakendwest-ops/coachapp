@@ -52,6 +52,9 @@ async function run() {
     { name: 'Pull-up',        category: 'back',      equipment: 'bodyweight', muscle_groups: ['lats', 'biceps'] },
     { name: 'Overhead Press', category: 'shoulders', equipment: 'barbell', muscle_groups: ['shoulders', 'triceps'] },
     { name: 'Row 500m',       category: 'cardio',    equipment: 'rower',   muscle_groups: ['back', 'legs'], exercise_type: 'cardio' },
+    // Name deliberately matches _isPlainStrengthExercise's carry regex, so it routes to the wizard
+    // (the view that owns the LOG button) — runner.spec.js's first-exercise tests depend on it.
+    { name: "Farmer's Carry", category: 'full body', equipment: 'dumbbell', muscle_groups: ['forearms', 'core'] },
   ]
   const { data: existingEx } = await db.from('exercises').select('name').eq('coach_id', ptId)
   const existingNames = new Set((existingEx || []).map(e => e.name))
@@ -62,26 +65,70 @@ async function run() {
   // ── 3. Workout template ─────────────────────────────────────────────────────
   console.log('\n[3] Workout template')
   let templateId
-  const { data: existingT } = await db.from('workout_templates').select('id').eq('coach_id', ptId).eq('name', 'Push Day A').single()
+  const { data: existingT } = await db.from('workout_templates').select('id').eq('coach_id', ptId).eq('name', 'Push Day A').maybeSingle()
   if (existingT) {
     templateId = existingT.id
     console.log('  Template exists')
   } else {
-    const { data: t } = await db.from('workout_templates').insert({
+    const { data: t, error: tErr } = await db.from('workout_templates').insert({
       coach_id: ptId, name: 'Push Day A', description: 'Chest / shoulders / triceps'
     }).select('id').single()
+    if (tErr || !t) throw new Error('Template insert failed: ' + (tErr?.message || 'no row'))
     templateId = t.id
     console.log('  Template created')
+  }
 
-    // Add exercises to template
+  // Populate exercises whenever the template has none — NOT just when the template is newly created.
+  // This block previously sat inside the `else` above AND was broken three ways: it omitted the
+  // required exercise_name/exercise_type, it double-encoded sets_json as a STRING (the column is
+  // jsonb, and the app reads sets_json as an array), and it never checked the insert's error — so it
+  // failed silently while printing "Template exercises added". Net effect: the seed could never
+  // actually build this template, and an emptied Push Day A was unrepairable by re-seeding.
+  const { count: exCount } = await db.from('workout_template_exercises')
+    .select('id', { count: 'exact', head: true }).eq('template_id', templateId)
+
+  if ((exCount || 0) > 0) {
+    console.log(`  Template exercises exist (${exCount})`)
+  } else {
     const { data: exRows } = await db.from('exercises').select('id, name').eq('coach_id', ptId)
-    const exMap = Object.fromEntries(exRows.map(e => [e.name, e.id]))
+    const exMap = Object.fromEntries((exRows || []).map(e => [e.name, e.id]))
+
+    // Order matters for the runner tests. _isPlainStrengthExercise (app-runner.js) routes an
+    // exercise to the one-set WIZARD (which owns the LOG button) when it is cardio, has any
+    // timed/unilateral set, or its name matches /carry|sled|.../ — otherwise to the strength TABLE
+    // (a ✓ checkbox, no LOG button). runner.spec.js needs BOTH: the first exercise must be a wizard
+    // one (it clicks LOG straight away), and at least one plain-strength one must exist for the
+    // table tests to jump to.
     const templateExercises = [
-      { template_id: templateId, exercise_id: exMap['Bench Press'],    order_index: 0, sets_json: JSON.stringify([{ reps: '4x8', weight: '80kg', rest: '2:00' }, { reps: '4x8', weight: '80kg', rest: '2:00' }, { reps: '4x8', weight: '80kg', rest: '2:00' }]) },
-      { template_id: templateId, exercise_id: exMap['Overhead Press'],  order_index: 1, sets_json: JSON.stringify([{ reps: '3x10', weight: '50kg', rest: '1:30' }, { reps: '3x10', weight: '50kg', rest: '1:30' }, { reps: '3x10', weight: '50kg', rest: '1:30' }]) },
+      {
+        template_id: templateId, exercise_id: exMap['Farmer\'s Carry'] || null,
+        exercise_name: 'Farmer\'s Carry', exercise_type: 'strength', order_index: 0,
+        sets_json: [
+          { repsMin: '10', repsMax: '10', weight: '40', rest: '90' },
+          { repsMin: '10', repsMax: '10', weight: '40', rest: '90' },
+        ],
+      },
+      {
+        template_id: templateId, exercise_id: exMap['Bench Press'] || null,
+        exercise_name: 'Bench Press', exercise_type: 'strength', order_index: 1,
+        sets_json: [
+          { repsMin: '8', repsMax: '8', weight: '80', rest: '120' },
+          { repsMin: '8', repsMax: '8', weight: '80', rest: '120' },
+          { repsMin: '8', repsMax: '8', weight: '80', rest: '120' },
+        ],
+      },
+      {
+        template_id: templateId, exercise_id: exMap['Overhead Press'] || null,
+        exercise_name: 'Overhead Press', exercise_type: 'strength', order_index: 2,
+        sets_json: [
+          { repsMin: '10', repsMax: '10', weight: '50', rest: '90' },
+          { repsMin: '10', repsMax: '10', weight: '50', rest: '90' },
+        ],
+      },
     ]
-    await db.from('workout_template_exercises').insert(templateExercises)
-    console.log('  Template exercises added')
+    const { error: teErr } = await db.from('workout_template_exercises').insert(templateExercises)
+    if (teErr) throw new Error('Template exercises insert failed: ' + teErr.message)
+    console.log(`  Template exercises added (${templateExercises.length})`)
   }
 
   // ── 4. Client account ───────────────────────────────────────────────────────

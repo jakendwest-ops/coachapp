@@ -1,6 +1,31 @@
 const { test, expect } = require('./fixtures')
 const { loginAsPT } = require('./helpers')
 
+// The day-slot workout picker became a tap-row modal on 2026-07-11, replacing the native <select>
+// (an <option> can only hold plain text, which is why three same-named workouts were impossible to
+// tell apart). These helpers keep every test driving the picker through one place.
+const daySlotBtn = day => `button.pwg-add[data-day="${day}"]`
+const pickerRow = id => `#wkp-results div[onclick="_pickWorkout('${id}')"]`
+const CREATE_ROW = '#wkp-results div[onclick="_createWorkoutFromPicker()"]'
+
+const availableTemplateIds = page => page.evaluate(() => (window._programTemplates || []).map(t => t.id))
+
+async function openDayPicker(page, day) {
+  await page.click(daySlotBtn(day))
+  await page.waitForSelector('#workout-picker-modal', { state: 'visible', timeout: 5000 })
+}
+
+async function closeDayPicker(page) {
+  await page.click('#workout-picker-modal .modal-close')
+  await page.waitForSelector('#workout-picker-modal', { state: 'detached', timeout: 5000 })
+}
+
+async function assignWorkoutToDay(page, day, templateId) {
+  await openDayPicker(page, day)
+  await page.click(pickerRow(templateId))
+  await page.waitForSelector('#workout-picker-modal', { state: 'detached', timeout: 5000 })
+}
+
 test.describe('Program periodization', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
@@ -22,12 +47,11 @@ test.describe('Program periodization', () => {
     await page.click('#pf-save-btn')
     await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
 
-    // Assign a workout to Monday, Week 1 — inline grid, no modal. Picks whatever template is first.
-    const mondaySelect = 'select.pwg-select[data-day="1"]'
-    await expect(page.locator(mondaySelect)).toBeVisible({ timeout: 8000 })
-    const templateOptions = await page.locator(`${mondaySelect} option`).evaluateAll(opts => opts.filter(o => o.value && o.value !== '__new__').map(o => o.value))
-    test.skip(templateOptions.length === 0, 'E2E PT account has no workout templates to assign')
-    await page.selectOption(mondaySelect, templateOptions[0])
+    // Assign a workout to Monday, Week 1 via the tap-row picker.
+    await expect(page.locator(daySlotBtn(1))).toBeVisible({ timeout: 8000 })
+    const templateIds = await availableTemplateIds(page)
+    test.skip(templateIds.length === 0, 'E2E PT account has no workout templates to assign')
+    await assignWorkoutToDay(page, 1, templateIds[0])
     await expect(page.locator('[id^="phase-workouts-"] button[onclick*="removePhaseWorkout"]').first()).toBeVisible({ timeout: 8000 })
 
     // Configure periodization on the phase
@@ -90,7 +114,7 @@ test.describe('Inline assign grid', () => {
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
-  test('7-day grid renders with no modal, and search filters a day\'s options', async ({ page }) => {
+  test('7-day grid renders, and the picker live-filters its rows', async ({ page }) => {
     await page.click('button:has-text("New program")')
     await page.fill('#pm-name', '[E2E] Inline Grid Test')
     await page.click('#pm-save-btn')
@@ -102,25 +126,28 @@ test.describe('Inline assign grid', () => {
     await page.click('#pf-save-btn')
     await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
 
-    // No modal anywhere in the phase-building flow — old "+ Assign workout" button/modal are gone
+    // The old day→session→template "+ Assign workout" modal stays gone (replaced 2026-07-01 by the
+    // inline grid). The picker introduced 2026-07-11 is a different thing: a per-slot tap-row list.
     await expect(page.locator('button:has-text("+ Assign workout")')).toHaveCount(0)
     await expect(page.locator('#phase-workout-modal')).toHaveCount(0)
 
-    // All 7 days present
+    // All 7 days present, each with its own add button
     for (let day = 1; day <= 7; day++) {
-      await expect(page.locator(`select.pwg-select[data-day="${day}"]`)).toBeVisible({ timeout: 8000 })
+      await expect(page.locator(daySlotBtn(day))).toBeVisible({ timeout: 8000 })
     }
 
-    const mondaySelect = 'select.pwg-select[data-day="1"]'
-    const totalBefore = await page.locator(`${mondaySelect} option`).count()
-    test.skip(totalBefore <= 3, 'E2E PT account has too few templates to meaningfully test search filtering')
+    const templateIds = await availableTemplateIds(page)
+    test.skip(templateIds.length === 0, 'E2E PT account has no workout templates to test filtering')
 
-    await page.fill('.pwg-search >> nth=0', 'zzz-no-such-template-zzz')
-    const visibleAfter = await page.locator(`${mondaySelect} option`).evaluateAll(opts => opts.filter(o => !o.hidden).length)
-    expect(visibleAfter).toBeLessThan(totalBefore)
-    // Placeholder option always stays visible regardless of query
-    const placeholderHidden = await page.locator(`${mondaySelect} option[value=""]`).evaluate(el => el.hidden)
-    expect(placeholderHidden).toBe(false)
+    await openDayPicker(page, 1)
+    const rowsBefore = await page.locator('#wkp-results div[onclick^="_pickWorkout"]').count()
+    expect(rowsBefore).toBeGreaterThan(0)
+
+    await page.fill('#wkp-search', 'zzz-no-such-template-zzz')
+    await expect(page.locator('#wkp-results div[onclick^="_pickWorkout"]')).toHaveCount(0)
+    // The create-new row stays available no matter the query — it's how you act on a no-match.
+    await expect(page.locator(CREATE_ROW)).toBeVisible()
+    await closeDayPicker(page)
 
     page.once('dialog', d => d.accept())
     await page.click('button:has-text("Delete")')
@@ -139,19 +166,18 @@ test.describe('Inline assign grid', () => {
     await page.click('#pf-save-btn')
     await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
 
-    const mondaySelect = 'select.pwg-select[data-day="1"]'
-    await expect(page.locator(mondaySelect)).toBeVisible({ timeout: 8000 })
-    const templateOptions = await page.locator(`${mondaySelect} option`).evaluateAll(opts => opts.filter(o => o.value && o.value !== '__new__').map(o => o.value))
-    test.skip(templateOptions.length === 0, 'E2E PT account has no workout templates to assign')
+    await expect(page.locator(daySlotBtn(1))).toBeVisible({ timeout: 8000 })
+    const templateIds = await availableTemplateIds(page)
+    test.skip(templateIds.length === 0, 'E2E PT account has no workout templates to assign')
 
     // Simulate a concurrent insert filling Monday's first slot behind the scenes, then try to
-    // assign through the (now-stale) UI select — the guard should reject it, not duplicate the row
-    const phaseId = await page.locator(mondaySelect).getAttribute('data-phase')
+    // assign through the (now-stale) UI — the guard should reject it, not duplicate the row
+    const phaseId = await page.locator(daySlotBtn(1)).getAttribute('data-phase')
     await page.evaluate(async ({ phaseId, templateId }) => {
       await db.from('program_phase_workouts').insert({ phase_id: phaseId, day_of_week: 1, day_label: 'Monday', template_id: templateId, session_order: 1, week_number: 1 })
-    }, { phaseId, templateId: templateOptions[0] })
+    }, { phaseId, templateId: templateIds[0] })
 
-    await page.selectOption(mondaySelect, templateOptions[0])
+    await assignWorkoutToDay(page, 1, templateIds[0])
     await expect(page.locator('text=That slot was just filled')).toBeVisible({ timeout: 8000 })
 
     const rowCount = await page.evaluate(async (phaseId) => {
@@ -177,9 +203,9 @@ test.describe('Inline assign grid', () => {
     await page.click('#pf-save-btn')
     await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
 
-    const mondaySelect = 'select.pwg-select[data-day="1"]'
-    await expect(page.locator(mondaySelect)).toBeVisible({ timeout: 8000 })
-    await page.selectOption(mondaySelect, '__new__')
+    await expect(page.locator(daySlotBtn(1))).toBeVisible({ timeout: 8000 })
+    await openDayPicker(page, 1)
+    await page.click(CREATE_ROW)
     await expect(page.locator('#create-template-modal')).toBeVisible({ timeout: 4000 })
     await page.fill('#ct-name', '[E2E] Grid Created Template')
     await page.click('#create-template-modal button:has-text("Create")')
@@ -215,7 +241,9 @@ test.describe('Inline assign grid', () => {
     await page.click('#pf-save-btn')
     await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
 
-    await expect(page.locator('select.pwg-select option[value="__new__"]').first()).toHaveText('＋ Create new workout (this day only)')
+    await openDayPicker(page, 1)
+    await expect(page.locator(CREATE_ROW)).toHaveText('＋ Create new workout (this day only)')
+    await closeDayPicker(page)
 
     const programId = await page.evaluate(async () => {
       const { data } = await db.from('programs').select('id').eq('name', '[E2E] Picker Scope Test').single()
@@ -355,12 +383,11 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     await page.click('#pf-save-btn')
     await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
 
-    const mondaySelect = 'select.pwg-select[data-day="1"]'
-    await expect(page.locator(mondaySelect)).toBeVisible({ timeout: 8000 })
-    const templateOptions = await page.locator(`${mondaySelect} option`).evaluateAll(opts => opts.filter(o => o.value && o.value !== '__new__').map(o => o.value))
-    test.skip(templateOptions.length === 0, 'E2E PT account has no workout templates to assign')
-    const phaseId = await page.locator(mondaySelect).getAttribute('data-phase')
-    await page.selectOption(mondaySelect, templateOptions[0])
+    await expect(page.locator(daySlotBtn(1))).toBeVisible({ timeout: 8000 })
+    const templateIds = await availableTemplateIds(page)
+    test.skip(templateIds.length === 0, 'E2E PT account has no workout templates to assign')
+    const phaseId = await page.locator(daySlotBtn(1)).getAttribute('data-phase')
+    await assignWorkoutToDay(page, 1, templateIds[0])
     await expect(page.locator('[id^="phase-workouts-"] button[onclick*="removePhaseWorkout"]').first()).toBeVisible({ timeout: 8000 })
 
     await expect(page.locator('button:has-text("Duplicate week")')).toBeVisible({ timeout: 4000 })
@@ -567,6 +594,231 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       await page.evaluate(async ({ programId, templateId }) => {
         await db.from('programs').delete().eq('id', programId)
         await db.from('workout_templates').delete().eq('id', templateId)
+      }, setup)
+    }
+  })
+})
+
+test.describe('Copy program workouts to Library + duplicate-week auto-extend (2026-07-11)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+    await page.click('[data-page="programs"]')
+    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+  })
+
+  test('duplicating the last week of a full phase extends the phase instead of refusing', async ({ page }) => {
+    // Previously canDuplicateAny (maxWeek < durationWeeks) hid the button entirely on a 1-week
+    // phase, and duplicatePhaseWeek bailed with "no more weeks to fill" -- so "repeat this week"
+    // silently had no control at all, with no hint you had to go raise the phase duration first.
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] AutoExtend Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] AutoExtend Session' }).select('id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 })
+      return { programId: prog.id, phaseId: phase.id, templateId: tmpl.id }
+    })
+
+    try {
+      await page.evaluate(async (programId) => { await openProgram(programId) }, setup.programId)
+      await page.waitForSelector('h1:has-text("[E2E] AutoExtend Program")', { timeout: 8000 })
+
+      // The button must now be present even though the phase is already "full" (1 of 1 weeks).
+      const dupBtn = page.locator('button:has-text("Duplicate week")').first()
+      await expect(dupBtn).toBeVisible({ timeout: 8000 })
+      await dupBtn.click()
+      await expect(page.locator('text=phase extended to 2 weeks')).toBeVisible({ timeout: 8000 })
+
+      const after = await page.evaluate(async ({ phaseId }) => {
+        const { data: ph } = await db.from('program_phases').select('duration_weeks').eq('id', phaseId).single()
+        const { data: pws } = await db.from('program_phase_workouts').select('week_number').eq('phase_id', phaseId)
+        return { durationWeeks: ph.duration_weeks, weeks: (pws || []).map(p => p.week_number).sort() }
+      }, setup)
+      expect(after.durationWeeks).toBe(2)        // the phase grew
+      expect(after.weeks).toEqual([1, 2])        // and week 2 actually got the copied session
+    } finally {
+      await page.evaluate(async ({ programId, templateId }) => {
+        await db.from('programs').delete().eq('id', programId)
+        await db.from('workout_templates').delete().eq('id', templateId)
+      }, setup)
+    }
+  })
+
+  test('copying a program workout to the Library makes it standalone and reusable, and is idempotent', async ({ page }) => {
+    // The bridge that was missing: a workout built with "+ Create new workout (this day only)"
+    // carries program_id, so it is deliberately excluded from the reuse pool and could only be
+    // reused by retyping it. Copying lifts it into the standalone library (all three ownership
+    // columns null) without touching the original.
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] CopyLib Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] CopyLib Session', description: 'Heavy day' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: tmpl.id, exercise_name: '[E2E] CopyLib Bench', exercise_type: 'strength', order_index: 0, sets_json: [{ repsMin: '5', repsMax: '5' }] })
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 })
+      return { programId: prog.id, templateId: tmpl.id }
+    })
+
+    try {
+      const first = await page.evaluate(async (programId) => {
+        await copyProgramWorkoutsToLibrary(programId)
+        const { data } = await db.from('workout_templates')
+          .select('id, program_id, client_id, generated_from_phase_id, description, workout_template_exercises(exercise_name)')
+          .eq('coach_id', currentUser.id).eq('name', '[E2E] CopyLib Session')
+          .is('program_id', null)
+        return data || []
+      }, setup.programId)
+
+      expect(first).toHaveLength(1)                                   // exactly one library copy
+      expect(first[0].program_id).toBeNull()                          // standalone...
+      expect(first[0].client_id).toBeNull()
+      expect(first[0].generated_from_phase_id).toBeNull()             // ...and not a week-clone
+      expect(first[0].description).toBe('Heavy day')                  // description carried over
+      expect(first[0].workout_template_exercises).toHaveLength(1)     // exercises carried over
+
+      // Idempotent: clicking again must not create a second copy.
+      const second = await page.evaluate(async (programId) => {
+        await copyProgramWorkoutsToLibrary(programId)
+        const { data } = await db.from('workout_templates').select('id')
+          .eq('coach_id', currentUser.id).eq('name', '[E2E] CopyLib Session').is('program_id', null)
+        return (data || []).length
+      }, setup.programId)
+      expect(second).toBe(1)
+    } finally {
+      await page.evaluate(async ({ programId, templateId }) => {
+        await db.from('programs').delete().eq('id', programId)
+        await db.from('workout_templates').delete().eq('id', templateId)
+        await db.from('workout_templates').delete().eq('coach_id', currentUser.id).eq('name', '[E2E] CopyLib Session')
+      }, setup)
+    }
+  })
+
+  test('Generate weeks never destroys a Week-1 workout whose template a duplicated week shares (found by multi-agent review, 2026-07-11)', async ({ page }) => {
+    // _cleanupPhaseWeeksBeyond deleted EVERY template a stale week referenced, with no ownership and
+    // no still-referenced check -- unlike its sibling deletePhaseWeek, which got both guards on
+    // 2026-07-10. "Duplicate week" is cheap by design (the new week shares the source's template_id),
+    // so regenerating periodization harvested Week 1's own template off the Week 2 row and deleted it
+    // while Week 1 still pointed at it. Both now share _deleteOwnedUnreferencedTemplates.
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Cleanup Guard Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0, periodization_type: 'linear', periodization_config: { startPct: 70, endPct: 80 } }).select('id').single()
+      const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] Cleanup Guard Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: tmpl.id, exercise_name: '[E2E] Guard Squat', exercise_type: 'strength', order_index: 0, sets_json: [{ repsMin: '5', intensityMin: '70' }] })
+      // Week 1 and a duplicated Week 2 BOTH point at the same template_id (the shared-until-forked case).
+      await db.from('program_phase_workouts').insert([
+        { phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 },
+        { phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 2 },
+      ])
+      return { programId: prog.id, phaseId: phase.id, templateId: tmpl.id }
+    })
+
+    try {
+      // Regenerating prunes week 2+ first — which must NOT take Week 1's still-referenced template with it.
+      await page.evaluate(async ({ phaseId, programId }) => {
+        window.confirm = () => true
+        await generatePhasePeriodization(phaseId, programId)
+      }, setup)
+      await page.waitForTimeout(1500)
+
+      const survived = await page.evaluate(async ({ templateId }) => {
+        const { data } = await db.from('workout_templates').select('id').eq('id', templateId)
+        return (data || []).length
+      }, setup)
+      expect(survived).toBe(1) // Week 1's workout must still exist
+    } finally {
+      await page.evaluate(async ({ programId, templateId }) => {
+        // Delete the program FIRST — that cascades its phases, which SET NULL the
+        // generated_from_phase_id on any periodization week-clone generated above. Those clones then
+        // look like genuine standalone templates and orphan into the reusable pool, where they sort
+        // ABOVE "Push Day A" ('[' < 'P') and get grabbed by the client-runner tests' "first Start
+        // button" — breaking 8 of them. Sweep by name, or this test quietly poisons runner.spec.js.
+        await db.from('programs').delete().eq('id', programId)
+        await db.from('workout_templates').delete().eq('id', templateId)
+        await db.from('workout_templates').delete().eq('coach_id', currentUser.id).ilike('name', '[E2E] Cleanup Guard Session%')
+      }, setup)
+    }
+  })
+
+  test('bulk copy does not silently drop distinct workouts that share a name (found by multi-agent review, 2026-07-11)', async ({ page }) => {
+    // The bulk copy deduped its source list by NAME, so a program holding three genuinely different
+    // "Upper Body" workouts copied only one — and the other two were reported as neither copied nor
+    // skipped. Now deduped by template_id; same-name collisions are surfaced honestly instead.
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Dedupe Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      // Two DIFFERENT workouts that happen to share a name — must not collapse into one.
+      const { data: a } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] Dedupe Upper Body' }).select('id').single()
+      const { data: b } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] Dedupe Upper Body' }).select('id').single()
+      await db.from('program_phase_workouts').insert([
+        { phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: a.id, week_number: 1 },
+        { phase_id: phase.id, day_of_week: 2, day_label: 'Tuesday', session_order: 1, template_id: b.id, week_number: 1 },
+      ])
+      return { programId: prog.id, aId: a.id, bId: b.id }
+    })
+
+    try {
+      const outcome = await page.evaluate(async (programId) => {
+        // Count how many distinct sources the bulk copy actually considered, via its real behaviour:
+        // one gets copied, the same-named sibling is honestly reported as skipped (not dropped).
+        await copyProgramWorkoutsToLibrary(programId)
+        const { data } = await db.from('workout_templates').select('id')
+          .eq('coach_id', currentUser.id).eq('name', '[E2E] Dedupe Upper Body').is('program_id', null)
+        return (data || []).length
+      }, setup.programId)
+      // Exactly one library copy (the second collides on name and is skipped, not silently dropped)
+      // — and critically, BOTH were considered, which the name-dedupe bug prevented.
+      expect(outcome).toBe(1)
+    } finally {
+      await page.evaluate(async ({ programId, aId, bId }) => {
+        await db.from('programs').delete().eq('id', programId)
+        await db.from('workout_templates').delete().in('id', [aId, bId])
+        await db.from('workout_templates').delete().eq('coach_id', currentUser.id).eq('name', '[E2E] Dedupe Upper Body')
+      }, setup)
+    }
+  })
+
+  test('the picker shows name, description and exercises so same-named workouts are distinguishable', async ({ page }) => {
+    // The whole reason the <select> was replaced: an <option> is plain text, so three "Upper Body"
+    // workouts were indistinguishable at the point of assignment (Jake, 2026-07-11).
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Picker Rows Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      // Two standalone library workouts sharing a name — distinguishable only by description/exercises.
+      const { data: a } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Upper Body', description: 'Heavy day' }).select('id').single()
+      const { data: b } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Upper Body', description: 'Volume day' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: a.id, exercise_name: '[E2E] Heavy Bench', exercise_type: 'strength', order_index: 0, sets_json: [] })
+      await db.from('workout_template_exercises').insert({ template_id: b.id, exercise_name: '[E2E] Volume Flye', exercise_type: 'strength', order_index: 0, sets_json: [] })
+      return { programId: prog.id, phaseId: phase.id, aId: a.id, bId: b.id }
+    })
+
+    try {
+      await page.evaluate(async (programId) => { await openProgram(programId) }, setup.programId)
+      await page.waitForSelector('h1:has-text("[E2E] Picker Rows Program")', { timeout: 8000 })
+
+      await openDayPicker(page, 1)
+      const rowA = page.locator(pickerRow(setup.aId))
+      const rowB = page.locator(pickerRow(setup.bId))
+      await expect(rowA).toBeVisible({ timeout: 5000 })
+      await expect(rowB).toBeVisible()
+      // Same name, but each row carries what actually tells them apart.
+      await expect(rowA).toContainText('Heavy day')
+      await expect(rowA).toContainText('[E2E] Heavy Bench')
+      await expect(rowB).toContainText('Volume day')
+      await expect(rowB).toContainText('[E2E] Volume Flye')
+
+      // Picking one assigns it to the slot. The modal closes before the insert resolves (the pick
+      // handler fires it without awaiting, same as the exercise picker), so wait for the grid to
+      // actually re-render with the assigned row rather than racing the DB read.
+      await rowA.click()
+      await page.waitForSelector('#workout-picker-modal', { state: 'detached', timeout: 5000 })
+      await expect(page.locator('[id^="phase-workouts-"] button[onclick*="removePhaseWorkout"]').first()).toBeVisible({ timeout: 8000 })
+      const assigned = await page.evaluate(async ({ phaseId }) => {
+        const { data } = await db.from('program_phase_workouts').select('template_id').eq('phase_id', phaseId)
+        return (data || []).map(r => r.template_id)
+      }, setup)
+      expect(assigned).toEqual([setup.aId])
+    } finally {
+      await page.evaluate(async ({ programId, aId, bId }) => {
+        await db.from('programs').delete().eq('id', programId)
+        await db.from('workout_templates').delete().in('id', [aId, bId])
       }, setup)
     }
   })
