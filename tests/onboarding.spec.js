@@ -102,4 +102,59 @@ test.describe('New-coach starter content', () => {
       await sweepPT2(page)
     }
   })
+
+  test('a partial seed RESUMES on the next run — completes what is missing, never duplicates', async ({ page }) => {
+    // Simulates a first attempt that died after the exercises + workout but before the program (flag
+    // never flipped). The re-run must recreate ONLY the missing program (not a second set of 40
+    // exercises) and then flip the flag. This is the failure the review flagged: the old guard would
+    // have seen exercises>0 and stopped, stranding the coach with no sample program forever.
+    await loginAsPT2(page)
+    try {
+      await sweepPT2(page)
+      // First full seed, then knock it back to a partial state: flag false, program removed.
+      const partial = await page.evaluate(async () => {
+        await db.from('profiles').update({ starter_seeded: false }).eq('id', currentUser.id)
+        currentProfile.starter_seeded = false
+        await _seedStarterContent()
+        // now fully seeded — simulate a partial by deleting the program and clearing the flag
+        const prog = await db.from('programs').select('id').eq('coach_id', currentUser.id)
+        for (const p of prog.data || []) {
+          const ph = await db.from('program_phases').select('id').eq('program_id', p.id)
+          for (const phase of ph.data || []) await db.from('program_phase_workouts').delete().eq('phase_id', phase.id)
+          await db.from('program_phases').delete().eq('program_id', p.id)
+        }
+        await db.from('programs').delete().eq('coach_id', currentUser.id)
+        await db.from('profiles').update({ starter_seeded: false }).eq('id', currentUser.id)
+        currentProfile.starter_seeded = false
+        const ex = await db.from('exercises').select('id').eq('coach_id', currentUser.id)
+        const prg = await db.from('programs').select('id').eq('coach_id', currentUser.id)
+        return { exercisesBefore: ex.data?.length || 0, programsBefore: prg.data?.length || 0 }
+      })
+      expect(partial.exercisesBefore).toBe(40) // exercises + workout still present
+      expect(partial.programsBefore).toBe(0)   // program was lost
+
+      // Resume
+      const after = await page.evaluate(async () => {
+        await _seedStarterContent()
+        const ex = await db.from('exercises').select('id').eq('coach_id', currentUser.id)
+        const prog = await db.from('programs').select('id, name').eq('coach_id', currentUser.id)
+        const phases = prog.data?.length ? await db.from('program_phases').select('id').eq('program_id', prog.data[0].id) : { data: [] }
+        const ppw = phases.data?.length ? await db.from('program_phase_workouts').select('day_of_week').eq('phase_id', phases.data[0].id) : { data: [] }
+        const prof = await db.from('profiles').select('starter_seeded').eq('id', currentUser.id).single()
+        return {
+          exerciseCount: ex.data?.length || 0,
+          programName: prog.data?.[0]?.name || null,
+          phaseWorkoutDays: (ppw.data || []).map(r => r.day_of_week).sort(),
+          seededFlag: prof.data?.starter_seeded,
+        }
+      })
+
+      expect(after.exerciseCount).toBe(40) // NOT 80 — exercises were not re-inserted
+      expect(after.programName).toBe('Example — 4-Week Foundation') // the missing program was recreated
+      expect(after.phaseWorkoutDays).toEqual([1, 4])
+      expect(after.seededFlag).toBe(true) // flag flips only now that everything is present
+    } finally {
+      await sweepPT2(page)
+    }
+  })
 })
