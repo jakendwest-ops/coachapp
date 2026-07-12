@@ -101,7 +101,7 @@ async function loadUserInfo() {
   log.info('loadUserInfo', 'fetching profile', { userId: currentUser.id })
   const { data, error } = await db
     .from('profiles')
-    .select('full_name, role')
+    .select('full_name, role, starter_seeded')
     .eq('id', currentUser.id)
     .single()
 
@@ -144,6 +144,19 @@ async function loadUserInfo() {
     }
   }
   await _loadBranding()
+
+  // Brand-new coach: seed the starter library/workout/program once, before anything renders, so the
+  // dashboard isn't a blank slate on first login. Idempotent (see _seedStarterContent). role is
+  // re-checked here because a master account's currentProfile.role may have been switched to
+  // 'client'/'solo' above — starter seeding is only for a genuine coach that has never seeded. Jake
+  // and every existing account carry starter_seeded=true from the migration, so this never fires for
+  // them; a brand-new coach has no client rows, so the master-detection block above is a no-op and
+  // role stays 'coach'.
+  if (currentProfile?.role === 'coach' && currentProfile?.starter_seeded === false) {
+    const main = document.getElementById('main-content')
+    if (main) main.innerHTML = '<div class="loading-state">Setting up your account…</div>'
+    await _seedStarterContent()
+  }
 }
 
 async function _loadBranding() {
