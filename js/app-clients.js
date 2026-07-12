@@ -268,7 +268,6 @@ async function openClient(id) {
       <button class="tab-btn" onclick="switchTab(this,'tab-weight','${id}')">Weight</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-performance','${id}')">Performance</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-programs','${id}')">Programs</button>
-      <button class="tab-btn" onclick="switchTab(this,'tab-photos','${id}')">Photos</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-1rms','${id}')">1RMs</button>
     </div>
 
@@ -289,7 +288,6 @@ function switchTab(btn, tab, clientId) {
     case 'tab-weight':       content.innerHTML = ''; renderClientWeight(clientId, content);       break
     case 'tab-performance':  content.innerHTML = ''; renderClientPerformance(clientId, content);  break
     case 'tab-programs':     content.innerHTML = ''; renderClientPrograms(clientId, content);     break
-    case 'tab-photos':       content.innerHTML = ''; renderClientPhotos(clientId, content);       break
     case 'tab-1rms':         content.innerHTML = ''; renderClient1RMs(clientId, content);         break
   }
 }

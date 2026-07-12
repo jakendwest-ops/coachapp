@@ -1,76 +1,15 @@
-﻿async function renderClientPhotos(clientId, el) {
-  el.innerHTML = '<div class="loading-state">Loading…</div>'
-  const prefix = `${clientId}/`
-  const { data: files, error } = await db.storage.from('progress-photos').list(prefix, { sortBy: { column: 'created_at', order: 'desc' } })
-
-  const isCoach = currentProfile?.role === 'coach'
-
-  const uploadHtml = `
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-body">
-        <div style="font-size:13px;font-weight:600;margin-bottom:10px">Upload progress photo</div>
-        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-          <div>
-            <label class="field-label">Date</label>
-            <input type="date" id="pp-date" class="field-input" value="${new Date().toISOString().split('T')[0]}" style="width:160px">
-          </div>
-          <div>
-            <label class="field-label">Photo</label>
-            <input type="file" id="pp-file" class="field-input" accept="image/*" style="width:auto">
-          </div>
-          <button onclick="uploadProgressPhoto('${clientId}')" class="btn-primary" style="font-size:13px;padding:8px 16px">Upload</button>
-        </div>
-        <p id="pp-error" style="color:var(--danger);font-size:12px;margin:6px 0 0"></p>
-      </div>
-    </div>`
-
-  const validFiles = files?.filter(f => f.name !== '.emptyFolderPlaceholder') || []
-  if (error || !validFiles.length) {
-    el.innerHTML = uploadHtml + `<div class="empty-state"><div class="empty-text">No progress photos yet.</div></div>`
-    return
-  }
-
-  const paths = validFiles.map(f => prefix + f.name)
-  const { data: signedUrlData } = await db.storage.from('progress-photos').createSignedUrls(paths, 3600)
-  const urlMap = {}
-  ;(signedUrlData || []).forEach(item => { if (item.signedUrl) urlMap[item.path] = item.signedUrl })
-
-  const photoHtml = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
-    ${validFiles.map(f => {
-      const signedUrl = urlMap[prefix + f.name] || ''
-      const datePart  = f.name.split('_')[0]
-      return `
-        <div style="border-radius:10px;overflow:hidden;background:var(--surface-2);position:relative">
-          <img src="${signedUrl}" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block" loading="lazy">
-          <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:11px;color:var(--text-muted)">${datePart}</span>
-            ${isCoach ? `<button onclick="deleteProgressPhoto('${clientId}','${f.name}')" style="font-size:11px;color:var(--danger);background:none;border:none;cursor:pointer">✕</button>` : ''}
-          </div>
-        </div>`
-    }).join('')}
-  </div>`
-
-  el.innerHTML = uploadHtml + photoHtml
-}
-
-async function uploadProgressPhoto(clientId) {
-  const fileInput = document.getElementById('pp-file')
-  const dateVal   = document.getElementById('pp-date')?.value
-  const errEl     = document.getElementById('pp-error')
-  if (!fileInput?.files?.[0]) { errEl.textContent = 'Please select a photo'; return }
-  const file = fileInput.files[0]
-  const ext  = file.name.split('.').pop()
-  const path = `${clientId}/${dateVal}_${Date.now()}.${ext}`
-  const { error } = await db.storage.from('progress-photos').upload(path, file, { upsert: false })
-  if (error) { errEl.textContent = error.message; return }
-  renderClientPhotos(clientId, document.getElementById('tab-content'))
-}
-
-async function deleteProgressPhoto(clientId, fileName) {
-  if (!confirm('Delete this photo?')) return
-  await db.storage.from('progress-photos').remove([`${clientId}/${fileName}`])
-  renderClientPhotos(clientId, document.getElementById('tab-content'))
-}
+﻿// ─── Progress photos — REMOVED 2026-07-12 (Jake: "remove the progress photos feature for now") ───
+// The Photos tab (button + switch case in app-clients.js) and renderClientPhotos /
+// uploadProgressPhoto / deleteProgressPhoto lived here. Removed the CODE only, not the DATA: the
+// `progress-photos` Supabase bucket and its contents are untouched, so this is restorable — pull the
+// functions back from git history (last present at app-progress v9) and re-add the tab.
+//
+// The bucket is verified PRIVATE (tests/storage-privacy.spec.js: an anonymous fetch of an uploaded
+// photo returns HTTP 400, not the image) and its RLS is intact, so nothing is exposed by leaving it.
+// One real pre-existing photo remains in it (folder 97bb871a…, a dev-era upload not tied to any
+// current client) — flagged to Jake for a delete/keep decision. With no UI to delete photos, any
+// future stored photo would need manual removal, so do NOT re-enable uploads without also restoring
+// deleteProgressPhoto (a GDPR erasure path).
 
 // ─── 1RMs ────────────────────────────────────────────────────────────────────
 
