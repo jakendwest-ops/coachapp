@@ -306,6 +306,12 @@ function toggleTableSet(rowIdx) {
     // from last session (2026-07-11), an untouched row is empty — so this guard is hit routinely
     // rather than never, and a silent no-op would read as a broken button to someone mid-set.
     if (!row.reps) { showToast('Enter reps first', 'warn'); return }
+    // Weight too, for the same reason. Dropping the pre-fill made a weightless ticked set the easy
+    // path rather than an impossible one, and it degrades silently: _syncLoggedSetsFromTable turns
+    // '' into null, saveRunnerSession then omits weight_kg, and the set counts as 0 volume, is
+    // invisible to PB detection, and shows '—' as next session's ghost text. Grey ghost text reads
+    // like a value, so this is easy to do by accident.
+    if (!ex.bodyweight && !row.weight) { showToast('Enter weight first', 'warn'); return }
     _unlockAudio()
     _unlockSpeech()
     row.done = true
@@ -322,12 +328,12 @@ function toggleTableSet(rowIdx) {
 function addTableRow() {
   const ex = _runner.exercises[_runner.exIdx]
   _ensureTableRows(ex)
-  const prevMap = _prevSetsByIndex(ex)
-  const i = ex.tableRows.length
-  const prev = prevMap[i]
+  // Empty for the same reason _ensureTableRows is: an appended set must not arrive pre-filled with
+  // last session's numbers, or you can tick it off having never confirmed them. renderStrengthTable
+  // computes ghost text per row index, so the reference still shows for appended rows too.
   ex.tableRows.push({
-    weight: ex.bodyweight ? 'BW' : (prev?.weight_kg != null ? String(prev.weight_kg) : ''),
-    reps: prev?.reps_achieved != null ? String(prev.reps_achieved) : '',
+    weight: ex.bodyweight ? 'BW' : '',
+    reps: '',
     done: false
   })
   ex.targetSets = ex.tableRows.length
@@ -650,35 +656,12 @@ function renderRunner() {
         <!-- Strength input -->
         ${(() => {
           const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
-          const cols = []
-          if (tgt.timed) {
-            const secs = tgt.duration ? (parseRest(tgt.duration)||0) : (tgt.repsMin ? parseInt(tgt.repsMin) : null)
-            const durDisplay = secs != null ? (Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0')) : null
-            if (durDisplay) cols.push({ val: durDisplay, label: 'DURATION', accent: true })
-          }
-          const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
-          if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
-          if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
-          let needsOneRM = false
-          if (tgt.intensityMin) {
-            if (ex.oneRM) {
-              const kgLo = _calcWeightFromPct(ex.oneRM, tgt.intensityMin)
-              const kgHi = tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? _calcWeightFromPct(ex.oneRM, tgt.intensityMax) : null
-              cols.push({ val: kgLo + (kgHi ? '–'+kgHi : '') + ' kg', label: '1RM TARGET', accent: true })
-            } else {
-              needsOneRM = true
-              cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
-            }
-          }
-          if (tgt.effortMin) cols.push({ val: (tgt.effortType==='rir'?'RIR ':'RPE ')+tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
-          if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
-          if (tgt.tempo) cols.push({ val: tgt.tempo, label: 'TEMPO' })
-          const targetBar = cols.length ? `<div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:10px">${cols.map((c, i) =>
-            `<div style="flex:1;text-align:center;padding:8px 4px${i < cols.length-1 ? ';border-right:1px solid var(--border)' : ''}">
-              <div style="font-size:18px;font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'};line-height:1.1">${c.val}</div>
-              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
-            </div>`
-          ).join('')}</div>` : ''
+          // Was a verbatim copy of _buildTargetCols + _renderTargetBarHtml. The copy is why the
+          // "don't print RPE twice" fix (2026-07-11) only landed in the table and left the wizard
+          // still rendering "RPE 8–9" under a column already labelled RPE — the wizard was never
+          // actually sharing the helper the helper's own comment claimed it shared. Now it does.
+          const { cols, needsOneRM } = _buildTargetCols(tgt, ex)
+          const targetBar = _renderTargetBarHtml(cols)
           const oneRMBanner = needsOneRM ? `
           <div id="wr-onerm-banner" onclick="showRunnerOneRMSheet(${_runner.exIdx})" style="background:rgba(245,158,11,.1);border:1.5px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;cursor:pointer;margin-bottom:10px">
             <div style="font-size:13px;font-weight:700;color:#b45309">⚠ Set your 1RM to see target weight</div>
@@ -687,6 +670,9 @@ function renderRunner() {
           const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
           const distTarget = ex.notes?.match(/(\d+)[–\-](\d+)\s*m/)?.[0] || tgt.distance || ''
           const weightPlaceholder = tgt.weight || '—'
+          // Same prescribed-rep string _buildTargetCols builds for its REPS column, but this one is
+          // the input's ghost text, so it stays local rather than being read off the shared helper.
+          const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin + (tgt.repsMax && tgt.repsMax !== tgt.repsMin ? '–' + tgt.repsMax : '')) : null
           const repsPlaceholder = repsStr ? repsStr.replace('–', '-') : '—'
           return `
           ${oneRMBanner}

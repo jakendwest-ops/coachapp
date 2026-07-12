@@ -109,6 +109,15 @@ test.describe('RLS audit — cross-tenant isolation', () => {
     'client_programs', 'performance_logs', 'goals', 'workout_templates',
   ]
 
+  // Tables the E2E client is SEEDED to own rows in. Probe B must see a non-zero count from each of
+  // these, because an RLS DENY returns zero rows and NO error — exactly like a clean pass. Without a
+  // positive lower bound, "✅ 0 rows, all own" is indistinguishable from "the client-read policy was
+  // dropped" (which is literally what s23 and s24 were). A typo'd column name fails the same silent
+  // way: during this harness's own review a probe queried `clients.name`, PostgREST errored, `data ||
+  // []` turned it into zero rows, and it read as a clean result. Green must mean "I looked and found
+  // the data I expected," never "I got nothing back."
+  const CLIENT_MUST_SEE = ['weight_logs', 'workout_logs', 'workout_templates']
+
   test('PROBE B: a client sees ONLY their own rows — never another client\'s', async ({ page }) => {
     // This is where s25's real leak lived: workout_templates' client-read policy scoped by coach_id
     // ALONE with no client_id restriction, so every client of the same coach could read every other
@@ -121,16 +130,31 @@ test.describe('RLS audit — cross-tenant isolation', () => {
     await loginAsClient(page)
 
     const results = await page.evaluate(async (tables) => {
-      const { data: me } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+      // Same filter the app's own _getCurrentClientId uses: a master account can hold TWO clients
+      // rows (a coached one and a personal/solo one), and .single() throws on two.
+      const { data: me } = await db.from('clients').select('id, coach_id')
+        .eq('user_id', currentUser.id).not('coach_id', 'is', null).single()
       const out = { myClientId: me.id, tables: [] }
 
       for (const t of tables) {
         const { data, error } = await db.from(t).select('*').limit(1000)
         const rows = data || []
-        // workout_templates legitimately holds coach-owned rows with client_id = null (the coach's
-        // reusable library, which a client is allowed to see). A LEAK is specifically a row carrying
-        // ANOTHER client's id.
-        const foreign = rows.filter(r => r.client_id != null && r.client_id !== me.id)
+        // Two distinct leak shapes, and the second one is easy to miss:
+        //   client_id set to someone else  → plainly another client's row.
+        //   client_id NULL                 → a coach-owned row (the reusable library a client IS
+        //                                    allowed to see) — but ONLY if it belongs to THIS
+        //                                    client's own coach. A null client_id is not a free pass:
+        //                                    if it carries another coach_id it is a stranger's data,
+        //                                    and that is the exact shape of Jake's solo/personal
+        //                                    templates (coach_id = his uid, client_id = null,
+        //                                    is_personal = true), which are kept out of client hands
+        //                                    by a CLIENT-SIDE is_personal filter — a display flag,
+        //                                    never a security boundary. So the coach_id check below
+        //                                    is what stands between a client and another coach's
+        //                                    entire library.
+        const foreign = rows.filter(r => r.client_id != null
+          ? r.client_id !== me.id
+          : (r.coach_id != null && r.coach_id !== me.coach_id))
         out.tables.push({
           table: t,
           total: rows.length,
@@ -155,6 +179,13 @@ test.describe('RLS audit — cross-tenant isolation', () => {
     console.log('──────────────────────────────────────────────────────────\n')
 
     expect(leaks).toEqual([])
+
+    // No probe may report a table clean without having actually read data from it — see CLIENT_MUST_SEE.
+    for (const t of CLIENT_MUST_SEE) {
+      const row = results.tables.find(r => r.table === t)
+      expect(row.error, `${t}: query errored, so its "clean" verdict is meaningless`).toBeNull()
+      expect(row.total, `${t}: client sees 0 rows — either the client-read policy is broken (s23/s24) or this probe is querying nothing. Either way the audit is not proving anything here.`).toBeGreaterThan(0)
+    }
   })
 
   test('SELF-TEST: the audit can actually DETECT a leak (it is not just always green)', async ({ page }) => {
@@ -162,36 +193,74 @@ test.describe('RLS audit — cross-tenant isolation', () => {
     // querying the wrong thing, filtering the wrong field, or silently erroring, and would look
     // identical to a clean bill of health. So prove the detector fires.
     //
-    // Safely, with no policy change: run Probe B's EXACT query and EXACT classifier as the COACH,
-    // who legitimately CAN see many clients' rows. If the classifier is real, it must light up with
-    // foreign rows. If this test ever goes green, the audit above is worthless and lying.
+    // Safely, with no policy change: plant a row that IS foreign to a chosen "me", run Probe B's
+    // EXACT classifier over it as the COACH (who legitimately sees all their clients), and require
+    // it to light up. If this test ever goes green, the audit above is lying.
+    //
+    // It OWNS its victim. The first version instead asked the coach for any 2+ clients and skipped
+    // if it found fewer — and it only ever passed because two `[E2E-RLS] Victim Client` rows had
+    // been stranded in the database by an earlier run. The seed creates exactly ONE client, so on a
+    // clean database it would have SKIPPED — and Playwright reports a skip as neither pass nor
+    // fail. The single test whose job is to prove the audit isn't lying was resting on garbage that
+    // happened to be lying around, and would have gone quiet without failing. Tests own their
+    // fixtures; they never borrow ambient data.
     await loginAsPT(page)
 
-    const detected = await page.evaluate(async () => {
-      const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id)
-      if (!clients || clients.length < 2) return { skip: 'coach needs 2+ clients to prove detection' }
+    const VICTIM = '[E2E-RLS] Detector Victim'
+    let detected
 
-      // Pretend client[0] is "me" — exactly as Probe B does.
-      const pretendMe = clients[0].id
-      const { data } = await db.from('weight_logs').select('*').limit(1000)
-      const rows = data || []
-      const foreign = rows.filter(r => r.client_id != null && r.client_id !== pretendMe)
-      return { totalRows: rows.length, foreignRows: foreign.length, clientCount: clients.length }
-    })
+    try {
+      detected = await page.evaluate(async (victimName) => {
+        // Belt and braces: clear any victim stranded by a previous failed run before planting ours.
+        await db.from('clients').delete().eq('coach_id', currentUser.id).eq('full_name', victimName)
 
-    if (detected.skip) {
-      console.log(`\n⚠️  SELF-TEST SKIPPED: ${detected.skip}\n`)
-      test.skip(true, detected.skip)
-      return
+        const { data: victim, error: vErr } = await db.from('clients')
+          .insert({ coach_id: currentUser.id, full_name: victimName, email: 'e2e-rls-victim@example.com', status: 'active' })
+          .select().single()
+        if (vErr) return { fatal: `could not create victim client: ${vErr.message}` }
+
+        const { error: wErr } = await db.from('weight_logs')
+          .insert({ client_id: victim.id, weight_kg: 77.7, date: '2020-01-01' })
+        if (wErr) return { fatal: `could not create victim weight_log: ${wErr.message}` }
+
+        // "me" = the real seeded client. The victim's row is, by construction, foreign to them.
+        const { data: me } = await db.from('clients').select('id')
+          .eq('coach_id', currentUser.id).neq('id', victim.id).limit(1).single()
+
+        const { data, error } = await db.from('weight_logs').select('*').limit(1000)
+        if (error) return { fatal: `weight_logs read failed: ${error.message}` }
+        const rows = data || []
+
+        // Probe B's classifier, verbatim.
+        const foreign = rows.filter(r => r.client_id != null && r.client_id !== me.id)
+        return {
+          totalRows: rows.length,
+          foreignRows: foreign.length,
+          victimFlagged: foreign.some(r => r.client_id === victim.id),
+        }
+      }, VICTIM)
+    } finally {
+      // By name, unconditionally — a mid-test failure must not strand the victim in a real clients
+      // table (which is exactly how the last version ended up with two of them).
+      await page.evaluate(async (victimName) => {
+        const { data: vs } = await db.from('clients').select('id').eq('coach_id', currentUser.id).eq('full_name', victimName)
+        for (const v of vs || []) {
+          await db.from('weight_logs').delete().eq('client_id', v.id)
+          await db.from('clients').delete().eq('id', v.id)
+        }
+      }, VICTIM).catch(() => {})
     }
 
+    expect(detected.fatal, 'self-test could not plant its victim, so it proves nothing').toBeUndefined()
+
     console.log(`\n─── SELF-TEST — can the audit detect a leak? ───`)
-    console.log(`  Coach sees ${detected.totalRows} weight_logs across ${detected.clientCount} clients.`)
-    console.log(`  Classifier flagged ${detected.foreignRows} as belonging to a DIFFERENT client.`)
-    console.log(`  ${detected.foreignRows > 0 ? '✅ Detector FIRES — the audit above is trustworthy.' : '🔴 Detector is DEAD — the audit above proves nothing!'}`)
+    console.log(`  Planted one weight_log belonging to a client who is NOT "me".`)
+    console.log(`  Coach sees ${detected.totalRows} weight_logs; classifier flagged ${detected.foreignRows} as foreign.`)
+    console.log(`  Planted victim specifically flagged: ${detected.victimFlagged}`)
+    console.log(`  ${detected.victimFlagged ? '✅ Detector FIRES — the audit above is trustworthy.' : '🔴 Detector is DEAD — the audit above proves nothing!'}`)
     console.log('───────────────────────────────────────────────\n')
 
-    // The detector MUST fire here. If it does not, the green result in Probe B is meaningless.
-    expect(detected.foreignRows).toBeGreaterThan(0)
+    // Not just "some row was flagged" — the row we PLANTED must be the one flagged.
+    expect(detected.victimFlagged, 'the classifier failed to flag a row it was designed to catch — Probe B is worthless').toBe(true)
   })
 })

@@ -208,6 +208,10 @@ async function run() {
   console.log('\n[8] Workout sessions')
   const { data: existingLogs } = await db.from('workout_logs').select('id').eq('client_id', clientId).limit(1)
   if (!existingLogs?.length) {
+    // Section 3's exMap is scoped inside its own else-block, so build a local one.
+    const { data: libRows } = await db.from('exercises').select('id, name').eq('coach_id', ptId)
+    const exMap = Object.fromEntries((libRows || []).map(e => [e.name, e.id]))
+
     for (let i = 4; i >= 0; i--) {
       const sessionDate = new Date(Date.now() - i * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       const { data: log, error: logErr } = await db.from('workout_logs').insert({
@@ -216,20 +220,40 @@ async function run() {
       }).select('id').single()
       if (logErr) throw new Error(`workout_logs insert: ${logErr.message}`)
 
-      const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
-        workout_log_id: log.id, exercise_name: 'Bench Press', order_index: 0
-      }).select('id').single()
-      if (exErr) throw new Error(`workout_log_exercises insert: ${exErr.message}`)
+      // History must cover BOTH template exercises, not just Bench Press. The runner's strength
+      // TABLE tests jump to the first _isPlainStrengthExercise — which is Overhead Press, because
+      // Bench Press has an empty sets_json and routes to the wizard. With history for Bench Press
+      // only, _runner.lastSession['Overhead Press'] was undefined, so the table's ghost text (the
+      // whole replacement for the PREVIOUS column, 2026-07-12) had NO data behind it in any test,
+      // and `expect(row.weight).toBe('')` passed even against the old pre-filling code. The guard
+      // test was green by construction.
+      // Column names mirror saveRunnerSession (app-runner.js ~1568-1600) EXACTLY. This block was
+      // wrong on three counts and had never once run: the FK is `log_id` (not `workout_log_id`),
+      // sets hang off `workout_log_exercise_id` (not `exercise_id`), and `exercise_type` was
+      // missing. It survived because the block is skipped whenever sessions already exist — and
+      // they always did — so a wrong insert shape sat here unexercised. Same failure mode as the
+      // template-exercises block above. If you touch the runner's save shape, update this too.
+      for (const [exName, orderIdx] of [['Bench Press', 0], ['Overhead Press', 1]]) {
+        const { data: logEx, error: exErr } = await db.from('workout_log_exercises').insert({
+          log_id: log.id, exercise_id: exMap[exName] || null,
+          exercise_name: exName, exercise_type: 'strength', order_index: orderIdx
+        }).select('id').single()
+        if (exErr) throw new Error(`workout_log_exercises insert: ${exErr.message}`)
 
-      const sets = [
-        { exercise_id: logEx.id, reps_achieved: 8, weight_kg: 80 + i, effort_value: 7 },
-        { exercise_id: logEx.id, reps_achieved: 8, weight_kg: 80 + i, effort_value: 8 },
-        { exercise_id: logEx.id, reps_achieved: 7, weight_kg: 80 + i, effort_value: 9 },
-      ]
-      const { error: setsErr } = await db.from('workout_log_sets').insert(sets)
-      if (setsErr) throw new Error(`workout_log_sets insert: ${setsErr.message}`)
+        // set_number is load-bearing, not decorative: _prevSetsByIndex builds its lookup as
+        // `map[s.set_number - 1] = s`. Omitting it made every key `null - 1` === -1, so the map was
+        // {-1: …}, every prevMap[0..n] lookup missed, no ghost text ever rendered in any test, and
+        // the wizard's "↑ Beat" bar showed "Snull".
+        const sets = [
+          { workout_log_exercise_id: logEx.id, set_number: 1, reps_achieved: 8, weight_kg: 80 + i, effort_type: 'rpe', effort_value: 7 },
+          { workout_log_exercise_id: logEx.id, set_number: 2, reps_achieved: 8, weight_kg: 80 + i, effort_type: 'rpe', effort_value: 8 },
+          { workout_log_exercise_id: logEx.id, set_number: 3, reps_achieved: 7, weight_kg: 80 + i, effort_type: 'rpe', effort_value: 9 },
+        ]
+        const { error: setsErr } = await db.from('workout_log_sets').insert(sets)
+        if (setsErr) throw new Error(`workout_log_sets insert: ${setsErr.message}`)
+      }
     }
-    console.log('  5 sessions + sets inserted')
+    console.log('  5 sessions + sets inserted (Bench Press + Overhead Press)')
   } else {
     console.log('  Sessions exist, skipping')
   }

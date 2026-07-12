@@ -626,9 +626,19 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       await expect(page.locator('text=[E2E] PB Deadlift')).toBeVisible({ timeout: 5000 })
       await expect(page.locator('text=No personal bests logged yet')).toHaveCount(0)
     } finally {
-      await page.evaluate(async (clientId) => {
-        await db.from('performance_logs').delete().eq('client_id', clientId).eq('name', '[E2E] PB Deadlift')
+      // Verify the cleanup actually cleaned. A working INSERT does not imply a working DELETE — they
+      // are separate RLS policies — and an RLS-denied delete removes 0 rows while returning NO error.
+      // Left unchecked, this test would quietly strand a row in the real performance_logs table on
+      // every single suite run, and still pass (a second row just groups under the same name).
+      const cleanup = await page.evaluate(async (clientId) => {
+        const { error } = await db.from('performance_logs').delete()
+          .eq('client_id', clientId).eq('name', '[E2E] PB Deadlift')
+        const { data: left } = await db.from('performance_logs').select('id')
+          .eq('client_id', clientId).eq('name', '[E2E] PB Deadlift')
+        return { err: error ? error.message : null, remaining: (left || []).length }
       }, clientId)
+      expect(cleanup.err, 'cleanup delete errored').toBeNull()
+      expect(cleanup.remaining, 'cleanup deleted nothing — RLS likely denies DELETE on performance_logs for a client, and this test has been stranding rows in the real database').toBe(0)
     }
   })
 })
