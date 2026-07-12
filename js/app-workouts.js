@@ -1390,6 +1390,13 @@ async function saveExerciseToTemplate(templateId) {
   if (error) { log.error('saveExerciseToTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
   log.ok('saveExerciseToTemplate', 'exercise added to template', { templateId: targetId, name })
   closeModal('add-to-template-modal')
+  window._lastExerciseChange = { op: 'add', matchName: name, row: {
+    exercise_id: exerciseId || null, exercise_name: name,
+    exercise_type: document.getElementById('att-type').value,
+    sets: cleanSets.length || null, sets_json: cleanSets.length ? cleanSets : null,
+    notes: document.getElementById('att-notes').value.trim() || null,
+    superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
+  } }
   _checkClientPlanPropagation(targetId)
 }
 
@@ -1416,8 +1423,10 @@ async function saveEditTemplateExercise(texId, templateId) {
   const sets = window._templateSets || []
 
   const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
-  log.info('saveEditTemplateExercise', 'updating template exercise', { texId: targetExId, name: picked.name })
-  const { error } = await db.from('workout_template_exercises').update({
+  // Capture the ORIGINAL name before the update — propagation matches the changed exercise by name
+  // across other sessions (Jake's choice, 2026-07-12), and a rename must still find the old row.
+  const { data: origRow } = await db.from('workout_template_exercises').select('exercise_name').eq('id', targetExId).single()
+  const newRow = {
     exercise_id:    picked.id || null,
     exercise_name: picked.name,
     exercise_type: document.getElementById('att-type').value,
@@ -1425,24 +1434,151 @@ async function saveEditTemplateExercise(texId, templateId) {
     sets_json:      sets.length ? sets : null,
     notes:          document.getElementById('att-notes').value.trim() || null,
     superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
-  }).eq('id', targetExId)
+  }
+  log.info('saveEditTemplateExercise', 'updating template exercise', { texId: targetExId, name: picked.name })
+  const { error } = await db.from('workout_template_exercises').update(newRow).eq('id', targetExId)
   if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
   log.ok('saveEditTemplateExercise', 'template exercise updated', { texId: targetExId })
   closeModal('edit-tex-modal')
+  window._lastExerciseChange = { op: 'update', matchName: origRow?.exercise_name || picked.name, row: newRow }
   _checkClientPlanPropagation(targetId)
 }
 
 async function deleteTemplateExercise(texId, templateId) {
   const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
+  // Capture the name before deleting so the change can propagate by name to other sessions.
+  const { data: delRow } = await db.from('workout_template_exercises').select('exercise_name').eq('id', targetExId).single()
   log.info('deleteTemplateExercise', 'removing exercise from template', { texId: targetExId, templateId: targetId })
   const { error } = await db.from('workout_template_exercises').delete().eq('id', targetExId)
   if (error) { log.error('deleteTemplateExercise', 'delete failed', error); return }
   log.ok('deleteTemplateExercise', 'exercise removed', { texId: targetExId })
   closeModal('edit-tex-modal')
-  openTemplate(targetId, window._templateCtx)
+  // If the pre-delete name fetch failed, DON'T propagate: a stale window._lastExerciseChange from a
+  // previous edit would otherwise be replayed and silently applied to assigned copies. Clear it and
+  // just reopen.
+  if (!delRow?.exercise_name) { window._lastExerciseChange = null; return openTemplate(targetId, window._templateCtx) }
+  window._lastExerciseChange = { op: 'delete', matchName: delRow.exercise_name, row: null }
+  _checkClientPlanPropagation(targetId)
 }
 
+// Applies ONE captured exercise change (window._lastExerciseChange) to a set of target templates,
+// matched BY EXERCISE NAME (Jake's choice, 2026-07-12). This replaces the old wholesale
+// "delete every exercise, re-insert the source's full list" propagation, which silently wiped any
+// per-session differences in the targets. A target that doesn't contain the changed exercise is
+// left untouched.
+//   update: find the exercise by its ORIGINAL name in the target, overwrite its fields (a rename
+//           is fine — change.row carries the new name).
+//   delete: remove that exercise from the target.
+//   add:    append it to the target only if the target doesn't already have an exercise by that name.
+async function _propagateExerciseChangeToTemplates(change, targetIds) {
+  if (!change || !targetIds?.length) return
+  for (const tid of targetIds) {
+    if (change.op === 'delete') {
+      await db.from('workout_template_exercises').delete().eq('template_id', tid).eq('exercise_name', change.matchName)
+    } else if (change.op === 'update') {
+      // Update every row in the target that matches the name (0 rows = a safe no-op when the target
+      // doesn't have that exercise). Acts on ALL same-named rows, matching the delete branch — so a
+      // session that happens to list an exercise name twice is treated consistently, never left
+      // half-updated. A rename is fine: change.row carries the new name.
+      await db.from('workout_template_exercises').update(change.row).eq('template_id', tid).eq('exercise_name', change.matchName)
+    } else if (change.op === 'add') {
+      const { data: exists } = await db.from('workout_template_exercises').select('id').eq('template_id', tid).eq('exercise_name', change.row.exercise_name).limit(1)
+      if (!exists?.length) {
+        const { data: last } = await db.from('workout_template_exercises').select('order_index').eq('template_id', tid).order('order_index', { ascending: false }).limit(1)
+        await db.from('workout_template_exercises').insert({ template_id: tid, order_index: last?.length ? last[0].order_index + 1 : 0, ...change.row })
+      }
+    }
+  }
+}
+
+// For a set of MASTER program templates, finds every already-assigned client copy of those sessions
+// (client_program_workouts → the cloned client-owned template), split into the current user's OWN
+// solo/personal copies vs. real coached clients' copies. Used to keep assigned plans in sync with a
+// program edit WITHOUT re-assigning (Jake, 2026-07-12). Queries clients directly rather than via a
+// deep nested embed, so an unreadable embed level can't silently misclassify a copy.
+async function _assignedCopiesForSession(masterTemplateIds) {
+  const out = { soloSelfIds: [], realClientIds: [], realClientNames: [] }
+  if (!masterTemplateIds?.length) return out
+  const { data: ppws } = await db.from('program_phase_workouts').select('id').in('template_id', masterTemplateIds)
+  const ppwIds = (ppws || []).map(r => r.id)
+  if (!ppwIds.length) return out
+  const { data: cpws } = await db.from('client_program_workouts')
+    .select('workout_template_id, client_programs(client_id)').in('program_phase_workout_id', ppwIds)
+  const idsByClient = {}
+  ;(cpws || []).forEach(r => {
+    const cid = r.client_programs?.client_id
+    if (r.workout_template_id && cid) (idsByClient[cid] = idsByClient[cid] || []).push(r.workout_template_id)
+  })
+  const clientIds = Object.keys(idsByClient)
+  if (!clientIds.length) return out
+  const { data: clients } = await db.from('clients').select('id, user_id, coach_id, full_name').in('id', clientIds)
+  const names = new Set()
+  ;(clients || []).forEach(cl => {
+    const ids = idsByClient[cl.id] || []
+    const isSoloSelf = cl.coach_id == null && cl.user_id === currentUser.id
+    if (isSoloSelf) out.soloSelfIds.push(...ids)
+    else { out.realClientIds.push(...ids); if (cl.full_name) names.add(cl.full_name) }
+  })
+  out.realClientNames = [...names]
+  return out
+}
+
+// Orchestrates what happens after a program/plan workout is edited (add/edit/delete of an exercise).
+// (#2) First keep already-assigned copies of THIS session in sync so the edit shows on the calendar
+//      without re-assigning: the user's own solo copies update silently; real clients' copies update
+//      only after a confirm. (#3) Then offer to apply the same change to other same-named sessions.
 async function _checkClientPlanPropagation(templateId) {
+  const ctx = window._templateCtx
+  const change = window._lastExerciseChange
+
+  // (#2) Sync assigned copies of the edited session — master program edits only (a direct client-plan
+  // edit is already editing the client's own copy, so there's nothing downstream to sync).
+  if (change && ctx?.programId && !ctx.isClientPlan) {
+    const copies = await _assignedCopiesForSession([templateId])
+    if (copies.soloSelfIds.length) await _propagateExerciseChangeToTemplates(change, copies.soloSelfIds)
+    if (copies.realClientIds.length) {
+      window._pendingClientCopyProp = { change, ids: copies.realClientIds }
+      _showClientCopyPropagateModal(copies.realClientNames, templateId)
+      return
+    }
+  }
+
+  return _checkSiblingPropagation(templateId)
+}
+
+// (#2) prompt shown when real clients have the edited session assigned.
+function _showClientCopyPropagateModal(clientNames, templateId) {
+  const names = clientNames.length <= 3 ? clientNames.join(', ') : `${clientNames.slice(0, 3).join(', ')} +${clientNames.length - 3} more`
+  const n = clientNames.length
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'client-copy-modal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Update assigned clients?</h2>
+        <button class="modal-close" onclick="_continueAfterClientCopy('${templateId}',false)">✕</button>
+      </div>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 20px"><strong>${n}</strong> client${n === 1 ? ' has' : 's have'} this workout assigned (${escapeHtml(names)}). Apply your change to their copies too?</p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="_continueAfterClientCopy('${templateId}',false)">Not now</button>
+        <button class="btn-primary" onclick="_continueAfterClientCopy('${templateId}',true)">Update their copies</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+}
+
+async function _continueAfterClientCopy(templateId, doIt) {
+  closeModal('client-copy-modal')
+  const p = window._pendingClientCopyProp
+  if (doIt && p) await _propagateExerciseChangeToTemplates(p.change, p.ids)
+  window._pendingClientCopyProp = null
+  _checkSiblingPropagation(templateId)
+}
+
+// (#3) offer to apply the same change to other sessions that share this one's name.
+async function _checkSiblingPropagation(templateId) {
   const ctx = window._templateCtx
 
   const _showPropagateModal = (name, count, label) => {
@@ -1455,7 +1591,7 @@ async function _checkClientPlanPropagation(templateId) {
           <h2 class="modal-title">Apply to other sessions?</h2>
           <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
         </div>
-        <p style="font-size:14px;line-height:1.6;margin:0 0 20px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other session${count === 1 ? '' : 's'} named "<strong>${name}</strong>" in ${label}.</p>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 20px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other session${count === 1 ? '' : 's'} named "<strong>${name}</strong>" in ${label}. Only the exercise you changed will be applied.</p>
         <div class="modal-footer">
           <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
           <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">Update all "${name}"</button>
@@ -1506,64 +1642,26 @@ async function _checkClientPlanPropagation(templateId) {
   openTemplate(templateId, ctx)
 }
 
+// Applies the single captured change to the other same-named sessions (surgically, by name) and to
+// THEIR assigned client copies — never a wholesale workout overwrite.
 async function _applyToAllSessions(sourceTemplateId) {
   closeModal('propagate-modal')
   const targetIds = window._propagateTargets || []
-  if (!targetIds.length) { openTemplate(sourceTemplateId, window._templateCtx); return }
+  const change = window._lastExerciseChange
+  if (!targetIds.length || !change) { openTemplate(sourceTemplateId, window._templateCtx); return }
 
-  const { data: sourceExs } = await db.from('workout_template_exercises')
-    .select('*').eq('template_id', sourceTemplateId).order('order_index')
+  await _propagateExerciseChangeToTemplates(change, targetIds)
 
-  for (const targetId of targetIds) {
-    await db.from('workout_template_exercises').delete().eq('template_id', targetId)
-    if (sourceExs?.length) {
-      const copies = sourceExs.map(ex => ({
-        template_id: targetId,
-        exercise_id: ex.exercise_id || null,
-        exercise_name: ex.exercise_name,
-        exercise_type: ex.exercise_type,
-        order_index: ex.order_index,
-        sets: ex.sets || null,
-        sets_json: ex.sets_json || null,
-        notes: ex.notes || null,
-        superset_group: ex.superset_group || null
-      }))
-      await db.from('workout_template_exercises').insert(copies)
-    }
-  }
-
-  // If propagating from master program, also sync client plan copies
-  // (client_program_workouts links back to program_phase_workouts via program_phase_workout_id)
+  // Master-program siblings: keep the user's OWN (solo) copies of those sessions in sync too. Real
+  // clients' copies are deliberately NOT touched here — writing to a real client's plan only ever
+  // happens through the per-session "Update assigned clients?" confirm in _checkClientPlanPropagation,
+  // so bulk "Update all same-named sessions" can never silently change a client's plan without consent.
   if (window._templateCtx?.programId) {
-    const allMasterIds = [sourceTemplateId, ...targetIds]
-    const { data: ppws } = await db.from('program_phase_workouts')
-      .select('id').in('template_id', allMasterIds)
-    if (ppws?.length) {
-      const { data: cpws } = await db.from('client_program_workouts')
-        .select('workout_template_id').in('program_phase_workout_id', ppws.map(r => r.id))
-      const clientTmplIds = (cpws || []).map(r => r.workout_template_id).filter(Boolean)
-      for (const clientTmplId of clientTmplIds) {
-        await db.from('workout_template_exercises').delete().eq('template_id', clientTmplId)
-        if (sourceExs?.length) {
-          const copies = sourceExs.map(ex => ({
-            template_id: clientTmplId,
-            exercise_id: ex.exercise_id || null,
-            exercise_name: ex.exercise_name,
-            exercise_type: ex.exercise_type,
-            order_index: ex.order_index,
-            sets: ex.sets || null,
-            sets_json: ex.sets_json || null,
-            notes: ex.notes || null,
-            superset_group: ex.superset_group || null
-          }))
-          await db.from('workout_template_exercises').insert(copies)
-        }
-      }
-      log.ok('_applyToAllSessions', `synced ${clientTmplIds.length} client plan copies`)
-    }
+    const copies = await _assignedCopiesForSession(targetIds)
+    await _propagateExerciseChangeToTemplates(change, copies.soloSelfIds)
   }
 
-  log.ok('_applyToAllSessions', `propagated to ${targetIds.length} sessions`)
+  log.ok('_applyToAllSessions', `propagated one change to ${targetIds.length} sessions`)
   openTemplate(sourceTemplateId, window._templateCtx)
 }
 

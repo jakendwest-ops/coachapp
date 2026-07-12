@@ -214,8 +214,14 @@ async function saveAssignProgram(clientId) {
   if (error) { log.error('saveAssignProgram', 'insert failed', error); errorEl.textContent = error.message; return }
   await _saveMissingOneRMEntries(clientId)
   closeModal('assign-program-modal')
-  _cloneProgramForClient(cp.id, programId, clientId)
-  renderClientPrograms(clientId, document.getElementById('tab-content'))
+  // Must AWAIT the clone: it builds the client_program_workouts rows every calendar/Workouts/dashboard
+  // view reads to show the assigned sessions. Fire-and-forget here meant the re-render (and any page
+  // the user navigated to next) raced ahead of those rows and showed the pre-assignment state until a
+  // manual refresh — the "old data until refresh" bug, most visible when the program starts today.
+  const tabEl = document.getElementById('tab-content')
+  if (tabEl) tabEl.innerHTML = '<div class="loading-state">Assigning program…</div>'
+  await _cloneProgramForClient(cp.id, programId, clientId)
+  renderClientPrograms(clientId, tabEl)
 }
 
 // Clones one master workout_template (+ its exercises) into a client-owned copy. Returns the new template id, or null on failure.
@@ -505,8 +511,13 @@ async function saveAssignProgramToClient(programId, soloClientId) {
   if (error) { errEl.textContent = error.message; return }
   await _saveMissingOneRMEntries(clientId)
   document.getElementById('apc-modal')?.remove()
-  _cloneProgramForClient(cp.id, programId, clientId)
+  // AWAIT the clone before re-rendering — same "old data until refresh" race as saveAssignProgram:
+  // the client_program_workouts rows must exist before any view reads them. Then re-render the
+  // current page so the new assignment shows immediately (Workouts/Calendar/dashboard), no refresh.
+  showToast('Adding program…', 'info', 1500)
+  await _cloneProgramForClient(cp.id, programId, clientId)
   if (soloClientId) showToast('Program added to your plan', 'success')
+  if (typeof currentPage === 'string') navigate(currentPage, 'replace')
 }
 
 // ─── PROGRAMS ─────────────────────────────────────────────────────────────────

@@ -452,6 +452,143 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     }, { programId: setup.programId, templateId: setup.templateId, monTemplateId: rows.monTemplateId })
   })
 
+  test('propagating a workout edit updates ONLY the changed exercise, never the whole target workout (2026-07-12)', async ({ page }) => {
+    // Regression for the wholesale-overwrite bug: "Update all same-named sessions" used to delete
+    // every exercise in each target and re-insert the source's full list, silently wiping any
+    // exercise a target had that the source didn't. It must now apply only the one changed exercise,
+    // matched by name, and leave everything else in the target intact.
+    const setup = await page.evaluate(async () => {
+      const mk = (name) => db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name }).select('id').single().then(r => r.data.id)
+      const t2 = await mk('[E2E] Prop Target')
+      // Target has FOUR exercises, incl. "[E2E] Unique" which the source does not have.
+      await db.from('workout_template_exercises').insert([
+        { template_id: t2, exercise_name: '[E2E] Squat', exercise_type: 'strength', order_index: 0, sets: 3 },
+        { template_id: t2, exercise_name: '[E2E] Bench', exercise_type: 'strength', order_index: 1, sets: 3, notes: 'original' },
+        { template_id: t2, exercise_name: '[E2E] Row', exercise_type: 'strength', order_index: 2, sets: 3 },
+        { template_id: t2, exercise_name: '[E2E] Unique', exercise_type: 'strength', order_index: 3, sets: 3 },
+      ])
+      return { t2 }
+    })
+
+    // UPDATE propagation: change only "[E2E] Bench".
+    await page.evaluate(async (t2) => {
+      const change = { op: 'update', matchName: '[E2E] Bench', row: { exercise_id: null, exercise_name: '[E2E] Bench', exercise_type: 'strength', sets: 5, sets_json: null, notes: 'CHANGED', superset_group: null } }
+      await _propagateExerciseChangeToTemplates(change, [t2])
+    }, setup.t2)
+
+    const after = await page.evaluate(async (t2) => {
+      const { data } = await db.from('workout_template_exercises').select('exercise_name, sets, notes').eq('template_id', t2).order('order_index')
+      return data
+    }, setup.t2)
+
+    // All four exercises still present, in order — the target was NOT wiped.
+    expect(after.map(e => e.exercise_name)).toEqual(['[E2E] Squat', '[E2E] Bench', '[E2E] Row', '[E2E] Unique'])
+    // Only Bench changed.
+    const bench = after.find(e => e.exercise_name === '[E2E] Bench')
+    expect(bench.notes).toBe('CHANGED')
+    expect(bench.sets).toBe(5)
+    // "[E2E] Unique" (absent from the source) survived — the old wholesale copy would have deleted it.
+    expect(after.some(e => e.exercise_name === '[E2E] Unique')).toBe(true)
+
+    // DELETE propagation removes only the named exercise.
+    await page.evaluate(async (t2) => {
+      await _propagateExerciseChangeToTemplates({ op: 'delete', matchName: '[E2E] Row', row: null }, [t2])
+    }, setup.t2)
+    const afterDel = await page.evaluate(async (t2) => {
+      const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', t2).order('order_index')
+      return (data || []).map(e => e.exercise_name)
+    }, setup.t2)
+    expect(afterDel).toEqual(['[E2E] Squat', '[E2E] Bench', '[E2E] Unique'])
+
+    await page.evaluate(async (t2) => {
+      await db.from('workout_template_exercises').delete().eq('template_id', t2)
+      await db.from('workout_templates').delete().eq('id', t2)
+    }, setup.t2)
+  })
+
+  test('_assignedCopiesForSession finds a real client copy of an edited session and names the client (2026-07-12)', async ({ page }) => {
+    // #2's classifier finds the assigned client copies of a program session so a program edit can be
+    // pushed to them without re-assigning. This proves the real-client path (prompt-gated) end to
+    // end: build a program session, assign it to a real client with a cloned copy, and confirm the
+    // classifier surfaces that copy under realClientIds with the client's name. (The symmetric
+    // solo-self path can't be fixtured from the PT account — inserting a clients row with
+    // coach_id=null is refused by RLS — so that half is verified live.)
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Copy Class Prog' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'B1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      const { data: master } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] Copy Class WO' }).select('id').single()
+      const { data: ppw } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: master.id, week_number: 1 }).select('id').single()
+
+      const { data: realClient } = await db.from('clients').insert({ coach_id: currentUser.id, full_name: '[E2E] Real Client' }).select('id').single()
+      const { data: realCp } = await db.from('client_programs').insert({ client_id: realClient.id, program_id: prog.id }).select('id').single()
+      const { data: realCopy } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: realClient.id, name: '[E2E] Copy Class WO' }).select('id').single()
+      await db.from('client_program_workouts').insert({ client_program_id: realCp.id, program_phase_workout_id: ppw.id, workout_template_id: realCopy.id, week_number: 1 })
+
+      const res = await _assignedCopiesForSession([master.id])
+      return { res, realClientId: realClient.id, realCopy: realCopy.id, progId: prog.id, master: master.id }
+    })
+
+    expect(setup.res.realClientIds).toContain(setup.realCopy)
+    expect(setup.res.realClientNames).toContain('[E2E] Real Client')
+    expect(setup.res.soloSelfIds).not.toContain(setup.realCopy) // a coached client is never mis-tagged as the user's own
+
+    await page.evaluate(async (s) => {
+      for (const t of [s.realCopy, s.master]) await db.from('workout_template_exercises').delete().eq('template_id', t)
+      await db.from('client_programs').delete().eq('program_id', s.progId)
+      // Delete the program FIRST so its cascade removes program_phase_workouts (which FK-references
+      // the master template) — otherwise the master-template delete below can silently fail and
+      // strand an [E2E] row.
+      await db.from('programs').delete().eq('id', s.progId)
+      for (const t of [s.realCopy, s.master]) await db.from('workout_templates').delete().eq('id', t)
+      await db.from('clients').delete().eq('id', s.realClientId)
+    }, setup)
+  })
+
+  test('_applyToAllSessions applies only the changed exercise to sibling sessions, end to end (2026-07-12)', async ({ page }) => {
+    // Drives the actual "Update all same-named sessions" entry point (not just the primitive) so a
+    // regression that restored the old delete-all/reinsert-all wholesale copy in _applyToAllSessions
+    // itself would fail here. Source and one sibling target; the target has an extra exercise the
+    // source lacks, which must survive.
+    const setup = await page.evaluate(async () => {
+      const mk = (name) => db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name }).select('id').single().then(r => r.data.id)
+      const src = await mk('[E2E] AllSess Source')
+      const tgt = await mk('[E2E] AllSess Target')
+      await db.from('workout_template_exercises').insert([
+        { template_id: src, exercise_name: '[E2E] Squat', exercise_type: 'strength', order_index: 0, sets: 3 },
+        { template_id: src, exercise_name: '[E2E] Bench', exercise_type: 'strength', order_index: 1, sets: 5, notes: 'new' },
+      ])
+      await db.from('workout_template_exercises').insert([
+        { template_id: tgt, exercise_name: '[E2E] Squat', exercise_type: 'strength', order_index: 0, sets: 3 },
+        { template_id: tgt, exercise_name: '[E2E] Bench', exercise_type: 'strength', order_index: 1, sets: 3, notes: 'old' },
+        { template_id: tgt, exercise_name: '[E2E] Unique', exercise_type: 'strength', order_index: 2, sets: 3 },
+      ])
+      return { src, tgt }
+    })
+
+    await page.evaluate(async ({ src, tgt }) => {
+      // Simulate the state _checkSiblingPropagation would have set right before showing the modal,
+      // then invoke the button's handler. ctx has no programId, so the client-copy sync branch is skipped.
+      window._templateCtx = {}
+      window._propagateTargets = [tgt]
+      window._lastExerciseChange = { op: 'update', matchName: '[E2E] Bench', row: { exercise_id: null, exercise_name: '[E2E] Bench', exercise_type: 'strength', sets: 5, sets_json: null, notes: 'new', superset_group: null } }
+      await _applyToAllSessions(src)
+    }, setup)
+
+    const after = await page.evaluate(async (tgt) => {
+      const { data } = await db.from('workout_template_exercises').select('exercise_name, sets, notes').eq('template_id', tgt).order('order_index')
+      return data
+    }, setup.tgt)
+
+    expect(after.map(e => e.exercise_name)).toEqual(['[E2E] Squat', '[E2E] Bench', '[E2E] Unique']) // Unique survived; no wholesale wipe
+    expect(after.find(e => e.exercise_name === '[E2E] Bench').notes).toBe('new') // only Bench changed
+    expect(after.find(e => e.exercise_name === '[E2E] Bench').sets).toBe(5)
+    expect(after.find(e => e.exercise_name === '[E2E] Squat').sets).toBe(3) // Squat untouched
+
+    await page.evaluate(async ({ src, tgt }) => {
+      for (const t of [src, tgt]) { await db.from('workout_template_exercises').delete().eq('template_id', t); await db.from('workout_templates').delete().eq('id', t) }
+    }, setup)
+  })
+
   test('deleting a program with an assigned client names them in the block toast', async ({ page }) => {
     const setup = await page.evaluate(async () => {
       const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Delete Block Test' }).select('id').single()
