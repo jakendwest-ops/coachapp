@@ -188,6 +188,132 @@ test.describe('RLS audit — cross-tenant isolation', () => {
     }
   })
 
+  test('PROBE C: a client can READ the rows they are supposed to (unexpected DENY = a silently broken feature)', async ({ browser }) => {
+    // The other half of RLS, and the half that has actually bitten this project most often. A leak is
+    // an unexpected ALLOW; s23 and s24 were unexpected DENIES — a client simply could not read their
+    // own assigned programme / template exercises / 1RMs, and the app showed an empty page rather
+    // than an error, because PostgREST returns [] (or silently NULLs an embed level) instead of
+    // raising. Probes A and B cannot see this class AT ALL: to them, "no rows" is a pass.
+    //
+    // Probe B's lower bound (CLIENT_MUST_SEE) covers the three tables the seed happens to populate.
+    // It could not cover these four, because the seed creates NO client_programs, client_1rms or
+    // performance_logs rows at all, and its client_check_ins insert is (correctly) refused — the
+    // coach may not submit a check-in on a client's behalf. So Probe B was reporting
+    // `client_programs ✅ 0 rows` on the exact table s23 leaked, proving nothing.
+    //
+    // Rather than bolt these onto the shared seed — assigning a programme changes what the client's
+    // Workouts page renders, and the runner tests key off "the first Start button", which is exactly
+    // how a fixture once poisoned the whole suite — this probe OWNS every row it needs: plant as the
+    // correct writer, read back as the client, destroy in `finally`.
+    // Coach and client get their OWN browser contexts. loginAs* drives the login form, which only
+    // exists when signed OUT — so re-logging-in on one page throws, and the first version of this
+    // probe threw inside its own `finally`, skipping cleanup and stranding the very fixtures it was
+    // built to avoid stranding. Two contexts means no sign-out dance and a cleanup path that cannot
+    // be skipped by a failed login.
+    const coachCtx = await browser.newContext()
+    const clientCtx = await browser.newContext()
+    const coach = await coachCtx.newPage()
+    const client = await clientCtx.newPage()
+
+    const TAG = '[E2E-RLS] Denial Probe'
+    let planted = {}
+    let result
+
+    try {
+      // ── Plant, as the COACH ──────────────────────────────────────────────────────────────────
+      await loginAsPT(coach)
+      planted = await coach.evaluate(async (tag) => {
+        const { data: client } = await db.from('clients').select('id')
+          .eq('coach_id', currentUser.id).eq('full_name', 'Test Client').single()
+
+        const { data: prog, error: pErr } = await db.from('programs')
+          .insert({ coach_id: currentUser.id, name: tag + ' Program' }).select('id').single()
+        if (pErr) return { fatal: `programs insert: ${pErr.message}` }
+
+        // The coach assigns — this is the row s23 made invisible to its own client.
+        const { data: cp, error: cpErr } = await db.from('client_programs')
+          .insert({ client_id: client.id, program_id: prog.id, start_date: '2026-01-01' }).select('id').single()
+        if (cpErr) return { fatal: `client_programs insert: ${cpErr.message}` }
+
+        const { data: orm, error: oErr } = await db.from('client_1rms')
+          .insert({ client_id: client.id, exercise_name: tag + ' Squat', one_rm_kg: 123, recorded_at: '2026-01-01' })
+          .select('id').single()
+        if (oErr) return { fatal: `client_1rms insert: ${oErr.message}` }
+
+        return { clientId: client.id, programId: prog.id, cpId: cp.id, ormId: orm.id }
+      }, TAG)
+
+      expect(planted.fatal, 'could not plant the fixtures, so this probe proves nothing').toBeUndefined()
+
+      // ── Read back, as the CLIENT ─────────────────────────────────────────────────────────────
+      await loginAsClient(client)
+      result = await client.evaluate(async (tag) => {
+        const out = {}
+
+        // s23 verbatim: the assigned programme, read through the SAME nested embed the app uses.
+        // Every level of the chain must resolve — PostgREST nulls an unreadable level in silence, so
+        // checking only the outer table would pass while the client still saw an empty programme.
+        const { data: cps, error: cpErr } = await db.from('client_programs')
+          .select('id, start_date, programs(id, name, program_phases(id, name, program_phase_workouts(id, day_of_week)))')
+          .limit(50)
+        const mine = (cps || []).find(r => r.programs?.name === tag + ' Program')
+        out.client_programs = {
+          err: cpErr?.message || null,
+          readable: !!mine,
+          embedResolved: !!mine?.programs,          // programs level
+          phasesResolved: mine?.programs?.program_phases != null, // phases level (array, may be empty)
+        }
+
+        const { data: orms, error: oErr } = await db.from('client_1rms').select('*').limit(200)
+        out.client_1rms = { err: oErr?.message || null, readable: (orms || []).some(r => r.exercise_name === tag + ' Squat') }
+
+        // These two the CLIENT writes themselves — so this checks INSERT and SELECT as separate
+        // policies. A working read does not imply a working write, and vice versa.
+        const { error: ciErr } = await db.from('client_check_ins')
+          .insert({ client_id: (await db.from('clients').select('id').eq('user_id', currentUser.id).not('coach_id','is',null).single()).data.id,
+                    sleep: 4, energy: 4, stress: 2, soreness: 2, notes: tag })
+        const { data: cis } = await db.from('client_check_ins').select('*').limit(200)
+        out.client_check_ins = { err: ciErr?.message || null, readable: (cis || []).some(r => r.notes === tag) }
+
+        return out
+      }, TAG)
+    } finally {
+      // Destroy everything, as the coach, by tag. The coach page is ALREADY authenticated, so this
+      // needs no login and cannot fail the way the first version did.
+      await coach.evaluate(async (tag) => {
+        const { data: c } = await db.from('clients').select('id').eq('coach_id', currentUser.id).eq('full_name', 'Test Client').single()
+        if (c) {
+          await db.from('client_check_ins').delete().eq('client_id', c.id).eq('notes', tag)
+          await db.from('client_1rms').delete().eq('client_id', c.id).eq('exercise_name', tag + ' Squat')
+        }
+        const { data: progs } = await db.from('programs').select('id').eq('coach_id', currentUser.id).eq('name', tag + ' Program')
+        for (const p of progs || []) {
+          await db.from('client_programs').delete().eq('program_id', p.id)
+          await db.from('programs').delete().eq('id', p.id)
+        }
+      }, TAG).catch(() => {})
+      await coachCtx.close().catch(() => {})
+      await clientCtx.close().catch(() => {})
+    }
+
+    console.log('\n─── PROBE C — can the client read what they SHOULD? (unexpected DENY) ───')
+    const verdict = (label, o, extra = '') => {
+      const bad = o.err || !o.readable
+      console.log(`  ${label.padEnd(22)} ${bad ? '🔴 DENIED — feature is silently broken for this client' : '✅ readable'}${o.err ? ` (${o.err})` : ''}${extra}`)
+    }
+    verdict('client_programs', result.client_programs,
+      result.client_programs.readable ? ` · embed: programs=${result.client_programs.embedResolved} phases=${result.client_programs.phasesResolved}` : '')
+    verdict('client_1rms', result.client_1rms)
+    verdict('client_check_ins', result.client_check_ins)
+    console.log('─────────────────────────────────────────────────────────────────────────\n')
+
+    expect(result.client_programs.readable, 'the client CANNOT read a programme their coach assigned them — this is s23 all over again').toBe(true)
+    expect(result.client_programs.embedResolved, 'client_programs is readable but the nested programs row came back NULL — PostgREST silently nulls unreadable embed levels, so the client would see an assigned programme with no content').toBe(true)
+    expect(result.client_programs.phasesResolved, 'the program_phases level of the embed is NULL for the client — same silent-null failure, one level deeper').toBe(true)
+    expect(result.client_1rms.readable, 'the client cannot read their own 1RMs — the runner needs these for %1RM targets').toBe(true)
+    expect(result.client_check_ins.readable, 'the client cannot write+read their own check-in').toBe(true)
+  })
+
   test('SELF-TEST: the audit can actually DETECT a leak (it is not just always green)', async ({ page }) => {
     // A green audit from a harness that has never once gone red proves nothing — it could be
     // querying the wrong thing, filtering the wrong field, or silently erroring, and would look
