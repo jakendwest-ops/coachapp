@@ -593,4 +593,42 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       await ptContext.close()
     }
   })
+
+  test('a logged personal best actually appears on the Personal Bests page (regression, 2026-07-12)', async ({ page }) => {
+    // Every personal best anyone ever logged was saved correctly and then NEVER DISPLAYED.
+    // renderProgressPBs embedded `performance_exercises(name, category, unit)` — a table that does
+    // not exist and has no relationship to performance_logs — so PostgREST rejected the whole query.
+    // The error was discarded (`const { data: logs } =`, no error check), `logs` came back
+    // undefined, and the page fell through to its "No personal bests logged yet" empty state.
+    // The columns were plain fields on performance_logs all along — exactly what saveClientPB writes.
+    // Found by the RLS audit, which enumerates the tables the app references; that one wasn't real.
+    const clientId = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+      return data.id
+    })
+
+    const insertErr = await page.evaluate(async (clientId) => {
+      const { error } = await db.from('performance_logs').insert({
+        client_id: clientId, logged_by: currentUser.id,
+        category: 'strength', name: '[E2E] PB Deadlift', value: 200, unit: 'kg',
+        date: new Date().toISOString().split('T')[0],
+      })
+      return error ? error.message : null
+    }, clientId)
+    expect(insertErr).toBeNull() // the WRITE was never the problem — only the read
+
+    try {
+      await page.click('[data-page="progress"]')
+      await page.waitForTimeout(1000)
+      await page.click('button:has-text("Personal Bests")')
+      await page.waitForTimeout(1500)
+
+      await expect(page.locator('text=[E2E] PB Deadlift')).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=No personal bests logged yet')).toHaveCount(0)
+    } finally {
+      await page.evaluate(async (clientId) => {
+        await db.from('performance_logs').delete().eq('client_id', clientId).eq('name', '[E2E] PB Deadlift')
+      }, clientId)
+    }
+  })
 })

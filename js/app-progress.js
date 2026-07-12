@@ -1404,9 +1404,18 @@ async function renderProgressPBs(el) {
         <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
       </div>
     </div>`
-  const { data: logs } = await db.from('performance_logs')
-    .select('*, performance_exercises(name, category, unit)')
+  // `name`, `category` and `unit` are PLAIN COLUMNS on performance_logs — that is exactly what
+  // saveClientPB() writes (app-clients.js). This query used to embed `performance_exercises(...)`,
+  // a table that does not exist and has no relationship to performance_logs, so PostgREST rejected
+  // the whole query. The error was discarded (`const { data: logs } =` with no error check), `logs`
+  // came back undefined, and the page fell through to the "No personal bests logged yet" empty
+  // state — meaning EVERY personal best a client logged was saved correctly and then never shown to
+  // anyone. Found by the RLS audit on 2026-07-12 (it enumerates the tables the app references, and
+  // performance_exercises did not exist), proved red/green with a real logged PB.
+  const { data: logs, error: pbErr } = await db.from('performance_logs')
+    .select('*')
     .eq('client_id', clientId).order('date', { ascending: false })
+  if (pbErr) log.error('renderProgressPBs', 'personal bests fetch failed', pbErr)
 
   let pbListHtml
   if (!logs?.length) {
@@ -1414,8 +1423,8 @@ async function renderProgressPBs(el) {
   } else {
     const byExercise = {}
     for (const l of logs) {
-      const name = l.performance_exercises?.name || 'Unknown'
-      if (!byExercise[name]) byExercise[name] = { best: l, all: [], unit: l.performance_exercises?.unit || '', category: l.performance_exercises?.category || '' }
+      const name = l.name || 'Unknown'
+      if (!byExercise[name]) byExercise[name] = { best: l, all: [], unit: l.unit || '', category: l.category || '' }
       byExercise[name].all.push(l)
     }
     pbListHtml = Object.entries(byExercise).map(([name, { best, all, unit, category }]) => `

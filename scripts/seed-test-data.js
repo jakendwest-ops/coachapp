@@ -14,6 +14,15 @@ const PT_PASSWORD    = 'E2eTestPass123!'
 const CLIENT_EMAIL   = 'coachapp.e2e.client@gmail.com'
 const CLIENT_PASSWORD = 'E2eTestPass123!'
 
+// A SECOND, entirely unrelated coach. Added 2026-07-12 for the RLS audit harness.
+// Until this existed there was no way to test cross-COACH isolation at all — every RLS test the
+// project had ever written used a single coach, so "coach B cannot read coach A's data" (the
+// boundary that actually matters once beta puts strangers in the same database) was never once
+// exercised. This account owns NO data of its own here on purpose: the harness creates and destroys
+// its own fixtures at runtime rather than depending on shared seed rows (feedback_test_fixture_isolation).
+const PT2_EMAIL      = 'coachapp.e2e.pt2@gmail.com'
+const PT2_PASSWORD   = 'E2eTestPass123!'
+
 async function signUpOrSignIn(db, email, password, fullName) {
   const { data: signUpData, error: signUpErr } = await db.auth.signUp({
     email, password,
@@ -240,11 +249,31 @@ async function run() {
         notes: i === 0 ? 'Feeling good this week, sleep improving' : null
       })
     }
-    await db.from('client_check_ins').insert(checkIns)
-    console.log(`  ${checkIns.length} check-ins inserted`)
+    // These are inserted while signed in as the PT, but client_check_ins is CLIENT-scoped by design
+    // (only the client submits their own check-in — saveClientCheckIn is called solely from the
+    // client's own dashboard). So this insert is REFUSED by RLS. It has been failing silently on
+    // every run since the error was never checked, while still printing "N check-ins inserted".
+    // Same swallowed-error bug as the template-exercises insert fixed 2026-07-11 — surfaced by the
+    // RLS audit, 2026-07-12. Report it honestly rather than lying about success.
+    const { error: ciErr } = await db.from('client_check_ins').insert(checkIns)
+    if (ciErr) console.log(`  ⚠️  check-ins NOT inserted — RLS refuses the coach (this is correct: only the client may submit their own). ${ciErr.message}`)
+    else console.log(`  ${checkIns.length} check-ins inserted`)
   } else {
     console.log('  Check-ins exist, skipping')
   }
+
+  // ── 10. SECOND COACH (RLS audit) ────────────────────────────────────────────
+  // A completely unrelated coach, in the same database. This is the tenant boundary that actually
+  // matters at beta — strangers sharing one Postgres — and until 2026-07-12 it had never been
+  // tested, because no second coach account existed. Deliberately seeded with NO data: the RLS
+  // harness creates and destroys its own fixtures so it never depends on shared rows.
+  console.log('\n[10] Second coach (for the RLS audit — cross-tenant isolation)')
+  const pt2Auth = await signUpOrSignIn(db, PT2_EMAIL, PT2_PASSWORD, 'Test Coach Two')
+  const pt2Id = pt2Auth.user.id
+  await db.auth.signInWithPassword({ email: PT2_EMAIL, password: PT2_PASSWORD })
+  const { error: p2Err } = await db.from('profiles').update({ full_name: 'Test Coach Two', role: 'coach' }).eq('id', pt2Id)
+  if (p2Err) throw new Error('PT2 profile update failed: ' + p2Err.message)
+  console.log(`  PT2 user id: ${pt2Id}`)
 
   // ── Done ────────────────────────────────────────────────────────────────────
   console.log('\n✓ Seed complete. Add these to .env:\n')
@@ -252,6 +281,8 @@ async function run() {
   console.log(`PT_PASSWORD=${PT_PASSWORD}`)
   console.log(`CLIENT_EMAIL=${CLIENT_EMAIL}`)
   console.log(`CLIENT_PASSWORD=${CLIENT_PASSWORD}`)
+  console.log(`PT2_EMAIL=${PT2_EMAIL}`)
+  console.log(`PT2_PASSWORD=${PT2_PASSWORD}`)
   console.log()
   process.exit(0)
 }

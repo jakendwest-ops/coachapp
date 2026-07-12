@@ -4,6 +4,9 @@ const PT_EMAIL     = process.env.PT_EMAIL
 const PT_PASSWORD  = process.env.PT_PASSWORD
 const CLIENT_EMAIL = process.env.CLIENT_EMAIL
 const CLIENT_PASSWORD = process.env.CLIENT_PASSWORD
+// A second, entirely unrelated coach — the other tenant. Added 2026-07-12 for the RLS audit.
+const PT2_EMAIL    = process.env.PT2_EMAIL
+const PT2_PASSWORD = process.env.PT2_PASSWORD
 
 async function loginAs(page, email, password) {
   await page.goto('/')
@@ -38,4 +41,22 @@ async function loginAsClient(page) {
   await page.waitForSelector('h1:has-text("Hi,")', { timeout: 15000 })
 }
 
-module.exports = { loginAsPT, loginAsClient }
+// Logs in as the SECOND coach — a different auth.uid(), a different tenant entirely. Used by the RLS
+// audit to prove coach B cannot read/write coach A's rows. Deliberately does NOT wait for a specific
+// dashboard heading: this account owns no data, so it lands on an empty coach dashboard, and the RLS
+// probes talk to `db` directly rather than through the UI anyway.
+async function loginAsPT2(page) {
+  await page.goto('/')
+  await page.evaluate(() => localStorage.setItem('_activeView', 'coach'))
+  await loginAs(page, PT2_EMAIL, PT2_PASSWORD)
+  // Wait for the session + profile to be loaded, not for any particular render.
+  // NOTE the bare identifiers: `currentUser`/`currentProfile` are top-level `let` declarations in a
+  // classic script, so they live in the global DECLARATIVE record and are NOT mirrored onto
+  // `window` (les-024). `window.currentUser` is permanently undefined; the bare name resolves.
+  await page.waitForFunction(
+    () => typeof currentUser !== 'undefined' && !!currentUser?.id && typeof currentProfile !== 'undefined' && !!currentProfile,
+    { timeout: 15000 }
+  )
+}
+
+module.exports = { loginAsPT, loginAsClient, loginAsPT2 }
