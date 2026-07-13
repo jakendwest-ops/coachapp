@@ -184,6 +184,16 @@ function toggleClientTemplate(id) {
 // session_order) so the Start button can jump straight into it instead of just linking back here.
 // Deliberately a standalone pair of functions, not shared with the dashboards' inline copies —
 // avoids touching two already-shipped, already-tested renders for a pure dedup benefit.
+// How many weeks of this phase actually EXIST to train, as opposed to how many it declares.
+// The accordion header printed phase.duration_weeks (the plan) directly above a body rendered from
+// the real program_phase_workouts rows (what's been built) — so a 3-week phase with 2 weeks built
+// read "3w" above 2 weeks of content, with nothing explaining the third. On the program BUILDER,
+// duration_weeks is the right number to show (it is the intent). On the Workouts page the reader is
+// the person about to train, and they need what is really there. Jake, 2026-07-13.
+function _builtWeekCount(sessions) {
+  return new Set((sessions || []).map(s => s.week_number || 1)).size
+}
+
 function _buildWorkoutsHero(clientId, activeAssignment, cpwMap) {
   if (!activeAssignment?.programs) {
     return { title: 'No program assigned', meta: 'Start a freeform session below, or ask your PT to assign a program.', action: `startWorkoutRunner('${clientId}')`, btnLabel: 'Start a session' }
@@ -334,7 +344,7 @@ async function renderClientWorkoutsPage(el) {
               <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
                 <div>
                   <span style="font-size:13px;font-weight:700;color:var(--text)">${phase.name}</span>
-                  <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${phase.duration_weeks}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
+                  <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${_builtWeekCount(allSessions)}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
                 </div>
                 <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
@@ -1497,7 +1507,7 @@ async function _propagateExerciseChangeToTemplates(change, targetIds) {
 // program edit WITHOUT re-assigning (Jake, 2026-07-12). Queries clients directly rather than via a
 // deep nested embed, so an unreadable embed level can't silently misclassify a copy.
 async function _assignedCopiesForSession(masterTemplateIds) {
-  const out = { soloSelfIds: [], realClientIds: [], realClientNames: [] }
+  const out = { soloSelfIds: [], realClientIds: [], realClientNames: [], realClientCount: 0 }
   if (!masterTemplateIds?.length) return out
   const { data: ppws } = await db.from('program_phase_workouts').select('id').in('template_id', masterTemplateIds)
   const ppwIds = (ppws || []).map(r => r.id)
@@ -1513,11 +1523,21 @@ async function _assignedCopiesForSession(masterTemplateIds) {
   if (!clientIds.length) return out
   const { data: clients } = await db.from('clients').select('id, user_id, coach_id, full_name').in('id', clientIds)
   const names = new Set()
+  // The Personal view must never reach a real client — not to write to their plan, and not even to
+  // read their name. Solo and PT share one auth.uid(), so a program built in Personal view is
+  // indistinguishable from a coaching program at the DB level (programs.is_personal fixes that going
+  // forward, but every PRE-EXISTING program defaults to false, so this guard cannot depend on it).
+  // Real-client copies are surfaced as a bare COUNT in solo — enough to warn honestly, with no write
+  // target and no name disclosure. Jake, 2026-07-13.
+  const isSolo = currentProfile?.role === 'solo'
   ;(clients || []).forEach(cl => {
     const ids = idsByClient[cl.id] || []
     const isSoloSelf = cl.coach_id == null && cl.user_id === currentUser.id
-    if (isSoloSelf) out.soloSelfIds.push(...ids)
-    else { out.realClientIds.push(...ids); if (cl.full_name) names.add(cl.full_name) }
+    if (isSoloSelf) { out.soloSelfIds.push(...ids); return }
+    out.realClientCount++
+    if (isSolo) return
+    out.realClientIds.push(...ids)
+    if (cl.full_name) names.add(cl.full_name)
   })
   out.realClientNames = [...names]
   return out
@@ -1536,6 +1556,12 @@ async function _checkClientPlanPropagation(templateId) {
   if (change && ctx?.programId && !ctx.isClientPlan) {
     const copies = await _assignedCopiesForSession([templateId])
     if (copies.soloSelfIds.length) await _propagateExerciseChangeToTemplates(change, copies.soloSelfIds)
+    // In Personal view, real clients are never a write target (_assignedCopiesForSession leaves
+    // realClientIds empty). Say so rather than saying nothing: silently skipping the sync would let
+    // the user assume their clients' plans had been updated, which is worse than the bug this fixes.
+    if (currentProfile?.role === 'solo' && copies.realClientCount) {
+      showToast(`Personal edit — ${copies.realClientCount} assigned client${copies.realClientCount === 1 ? "'s plan was" : "s' plans were"} not changed. Switch to PT view to update them.`, 'info', 6000)
+    }
     if (copies.realClientIds.length) {
       window._pendingClientCopyProp = { change, ids: copies.realClientIds }
       _showClientCopyPropagateModal(copies.realClientNames, templateId)

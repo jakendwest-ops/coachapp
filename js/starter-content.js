@@ -123,14 +123,14 @@ async function _seedStarterContent() {
 
   // 3. Sample program → phase → phase-workouts — each created only if missing.
   let programId, phaseId
-  const { data: existingProg } = await db.from('programs').select('id').eq('coach_id', currentUser.id).eq('name', STARTER_PROGRAM.name).limit(1)
+  const { data: existingProg } = await db.from('programs').select('id').eq('coach_id', currentUser.id).eq('is_personal', false).eq('name', STARTER_PROGRAM.name).limit(1)
   if (existingProg?.length) {
     programId = existingProg[0].id
     const { data: existingPhase } = await db.from('program_phases').select('id').eq('program_id', programId).limit(1)
     phaseId = existingPhase?.[0]?.id
   } else {
     const { data: prog, error: pErr } = await db.from('programs').insert({
-      coach_id: currentUser.id, name: STARTER_PROGRAM.name, description: STARTER_PROGRAM.description,
+      coach_id: currentUser.id, is_personal: false, name: STARTER_PROGRAM.name, description: STARTER_PROGRAM.description,
     }).select('id').single()
     if (pErr || !prog) { log.error('_seedStarterContent', 'program seed failed', pErr); return }
     programId = prog.id

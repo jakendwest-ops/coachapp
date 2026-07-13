@@ -121,7 +121,7 @@
                   <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
                     <div>
                       <span style="font-size:13px;font-weight:700;color:var(--text)">${phase.name}</span>
-                      <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${phase.duration_weeks}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
+                      <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${_builtWeekCount(allSessions)}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
                     </div>
                     <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
@@ -180,15 +180,27 @@ function showAssignProgramModal(clientId) {
       <p class="modal-error" id="ap-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="closeModal('assign-program-modal')">Cancel</button>
-        <button class="btn-primary" onclick="saveAssignProgram('${targetClientId}')">Assign</button>
+        <button class="btn-primary" id="ap-save-btn" onclick="saveAssignProgram('${targetClientId}')">Assign</button>
       </div>
     </div>
   `
   document.body.appendChild(overlay)
 
-  db.from('programs').select('id, name').eq('coach_id', currentUser.id).order('name').then(({ data }) => {
+  // Personal programs must never appear in a dropdown that assigns a program TO a client — that is
+  // exactly how real clients ended up on a personal program. Filtered by the current view, matching
+  // every other is_personal read site.
+  db.from('programs').select('id, name').eq('coach_id', currentUser.id).eq('is_personal', currentProfile?.role === 'solo').order('name').then(({ data, error }) => {
     const sel = document.getElementById('ap-program')
     if (!sel) return
+    // Surface the error. This query was discarding it, so a failure rendered an EMPTY dropdown and
+    // the coach would conclude they had no programs — the same silent-empty failure that hid the
+    // Personal Bests bug for months (a rejected query whose error was thrown away).
+    if (error) {
+      log.error('showAssignProgramModal', 'program fetch failed', error)
+      const errEl = document.getElementById('ap-error')
+      if (errEl) errEl.textContent = 'Could not load your programs. Please reload.'
+      return
+    }
     ;(data || []).forEach(p => {
       const opt = document.createElement('option')
       opt.value = p.id
@@ -198,12 +210,89 @@ function showAssignProgramModal(clientId) {
   })
 }
 
+// Is this program ALREADY assigned to this person? Both assign paths (saveAssignProgram and
+// saveAssignProgramToClient) previously inserted a client_programs row with no duplicate check at
+// all — so assigning the same program twice silently stacked a second assignment AND re-cloned every
+// template in it. Found 2026-07-13: Jake's own account had 32 stacked self-assignments of one
+// program, each having minted a fresh client-owned clone of all ~30 of its sessions. Nothing looked
+// broken because every read does .order('created_at', desc).limit(1) and takes the newest, leaving
+// the rest as invisible debris. Preventing silent double-assign has been the stated intent since
+// 2026-07-03; it was never actually built. ONE shared helper, called by BOTH paths.
+async function _existingAssignment(clientId, programId) {
+  const { data, error } = await db.from('client_programs').select('id, start_date')
+    .eq('client_id', clientId).eq('program_id', programId)
+    .order('created_at', { ascending: false }).limit(1)
+  // FAIL CLOSED. Returning "not assigned" on a lookup error would re-create the exact duplicate this
+  // guard exists to prevent, silently, on any network/RLS blip. Callers treat `error` as "abort".
+  if (error) { log.error('_existingAssignment', 'lookup failed', error); return { error } }
+  return data?.[0] || null
+}
+
+// Removes an assignment AND the client-owned template clones it created.
+//
+// unassignProgram used to delete ONLY the client_programs row. Its client_program_workouts cascade
+// away with it, but the workout_templates those rows pointed at do NOT — the FK runs the other way
+// (workout_templates → client_program_workouts is CASCADE, i.e. deleting the TEMPLATE deletes the
+// cpw, never the reverse). So every removal stranded ~30 clones forever. Together with the
+// unguarded re-assign path, that is how one account accumulated 2013 client-owned templates, 1223
+// of them dead (2026-07-13). ONE helper, used by every path that drops an assignment, so the two
+// cannot diverge again.
+//
+// Deliberately does NOT delete a clone that a workout_log points at: workout_logs.template_id is
+// SET NULL on delete, so history survives either way, but keeping the link means a logged session
+// can still say which workout it came from.
+async function _removeAssignmentAndClones(clientProgramId) {
+  const { data: cpws } = await db.from('client_program_workouts')
+    .select('workout_template_id').eq('client_program_id', clientProgramId)
+  const cloneIds = [...new Set((cpws || []).map(r => r.workout_template_id).filter(Boolean))]
+
+  const { error: delErr } = await db.from('client_programs').delete().eq('id', clientProgramId)
+  if (delErr) { log.error('_removeAssignmentAndClones', 'assignment delete failed', delErr); return false }
+
+  if (cloneIds.length) {
+    // Only clones nothing else still needs: not referenced by any surviving assignment, and never
+    // trained from. Same two-guard shape as _deleteOwnedUnreferencedTemplates.
+    const { data: stillUsed } = await db.from('client_program_workouts')
+      .select('workout_template_id').in('workout_template_id', cloneIds)
+    const { data: logged } = await db.from('workout_logs')
+      .select('template_id').in('template_id', cloneIds)
+    const keep = new Set([
+      ...(stillUsed || []).map(r => r.workout_template_id),
+      ...(logged || []).map(r => r.template_id)
+    ])
+    const dead = cloneIds.filter(id => !keep.has(id))
+    if (dead.length) {
+      const { error: tErr } = await db.from('workout_templates').delete().in('id', dead).not('client_id', 'is', null)
+      if (tErr) log.error('_removeAssignmentAndClones', 'clone cleanup failed', tErr) // assignment is gone either way
+      else log.ok('_removeAssignmentAndClones', 'cleaned clones', { count: dead.length })
+    }
+  }
+  return true
+}
+
 async function saveAssignProgram(clientId) {
   const programId = document.getElementById('ap-program').value
   const startDate = document.getElementById('ap-start').value || null
   const errorEl   = document.getElementById('ap-error')
+  const btn       = document.getElementById('ap-save-btn')
 
   if (!programId) { errorEl.textContent = 'Please select a program'; return }
+
+  // Disable for the whole run. A check-then-insert in the browser cannot beat a double-tap: two
+  // invocations both await the lookup before either INSERT lands, both see zero rows, and both
+  // insert — re-cloning every template in the program twice. The unique index on
+  // (client_id, program_id) is the real backstop; this stops the user ever provoking it.
+  if (btn?.disabled) return
+  if (btn) { btn.disabled = true; btn.textContent = 'Assigning…' }
+  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = 'Assign' } }
+
+  const existing = await _existingAssignment(clientId, programId)
+  if (existing?.error) { errorEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
+  if (existing) {
+    const started = existing.start_date ? ` (started ${existing.start_date})` : ''
+    if (!confirm(`That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`)) { _release(); return }
+    if (!await _removeAssignmentAndClones(existing.id)) { errorEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
+  }
 
   const { data: cp, error } = await db.from('client_programs').insert({
     client_id: clientId,
@@ -211,7 +300,12 @@ async function saveAssignProgram(clientId) {
     start_date: startDate || null
   }).select('id').single()
 
-  if (error) { log.error('saveAssignProgram', 'insert failed', error); errorEl.textContent = error.message; return }
+  if (error) {
+    log.error('saveAssignProgram', 'insert failed', error)
+    // 23505 = the unique index fired: a concurrent assign won the race.
+    errorEl.textContent = error.code === '23505' ? 'That program is already assigned to this client.' : error.message
+    _release(); return
+  }
   await _saveMissingOneRMEntries(clientId)
   closeModal('assign-program-modal')
   // Must AWAIT the clone: it builds the client_program_workouts rows every calendar/Workouts/dashboard
@@ -414,8 +508,11 @@ async function _saveMissingOneRMEntries(clientId) {
 
 async function unassignProgram(clientId, assignmentId) {
   if (!confirm('Remove this program from the client?')) return
-  const { error } = await db.from('client_programs').delete().eq('id', assignmentId)
-  if (error) { log.error('unassignProgram', 'delete failed', error); return }
+  // Was a bare delete of the client_programs row. Its client_program_workouts cascade away, but the
+  // client-owned template clones they pointed at do NOT (the FK runs the other way), so every
+  // removal stranded ~30 orphan templates forever — for real clients as well as the owner. Now goes
+  // through the shared helper, which removes the assignment AND its dead clones. 2026-07-13.
+  if (!await _removeAssignmentAndClones(assignmentId)) { showToast('Could not remove the program', 'error'); return }
   renderClientPrograms(clientId, document.getElementById('tab-content'))
 }
 
@@ -486,7 +583,7 @@ async function showAssignProgramToClientModal(programId) {
       <p class="modal-error" id="apc-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="document.getElementById('apc-modal').remove()">Cancel</button>
-        <button class="btn-primary" onclick="saveAssignProgramToClient('${programId}','${isSolo ? window._soloClientId : ''}')">Assign</button>
+        <button class="btn-primary" id="apc-save-btn" onclick="saveAssignProgramToClient('${programId}','${isSolo ? window._soloClientId : ''}')">Assign</button>
       </div>
     </div>`
 
@@ -507,8 +604,37 @@ async function saveAssignProgramToClient(programId, soloClientId) {
   const clientId = soloClientId || document.getElementById('apc-client')?.value
   const startDate = document.getElementById('apc-start').value || null
   if (!clientId) { errEl.textContent = 'Please select a client'; return }
+
+  const btn = document.getElementById('apc-save-btn')
+  if (btn?.disabled) return
+  if (btn) { btn.disabled = true; btn.textContent = 'Assigning…' }
+  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = 'Assign' } }
+
+  // Already assigned? Do NOT just refuse. Every "which program am I on?" read takes the NEWEST
+  // assignment (.order('created_at', desc).limit(1)), and solo view has no Remove/Edit-date control
+  // anywhere — those live in renderClientPrograms, which is only reachable from a coach's
+  // client-detail tab, and a solo client record (coach_id IS NULL) is never listed there. So
+  // RE-ASSIGNING has been the only way a solo user could restart a block or go back to an earlier
+  // program. A bare refusal would remove the sole escape hatch and strand them on whatever program
+  // they last assigned. Offer a real restart instead: drop the old assignment (and its now-dead
+  // clones) and re-clone fresh. Caught by two independent review agents, 2026-07-13.
+  const existing = await _existingAssignment(clientId, programId)
+  if (existing?.error) { errEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
+  if (existing) {
+    const started = existing.start_date ? ` (started ${existing.start_date})` : ''
+    const ok = confirm(soloClientId
+      ? `This program is already in your plan${started}.\n\nRestart it from the new start date? Your logged sessions are kept — only the plan itself is rebuilt.`
+      : `That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`)
+    if (!ok) { _release(); return }
+    if (!await _removeAssignmentAndClones(existing.id)) { errEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
+  }
+
   const { data: cp, error } = await db.from('client_programs').insert({ client_id: clientId, program_id: programId, start_date: startDate || null }).select('id').single()
-  if (error) { errEl.textContent = error.message; return }
+  if (error) {
+    log.error('saveAssignProgramToClient', 'insert failed', error)
+    errEl.textContent = error.code === '23505' ? 'That program is already assigned.' : error.message
+    _release(); return
+  }
   await _saveMissingOneRMEntries(clientId)
   document.getElementById('apc-modal')?.remove()
   // AWAIT the clone before re-rendering — same "old data until refresh" race as saveAssignProgram:
@@ -525,10 +651,16 @@ async function renderPrograms(el) {
   log.info('renderPrograms', 'fetching programs')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
+  // The PT and Personal views share one coach_id/auth.uid(), so without this filter the Programs page
+  // is a single merged list — a personal program shows up in the coaching pool and vice versa. Same
+  // split already applied to exercises (2026-07-10) and workout_templates (2026-07-11); programs was
+  // the one table that never got it, which is how real clients ended up assigned to a personal
+  // program. Jake, 2026-07-13.
   const { data: programs, error } = await db
     .from('programs')
     .select('id, name, description, created_at, program_phases(id)')
     .eq('coach_id', currentUser.id)
+    .eq('is_personal', currentProfile?.role === 'solo')
     .order('created_at', { ascending: false })
 
   if (error) { log.error('renderPrograms', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
@@ -545,7 +677,9 @@ async function renderPrograms(el) {
       <div class="empty-state">
         <div class="empty-icon">📋</div>
         <div class="empty-title">No programs yet</div>
-        <div class="empty-text">${currentProfile?.role === 'solo' ? 'Create a program to plan your own training.' : 'Create a program to organise training phases for your clients.'}</div>
+        <div class="empty-text">${currentProfile?.role === 'solo'
+          ? `Create a program to plan your own training.${window._soloClientId ? ' <br><br>Built a personal program before today? It’s still in your <strong>PT</strong> view — open it there and use “Move to Personal” to bring it across.' : ''}`
+          : 'Create a program to organise training phases for your clients.'}</div>
         <button class="btn-primary" onclick="showCreateProgramModal()">+ Create program</button>
       </div>
     ` : `
@@ -596,7 +730,7 @@ async function openProgram(programId) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const [{ data: program, error }, { data: templates }] = await Promise.all([
-    db.from('programs').select('id, name, description, created_at, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)').eq('id', programId).single(),
+    db.from('programs').select('id, name, description, created_at, is_personal, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)').eq('id', programId).single(),
     // .is('program_id', null) excludes templates already created inline for a specific day slot
     // ("+ Create new workout") -- without it, every one-off slot creation stayed in this reuse
     // pool forever, ballooning the picker with indistinguishable same-named entries the coach had
@@ -630,8 +764,11 @@ async function openProgram(programId) {
       <p style="font-size:12px;color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${program.name.replace(/'/g,"\\'")}','${(program.description||'').replace(/'/g,"\\'")}')">Edit</button>
-        <button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">${currentProfile?.role === 'solo' ? 'Add to my plan' : 'Assign to client'}</button>
+        ${_assignBtnHtml(program)}
         <button class="btn btn-secondary" onclick="copyProgramWorkoutsToLibrary('${program.id}')" title="Copy every workout in this program into your reusable Library">Copy workouts to Library</button>
+        ${program.is_personal
+          ? `<button class="btn btn-secondary" onclick="copyProgramToCoaching('${program.id}')" title="Make a coaching copy of this personal program that you can assign to clients">Copy to coaching programs</button>`
+          : (window._soloClientId && currentProfile?.role !== 'solo' ? `<button class="btn btn-secondary" onclick="moveProgramToPersonal('${program.id}')" title="Move this program into your Personal view — it will no longer be assignable to clients">Move to Personal</button>` : '')}
         <button class="btn btn-danger" onclick="deleteProgram('${program.id}')">Delete</button>
       </div>
     </div>
@@ -769,7 +906,7 @@ async function saveProgram(programId) {
     openProgram(id)
   } else {
     log.info('saveProgram', 'creating')
-    const { data, error } = await db.from('programs').insert({ coach_id: currentUser.id, name, description: desc || null }).select().single()
+    const { data, error } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: currentProfile?.role === 'solo', name, description: desc || null }).select().single()
     if (error) { log.error('saveProgram', 'create failed', error); errorEl.textContent = error.message; return }
     log.ok('saveProgram', 'created', { id: data.id })
     closeProgramModal()
@@ -777,15 +914,204 @@ async function saveProgram(programId) {
   }
 }
 
-async function deleteProgram(programId) {
-  const { data: assignedRows } = await db.from('client_programs').select('id, client_id').eq('program_id', programId)
+// Which button the program header shows for "give this program to someone".
+// A PERSONAL program is never assignable to a client — that is the whole point of the boundary, and
+// the reason 2 real clients ended up on a personal program in the first place. Solo always sees
+// "Add to my plan" (assigning to yourself is what a personal program is for).
+function _assignBtnHtml(program) {
+  if (currentProfile?.role === 'solo') return `<button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">Add to my plan</button>`
+  if (program.is_personal) return ''
+  return `<button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">Assign to client</button>`
+}
+
+// Who is actually assigned to this program, split into the user's OWN solo self-assignment vs. real
+// clients. Extracted from deleteProgram so deleteProgram and moveProgramToPersonal share ONE
+// definition of "a real client is blocking this". The 2026-07-11 data-loss bug happened because a
+// guard was fixed in one function and not its sibling — a shared helper cannot silently diverge.
+async function _programAssignments(programId) {
+  const { data: rows } = await db.from('client_programs').select('id, client_id').eq('program_id', programId)
   const soloId = window._soloClientId || null
-  // A solo user's own self-assignment isn't "a client blocking deletion" — it's just their own plan.
-  const blocking = (assignedRows || []).filter(r => r.client_id !== soloId)
+  const all = rows || []
+  return {
+    all,
+    realClients: all.filter(r => r.client_id !== soloId),
+    soloOwnIds: all.filter(r => r.client_id === soloId).map(r => r.id)
+  }
+}
+
+// coach_id anchor is deliberate: this resolves ids into real client NAMES that get rendered in a
+// toast. RLS holds today (Probe A proves a coach who owns nothing reads 0 rows), but a name lookup
+// filtered by `id` alone is precisely the shape of the s25 leak — one anchor here covers both
+// callers (deleteProgram and moveProgramToPersonal) rather than trusting the policy alone.
+// Who a structural program edit (generate-weeks, duplicate-week) is allowed to fan out to.
+//
+// Both of those paths re-clone templates into EVERY assignee's plan. Neither had any role split, so
+// a Personal-view edit of a program that still has real clients on it (exactly the state every
+// pre-existing program is in — they all default to is_personal = false) would write straight into
+// those clients' plans. That is the same bug _checkClientPlanPropagation was fixed for today; these
+// two are its siblings and were about to be left behind. In Personal view, the only legitimate
+// target is the user's own solo assignment. Same rule, one helper, both callers.
+function _propagationTargets(assignments) {
+  const rows = assignments || []
+  if (currentProfile?.role !== 'solo') return rows
+  return rows.filter(a => a.client_id === window._soloClientId)
+}
+
+async function _blockingClientNames(realClientRows) {
+  const { data } = await db.from('clients').select('full_name')
+    .in('id', realClientRows.map(r => r.client_id)).eq('coach_id', currentUser.id)
+  return (data || []).map(c => c.full_name).filter(Boolean).join(', ')
+}
+
+// Reclassify an existing program as Personal. Needed because the is_personal migration defaults every
+// PRE-EXISTING program to false (fix-forward — no retroactive reclassification), so programs the user
+// actually built for themselves still sit in the coaching pool until they say otherwise.
+// Refuses while any real client is assigned: a program a client is training on is, by definition, a
+// coaching program. This is the deliberate "conscious choice" gate.
+async function moveProgramToPersonal(programId) {
+  // Gate on _soloClientId, NOT _masterAccount. _masterAccount is also true for a coach who is merely
+  // someone else's client (they have _masterClientId but no solo record) — that user has no Personal
+  // view at all, so moving a program there would make it unlistable, uneditable and UNDELETABLE
+  // (deleteProgram is only reachable from openProgram). _soloClientId is the thing that actually
+  // proves a Personal view exists. Caught by review, 2026-07-13.
+  if (!window._soloClientId) { showToast('You have no Personal view to move this into.', 'warn'); return }
+
+  const { realClients } = await _programAssignments(programId)
+  if (realClients.length) {
+    const names = await _blockingClientNames(realClients)
+    showToast(`Assigned to ${names || `${realClients.length} client${realClients.length === 1 ? '' : 's'}`} — a program a client is training on can't be personal. Remove them first.`, 'warn', 6000)
+    return
+  }
+  if (!confirm('Move this program to your Personal view? It will no longer appear in your PT programs and can no longer be assigned to clients.')) return
+
+  log.info('moveProgramToPersonal', 'moving', { programId })
+  // .select() is not optional here: PostgREST returns error:null for an UPDATE that matches ZERO
+  // rows (RLS-filtered, or a coach_id mismatch). Without it, a write that changed nothing reports a
+  // green "Moved to Personal" — which would also mask any future RLS regression on programs UPDATE.
+  const { data, error } = await db.from('programs').update({ is_personal: true })
+    .eq('id', programId).eq('coach_id', currentUser.id).select('id')
+  if (error || data?.length !== 1) {
+    log.error('moveProgramToPersonal', 'update failed', error || { rows: data?.length })
+    showToast('Could not move program', 'error'); return
+  }
+  log.ok('moveProgramToPersonal', 'moved', { programId })
+  showToast('Moved to Personal. Switch to the Personal view to see it.', 'success', 5000)
+  // Back to the list, not openProgram: this program has just LEFT the pool the user is looking at,
+  // and re-rendering it in PT view would offer them the coaching template picker plus a "Copy to
+  // coaching programs" button — an immediate offer to undo what they just did.
+  navigate('programs')
+}
+
+// The bridge OUT of Personal: make a coaching copy of a personal program so it can be assigned to
+// clients. Without this, sealing the boundary would strand the user exactly the way the template
+// boundary did on 2026-07-11 (6 workouts retyped by hand because there was no way across).
+// The copy lands in the PT pool (is_personal: false) regardless of which view we're copying FROM —
+// same explicit-override trick _copyTemplateToLibrary uses, rather than reading the current role.
+async function copyProgramToCoaching(programId) {
+  const { data: src, error: srcErr } = await db.from('programs')
+    .select('id, name, description, is_personal, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)')
+    .eq('id', programId).eq('coach_id', currentUser.id).single()
+  if (srcErr || !src) { log.error('copyProgramToCoaching', 'source fetch failed', srcErr); showToast('Could not load that program', 'error'); return }
+
+  // Name-collision guard against the DESTINATION pool. Plain fetch + JS compare — .ilike() would
+  // treat the name as a LIKE pattern (_ and % are wildcards) and .maybeSingle() ERRORS on >1 match,
+  // and a discarded error reads as null, so the guard would fail open exactly when duplicates exist.
+  const newName = `${src.name} (coaching copy)`
+  const { data: existing, error: exErr } = await db.from('programs').select('id')
+    .eq('coach_id', currentUser.id).eq('is_personal', false).eq('name', newName)
+  if (exErr) { log.error('copyProgramToCoaching', 'collision check failed', exErr); showToast('Could not copy program', 'error'); return }
+  if (existing?.length) {
+    showToast('A coaching copy of this program already exists.', 'warn', 5000)
+    return
+  }
+
+  if (!confirm(`Create a coaching copy of "${src.name}"? The copy can be assigned to clients; this personal program stays untouched.`)) return
+  log.info('copyProgramToCoaching', 'copying', { programId })
+  showToast('Copying…', 'info', 2000)
+
+  const { data: newProg, error: pErr } = await db.from('programs')
+    .insert({ coach_id: currentUser.id, is_personal: false, name: newName, description: src.description || null })
+    .select('id').single()
+  if (pErr || !newProg) { log.error('copyProgramToCoaching', 'program insert failed', pErr); showToast('Could not copy program', 'error'); return }
+
+  // Any failure after the program row exists must roll it back. Otherwise a half-copied program is
+  // left in the COACHING pool — is_personal:false, so it is listed and assignable to a real client
+  // with phases/days missing — and the name-collision guard above then blocks the retry, stranding
+  // the user with a broken copy they must hunt down and delete by hand. (Same partial-failure class
+  // as the starter-seed stranding fixed 2026-07-12.) program_phases and program_phase_workouts
+  // cascade from programs, so one delete unwinds the lot; the template clones are removed explicitly.
+  const _rollback = async (msg) => {
+    const { data: orphanTmpls } = await db.from('workout_templates').select('id').eq('program_id', newProg.id)
+    if (orphanTmpls?.length) await db.from('workout_templates').delete().in('id', orphanTmpls.map(t => t.id))
+    await db.from('programs').delete().eq('id', newProg.id).eq('coach_id', currentUser.id)
+    log.error('copyProgramToCoaching', 'rolled back partial copy', { programId: newProg.id })
+    showToast(msg, 'error', 5000)
+  }
+
+  const phases = [...(src.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
+  // Clone each source template ONCE, even when several slots share it (a duplicated-but-unforked week
+  // legitimately points multiple slots at one template — copying it per-slot would silently fork them
+  // apart and break that "cheap by design" sharing).
+  const templateMap = new Map()
+
+  for (const ph of phases) {
+    const { data: newPhase, error: phErr } = await db.from('program_phases').insert({
+      program_id: newProg.id, name: ph.name, duration_weeks: ph.duration_weeks, order_index: ph.order_index,
+      periodization_type: ph.periodization_type || null, periodization_config: ph.periodization_config || null
+    }).select('id').single()
+    if (phErr || !newPhase) { await _rollback('Could not copy a phase — nothing was changed.'); return }
+
+    const { data: slots } = await db.from('program_phase_workouts')
+      .select('*, workout_templates(*, workout_template_exercises(*))').eq('phase_id', ph.id)
+
+    const inserts = []
+    for (const slot of (slots || [])) {
+      let newTemplateId = null
+      // A slot with template_id set but a NULL embed means the workout couldn't be read (an
+      // unreadable nested level, or a dangling FK). Copying it as an empty day and reporting success
+      // would silently drop a workout — this codebase has been bitten by silently-nulled embeds
+      // three times. Fail loudly instead.
+      if (slot.template_id && !slot.workout_templates) {
+        await _rollback('Could not read one of the workouts in this program — nothing was copied.')
+        return
+      }
+      if (slot.template_id && slot.workout_templates) {
+        if (templateMap.has(slot.template_id)) {
+          newTemplateId = templateMap.get(slot.template_id)
+        } else {
+          const clone = await _cloneSharedMasterTemplate(slot.workout_templates, {
+            is_personal: false,
+            program_id: newProg.id,
+            // A week-clone's generated_from_phase_id must point at the NEW phase, or the ownership
+            // checks in deleteProgram/_deleteOwnedUnreferencedTemplates won't recognise it as owned.
+            generated_from_phase_id: slot.workout_templates.generated_from_phase_id ? newPhase.id : null
+          })
+          if (!clone?.id) { await _rollback('Could not copy one of the workouts — nothing was changed.'); return }
+          newTemplateId = clone.id
+          templateMap.set(slot.template_id, newTemplateId)
+        }
+      }
+      inserts.push({
+        phase_id: newPhase.id, day_of_week: slot.day_of_week, day_label: slot.day_label,
+        session_order: slot.session_order, template_id: newTemplateId,
+        week_number: slot.week_number, tier: slot.tier || null
+      })
+    }
+    if (inserts.length) {
+      const { error: sErr } = await db.from('program_phase_workouts').insert(inserts)
+      if (sErr) { log.error('copyProgramToCoaching', 'slot insert failed', sErr); await _rollback('Could not copy the day slots — nothing was changed.'); return }
+    }
+  }
+
+  log.ok('copyProgramToCoaching', 'copied', { from: programId, to: newProg.id, templates: templateMap.size })
+  showToast(`Copied to your coaching programs as "${newName}".`, 'success', 6000)
+}
+
+async function deleteProgram(programId) {
+  const { realClients: blocking, soloOwnIds } = await _programAssignments(programId)
 
   if (blocking.length) {
-    const { data: blockingClients } = await db.from('clients').select('full_name').in('id', blocking.map(r => r.client_id))
-    const names = (blockingClients || []).map(c => c.full_name).filter(Boolean).join(', ')
+    const names = await _blockingClientNames(blocking)
     showToast(`Assigned to ${names || `${blocking.length} client${blocking.length === 1 ? '' : 's'}`} — remove them from this program first.`, 'warn', 5000)
     return
   }
@@ -795,8 +1121,7 @@ async function deleteProgram(programId) {
 
   // Only remaining assignment at this point (if any) is the user's own solo self-assignment —
   // clean it up (cascades to its client_program_workouts) before deleting the program itself.
-  const soloAssignmentIds = (assignedRows || []).filter(r => r.client_id === soloId).map(r => r.id)
-  if (soloAssignmentIds.length) await db.from('client_programs').delete().in('id', soloAssignmentIds)
+  if (soloOwnIds.length) await db.from('client_programs').delete().in('id', soloOwnIds)
 
   const { data: phases } = await db.from('program_phases').select('id').eq('program_id', programId)
   const phaseIds = (phases || []).map(p => p.id)
@@ -1097,7 +1422,8 @@ async function generatePhasePeriodization(phaseId, programId) {
 
     // Propagate the newly generated weeks to any clients already assigned to this program —
     // otherwise their calendar/workouts page would show weeks 2+ as "Not set up" until reassigned.
-    const { data: assignments } = await db.from('client_programs').select('id, client_id').eq('program_id', programId)
+    const { data: allAssignments } = await db.from('client_programs').select('id, client_id').eq('program_id', programId)
+    const assignments = _propagationTargets(allAssignments)
     if (assignments?.length && insertedPws?.length) {
       const { data: fullPws } = await db.from('program_phase_workouts')
         .select('id, week_number, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
@@ -1301,7 +1627,8 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
   // Propagate to already-assigned clients — clone a fresh client-owned copy per new slot, same
   // pattern as _cloneProgramForClient/generatePhasePeriodization (never share a client clone across slots).
   const programId = window._openProgramId
-  const { data: assignments } = await db.from('client_programs').select('id, client_id').eq('program_id', programId)
+  const { data: allAssignments } = await db.from('client_programs').select('id, client_id').eq('program_id', programId)
+  const assignments = _propagationTargets(allAssignments)
   if (assignments?.length) {
     const { data: fullSourceRows } = await db.from('program_phase_workouts')
       .select('id, day_of_week, session_order, workout_templates(id, name, description, workout_template_exercises(*))')
