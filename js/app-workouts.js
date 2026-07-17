@@ -124,7 +124,7 @@ async function openSessionDetail(templateId, name, ctx = {}) {
       <div style="padding:16px;flex:1">${exHtml}</div>
     </div>`
 
-  document.body.appendChild(panel)
+  mountModal(panel)
   setTimeout(() => {
     const d = document.getElementById('session-detail-drawer')
     if (d) d.style.transform = 'translateX(0)'
@@ -238,9 +238,15 @@ function _renderWorkoutsHeroHtml(hero) {
 }
 
 async function renderClientWorkoutsPage(el) {
-  const { data: clientRecord } = await db.from('clients').select('id, coach_id').eq('user_id', currentUser.id).single()
-  if (!clientRecord) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
-  const clientId = clientRecord.id
+  // Role-aware, and it MUST be. A master account holds TWO clients rows — a coached one (coach_id set)
+  // and a personal/solo one (coach_id NULL). The old query was
+  //   .from('clients').eq('user_id', currentUser.id).single()
+  // with no discriminator: on two rows PostgREST throws PGRST116, data comes back null, and this page
+  // rendered "No client profile found" — the whole Workouts page dead, silently. Even with one row it
+  // bound nothing to the active view, so solo could read the coached record's data and vice versa.
+  // _getCurrentClientId() is the canonical resolver (app-core.js) and already answers this correctly.
+  const clientId = await _getCurrentClientId()
+  if (!clientId) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
 
   const [{ data: logs }, { data: cpAssignments }] = await Promise.all([
     db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
@@ -272,7 +278,8 @@ async function renderClientWorkoutsPage(el) {
     // week clones (e.g. "Bench Press — W2") -- these have client_id/program_id both null too
     // (same shape as a genuine standalone template), so without this they'd leak into this flat
     // fallback list. Same fix as renderWorkoutTemplates below.
-    const { data } = await db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', clientRecord.coach_id || currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(100)
+    const coachId = await _effectiveCoachIdForClient(clientId)
+    const { data } = await db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', coachId).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(100)
     templates = data
   }
 
@@ -322,14 +329,14 @@ async function renderClientWorkoutsPage(el) {
                       return `<div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
                         ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '0'}">
-                          ${templateId ? `<span style="font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)" onclick="openSessionDetail('${templateId}','${name.replace(/'/g,"\\'")}',{clientId:'${clientId}',clientProgramId:'${activeAssignment.id}',isClientPlan:true,backLabel:'Workouts'})">` : `<span style="font-size:13px;font-weight:600">`}${name}</span>
+                          ${templateId ? `<span style="font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)" onclick="openSessionDetail('${templateId}','${escapeAttr(name)}',{clientId:'${clientId}',clientProgramId:'${activeAssignment.id}',isClientPlan:true,backLabel:'Workouts'})">` : `<span style="font-size:13px;font-weight:600">`}${escapeHtml(name)}</span>
                           ${templateId ? `<button class="btn-primary" style="font-size:12px;padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
                         </div>
                         ${exs.length ? `
                         <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
                           ${exs.map(ex => `
                             <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-                              <span style="font-size:12px">${ex.exercise_name}</span>
+                              <span style="font-size:12px">${escapeHtml(ex.exercise_name)}</span>
                               <span style="font-size:11px;color:var(--text-muted)">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
                             </div>`).join('')}
                         </div>` : ''}
@@ -370,8 +377,8 @@ async function renderClientWorkoutsPage(el) {
           const exs = (t.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
           return `<div style="border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--surface)">
             <div style="display:flex;align-items:center;gap:12px;padding:12px 14px">
-              <div class="row-info" style="flex:1;min-width:0;cursor:pointer" onclick="openSessionDetail('${t.id}','${t.name.replace(/'/g,"\\'")}')">
-                <div class="row-name">${t.name}</div>
+              <div class="row-info" style="flex:1;min-width:0;cursor:pointer" onclick="openSessionDetail('${t.id}','${escapeAttr(t.name)}')">
+                <div class="row-name">${escapeHtml(t.name)}</div>
                 <div class="row-meta">${exs.length} exercise${exs.length!==1?'s':''} · tap to preview</div>
               </div>
               <button class="btn-primary" style="font-size:13px;padding:6px 14px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
@@ -441,7 +448,7 @@ async function renderWorkoutTemplates(el) {
     <div class="list-row" onclick="openTemplate('${t.id}')">
       <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
       <div class="row-info">
-        <div class="row-name">${t.name}</div>
+        <div class="row-name">${escapeHtml(t.name)}</div>
         <div class="row-meta">${t.description || (t.workout_template_exercises.length + ' exercise' + (t.workout_template_exercises.length !== 1 ? 's' : ''))}</div>
       </div>
       <div class="row-right">
@@ -575,7 +582,7 @@ function showAddExerciseModal() {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   document.getElementById('ae-name').focus()
 }
 
@@ -657,7 +664,7 @@ async function showEditExerciseModal(id) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function saveEditExercise(id) {
@@ -697,7 +704,16 @@ async function deleteExercise(id) {
 }
 
 // ─── TEMPLATE CREATE / DETAIL ─────────────────────────────────────────────────
-function showCreateTemplateModal() {
+// `phaseCtx` binds this template to a program day slot. It is OWNED by this function: passing nothing
+// clears it. Previously it was a global (`window._phaseWorkoutContext`) set by _createWorkoutFromPicker
+// and cleared in exactly ONE place — the success branch of saveNewTemplate — so cancelling the modal
+// (or an empty name, or an insert error, or switching view) left it set indefinitely. The next template
+// you created ANYWHERE, including a personal one in the Library, was then stamped with that stale
+// program_id and bound into that program's day slot. Combined with the unguarded delete fan-out in
+// _cleanupPhaseWeeksBeyond, that let a Personal-view action wipe real clients' program weeks.
+// The context is now an argument, so every entry point that isn't a phase slot implicitly clears it.
+function showCreateTemplateModal(phaseCtx = null) {
+  window._phaseWorkoutContext = phaseCtx
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'create-template-modal'
@@ -722,7 +738,7 @@ function showCreateTemplateModal() {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   document.getElementById('ct-name').focus()
 }
 
@@ -803,7 +819,7 @@ async function openTemplate(id, ctx = {}) {
 
     <div class="page-header">
       <div>
-        <h1 class="page-title">${t.name}</h1>
+        <h1 class="page-title">${escapeHtml(t.name)}</h1>
         ${t.description ? `<p class="page-subtitle">${t.description}</p>` : ''}
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -841,7 +857,7 @@ async function openTemplate(id, ctx = {}) {
               <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0">${i + 1}</div>
               <div style="flex:1;min-width:0">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                  <span style="font-weight:600;font-size:14px">${ex.exercise_name}</span>
+                  <span style="font-weight:600;font-size:14px">${escapeHtml(ex.exercise_name)}</span>
                   ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
                   ${ex.superset_group ? `<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:4px;background:rgba(245,158,11,.15);color:#d97706">SS: ${ex.superset_group}</span>` : ''}
                   ${ex.sets_json?.[0]?.bodyweight ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(16,185,129,.12);color:#059669">BW</span>` : ''}
@@ -900,10 +916,19 @@ function _templateGoBack() {
   const ctx = window._templateCtx || {}
   if (ctx.backFn) {
     ctx.backFn()
-  } else if (ctx.clientId) {
+  } else if (ctx.clientId && currentProfile?.role !== 'solo' && currentProfile?.role !== 'client') {
+    // Coach-only. openClientProgramsTab -> openClient(), which queries clients scoped by
+    // `.eq('coach_id', currentUser.id)`. A SOLO client record has coach_id = NULL, so for a solo user
+    // that matched 0 rows, .single() errored, and the raw PostgREST error was painted into
+    // #main-content — the Back button landed you on an error page. Same shape as the 298d88d solo
+    // runner bug: a shared function special-cased 'client' and let 'solo' fall into a PT-only path.
     openClientProgramsTab(ctx.clientId)
   } else {
-    navigate(ctx.backTo || 'workouts')
+    // `'client'` is a sentinel handled by the branch above, never a page — guard against it reaching
+    // navigate() (→ "Page not found"). Solo's builder lives on `library`, not `workouts` (that's its
+    // read-only accordion); a coach's builder IS `workouts`.
+    const fallback = currentProfile?.role === 'solo' ? 'library' : 'workouts'
+    navigate(ctx.backTo && ctx.backTo !== 'client' ? ctx.backTo : fallback)
   }
 }
 
@@ -1187,7 +1212,7 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   window._templateSets = existingSets && existingSets.length ? existingSets.map(s => ({...s})) : [{ effortType: 'rpe' }]
   renderTemplateSets('att-sets-container', existingType)
 }
@@ -1268,7 +1293,7 @@ async function _openExercisePicker(coachId, onPick) {
       <div id="exp-results" style="overflow-y:auto;flex:1"><div class="loading-state">Loading…</div></div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   document.getElementById('exp-search').focus()
   // vh units are sized against the layout viewport, which most mobile browsers do NOT shrink
   // when the on-screen keyboard opens — so a plain height:70vh box can end up partly hidden
@@ -1300,7 +1325,7 @@ function _renderExercisePickerResults(query) {
   // first, which the browser then decodes back to a raw ' inside the attribute, breaking the
   // inline handler for any name with an apostrophe (e.g. "Farmer's Carry"). Keep escapeHtml()
   // only for the separately-rendered visible text.
-  const jsArg = s => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  const jsArg = escapeAttr   // was a local JS-escape that left `"` live — a " closes the HTML attribute
   const rowHtml = e => `<div onclick="_pickExercise('${e.id}','${jsArg(e.name)}')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px">${escapeHtml(e.name)}${e.muscle_group ? `<span style="color:var(--text-muted);font-size:12px"> · ${escapeHtml(e.muscle_group)}</span>` : ''}</div>`
   const createRow = query.trim() ? `<div onclick="_createExerciseFromPicker('${jsArg(query.trim())}')" style="padding:12px;border:1.5px dashed var(--accent);border-radius:10px;background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:12px">+ Create new exercise: "${escapeHtml(query.trim())}"</div>` : ''
   resultsEl.innerHTML = `
@@ -1512,16 +1537,38 @@ async function _assignedCopiesForSession(masterTemplateIds) {
   const { data: ppws } = await db.from('program_phase_workouts').select('id').in('template_id', masterTemplateIds)
   const ppwIds = (ppws || []).map(r => r.id)
   if (!ppwIds.length) return out
+  // Two flat queries, NOT a nested embed. The comment above claimed this already — it didn't: the old
+  // code embedded `client_programs(client_id)`, and if PostgREST NULLed that level (an RLS gap) every
+  // row was dropped by the `&& cid` filter, realClientCount came back 0, and the caller concluded
+  // NOBODY has this workout assigned. In the one function whose entire job is deciding who a write
+  // fans out to, that fails SILENT and in the dangerous direction: the "Update assigned clients?"
+  // confirm never appears. A flat join can't be silently nulled — a missing row is a missing row.
   const { data: cpws } = await db.from('client_program_workouts')
-    .select('workout_template_id, client_programs(client_id)').in('program_phase_workout_id', ppwIds)
+    .select('workout_template_id, client_program_id').in('program_phase_workout_id', ppwIds)
+  const cpIds = [...new Set((cpws || []).map(r => r.client_program_id).filter(Boolean))]
+  if (!cpIds.length) return out
+  const { data: assignments } = await db.from('client_programs').select('id, client_id').in('id', cpIds)
+  const clientByCp = Object.fromEntries((assignments || []).map(a => [a.id, a.client_id]))
+
   const idsByClient = {}
   ;(cpws || []).forEach(r => {
-    const cid = r.client_programs?.client_id
+    const cid = clientByCp[r.client_program_id]
     if (r.workout_template_id && cid) (idsByClient[cid] = idsByClient[cid] || []).push(r.workout_template_id)
   })
   const clientIds = Object.keys(idsByClient)
   if (!clientIds.length) return out
-  const { data: clients } = await db.from('clients').select('id, user_id, coach_id, full_name').in('id', clientIds)
+  // Ownership anchor — this resolves ids into rendered client NAMES, and its sibling
+  // _blockingClientNames anchors for exactly that reason.
+  //
+  // It must be an .or(), NOT a bare .eq('coach_id', currentUser.id). A SOLO client record has
+  // coach_id = NULL, so a plain coach_id anchor silently EXCLUDES the user's own solo record —
+  // soloSelfIds comes back empty and solo's own program copies quietly stop syncing, which is the very
+  // feature this function exists to drive. (I introduced exactly that regression writing this fix; the
+  // pre-push review caught it. Solo's NULL coach_id defeats a coach_id filter every single time — it is
+  // the most reliable way to break solo in this codebase.)
+  const { data: clients } = await db.from('clients').select('id, user_id, coach_id, full_name')
+    .in('id', clientIds)
+    .or(`coach_id.eq.${currentUser.id},user_id.eq.${currentUser.id}`)
   const names = new Set()
   // The Personal view must never reach a real client — not to write to their plan, and not even to
   // read their name. Solo and PT share one auth.uid(), so a program built in Personal view is
@@ -1592,7 +1639,7 @@ function _showClientCopyPropagateModal(clientNames, templateId) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function _continueAfterClientCopy(templateId, doIt) {
@@ -1624,7 +1671,7 @@ async function _checkSiblingPropagation(templateId) {
         </div>
       </div>
     `
-    document.body.appendChild(overlay)
+    mountModal(overlay)
   }
 
   // Client plan propagation
@@ -1858,7 +1905,7 @@ async function showEditTemplateModal(id) {
       </div>
       <div class="field">
         <label class="field-label">Name</label>
-        <input class="field-input" id="et-name" value="${t.name}">
+        <input class="field-input" id="et-name" value="${escapeHtml(t.name)}">
       </div>
       <div class="field">
         <label class="field-label">Description</label>
@@ -1873,7 +1920,7 @@ async function showEditTemplateModal(id) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 // Resolves the coach_id that should own this template's row, matching the same role-check
@@ -1913,7 +1960,18 @@ async function deleteTemplate(id) {
   if (!data?.length) { log.error('deleteTemplate', 'no rows deleted — permission denied or already gone', { id }); return }
   log.ok('deleteTemplate', 'template deleted', { id })
   closeModal('edit-template-modal')
-  navigate('workouts')
+
+  // Jake, 2026-07-13: "deleting a workout template from the templates page falls back to the workouts
+  // page." Correct, and it's a SOLO bug — which is why it looks like a non-bug for a coach, whose
+  // Workouts page IS the templates page. Solo has a SEPARATE `library` page for the builder, while
+  // `workouts` is its read-only session accordion. So a hardcoded navigate('workouts') ejected a solo
+  // user clean out of the Library after every delete. It also ignored the back-context entirely, so
+  // deleting a template opened from a program dumped you on Workouts instead of back in the program.
+  // Return exactly where _templateGoBack would — do NOT re-implement the routing, or the two drift.
+  // In particular `backTo:'client'` is a SENTINEL, not a page: navigate('client') hits the default
+  // "Page not found". _templateGoBack translates it via openClientProgramsTab(); passing it to
+  // navigate() (as the first cut of this fix did) is a regression the pre-push review caught.
+  window._templateGoBack()
 }
 
 // ─── CLIENT WORKOUTS TAB ──────────────────────────────────────────────────────
@@ -1944,7 +2002,7 @@ async function renderClientWorkouts(clientId, el) {
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${programName}</div>
         <div class="list" style="margin-bottom:20px">
           ${unique.map(r => `
-            <div class="list-row" onclick="openTemplate('${r.workout_templates?.id||r.workout_template_id}',{backTo:'client',backLabel:'${(clientData?.full_name||'Client').replace(/'/g,"\\'")}',clientId:'${clientId}',clientName:'${(clientData?.full_name||'Client').replace(/'/g,"\\'")}',clientProgramId:'${cpIds[0]||''}'})">
+            <div class="list-row" onclick="openTemplate('${r.workout_templates?.id||r.workout_template_id}',{backTo:'client',backLabel:'${escapeAttr((clientData?.full_name||'Client'))}',clientId:'${clientId}',clientName:'${escapeAttr((clientData?.full_name||'Client'))}',clientProgramId:'${cpIds[0]||''}'})">
               <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
               <div class="row-info">
                 <div class="row-name">${r.workout_templates?.name||'Workout'}</div>
@@ -2010,8 +2068,12 @@ async function startWorkoutRunner(clientId, templateId) {
   // first rest period needs it.
   _unlockAudio()
   _unlockSpeech()
+  // .not('coach_id','is',null) + maybeSingle(): a MASTER account holds TWO clients rows (a coached one
+  // and a solo one, coach_id NULL). A bare .single() on user_id throws PGRST116 on two rows, leaving
+  // coachId undefined and the template dropdown silently empty. Solo/coach fall through to their own
+  // uid, which IS the coach_id for their data.
   const coachId = currentProfile?.role === 'client'
-    ? (await db.from('clients').select('coach_id').eq('user_id', currentUser.id).single()).data?.coach_id
+    ? (await db.from('clients').select('coach_id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle()).data?.coach_id || currentUser.id
     : currentUser.id
 
   // When a templateId is provided, fetch only that template to avoid max_rows truncation
@@ -2048,7 +2110,7 @@ async function startWorkoutRunner(clientId, templateId) {
         <label class="field-label">Load from template</label>
         <select class="field-input" id="rs-template">
           <option value="">— Custom / blank —</option>
-          ${(templates||[]).map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}
+          ${(templates||[]).map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
         </select>
       </div>
       <p class="modal-error" id="rs-error"></p>
@@ -2058,6 +2120,6 @@ async function startWorkoutRunner(clientId, templateId) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 

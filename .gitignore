@@ -8,3 +8,8 @@ desktop.ini
 
 # Reference PDFs
 *.pdf
+
+# Throwaway ad-hoc Playwright specs (run-coachapp / mobile-check) — never commit
+tests/_adhoc.spec.js
+adhoc.png
+mobile.png

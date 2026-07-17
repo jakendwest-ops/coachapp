@@ -2,5 +2,17 @@
   "enabledPlugins": {
     "context-mode@context-mode": true,
     "superpowers@claude-plugins-official": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:/Program Files/nodejs/node.exe\" \"C:/Users/jaken/.claude/hooks/os-lint.mjs\""
+          }
+        ]
+      }
+    ]
   }
 }

@@ -71,6 +71,44 @@ function escapeHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
 }
 
+// For a user-controlled string interpolated into a JS string literal INSIDE an HTML attribute,
+// e.g. onclick="openSessionDetail('${escapeAttr(name)}')".
+//
+// Order matters and is not interchangeable. The browser HTML-decodes an attribute value BEFORE the
+// JS parser sees it, so we must JS-escape first and HTML-escape second — then the decode step hands
+// the JS parser exactly the escaping we intended:
+//   O'Brien  -> JS-escape -> O\'Brien -> HTML-escape -> O\&#39;Brien -> (decode) -> O\'Brien -> 'O'Brien' ✓
+// Escaping in the other order, or with escapeHtml alone, decodes &#39; back to a bare quote and
+// terminates the JS string. A bare .replace(/'/g,"\\'") — the pattern this replaces — left `"` live,
+// which closes the HTML attribute itself and allows an injected event handler.
+function escapeAttr(str) {
+  if (!str) return ''
+  // Newlines too: a raw newline inside a JS string literal in an inline handler is a SyntaxError and
+  // breaks the handler. (No injection risk — the quotes and angle brackets are already neutralised —
+  // but a textarea-sourced value like a program description can contain them.)
+  return escapeHtml(String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r'))
+}
+
+// Mount a modal/overlay, REPLACING any existing node with the same id.
+//
+// Several modals build their overlay, `await` a fetch, and only then append — a genuine race window,
+// not merely a fast double-tap. Two overlays sharing element ids is silently corrupting: the user sees
+// and types into the SECOND (painted on top), while getElementById resolves to the buried FIRST, so
+// the save reads stale values and reports success. The visible modal's own ✕ can't close it either,
+// because closeModal also only ever finds the first. That is exactly what froze the exercise picker
+// on 2026-07-04 and what makes a double-tapped Edit dialog save the un-edited values.
+//
+// Guarding at function entry does NOT fix the await version — both callers pass the check before
+// either appends. It has to happen at mount.
+function mountModal(node) {
+  if (node.id) document.getElementById(node.id)?.remove()
+  document.body.appendChild(node)
+}
+
 function showAuth() {
   document.getElementById('auth-screen').style.display = 'flex'
   document.getElementById('app-shell').style.display   = 'none'

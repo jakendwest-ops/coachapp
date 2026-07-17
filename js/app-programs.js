@@ -38,7 +38,7 @@
   const cpwMap = {}
   ;(cpwRows || []).forEach(r => { cpwMap[r.program_phase_workout_id] = { templateId: r.workout_template_id, name: r.workout_templates?.name, exercises: r.workout_templates?.workout_template_exercises || [] } })
 
-  const clientName = (clientData?.full_name || 'Client').replace(/'/g, "\\'")
+  const clientName = escapeAttr(clientData?.full_name || 'Client')
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -105,7 +105,7 @@
                               <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
                                 ${exs.map(ex => `
                                   <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-                                    <span style="font-size:12px">${ex.exercise_name}</span>
+                                    <span style="font-size:12px">${escapeHtml(ex.exercise_name)}</span>
                                     <span style="font-size:11px;color:var(--text-muted)">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
                                   </div>`).join('')}
                               </div>` : ''}
@@ -126,7 +126,8 @@
                     <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
                   <div id="${panelId}" style="display:none">
-                    ${!showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : weekNums.map(w => `
+                    ${!weekNums.length ? '<div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">No sessions added to this phase yet</div>' :
+                      !showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : weekNums.map(w => `
                       <div style="padding:8px 14px 2px;font-size:11px;font-weight:700;color:var(--accent);background:var(--surface-2);border-top:1px solid var(--border)">WEEK ${w}</div>
                       ${renderDays(weekMap[w], `${panelId}-w${w}`)}
                     `).join('')}
@@ -184,7 +185,7 @@ function showAssignProgramModal(clientId) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 
   // Personal programs must never appear in a dropdown that assigns a program TO a client — that is
   // exactly how real clients ended up on a personal program. Filtered by the current view, matching
@@ -353,10 +354,17 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
 
   const cpwInserts = []
 
+  let skipped = 0
   for (const phase of phases) {
     for (const pw of (phase.program_phase_workouts || [])) {
+      // FAIL LOUD. A slot that HAS a template_id but whose `workout_templates` embed came back null
+      // means PostgREST silently NULLed that level (an RLS gap), not that the slot is empty. The old
+      // code did a bare `continue` and then logged "cloned N workouts" as a success — so the client
+      // got a program with sessions quietly missing and nobody, on either side, was told. This exact
+      // detection already exists in copyProgramToCoaching; four siblings, one guard.
+      if (pw.template_id && !pw.workout_templates) { skipped++; continue }
       const newTemplateId = await _cloneTemplateForClient(pw.workout_templates, clientId)
-      if (!newTemplateId) continue
+      if (!newTemplateId) { if (pw.template_id) skipped++; continue }
       cpwInserts.push({ client_program_id: clientProgramId, program_phase_workout_id: pw.id, workout_template_id: newTemplateId, week_number: pw.week_number })
     }
   }
@@ -366,7 +374,11 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
     if (error) log.error('_cloneProgramForClient', 'cpw insert failed', error)
   }
 
-  log.ok('_cloneProgramForClient', `cloned ${cpwInserts.length} workouts`, { clientId, programId })
+  if (skipped) {
+    log.error('_cloneProgramForClient', `${skipped} session(s) could not be copied`, { clientId, programId, skipped })
+    showToast(`${skipped} session${skipped > 1 ? 's' : ''} could not be copied to this client — do not rely on this assignment`, 'error', 8000)
+  }
+  log.ok('_cloneProgramForClient', `cloned ${cpwInserts.length} workouts`, { clientId, programId, skipped })
 }
 
 // ─── Assignment-time 1RM check ─────────────────────────────────────────────────
@@ -542,7 +554,7 @@ function showEditStartDateModal(clientId, assignmentId, currentDate) {
       </div>
     </div>`
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function saveEditStartDate(clientId, assignmentId) {
@@ -588,12 +600,12 @@ async function showAssignProgramToClientModal(programId) {
     </div>`
 
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 
   if (!isSolo) {
     const { data: clients } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).order('full_name')
     const sel = document.getElementById('apc-client')
-    if (sel) sel.innerHTML = '<option value="">Select client…</option>' + (clients || []).map(c => `<option value="${c.id}">${c.full_name}</option>`).join('')
+    if (sel) sel.innerHTML = '<option value="">Select client…</option>' + (clients || []).map(c => `<option value="${c.id}">${escapeHtml(c.full_name)}</option>`).join('')
   } else if (window._soloClientId) {
     _refreshMissingOneRMs(programId, window._soloClientId, 'apc-missing-1rm')
   }
@@ -688,7 +700,7 @@ async function renderPrograms(el) {
           <div class="list-row" onclick="openProgram('${p.id}')">
             <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📋</div>
             <div class="row-info">
-              <div class="row-name">${p.name}</div>
+              <div class="row-name">${escapeHtml(p.name)}</div>
               <div class="row-meta">${p.description || `${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}`}</div>
             </div>
             <div class="row-right">
@@ -759,11 +771,11 @@ async function openProgram(programId) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="15 18 9 12 15 6"/></svg>
         All programs
       </a>
-      <h1 class="page-title" style="margin-bottom:4px">${program.name}</h1>
+      <h1 class="page-title" style="margin-bottom:4px">${escapeHtml(program.name)}</h1>
       ${program.description ? `<p style="color:var(--text-muted);font-size:14px">${program.description}</p>` : ''}
       <p style="font-size:12px;color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${program.name.replace(/'/g,"\\'")}','${(program.description||'').replace(/'/g,"\\'")}')">Edit</button>
+        <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${escapeAttr(program.name)}','${escapeAttr((program.description||''))}')">Edit</button>
         ${_assignBtnHtml(program)}
         <button class="btn btn-secondary" onclick="copyProgramWorkoutsToLibrary('${program.id}')" title="Copy every workout in this program into your reusable Library">Copy workouts to Library</button>
         ${program.is_personal
@@ -787,10 +799,10 @@ async function openProgram(programId) {
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
                 <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i + 1}</div>
                 <div style="flex:1">
-                  <div style="font-weight:600;font-size:15px">${ph.name}</div>
+                  <div style="font-weight:600;font-size:15px">${escapeHtml(ph.name)}</div>
                   <div style="font-size:12px;color:var(--text-muted)">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}</div>
                 </div>
-                <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showEditPhaseForm('${program.id}','${ph.id}','${ph.name.replace(/'/g,"\\'")}',${ph.duration_weeks},${ph.order_index})">Edit</button>
+                <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showEditPhaseForm('${program.id}','${ph.id}','${escapeAttr(ph.name)}',${ph.duration_weeks},${ph.order_index})">Edit</button>
                 <button class="btn-danger" style="font-size:12px;padding:4px 10px" onclick="deletePhase('${program.id}','${ph.id}')">Remove</button>
               </div>
               ${ph.duration_weeks > 1 ? `
@@ -1119,33 +1131,36 @@ async function deleteProgram(programId) {
   if (!confirm('Delete this program, its phases, and its workout templates? This cannot be undone.')) return
   log.info('deleteProgram', 'deleting', { programId })
 
-  // Only remaining assignment at this point (if any) is the user's own solo self-assignment —
-  // clean it up (cascades to its client_program_workouts) before deleting the program itself.
-  if (soloOwnIds.length) await db.from('client_programs').delete().in('id', soloOwnIds)
+  // The only remaining assignment at this point (if any) is the user's own solo self-assignment.
+  // This was a bare `client_programs.delete()`, which is exactly the bug _removeAssignmentAndClones
+  // was written to eliminate: client_program_workouts cascade away, but the client-owned
+  // workout_templates CLONES they pointed at do NOT (the FK runs the other way). Every self-assigned
+  // program you deleted stranded its clones — invisible to every library query (they all filter
+  // `.is('client_id', null)`), so they could never be found or removed again. That is the same
+  // generator behind the 2013-templates / 1223-dead figure. The helper was wired into unassignProgram
+  // and both assign paths, and not into this one. (Fix the class, not the instance.)
+  // ABORT if the clone cleanup fails. _removeAssignmentAndClones returns false on error, and pressing
+  // on would delete the program anyway — permanently orphaning the very clones this call exists to
+  // remove, with the program row gone so nothing can ever find them again. Fail closed.
+  for (const cpId of soloOwnIds) {
+    if (!await _removeAssignmentAndClones(cpId)) {
+      showToast('Could not clean up this program’s workout copies — nothing was deleted. Try again.', 'error')
+      return
+    }
+  }
 
   const { data: phases } = await db.from('program_phases').select('id').eq('program_id', programId)
   const phaseIds = (phases || []).map(p => p.id)
   if (phaseIds.length) {
     const { data: pws } = await db.from('program_phase_workouts').select('template_id').in('phase_id', phaseIds)
     const templateIds = [...new Set((pws || []).map(p => p.template_id).filter(Boolean))]
-    if (templateIds.length) {
-      // Only delete templates actually owned by this program -- either created for it directly
-      // (program_id set to this program) or periodization-generated week clones from one of its
-      // own phases (generated_from_phase_id in phaseIds; generatePhasePeriodization always
-      // inserts these with program_id: null, so they need their own ownership check here or
-      // they'd silently survive as orphans every time a periodized program is deleted). A slot
-      // can also reference a shared standalone template (program_id AND generated_from_phase_id
-      // both null) that the coach reuses elsewhere; deleting this program must not destroy that.
-      const { data: owned, error: ownedErr } = await db.from('workout_templates').select('id')
-        .in('id', templateIds)
-        .or(`program_id.eq.${programId},generated_from_phase_id.in.(${phaseIds.join(',')})`)
-      if (ownedErr) { log.error('deleteProgram', 'owned-template lookup failed', ownedErr); return }
-      const ownedIds = (owned || []).map(t => t.id)
-      if (ownedIds.length) {
-        const { error: tErr } = await db.from('workout_templates').delete().in('id', ownedIds).or(`program_id.eq.${programId},generated_from_phase_id.in.(${phaseIds.join(',')})`)
-        if (tErr) { log.error('deleteProgram', 'template cleanup failed', tErr); return }
-      }
-    }
+
+    // Drop our own slot rows BEFORE the ownership sweep, so the helper's still-referenced check sees
+    // only genuinely EXTERNAL survivors (another program still using a shared standalone template).
+    // These rows would cascade with the phases anyway; removing them first is what makes the shared
+    // helper usable here at all.
+    await db.from('program_phase_workouts').delete().in('phase_id', phaseIds)
+    await _deleteOwnedUnreferencedTemplates(templateIds, programId, phaseIds)
   }
 
   const { error } = await db.from('programs').delete().eq('id', programId).eq('coach_id', currentUser.id)
@@ -1211,6 +1226,21 @@ async function savePhase(programId) {
 async function deletePhase(programId, phaseId) {
   if (!confirm('Remove this phase?')) return
   log.info('deletePhase', 'deleting', { phaseId })
+
+  // Deleting the phase row cascades its program_phase_workouts (and, through them, the client copies)
+  // — but it does NOT touch the workout_templates those slots pointed at. So this used to orphan, on
+  // every call: every periodization week-clone generated from this phase (those carry program_id:
+  // null, so NO other code path can ever find them again), plus any template this program created that
+  // only this phase referenced. One 4-week periodized phase with 4 sessions/week = 12 templates
+  // stranded forever. Collect the ids and the client copies BEFORE the cascade destroys the trail.
+  const { data: pws } = await db.from('program_phase_workouts').select('id, template_id').eq('phase_id', phaseId)
+  const templateIds = [...new Set((pws || []).map(p => p.template_id).filter(Boolean))]
+  const pwIds = (pws || []).map(p => p.id)
+
+  await _deleteClientCopiesForSlots(pwIds, programId)
+  await db.from('program_phase_workouts').delete().eq('phase_id', phaseId)   // before the sweep, so
+  await _deleteOwnedUnreferencedTemplates(templateIds, programId, phaseId)   // survivors are external
+
   const { error } = await db.from('program_phases').delete().eq('id', phaseId)
   if (error) { log.error('deletePhase', 'failed', error); return }
   log.ok('deletePhase', 'deleted', { phaseId })
@@ -1246,7 +1276,7 @@ function showPeriodizationModal(phaseId, programId) {
         <button class="btn-primary" onclick="savePeriodizationConfig()">Save</button>
       </div>
     </div>`
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   renderPeriodizationBody(phase.duration_weeks)
 }
 
@@ -1461,16 +1491,37 @@ async function generatePhasePeriodization(phaseId, programId) {
 //     a surviving row in another week.
 // Callers must delete their own program_phase_workouts rows FIRST, so anything still referencing the
 // template afterwards is a genuine survivor.
-async function _deleteOwnedUnreferencedTemplates(templateIds, programId, phaseId) {
+// `phaseIds` accepts a single id OR an array. It used to take one `phaseId` and .eq() it — which is
+// precisely why deleteProgram (inherently multi-phase) COULDN'T use this helper and hand-rolled its
+// own copy of the ownership check, which then drifted. Widening it to an array is what lets all five
+// delete paths share one implementation, which is the only durable way to stop this class recurring.
+//
+// CALLERS MUST DELETE THEIR OWN program_phase_workouts ROWS FIRST. The still-referenced check below
+// asks "does any surviving row still point at this template?" — so the rows you are tearing down have
+// to be gone before you ask, or every template will look busy and none will be cleaned up.
+async function _deleteOwnedUnreferencedTemplates(templateIds, programId, phaseIds) {
   const ids = [...new Set((templateIds || []).filter(Boolean))]
   if (!ids.length) return
+  const phases = [...new Set((Array.isArray(phaseIds) ? phaseIds : [phaseIds]).filter(Boolean))]
 
-  const { data: owned } = await db.from('workout_templates').select('id')
-    .in('id', ids)
-    .or(`program_id.eq.${programId},generated_from_phase_id.eq.${phaseId}`)
+  // (1) OWNERSHIP — ours only if this program created it (program_id), or one of OUR phases generated
+  // it as a periodization week-clone (generated_from_phase_id; those carry program_id: null, so they
+  // need this second clause or they survive as permanent orphans). A coach's reusable STANDALONE
+  // template merely slotted into a week is NOT ours to delete — destroying it rips it out of every
+  // other program using it (the deleteProgram data-loss bug, 2026-07-10).
+  const clauses = []
+  if (programId) clauses.push(`program_id.eq.${programId}`)
+  if (phases.length) clauses.push(`generated_from_phase_id.in.(${phases.join(',')})`)
+  if (!clauses.length) return
+
+  const { data: owned, error } = await db.from('workout_templates').select('id').in('id', ids).or(clauses.join(','))
+  if (error) { log.error('_deleteOwnedUnreferencedTemplates', 'ownership lookup failed', error); return }
   const ownedIds = (owned || []).map(t => t.id)
   if (!ownedIds.length) return
 
+  // (2) LIVE REFERENCES — a DIFFERENT question from ownership, and the pair is why this helper exists.
+  // "Duplicate week" is cheap by design: the new week's rows share the SOURCE week's template_id until
+  // someone forks on edit. So a template we genuinely own may still be needed by a surviving row.
   const { data: stillUsed } = await db.from('program_phase_workouts').select('template_id').in('template_id', ownedIds)
   const stillUsedIds = new Set((stillUsed || []).map(r => r.template_id))
   const safeToDelete = ownedIds.filter(id => !stillUsedIds.has(id))
@@ -1478,6 +1529,35 @@ async function _deleteOwnedUnreferencedTemplates(templateIds, programId, phaseId
 }
 
 // Deletes generated program_phase_workouts (+ the workout_templates it owns) beyond maxWeek for a
+// Deletes the client-side copies of a set of program_phase_workouts slots — but ONLY for assignments
+// the current view is actually allowed to touch (_propagationTargets). In Personal view the only
+// legitimate target is the user's own solo self-assignment; a real client's plan must never be mutated
+// by a Personal-view action.
+//
+// The ADDITIVE fan-out (generatePhasePeriodization, duplicatePhaseWeek) was given this guard; the
+// DESTRUCTIVE fan-out was not. So a Personal-view "Generate weeks" deleted EVERY assigned client's
+// weeks 2+ and then rebuilt only the solo copy — the delete was wide and the restore was narrow, and
+// real clients silently lost their program. Both halves of the fan-out live in one helper now so they
+// cannot diverge again. (Fix the class, not the instance — the 5th time this exact drift has bitten.)
+async function _deleteClientCopiesForSlots(stalePwIds, programId) {
+  if (!stalePwIds?.length) return
+
+  const { data: staleCpws } = await db.from('client_program_workouts')
+    .select('id, workout_template_id, client_program_id')
+    .in('program_phase_workout_id', stalePwIds)
+  if (!staleCpws?.length) return
+
+  const { data: allAssignments } = await db.from('client_programs').select('id, client_id').eq('program_id', programId)
+  const allowed = new Set(_propagationTargets(allAssignments).map(a => a.id))
+  const deletable = staleCpws.filter(c => allowed.has(c.client_program_id))
+  if (!deletable.length) return
+
+  await db.from('client_program_workouts').delete().in('id', deletable.map(c => c.id))
+  // Client clones are per-slot by construction (never shared), so these are always safe to remove.
+  const cloneIds = deletable.map(c => c.workout_template_id).filter(Boolean)
+  if (cloneIds.length) await db.from('workout_templates').delete().in('id', cloneIds)
+}
+
 // phase, along with any client-side copies already propagated from a previous generation.
 async function _cleanupPhaseWeeksBeyond(phaseId, maxWeek, programId) {
   const { data: staleRows } = await db.from('program_phase_workouts').select('id, template_id').eq('phase_id', phaseId).gt('week_number', maxWeek)
@@ -1486,13 +1566,7 @@ async function _cleanupPhaseWeeksBeyond(phaseId, maxWeek, programId) {
   const stalePwIds = staleRows.map(r => r.id)
   const staleMasterTemplateIds = staleRows.map(r => r.template_id).filter(Boolean)
 
-  const { data: staleCpws } = await db.from('client_program_workouts').select('id, workout_template_id').in('program_phase_workout_id', stalePwIds)
-  if (staleCpws?.length) {
-    await db.from('client_program_workouts').delete().in('id', staleCpws.map(c => c.id))
-    const staleClientTemplateIds = staleCpws.map(c => c.workout_template_id).filter(Boolean)
-    // Client clones are per-slot by construction (never shared), so these are always safe to remove.
-    if (staleClientTemplateIds.length) await db.from('workout_templates').delete().in('id', staleClientTemplateIds)
-  }
+  await _deleteClientCopiesForSlots(stalePwIds, programId)
 
   await db.from('program_phase_workouts').delete().eq('phase_id', phaseId).gt('week_number', maxWeek)
   // Was an unguarded `delete().in('id', staleMasterTemplateIds)` — it deleted EVERY template a stale
@@ -1575,7 +1649,7 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
             <div style="display:flex;align-items:center;gap:4px;background:var(--surface);border-radius:6px;padding:5px 6px;margin-bottom:4px">
               ${pw.tier ? `<span style="font-size:8px;font-weight:700;color:${tierColor[pw.tier]};flex-shrink:0">${pw.tier[0].toUpperCase()}</span>` : ''}
               ${daySessions.length > 1 ? `<span style="font-size:8px;font-weight:700;color:var(--accent);flex-shrink:0">${pw.session_order===2?'PM':'AM'}</span>` : ''}
-              <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openSessionDetail('${pw.template_id}','${(pw.workout_templates?.name || 'Session').replace(/'/g, "\\'")}',{backLabel:'Back to program',backFn:()=>openProgram('${window._openProgramId}'),programId:'${window._openProgramId}',phaseWorkoutId:'${pw.id}'})">${escapeHtml(pw.workout_templates?.name || 'Unknown')}</span>
+              <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openSessionDetail('${pw.template_id}','${escapeAttr((pw.workout_templates?.name || 'Session'))}',{backLabel:'Back to program',backFn:()=>openProgram('${window._openProgramId}'),programId:'${window._openProgramId}',phaseWorkoutId:'${pw.id}'})">${escapeHtml(pw.workout_templates?.name || 'Unknown')}</span>
               <button onclick="removePhaseWorkout('${pw.id}','${phase.id}')" style="font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0;flex-shrink:0">✕</button>
             </div>`).join('')}
           ${canAdd ? `
@@ -1631,7 +1705,11 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
   const assignments = _propagationTargets(allAssignments)
   if (assignments?.length) {
     const { data: fullSourceRows } = await db.from('program_phase_workouts')
-      .select('id, day_of_week, session_order, workout_templates(id, name, description, workout_template_exercises(*))')
+      // `is_personal` MUST be in this projection. A nested explicit column list is an ALLOWLIST — an
+      // omitted column comes back `undefined`, supabase-js drops undefined keys from the insert
+      // payload, and the clone silently falls back to the DB default instead of inheriting. Silent at
+      // every layer (les-036). Both sibling embeds already list it.
+      .select('id, day_of_week, session_order, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
       .in('id', sourceRows.map(r => r.id))
     for (const a of assignments) {
       const cpwInserts = []
@@ -1671,12 +1749,7 @@ async function deletePhaseWeek(phaseId, weekNumber) {
   const staleTemplateIds = [...new Set((staleRows || []).map(r => r.template_id).filter(Boolean))]
 
   if (stalePwIds.length) {
-    const { data: staleCpws } = await db.from('client_program_workouts').select('id, workout_template_id').in('program_phase_workout_id', stalePwIds)
-    if (staleCpws?.length) {
-      await db.from('client_program_workouts').delete().in('id', staleCpws.map(c => c.id))
-      const staleClientTemplateIds = staleCpws.map(c => c.workout_template_id).filter(Boolean)
-      if (staleClientTemplateIds.length) await db.from('workout_templates').delete().in('id', staleClientTemplateIds)
-    }
+    await _deleteClientCopiesForSlots(stalePwIds, programId)
     await db.from('program_phase_workouts').delete().eq('phase_id', phaseId).eq('week_number', weekNumber)
 
     // Shared with _cleanupPhaseWeeksBeyond — both must apply the ownership AND still-referenced
@@ -1761,7 +1834,7 @@ function _openWorkoutPicker(phaseId, dayOfWeek, sessionOrder, weekNumber) {
       <div id="wkp-results" style="overflow-y:auto;flex:1"></div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   document.getElementById('wkp-search').focus()
   if (window.visualViewport) {
     _syncWorkoutPickerHeight()
@@ -1814,9 +1887,8 @@ function _renderWorkoutPickerResults(query) {
 function _createWorkoutFromPicker() {
   const s = _workoutPickerState
   if (!s) return
-  window._phaseWorkoutContext = { phaseId: s.phaseId, dayOfWeek: s.dayOfWeek, weekNumber: s.weekNumber, programId: window._openProgramId || null }
   _closeWorkoutPicker()
-  showCreateTemplateModal()
+  showCreateTemplateModal({ phaseId: s.phaseId, dayOfWeek: s.dayOfWeek, weekNumber: s.weekNumber, programId: window._openProgramId || null })
 }
 
 function _pickWorkout(templateId) {
@@ -1849,8 +1921,19 @@ async function _quickAssignPhaseWorkout(slot, templateId) {
 }
 
 async function removePhaseWorkout(pwId, phaseId) {
+  // Removing the slot used to leave its template behind. If that template was created inline via
+  // "+ Create new workout (this day only)" it carries program_id, which EXCLUDES it from the reusable
+  // library list — so it became unreachable debris the moment its only slot was removed. deleteProgram
+  // could not clean it up later either: that sweep only collects template_ids from SURVIVING slot rows.
+  const { data: pw } = await db.from('program_phase_workouts').select('template_id').eq('id', pwId).maybeSingle()
+  const programId = window._openProgramId || null
+
+  await _deleteClientCopiesForSlots([pwId], programId)
   const { error } = await dbq('removePhaseWorkout', db.from('program_phase_workouts').delete().eq('id', pwId))
   if (error) return
+  // After the slot is gone, so a template still referenced by a sibling week is correctly spared.
+  if (pw?.template_id) await _deleteOwnedUnreferencedTemplates([pw.template_id], programId, phaseId)
+
   loadAllPhaseWorkouts([{ id: phaseId }])
 }
 

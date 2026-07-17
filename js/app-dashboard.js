@@ -155,7 +155,7 @@
                 <div class="compliance-row" data-zone="${zone}" style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
                   <div style="display:flex;align-items:center;gap:8px">
                     <div style="width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0"></div>
-                    <div style="font-size:13px;font-weight:500;cursor:pointer" onclick="openClient('${c.id}')">${c.full_name}</div>
+                    <div style="font-size:13px;font-weight:500;cursor:pointer" onclick="openClient('${c.id}')">${escapeHtml(c.full_name)}</div>
                   </div>
                   <span style="font-size:11.5px;font-weight:600;color:${dot}">${label}</span>
                 </div>`

@@ -79,12 +79,12 @@ async function renderClient1RMs(clientId, el) {
         <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;background:var(--surface)">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px">
             <div>
-              <div style="font-size:15px;font-weight:700">${exName}</div>
+              <div style="font-size:15px;font-weight:700">${escapeHtml(exName)}</div>
               <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Recorded ${new Date(latest.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px">
               <span style="font-size:22px;font-weight:800;color:var(--accent)">${parseFloat(latest.one_rm_kg).toFixed(1)} kg</span>
-              <button onclick="showAdd1RMModal('${clientId}','${exName.replace(/'/g,"\\'")}'${latest.exercise_id ? `,'${latest.exercise_id}'` : ''})" style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Update</button>
+              <button onclick="showAdd1RMModal('${clientId}','${escapeAttr(exName)}'${latest.exercise_id ? `,'${latest.exercise_id}'` : ''})" style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Update</button>
               <button onclick="delete1RM('${latest.id}','${clientId}')" style="padding:5px 10px;border:1px solid #ef4444;border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:#ef4444">Delete</button>
             </div>
           </div>
@@ -168,7 +168,7 @@ function _showOneRMDetailModal(clientId, picked, opts = {}) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 // "Change" link on the 1RM detail screen — reopens the picker without losing weight/date entry.
@@ -1294,7 +1294,7 @@ async function renderProgressCardio(el) {
     const best = usesDist ? Math.max(...ex.pts.map(p=>p.dist)).toFixed(1)+' km' : fmtRestCountdown(Math.max(...ex.pts.map(p=>p.secs)))
     return `
     <div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
-      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${ex.name}</div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${escapeHtml(ex.name)}</div>
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Best: ${best} · ${ex.pts.length} session${ex.pts.length===1?'':'s'}</div>
       <div style="position:relative;height:80px"><canvas id="pc-chart-${i}" style="width:100%;height:100%"></canvas></div>
     </div>`}).join('')
@@ -1705,7 +1705,7 @@ function deleteAccount() {
         <button id="delete-confirm-btn" class="btn-primary" style="background:var(--danger)" onclick="deleteAccountConfirmed(this.closest('.modal-overlay'))">Delete my account</button>
       </div>
     </div>`
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   setTimeout(() => document.getElementById('delete-confirm-input')?.focus(), 50)
 }
 

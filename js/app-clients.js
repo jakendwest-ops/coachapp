@@ -127,14 +127,14 @@ async function renderClients(el) {
         <div class="list-row" onclick="openClient('${c.id}')">
           <div class="avatar">${c.full_name.charAt(0).toUpperCase()}</div>
           <div class="row-info">
-            <div class="row-name">${c.full_name}</div>
+            <div class="row-name">${escapeHtml(c.full_name)}</div>
             <div class="row-meta">${c.email || 'No email'}</div>
           </div>
           <div class="row-right" style="flex-direction:column;align-items:flex-end;gap:4px">
             <span class="badge badge-${c.status}">${c.status}</span>
             <span style="font-size:11px;font-weight:600;color:${lastColour}">${lastText}</span>
           </div>
-          ${currentUser.email === 'jakendwest@gmail.com' ? `<button onclick="event.stopPropagation();sudoAsClient('${c.id}','${escapeHtml(c.full_name)}')" style="font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:#f59e0b;cursor:pointer;white-space:nowrap">View as</button>` : ''}
+          ${currentUser.email === 'jakendwest@gmail.com' ? `<button onclick="event.stopPropagation();sudoAsClient('${c.id}','${escapeAttr(c.full_name)}')" style="font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:#f59e0b;cursor:pointer;white-space:nowrap">View as</button>` : ''}
           <svg style="width:15px;height:15px;color:#d1d5db;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>`
       }).join('')}
@@ -243,7 +243,7 @@ async function openClient(id) {
       <div style="display:flex;align-items:center;gap:14px">
         <div class="avatar" style="width:48px;height:48px;font-size:18px">${client.full_name.charAt(0).toUpperCase()}</div>
         <div>
-          <h1 class="page-title" style="margin-bottom:2px">${client.full_name}</h1>
+          <h1 class="page-title" style="margin-bottom:2px">${escapeHtml(client.full_name)}</h1>
           <p class="page-subtitle">${client.email || ''}</p>
         </div>
       </div>
@@ -431,7 +431,7 @@ async function showEditClientModal(id) {
       </div>
       <div class="field">
         <label class="field-label">Full name <span style="color:var(--danger)">*</span></label>
-        <input class="field-input" id="ec-name" value="${c.full_name}">
+        <input class="field-input" id="ec-name" value="${escapeHtml(c.full_name)}">
       </div>
       <div class="field-row">
         <div class="field">

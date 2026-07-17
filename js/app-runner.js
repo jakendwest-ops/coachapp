@@ -157,7 +157,7 @@ function _showRunnerResumeModal(clientId, draft) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function _resumeRunnerFromDraft(clientId) {
@@ -528,9 +528,9 @@ function renderRunner() {
               <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}</span>
               <span style="font-size:11px;font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
-            <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${ex.name||'Exercise name'}</div>
+            <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${escapeHtml(ex.name)||'Exercise name'}</div>
             ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?ex.targetReps+' reps':null,ex.targetWeight?'@ '+ex.targetWeight+'kg':null].filter(Boolean).join(' · ')}</div>` : ''}
-            ${nextEx ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${nextEx.name}</span></div>` : ''}
+            ${nextEx ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
           </div>
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
         </div>
@@ -539,7 +539,7 @@ function renderRunner() {
           <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">⇄ Swap exercise</button>
           <button id="wr-add-btn" onclick="showExercisePicker('add')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">+ Add exercise</button>
         </div>
-        ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:8px;font-size:11.5px;color:var(--text-muted);line-height:1.5">${_runner.templateDesc}</div>` : ''}
+        ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:8px;font-size:11.5px;color:var(--text-muted);line-height:1.5">${escapeHtml(_runner.templateDesc)}</div>` : ''}
       </div>
 
       <!-- Scrollable area: logged sets + PT note + client notes -->
@@ -981,7 +981,7 @@ function renderStrengthSetTimer() {
   overlay.id = 'wr-set-timer-overlay'
   overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
   overlay.innerHTML = `
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${ex.name} — Set ${setNum}</div>
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — Set ${setNum}</div>
     <div style="position:relative;display:inline-block;margin-bottom:24px">
       <svg width="140" height="140" viewBox="0 0 120 120">
         <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
@@ -994,7 +994,7 @@ function renderStrengthSetTimer() {
     </div>
     <div style="font-size:13px;color:var(--text-muted)">SET IN PROGRESS</div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 function startCardioTimer() {
@@ -1083,7 +1083,7 @@ function renderIntervalTimer() {
   overlay.id = 'wr-interval-overlay'
   overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
   overlay.innerHTML = `
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${ex.name} — Set ${setNum}</div>
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — Set ${setNum}</div>
     <div style="position:relative;display:inline-block;margin-bottom:24px">
       <svg width="140" height="140" viewBox="0 0 120 120">
         <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
@@ -1110,7 +1110,7 @@ function renderIntervalTimer() {
     </div>
     <button onclick="event.stopPropagation();logRunnerSet()" style="width:100%;max-width:340px;padding:16px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">Done early — LOG</button>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 function startRestTimer(secs) {
@@ -1201,13 +1201,19 @@ function renderRestTimer() {
     </div>
     <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:8px;background:var(--surface-2);font-size:13px;font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 
 function editRunnerSet(exIdx, setIdx) {
   const s = _runner.exercises[exIdx].loggedSets[setIdx]
   if (!s) return
+  // Re-entrancy guard. Without it a double-tap on ✎ appended TWO overlays sharing the same input ids.
+  // The user sees and types into the second (painted on top); saveEditRunnerSet then calls
+  // getElementById, which resolves to the FIRST, buried one — still holding the original pre-filled
+  // values. The set "saved" completely unchanged, with no error, and a dead full-screen sheet was left
+  // over the runner. showRunnerOneRMSheet already does exactly this; it just never got copied here.
+  document.getElementById('wr-edit-overlay')?.remove()
   const overlay = document.createElement('div')
   overlay.id = 'wr-edit-overlay'
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center'
@@ -1230,7 +1236,7 @@ function editRunnerSet(exIdx, setIdx) {
         <button onclick="saveEditRunnerSet(${exIdx},${setIdx})" style="flex:2;padding:13px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Save</button>
       </div>
     </div>`
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 function saveEditRunnerSet(exIdx, setIdx) {
@@ -1270,6 +1276,11 @@ function runnerJumpTo(i) {
 function runnerGoBack() {
   stopIntervalTimer()
   stopStrengthSetTimer()
+  // skipRestTimer() FIRES the pending _afterRest callback, and after logging a set that callback is
+  // `() => { _runner.exIdx = nextExIdx; renderRunner() }` — i.e. it advances FORWARD. So tapping
+  // "← Back" during a rest went forward one, then back one, landing you on the screen you were
+  // already on (and double-rendering). The button simply looked broken. Null the callback first.
+  _runner._afterRest = null
   skipRestTimer()
   if (_runner.exIdx > 0) {
     _runner.exIdx--
@@ -1378,7 +1389,26 @@ function addExtraStrengthSet() {
 }
 
 async function showRunnerFinish() {
+  // FULL teardown. This used to clear only _timerInterval, leaving the rest timer, the timed-set
+  // timer, the cardio-interval timer and the draft safety-net all still ticking. The common path:
+  // tick your last set (fires a 90s rest) -> tap "Finish" -> ~88s later the rest tick reaches 0, and
+  // because _afterRest is null it calls renderRunner(), which innerHTML-replaces the "Workout
+  // complete" screen with the exercise runner — throwing away the session name and notes the user was
+  // in the middle of typing. In wizard mode it's worse: _afterRest bounces them into the NEXT exercise.
+  //
+  // Note this must NOT call skipRestTimer() — that FIRES the pending _afterRest callback. Null the
+  // callback first, then clear. (Same trap as runnerGoBack.)
+  _runner._afterRest = null
   _runner._timerInterval = clearTimer(_runner._timerInterval)
+  _runner._restInterval  = clearTimer(_runner._restInterval)
+  stopIntervalTimer()
+  stopStrengthSetTimer()
+  _stopRunnerDraftSafetyNet()
+  // Remove the floating rest overlay too — clearing its interval stops the countdown but leaves the
+  // DOM node painted (z-400) OVER the finish screen (z-300), and its "Skip →" button re-renders the
+  // runner, destroying the finish screen mid-typing. discardRunner already does this; this didn't.
+  document.getElementById('rest-timer-overlay')?.remove()
+
   const el = document.getElementById('workout-runner')
   if (!el) return
 
@@ -1662,10 +1692,10 @@ function showPostSessionOneRMModal(clientId, candidates) {
       <div id="psorm-rows">
         ${candidates.map((c, i) => `
           <div id="psorm-row-${i}" style="background:rgba(99,102,241,.07);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
-            <div style="font-size:13px;font-weight:700;color:var(--accent)">${c.name} — ${c.weight}kg × ${c.reps} reps</div>
+            <div style="font-size:13px;font-weight:700;color:var(--accent)">${escapeHtml(c.name)} — ${c.weight}kg × ${c.reps} reps</div>
             <div style="font-size:12px;color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${c.estimate.toFixed(1)} kg</div>
             <div style="display:flex;gap:6px">
-              <button class="btn-primary" style="flex:1;font-size:12px;padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${c.name.replace(/'/g,"\\'")}',${c.estimate})">Save as my 1RM</button>
+              <button class="btn-primary" style="flex:1;font-size:12px;padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${escapeAttr(c.name)}',${c.estimate})">Save as my 1RM</button>
               <button class="btn-secondary" style="flex:1;font-size:12px;padding:8px" onclick="document.getElementById('psorm-row-${i}').remove()">Skip</button>
             </div>
           </div>`).join('')}
@@ -1675,7 +1705,7 @@ function showPostSessionOneRMModal(clientId, candidates) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function _savePostSessionOneRM(i, clientId, exerciseName, estimate) {
@@ -1739,7 +1769,7 @@ function showRunnerOneRMSheet(exIdx) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">${ex.name} — set your 1RM</h2>
+        <h2 class="modal-title">${escapeHtml(ex.name)} — set your 1RM</h2>
         <button class="modal-close" onclick="document.getElementById('modal-runner-1rm').remove()">✕</button>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:14px">
@@ -1770,7 +1800,7 @@ function showRunnerOneRMSheet(exIdx) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 function _setRunnerOneRMMode(mode) {
@@ -1812,6 +1842,18 @@ async function saveRunnerOneRM(exIdx) {
   renderRunner()
 }
 
+// Two bugs lived in this function's inline handlers, both fixed 2026-07-13:
+//
+// 1. `oninput="block.oneRM=this.value;renderLogExercises()"` — `block` is a .map() parameter, and an
+//    inline handler resolves against element -> document -> window, never the enclosing closure. So it
+//    threw a ReferenceError on EVERY keystroke and the renderLogExercises() after it never ran. That is
+//    why the "% 1RM will auto-fill weight" hint only appeared once you happened to touch some other
+//    field (which re-rendered via flushLogState and picked the value up the back way). Now addresses
+//    window._logBlocks[bi] directly.
+//
+// 2. Re-rendering on `oninput` rebuilds container.innerHTML and therefore DESTROYS the focused input —
+//    so a two-digit %1RM could never be typed (focus vanished after the first digit). The re-render is
+//    now on `onchange` (blur/Enter), which is when the derived weight preview actually needs refreshing.
 function renderLogExercises() {
   const container = document.getElementById('ls-exercises')
   if (!container) return
@@ -1859,8 +1901,8 @@ function renderLogExercises() {
       </div>
       <div style="text-align:center">
         <div style="display:flex;border-radius:5px;border:1px solid var(--border);overflow:hidden">
-          <button onclick="window._logBlocks[${bi}].effortMode='RPE';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${!isRIR?'var(--accent)':'transparent'};color:${!isRIR?'#fff':'var(--text-muted)'}">RPE</button>
-          <button onclick="window._logBlocks[${bi}].effortMode='RIR';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${isRIR?'var(--accent)':'transparent'};color:${isRIR?'#fff':'var(--text-muted)'}">RIR</button>
+          <button onclick="flushLogState();window._logBlocks[${bi}].effortMode='RPE';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${!isRIR?'var(--accent)':'transparent'};color:${!isRIR?'#fff':'var(--text-muted)'}">RPE</button>
+          <button onclick="flushLogState();window._logBlocks[${bi}].effortMode='RIR';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${isRIR?'var(--accent)':'transparent'};color:${isRIR?'#fff':'var(--text-muted)'}">RIR</button>
         </div>
       </div>
       ${hdr('Rest')}
@@ -1888,9 +1930,9 @@ function renderLogExercises() {
             <div>
               <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="kg" value="${orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||s.weight||'') : (s.weight||'')}">
             </div>
-            <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${s.pctMin || ''}" oninput="flushLogState();renderLogExercises()">
+            <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${s.pctMin || ''}" oninput="flushLogState()" onchange="renderLogExercises()">
             <div>
-              <input id="ls-pmax-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${s.pctMax || ''}" oninput="flushLogState();renderLogExercises()">
+              <input id="ls-pmax-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${s.pctMax || ''}" oninput="flushLogState()" onchange="renderLogExercises()">
               ${wFromPct}
             </div>
             <input id="ls-effort-${bi}-${si}" ${si_style} type="number" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${s.effort || ''}">
@@ -1915,7 +1957,7 @@ function renderLogExercises() {
         ${!isCardio ? `
         <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)">
           <span style="font-size:11px;font-weight:500;color:var(--text-muted);white-space:nowrap">1 Rep Max</span>
-          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:12px;text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM || ''}" oninput="block.oneRM=this.value;renderLogExercises()">
+          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:12px;text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM || ''}" oninput="window._logBlocks[${bi}].oneRM=this.value" onchange="flushLogState();renderLogExercises()">
           <span style="font-size:11px;color:var(--text-muted)">kg</span>
           <span style="font-size:11px;color:var(--text-muted);margin-left:2px">${orm ? '— % 1RM will auto-fill weight' : '— enter to enable % 1RM'}</span>
         </div>
@@ -1937,12 +1979,17 @@ async function showLogSessionModal(clientId) {
   // already has a safe fallback (currentUser.id) and the modal still opens normally.
   const { data: clientRecord } = await dbq('showLogSessionModal:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
   const coachId = clientRecord?.coach_id || currentUser.id
+  // This was the ONLY workout_templates fetch missing these two filters — every sibling carries both.
+  // Without them, logging a past session for a REAL client offered the coach's own PERSONAL templates
+  // and every periodization week-clone ("Bench Press — W2") in the dropdown.
   const { data: templates } = await db
     .from('workout_templates')
     .select('*, workout_template_exercises(*)')
     .eq('coach_id', coachId)
     .is('client_id', null)
     .is('program_id', null)
+    .is('generated_from_phase_id', null)
+    .eq('is_personal', currentProfile?.role === 'solo')
     .order('name')
 
   window._logBlocks = []
@@ -1970,7 +2017,7 @@ async function showLogSessionModal(clientId) {
         <label class="field-label">Load from template</label>
         <select class="field-input" id="ls-template" onchange="loadTemplateIntoLog(this.value)">
           <option value="">— No template / custom —</option>
-          ${(templates || []).map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+          ${(templates || []).map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
         </select>
       </div>
 
@@ -1989,7 +2036,7 @@ async function showLogSessionModal(clientId) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   window._logTemplates = templates || []
 }
 
@@ -2123,6 +2170,11 @@ async function saveWorkoutSession(clientId) {
 }
 
 async function openWorkoutLog(logId, clientId) {
+  // This screen is reachable by a CLIENT from their own session history (app-workouts.js), and it had
+  // no role check at all: it rendered the coach's Delete button and an editable "Coach notes" box to
+  // the very person the notes are written about. A client could overwrite their coach's feedback, or
+  // delete the session. Solo is its own coach, so solo keeps the coach controls.
+  const _isCoachView = currentProfile?.role !== 'client'
   const el = document.getElementById('tab-content') || document.getElementById('main-content')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
@@ -2187,10 +2239,10 @@ async function openWorkoutLog(logId, clientId) {
 
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       <div>
-        <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${session.name}</h2>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${escapeHtml(session.name)}</h2>
         <p style="color:var(--text-muted)">${dateStr}</p>
       </div>
-      <button class="btn-danger" style="font-size:13px;padding:6px 12px" onclick="deleteWorkoutLog('${logId}','${clientId}')">Delete</button>
+      ${_isCoachView ? `<button class="btn-danger" style="font-size:13px;padding:6px 12px" onclick="deleteWorkoutLog('${logId}','${clientId}')">Delete</button>` : ''}
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px">
@@ -2226,7 +2278,7 @@ async function openWorkoutLog(logId, clientId) {
             <div class="card-body">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
                 <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0">${i+1}</div>
-                <span style="font-weight:600;font-size:15px">${ex.exercise_name}</span>
+                <span style="font-weight:600;font-size:15px">${escapeHtml(ex.exercise_name)}</span>
                 ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
               </div>
               ${prevSummary ? `<div style="font-size:11px;color:var(--text-muted);margin-left:36px;margin-bottom:10px">Last time: ${prevSummary}</div>` : `<div style="margin-bottom:10px"></div>`}
@@ -2262,9 +2314,13 @@ async function openWorkoutLog(logId, clientId) {
     <div class="card" style="margin-top:8px">
       <div class="card-body">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Coach notes</div>
-        <textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${session.notes||''}</textarea>
-        <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:13px;padding:7px 16px">Save notes</button>
-        <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:12px;color:#10b981;font-weight:600">Saved ✓</span>
+        ${_isCoachView
+          ? `<textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${escapeHtml(session.notes)}</textarea>
+             <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:13px;padding:7px 16px">Save notes</button>
+             <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:12px;color:#10b981;font-weight:600">Saved ✓</span>`
+          : session.notes
+            ? `<div style="white-space:pre-wrap;font-size:14px;line-height:1.5">${escapeHtml(session.notes)}</div>`
+            : `<div style="font-size:13px;color:var(--text-muted)">No notes from your coach yet.</div>`}
       </div>
     </div>
   `
@@ -2279,17 +2335,25 @@ function backToClientWorkouts(clientId) {
 }
 
 async function saveCoachNotes(logId) {
+  // Defence in depth. The UI no longer renders this control for a client, but the function is on
+  // window and callable from DevTools, and the query anchored on `id` alone — leaning entirely on RLS,
+  // which very plausibly permits a client to write their own workout_logs row. Coach notes are the
+  // coach's, not the client's.
+  if (currentProfile?.role === 'client') { log.warn('saveCoachNotes', 'blocked: coach notes are not client-writable'); return }
   const notes = document.getElementById('wl-coach-notes')?.value.trim() || null
-  const { error } = await db.from('workout_logs').update({ notes }).eq('id', logId)
+  const { error } = await db.from('workout_logs').update({ notes }).eq('id', logId).eq('coach_id', currentUser.id)
   if (error) { log.error('saveCoachNotes', 'update failed', error); return }
   const saved = document.getElementById('wl-notes-saved')
   if (saved) { saved.style.display = 'inline'; setTimeout(() => saved.style.display = 'none', 2000) }
 }
 
 async function deleteWorkoutLog(logId, clientId) {
+  // Same reasoning as saveCoachNotes: the button is no longer rendered for a client, but the function
+  // is callable from the console and the delete anchored on `id` alone.
+  if (currentProfile?.role === 'client') { log.warn('deleteWorkoutLog', 'blocked: clients cannot delete sessions'); return }
   if (!confirm('Delete this session? This cannot be undone.')) return
   log.info('deleteWorkoutLog', 'deleting session', { logId })
-  const { error } = await db.from('workout_logs').delete().eq('id', logId)
+  const { error } = await db.from('workout_logs').delete().eq('id', logId).eq('coach_id', currentUser.id)
   if (error) { log.error('deleteWorkoutLog', 'delete failed', error); return }
   log.ok('deleteWorkoutLog', 'session deleted', { logId })
   backToClientWorkouts(clientId)
