@@ -2,6 +2,10 @@
 -- Progress overhaul — sub-project ① DATA MODEL. First-class metric_type + typed metric columns.
 -- Design: docs/superpowers/specs/2026-07-18-progress-tracking-overhaul-design.md
 -- Run in the Supabase SQL editor. Additive, idempotent, reversible. No user-visible change.
+-- APPLIED to production by Jake 2026-07-18. Verified: 4 new workout_log_sets columns present;
+-- metric_type on all 3 tables (default 'weight_reps'); cardio backfilled from exercise_type
+-- (template 68, log 2); jumps → jump_height (Box Jump, Depth Jump); Trap Bar Jump correctly stayed
+-- weight_reps; no NULLs; no strength lift misclassified.
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
 
 -- metric_type is intrinsic to an exercise ("Box Jump is always jump_height"), so it lives on the
