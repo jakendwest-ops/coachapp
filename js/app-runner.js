@@ -37,7 +37,7 @@ async function _startFreshRunner(clientId) {
         const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.[0]?.restMin || '') || 90
         const s0 = ex.sets_json?.[0] || {}
         const oneRM = (ex.exercise_id && oneRMById[ex.exercise_id] != null) ? oneRMById[ex.exercise_id] : (oneRMByName[ex.exercise_name.trim().toLowerCase()] || null)
-        return { name: ex.exercise_name, exerciseId: ex.exercise_id || null, type: ex.exercise_type || 'strength', targetSets: ex.sets_json?.length || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
+        return { name: ex.exercise_name, exerciseId: ex.exercise_id || null, type: ex.exercise_type || 'strength', metricType: ex.metric_type || 'weight_reps', targetSets: ex.sets_json?.length || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
       })
   }
   if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
@@ -1599,7 +1599,8 @@ async function saveRunnerSession() {
   // exercise — replaces the old one-exercise-at-a-time loop (N sequential round trips) that was
   // the main cause of "save feels slow" on multi-exercise sessions.
   const exerciseRows = exercises.map((ex, bi) => ({
-    log_id: sessionLog.id, exercise_id: ex.exerciseId || null, exercise_name: ex.name, exercise_type: ex.type, order_index: bi,
+    log_id: sessionLog.id, exercise_id: ex.exerciseId || null, exercise_name: ex.name, exercise_type: ex.type,
+    metric_type: ex.metricType || 'weight_reps', order_index: bi,
     client_notes: ex.clientNotes || null
   }))
   const { data: insertedExercises, error: exErr } = await db.from('workout_log_exercises').insert(exerciseRows).select()
@@ -1620,15 +1621,46 @@ async function saveRunnerSession() {
   exercises.forEach((ex, bi) => {
     const logExId = exerciseIdByOrderIndex[bi]
     ex.loggedSets.forEach((s, si) => {
-      const row = { workout_log_exercise_id: logExId, set_number: si+1 }
+      const setNumber = si + 1
+      // Heart rate is common to any set shape (populated by sub-project ②d); apply it uniformly.
+      const applyHr = (row) => {
+        if (s.avgHr) row.avg_hr = parseInt(s.avgHr)
+        if (s.maxHr) row.max_hr = parseInt(s.maxHr)
+      }
+
+      // Unilateral: the wizard captures both sides in ONE loggedSet. Persist as two rows sharing the
+      // set_number, tagged by `side` — the L/R model progress imbalance charts read. Drop a side with
+      // no reps. (base has 3 keys once `side` is added, so >3 means the row carries real data.)
+      const isUnilateral = s.leftReps != null || s.rightReps != null || s.leftWeight != null || s.rightWeight != null
+      if (isUnilateral) {
+        for (const sd of [
+          { side: 'left',  reps: s.leftReps,  weight: s.leftWeight },
+          { side: 'right', reps: s.rightReps, weight: s.rightWeight }
+        ]) {
+          const row = { workout_log_exercise_id: logExId, set_number: setNumber, side: sd.side }
+          if (sd.reps) row.reps_achieved = parseInt(sd.reps)
+          if (sd.weight && sd.weight !== 'BW') row.weight_kg = parseFloat(sd.weight)
+          applyHr(row)
+          if (Object.keys(row).length > 3) allSets.push(row)
+        }
+        return
+      }
+
+      const row = { workout_log_exercise_id: logExId, set_number: setNumber }
       if (ex.type === 'cardio') {
         if (s.duration) row.duration_seconds = parseDuration(s.duration)
-        if (s.distance) row.distance_m = Math.round(parseFloat(s.distance)*1000)
+        if (s.distance) row.distance_m = Math.round(parseFloat(s.distance) * 1000) // cardio distance is km
       } else {
-        if (s.reps) row.reps_achieved = parseInt(s.reps)
+        // Timed hold: duration (+ optional load). Distance-strength / jump_distance: distance_m in METRES
+        // (not km). Jump height: height_cm (populated by ②c). Plus the plain weight/reps/rpe case.
+        if (s.duration)   row.duration_seconds = parseDuration(s.duration)
+        if (s.distance_m) row.distance_m = Math.round(parseFloat(s.distance_m)) // already metres
+        if (s.height_cm)  row.height_cm = parseFloat(s.height_cm)
+        if (s.reps)       row.reps_achieved = parseInt(s.reps)
         if (s.weight && s.weight !== 'BW') row.weight_kg = parseFloat(s.weight)
         if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
       }
+      applyHr(row)
       if (Object.keys(row).length > 2) allSets.push(row)
     })
   })
