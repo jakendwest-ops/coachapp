@@ -52,7 +52,7 @@ test.describe('Program periodization', () => {
     const templateIds = await availableTemplateIds(page)
     test.skip(templateIds.length === 0, 'E2E PT account has no workout templates to assign')
     await assignWorkoutToDay(page, 1, templateIds[0])
-    await expect(page.locator('[id^="phase-workouts-"] button[onclick*="removePhaseWorkout"]').first()).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('[id^="phase-workouts-"] .pwk-slot-name').first()).toBeVisible({ timeout: 8000 })
 
     // Configure periodization on the phase
     await page.click('button:has-text("Configure")')
@@ -68,8 +68,8 @@ test.describe('Program periodization', () => {
     // Generate weeks 2-3 from the Week 1 base
     page.once('dialog', d => d.accept())
     await page.click('button:has-text("Generate weeks")')
-    await expect(page.locator('text=WEEK 2')).toBeVisible({ timeout: 10000 })
-    await expect(page.locator('text=WEEK 3')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('.week-tab[data-week="2"]')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('.week-tab[data-week="3"]')).toBeVisible({ timeout: 10000 })
 
     // Cleanup — delete the throwaway program
     page.once('dialog', d => d.accept())
@@ -388,11 +388,11 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     test.skip(templateIds.length === 0, 'E2E PT account has no workout templates to assign')
     const phaseId = await page.locator(daySlotBtn(1)).getAttribute('data-phase')
     await assignWorkoutToDay(page, 1, templateIds[0])
-    await expect(page.locator('[id^="phase-workouts-"] button[onclick*="removePhaseWorkout"]').first()).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('[id^="phase-workouts-"] .pwk-slot-name').first()).toBeVisible({ timeout: 8000 })
 
     await expect(page.locator('button:has-text("Duplicate week")')).toBeVisible({ timeout: 4000 })
     await page.click('button:has-text("Duplicate week")')
-    await expect(page.locator('[id^="phase-workouts-"]').locator('text=WEEK 2')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('.week-tab[data-week="2"]')).toBeVisible({ timeout: 8000 })
 
     const weeks = await page.evaluate(async (phaseId) => {
       const { data } = await db.from('program_phase_workouts').select('week_number, template_id').eq('phase_id', phaseId)
@@ -423,10 +423,9 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     await page.click('text=[E2E] Fork Test Program')
     await page.waitForSelector('text=[E2E] Shared Workout', { timeout: 8000 })
 
-    // Open Monday's session (first occurrence in Mon→Sun order) and rename it
-    await page.locator('text=[E2E] Shared Workout').first().click()
-    await expect(page.locator('#session-detail-drawer')).toBeVisible({ timeout: 4000 })
-    await page.click('#session-detail-drawer button:has-text("Edit")')
+    // Open Monday's session inline (first slot in day order), then Edit → the full template editor.
+    await page.locator('.pwk-slot-head').first().click()
+    await page.locator('.pwk-act.edit').first().click()
     await expect(page.locator('h1:has-text("[E2E] Shared Workout")')).toBeVisible({ timeout: 8000 })
     await page.click('button:has-text("Edit")')
     await expect(page.locator('#edit-template-modal')).toBeVisible({ timeout: 4000 })
@@ -631,7 +630,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       await page.click('[data-page="programs"]')
       await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
       await page.evaluate((programId) => openProgram(programId), setup.programId)
-      await page.waitForSelector('text=WEEK 3', { timeout: 8000 })
+      await page.waitForSelector('.week-tab[data-week="3"]', { timeout: 8000 })
       await expect(page.locator('button:has-text("Delete week")').first()).toBeVisible({ timeout: 4000 })
 
       page.once('dialog', d => d.accept())
@@ -946,7 +945,7 @@ test.describe('Copy program workouts to Library + duplicate-week auto-extend (20
       // actually re-render with the assigned row rather than racing the DB read.
       await rowA.click()
       await page.waitForSelector('#workout-picker-modal', { state: 'detached', timeout: 5000 })
-      await expect(page.locator('[id^="phase-workouts-"] button[onclick*="removePhaseWorkout"]').first()).toBeVisible({ timeout: 8000 })
+      await expect(page.locator('[id^="phase-workouts-"] .pwk-slot-name').first()).toBeVisible({ timeout: 8000 })
       const assigned = await page.evaluate(async ({ phaseId }) => {
         const { data } = await db.from('program_phase_workouts').select('template_id').eq('phase_id', phaseId)
         return (data || []).map(r => r.template_id)

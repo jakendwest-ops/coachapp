@@ -699,3 +699,45 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 }
 
 @keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(12px) } to { opacity:1; transform:translateX(-50%) translateY(0) } }
+
+/* ─── Program week tabs + responsive builder day layout (2026-07-17 week-tabs redesign) ──── */
+/* Weeks are tabs (one week on screen at a time), days are rows. Shared by the read Workouts
+   page and the Programs builder. Flat, token-driven — matches the app's existing visual language. */
+.week-tabs { display:flex; gap:6px; margin-bottom:12px; }
+.week-tab {
+  flex:1; text-align:center; font-size:12px; font-weight:700; letter-spacing:.02em;
+  padding:8px 4px; border-radius:8px; border:1px solid var(--border);
+  background:var(--surface); color:var(--text-muted); cursor:pointer;
+  transition:background .15s, color .15s, border-color .15s;
+}
+.week-tab .wt-n { display:block; font-size:9px; font-weight:700; letter-spacing:.08em; opacity:.7; }
+.week-tab[aria-selected="true"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+.week-tab:hover:not([aria-selected="true"]) { border-color:var(--accent); color:var(--text); }
+.week-tab:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* Builder: days stack vertically on mobile, flow into columns on a wide screen. */
+.pwk-days { display:flex; flex-direction:column; gap:8px; }
+@media (min-width:768px) {
+  .pwk-days { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px; align-items:start; }
+}
+.pwk-day { border:1px solid var(--border); border-radius:10px; padding:8px; background:var(--surface); }
+.pwk-dow { font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--text-muted); margin-bottom:6px; }
+.pwk-slot { border:1px solid var(--border); border-radius:8px; background:var(--bg); margin-bottom:6px; overflow:hidden; }
+.pwk-slot-head { display:flex; align-items:center; gap:6px; padding:7px 8px; cursor:pointer; }
+.pwk-slot-head:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.pwk-tier { font-size:8px; font-weight:800; flex-shrink:0; }
+.pwk-ampm { font-size:8px; font-weight:800; color:var(--accent); flex-shrink:0; }
+.pwk-slot-name { flex:1; min-width:0; font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pwk-chev { width:13px; height:13px; flex-shrink:0; color:var(--text-muted); transition:transform .2s; }
+.pwk-slot-body { padding:0 8px 8px; }
+.pwk-ex { display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-top:1px solid var(--border); font-size:12px; }
+.pwk-ex .s { color:var(--text-muted); font-size:11px; flex-shrink:0; font-variant-numeric:tabular-nums; }
+.pwk-slot-actions { display:flex; gap:6px; margin-top:8px; }
+.pwk-act { flex:1; font-size:11.5px; font-weight:700; padding:7px 6px; border-radius:7px; border:1px solid var(--border); background:var(--surface); cursor:pointer; }
+.pwk-act.edit { color:var(--accent); }
+.pwk-act.remove { color:var(--danger); }
+.pwk-act:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.pwk-add { width:100%; min-height:40px; font-size:11.5px; font-weight:600; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer; text-align:center; }
+.pwk-add:hover { border-color:var(--accent); color:var(--accent); }
+.pwk-add:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.pwk-weekhead { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-bottom:8px; }

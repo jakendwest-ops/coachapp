@@ -100,11 +100,8 @@ async function openSessionDetail(templateId, name, ctx = {}) {
 
   // Clients view their own prescribed program read-only; coach and solo (self-coached) can edit.
   const canEdit = currentProfile?.role !== 'client'
-  // Only offer "Save to Library" when this drawer was opened from inside a program phase slot
-  // (ctx.programId is set by renderPhaseWeekGrid) — that's precisely the case where the workout is
-  // program-owned and therefore NOT reusable elsewhere. Opened from the Library or a client's plan,
-  // the action is meaningless. Gating on ctx avoids a second fetch just to read program_id.
-  const canSaveToLibrary = canEdit && !!ctx.programId && !ctx.isClientPlan
+  // "Save to Library" lives on the Programs-builder slot itself now (renderPhaseWeekGrid) — the drawer
+  // is no longer opened from a program slot, so it doesn't offer it here.
 
   panel.innerHTML = `
     <div onclick="closeSessionDetail()" style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.45)"></div>
@@ -116,11 +113,6 @@ async function openSessionDetail(templateId, name, ctx = {}) {
           <button onclick="closeSessionDetail()" style="border:none;background:none;cursor:pointer;padding:4px 8px;color:var(--text-muted);font-size:22px;line-height:1">✕</button>
         </div>
       </div>
-      ${canSaveToLibrary ? `
-      <div style="padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
-        <button id="sd-save-library" class="btn-secondary" style="width:100%;min-height:44px;font-size:13px;font-weight:600" onclick="saveTemplateToLibrary('${templateId}')">Save to Library</button>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:5px;text-align:center">Makes this workout reusable in any program</div>
-      </div>` : ''}
       <div style="padding:16px;flex:1">${exHtml}</div>
     </div>`
 
@@ -237,6 +229,17 @@ function _renderWorkoutsHeroHtml(hero) {
     </div>`
 }
 
+// Switch the visible week within a phase panel on the read Workouts page. Weeks are tabs; each week's
+// day list is pre-rendered into a hidden .rw-week panel keyed by phase, so switching is instant (no refetch).
+function _selectReadWeek(panelId, week) {
+  document.querySelectorAll(`.rw-week[data-panel="${panelId}"]`).forEach(d => {
+    d.style.display = Number(d.dataset.week) === week ? 'block' : 'none'
+  })
+  document.querySelectorAll(`.week-tab[data-panel="${panelId}"]`).forEach(b => {
+    b.setAttribute('aria-selected', Number(b.dataset.week) === week)
+  })
+}
+
 async function renderClientWorkoutsPage(el) {
   // Role-aware, and it MUST be. A master account holds TWO clients rows — a coached one (coach_id set)
   // and a personal/solo one (coach_id NULL). The old query was
@@ -316,7 +319,7 @@ async function renderClientWorkoutsPage(el) {
                   <button onclick="toggleClientPhase('${dayPanelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:none;border:none;cursor:pointer;text-align:left">
                     <div>
                       <span style="font-size:12px;font-weight:700;color:var(--accent)">DAY ${day}</span>
-                      <span style="font-size:13px;font-weight:500;color:var(--text);margin-left:8px">${sessionSummary}</span>
+                      <span style="font-size:13px;font-weight:500;color:var(--text);margin-left:8px">${escapeHtml(sessionSummary)}</span>
                     </div>
                     <svg id="${dayPanelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
@@ -328,8 +331,8 @@ async function renderClientWorkoutsPage(el) {
                       const exs = (cpw?.exercises || []).sort((a,b) => a.order_index - b.order_index)
                       return `<div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
                         ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '0'}">
-                          ${templateId ? `<span style="font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)" onclick="openSessionDetail('${templateId}','${escapeAttr(name)}',{clientId:'${clientId}',clientProgramId:'${activeAssignment.id}',isClientPlan:true,backLabel:'Workouts'})">` : `<span style="font-size:13px;font-weight:600">`}${escapeHtml(name)}</span>
+                        <div style="display:flex;align-items:center;justify-content:${multi ? 'space-between' : 'flex-end'};margin-bottom:${exs.length ? '8px' : '0'}">
+                          ${multi ? `<span style="font-size:13px;font-weight:600">${escapeHtml(name)}</span>` : ''}
                           ${templateId ? `<button class="btn-primary" style="font-size:12px;padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
                         </div>
                         ${exs.length ? `
@@ -353,14 +356,13 @@ async function renderClientWorkoutsPage(el) {
                   <span style="font-size:13px;font-weight:700;color:var(--text)">${phase.name}</span>
                   <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${_builtWeekCount(allSessions)}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
                 </div>
-                <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
+                <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0;transform:rotate(${pi === 0 ? '180deg' : '0deg'})"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
-              <div id="${panelId}" style="display:none">
+              <div id="${panelId}" style="display:${pi === 0 ? 'block' : 'none'}">
                 ${!weekNums.length ? '<div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">No sessions added to this phase yet</div>' :
-                  !showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : weekNums.map(w => `
-                  <div style="padding:8px 14px 2px;font-size:11px;font-weight:700;color:var(--accent);background:var(--surface-2);border-top:1px solid var(--border)">WEEK ${w}</div>
-                  ${renderDays(weekMap[w], `${panelId}-w${w}`)}
-                `).join('')}
+                  !showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : `
+                  <div class="week-tabs" style="padding:12px 12px 0;margin-bottom:2px">${weekNums.map((w, wi) => `<button class="week-tab" data-panel="${panelId}" data-week="${w}" aria-selected="${wi === 0}" onclick="_selectReadWeek('${panelId}',${w})"><span class="wt-n">WEEK</span>${w}</button>`).join('')}</div>
+                  ${weekNums.map((w, wi) => `<div class="rw-week" data-panel="${panelId}" data-week="${w}" style="display:${wi === 0 ? 'block' : 'none'}">${renderDays(weekMap[w], `${panelId}-w${w}`)}</div>`).join('')}`}
               </div>
             </div>`
           }).join('')}
@@ -1810,8 +1812,8 @@ async function _copyTemplateToLibrary(templateId) {
 
 // Per-workout entry point — the button lives in the session-detail drawer (openSessionDetail),
 // which already has the template in context and room for it; the phase-grid row is just name + ✕.
-async function saveTemplateToLibrary(templateId) {
-  const btn = document.getElementById('sd-save-library')
+async function saveTemplateToLibrary(templateId, btnEl) {
+  const btn = btnEl || document.getElementById('sd-save-library')
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…' }
   const result = await _copyTemplateToLibrary(templateId)
   if (btn) { btn.disabled = false; btn.textContent = 'Save to Library' }

@@ -240,15 +240,18 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       })
 
       try {
-        await page.click('[data-page="workouts"]')
-        await page.waitForTimeout(1000)
+        // Attach BEFORE navigating: the read page now expands the first phase by default, so an
+        // empty-phase render crash (the bug this guards) would fire on load, before any click.
         const consoleErrors = []
         page.on('pageerror', err => consoleErrors.push(err.message))
-        // The hero card also shows the phase name in its meta line ("Deload · Week 1"), so a
-        // plain text=Deload locator is ambiguous and can land on that instead of the actual
-        // accordion toggle button — scope to the button specifically.
-        await page.click('button:has-text("Deload")')
-        await expect(page.locator('text=No sessions added to this phase yet')).toBeVisible({ timeout: 5000 })
+        await page.click('[data-page="workouts"]')
+        await page.waitForTimeout(1000)
+        // Deload is phase 1 (order_index 0) → expanded by default, so its empty-phase message shows
+        // on load. If a phase ever defaults collapsed again, open it (scope to the accordion toggle
+        // button, since the hero meta line also contains the phase name "Deload").
+        const msg = page.locator('text=No sessions added to this phase yet')
+        if (!(await msg.isVisible().catch(() => false))) await page.click('button:has-text("Deload")')
+        await expect(msg).toBeVisible({ timeout: 5000 })
         expect(consoleErrors).toEqual([])
       } finally {
         await ptPage.evaluate(async ({ progId, cpId }) => {

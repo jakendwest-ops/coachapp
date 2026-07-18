@@ -94,27 +94,20 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('button:has-text("Performance")')).toBeVisible()
   })
 
-  test('session detail slide-in opens and closes', async ({ page }) => {
+  test('tapping a day shows its workout inline, with no slider (2026-07-17 week-tabs redesign)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.click('[data-page="workouts"]')
     await page.waitForTimeout(2000)
     // Skip if no program assigned (E2E account may not have one)
     const hasPhase = await page.locator('button[onclick*="cl-phase"]').first().isVisible({ timeout: 4000 }).catch(() => false)
     if (!hasPhase) return
-    // Expand first phase then first day
-    await page.locator('button[onclick*="cl-phase"]').first().click()
-    await page.waitForTimeout(500)
-    await page.locator('button[onclick*="-d1"]').first().click()
-    await page.waitForTimeout(500)
-    // Click first session name span
-    await page.locator('span[onclick*="openSessionDetail"]').first().click()
-    await page.waitForTimeout(500)
-    // Slide-in panel must be in DOM
-    await expect(page.locator('#session-detail-panel')).toBeAttached({ timeout: 5000 })
-    await expect(page.locator('#session-detail-drawer')).toBeAttached()
-    // Close via X button
-    await page.locator('button[onclick="closeSessionDetail()"]').click()
-    await page.waitForSelector('#session-detail-panel', { state: 'detached', timeout: 5000 })
+    // The active phase is expanded by default now — open the first day to reveal its workout inline.
+    const dayBtn = page.locator('button[onclick*="-d1"]').first()
+    if (await dayBtn.isVisible({ timeout: 3000 }).catch(() => false)) await dayBtn.click()
+    await page.waitForTimeout(400)
+    // Exercises show inline under the day (set counts) — the redundant slide-in slider is gone.
+    await expect(page.locator('text=/\\d+ set/').first()).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('#session-detail-panel')).toHaveCount(0)
   })
 
   test('solo stats strip stays visible (not display:none) on mobile', async ({ page }) => {

@@ -1596,7 +1596,7 @@ async function loadAllPhaseWorkouts(phases) {
   // One batched fetch for all phases instead of a sequential per-phase round-trip —
   // programs with many phases (e.g. Hyrox Hero's 12) were queuing up 12 awaits in a row.
   const phaseIds = phases.map(ph => ph.id)
-  const { data: allPws, error: pwsError } = await db.from('program_phase_workouts').select('*, workout_templates(name)').in('phase_id', phaseIds).order('week_number').order('day_of_week').order('session_order')
+  const { data: allPws, error: pwsError } = await db.from('program_phase_workouts').select('*, workout_templates(name, workout_template_exercises(exercise_name, order_index, sets_json))').in('phase_id', phaseIds).order('week_number').order('day_of_week').order('session_order')
   if (pwsError) log.error('loadAllPhaseWorkouts', 'fetch failed', pwsError)
   const pwsByPhase = {}
   ;(allPws || []).forEach(pw => { (pwsByPhase[pw.phase_id] = pwsByPhase[pw.phase_id] || []).push(pw) })
@@ -1615,8 +1615,37 @@ async function loadAllPhaseWorkouts(phases) {
     const weekNums = Object.keys(byWeek).map(Number).sort((a, b) => a - b)
     if (!weekNums.length) weekNums.push(1)
 
-    el.innerHTML = weekNums.map(w => `<div style="margin-bottom:10px">${renderPhaseWeekGrid(fullPhase, w, byWeek[w] || [])}</div>`).join('')
+    // Weeks are tabs — one week on screen at a time. Active week persists per phase across the
+    // re-renders that add/remove/duplicate/delete trigger (all reload via loadAllPhaseWorkouts).
+    // Clamp to a valid week so deleting the active one can't leave a dangling selection.
+    window._builderActiveWeek = window._builderActiveWeek || {}
+    window._builderWeekData = window._builderWeekData || {}
+    const stored = window._builderActiveWeek[ph.id]
+    const active = weekNums.includes(stored) ? stored : weekNums[0]
+    window._builderActiveWeek[ph.id] = active
+    // Cache this phase's per-week data so the tab handler can re-render one week without a refetch.
+    window._builderWeekData[ph.id] = { phase: fullPhase, byWeek }
+
+    const tabsHtml = weekNums.length > 1
+      ? `<div class="week-tabs">${weekNums.map(w => `<button class="week-tab" data-phase="${ph.id}" data-week="${w}" aria-selected="${w === active}" onclick="_selectBuilderWeek('${ph.id}',${w})"><span class="wt-n">WEEK</span>${w}</button>`).join('')}</div>`
+      : ''
+    // Only the active week's grid is in the DOM at once — keeps the day/add/remove controls unambiguous
+    // (one set on screen) and avoids duplicating a whole phase's grid per week.
+    el.innerHTML = tabsHtml + `<div class="bw-week" id="phase-week-${ph.id}" data-phase="${ph.id}">${renderPhaseWeekGrid(fullPhase, active, byWeek[active] || [])}</div>`
   }
+}
+
+// Switch the visible week within a phase on the builder. Re-renders just the active week's grid from
+// the data cached by loadAllPhaseWorkouts (no refetch); the choice persists across later re-renders.
+function _selectBuilderWeek(phaseId, week) {
+  window._builderActiveWeek = window._builderActiveWeek || {}
+  window._builderActiveWeek[phaseId] = week
+  const d = window._builderWeekData?.[phaseId]
+  const container = document.getElementById('phase-week-' + phaseId)
+  if (d && container) container.innerHTML = renderPhaseWeekGrid(d.phase, week, d.byWeek[week] || [])
+  document.querySelectorAll(`.week-tab[data-phase="${phaseId}"]`).forEach(b => {
+    b.setAttribute('aria-selected', Number(b.dataset.week) === week)
+  })
 }
 
 // Every week (1, or any manually-duplicated/periodization-generated week beyond it) renders through
@@ -1629,34 +1658,68 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
   const byDay = {}
   sessions.forEach(pw => { (byDay[pw.day_of_week] = byDay[pw.day_of_week] || []).push(pw) })
 
-  return `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-      <div style="font-size:11px;font-weight:700;color:var(--accent)">WEEK ${weekNum}</div>
-      <div style="display:flex;gap:6px">
-        ${sessions.length ? `<button class="btn-secondary" style="font-size:11px;padding:3px 9px" onclick="duplicatePhaseWeek('${phase.id}',${weekNum})">Duplicate week</button>` : ''}
-        ${sessions.length ? `<button class="btn-secondary" style="font-size:11px;padding:3px 9px;color:#ef4444" onclick="deletePhaseWeek('${phase.id}',${weekNum})">Delete week</button>` : ''}
+  // A slotted workout: tap the head to reveal its exercises inline + Edit / Remove (no slider —
+  // matches the read Workouts page). Exercises come from the embed extended in loadAllPhaseWorkouts.
+  const slotHtml = (pw, multi) => {
+    const name = pw.workout_templates?.name || 'Unknown'
+    const exs = [...(pw.workout_templates?.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
+    const exHtml = exs.length
+      ? exs.map(ex => `<div class="pwk-ex"><span>${escapeHtml(ex.exercise_name)}</span><span class="s">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span></div>`).join('')
+      : '<div class="pwk-ex" style="color:var(--text-muted)">No exercises yet</div>'
+    return `<div class="pwk-slot">
+      <div class="pwk-slot-head" role="button" tabindex="0" onclick="_toggleBuilderSlot('${pw.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();_toggleBuilderSlot('${pw.id}')}">
+        ${pw.tier ? `<span class="pwk-tier" style="color:${tierColor[pw.tier]}">${pw.tier[0].toUpperCase()}</span>` : ''}
+        ${multi ? `<span class="pwk-ampm">${pw.session_order === 2 ? 'PM' : 'AM'}</span>` : ''}
+        <span class="pwk-slot-name">${escapeHtml(name)}</span>
+        <svg id="pwk-chev-${pw.id}" class="pwk-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
+      <div class="pwk-slot-body" id="pwk-body-${pw.id}" style="display:none">
+        ${exHtml}
+        <div class="pwk-slot-actions">
+          <button class="pwk-act edit" onclick="_editPhaseWorkout('${pw.template_id}','${pw.id}')">✎ Edit workout</button>
+          <button class="pwk-act remove" onclick="removePhaseWorkout('${pw.id}','${phase.id}')">✕ Remove</button>
+        </div>
+        <button class="pwk-act" style="width:100%;margin-top:6px;color:var(--text-muted)" onclick="saveTemplateToLibrary('${pw.template_id}',this)" title="Make this workout reusable in any program">Save to Library</button>
+      </div>
+    </div>`
+  }
+
+  return `
+    <div class="pwk-weekhead">
+      ${sessions.length ? `<button class="btn-secondary" style="font-size:11px;padding:3px 9px" onclick="duplicatePhaseWeek('${phase.id}',${weekNum})">Duplicate week</button>` : ''}
+      ${sessions.length ? `<button class="btn-secondary" style="font-size:11px;padding:3px 9px;color:#ef4444" onclick="deletePhaseWeek('${phase.id}',${weekNum})">Delete week</button>` : ''}
     </div>
-    <div style="display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:4px;-webkit-overflow-scrolling:touch">
+    <div class="pwk-days">
       ${dayLabels.map((label, i) => {
         const dayNum = i + 1
         const daySessions = (byDay[dayNum] || []).sort((a, b) => a.session_order - b.session_order)
+        const multi = daySessions.length > 1
         const canAdd = daySessions.length < 2
         const nextSessionOrder = daySessions.length + 1
-        return `<div style="flex:0 0 132px;scroll-snap-align:start;background:var(--surface-2);border-radius:10px;padding:8px">
-          <div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:6px">${label}</div>
-          ${daySessions.map(pw => `
-            <div style="display:flex;align-items:center;gap:4px;background:var(--surface);border-radius:6px;padding:5px 6px;margin-bottom:4px">
-              ${pw.tier ? `<span style="font-size:8px;font-weight:700;color:${tierColor[pw.tier]};flex-shrink:0">${pw.tier[0].toUpperCase()}</span>` : ''}
-              ${daySessions.length > 1 ? `<span style="font-size:8px;font-weight:700;color:var(--accent);flex-shrink:0">${pw.session_order===2?'PM':'AM'}</span>` : ''}
-              <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openSessionDetail('${pw.template_id}','${escapeAttr((pw.workout_templates?.name || 'Session'))}',{backLabel:'Back to program',backFn:()=>openProgram('${window._openProgramId}'),programId:'${window._openProgramId}',phaseWorkoutId:'${pw.id}'})">${escapeHtml(pw.workout_templates?.name || 'Unknown')}</span>
-              <button onclick="removePhaseWorkout('${pw.id}','${phase.id}')" style="font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0;flex-shrink:0">✕</button>
-            </div>`).join('')}
-          ${canAdd ? `
-            <button class="btn-secondary pwg-add" style="font-size:11px;padding:6px;width:100%;min-height:44px" data-phase="${phase.id}" data-day="${dayNum}" data-session="${nextSessionOrder}" data-week="${weekNum}" onclick="_openWorkoutPicker('${phase.id}',${dayNum},${nextSessionOrder},${weekNum})">+ Add workout…</button>` : ''}
+        return `<div class="pwk-day">
+          <div class="pwk-dow">${label}</div>
+          ${daySessions.map(pw => slotHtml(pw, multi)).join('')}
+          ${canAdd ? `<button class="pwk-add pwg-add" data-phase="${phase.id}" data-day="${dayNum}" data-session="${nextSessionOrder}" data-week="${weekNum}" onclick="_openWorkoutPicker('${phase.id}',${dayNum},${nextSessionOrder},${weekNum})">+ Add workout…</button>` : ''}
         </div>`
       }).join('')}
     </div>`
+}
+
+// Expand/collapse a builder workout slot to preview its exercises + Edit/Remove actions.
+function _toggleBuilderSlot(pwId) {
+  const body = document.getElementById('pwk-body-' + pwId)
+  const chev = document.getElementById('pwk-chev-' + pwId)
+  if (!body) return
+  const open = body.style.display !== 'none'
+  body.style.display = open ? 'none' : 'block'
+  if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)'
+}
+
+// Edit a program-slotted workout: hand off to the full template editor with the program back-context —
+// the same ctx the session-detail slider used to pass, so the propagate-to-clients prompt still fires on save.
+function _editPhaseWorkout(templateId, phaseWorkoutId) {
+  const programId = window._openProgramId
+  openTemplate(templateId, { backLabel: 'Back to program', backFn: () => openProgram(programId), programId, phaseWorkoutId })
 }
 
 // Copies a week's day→workout assignments into the next empty week slot (up to the phase's
@@ -1729,6 +1792,9 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
     : `Week ${sourceWeek} duplicated to Week ${targetWeek}`, 'success')
   // Full re-render (not just loadAllPhaseWorkouts) — when the phase was extended, its duration and
   // the program's "N weeks total" header both changed, and only openProgram redraws those.
+  // Land on the week we just created (the tab render reads this on reload).
+  window._builderActiveWeek = window._builderActiveWeek || {}
+  window._builderActiveWeek[phaseId] = targetWeek
   if (extendedTo && window._openProgramId) openProgram(window._openProgramId)
   else loadAllPhaseWorkouts([{ id: phaseId }])
 }
