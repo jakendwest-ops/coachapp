@@ -107,11 +107,19 @@ update workout_log_exercises      set metric_type = 'jump_height'
 update workout_log_exercises      set metric_type = 'jump_distance'
   where metric_type = 'weight_reps' and exercise_name ~* '(broad|standing *long|horizontal|long) *jump';
 
--- Cardio-name backfill for the canonical `exercises` table only (it has no exercise_type to lean on).
-update exercises set metric_type = 'cardio'
-  where metric_type = 'weight_reps'
-    and name ~* '(row(ing)?|run(ning)?|treadmill|bike|cycl|skierg|ski *erg|erg|swim|elliptical|assault|echo *bike|jog|sprint)';
+-- NOTE: deliberately NO cardio name-pattern backfill for the canonical `exercises` library.
+-- The library metric_type is only a DEFAULT (the authoritative per-use value is denormalized onto the
+-- template/log rows above, backfilled accurately from exercise_type). Name-pattern cardio detection here
+-- is trap-laden — substrings misclassify real strength lifts as cardio ("Row", "Crunch"→run, "Bicycle"→
+-- cycl) — and the fix-forward guard makes a wrong guess sticky. Library cardio items stay at the
+-- weight_reps default and are set correctly when the exercise is used/edited in the builder (sub-project
+-- ②). False-negative-safe by design; a wrong guess would be worse than none. (Jake's call, 2026-07-18.)
 ```
+
+> **Task-1 review fix (2026-07-18):** the original plan draft included a cardio name-pattern backfill on
+> the `exercises` library that the task review flagged as Critical — bare `row`/`run`/`cycl` substrings
+> misclassify seeded strength lifts (Bent-Over Barbell Row, Seated Cable Row, Cable Crunch) as cardio,
+> made sticky by the fix-forward guard. Jake chose to drop it entirely rather than narrow it.
 
 - [ ] **Step 2: Run the script through the sql-safety skill**
 
