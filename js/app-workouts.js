@@ -1025,20 +1025,26 @@ function toggleTsSet(i, prop, containerId) {
   flushTemplateSets(containerId)
   window._templateSets[i][prop] = !window._templateSets[i][prop]
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
-  renderTemplateSets(containerId, document.getElementById(tid)?.value || 'strength')
+  renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
 
 function setTsEffort(i, type, containerId) {
   flushTemplateSets(containerId)
   window._templateSets[i].effortType = type
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
-  renderTemplateSets(containerId, document.getElementById(tid)?.value || 'strength')
+  renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
 
 function renderTemplateSets(containerId, type) {
   const container = document.getElementById(containerId)
   if (!container) return
+  // type is a metric_type value (weight_reps/unilateral/timed_hold/cardio/jump_height/jump_distance).
+  // Any unrecognised/legacy value (e.g. old 'strength' rows not yet resaved) falls into the
+  // weight_reps/unilateral bucket below, matching the picker's own default-selected logic.
   const isCardio = type === 'cardio'
+  const isTimedHold = type === 'timed_hold'
+  const isJump = type === 'jump_height' || type === 'jump_distance'
+  const showSetToggles = type === 'weight_reps' || type === 'unilateral'
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
   const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f4f6"><span style="font-size:13px;font-weight:600;color:#374151">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
   const mini = (id, opts='') => `<input id="${id}" class="field-input" style="width:60px;padding:5px 8px;font-size:13px;text-align:center" ${opts}>`
@@ -1054,14 +1060,12 @@ function renderTemplateSets(containerId, type) {
           ${i > 0 ? `<button type="button" onclick="copyPrevTemplateSet(${i},'${containerId}','${tid}')" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">Copy set ${i} ↑</button>` : ''}
         </div>
         <div style="display:flex;gap:4px">
-          ${!isCardio ? `
+          ${showSetToggles ? `
             ${tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`)}
-            ${tog('⟺ Uni', s.unilateral, `toggleTsSet(${i},'unilateral','${containerId}')`)}
-            ${tog('⏱ Timed', s.timed, `toggleTsSet(${i},'timed','${containerId}')`)}
             ${tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`)}
             ${tog('Assist', s.assisted, `toggleTsSet(${i},'assisted','${containerId}')`)}
           ` : ''}
-          <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'strength')" style="width:26px;height:26px;border-radius:6px;border:1px solid #d1d5db;background:transparent;color:#9ca3af;cursor:pointer;font-size:15px;line-height:1">×</button>
+          <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid #d1d5db;background:transparent;color:#9ca3af;cursor:pointer;font-size:15px;line-height:1">×</button>
         </div>
       </div>
       ${isCardio ? `
@@ -1082,10 +1086,15 @@ function renderTemplateSets(containerId, type) {
         ${row('Pace / km', mini(`ts-pkmmin-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMin||'0:00'}"`) + dash + mini(`ts-pkmmax-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMax||'0:00'}"`))}
         ${row('Rest HR max (BPM)', mini(`ts-resthr-${i}`, 'type="number" placeholder="e.g. 150"'+(s.restHrMax ? ` value="${s.restHrMax}"` : '')))}
         ${row('Stroke rate (spm)', mini(`ts-srmin-${i}`, 'type="number" placeholder="—"'+(s.strokeRateMin?` value="${s.strokeRateMin}"`:'')) + dash + mini(`ts-srmax-${i}`, 'type="number" placeholder="—"'+(s.strokeRateMax?` value="${s.strokeRateMax}"`:'')))}
+      ` : isTimedHold ? `
+        ${row('Duration (mm:ss)', mini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.duration||'0:00'}"`))}
+        ${row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
+        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
+        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
+      ` : isJump ? `
+        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
       ` : `
-        ${s.timed
-          ? row('Duration (mm:ss)', mini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.duration||'0:00'}"`))
-          : row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
+        ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
         ${s.bodyweight ? '' : row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
         ${s.assisted ? row('Assist weight (kg)', mini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${s.assistWeight}"`:''))): ''}
         ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${s.intensityMin}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${s.intensityMax}"`:'')))}
@@ -1096,7 +1105,7 @@ function renderTemplateSets(containerId, type) {
       `}
     </div>`
   }).join('') + `
-  <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.push({effortType:'rpe'});renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'strength')" style="margin-top:6px;font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Add set</button>`
+  <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.push({effortType:'rpe'});renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="margin-top:6px;font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Add set</button>`
 }
 
 function copyPrevTemplateSet(i, containerId, tid) {
@@ -1105,7 +1114,7 @@ function copyPrevTemplateSet(i, containerId, tid) {
   if (i < 1 || i >= sets.length) return
   const prev = { ...sets[i - 1] }
   sets[i] = prev
-  renderTemplateSets(containerId, document.getElementById(tid)?.value || 'strength')
+  renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
 
 // runnerCtx = { mode: 'add'|'swap' } — set when opened from the workout runner's
@@ -1149,13 +1158,13 @@ async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
   _addExerciseModalPending = false
   if (isRunner) _setExercisePickerButtonsDisabled(false)
   _openExercisePicker(coachId, picked => {
-    _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked })
+    _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, existingType: picked.metric_type || 'weight_reps' })
   })
 }
 
 // Step 2 of add/swap/edit — sets/reps/notes screen, shown once an exercise has been picked.
 // Shared by the workout builder (add + edit) and the runner swap/add modal.
-function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingTexId = null, existingSets = null, existingType = 'strength', existingNotes = '', existingSuperset = '' }) {
+function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingTexId = null, existingSets = null, existingType = 'weight_reps', existingNotes = '', existingSuperset = '' }) {
   const isRunner = !!runnerCtx
   const title = editingTexId ? `Edit: ${picked.name}` : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap exercise' : 'Add exercise') : 'Add exercise')
   const confirmLabel = editingTexId ? 'Save' : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap' : 'Add') : 'Add exercise')
@@ -1190,8 +1199,12 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
       <div class="field">
         <label class="field-label">Type</label>
         <select class="field-input" id="att-type" onchange="flushTemplateSets('att-sets-container');renderTemplateSets('att-sets-container',this.value)">
-          <option value="strength" ${existingType !== 'cardio' ? 'selected' : ''}>Strength</option>
-          <option value="cardio" ${existingType === 'cardio' ? 'selected' : ''}>Cardio</option>
+          <option value="weight_reps"   ${existingType === 'weight_reps'   || (existingType !== 'cardio' && existingType !== 'unilateral' && existingType !== 'timed_hold' && existingType !== 'jump_height' && existingType !== 'jump_distance') ? 'selected' : ''}>Weight &amp; reps</option>
+          <option value="unilateral"    ${existingType === 'unilateral'    ? 'selected' : ''}>Unilateral (per side)</option>
+          <option value="timed_hold"    ${existingType === 'timed_hold'    ? 'selected' : ''}>Timed hold</option>
+          <option value="cardio"        ${existingType === 'cardio'        ? 'selected' : ''}>Cardio</option>
+          <option value="jump_height"   ${existingType === 'jump_height'   ? 'selected' : ''}>Jump height</option>
+          <option value="jump_distance" ${existingType === 'jump_distance' ? 'selected' : ''}>Jump distance</option>
         </select>
       </div>
 
@@ -1226,7 +1239,7 @@ function _reopenExercisePickerFromDetail() {
   if (!ctx) return
   const modalId = ctx.editingTexId ? 'edit-tex-modal' : 'add-to-template-modal'
   flushTemplateSets('att-sets-container')
-  const currentType = document.getElementById('att-type')?.value || 'strength'
+  const currentType = document.getElementById('att-type')?.value || 'weight_reps'
   const currentNotes = document.getElementById('att-notes')?.value || ''
   const currentSuperset = document.getElementById('att-superset')?.value || ''
   const currentSets = window._templateSets
@@ -1306,7 +1319,7 @@ async function _openExercisePicker(coachId, onPick) {
     _syncExercisePickerHeight()
     window.visualViewport.addEventListener('resize', _syncExercisePickerHeight)
   }
-  const { data } = await db.from('exercises').select('id, name, muscle_group, is_archived').eq('coach_id', coachId).eq('is_personal', currentProfile?.role === 'solo').order('name')
+  const { data } = await db.from('exercises').select('id, name, muscle_group, is_archived, metric_type').eq('coach_id', coachId).eq('is_personal', currentProfile?.role === 'solo').order('name')
   if (!_exercisePickerState) return // closed before the fetch resolved
   _exercisePickerState.allExercises = data || []
   // Re-render using whatever is CURRENTLY typed, not '' — the user may have already started
@@ -1328,7 +1341,7 @@ function _renderExercisePickerResults(query) {
   // inline handler for any name with an apostrophe (e.g. "Farmer's Carry"). Keep escapeHtml()
   // only for the separately-rendered visible text.
   const jsArg = escapeAttr   // was a local JS-escape that left `"` live — a " closes the HTML attribute
-  const rowHtml = e => `<div onclick="_pickExercise('${e.id}','${jsArg(e.name)}')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px">${escapeHtml(e.name)}${e.muscle_group ? `<span style="color:var(--text-muted);font-size:12px"> · ${escapeHtml(e.muscle_group)}</span>` : ''}</div>`
+  const rowHtml = e => `<div onclick="_pickExercise('${e.id}','${jsArg(e.name)}','${e.metric_type || 'weight_reps'}')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px">${escapeHtml(e.name)}${e.muscle_group ? `<span style="color:var(--text-muted);font-size:12px"> · ${escapeHtml(e.muscle_group)}</span>` : ''}</div>`
   const createRow = query.trim() ? `<div onclick="_createExerciseFromPicker('${jsArg(query.trim())}')" style="padding:12px;border:1.5px dashed var(--accent);border-radius:10px;background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:12px">+ Create new exercise: "${escapeHtml(query.trim())}"</div>` : ''
   resultsEl.innerHTML = `
     ${createRow}
@@ -1346,10 +1359,10 @@ function _toggleArchivedExercisePicks() {
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none'
 }
 
-function _pickExercise(id, name) {
+function _pickExercise(id, name, metricType) {
   const cb = _exercisePickerState?.onPick
   _closeExercisePicker()
-  if (cb) cb({ id, name })
+  if (cb) cb({ id, name, metric_type: metricType || 'weight_reps' })
 }
 
 let _createExerciseFromPickerPending = false
@@ -1446,7 +1459,7 @@ async function showEditTemplateExerciseModal(templateExId, templateId) {
     picked: { id: ex.exercise_id || null, name: ex.exercise_name },
     editingTexId: templateExId,
     existingSets: ex.sets_json?.length ? ex.sets_json : (ex.sets ? Array.from({ length: ex.sets }, () => ({})) : [{}]),
-    existingType: ex.exercise_type || 'strength',
+    existingType: ex.metric_type || (ex.exercise_type === 'cardio' ? 'cardio' : 'weight_reps'),
     existingNotes: ex.notes || '',
     existingSuperset: ex.superset_group || ''
   })
