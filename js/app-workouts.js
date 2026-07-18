@@ -1395,6 +1395,25 @@ function _closeExercisePicker() {
   if (window.visualViewport) window.visualViewport.removeEventListener('resize', _syncExercisePickerHeight)
 }
 
+// metric_type is the single source of truth chosen in the builder. Derive the legacy exercise_type and
+// the per-set unilateral/timed flags from it so the current runner (which still reads sets_json flags)
+// keeps working until sub-project ②c switches it to read metric_type directly.
+function _deriveFromMetricType(metricType) {
+  return {
+    exercise_type: metricType === 'cardio' ? 'cardio' : 'strength',
+    unilateral: metricType === 'unilateral',
+    timed: metricType === 'timed_hold'
+  }
+}
+
+// Fire-and-forget: remember the chosen metric_type on the library exercise so the picker defaults to it
+// next time. A convenience default, not correctness-critical — never block the modal close on it.
+function _rememberExerciseMetricType(libId, metricType) {
+  if (!libId) return
+  db.from('exercises').update({ metric_type: metricType }).eq('id', libId)
+    .then(({ error }) => { if (error) log.error('_rememberExerciseMetricType', 'update failed', error) })
+}
+
 async function saveExerciseToTemplate(templateId) {
   flushTemplateSets('att-sets-container')
   const picked = window._exerciseDetailPicked
@@ -1402,6 +1421,8 @@ async function saveExerciseToTemplate(templateId) {
   if (!picked?.name) { errorEl.textContent = 'Exercise name is required'; return }
   const name = picked.name
   const exerciseId = picked.id || null
+  const metricType = document.getElementById('att-type').value || 'weight_reps'
+  const derived = _deriveFromMetricType(metricType)
   const { templateId: targetId } = await _resolveEditableTemplateId(templateId)
   log.info('saveExerciseToTemplate', 'adding exercise to template', { templateId: targetId, name })
 
@@ -1416,7 +1437,7 @@ async function saveExerciseToTemplate(templateId) {
   const sets = window._templateSets || []
 
   const cleanSets = sets.map(s => ({
-    amrap: !!s.amrap, unilateral: !!s.unilateral, timed: !!s.timed,
+    amrap: !!s.amrap, unilateral: derived.unilateral, timed: derived.timed,
     bodyweight: !!s.bodyweight, assisted: !!s.assisted, assistWeight: s.assistWeight||null,
     repsMin: s.repsMin||null, repsMax: s.repsMax||null, weight: s.weight||null,
     intensityMin: s.intensityMin||null, intensityMax: s.intensityMax||null,
@@ -1429,7 +1450,8 @@ async function saveExerciseToTemplate(templateId) {
     template_id:   targetId,
     exercise_id:   exerciseId || null,
     exercise_name: name,
-    exercise_type: document.getElementById('att-type').value,
+    exercise_type: derived.exercise_type,
+    metric_type:   metricType,
     order_index:   nextOrder,
     sets:           cleanSets.length || null,
     sets_json:      cleanSets.length ? cleanSets : null,
@@ -1439,10 +1461,11 @@ async function saveExerciseToTemplate(templateId) {
 
   if (error) { log.error('saveExerciseToTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
   log.ok('saveExerciseToTemplate', 'exercise added to template', { templateId: targetId, name })
+  _rememberExerciseMetricType(exerciseId, metricType)
   closeModal('add-to-template-modal')
   window._lastExerciseChange = { op: 'add', matchName: name, row: {
     exercise_id: exerciseId || null, exercise_name: name,
-    exercise_type: document.getElementById('att-type').value,
+    exercise_type: derived.exercise_type, metric_type: metricType,
     sets: cleanSets.length || null, sets_json: cleanSets.length ? cleanSets : null,
     notes: document.getElementById('att-notes').value.trim() || null,
     superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
@@ -1472,6 +1495,10 @@ async function saveEditTemplateExercise(texId, templateId) {
   if (!picked?.name) { errorEl.textContent = 'Name is required'; return }
   const sets = window._templateSets || []
 
+  const metricType = document.getElementById('att-type').value || 'weight_reps'
+  const derived = _deriveFromMetricType(metricType)
+  // metric_type is the single source of truth; keep each set's legacy flags in sync with it.
+  sets.forEach(s => { s.unilateral = derived.unilateral; s.timed = derived.timed })
   const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
   // Capture the ORIGINAL name before the update — propagation matches the changed exercise by name
   // across other sessions (Jake's choice, 2026-07-12), and a rename must still find the old row.
@@ -1479,7 +1506,8 @@ async function saveEditTemplateExercise(texId, templateId) {
   const newRow = {
     exercise_id:    picked.id || null,
     exercise_name: picked.name,
-    exercise_type: document.getElementById('att-type').value,
+    exercise_type: derived.exercise_type,
+    metric_type:   metricType,
     sets:           sets.length || null,
     sets_json:      sets.length ? sets : null,
     notes:          document.getElementById('att-notes').value.trim() || null,
@@ -1489,6 +1517,7 @@ async function saveEditTemplateExercise(texId, templateId) {
   const { error } = await db.from('workout_template_exercises').update(newRow).eq('id', targetExId)
   if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
   log.ok('saveEditTemplateExercise', 'template exercise updated', { texId: targetExId })
+  _rememberExerciseMetricType(picked.id || null, metricType)
   closeModal('edit-tex-modal')
   window._lastExerciseChange = { op: 'update', matchName: origRow?.exercise_name || picked.name, row: newRow }
   _checkClientPlanPropagation(targetId)
