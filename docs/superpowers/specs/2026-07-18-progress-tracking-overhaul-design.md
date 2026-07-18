@@ -51,13 +51,21 @@ Each exercise declares a `metric_type` that determines what the runner logs and 
 |---|---|---|
 | `weight_reps` | WEIGHT · REPS · (RPE) · ✓ | Top weight · Est 1RM (Epley) · Volume · expandable set-by-set |
 | `unilateral` | L row: WEIGHT · REPS · ✓ / R row: WEIGHT · REPS · ✓ | dual L/R lines (imbalance) · volume per side |
-| `amrap` | REPS · ✓ (target time as the row label) | reps over time |
 | `timed_hold` | TIME · (WEIGHT) · ✓ | duration over time (+ load if any) |
 | `jump_height` | HEIGHT (cm) · ✓ | best height per session |
 | `jump_distance` | DISTANCE (m) · ✓ | best distance per session |
 | `cardio` | TIME · DISTANCE · (AVG HR · MAX HR) · ✓ | distance · duration · pace · avg HR |
 
 Body metrics logged outside a workout: bodyweight (exists) + resting HR (new).
+
+**Revision (2026-07-18, during ②a planning): 6 intrinsic metric_types, not 7 — AMRAP is a per-set flag,
+not a metric_type.** metric_type means "what kind of exercise is this" — intrinsic and uniform across all
+sets (a plank is always timed; a split squat always unilateral). AMRAP ("last set to failure") is genuine
+per-set *intent* and what it tracks is just reps — the same metric as `weight_reps` — so it stays a per-set
+flag on `weight_reps`/`unilateral` sets (as do `bodyweight` and `assisted`), and charts as reps-over-time.
+The `'amrap'` value remains in the ① DB CHECK constraint but is unused (harmless). The builder's
+metric_type picker therefore offers 6 options and replaces both the old Strength/Cardio dropdown and the
+per-set Uni/Timed toggles.
 
 ## Build order — four sequenced sub-projects
 
