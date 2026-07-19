@@ -1437,55 +1437,8 @@ function _renderPerfExerciseList(query) {
   })
 }
 
-async function renderProgressCardio(el) {
-  el.innerHTML = '<div class="loading-state">Loading cardio data…</div>'
-  const clientId = await _getCurrentClientId()
-  if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
-  const client = { id: clientId }
-  const { data: exRows } = await db.from('workout_log_exercises')
-    .select('exercise_name, workout_logs!inner(date, client_id), workout_log_sets(distance_m, duration_seconds)')
-    .eq('workout_logs.client_id', client.id).eq('exercise_type', 'cardio').order('exercise_name')
-  if (!exRows?.length) { el.innerHTML = '<div class="empty-state"><p>Cardio progress populates automatically from your logged workout sessions. Complete a session with cardio sets and it will appear here.</p></div>'; return }
-  const byExercise = {}
-  for (const row of exRows) {
-    const name = row.exercise_name; if (!name) continue
-    if (!byExercise[name]) byExercise[name] = []
-    const totalDist = (row.workout_log_sets||[]).reduce((s,set)=>s+(parseFloat(set.distance_m)||0),0)
-    const totalSecs = (row.workout_log_sets||[]).reduce((s,set)=>s+(parseInt(set.duration_seconds)||0),0)
-    if (totalDist > 0 || totalSecs > 0)
-      byExercise[name].push({ date: row.workout_logs.date, dist: totalDist/1000, secs: totalSecs })
-  }
-  const exercises = Object.entries(byExercise).filter(([,pts])=>pts.length>0)
-    .map(([name, pts]) => ({ name, pts: pts.sort((a,b)=>new Date(a.date)-new Date(b.date)) }))
-  if (!exercises.length) { el.innerHTML = '<div class="empty-state"><p>No cardio data yet.</p></div>'; return }
-  el.innerHTML = exercises.map((ex, i) => {
-    const usesDist = ex.pts.some(p => p.dist > 0)
-    const best = usesDist ? Math.max(...ex.pts.map(p=>p.dist)).toFixed(1)+' km' : fmtRestCountdown(Math.max(...ex.pts.map(p=>p.secs)))
-    return `
-    <div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
-      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${escapeHtml(ex.name)}</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Best: ${best} · ${ex.pts.length} session${ex.pts.length===1?'':'s'}</div>
-      <div style="position:relative;height:80px"><canvas id="pc-chart-${i}" style="width:100%;height:100%"></canvas></div>
-    </div>`}).join('')
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
-  const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
-  exercises.forEach((ex, i) => {
-    const canvas = document.getElementById(`pc-chart-${i}`)
-    if (!canvas || ex.pts.length < 2) return
-    const usesDist = ex.pts.some(p => p.dist > 0)
-    new Chart(canvas.getContext('2d'), {
-      type: 'line',
-      data: { labels: ex.pts.map(p => new Date(p.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
-              datasets: [{ data: ex.pts.map(p => usesDist ? p.dist : p.secs/60), borderColor: accent, borderWidth: 2,
-                pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
-      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
-        plugins: { legend: { display: false } },
-        scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
-                  y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 },
-                    callback: v => usesDist ? v+'km' : v+'min' } } } }
-    })
-  })
-}
+// renderProgressCardio removed 2026-07-19 (B5): cardio now has a proper metric_type trend card in
+// the Per-exercise view; the standalone "Cardio bests" section it fed is gone from Personal Bests.
 
 // 2026-07-08 restructure: Personal Bests now also hosts the 1RMs and Cardio bests sections that
 // used to be their own separate places (a standalone Cardio tab, a Performance > 1RMs sub-tab) —
@@ -1555,11 +1508,8 @@ async function renderProgressPBs(el) {
     ${addPBBtn}
     ${pbListHtml}
     <div id="pb-1rms-section" style="margin-top:28px"></div>
-    <div style="margin-top:28px;margin-bottom:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Cardio bests</div>
-    <div id="pb-cardio-section"></div>
   `
   await renderClient1RMs(clientId, document.getElementById('pb-1rms-section'))
-  await renderProgressCardio(document.getElementById('pb-cardio-section'))
 }
 
 async function renderSettings(el) {

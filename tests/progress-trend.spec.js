@@ -1,5 +1,16 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, loginAsClient } = require('./helpers')
+
+// B5 — the standalone "Cardio bests" section is removed from Personal Bests (cardio now has its own
+// metric_type trend card in Per-exercise). The 1RMs section stays.
+test('Personal Bests no longer renders a Cardio-bests section (B5)', async ({ page }) => {
+  await loginAsClient(page)
+  await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
+  await page.waitForTimeout(1200)
+  expect(await page.locator('#pb-1rms-section').count()).toBe(1)      // 1RMs stays
+  expect(await page.locator('#pb-cardio-section').count()).toBe(0)    // cardio-bests gone
+  expect(await page.getByText('Cardio bests', { exact: true }).count()).toBe(0)
+})
 
 // Sub-project ③ — metric_type-aware progress trends. Pure helpers are unit-tested here (same
 // lightweight in-page evaluate pattern the existing progress.spec.js regression tests use).
