@@ -59,4 +59,25 @@ async function loginAsPT2(page) {
   )
 }
 
-module.exports = { loginAsPT, loginAsClient, loginAsPT2 }
+// Log one set in the runner's fast table. Since sub-project ②c, every strength metric_type
+// (weight_reps/unilateral/timed_hold/jump_height/jump_distance) logs via the fast table, not the wizard —
+// so tests that used to drive `#wr-weight-input` + the LOG button now fill the row inputs and tick the ✓.
+// Jumps to the first table-mode exercise, fills row 0 (weight optional — skipped for bodyweight/jump/timed
+// rows that have no weight input), and marks it complete. Returns false if no table-mode exercise exists.
+async function logTableSet(page, { weight = '60', reps = '10' } = {}) {
+  const found = await page.evaluate(() => {
+    const idx = _runner.exercises.findIndex(e => typeof _isPlainStrengthExercise === 'function' && _isPlainStrengthExercise(e))
+    if (idx === -1) return false
+    runnerJumpTo(idx)
+    return true
+  })
+  if (!found) return false
+  const kg = page.locator('#workout-runner input[oninput*="tableRows[0].weight"]')
+  const rp = page.locator('#workout-runner input[oninput*="tableRows[0].reps"]')
+  if (await kg.count() > 0) await kg.fill(String(weight))
+  if (await rp.count() > 0) await rp.fill(String(reps))
+  await page.locator('#workout-runner button[onclick="toggleTableSet(0)"]').click()
+  return true
+}
+
+module.exports = { loginAsPT, loginAsClient, loginAsPT2, logTableSet }

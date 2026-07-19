@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient } = require('./helpers')
+const { loginAsPT, loginAsClient, logTableSet } = require('./helpers')
 
 // Drives the exercise picker (2026-07-06): type a name, tap "Create new exercise", land on
 // the sets/reps screen with that exercise locked in. Shared by every add/swap test below.
@@ -200,23 +200,31 @@ test.describe('Timed set render regression', () => {
     expect(result).not.toContain('1:')
   })
 
-  test('%1RM exercises now route to the strength table, not the wizard (Runner Phase 2 — %1RM only, 2026-07-05)', async ({ page }) => {
-    const result = await page.evaluate(() => {
-      const pctExercise = { type: 'strength', sets_json: [{ intensityMin: 20, intensityMax: 20 }] }
-      const timedExercise = { type: 'strength', sets_json: [{ timed: true }] }
-      const uniExercise = { type: 'strength', sets_json: [{ unilateral: true }] }
-      const plainExercise = { type: 'strength', sets_json: [{ repsMin: '5' }] }
-      return {
-        pctIsTable: _isPlainStrengthExercise(pctExercise),
-        timedIsTable: _isPlainStrengthExercise(timedExercise),
-        uniIsTable: _isPlainStrengthExercise(uniExercise),
-        plainIsTable: _isPlainStrengthExercise(plainExercise),
-      }
-    })
-    expect(result.pctIsTable).toBe(true)   // the fix — %1RM now gets the table
-    expect(result.timedIsTable).toBe(false) // unchanged — still wizard
-    expect(result.uniIsTable).toBe(false)   // unchanged — still wizard
-    expect(result.plainIsTable).toBe(true)  // unchanged — plain strength always table
+  test('every strength metric_type routes to the fast table; only cardio stays on the wizard (②c, 2026-07-18)', async ({ page }) => {
+    // ②c: the fast table is now metric_type-driven. weight_reps/unilateral/timed_hold/jump_height/
+    // jump_distance all log in the table; only cardio falls to the wizard. _exMetricType derives the
+    // type from legacy flags for rows that predate ②a, so flag-only fixtures still route correctly.
+    const result = await page.evaluate(() => ({
+      pct:      _isPlainStrengthExercise({ type: 'strength', metricType: 'weight_reps', sets_json: [{ intensityMin: 20, intensityMax: 20 }] }),
+      plain:    _isPlainStrengthExercise({ type: 'strength', metricType: 'weight_reps', sets_json: [{ repsMin: '5' }] }),
+      timed:    _isPlainStrengthExercise({ type: 'strength', metricType: 'timed_hold' }),
+      uni:      _isPlainStrengthExercise({ type: 'strength', metricType: 'unilateral' }),
+      jumpH:    _isPlainStrengthExercise({ type: 'strength', metricType: 'jump_height' }),
+      jumpD:    _isPlainStrengthExercise({ type: 'strength', metricType: 'jump_distance' }),
+      // legacy flag-only fixtures (no metricType) still derive correctly
+      timedLegacy: _isPlainStrengthExercise({ type: 'strength', sets_json: [{ timed: true }] }),
+      uniLegacy:   _isPlainStrengthExercise({ type: 'strength', sets_json: [{ unilateral: true }] }),
+      cardio:   _isPlainStrengthExercise({ type: 'cardio', metricType: 'cardio', sets_json: [{ duration: '1:00' }] }),
+    }))
+    expect(result.pct).toBe(true)
+    expect(result.plain).toBe(true)
+    expect(result.timed).toBe(true)   // ②c: timed now uses the table (was wizard)
+    expect(result.uni).toBe(true)     // ②c: unilateral now uses the table (was wizard)
+    expect(result.jumpH).toBe(true)
+    expect(result.jumpD).toBe(true)
+    expect(result.timedLegacy).toBe(true) // derived from sets_json flag
+    expect(result.uniLegacy).toBe(true)
+    expect(result.cardio).toBe(false) // only cardio stays on the wizard
   })
 
   test('mobile log-session RPE field no longer repeats the header label (regression, 2026-07-05)', async ({ page }) => {
@@ -266,30 +274,23 @@ test.describe('Workout runner (client)', () => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    // Fill weight and reps
-    const weightInput = page.locator('#wr-weight-input')
-    const repsInput   = page.locator('#wr-reps-input')
-
-    if (await weightInput.isVisible()) await weightInput.fill('80')
-    if (await repsInput.isVisible())   await repsInput.fill('8')
-
-    await page.locator('button:has-text("LOG")').click()
+    // ②c: strength logs in the fast table (tick ✓), not the wizard.
+    const logged = await logTableSet(page, { weight: '80', reps: '8' })
+    if (!logged) return // template has no table-mode exercise — nothing to assert
 
     // Rest timer overlay should appear
     await expect(page.locator('#rest-timer-overlay')).toBeVisible({ timeout: 5000 })
   })
 
-  test('skip rest clears rest overlay and restores input fields', async ({ page }) => {
+  test('skip rest clears rest overlay and the table stays interactive', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    const weightInput = page.locator('#wr-weight-input')
-    const repsInput   = page.locator('#wr-reps-input')
-
-    if (await weightInput.isVisible()) await weightInput.fill('80')
-    if (await repsInput.isVisible())   await repsInput.fill('8')
-
-    await page.locator('button:has-text("LOG")').click()
+    // ②c: log via the fast table. The core design difference from the old wizard is that the table
+    // stays visible under the rest bar (never a blocking "Resting…" placeholder), so after Skip the
+    // table is immediately interactive again.
+    const logged = await logTableSet(page, { weight: '80', reps: '8' })
+    if (!logged) return
     await expect(page.locator('#rest-timer-overlay')).toBeVisible({ timeout: 5000 })
 
     // Skip rest
@@ -298,31 +299,17 @@ test.describe('Workout runner (client)', () => {
     // Rest overlay must be gone
     await expect(page.locator('#rest-timer-overlay')).not.toBeVisible({ timeout: 5000 })
 
-    // --- Regression guard: input fields must be visible again after skip ---
-    // "Resting — inputs available after rest" must NOT be showing
-    await expect(page.locator('text=Resting — inputs available after rest')).not.toBeVisible({ timeout: 3000 })
-
-    // The LOG button must be visible and enabled (not blocked by rest state)
-    await expect(page.locator('button:has-text("LOG")')).toBeVisible({ timeout: 3000 })
-
-    // Set counter should now show set 2 (or next exercise if target was 1 set)
-    const setTwoOrNext =
-      await page.locator('text=Set 2').isVisible().catch(() => false) ||
-      await page.locator('text=/Exercise \\d+/').isVisible().catch(() => false)
-    expect(setTwoOrNext).toBe(true)
+    // The table is still there and the first set now reads as completed (toggle can un-tick it).
+    await expect(page.locator('#workout-runner').getByText('Reps', { exact: true })).toBeVisible({ timeout: 3000 })
+    await expect(page.locator('#workout-runner button[onclick="toggleTableSet(0)"][aria-label="Mark set incomplete"]')).toBeVisible({ timeout: 3000 })
   })
 
   test('finish screen renders with Save workout button', async ({ page }) => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    // Log one set — scoped to #workout-runner to avoid matching the workouts-page
-    // Start/LOG buttons still in the DOM behind the runner overlay
-    const weightInput = page.locator('#wr-weight-input')
-    const repsInput   = page.locator('#wr-reps-input')
-    if (await weightInput.isVisible({ timeout: 5000 }).catch(() => false)) await weightInput.fill('80')
-    if (await repsInput.isVisible())   await repsInput.fill('8')
-    await page.locator('#workout-runner button:has-text("LOG")').click({ timeout: 8000 })
+    // Log one set via the fast table (②c), then trigger the finish screen.
+    await logTableSet(page, { weight: '80', reps: '8' })
     await page.waitForTimeout(300)
 
     // Skip rest timer, then trigger finish screen directly
@@ -414,12 +401,8 @@ test.describe('Workout runner (client)', () => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    // Log one set — scoped to #workout-runner to avoid the workouts-page buttons behind overlay
-    const weightInput = page.locator('#wr-weight-input')
-    const repsInput   = page.locator('#wr-reps-input')
-    if (await weightInput.isVisible({ timeout: 5000 }).catch(() => false)) await weightInput.fill('80')
-    if (await repsInput.isVisible())   await repsInput.fill('8')
-    await page.locator('#workout-runner button:has-text("LOG")').click({ timeout: 8000 })
+    // Log one set via the fast table (②c).
+    await logTableSet(page, { weight: '80', reps: '8' })
 
     // Skip rest timer so End button works cleanly
     await page.evaluate(() => { if (typeof skipRestTimer === 'function') skipRestTimer() })
@@ -528,10 +511,16 @@ test.describe('Workout runner (client)', () => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    // Force a non-table exercise so the wizard's editable logged-set list renders
+    // Force a CARDIO exercise so the wizard's editable logged-set list renders. Since ②c, cardio is the
+    // only metric_type that stays on the wizard (timed/unilateral/jump now log in the fast table, whose
+    // own row-delete is covered by the "strength table set row can be deleted" test below).
     await page.evaluate(() => {
-      _runner.exercises[_runner.exIdx].sets_json = [{ timed: true, duration: '0:30' }]
-      _runner.exercises[_runner.exIdx].loggedSets = [{ weight: '20', duration: '0:30' }]
+      const ex = _runner.exercises[_runner.exIdx]
+      ex.type = 'cardio'
+      ex.metricType = 'cardio'
+      ex.sets_json = [{ duration: '0:30' }]
+      ex.loggedSets = [{ duration: '0:30', distance: '1' }]
+      delete ex.tableRows
       renderRunner()
     })
     await expect(page.locator('button:has-text("✎ Edit")').first()).toBeVisible({ timeout: 5000 })
@@ -680,11 +669,7 @@ test.describe('Workout runner (client)', () => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    const weightInput = page.locator('#wr-weight-input')
-    const repsInput   = page.locator('#wr-reps-input')
-    if (await weightInput.isVisible({ timeout: 5000 }).catch(() => false)) await weightInput.fill('80')
-    if (await repsInput.isVisible())   await repsInput.fill('8')
-    await page.locator('#workout-runner button:has-text("LOG")').click({ timeout: 8000 })
+    await logTableSet(page, { weight: '80', reps: '8' })
     await page.waitForTimeout(300)
 
     const draft = await page.evaluate(() => {
@@ -810,11 +795,7 @@ test.describe('Workout runner (client)', () => {
     await page.locator('button:has-text("Start")').first().click()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
-    const weightInput = page.locator('#wr-weight-input')
-    const repsInput   = page.locator('#wr-reps-input')
-    if (await weightInput.isVisible({ timeout: 5000 }).catch(() => false)) await weightInput.fill('80')
-    if (await repsInput.isVisible())   await repsInput.fill('8')
-    await page.locator('#workout-runner button:has-text("LOG")').click({ timeout: 8000 })
+    await logTableSet(page, { weight: '80', reps: '8' })
     await page.waitForTimeout(300)
 
     const clientId = await page.evaluate(() => _runner.clientId)
