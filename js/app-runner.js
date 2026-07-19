@@ -282,6 +282,49 @@ function _isPlainStrengthExercise(ex) {
   return _METRIC_TABLE_TYPES.has(_exMetricType(ex))
 }
 
+// ── Workstream C — live "vs last session" totals for the current exercise ────────────────────────
+// SetGraph-informed (our flat style + wording). weight_reps only: _runner.lastSession stores just
+// weight/reps, and current loggedSets are {weight,reps} for this type. Returns null when not
+// applicable (no previous session, nothing logged this session yet, or a non-weight_reps type).
+function _runnerVsLast(ex) {
+  if (!ex || _exMetricType(ex) !== 'weight_reps') return null
+  const prev = _runner?.lastSession?.[ex.name]?.sets
+  const cur = ex.loggedSets || []
+  if (!prev?.length || !cur.length) return null
+  const num = v => parseFloat(v) || 0
+  const cv = { sets: cur.length, reps: cur.reduce((s, x) => s + (parseInt(x.reps) || 0), 0),
+    vol: cur.reduce((s, x) => s + num(x.weight) * (parseInt(x.reps) || 0), 0), top: Math.max(0, ...cur.map(x => num(x.weight))) }
+  const pv = { sets: prev.length, reps: prev.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0),
+    vol: prev.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0), top: Math.max(0, ...prev.map(x => num(x.weight_kg))) }
+  return { cur: cv, prev: pv, date: _runner.lastSession[ex.name].date }
+}
+
+function _renderRunnerVsLast(ex) {
+  const d = _runnerVsLast(ex)
+  if (!d) return ''
+  const dateStr = new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const chip = (label, cur, prev, unit) => {
+    const diff = cur - prev, flat = Math.abs(diff) < 0.005, up = diff > 0
+    const pct = prev ? Math.round(Math.abs(diff) / prev * 100) : null
+    const col = flat ? 'var(--text-muted)' : (up ? '#16a34a' : '#ef4444')
+    const delta = flat ? '—' : `${up ? '▲' : '▼'} ${up ? '+' : '−'}${Math.round(Math.abs(diff) * 10) / 10}${unit}${pct != null ? ` (${pct}%)` : ''}`
+    return `<div style="flex:1;min-width:0;text-align:center">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</div>
+      <div style="font-size:13px;font-weight:800">${Math.round(cur * 10) / 10}${unit}</div>
+      <div style="font-size:9px;font-weight:700;color:${col};white-space:nowrap">${delta}</div></div>`
+  }
+  return `
+    <div style="margin-bottom:12px;padding:10px 12px;border-radius:10px;background:var(--surface-2)">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">vs last session · ${dateStr}</div>
+      <div style="display:flex;gap:6px">
+        ${chip('Volume', d.cur.vol, d.prev.vol, 'kg')}
+        ${chip('Top', d.cur.top, d.prev.top, 'kg')}
+        ${chip('Reps', d.cur.reps, d.prev.reps, '')}
+        ${chip('Sets', d.cur.sets, d.prev.sets, '')}
+      </div>
+    </div>`
+}
+
 function _prevSetsByIndex(ex) {
   const sets = _runner?.lastSession?.[ex.name]?.sets
   const map = {}
@@ -624,6 +667,7 @@ function renderRunner() {
 
       <!-- Scrollable area: logged sets + PT note + client notes -->
       <div style="flex:1;overflow-y:auto;padding:12px 16px">
+        ${_renderRunnerVsLast(ex)}
         <!-- Logged sets -->
         ${isTable ? renderStrengthTable(ex) : !ex.loggedSets.length
           ? `<p style="color:var(--text-muted);font-size:13px;margin:0 0 8px">No sets logged yet.</p>`

@@ -76,6 +76,22 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     expect(r.cardioMain).toBe('5.0 km')
   })
 
+  test('runner vs-last-session totals (Workstream C)', async ({ page }) => {
+    await loginAsPT(page)
+    await page.waitForTimeout(500)
+    const r = await page.evaluate(() => {
+      _runner = { exIdx: 0, lastSession: { Bench: { date: '2026-07-01', sets: [{ weight_kg: 100, reps_achieved: 5 }, { weight_kg: 100, reps_achieved: 5 }] } } }
+      const ex = { name: 'Bench', metricType: 'weight_reps', loggedSets: [{ weight: '105', reps: '5' }, { weight: '105', reps: '5' }] }
+      return _runnerVsLast(ex)
+    })
+    expect(r.cur.vol).toBe(1050)
+    expect(r.prev.vol).toBe(1000)
+    expect(r.cur.top).toBe(105)
+    expect(r.prev.top).toBe(100)
+    expect(r.cur.reps).toBe(10)
+    expect(r.cur.sets).toBe(2)
+  })
+
   test('aggregation buckets a >40-point window instead of plotting every point', async ({ page }) => {
     await loginAsPT(page)
     const n = await page.evaluate(() => {
