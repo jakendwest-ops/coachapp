@@ -33,6 +33,25 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     expect(r.e1rm).toBe(120)                 // max Epley across the session's sets
   })
 
+  test('diary: set-details line + per-exercise metrics (B3)', async ({ page }) => {
+    await loginAsPT(page)
+    await page.waitForTimeout(500)
+    const r = await page.evaluate(() => {
+      const ex = { exercise_name: 'Squat', exercise_type: 'strength', metric_type: 'weight_reps',
+        workout_log_sets: [{ weight_kg: 105, reps_achieved: 10 }, { weight_kg: 110, reps_achieved: 10 }, { weight_kg: 120, reps_achieved: 8 }] }
+      const m = _diaryExMetrics(ex)
+      const cardio = _diaryExMetrics({ exercise_name: 'Row', exercise_type: 'cardio', metric_type: 'cardio',
+        workout_log_sets: [{ distance_m: 5000, duration_seconds: 1200 }] })
+      return { setLine: m.setLine, volume: m.sec.raw, top: m.main.raw, reps: m.reps, sets: m.sets, cardioMain: cardio.main.fmt }
+    })
+    expect(r.setLine).toBe('105×10, 110×10, 120×8')
+    expect(r.volume).toBe(105 * 10 + 110 * 10 + 120 * 8) // 3110
+    expect(r.top).toBe(120)
+    expect(r.reps).toBe(28)
+    expect(r.sets).toBe(3)
+    expect(r.cardioMain).toBe('5.0 km')
+  })
+
   test('aggregation buckets a >40-point window instead of plotting every point', async ({ page }) => {
     await loginAsPT(page)
     const n = await page.evaluate(() => {

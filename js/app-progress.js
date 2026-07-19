@@ -944,12 +944,14 @@ async function renderPerformance(el) {
   // 2026-07-08 restructure: was ['1RMs', 'Progressions'] — 1RMs moved into Personal Bests
   // (renderProgressPBs), and "Progressions" (endless flat list) split into a searchable
   // per-exercise view and a new per-session comparison view.
-  const subTab = window._perfTab || 'Per session'
-  if (subTab === '1RMs' || subTab === 'Progressions') window._perfTab = subTab = 'Per session'
+  // Per exercise is the progression tool and now the default; "Recent sessions" is the diary.
+  // Migrate any stored legacy tab value to the current pair.
+  let subTab = window._perfTab || 'Per exercise'
+  if (['1RMs', 'Progressions', 'Per session'].includes(subTab)) window._perfTab = subTab = subTab === 'Per session' ? 'Recent sessions' : 'Per exercise'
 
   el.innerHTML = `
     <div style="display:flex;gap:6px;margin-bottom:16px">
-      ${['Per session', 'Per exercise'].map(t => `
+      ${['Per exercise', 'Recent sessions'].map(t => `
         <button onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))"
           style="padding:6px 16px;border:none;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;
                  background:${t===subTab?'var(--accent)':'var(--surface-2)'};
@@ -961,7 +963,7 @@ async function renderPerformance(el) {
   `
 
   const subEl = document.getElementById('perf-sub-content')
-  if (subTab === 'Per session') {
+  if (subTab === 'Recent sessions') {
     await renderProgressPerSession(clientId, subEl)
   } else {
     await renderProgressStrength(subEl)
@@ -977,54 +979,95 @@ async function renderPerformance(el) {
 // switches Client/Personal view while this fetch is still in flight, the slower request's
 // now-stale result is discarded instead of overwriting the newer view's cache with the wrong
 // client's data.
+// ── B3 diary helpers (unit-tested) ──────────────────────────────────────────────────────────────
+// Compact per-set line, our format: "105×10, 110×8" (weight×reps), "L 20×10, R 18×10" (unilateral),
+// hold times, jump heights/distances.
+function _setDetailsLine(sets) {
+  const num = v => parseFloat(v) || 0
+  return (sets || []).map(x => {
+    if (x.side) return `${x.side[0].toUpperCase()} ${num(x.weight_kg) || 'BW'}×${x.reps_achieved || 0}`
+    if (x.height_cm) return `${num(x.height_cm)} cm`
+    if (x.duration_seconds && x.weight_kg == null) return fmtRestCountdown(parseInt(x.duration_seconds))
+    if (x.weight_kg != null && x.reps_achieved != null) return `${num(x.weight_kg)}×${x.reps_achieved}`
+    if (x.reps_achieved != null) return `${x.reps_achieved} rep`
+    if (x.distance_m) return `${num(x.distance_m)} m`
+    return ''
+  }).filter(Boolean).join(', ')
+}
+
+// One exercise-occurrence's metrics for the diary: a `main` value (top weight / cardio distance-or-time)
+// and a `sec` value (volume / cardio time), each with a raw number + display + delta-number formatter,
+// plus the set-details line and strength totals used for the per-workout summary.
+function _diaryExMetrics(ex) {
+  const sets = ex.workout_log_sets || []
+  const num = v => parseFloat(v) || 0
+  const mt = ex.metric_type || (ex.exercise_type === 'cardio' ? 'cardio' : 'weight_reps')
+  const setLine = _setDetailsLine(sets)
+  if (mt === 'cardio') {
+    const dist = sets.reduce((s, x) => s + num(x.distance_m), 0)
+    const dur  = sets.reduce((s, x) => s + (parseInt(x.duration_seconds) || 0), 0)
+    const useDist = dist > 0
+    return { mt, isCardio: true, setLine, sets: sets.length, reps: 0, volume: 0,
+      main: { raw: useDist ? dist : dur, fmt: useDist ? (dist / 1000).toFixed(1) + ' km' : fmtRestCountdown(dur),
+              fmtNum: useDist ? (v => (v / 1000).toFixed(1) + 'km') : (v => fmtRestCountdown(v)) },
+      sec:  useDist && dur > 0 ? { label: 'Time', raw: dur, fmt: fmtRestCountdown(dur), fmtNum: v => fmtRestCountdown(v) } : null }
+  }
+  const reps   = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
+  const volume = sets.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0)
+  const top    = Math.max(0, ...sets.map(x => num(x.weight_kg)))
+  return { mt, isCardio: false, setLine, sets: sets.length, reps, volume,
+    main: { raw: top, fmt: top + ' kg', fmtNum: v => v + 'kg' },
+    sec:  { label: 'Volume', raw: volume, fmt: Math.round(volume).toLocaleString() + ' kg', fmtNum: v => Math.round(v).toLocaleString() + 'kg' } }
+}
+
+// "▲ +X (+Y%)" / "▼ −X (−Y%)" delta vs previous occurrence — green up / red down, our wording.
+function _diaryDelta(cur, prev, fmtNum) {
+  if (prev == null) return ''
+  const d = cur - prev
+  if (Math.abs(d) < 0.005) return `<span style="color:var(--text-muted)">—</span>`
+  const up = d > 0, pct = prev !== 0 ? Math.round(Math.abs(d) / prev * 100) : null
+  return `<span style="color:${up ? '#16a34a' : '#ef4444'};font-weight:700">${up ? '▲' : '▼'} ${up ? '+' : '−'}${fmtNum(Math.abs(d))}${pct != null ? ` (${up ? '+' : '−'}${pct}%)` : ''}</span>`
+}
+
 let _perfSessionToken = 0
 async function renderProgressPerSession(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading sessions…</div>'
   const myToken = ++_perfSessionToken
-  // Any chart expanded on the previous render is about to be detached — destroy it first so it
-  // doesn't leak (mirrors the same fix applied to _renderPerfExerciseList below).
+  // Any chart expanded on the previous render is about to be detached — destroy it first so it doesn't leak.
   _perfSessionCharts.forEach(c => c.destroy())
   _perfSessionCharts = []
   const { data: sessions } = await db.from('workout_logs')
-    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds))')
-    .eq('client_id', clientId).order('date', { ascending: false }).limit(20)
+    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr))')
+    .eq('client_id', clientId).order('date', { ascending: false }).limit(10)
   if (myToken !== _perfSessionToken) return
-  if (!sessions?.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>'; return }
+  if (!sessions?.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet. Your recent workouts will show here.</p></div>'; return }
 
-  const valueFor = (ex) => {
-    const sets = ex.workout_log_sets || []
-    if (ex.exercise_type === 'cardio') {
-      const dist = sets.reduce((s, st) => s + (parseFloat(st.distance_m) || 0), 0)
-      const secs = sets.reduce((s, st) => s + (parseInt(st.duration_seconds) || 0), 0)
-      return dist > 0 ? { display: (dist / 1000).toFixed(1) + ' km', raw: dist } : { display: fmtRestCountdown(secs), raw: secs }
-    }
-    const maxW = Math.max(0, ...sets.map(st => parseFloat(st.weight_kg) || 0))
-    return { display: maxW + ' kg', raw: maxW }
-  }
-
-  // Chronological (ascending) per-exercise history, so any session's exercise can look up its
-  // own immediately-prior occurrence regardless of what else was logged in between.
+  // Chronological per-exercise history so any occurrence can find its own immediately-prior one.
   const history = {}
   ;[...sessions].reverse().forEach(s => {
     ;(s.workout_log_exercises || []).forEach(ex => {
       if (!ex.exercise_name) return
-      if (!history[ex.exercise_name]) history[ex.exercise_name] = []
-      history[ex.exercise_name].push({ date: s.date, ...valueFor(ex) })
+      ;(history[ex.exercise_name] ||= []).push({ date: s.date, m: _diaryExMetrics(ex) })
     })
   })
-
   window._perfSessionData = { sessions, history }
 
   el.innerHTML = sessions.map((s, i) => {
-    const exCount = (s.workout_log_exercises || []).length
+    const exs = (s.workout_log_exercises || []).filter(e => e.exercise_name)
+    const totals = exs.reduce((t, ex) => { const m = _diaryExMetrics(ex); t.sets += m.sets; t.reps += m.reps; t.vol += m.volume; return t }, { sets: 0, reps: 0, vol: 0 })
+    const tiles = [['Sets', totals.sets], ['Reps', totals.reps], ['Volume', Math.round(totals.vol).toLocaleString() + 'kg'], ['Exercises', exs.length]]
     return `
     <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden">
-      <button onclick="_togglePerfSession(${i})" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
-        <div>
+      <button onclick="_togglePerfSession(${i})" style="width:100%;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span style="font-size:13px;font-weight:700">${escapeHtml(s.name || 'Session')}</span>
-          <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${exCount} exercise${exCount !== 1 ? 's' : ''}</span>
+          <span style="font-size:12px;color:var(--text-muted)">${new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
         </div>
-        <span style="font-size:12px;color:var(--text-muted)">${new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+        <div style="display:flex;gap:6px">
+          ${tiles.map(([l, v]) => `<div style="flex:1;text-align:center;background:var(--surface);border-radius:8px;padding:6px 4px">
+            <div style="font-size:13px;font-weight:800;color:var(--accent)">${v}</div>
+            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${l}</div></div>`).join('')}
+        </div>
       </button>
       <div id="perf-sess-${i}" style="display:none;padding:6px 14px 12px"></div>
     </div>`
@@ -1048,19 +1091,20 @@ function _renderPerfSessionDetail(i) {
   const panel = document.getElementById(`perf-sess-${i}`)
   if (!s || !panel) return
   panel.innerHTML = (s.workout_log_exercises || []).filter(ex => ex.exercise_name).map((ex, ei) => {
+    const m = _diaryExMetrics(ex)
     const hist = history[ex.exercise_name] || []
     const idx = hist.findIndex(h => h.date === s.date)
-    const current = idx >= 0 ? hist[idx] : null
-    const previous = idx > 0 ? hist[idx - 1] : null
-    const diff = previous && current ? current.raw - previous.raw : null
-    const diffLabel = diff == null || diff === 0 ? '' : (diff > 0 ? ` (+${diff.toFixed(ex.exercise_type === 'cardio' ? 0 : 1)})` : ` (${diff.toFixed(ex.exercise_type === 'cardio' ? 0 : 1)})`)
+    const prev = idx > 0 ? hist[idx - 1].m : null
+    const mainDelta = prev ? _diaryDelta(m.main.raw, prev.main.raw, m.main.fmtNum) : (idx <= 0 ? '<span style="font-size:10px;color:var(--text-muted)">first time</span>' : '')
+    const secDelta  = (m.sec && prev && prev.sec) ? _diaryDelta(m.sec.raw, prev.sec.raw, m.sec.fmtNum) : ''
     return `
       <div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="_expandPerfSessionExercise(${i},${ei})">
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
           <span style="font-size:13px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
-          <span style="font-size:13px;font-weight:700">${current?.display || '—'}${diffLabel}</span>
+          <span style="font-size:13px;font-weight:700;white-space:nowrap">${m.main.fmt} ${mainDelta}</span>
         </div>
-        <div style="font-size:11px;color:var(--text-muted)">${previous ? `Previous: ${previous.display}` : 'First time logged'}</div>
+        ${m.setLine ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${m.setLine}</div>` : ''}
+        ${m.sec ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${m.sec.label} ${m.sec.fmt} ${secDelta}</div>` : ''}
         <div id="perf-sess-${i}-ex-${ei}-chart" style="display:none;position:relative;height:80px;margin-top:8px"></div>
       </div>`
   }).join('')
@@ -1086,7 +1130,7 @@ function _expandPerfSessionExercise(i, ei) {
   _perfSessionCharts.push(new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: { labels: hist.map(h => new Date(h.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
-            datasets: [{ data: hist.map(h => h.raw), borderColor: accent, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
+            datasets: [{ data: hist.map(h => h.m.main.raw), borderColor: accent, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
     options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
       plugins: { legend: { display: false } },
       scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
