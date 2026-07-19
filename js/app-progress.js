@@ -1195,78 +1195,205 @@ async function renderProgressWeight(el) {
   })
 }
 
-// "Per exercise" tab (Performance). Fetches once into window._perfExerciseCache so the search
-// box (2026-07-08) can re-filter/re-render on every keystroke without re-hitting the DB — same
-// reasoning as the exercise-picker's live-filter pattern (_renderExercisePickerResults,
-// app-workouts.js), just against a locally-cached list instead of the exercise library.
-// Token-guarded (same pattern as _oneRMRefreshToken, app-programs.js): if the master account
-// switches Client/Personal view while this fetch is still in flight, the slower request's
-// now-stale result is discarded instead of overwriting the newer view's cache with the wrong
-// client's data.
+// ── ③ metric_type-aware progress trends ─────────────────────────────────────────────────────────
+// Pure helpers (unit-tested). A logged exercise's metric_type is denormalized onto
+// workout_log_exercises (①); exercise_id is nullable, so series group by exercise_name, never a join.
+const _TREND_RANGES = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365, 'All': Infinity }
+
+function _epley1RM(weightKg, reps) {
+  const w = parseFloat(weightKg) || 0, r = parseInt(reps) || 0
+  return w > 0 && r > 0 ? w * (1 + r / 30) : 0
+}
+
+// One point per session, with only the keys relevant to the metric_type populated.
+function _metricPointsFor(ex) {
+  const points = (ex.sessions || []).map(sess => {
+    const sets = sess.sets || []
+    const num = (v) => parseFloat(v) || 0
+    const p = { date: sess.date }
+    switch (ex.metricType) {
+      case 'cardio': {
+        p.totalDistance = sets.reduce((s, x) => s + num(x.distance_m), 0)          // metres
+        p.totalDuration = sets.reduce((s, x) => s + (parseInt(x.duration_seconds) || 0), 0)
+        p.pace = p.totalDistance > 0 ? p.totalDuration / (p.totalDistance / 1000) : 0 // sec/km
+        const hrs = sets.map(x => parseInt(x.avg_hr)).filter(Boolean)
+        p.avgHr = hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : 0
+        break
+      }
+      case 'unilateral': {
+        const side = (sd) => sets.filter(x => x.side === sd)
+        p.leftTop  = Math.max(0, ...side('left').map(x => num(x.weight_kg)))
+        p.rightTop = Math.max(0, ...side('right').map(x => num(x.weight_kg)))
+        p.topWeight = Math.max(p.leftTop, p.rightTop)
+        break
+      }
+      case 'timed_hold':
+        p.maxDuration = Math.max(0, ...sets.map(x => parseInt(x.duration_seconds) || 0))
+        break
+      case 'jump_height':
+        p.bestHeight = Math.max(0, ...sets.map(x => num(x.height_cm)))
+        break
+      case 'jump_distance':
+        p.bestDistance = Math.max(0, ...sets.map(x => num(x.distance_m)))
+        break
+      default: { // weight_reps (and any unknown → treat as weight_reps)
+        p.topWeight = Math.max(0, ...sets.map(x => num(x.weight_kg)))
+        p.e1rm      = Math.max(0, ...sets.map(x => _epley1RM(x.weight_kg, x.reps_achieved)))
+        p.volume    = sets.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0)
+      }
+    }
+    return p
+  })
+  return { name: ex.name, metricType: ex.metricType, points }
+}
+
+// ISO-week key for weekly buckets; YYYY-MM for monthly.
+function _bucketKey(dateStr, mode) {
+  const d = new Date(dateStr)
+  if (mode === 'month') return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+  const onejan = new Date(d.getFullYear(), 0, 1)
+  const week = Math.ceil((((d - onejan) / 86400000) + onejan.getDay() + 1) / 7)
+  return d.getFullYear() + '-W' + String(week).padStart(2, '0')
+}
+
+// Raw points → [{label, value}] for one metricKey, bucketed for readability on long windows.
+// mode: 'max' for "best" metrics (top weight, e1RM, jump, hold), 'mean' for rate metrics (pace, HR).
+function _aggregateSeries(points, metricKey, mode) {
+  const vals = points.map(p => ({ date: p.date, v: p[metricKey] })).filter(p => p.v != null && !isNaN(p.v))
+  if (!vals.length) return []
+  const bucket = vals.length > 120 ? 'month' : vals.length > 40 ? 'week' : null
+  const fmt = (dateStr) => new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  if (!bucket) return vals.map(p => ({ label: fmt(p.date), value: p.v }))
+  const groups = {}
+  vals.forEach(p => { (groups[_bucketKey(p.date, bucket)] ||= []).push(p) })
+  return Object.entries(groups).sort(([a], [b]) => a < b ? -1 : 1).map(([, arr]) => {
+    const value = mode === 'mean'
+      ? arr.reduce((s, p) => s + p.v, 0) / arr.length
+      : Math.max(...arr.map(p => p.v))
+    return { label: fmt(arr[arr.length - 1].date), value: Math.round(value * 10) / 10 }
+  })
+}
+
+// "Per exercise" tab (Performance) — metric_type-aware trend cards (③). Fetches once into
+// window._trendCache so the search box, range selector and metric chips all re-render locally
+// without re-hitting the DB (same fetch-once/filter-locally reasoning as the exercise picker).
+// Token-guarded (like _oneRMRefreshToken): a mid-fetch Client/Personal switch can't paint the
+// wrong client's data. metric_type drives which chips/chart each card shows.
 let _perfExerciseToken = 0
 async function renderProgressStrength(el) {
   el.innerHTML = '<div class="loading-state">Loading exercise data…</div>'
   const myToken = ++_perfExerciseToken
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
-  const { data: exRows } = await db.from('workout_log_exercises')
-    .select('exercise_name, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved)')
-    .eq('workout_logs.client_id', clientId).eq('exercise_type', 'strength').order('exercise_name')
+  const exercises = await _buildExerciseSeries(clientId)
   if (myToken !== _perfExerciseToken) return
-  if (!exRows?.length) { el.innerHTML = '<div class="empty-state"><p>No strength sessions logged yet.</p></div>'; return }
-  const byExercise = {}
-  for (const row of exRows) {
-    const name = row.exercise_name; if (!name) continue
-    if (!byExercise[name]) byExercise[name] = []
-    const maxW = Math.max(...(row.workout_log_sets||[]).map(s => parseFloat(s.weight_kg)||0).filter(w=>w>0))
-    if (maxW > 0) byExercise[name].push({ date: row.workout_logs.date, weight: maxW })
-  }
-  // Already alphabetical — the query above orders by exercise_name.
-  const exercises = Object.entries(byExercise).filter(([,pts]) => pts.length > 0)
-    .map(([name, pts]) => ({ name, pts: pts.sort((a,b)=>new Date(a.date)-new Date(b.date)) }))
-  if (!exercises.length) { el.innerHTML = '<div class="empty-state"><p>No strength data yet.</p></div>'; return }
-  window._perfExerciseCache = exercises
+  if (!exercises.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>'; return }
+  window._trendCache = exercises
+  window._trendState = window._trendState || { range: 'All', metricByEx: {} }
   el.innerHTML = `
-    <input class="field-input" id="perf-ex-search" placeholder="Search exercises…" style="margin-bottom:14px" autocomplete="off" oninput="_renderPerfExerciseList(this.value)">
-    <div id="perf-ex-list"></div>
-  `
+    <input class="field-input" id="perf-ex-search" placeholder="Search exercises…" style="margin-bottom:12px" autocomplete="off" oninput="_renderPerfExerciseList(this.value)">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px" id="trend-range-row">
+      ${Object.keys(_TREND_RANGES).map(r => `
+        <button onclick="_setTrendRange('${r}')" data-range="${r}"
+          style="padding:5px 12px;border:none;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;
+                 background:${r===window._trendState.range?'var(--accent)':'var(--surface-2)'};
+                 color:${r===window._trendState.range?'#fff':'var(--text-muted)'}">${r}</button>`).join('')}
+    </div>
+    <div id="perf-ex-list"></div>`
   _renderPerfExerciseList('')
 }
 
-// Destroys the previous render's Chart.js instances before rebuilding — this fires on every
-// keystroke, so without this each keystroke would leak another full set of chart instances
-// bound to canvases that just got detached by the innerHTML rebuild below.
+async function _buildExerciseSeries(clientId) {
+  const { data: exRows } = await db.from('workout_log_exercises')
+    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side)')
+    .eq('workout_logs.client_id', clientId).order('exercise_name')
+  const byName = {}
+  for (const row of (exRows || [])) {
+    const name = row.exercise_name; if (!name) continue
+    ;(byName[name] ||= { name, metricType: row.metric_type || 'weight_reps', sessions: [] })
+      .sessions.push({ date: row.workout_logs.date, sets: row.workout_log_sets || [] })
+  }
+  return Object.values(byName)
+    .map(ex => { ex.sessions.sort((a, b) => new Date(a.date) - new Date(b.date)); return ex })
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function _setTrendRange(r) { window._trendState.range = r; renderProgressStrength(document.getElementById('perf-sub-content')) }
+function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = key; _renderPerfExerciseList(document.getElementById('perf-ex-search')?.value || '') }
+
+// Per-type chip config: [metricKey, label, aggMode, formatter]. Chips with all-zero data are dropped.
+// Types beyond weight_reps are added by ③ Tasks 2–3.
+const _TREND_METRICS = {
+  weight_reps: [['topWeight','Top weight','max',v=>v+'kg'], ['e1rm','Est 1RM','max',v=>Math.round(v)+'kg'], ['volume','Volume','max',v=>Math.round(v)+'kg']],
+}
+const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', unilateral:'Unilateral', timed_hold:'Timed', jump_height:'Jump', jump_distance:'Jump' }
+
+function _trendCardEmpty(ex) {
+  return `<div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px">${escapeHtml(ex.name)}</div>
+    <div style="font-size:11px;color:var(--text-muted)">Log another session to see a trend.</div></div>`
+}
+
+// Destroys the previous render's Chart.js instances before rebuilding — fires on every keystroke,
+// range change and metric-chip tap, so without this each would leak a full set of chart instances
+// bound to canvases the innerHTML rebuild below just detached.
 let _perfExerciseCharts = []
 function _renderPerfExerciseList(query) {
-  const listEl = document.getElementById('perf-ex-list')
-  if (!listEl) return
-  _perfExerciseCharts.forEach(c => c.destroy())
-  _perfExerciseCharts = []
+  const listEl = document.getElementById('perf-ex-list'); if (!listEl) return
+  _perfExerciseCharts.forEach(c => c.destroy()); _perfExerciseCharts = []
   const q = (query || '').trim().toLowerCase()
-  const exercises = (window._perfExerciseCache || []).filter(ex => !q || ex.name.toLowerCase().includes(q))
-  if (!exercises.length) { listEl.innerHTML = '<div class="empty-state"><p>No matching exercises.</p></div>'; return }
-  listEl.innerHTML = exercises.map((ex, i) => `
-    <div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
-      <div style="font-size:14px;font-weight:700;margin-bottom:8px">${escapeHtml(ex.name)}</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">
-        Best: ${Math.max(...ex.pts.map(p=>p.weight))} kg · ${ex.pts.length} session${ex.pts.length===1?'':'s'}
-      </div>
-      <div style="position:relative;height:80px"><canvas id="ps-chart-${i}" style="width:100%;height:100%"></canvas></div>
-    </div>`).join('')
+  const cutoffDays = _TREND_RANGES[window._trendState.range]
+  const cutoff = cutoffDays === Infinity ? 0 : Date.now() - cutoffDays * 86400000
+  const list = (window._trendCache || []).filter(ex => !q || ex.name.toLowerCase().includes(q))
+  if (!list.length) { listEl.innerHTML = '<div class="empty-state"><p>No matching exercises.</p></div>'; return }
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
   const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
-  exercises.forEach((ex, i) => {
-    const canvas = document.getElementById(`ps-chart-${i}`)
-    if (!canvas || ex.pts.length < 2) return
+
+  // Pass 1 — compute what each card shows (range-filtered points, visible metric chips, active chip).
+  const rendered = list.map((ex, i) => {
+    const pts = _metricPointsFor(ex).points.filter(p => new Date(p.date).getTime() >= cutoff)
+    const metrics = (_TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps)
+      .filter(([key]) => pts.some(p => (p[key] || 0) > 0))
+    if (!metrics.length) return { ex, i, empty: true }
+    const stored = window._trendState.metricByEx[ex.name]
+    const activeKey = stored && metrics.some(m => m[0] === stored) ? stored : metrics[0][0]
+    return { ex, i, pts, metrics, activeKey, active: metrics.find(m => m[0] === activeKey) }
+  })
+
+  // Pass 2 — build the HTML (canvases must exist before Chart.js can bind to them).
+  listEl.innerHTML = rendered.map(r => {
+    if (r.empty) return _trendCardEmpty(r.ex)
+    const best = Math.max(...r.pts.map(p => p[r.activeKey] || 0))
+    return `
+      <div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:14px;font-weight:700">${escapeHtml(r.ex.name)}</span>
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${_TREND_BADGE[r.ex.metricType]||'Strength'}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Best ${r.active[1].toLowerCase()}: ${r.active[3](best)} · ${r.pts.length} session${r.pts.length===1?'':'s'}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+          ${r.metrics.map(([key,label]) => `<button onclick="_setTrendMetric('${r.ex.name.replace(/'/g,"\\'")}','${key}')"
+            style="padding:4px 10px;border:none;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
+                   background:${key===r.activeKey?'var(--accent)':'var(--surface-2)'};color:${key===r.activeKey?'#fff':'var(--text-muted)'}">${label}</button>`).join('')}
+        </div>
+        <div style="position:relative;height:90px"><canvas id="ps-chart-${r.i}"></canvas></div>
+      </div>`
+  }).join('')
+
+  // Pass 3 — draw the charts.
+  rendered.forEach(r => {
+    if (r.empty) return
+    const canvas = document.getElementById(`ps-chart-${r.i}`); if (!canvas) return
+    const agg = _aggregateSeries(r.pts, r.activeKey, r.active[2])
+    if (agg.length < 2) return
     _perfExerciseCharts.push(new Chart(canvas.getContext('2d'), {
       type: 'line',
-      data: { labels: ex.pts.map(p => new Date(p.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
-              datasets: [{ data: ex.pts.map(p=>p.weight), borderColor: accent, borderWidth: 2,
-                pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
+      data: { labels: agg.map(a => a.label), datasets: [{ data: agg.map(a => a.value), borderColor: accent, borderWidth: 2,
+              pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
       options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
         plugins: { legend: { display: false } },
         scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
-                  y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 }, callback: v => v+'kg' } } } }
+                  y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 }, callback: v => r.active[3](v) } } } }
     }))
   })
 }
