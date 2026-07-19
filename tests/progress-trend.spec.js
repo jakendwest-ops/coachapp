@@ -43,7 +43,7 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     await loginAsPT(page)
     await page.waitForTimeout(500)
     const r = await page.evaluate(() => {
-      const e1 = _epley1RM(100, 5) // 100 * (1 + 5/30) = 116.67
+      const e1 = _epleyEst1RM(100, 5) // 100 * (1 + 5/30) = 116.67
       const p = _metricPointsFor({ name: 'Bench', metricType: 'weight_reps',
         sessions: [{ date: '2026-07-01', sets: [
           { weight_kg: 100, reps_achieved: 5 },   // Epley 116.7

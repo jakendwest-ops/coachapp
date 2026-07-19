@@ -1259,7 +1259,7 @@ async function renderProgressWeight(el) {
 // workout_log_exercises (①); exercise_id is nullable, so series group by exercise_name, never a join.
 const _TREND_RANGES = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365, 'All': Infinity }
 
-function _epley1RM(weightKg, reps) {
+function _epleyEst1RM(weightKg, reps) {
   const w = parseFloat(weightKg) || 0, r = parseInt(reps) || 0
   return w > 0 && r > 0 ? w * (1 + r / 30) : 0
 }
@@ -1297,7 +1297,7 @@ function _metricPointsFor(ex) {
         break
       default: { // weight_reps (and any unknown → treat as weight_reps)
         p.topWeight = Math.max(0, ...sets.map(x => num(x.weight_kg)))
-        p.e1rm      = Math.max(0, ...sets.map(x => _epley1RM(x.weight_kg, x.reps_achieved)))
+        p.e1rm      = Math.max(0, ...sets.map(x => _epleyEst1RM(x.weight_kg, x.reps_achieved)))
         p.volume    = sets.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0)
         const totalReps = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
         p.intensity = totalReps > 0 ? p.volume / totalReps : 0 // weighted avg weight per rep
@@ -1453,7 +1453,7 @@ function _exerciseRecords(ex) {
   const num = v => parseFloat(v) || 0
   const allSets = (ex.sessions || []).flatMap(s => s.sets || [])
   const heaviest = Math.max(0, ...allSets.map(s => num(s.weight_kg)))
-  const best1rm  = Math.max(0, ...allSets.map(s => _epley1RM(s.weight_kg, s.reps_achieved)))
+  const best1rm  = Math.max(0, ...allSets.map(s => _epleyEst1RM(s.weight_kg, s.reps_achieved)))
   let bestSet = null // the single set with the highest weight×reps
   for (const s of allSets) {
     const w = num(s.weight_kg), r = parseInt(s.reps_achieved) || 0
