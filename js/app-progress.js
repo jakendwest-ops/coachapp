@@ -1321,10 +1321,16 @@ async function _buildExerciseSeries(clientId) {
 function _setTrendRange(r) { window._trendState.range = r; renderProgressStrength(document.getElementById('perf-sub-content')) }
 function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = key; _renderPerfExerciseList(document.getElementById('perf-ex-search')?.value || '') }
 
-// Per-type chip config: [metricKey, label, aggMode, formatter]. Chips with all-zero data are dropped.
-// Types beyond weight_reps are added by ③ Tasks 2–3.
+// Per-type chip config: [metricKey, label, aggMode, formatter, lowerBetter?]. Chips with all-zero
+// data are dropped. lowerBetter=true (pace) makes the headline "best" a min, not a max.
 const _TREND_METRICS = {
   weight_reps: [['topWeight','Top weight','max',v=>v+'kg'], ['e1rm','Est 1RM','max',v=>Math.round(v)+'kg'], ['volume','Volume','max',v=>Math.round(v)+'kg']],
+  cardio: [
+    ['totalDistance','Distance','max', v => (v/1000).toFixed(1)+'km'],
+    ['totalDuration','Duration','max', v => fmtRestCountdown(v)],
+    ['pace','Pace','mean', v => fmtRestCountdown(v)+'/km', true],
+    ['avgHr','Avg HR','mean', v => Math.round(v)+' bpm'],
+  ],
 }
 const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', unilateral:'Unilateral', timed_hold:'Timed', jump_height:'Jump', jump_distance:'Jump' }
 
@@ -1333,7 +1339,20 @@ const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', unilateral:'Unil
 // ③ Tasks 2–3; weight_reps/unilateral compute weight/reps records now.
 function _exerciseRecords(ex) {
   const mt = ex.metricType
-  if (mt === 'cardio' || mt === 'timed_hold' || mt === 'jump_height' || mt === 'jump_distance') return []
+  if (mt === 'cardio') {
+    const pts = _metricPointsFor(ex).points
+    const dist = Math.max(0, ...pts.map(p => p.totalDistance || 0))
+    const dur  = Math.max(0, ...pts.map(p => p.totalDuration || 0))
+    const paces = pts.map(p => p.pace).filter(v => v > 0)       // lower = faster
+    const hrs   = pts.map(p => p.avgHr).filter(v => v > 0)
+    const rows = []
+    if (dist > 0)      rows.push(['Best distance', (dist / 1000).toFixed(1) + ' km'])
+    if (dur > 0)       rows.push(['Longest time', fmtRestCountdown(dur)])
+    if (paces.length)  rows.push(['Best pace', fmtRestCountdown(Math.min(...paces)) + '/km'])
+    if (hrs.length)    rows.push(['Avg HR', Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) + ' bpm'])
+    return rows
+  }
+  if (mt === 'timed_hold' || mt === 'jump_height' || mt === 'jump_distance') return [] // added in the uni/timed/jump task
   const num = v => parseFloat(v) || 0
   const allSets = (ex.sessions || []).flatMap(s => s.sets || [])
   const heaviest = Math.max(0, ...allSets.map(s => num(s.weight_kg)))
@@ -1401,7 +1420,8 @@ function _renderPerfExerciseList(query) {
   // Pass 2 — build the HTML (canvases must exist before Chart.js can bind to them).
   listEl.innerHTML = rendered.map(r => {
     if (r.empty) return _trendCardEmpty(r.ex)
-    const best = Math.max(...r.pts.map(p => p[r.activeKey] || 0))
+    const vals = r.pts.map(p => p[r.activeKey]).filter(v => v > 0)
+    const best = vals.length ? (r.active[4] ? Math.min(...vals) : Math.max(...vals)) : 0
     return `
       <div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">

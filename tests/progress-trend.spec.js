@@ -46,6 +46,29 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     expect(n).toBeGreaterThan(0)
   })
 
+  test('cardio: points (pace/avg-HR), chips, and records (B1)', async ({ page }) => {
+    await loginAsPT(page)
+    await page.waitForTimeout(500)
+    const r = await page.evaluate(() => {
+      const ex = { name: 'Row', metricType: 'cardio', sessions: [
+        { date: '2026-07-01', sets: [{ distance_m: 5000, duration_seconds: 1200, avg_hr: 150 }] }, // pace 240 s/km
+        { date: '2026-07-08', sets: [{ distance_m: 6000, duration_seconds: 1300, avg_hr: 140 }] }  // pace ~216.7
+      ] }
+      const pts = _metricPointsFor(ex).points
+      return {
+        pace0: Math.round(pts[0].pace), avgHr0: pts[0].avgHr,
+        chips: _TREND_METRICS.cardio.map(m => m[1]),
+        rec: Object.fromEntries(_exerciseRecords(ex))
+      }
+    })
+    expect(r.pace0).toBe(240)
+    expect(r.avgHr0).toBe(150)
+    expect(r.chips).toEqual(['Distance', 'Duration', 'Pace', 'Avg HR'])
+    expect(r.rec['Best distance']).toBe('6.0 km')
+    expect(r.rec['Avg HR']).toContain('bpm')
+    expect(r.rec['Best pace']).toContain('/km')
+  })
+
   test('personal records: heaviest, best 1RM, best set (weight×reps), best session volume', async ({ page }) => {
     await loginAsPT(page)
     await page.waitForTimeout(500)
