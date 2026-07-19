@@ -725,6 +725,19 @@ function renderRunner() {
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>`}
           </div>
+          <!-- Optional heart rate (sub-project ②d) — shown for both distance- and duration-based cardio -->
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <div style="flex:1">
+              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Avg HR (bpm) — optional</div>
+              <input id="wr-cardio-avg-hr" type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${tgt.hrZoneMin||''}" value="${lastCardio?.avgHr||''}"
+                style="width:100%;padding:10px 12px;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+            </div>
+            <div style="flex:1">
+              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Max HR (bpm) — optional</div>
+              <input id="wr-cardio-max-hr" type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="" value="${lastCardio?.maxHr||''}"
+                style="width:100%;padding:10px 12px;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+            </div>
+          </div>
           <!-- Buttons -->
           <div style="display:flex;gap:8px;margin-bottom:6px">
             ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
@@ -848,7 +861,9 @@ function logRunnerSet() {
       const dist = document.getElementById('wr-cardio-dist')?.value?.trim()
       if (!dist) return
       const paceEl = document.getElementById('wr-cardio-pace')
-      setData = { distance: dist, paceAchieved: paceEl?.value?.trim() || null }
+      setData = { distance: dist, paceAchieved: paceEl?.value?.trim() || null,
+                  avgHr: document.getElementById('wr-cardio-avg-hr')?.value?.trim() || null,
+                  maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null }
     } else {
       // If interval timer is running, compute elapsed time; otherwise read the manual input field
       let dur
@@ -862,7 +877,9 @@ function logRunnerSet() {
       // Overlay inputs take priority over runner-form inputs (interval overlay is still mounted here)
       const distEl = document.getElementById('wr-cardio-dist-opt')
       const paceEl = document.getElementById('wr-cardio-pace')
-      setData = { duration: dur, distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null }
+      setData = { duration: dur, distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null,
+                  avgHr: document.getElementById('wr-cardio-avg-hr')?.value?.trim() || null,
+                  maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null }
     }
     // stop any running interval timer
     stopIntervalTimer()
