@@ -57,6 +57,7 @@ async function saveClientWeight(clientId) {
   const weight = parseFloat(document.getElementById('cwf-weight').value)
   const bf     = document.getElementById('cwf-bf').value
   const notes  = document.getElementById('cwf-notes').value.trim()
+  const restingHr = document.getElementById('cwf-resting-hr')?.value
   const errorEl = document.getElementById('cwf-error')
 
   if (!date || isNaN(weight)) { errorEl.textContent = 'Date and weight are required.'; return }
@@ -65,6 +66,7 @@ async function saveClientWeight(clientId) {
   const row = { client_id: clientId, date, weight_kg: weight }
   if (bf)    row.body_fat_pct = parseFloat(bf)
   if (notes) row.notes = notes
+  if (restingHr) row.resting_hr = parseInt(restingHr)
 
   log.info('saveClientWeight', 'inserting', { clientId: row.client_id, date: row.date })
   const { error } = await db.from('weight_logs').insert(row)

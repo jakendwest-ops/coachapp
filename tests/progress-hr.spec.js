@@ -36,4 +36,30 @@ test.describe('Sub-project 2d — manual HR capture', () => {
     expect(set.avgHr).toBe('142')
     expect(set.maxHr).toBe('168')
   })
+
+  test('bodyweight log with resting HR round-trips to weight_logs', async ({ page }) => {
+    await loginAsPT(page)
+    await page.click('text=Personal') // solo — own weight_logs, no cross-tenant setup
+    await page.waitForTimeout(800)
+    // Render the Body Weight tab and open the log form (same pattern as progress.spec.js).
+    await page.evaluate(() => { window._progressTab = 'Body Weight'; renderProgress(document.getElementById('main-content')) })
+    await page.click('button:has-text("+ Log weight")')
+    await page.fill('#cwf-weight', '82.5')
+    await page.fill('#cwf-resting-hr', '58') // this input is exactly what ②d adds — RED before it exists
+
+    const row = await page.evaluate(async () => {
+      const clientId = await _getCurrentClientId()
+      await saveClientWeight(clientId)
+      const { data } = await db.from('weight_logs')
+        .select('id, weight_kg, resting_hr')
+        .eq('client_id', clientId).eq('resting_hr', 58)
+        .order('id', { ascending: false }).limit(1)
+      const r = data?.[0]
+      if (r) await db.from('weight_logs').delete().eq('id', r.id) // own-fixture cleanup (les-041)
+      return r
+    })
+
+    expect(row.resting_hr).toBe(58)
+    expect(Number(row.weight_kg)).toBe(82.5)
+  })
 })

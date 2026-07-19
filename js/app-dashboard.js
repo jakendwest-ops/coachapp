@@ -495,6 +495,12 @@ async function renderClientDashboard(el) {
               <input type="text" id="cwf-notes" class="form-input" placeholder="Any notes…">
             </div>
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <label class="form-label">Resting HR (bpm) <span style="color:var(--text-muted)">(optional)</span></label>
+              <input type="number" inputmode="numeric" id="cwf-resting-hr" class="form-input" placeholder="e.g. 58" step="1" min="20" max="250">
+            </div>
+          </div>
           <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
           <div style="display:flex;gap:8px">
             <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
@@ -777,6 +783,9 @@ async function renderSoloDashboard(el) {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
               <div><label class="form-label">Body fat % <span style="color:var(--text-muted)">(opt)</span></label><input type="number" id="cwf-bf" class="form-input" placeholder="e.g. 19.5" step="0.1"></div>
               <div><label class="form-label">Notes <span style="color:var(--text-muted)">(opt)</span></label><input type="text" id="cwf-notes" class="form-input" placeholder="Any notes…"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <div><label class="form-label">Resting HR (bpm) <span style="color:var(--text-muted)">(opt)</span></label><input type="number" inputmode="numeric" id="cwf-resting-hr" class="form-input" placeholder="e.g. 58" step="1" min="20" max="250"></div>
             </div>
             <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
             <div style="display:flex;gap:8px">
