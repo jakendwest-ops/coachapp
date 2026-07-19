@@ -132,25 +132,29 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('button', { hasText: /^Cardio$/ })).toHaveCount(0)
   })
 
-  test('Personal Bests tab mounts the 1RMs and Cardio-bests sections (folded in from their old standalone locations)', async ({ page }) => {
+  test('Personal Bests still mounts the 1RMs section (Cardio-bests removed 2026-07-19 — cardio now has its own trend card)', async ({ page }) => {
     await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(800)
     await expect(page.locator('#pb-1rms-section')).toBeAttached()
-    await expect(page.locator('#pb-cardio-section')).toBeAttached()
-    await expect(page.locator('text=Cardio bests')).toBeVisible()
+    await expect(page.locator('#pb-cardio-section')).toHaveCount(0)
+    await expect(page.locator('text=Cardio bests')).toHaveCount(0)
   })
 
-  test('Performance tab shows "Per session" / "Per exercise" sub-tabs, not the old "1RMs" / "Progressions"', async ({ page }) => {
-    await page.evaluate(() => { window._progressTab = 'Performance'; renderProgress(document.getElementById('main-content')) })
+  test('Performance tab shows "Per exercise" / "Recent sessions" sub-tabs (Per exercise default), not the old "1RMs" / "Progressions"', async ({ page }) => {
+    await page.evaluate(() => { window._perfTab = undefined; window._progressTab = 'Performance'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(800)
-    await expect(page.locator('button:has-text("Per session")')).toBeVisible()
     await expect(page.locator('button:has-text("Per exercise")')).toBeVisible()
-    await expect(page.locator('#perf-sub-content button:has-text("1RMs")')).toHaveCount(0)
+    await expect(page.locator('button:has-text("Recent sessions")')).toBeVisible()
+    await expect(page.locator('button:has-text("1RMs")')).toHaveCount(0)
   })
 
-  test('Performance > Per exercise search bar filters the exercise list without a DB re-fetch (regression-proof of the live-filter logic)', async ({ page }) => {
+  test('Performance > Per exercise search filters the trend-card list without a DB re-fetch (live-filter logic)', async ({ page }) => {
     const result = await page.evaluate(() => {
-      window._perfExerciseCache = [{ name: 'Back Squat', pts: [{ date: '2026-01-01', weight: 100 }] }, { name: 'Bench Press', pts: [{ date: '2026-01-01', weight: 60 }] }]
+      window._trendCache = [
+        { name: 'Back Squat', metricType: 'weight_reps', sessions: [{ date: '2026-01-01', sets: [{ weight_kg: 100, reps_achieved: 5 }] }] },
+        { name: 'Bench Press', metricType: 'weight_reps', sessions: [{ date: '2026-01-01', sets: [{ weight_kg: 60, reps_achieved: 5 }] }] }
+      ]
+      window._trendState = { range: 'All', metricByEx: {} }
       const div = document.createElement('div')
       div.id = 'perf-ex-list'
       document.body.appendChild(div)
