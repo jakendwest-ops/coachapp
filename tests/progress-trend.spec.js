@@ -90,6 +90,17 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     expect(r.prev.top).toBe(100)
     expect(r.cur.reps).toBe(10)
     expect(r.cur.sets).toBe(2)
+    expect(r.logged).toBe(true)
+
+    // Pre-log: the block still shows (last-session reference) the moment you reach the exercise.
+    const pre = await page.evaluate(() => {
+      _runner = { exIdx: 0, lastSession: { Bench: { date: '2026-07-01', sets: [{ weight_kg: 100, reps_achieved: 5 }] } } }
+      return _runnerVsLast({ name: 'Bench', metricType: 'weight_reps', loggedSets: [] })
+    })
+    expect(pre).not.toBeNull()
+    expect(pre.logged).toBe(false)
+    expect(pre.prev.top).toBe(100)
+    expect(pre.cur.sets).toBe(0)
   })
 
   test('aggregation buckets a >40-point window instead of plotting every point', async ({ page }) => {

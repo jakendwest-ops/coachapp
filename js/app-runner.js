@@ -289,14 +289,14 @@ function _isPlainStrengthExercise(ex) {
 function _runnerVsLast(ex) {
   if (!ex || _exMetricType(ex) !== 'weight_reps') return null
   const prev = _runner?.lastSession?.[ex.name]?.sets
+  if (!prev?.length) return null // needs a previous session to compare against; shows from the moment you reach the exercise
   const cur = ex.loggedSets || []
-  if (!prev?.length || !cur.length) return null
   const num = v => parseFloat(v) || 0
   const cv = { sets: cur.length, reps: cur.reduce((s, x) => s + (parseInt(x.reps) || 0), 0),
     vol: cur.reduce((s, x) => s + num(x.weight) * (parseInt(x.reps) || 0), 0), top: Math.max(0, ...cur.map(x => num(x.weight))) }
   const pv = { sets: prev.length, reps: prev.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0),
     vol: prev.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0), top: Math.max(0, ...prev.map(x => num(x.weight_kg))) }
-  return { cur: cv, prev: pv, date: _runner.lastSession[ex.name].date }
+  return { cur: cv, prev: pv, logged: cur.length > 0, date: _runner.lastSession[ex.name].date }
 }
 
 function _renderRunnerVsLast(ex) {
@@ -304,18 +304,26 @@ function _renderRunnerVsLast(ex) {
   if (!d) return ''
   const dateStr = new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   const chip = (label, cur, prev, unit) => {
-    const diff = cur - prev, flat = Math.abs(diff) < 0.005, up = diff > 0
-    const pct = prev ? Math.round(Math.abs(diff) / prev * 100) : null
-    const col = flat ? 'var(--text-muted)' : (up ? '#16a34a' : '#ef4444')
-    const delta = flat ? '—' : `${up ? '▲' : '▼'} ${up ? '+' : '−'}${Math.round(Math.abs(diff) * 10) / 10}${unit}${pct != null ? ` (${pct}%)` : ''}`
+    let bottom
+    if (!d.logged) {
+      // Before your first set this session: show last session's number as the target to beat.
+      bottom = `<span style="color:var(--text-muted)">last ${Math.round(prev * 10) / 10}${unit}</span>`
+    } else {
+      const diff = cur - prev, flat = Math.abs(diff) < 0.005, up = diff > 0
+      const pct = prev ? Math.round(Math.abs(diff) / prev * 100) : null
+      const col = flat ? 'var(--text-muted)' : (up ? '#16a34a' : '#ef4444')
+      bottom = flat ? `<span style="color:var(--text-muted)">—</span>`
+        : `<span style="color:${col}">${up ? '▲' : '▼'} ${up ? '+' : '−'}${Math.round(Math.abs(diff) * 10) / 10}${unit}${pct != null ? ` (${pct}%)` : ''}</span>`
+    }
     return `<div style="flex:1;min-width:0;text-align:center">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</div>
       <div style="font-size:13px;font-weight:800">${Math.round(cur * 10) / 10}${unit}</div>
-      <div style="font-size:9px;font-weight:700;color:${col};white-space:nowrap">${delta}</div></div>`
+      <div style="font-size:9px;font-weight:700;white-space:nowrap">${bottom}</div></div>`
   }
+  const heading = d.logged ? `vs last session · ${dateStr}` : `last session · ${dateStr} · beat it`
   return `
     <div style="margin-bottom:12px;padding:10px 12px;border-radius:10px;background:var(--surface-2)">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">vs last session · ${dateStr}</div>
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">${heading}</div>
       <div style="display:flex;gap:6px">
         ${chip('Volume', d.cur.vol, d.prev.vol, 'kg')}
         ${chip('Top', d.cur.top, d.prev.top, 'kg')}
