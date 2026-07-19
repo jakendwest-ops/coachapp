@@ -1143,7 +1143,7 @@ async function renderProgressWeight(el) {
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
   const [{ data: logs }, { data: clientRow }] = await Promise.all([
-    db.from('weight_logs').select('date, weight_kg, body_fat_pct').eq('client_id', clientId).order('date', { ascending: true }),
+    db.from('weight_logs').select('date, weight_kg, body_fat_pct, resting_hr').eq('client_id', clientId).order('date', { ascending: true }),
     db.from('clients').select('starting_weight_kg, goal_weight_kg').eq('id', clientId).single()
   ])
   const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
@@ -1215,6 +1215,9 @@ async function renderProgressWeight(el) {
           <span style="font-size:14px;font-weight:700">${l.weight_kg} kg${l.body_fat_pct ? ' · '+l.body_fat_pct+'% BF' : ''}</span>
         </div>`).join('')}
     </div>
+    ${(() => { const hr = logs.filter(l => l.resting_hr != null); if (hr.length < 2) return ''
+      return `<div style="margin-top:20px;margin-bottom:8px;font-size:13px;font-weight:600;color:var(--text)">Resting heart rate</div>
+        <div style="position:relative;height:160px"><canvas id="resting-hr-chart" style="width:100%;height:100%"></canvas></div>` })()}
   `
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
   const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
@@ -1237,6 +1240,18 @@ async function renderProgressWeight(el) {
       scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 9 }, maxRotation: 0 } },
                 y: { ...yRange, grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 9 }, stepSize: 0.5, callback: v => v + 'kg' } } } }
   })
+  const hrLogs = logs.filter(l => l.resting_hr != null)
+  if (hrLogs.length >= 2 && document.getElementById('resting-hr-chart')) {
+    new Chart(document.getElementById('resting-hr-chart').getContext('2d'), {
+      type: 'line',
+      data: { labels: hrLogs.map(l => new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+              datasets: [{ data: hrLogs.map(l => l.resting_hr), borderColor: accent, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 9 }, maxRotation: 0 } },
+                  y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 9 }, callback: v => v + ' bpm' } } } }
+    })
+  }
 }
 
 // ── ③ metric_type-aware progress trends ─────────────────────────────────────────────────────────

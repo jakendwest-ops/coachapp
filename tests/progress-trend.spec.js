@@ -1,6 +1,30 @@
 const { test, expect } = require('@playwright/test')
 const { loginAsPT, loginAsClient } = require('./helpers')
 
+// B4 — resting-HR trend chart appears on the Body Weight tab once ≥2 resting-HR entries exist.
+test('resting-HR trend chart shows on the Body tab with >=2 entries (B4)', async ({ page }) => {
+  await loginAsPT(page)
+  await page.click('text=Personal')
+  await page.waitForTimeout(1000)
+  await page.evaluate(async () => {
+    const cid = await _getCurrentClientId()
+    await db.from('weight_logs').insert([
+      { client_id: cid, date: '2027-03-01', weight_kg: 82, resting_hr: 60 },
+      { client_id: cid, date: '2027-03-08', weight_kg: 81.5, resting_hr: 57 }
+    ])
+  })
+  await page.reload()
+  await page.waitForTimeout(800)
+  await page.evaluate(() => { window._progressTab = 'Body Weight'; renderProgress(document.getElementById('main-content')) })
+  await page.waitForTimeout(1000)
+  const count = await page.locator('#resting-hr-chart').count()
+  await page.evaluate(async () => { // cleanup own fixture (future dates, no collision)
+    const cid = await _getCurrentClientId()
+    await db.from('weight_logs').delete().eq('client_id', cid).in('date', ['2027-03-01', '2027-03-08'])
+  })
+  expect(count).toBe(1)
+})
+
 // B5 — the standalone "Cardio bests" section is removed from Personal Bests (cardio now has its own
 // metric_type trend card in Per-exercise). The 1RMs section stays.
 test('Personal Bests no longer renders a Cardio-bests section (B5)', async ({ page }) => {
