@@ -263,12 +263,23 @@ function renderRunnerLastSession(exName) {
 // input; in real use it was noise rather than help. Deliberately deleted outright rather than
 // hidden behind a flag — nothing else referenced _calcPlateBreakdown/_updatePlateBreakdown.
 
+// The metric_types the fast logging table handles. Cardio stays on the wizard.
+const _METRIC_TABLE_TYPES = new Set(['weight_reps','unilateral','timed_hold','jump_height','jump_distance'])
+
+// Resolve an exercise's metric_type with a safe fallback for older drafts/rows that predate ②a/②b:
+// derive from the legacy type/flags so nothing silently drops onto the wrong path.
+function _exMetricType(ex) {
+  if (ex.metricType) return ex.metricType
+  if (ex.type === 'cardio') return 'cardio'
+  const s0 = ex.sets_json?.[0] || {}
+  if (s0.unilateral) return 'unilateral'
+  if (s0.timed) return 'timed_hold'
+  return 'weight_reps'
+}
+
 function _isPlainStrengthExercise(ex) {
-  if (!ex || ex.type === 'cardio' || !ex.sets_json?.length) return false
-  if (/carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)) return false
-  // %1RM exercises are allowed into the table — the target bar already computes the
-  // kg target from intensityMin/oneRM (_buildTargetCols), same as the wizard does.
-  return ex.sets_json.every(s => !s.timed && !s.unilateral)
+  if (!ex) return false
+  return _METRIC_TABLE_TYPES.has(_exMetricType(ex))
 }
 
 function _prevSetsByIndex(ex) {
@@ -278,23 +289,37 @@ function _prevSetsByIndex(ex) {
   return map
 }
 
+// Blank row shape for a fresh table set, per metric_type. Shared by _ensureTableRows (initial fill)
+// and addTableRow (appended set) so the shape literal isn't duplicated in two places.
+function _blankTableRow(ex) {
+  const mt = _exMetricType(ex)
+  if (mt === 'unilateral') return { leftWeight: ex.bodyweight ? 'BW' : '', leftReps: '', rightWeight: ex.bodyweight ? 'BW' : '', rightReps: '', done: false }
+  if (mt === 'timed_hold') return { duration: '', weight: ex.bodyweight ? 'BW' : '', done: false }
+  if (mt === 'jump_height') return { height_cm: '', done: false }
+  if (mt === 'jump_distance') return { distance_m: '', done: false }
+  return { weight: ex.bodyweight ? 'BW' : '', reps: '', done: false }
+}
+
 function _ensureTableRows(ex) {
   if (ex.tableRows) return
-  const n = ex.targetSets || ex.sets_json.length || 3
+  const n = ex.targetSets || ex.sets_json?.length || 3
   // Rows start EMPTY. Last session's numbers used to be pre-filled here (the Hevy-style "1-tap
   // repeat"), but a pre-filled value is indistinguishable from one you actually entered — you can
   // tick a set off without ever confirming the weight was right. They are now shown as grey ghost
   // text in the inputs instead (renderStrengthTable), so the reference is still there but nothing
   // is logged until you type it. Jake, 2026-07-11.
-  ex.tableRows = Array.from({ length: n }, () => ({
-    weight: ex.bodyweight ? 'BW' : '',
-    reps: '',
-    done: false
-  }))
+  ex.tableRows = Array.from({ length: n }, () => _blankTableRow(ex))
 }
 
 function _syncLoggedSetsFromTable(ex) {
-  ex.loggedSets = ex.tableRows.filter(r => r.done).map(r => ({ weight: r.weight || null, reps: r.reps }))
+  const mt = _exMetricType(ex)
+  ex.loggedSets = ex.tableRows.filter(r => r.done).map(r => {
+    if (mt === 'unilateral') return { leftWeight: r.leftWeight || null, leftReps: r.leftReps || null, rightWeight: r.rightWeight || null, rightReps: r.rightReps || null }
+    if (mt === 'timed_hold') return { duration: r.duration || null, weight: r.weight || null }
+    if (mt === 'jump_height') return { height_cm: r.height_cm || null }
+    if (mt === 'jump_distance') return { distance_m: r.distance_m || null }
+    return { weight: r.weight || null, reps: r.reps }
+  })
 }
 
 function toggleTableSet(rowIdx) {
@@ -302,16 +327,27 @@ function toggleTableSet(rowIdx) {
   const row = ex.tableRows?.[rowIdx]
   if (!row) return
   if (!row.done) {
-    // Require reps, same minimum as the wizard's LOG validation. Now that rows no longer pre-fill
-    // from last session (2026-07-11), an untouched row is empty — so this guard is hit routinely
-    // rather than never, and a silent no-op would read as a broken button to someone mid-set.
-    if (!row.reps) { showToast('Enter reps first', 'warn'); return }
-    // Weight too, for the same reason. Dropping the pre-fill made a weightless ticked set the easy
-    // path rather than an impossible one, and it degrades silently: _syncLoggedSetsFromTable turns
-    // '' into null, saveRunnerSession then omits weight_kg, and the set counts as 0 volume, is
-    // invisible to PB detection, and shows '—' as next session's ghost text. Grey ghost text reads
-    // like a value, so this is easy to do by accident.
-    if (!ex.bodyweight && !row.weight) { showToast('Enter weight first', 'warn'); return }
+    // Require the fields the metric_type actually logs — same minimum as the wizard's LOG
+    // validation. Now that rows no longer pre-fill from last session (2026-07-11), an untouched row
+    // is empty — so this guard is hit routinely rather than never, and a silent no-op would read as
+    // a broken button to someone mid-set. Dropping the pre-fill also made a weightless/valueless
+    // ticked set the easy path rather than an impossible one, and it degrades silently:
+    // _syncLoggedSetsFromTable turns '' into null, saveRunnerSession then omits the value, and the
+    // set is invisible to PB detection and shows '—' as next session's ghost text. Grey ghost text
+    // reads like a value, so this is easy to do by accident.
+    const mt = _exMetricType(ex)
+    if (mt === 'unilateral') {
+      if (!row.leftReps && !row.rightReps) { showToast('Enter reps first', 'warn'); return }
+    } else if (mt === 'timed_hold') {
+      if (!row.duration || row.duration === '0:00') { showToast('Enter a duration first', 'warn'); return }
+    } else if (mt === 'jump_height') {
+      if (!row.height_cm) { showToast('Enter a height first', 'warn'); return }
+    } else if (mt === 'jump_distance') {
+      if (!row.distance_m) { showToast('Enter a distance first', 'warn'); return }
+    } else {
+      if (!row.reps) { showToast('Enter reps first', 'warn'); return }
+      if (!ex.bodyweight && !row.weight) { showToast('Enter weight first', 'warn'); return }
+    }
     _unlockAudio()
     _unlockSpeech()
     row.done = true
@@ -331,11 +367,7 @@ function addTableRow() {
   // Empty for the same reason _ensureTableRows is: an appended set must not arrive pre-filled with
   // last session's numbers, or you can tick it off having never confirmed them. renderStrengthTable
   // computes ghost text per row index, so the reference still shows for appended rows too.
-  ex.tableRows.push({
-    weight: ex.bodyweight ? 'BW' : '',
-    reps: '',
-    done: false
-  })
+  ex.tableRows.push(_blankTableRow(ex))
   ex.targetSets = ex.tableRows.length
   renderRunner()
 }
@@ -1327,12 +1359,13 @@ async function _confirmRunnerExerciseFromModal(mode) {
   if (!picked?.name) { errorEl.textContent = 'Exercise name is required'; return }
   const name = picked.name
   const exerciseId = picked.id || null
-  const type = document.getElementById('att-type').value
+  const metricType = document.getElementById('att-type').value || 'weight_reps'
+  const type = metricType === 'cardio' ? 'cardio' : 'strength'
   const notes = document.getElementById('att-notes').value.trim() || null
   const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   const sets = window._templateSets || []
   const cleanSets = sets.map(s => ({
-    amrap: !!s.amrap, unilateral: !!s.unilateral, timed: !!s.timed,
+    amrap: !!s.amrap, unilateral: metricType === 'unilateral', timed: metricType === 'timed_hold',
     bodyweight: !!s.bodyweight, assisted: !!s.assisted, assistWeight: s.assistWeight||null,
     repsMin: s.repsMin||null, repsMax: s.repsMax||null, weight: s.weight||null,
     intensityMin: s.intensityMin||null, intensityMax: s.intensityMax||null,
@@ -1351,6 +1384,7 @@ async function _confirmRunnerExerciseFromModal(mode) {
     ex.name = name
     ex.exerciseId = exerciseId
     ex.type = type
+    ex.metricType = metricType
     ex.sets_json = cleanSets
     ex.targetSets = cleanSets.length || ex.targetSets
     ex.restSecs = restSecs
@@ -1365,7 +1399,7 @@ async function _confirmRunnerExerciseFromModal(mode) {
     renderRunner()
   } else {
     _runner.exercises.push({
-      name, exerciseId, type, targetSets: cleanSets.length || 3, targetReps: '', targetWeight: '',
+      name, exerciseId, type, metricType, targetSets: cleanSets.length || 3, targetReps: '', targetWeight: '',
       restSecs, loggedSets: [], bodyweight: !!cleanSets[0]?.bodyweight, assisted: !!cleanSets[0]?.assisted,
       supersetGroup, sets_json: cleanSets, notes, oneRM
     })
