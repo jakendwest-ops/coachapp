@@ -482,57 +482,105 @@ function renderStrengthTable(ex) {
     </div>`
   }
 
+  // ②c: the fast table adapts its columns to the exercise's metric_type. weight_reps is unchanged
+  // (regression-safe); unilateral/timed_hold/jump_height/jump_distance render their own inputs. Cardio
+  // never reaches here (it stays on the wizard, gated by _isPlainStrengthExercise).
+  const mt = _exMetricType(ex)
+  const showTargets = mt === 'weight_reps' || mt === 'unilateral' // %1RM/rep targets only apply to these
+  const inCell = (i, row, field, { mode = 'decimal', step = '', ph = '—', fmt = false } = {}) => {
+    const bind = fmt
+      ? `this.value=fmtRestInput(this.value);_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
+      : `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
+    return `<input type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${row[field] || ''}" placeholder="${ph}"
+      oninput="${bind}"
+      style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done ? 'var(--border)' : 'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
+  }
+  const inDone = (i, row) => `<button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}" style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:${row.done?'none':'2px solid #9ca3af'};font-size:18px;font-weight:800;cursor:pointer;background:${row.done?'var(--success)':'#fff'};color:${row.done?'#fff':'transparent'}">✓</button>`
+  const inDel = (i) => ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="height:44px;flex-shrink:0;padding:0 8px;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:11px;font-weight:700">Delete</button>` : ''
+  const inSetNum = (i, isCurrent) => `<span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text-muted)'};text-align:center">${i+1}</span>`
+
   const rows = ex.tableRows.map((row, i) => {
     const prev = prevMap[i]
-    // The row for the set you're currently on is highlighted so it's visually obvious which
-    // row the target bar above applies to — no separate caption text (Jake: "highlighted or
-    // stand out, not entered as text underneath — ugly UI").
+    // The row for the set you're currently on is highlighted so it's visually obvious which set the
+    // target bar above applies to (Jake: "highlighted, not entered as text underneath — ugly UI").
     const isCurrent = i === curIdx
-    // Ghost text = what you lifted for THIS set last time, sitting directly in the column it belongs
-    // to (weight under KG, reps under REPS) — which is what the old separate 54px PREVIOUS column
-    // was trying to convey while squashing both numbers into one cramped cell. Nothing is
-    // pre-filled: you have to type it, so a ticked set always reflects what you actually did.
-    // Falls back to the %1RM-derived target when there's no history for this set, so the input is
-    // never blank when the prescription is known. Jake, 2026-07-11.
+    const cardOpen = `<div style="padding:7px 6px;margin:0 -6px;border-radius:8px;border-bottom:1px solid var(--border);${isCurrent ? 'background:rgba(99,102,241,.08)' : ''}">`
+
+    if (mt === 'unilateral') {
+      // Two sub-rows per set (L then R) — keeps the table to two data columns on a 390px phone rather
+      // than cramming four. One ✓ logs the whole set; _syncLoggedSetsFromTable emits both sides.
+      const side = (label, wField, rField) => `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="width:14px;flex-shrink:0;font-size:11px;font-weight:800;color:var(--text-muted);text-align:center">${label}</span>
+        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, wField, { mode:'decimal', step:'0.5', ph:'kg' })}
+        ${inCell(i, row, rField, { mode:'numeric', ph:'reps' })}
+      </div>`
+      return `${cardOpen}<div style="display:flex;align-items:flex-start;gap:6px">
+        ${inSetNum(i, isCurrent)}
+        <div style="flex:1;min-width:0">${side('L','leftWeight','leftReps')}${side('R','rightWeight','rightReps')}</div>
+        ${inDone(i, row)}${inDel(i)}
+      </div></div>`
+    }
+
+    if (mt === 'timed_hold') {
+      return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
+        ${inSetNum(i, isCurrent)}
+        ${inCell(i, row, 'duration', { mode:'numeric', ph:'0:00', fmt:true })}
+        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:'kg' })}
+        ${inDone(i, row)}${inDel(i)}
+      </div></div>`
+    }
+
+    if (mt === 'jump_height' || mt === 'jump_distance') {
+      const f = mt === 'jump_height' ? 'height_cm' : 'distance_m'
+      const ph = mt === 'jump_height' ? 'cm' : 'm'
+      return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
+        ${inSetNum(i, isCurrent)}
+        ${inCell(i, row, f, { mode:'decimal', step:'0.01', ph })}
+        ${inDone(i, row)}${inDel(i)}
+      </div></div>`
+    }
+
+    // weight_reps (default) — behaviour unchanged incl. ghost placeholders (les 2026-07-11: no pre-fill).
     const rowTgt = ex.sets_json?.[i]
     const oneRMPlaceholder = (rowTgt?.intensityMin && ex.oneRM)
       ? _calcWeightFromPct(ex.oneRM, rowTgt.intensityMin) + (rowTgt.intensityMax && rowTgt.intensityMax !== rowTgt.intensityMin ? '–' + _calcWeightFromPct(ex.oneRM, rowTgt.intensityMax) : '')
       : ''
     const wPlaceholder = (prev?.weight_kg != null ? String(prev.weight_kg) : oneRMPlaceholder) || '—'
     const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || '—'
-    return `
-    <div style="padding:7px 6px;margin:0 -6px;border-radius:8px;border-bottom:1px solid var(--border);${isCurrent ? 'background:rgba(99,102,241,.08)' : ''}">
-      <div style="display:flex;align-items:center;gap:6px">
-        <span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text-muted)'};text-align:center">${i+1}</span>
+    return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
+        ${inSetNum(i, isCurrent)}
         ${ex.bodyweight
           ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>`
-          : `<input type="number" inputmode="decimal" step="0.5" value="${row.weight}" placeholder="${wPlaceholder}"
-              oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].weight=this.value"
-              style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
-        }
-        <input type="number" inputmode="numeric" value="${row.reps}" placeholder="${rPlaceholder}"
-          oninput="_runner.exercises[${_runner.exIdx}].tableRows[${i}].reps=this.value"
-          style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done?'var(--border)':'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-        <button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}"
-          style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:${row.done?'none':'2px solid #9ca3af'};font-size:18px;font-weight:800;cursor:pointer;background:${row.done?'var(--success)':'#fff'};color:${row.done?'#fff':'transparent'}">✓</button>
-        ${ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="height:44px;flex-shrink:0;padding:0 8px;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:11px;font-weight:700">Delete</button>` : ''}
-      </div>
-    </div>`
+          : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder })}
+        ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
+        ${inDone(i, row)}${inDel(i)}
+      </div></div>`
   }).join('')
 
+  const th = (label, w) => `<span style="${w ? `width:${w}` : 'flex:1'};text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</span>`
+  let header
+  if (mt === 'unilateral') {
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('L / R · kg × reps')}<span style="width:44px"></span></div>`
+  } else if (mt === 'timed_hold') {
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : 'Kg')}<span style="width:44px"></span></div>`
+  } else if (mt === 'jump_height') {
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Height (cm)')}<span style="width:44px"></span></div>`
+  } else if (mt === 'jump_distance') {
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}<span style="width:44px"></span></div>`
+  } else {
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Kg')}${th('Reps')}<span style="width:44px"></span></div>`
+  }
+  // Reps tally only makes sense for rep-based types.
+  const tally = (mt === 'weight_reps' || mt === 'unilateral') ? _renderRepsTallyHtml(ex) : ''
+
   return `
-    ${targetBar}
-    ${oneRMBanner}
+    ${showTargets ? targetBar : ''}
+    ${showTargets ? oneRMBanner : ''}
     ${restBar}
-    <div style="display:flex;gap:6px;padding:0 6px 6px">
-      <span style="width:22px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Set</span>
-      <span style="flex:1;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Kg</span>
-      <span style="flex:1;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Reps</span>
-      <span style="width:44px"></span>
-    </div>
+    ${header}
     ${rows}
     <button onclick="addTableRow()" style="width:100%;margin-top:8px;padding:8px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add set</button>
-    ${_renderRepsTallyHtml(ex)}
+    ${tally}
   `
 }
 
