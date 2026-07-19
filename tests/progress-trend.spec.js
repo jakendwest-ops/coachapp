@@ -35,6 +35,22 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     expect(n).toBeGreaterThan(0)
   })
 
+  test('personal records: heaviest, best 1RM, best set (weight×reps), best session volume', async ({ page }) => {
+    await loginAsPT(page)
+    await page.waitForTimeout(500)
+    const map = await page.evaluate(() => {
+      const ex = { name: 'Bench', metricType: 'weight_reps', sessions: [
+        { date: '2026-06-01', sets: [{ weight_kg: 100, reps_achieved: 5 }, { weight_kg: 90, reps_achieved: 10 }] }, // vol 1400
+        { date: '2026-07-01', sets: [{ weight_kg: 100, reps_achieved: 10 }, { weight_kg: 80, reps_achieved: 12 }] }  // vol 1960
+      ] }
+      return Object.fromEntries(_exerciseRecords(ex))
+    })
+    expect(map['Heaviest weight']).toBe('100 kg')
+    expect(map['Best est. 1RM']).toBe('133 kg')      // 100×10 → 133.3
+    expect(map['Best set']).toBe('100 kg × 10')       // max weight×reps set
+    expect(map['Best session vol']).toBe('1,960 kg')  // heavier of the two sessions
+  })
+
   test('Per-exercise view renders the range selector + a trend card for a logged session (smoke)', async ({ page }) => {
     await loginAsPT(page)
     await page.click('text=Personal') // solo — own data, cleaned up below

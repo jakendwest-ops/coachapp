@@ -1328,10 +1328,48 @@ const _TREND_METRICS = {
 }
 const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', unilateral:'Unilateral', timed_hold:'Timed', jump_height:'Jump', jump_distance:'Jump' }
 
+// Personal records per exercise — ALL-TIME (not range-filtered; a PR is a lifetime best, Hevy-style).
+// Returns [[label, value], …] appropriate to the metric_type. Non-weight types get their records in
+// ③ Tasks 2–3; weight_reps/unilateral compute weight/reps records now.
+function _exerciseRecords(ex) {
+  const mt = ex.metricType
+  if (mt === 'cardio' || mt === 'timed_hold' || mt === 'jump_height' || mt === 'jump_distance') return []
+  const num = v => parseFloat(v) || 0
+  const allSets = (ex.sessions || []).flatMap(s => s.sets || [])
+  const heaviest = Math.max(0, ...allSets.map(s => num(s.weight_kg)))
+  const best1rm  = Math.max(0, ...allSets.map(s => _epley1RM(s.weight_kg, s.reps_achieved)))
+  let bestSet = null // the single set with the highest weight×reps
+  for (const s of allSets) {
+    const w = num(s.weight_kg), r = parseInt(s.reps_achieved) || 0
+    if (w > 0 && r > 0 && (!bestSet || w * r > bestSet.vol)) bestSet = { w, r, vol: w * r }
+  }
+  let bestSessVol = 0
+  for (const sess of (ex.sessions || [])) {
+    const vol = (sess.sets || []).reduce((t, s) => t + num(s.weight_kg) * (parseInt(s.reps_achieved) || 0), 0)
+    if (vol > bestSessVol) bestSessVol = vol
+  }
+  const rows = []
+  if (heaviest > 0)    rows.push(['Heaviest weight', heaviest + ' kg'])
+  if (best1rm > 0)     rows.push(['Best est. 1RM', Math.round(best1rm) + ' kg'])
+  if (bestSet)         rows.push(['Best set', `${bestSet.w} kg × ${bestSet.r}`])
+  if (bestSessVol > 0) rows.push(['Best session vol', Math.round(bestSessVol).toLocaleString() + ' kg'])
+  return rows
+}
+
+function _recordsBlockHtml(rows) {
+  if (!rows.length) return ''
+  return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">Personal records</div>
+    ${rows.map(([label, val]) => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px">
+      <span style="color:var(--text-muted)">${label}</span><span style="font-weight:700">${escapeHtml(String(val))}</span></div>`).join('')}
+  </div>`
+}
+
 function _trendCardEmpty(ex) {
   return `<div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
     <div style="font-size:14px;font-weight:700;margin-bottom:4px">${escapeHtml(ex.name)}</div>
-    <div style="font-size:11px;color:var(--text-muted)">Log another session to see a trend.</div></div>`
+    <div style="font-size:11px;color:var(--text-muted)">No sessions in this range.</div>
+    ${_recordsBlockHtml(_exerciseRecords(ex))}</div>`
 }
 
 // Destroys the previous render's Chart.js instances before rebuilding — fires on every keystroke,
@@ -1377,6 +1415,7 @@ function _renderPerfExerciseList(query) {
                    background:${key===r.activeKey?'var(--accent)':'var(--surface-2)'};color:${key===r.activeKey?'#fff':'var(--text-muted)'}">${label}</button>`).join('')}
         </div>
         <div style="position:relative;height:90px"><canvas id="ps-chart-${r.i}"></canvas></div>
+        ${_recordsBlockHtml(_exerciseRecords(r.ex))}
       </div>`
   }).join('')
 
