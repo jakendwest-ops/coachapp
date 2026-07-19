@@ -1055,7 +1055,7 @@ async function renderProgressPerSession(clientId, el) {
   el.innerHTML = sessions.map((s, i) => {
     const exs = (s.workout_log_exercises || []).filter(e => e.exercise_name)
     const totals = exs.reduce((t, ex) => { const m = _diaryExMetrics(ex); t.sets += m.sets; t.reps += m.reps; t.vol += m.volume; return t }, { sets: 0, reps: 0, vol: 0 })
-    const tiles = [['Sets', totals.sets], ['Reps', totals.reps], ['Volume', Math.round(totals.vol).toLocaleString() + 'kg'], ['Exercises', exs.length]]
+    const tiles = [['Sets', totals.sets, 'sets'], ['Reps', totals.reps, 'reps'], ['Volume', Math.round(totals.vol).toLocaleString() + 'kg', 'vol'], ['Exercises', exs.length, 'exercises']]
     return `
     <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden">
       <button onclick="_togglePerfSession(${i})" style="width:100%;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
@@ -1064,8 +1064,8 @@ async function renderProgressPerSession(clientId, el) {
           <span style="font-size:12px;color:var(--text-muted)">${new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
         </div>
         <div style="display:flex;gap:6px">
-          ${tiles.map(([l, v]) => `<div style="flex:1;text-align:center;background:var(--surface);border-radius:8px;padding:6px 4px">
-            <div style="font-size:13px;font-weight:800;color:var(--accent)">${v}</div>
+          ${tiles.map(([l, v, key]) => `<div style="flex:1;text-align:center;background:var(--surface);border-radius:8px;padding:6px 4px">
+            <div style="font-size:13px;font-weight:800;color:${_METRIC_COLORS[key] || 'var(--accent)'}">${v}</div>
             <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${l}</div></div>`).join('')}
         </div>
       </button>
@@ -1399,6 +1399,16 @@ const _TREND_METRICS = {
 }
 const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', unilateral:'Unilateral', timed_hold:'Timed', jump_height:'Jump', jump_distance:'Jump' }
 
+// B6 — our own metric colour palette (NOT SetGraph's assignment). Mid-tone hexes that read on both
+// light + dark themes. Used for the active chip, the trend chart line, and the diary summary tiles so
+// each metric is recognisable at a glance.
+const _METRIC_COLORS = {
+  topWeight:'#6366f1', e1rm:'#8b5cf6', volume:'#0ea5e9', intensity:'#f59e0b',
+  totalDistance:'#06b6d4', totalDuration:'#14b8a6', pace:'#0ea5e9', avgHr:'#ef4444',
+  maxDuration:'#14b8a6', bestHeight:'#22c55e', bestDistance:'#22c55e',
+  sets:'#f59e0b', reps:'#22c55e', vol:'#0ea5e9', exercises:'#8b5cf6' // diary summary tiles
+}
+
 // Personal records per exercise — ALL-TIME (not range-filtered; a PR is a lifetime best, Hevy-style).
 // Returns [[label, value], …] appropriate to the metric_type. Non-weight types get their records in
 // ③ Tasks 2–3; weight_reps/unilateral compute weight/reps records now.
@@ -1519,7 +1529,7 @@ function _renderPerfExerciseList(query) {
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           ${r.metrics.map(([key,label]) => `<button onclick="_setTrendMetric('${r.ex.name.replace(/'/g,"\\'")}','${key}')"
             style="padding:4px 10px;border:none;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
-                   background:${key===r.activeKey?'var(--accent)':'var(--surface-2)'};color:${key===r.activeKey?'#fff':'var(--text-muted)'}">${label}</button>`).join('')}
+                   background:${key===r.activeKey?(_METRIC_COLORS[key]||'var(--accent)'):'var(--surface-2)'};color:${key===r.activeKey?'#fff':'var(--text-muted)'}">${label}</button>`).join('')}
         </div>
         <div style="position:relative;height:90px"><canvas id="ps-chart-${r.i}"></canvas></div>
         ${_recordsBlockHtml(_exerciseRecords(r.ex))}
@@ -1551,10 +1561,11 @@ function _renderPerfExerciseList(query) {
     }
     const agg = _aggregateSeries(r.pts, r.activeKey, r.active[2])
     if (agg.length < 2) return
+    const line = _METRIC_COLORS[r.activeKey] || accent
     _perfExerciseCharts.push(new Chart(canvas.getContext('2d'), {
       type: 'line',
-      data: { labels: agg.map(a => a.label), datasets: [{ data: agg.map(a => a.value), borderColor: accent, borderWidth: 2,
-              pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
+      data: { labels: agg.map(a => a.label), datasets: [{ data: agg.map(a => a.value), borderColor: line, borderWidth: 2,
+              pointBackgroundColor: line, pointRadius: 3, fill: false, tension: 0.3 }] },
       options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
         plugins: { legend: { display: false } },
         scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
