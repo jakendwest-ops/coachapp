@@ -1240,6 +1240,8 @@ function _metricPointsFor(ex) {
         p.topWeight = Math.max(0, ...sets.map(x => num(x.weight_kg)))
         p.e1rm      = Math.max(0, ...sets.map(x => _epley1RM(x.weight_kg, x.reps_achieved)))
         p.volume    = sets.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0)
+        const totalReps = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
+        p.intensity = totalReps > 0 ? p.volume / totalReps : 0 // weighted avg weight per rep
       }
     }
     return p
@@ -1324,13 +1326,17 @@ function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = 
 // Per-type chip config: [metricKey, label, aggMode, formatter, lowerBetter?]. Chips with all-zero
 // data are dropped. lowerBetter=true (pace) makes the headline "best" a min, not a max.
 const _TREND_METRICS = {
-  weight_reps: [['topWeight','Top weight','max',v=>v+'kg'], ['e1rm','Est 1RM','max',v=>Math.round(v)+'kg'], ['volume','Volume','max',v=>Math.round(v)+'kg']],
+  weight_reps: [['topWeight','Top weight','max',v=>v+'kg'], ['e1rm','Est 1RM','max',v=>Math.round(v)+'kg'], ['volume','Volume','max',v=>Math.round(v)+'kg'], ['intensity','Intensity','mean',v=>Math.round(v*10)/10+' kg/rep']],
   cardio: [
     ['totalDistance','Distance','max', v => (v/1000).toFixed(1)+'km'],
     ['totalDuration','Duration','max', v => fmtRestCountdown(v)],
     ['pace','Pace','mean', v => fmtRestCountdown(v)+'/km', true],
     ['avgHr','Avg HR','mean', v => Math.round(v)+' bpm'],
   ],
+  unilateral:    [['topWeight','Top weight','max', v => v+'kg']], // chart draws L/R as two lines
+  timed_hold:    [['maxDuration','Hold time','max', v => fmtRestCountdown(v)]],
+  jump_height:   [['bestHeight','Height','max', v => v+' cm']],
+  jump_distance: [['bestDistance','Distance','max', v => v.toFixed(2)+' m']],
 }
 const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', unilateral:'Unilateral', timed_hold:'Timed', jump_height:'Jump', jump_distance:'Jump' }
 
@@ -1352,7 +1358,29 @@ function _exerciseRecords(ex) {
     if (hrs.length)    rows.push(['Avg HR', Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) + ' bpm'])
     return rows
   }
-  if (mt === 'timed_hold' || mt === 'jump_height' || mt === 'jump_distance') return [] // added in the uni/timed/jump task
+  if (mt === 'unilateral') {
+    const pts = _metricPointsFor(ex).points
+    const bestL = Math.max(0, ...pts.map(p => p.leftTop || 0))
+    const bestR = Math.max(0, ...pts.map(p => p.rightTop || 0))
+    const rows = []
+    if (bestL > 0) rows.push(['Best left', bestL + ' kg'])
+    if (bestR > 0) rows.push(['Best right', bestR + ' kg'])
+    if (bestL > 0 && bestR > 0) rows.push(['L/R balance', Math.round(Math.min(bestL, bestR) / Math.max(bestL, bestR) * 100) + '%'])
+    return rows
+  }
+  const flat = (ex.sessions || []).flatMap(s => s.sets || [])
+  if (mt === 'timed_hold') {
+    const best = Math.max(0, ...flat.map(x => parseInt(x.duration_seconds) || 0))
+    return best > 0 ? [['Best hold', fmtRestCountdown(best)]] : []
+  }
+  if (mt === 'jump_height') {
+    const best = Math.max(0, ...flat.map(x => parseFloat(x.height_cm) || 0))
+    return best > 0 ? [['Best height', best + ' cm']] : []
+  }
+  if (mt === 'jump_distance') {
+    const best = Math.max(0, ...flat.map(x => parseFloat(x.distance_m) || 0))
+    return best > 0 ? [['Best distance', best.toFixed(2) + ' m']] : []
+  }
   const num = v => parseFloat(v) || 0
   const allSets = (ex.sessions || []).flatMap(s => s.sets || [])
   const heaviest = Math.max(0, ...allSets.map(s => num(s.weight_kg)))
@@ -1443,6 +1471,25 @@ function _renderPerfExerciseList(query) {
   rendered.forEach(r => {
     if (r.empty) return
     const canvas = document.getElementById(`ps-chart-${r.i}`); if (!canvas) return
+    // Unilateral: two lines (left + right) so a strength imbalance is visible.
+    if (r.ex.metricType === 'unilateral') {
+      const left  = _aggregateSeries(r.pts, 'leftTop', 'max')
+      const right = _aggregateSeries(r.pts, 'rightTop', 'max')
+      if (Math.max(left.length, right.length) < 2) return
+      const labels = (left.length >= right.length ? left : right).map(a => a.label)
+      _perfExerciseCharts.push(new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: { labels, datasets: [
+          { label: 'Left',  data: left.map(a => a.value),  borderColor: accent, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 },
+          { label: 'Right', data: right.map(a => a.value), borderColor: muted,  borderWidth: 2, pointBackgroundColor: muted,  pointRadius: 3, fill: false, tension: 0.3, borderDash: [4, 3] }
+        ] },
+        options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+          plugins: { legend: { display: true, labels: { color: muted, font: { size: 9 }, boxWidth: 10 } } },
+          scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
+                    y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 }, callback: v => v + 'kg' } } } }
+      }))
+      return
+    }
     const agg = _aggregateSeries(r.pts, r.activeKey, r.active[2])
     if (agg.length < 2) return
     _perfExerciseCharts.push(new Chart(canvas.getContext('2d'), {

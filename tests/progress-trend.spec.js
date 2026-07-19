@@ -69,6 +69,51 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     expect(r.rec['Best pace']).toContain('/km')
   })
 
+  test('intensity (kg/rep) metric on weight_reps (B2)', async ({ page }) => {
+    await loginAsPT(page)
+    await page.waitForTimeout(500)
+    const r = await page.evaluate(() => {
+      const ex = { name: 'B', metricType: 'weight_reps', sessions: [
+        { date: '2026-07-01', sets: [{ weight_kg: 100, reps_achieved: 5 }, { weight_kg: 90, reps_achieved: 10 }] } // vol 1400 / 15 reps = 93.33
+      ] }
+      const p = _metricPointsFor(ex).points[0]
+      return { intensity: p.intensity, hasChip: _TREND_METRICS.weight_reps.some(m => m[0] === 'intensity') }
+    })
+    expect(r.intensity).toBeCloseTo(93.33, 1)
+    expect(r.hasChip).toBe(true)
+  })
+
+  test('unilateral / timed / jump points + records (B1)', async ({ page }) => {
+    await loginAsPT(page)
+    await page.waitForTimeout(500)
+    const r = await page.evaluate(() => {
+      const uni = { name: 'Split', metricType: 'unilateral', sessions: [
+        { date: '2026-07-01', sets: [{ side: 'left', weight_kg: 20, reps_achieved: 10 }, { side: 'right', weight_kg: 18, reps_achieved: 10 }] }
+      ] }
+      const timed = { name: 'Plank', metricType: 'timed_hold', sessions: [{ date: '2026-07-01', sets: [{ duration_seconds: 90 }, { duration_seconds: 120 }] }] }
+      const jh = { name: 'Box', metricType: 'jump_height', sessions: [{ date: '2026-07-01', sets: [{ height_cm: 60 }, { height_cm: 65 }] }] }
+      return {
+        uniPt: _metricPointsFor(uni).points[0],
+        uniRec: Object.fromEntries(_exerciseRecords(uni)),
+        timedRec: Object.fromEntries(_exerciseRecords(timed)),
+        jhRec: Object.fromEntries(_exerciseRecords(jh)),
+        uniChips: _TREND_METRICS.unilateral.map(m => m[1]),
+        timedChips: _TREND_METRICS.timed_hold.map(m => m[1]),
+        jhChips: _TREND_METRICS.jump_height.map(m => m[1]),
+      }
+    })
+    expect(r.uniPt.leftTop).toBe(20)
+    expect(r.uniPt.rightTop).toBe(18)
+    expect(r.uniRec['Best left']).toBe('20 kg')
+    expect(r.uniRec['Best right']).toBe('18 kg')
+    expect(r.uniRec['L/R balance']).toBe('90%')
+    expect(r.timedRec['Best hold']).toContain(':')
+    expect(r.jhRec['Best height']).toBe('65 cm')
+    expect(r.uniChips).toEqual(['Top weight'])
+    expect(r.timedChips).toEqual(['Hold time'])
+    expect(r.jhChips).toEqual(['Height'])
+  })
+
   test('personal records: heaviest, best 1RM, best set (weight×reps), best session volume', async ({ page }) => {
     await loginAsPT(page)
     await page.waitForTimeout(500)
