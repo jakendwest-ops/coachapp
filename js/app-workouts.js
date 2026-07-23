@@ -55,6 +55,108 @@ function fmtDistanceM(m) {
 // using raw truthiness while the runner had been fixed).
 function _hasTimeTarget(v) { return !!v && v !== '0:00' && v !== '00:00' }
 
+// THE prescription formatter. One set → one human string ("8–10 reps · 60kg · RPE 8").
+//
+// This existed as TWO near-identical copies — openSessionDetail and openTemplate — and they had
+// already drifted: one rendered rest in a separate span, the other folded it into the string via its
+// own local helper. One even carried a comment claiming it was "reused for consistency" with the
+// other. It was a copy. Adding a third for the day rows would have guaranteed further drift, so all
+// three now share this (les-037). `includeRest` reproduces each caller's existing behaviour exactly.
+//
+// Every mm:ss value goes through _hasTimeTarget: the builder used to default these inputs to '0:00',
+// which is truthy, so a bare check renders a phantom "0:00 rest" on essentially every legacy set.
+// SECURITY: the returned string concatenates RAW sets_json values (tempo, weight, reps, rpe, stroke
+// rate, HR…). It is NOT html-safe — every caller must escapeHtml() it before innerHTML. On a client
+// PLAN CLONE the underlying row belongs to the client, so an unescaped sink here is the client→coach
+// stored-XSS shape that hit this codebase on 2026-07-18.
+function _fmtSetDetail(s, { isCardio = false, includeRest = false, markAmrap = true } = {}) {
+  if (!s) return '—'
+  // Renders a range only when both ends are real, otherwise the single end that IS set. The old
+  // copies hardcoded '?' for a missing end ("24–? spm", "1:45–?/500m"), which reads as broken in a
+  // compact day row when a coach prescribed only a floor.
+  const range = (min, max, unit = '') => {
+    const lo = min || null, hi = max || null
+    if (!lo && !hi) return null
+    return (lo && hi && lo !== hi ? `${lo}–${hi}` : (lo || hi)) + unit
+  }
+  // Legacy key fallbacks (`s.rest`/`s.reps`/`s.rpe`) come from openTemplate's copy, which supported
+  // an older sets_json shape the other copy had already dropped. Merged in rather than lost.
+  // Rest can be stored as mm:ss OR as a bare seconds NUMBER (the old openTemplate had a typeof-number
+  // branch; app-runner.js defends the same shape). Normalise before comparing/printing.
+  const restVal = v => (typeof v === 'number' ? fmtDuration(v) : v)
+  const rMin = restVal(s.restMin), rMax = restVal(s.restMax)
+  const restStr = _hasTimeTarget(rMin)
+    ? (_hasTimeTarget(rMax) && rMax !== rMin ? `${rMin}–${rMax}` : rMin) + ' rest'
+    : (s.rest ? restVal(s.rest) + ' rest' : null)
+
+  let parts
+  if (isCardio) {
+    // Only render a RANGE when both ends are real. The old copies hardcoded '?' for a missing end,
+    // which reads as broken in a compact day row ("1:45–?/500m") when only a floor was prescribed.
+    const paceRange = (min, max, unit) => {
+      const lo = _hasTimeTarget(min) ? min : null, hi = _hasTimeTarget(max) ? max : null
+      if (!lo && !hi) return null
+      return (lo && hi && lo !== hi ? `${lo}–${hi}` : (lo || hi)) + unit
+    }
+    const pace = paceRange(s.pace500Min, s.pace500Max, '/500m')
+    const paceKm = paceRange(s.paceKmMin, s.paceKmMax, '/km')
+    const watts = range(s.wattsMin, s.wattsMax, ' W')
+    const stroke = range(s.strokeRateMin, s.strokeRateMax, ' spm')
+    const hrRange = range(s.hrZoneMin, s.hrZoneMax)
+    const hr = hrRange ? 'HR ' + hrRange : null
+    const restHr = s.restHrMax ? `rest HR <${s.restHrMax}` : null
+    const dur = _hasTimeTarget(s.duration) ? fmtDuration(parseRest(s.duration) || 0) : null
+    const dist = fmtDistanceM(_cardioDistanceM(s)) || null
+    // isDistanceBased decides which of duration/distance leads — same branch the runner uses.
+    parts = [s.isDistanceBased ? dist : dur, pace || paceKm, watts, stroke, hr, restHr]
+  } else if (s.timed) {
+    // Two storage shapes for a timed set: `duration` as mm:ss from the editor, or `repsMin` as a
+    // seconds integer from a programmatic build. Both must render (STATUS continuity block).
+    const secs = _hasTimeTarget(s.duration) ? (parseRest(s.duration) || 0) : (s.repsMin ? parseInt(s.repsMin) : null)
+    parts = [secs != null ? fmtDuration(secs) : null, s.weight ? s.weight + 'kg' : null]
+  } else if (s.targetHeightCm || s.targetDistanceM) {
+    // Jump. A "rep" here is a contact, so label it jumps rather than reps.
+    const target = s.targetHeightCm ? s.targetHeightCm + 'cm' : s.targetDistanceM + 'm'
+    const jumpEffort = s.effortMin
+      ? (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + range(s.effortMin, s.effortMax) : null
+    parts = [target, s.repsMin ? s.repsMin + ' jumps' : null, jumpEffort]
+  } else {
+    // TIMED GUARD: a timed set stores its DURATION in repsMin (seconds), so rendering repsMin as
+    // "N reps" there would print "90 reps" for a 1:30 hold. Safe here because `s.timed` is handled by
+    // an earlier branch, so this one is only ever a real rep count. Kept on two lines deliberately —
+    // checks.sh 9b greps for those two tokens on the SAME line precisely to catch an unguarded one.
+    const repsRange = range(s.repsMin, s.repsMax) || s.reps || null
+    const reps = repsRange ? repsRange + ' reps' : null
+    const repsPart = s.amrap && markAmrap ? (reps ? `${reps} (AMRAP)` : 'AMRAP') : reps
+    const weight = s.weight ? s.weight + 'kg' : null
+    const intensity = range(s.intensityMin, s.intensityMax, '% 1RM')
+    const effort = s.effortMin
+      ? (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + range(s.effortMin, s.effortMax)
+      : (s.rpe ? 'RPE ' + s.rpe : null)
+    parts = [repsPart, weight, intensity, effort, s.tempo ? `@${s.tempo}` : null]
+  }
+  if (includeRest) parts.push(restStr)
+  return parts.filter(Boolean).join(' · ') || '—'
+}
+
+// Sets → ONE scannable line. Identical consecutive sets collapse to "4 × 8–10 · 60kg"; genuinely
+// differing sets fall back to a per-set list so nothing is hidden. Returns null for no sets, so
+// callers render nothing rather than a meaningless "0 sets".
+function _fmtSetsCollapsed(sets, { isCardio = false } = {}) {
+  const list = Array.isArray(sets) ? sets : []
+  if (!list.length) return null
+  const groups = []
+  list.forEach(s => {
+    const detail = _fmtSetDetail(s, { isCardio, includeRest: true })
+    const last = groups[groups.length - 1]
+    if (last && last.detail === detail) last.n++
+    else groups.push({ detail, n: 1 })
+  })
+  // All-empty sets format to '—'; printing "3 × —" is noise, so render nothing at all instead.
+  if (groups.every(g => g.detail === '—')) return null
+  return groups.map(g => (g.n > 1 ? `${g.n} × ${g.detail}` : g.detail)).join(' | ')
+}
+
 // THE single source of truth for a sets_json payload.
 //
 // This was an explicit key allowlist duplicated in TWO builders — saveExerciseToTemplate (here) and
@@ -129,37 +231,16 @@ async function openSessionDetail(templateId, name, ctx = {}) {
           let label = `Set ${si + 1}`
           if (s.amrap) label = 'AMRAP'
 
-          let detail = ''
-          if (isCardio) {
-            // Same field set/formatting as the template card preview (openTemplate) — reused for consistency.
-            const paceStr   = (s.pace500Min || s.pace500Max) ? `${s.pace500Min||'?'}–${s.pace500Max||'?'}/500m` : null
-            const paceKmStr = (s.paceKmMin  || s.paceKmMax)  ? `${s.paceKmMin||'?'}–${s.paceKmMax||'?'}/km`   : null
-            const strokeStr = (s.strokeRateMin || s.strokeRateMax) ? `${s.strokeRateMin||'?'}–${s.strokeRateMax||'?'} spm` : null
-            const hrStr     = (s.hrZoneMin || s.hrZoneMax) ? `HR ${s.hrZoneMin||'?'}–${s.hrZoneMax||'?'}` : null
-            const restHrStr = s.restHrMax ? `rest HR <${s.restHrMax}` : null
-            const durStr    = s.duration ? Math.floor((parseRest(s.duration)||0) / 60) + ':' + String((parseRest(s.duration)||0) % 60).padStart(2, '0') : null
-            const distStr   = fmtDistanceM(_cardioDistanceM(s)) || null
-            const parts = s.isDistanceBased
-              ? [distStr, paceStr || paceKmStr, strokeStr, hrStr, restHrStr]
-              : [durStr, paceStr || paceKmStr, strokeStr, hrStr, restHrStr]
-            detail = parts.filter(Boolean).join(' · ') || '—'
-          } else if (s.timed) {
-            const secs = s.duration ? (parseRest(s.duration) || 0) : (s.repsMin ? parseInt(s.repsMin) : null)
-            detail = secs != null ? Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') : '—'
-          } else {
-            const repsRange = s.repsMin ? s.repsMin + (s.repsMax && s.repsMax !== s.repsMin ? '–' + s.repsMax : '') : null
-            const reps = repsRange ? repsRange + ' reps' : null  // timed guard: only reached in else branch
-            const weight = s.weight ? s.weight + 'kg' : null
-            const intensity = s.intensityMin ? s.intensityMin + (s.intensityMax && s.intensityMax !== s.intensityMin ? '–' + s.intensityMax : '') + '% 1RM' : null
-            const effort = s.effortMin ? ((s.effortType === 'rir' ? 'RIR ' : 'RPE ') + s.effortMin + (s.effortMax && s.effortMax !== s.effortMin ? '–' + s.effortMax : '')) : null
-            detail = [reps, weight || intensity, effort].filter(Boolean).join(' · ') || '—'
-          }
-          const rest = s.restMin && s.restMin !== '0:00' ? s.restMin + (s.restMax && s.restMax !== s.restMin ? '–' + s.restMax : '') + ' rest' : null
+          // Rest renders in its own right-aligned span here, so it is excluded from the detail string.
+          const detail = _fmtSetDetail(s, { isCardio, includeRest: false, markAmrap: false })
+          const rest = _hasTimeTarget(s.restMin)
+            ? (_hasTimeTarget(s.restMax) && s.restMax !== s.restMin ? `${s.restMin}–${s.restMax}` : s.restMin) + ' rest'
+            : null
 
           return `<div style="display:flex;align-items:baseline;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
             <span style="font-size:11px;font-weight:700;color:var(--text-muted);width:56px;flex-shrink:0">${label}</span>
-            <span style="font-size:13px;flex:1">${detail}</span>
-            ${rest ? `<span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${rest}</span>` : ''}
+            <span style="font-size:13px;flex:1">${escapeHtml(detail)}</span>
+            ${rest ? `<span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${escapeHtml(rest)}</span>` : ''}
           </div>`
         }).join('')
 
@@ -332,7 +413,7 @@ async function renderClientWorkoutsPage(el) {
   const activeAssignment = cpAssignments?.[0]
   if (activeAssignment) {
     const { data: cpwRows } = await db.from('client_program_workouts')
-      .select('program_phase_workout_id, workout_template_id, workout_templates(id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes))')
+      .select('program_phase_workout_id, workout_template_id, workout_templates(id, name, description, workout_template_exercises(id, exercise_name, exercise_type, metric_type, order_index, sets_json, notes))')
       .eq('client_program_id', activeAssignment.id)
     ;(cpwRows || []).forEach(r => { cpwMap[r.program_phase_workout_id] = { templateId: r.workout_template_id, name: r.workout_templates?.name, desc: r.workout_templates?.description, exercises: r.workout_templates?.workout_template_exercises || [] } })
   }
@@ -409,11 +490,20 @@ async function renderClientWorkoutsPage(el) {
                         </div>
                         ${exs.length ? `
                         <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
-                          ${exs.map(ex => `
-                            <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-                              <span style="font-size:12px">${escapeHtml(ex.exercise_name)}</span>
-                              <span style="font-size:11px;color:var(--text-muted)">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
-                            </div>`).join('')}
+                          ${exs.map(ex => {
+                            // Jake, 2026-07-22: name + set count alone is "not good UX or helpful to a
+                            // user who wants to look at their week ahead to see what the plan has in
+                            // store for them". Show the actual prescription, sets collapsed.
+                            const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio' })
+                            return `
+                            <div style="padding:5px 0;border-bottom:1px solid var(--border)">
+                              <div style="display:flex;justify-content:space-between;gap:8px">
+                                <span style="font-size:12px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
+                                <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
+                              </div>
+                              ${presc ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
+                            </div>`
+                          }).join('')}
                         </div>` : ''}
                       </div>`
                     }).join('')}
@@ -939,34 +1029,10 @@ async function openTemplate(id, ctx = {}) {
                 </div>
                 ${ex.sets_json?.length ? (() => {
                   const rows = ex.sets_json.map((s, si) => {
-                    let parts
-                    if (isCardio) {
-                      const fmtRV = v => { if (!v || v === '0:00') return null; if (typeof v === 'number') return fmtDuration(v); return String(v) }
-                      const paceStr    = (s.pace500Min || s.pace500Max) ? `${s.pace500Min||'?'}–${s.pace500Max||'?'}/500m` : null
-                      const paceKmStr  = (s.paceKmMin  || s.paceKmMax)  ? `${s.paceKmMin||'?'}–${s.paceKmMax||'?'}/km`   : null
-                      const strokeStr  = (s.strokeRateMin || s.strokeRateMax) ? `${s.strokeRateMin||'?'}–${s.strokeRateMax||'?'} spm` : null
-                      const rMin = fmtRV(s.restMin), rMax = fmtRV(s.restMax)
-                      const restStr    = rMin ? (rMin === rMax || !rMax ? rMin+' rest' : rMin+'–'+rMax+' rest') : null
-                      const hrStr      = (s.hrZoneMin || s.hrZoneMax) ? `HR ${s.hrZoneMin||'?'}–${s.hrZoneMax||'?'}` : null
-                      const restHrStr  = s.restHrMax ? `rest HR <${s.restHrMax}` : null
-                      const durStr     = s.duration ? fmtDuration(parseRest(s.duration)||0) : null
-                      parts = s.isDistanceBased
-                        ? [fmtDistanceM(_cardioDistanceM(s)) || null, paceStr||paceKmStr, strokeStr, restStr, hrStr, restHrStr]
-                        : [durStr, paceStr||paceKmStr, strokeStr, restStr, hrStr, restHrStr]
-                    } else {
-                      const restStr2 = s.restMin && s.restMin !== '0:00' ? s.restMin+(s.restMax&&s.restMax!==s.restMin?'–'+s.restMax:'')+' rest' : (s.rest ? s.rest+' rest' : null)
-                      if (s.timed) {
-                        const secs = s.duration ? (parseRest(s.duration)||0) : (s.repsMin ? parseInt(s.repsMin) : null)
-                        const durDisplay = secs != null ? (Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0')) : null
-                        parts = [durDisplay, restStr2]
-                      } else {
-                        const repsStr2 = s.repsMin ? (s.repsMin+(s.repsMax&&s.repsMax!==s.repsMin?'–'+s.repsMax:'')) : (s.reps || null)
-                        const effortStr2 = s.effortMin ? ((s.effortType==='rir'?'RIR ':'RPE ')+s.effortMin+(s.effortMax&&s.effortMax!==s.effortMin?'–'+s.effortMax:'')) : (s.rpe ? 'RPE '+s.rpe : null)
-                        parts = [repsStr2 ? repsStr2+' reps' : null, s.weight ? s.weight+'kg' : null, s.intensityMin ? s.intensityMin+(s.intensityMax&&s.intensityMax!==s.intensityMin?'–'+s.intensityMax:'')+'% 1RM' : null, effortStr2, restStr2]
-                      }
-                    }
-                    const summary = parts.filter(Boolean).join(' · ')
-                    return summary ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">Set ${si+1}:</span> ${summary}</div>` : null
+                    // Shared with openSessionDetail + the day rows (_fmtSetDetail). Rest is folded
+                    // INTO the string here, which is this surface's existing behaviour.
+                    const summary = _fmtSetDetail(s, { isCardio, includeRest: true })
+                    return summary && summary !== '—' ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">Set ${si+1}:</span> ${escapeHtml(summary)}</div>` : null
                   }).filter(Boolean)
                   return rows.length ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:4px">${rows.join('')}</div>` : `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${meta}</div>`
                 })() : `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${meta}</div>`}

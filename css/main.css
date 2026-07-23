@@ -744,6 +744,9 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 .pwk-slot-body { padding:0 8px 8px; }
 .pwk-ex { display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-top:1px solid var(--border); font-size:12px; }
 .pwk-ex .s { color:var(--text-muted); font-size:11px; flex-shrink:0; font-variant-numeric:tabular-nums; }
+/* The prescription line under an exercise name in a builder slot (2026-07-22) — the actual
+   reps/weight/rest, not just a set count. Muted so the exercise name still leads the row. */
+.pwk-presc { color:var(--text-muted); font-size:11px; margin-top:2px; line-height:1.35; }
 .pwk-slot-actions { display:flex; gap:6px; margin-top:8px; }
 .pwk-act { flex:1; font-size:11.5px; font-weight:700; padding:7px 6px; border-radius:7px; border:1px solid var(--border); background:var(--surface); cursor:pointer; }
 .pwk-act.edit { color:var(--accent); }

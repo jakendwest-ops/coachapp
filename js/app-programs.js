@@ -32,7 +32,7 @@
 
   const cpIds = assignments.map(a => a.id)
   const { data: cpwRows } = await db.from('client_program_workouts')
-    .select('client_program_id, program_phase_workout_id, workout_template_id, workout_templates(id, name, workout_template_exercises(exercise_name, order_index, sets_json))')
+    .select('client_program_id, program_phase_workout_id, workout_template_id, workout_templates(id, name, workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json))')
     .in('client_program_id', cpIds)
 
   const cpwMap = {}
@@ -103,11 +103,20 @@
                               </div>
                               ${exs.length ? `
                               <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
-                                ${exs.map(ex => `
-                                  <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-                                    <span style="font-size:12px">${escapeHtml(ex.exercise_name)}</span>
-                                    <span style="font-size:11px;color:var(--text-muted)">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
-                                  </div>`).join('')}
+                                ${exs.map(ex => {
+                                  // Same shared formatter as the client's own Workouts page and the
+                                  // builder slot — a coach reviewing a client's plan must see the
+                                  // prescription they wrote, not just a set count.
+                                  const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio' })
+                                  return `
+                                  <div style="padding:5px 0;border-bottom:1px solid var(--border)">
+                                    <div style="display:flex;justify-content:space-between;gap:8px">
+                                      <span style="font-size:12px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
+                                      <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
+                                    </div>
+                                    ${presc ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
+                                  </div>`
+                                }).join('')}
                               </div>` : ''}
                             </div>`
                         }).join('')}
@@ -740,6 +749,59 @@ async function renderPrograms(el) {
 
 }
 
+// Day labels, 0-indexed. NOTE `day_of_week` is **1-based** (Monday = 1) everywhere it is stored —
+// renderPhaseWeekGrid writes `i + 1`, starter-content seeds `day_of_week: 1 / 'Monday'`, the calendar
+// reads `day_of_week - 1`, and _quickAssignPhaseWorkout keeps its own array with a padded empty [0].
+// So ALWAYS subtract 1 when indexing this with a stored day_of_week.
+const _DAY_LABELS = ['MON','TUE','WED','THU','FRI','SAT','SUN']
+
+// Builds the Add-workout picker's pool, INCLUDING where each template is already used.
+//
+// Jake, 2026-07-22: two "Full Body" rows with byte-identical name/description/exercise-preview are
+// impossible to tell apart — and same-named workouts are a NORMAL steady state, not debris:
+// "very likely that a user will have more than 1 of the same workout in a program (especially if
+// they are duplicating weeks)". Duplicate-week manufactures them by design, so deduping the data
+// would not fix this; the picker has to disambiguate. Where a workout is already used is the thing
+// that actually answers "which copy is this one".
+//
+// Was duplicated at two call sites (openProgram + _refreshProgramTemplatePool) — one builder now,
+// so the pool shape cannot drift between them.
+async function _buildProgramTemplatePool(templates) {
+  const pool = (templates || []).map(t => {
+    const exs = [...(t.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
+    const names = exs.map(e => e.exercise_name)
+    const preview = names.length ? names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3} more` : '') : ''
+    return { id: t.id, name: t.name, description: t.description || '', _exPreview: preview, _exCount: names.length, _usage: null }
+  })
+  if (!pool.length) return pool
+
+  // Chunked: a big library would push the .in() list past the ~8KB GET URL cap and 414, and the
+  // failure mode is worse than useless — every row would read "Not used yet", inverting the answer.
+  const ids = pool.map(t => t.id)
+  const uses = []
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await db.from('program_phase_workouts')
+      .select('template_id, week_number, day_of_week, program_phases(name)')
+      .in('template_id', ids.slice(i, i + 100))
+    // Degrade to no usage labels rather than breaking the picker — it is an enrichment, not the data.
+    if (error) { log.error('_buildProgramTemplatePool', 'usage lookup failed', error); return pool }
+    uses.push(...(data || []))
+  }
+
+  const byTemplate = {}
+  ;uses.forEach(u => { (byTemplate[u.template_id] = byTemplate[u.template_id] || []).push(u) })
+  pool.forEach(t => {
+    const rows = byTemplate[t.id] || []
+    if (!rows.length) return
+    // A nulled program_phases embed (RLS) drops only the phase NAME — week/day still render, and
+    // "used vs not used" is driven by rows.length, so a nulled embed can never read as "not used".
+    const label = u => [u.program_phases?.name, u.week_number ? 'Wk ' + u.week_number : null,
+                        _DAY_LABELS[u.day_of_week - 1] || null].filter(Boolean).join(' · ')
+    t._usage = rows.slice(0, 2).map(label).join('   ') + (rows.length > 2 ? `   +${rows.length - 2} more` : '')
+  })
+  return pool
+}
+
 async function openProgram(programId) {
   const el = document.getElementById('main-content')
   log.info('openProgram', 'loading', { programId })
@@ -760,12 +822,7 @@ async function openProgram(programId) {
 
   const phases = (program.program_phases || []).sort((a, b) => a.order_index - b.order_index)
   const totalWeeks = phases.reduce((sum, p) => sum + p.duration_weeks, 0)
-  window._programTemplates = (templates || []).map(t => {
-    const exs = [...(t.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
-    const names = exs.map(e => e.exercise_name)
-    const preview = names.length ? names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3} more` : '') : ''
-    return { id: t.id, name: t.name, description: t.description || '', _exPreview: preview, _exCount: names.length }
-  })
+  window._programTemplates = await _buildProgramTemplatePool(templates)
   window._openProgramId = programId
   window._openProgramPhases = phases
 
@@ -1600,7 +1657,7 @@ async function loadAllPhaseWorkouts(phases) {
   // One batched fetch for all phases instead of a sequential per-phase round-trip —
   // programs with many phases (e.g. Hyrox Hero's 12) were queuing up 12 awaits in a row.
   const phaseIds = phases.map(ph => ph.id)
-  const { data: allPws, error: pwsError } = await db.from('program_phase_workouts').select('*, workout_templates(name, workout_template_exercises(exercise_name, order_index, sets_json))').in('phase_id', phaseIds).order('week_number').order('day_of_week').order('session_order')
+  const { data: allPws, error: pwsError } = await db.from('program_phase_workouts').select('*, workout_templates(name, workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json))').in('phase_id', phaseIds).order('week_number').order('day_of_week').order('session_order')
   if (pwsError) log.error('loadAllPhaseWorkouts', 'fetch failed', pwsError)
   const pwsByPhase = {}
   ;(allPws || []).forEach(pw => { (pwsByPhase[pw.phase_id] = pwsByPhase[pw.phase_id] || []).push(pw) })
@@ -1657,7 +1714,7 @@ function _selectBuilderWeek(phaseId, week) {
 // assigns it immediately, no modal, no separate day/session step. "Duplicate week" copies a week's
 // day/workout assignments into the next empty week slot (see duplicatePhaseWeek below).
 function renderPhaseWeekGrid(phase, weekNum, sessions) {
-  const dayLabels = ['MON','TUE','WED','THU','FRI','SAT','SUN']
+  const dayLabels = _DAY_LABELS
   const tierColor = { heavy: '#ef4444', moderate: '#f59e0b', light: '#10b981' }
   const byDay = {}
   sessions.forEach(pw => { (byDay[pw.day_of_week] = byDay[pw.day_of_week] || []).push(pw) })
@@ -1668,7 +1725,12 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
     const name = pw.workout_templates?.name || 'Unknown'
     const exs = [...(pw.workout_templates?.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
     const exHtml = exs.length
-      ? exs.map(ex => `<div class="pwk-ex"><span>${escapeHtml(ex.exercise_name)}</span><span class="s">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span></div>`).join('')
+      // Same prescription line as the client/solo Workouts page, via the one shared formatter in
+      // app-workouts.js — a coach building the week sees exactly what the client will read.
+      ? exs.map(ex => {
+          const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio' })
+          return `<div class="pwk-ex"><div style="flex:1;min-width:0"><span>${escapeHtml(ex.exercise_name)}</span>${presc ? `<div class="pwk-presc">${escapeHtml(presc)}</div>` : ''}</div><span class="s">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span></div>`
+        }).join('')
       : '<div class="pwk-ex" style="color:var(--text-muted)">No exercises yet</div>'
     return `<div class="pwk-slot">
       <div class="pwk-slot-head" role="button" tabindex="0" onclick="_toggleBuilderSlot('${pw.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();_toggleBuilderSlot('${pw.id}')}">
@@ -1875,12 +1937,7 @@ async function _refreshProgramTemplates() {
     .is('client_id', null).is('program_id', null).is('generated_from_phase_id', null)
     .eq('is_personal', currentProfile?.role === 'solo')
     .order('name')
-  window._programTemplates = (templates || []).map(t => {
-    const exs = [...(t.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
-    const names = exs.map(e => e.exercise_name)
-    const preview = names.length ? names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3} more` : '') : ''
-    return { id: t.id, name: t.name, description: t.description || '', _exPreview: preview, _exCount: names.length }
-  })
+  window._programTemplates = await _buildProgramTemplatePool(templates)
 }
 
 function _openWorkoutPicker(phaseId, dayOfWeek, sessionOrder, weekNumber) {
@@ -1938,12 +1995,18 @@ function _renderWorkoutPickerResults(query) {
 
   const createRow = `<div onclick="_createWorkoutFromPicker()" style="padding:12px;border:1.5px dashed var(--accent);border-radius:10px;background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:12px">＋ Create new workout (this day only)</div>`
 
-  // Name + description + exercise preview is what makes three same-named workouts distinguishable.
+  // Name + description + exercise preview distinguishes DIFFERENT workouts — but for two genuine
+  // duplicates all three are identical, which is exactly what Jake hit (2026-07-22). The usage line
+  // is the discriminator that survives that case: it says WHICH copy this is.
   const rowHtml = t => `
     <div onclick="_pickWorkout('${t.id}')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;min-height:44px">
       <div style="font-size:14px;font-weight:600">${escapeHtml(t.name)}</div>
       ${t.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${escapeHtml(t.description)}</div>` : ''}
       ${t._exPreview ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px">${escapeHtml(t._exPreview)}</div>` : '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">No exercises yet</div>'}
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px;font-size:11px">
+        <span style="color:${t._usage ? 'var(--accent)' : 'var(--text-muted)'};font-weight:${t._usage ? '600' : '400'}">${t._usage ? '↳ Used in ' + escapeHtml(t._usage) : 'Not used yet'}</span>
+        <span style="color:var(--text-muted);flex-shrink:0">${t._exCount} exercise${t._exCount !== 1 ? 's' : ''}</span>
+      </div>
     </div>`
 
   resultsEl.innerHTML = `
