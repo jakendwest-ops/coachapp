@@ -487,14 +487,11 @@ function _buildTargetCols(tgt, ex) {
   if (tgt.weight && !isJumpMt) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
   let needsOneRM = false
   if (tgt.intensityMin) {
-    if (ex.oneRM) {
-      const kgLo = _calcWeightFromPct(ex.oneRM, tgt.intensityMin)
-      const kgHi = tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? _calcWeightFromPct(ex.oneRM, tgt.intensityMax) : null
-      cols.push({ val: kgLo + (kgHi ? '–'+kgHi : '') + ' kg', label: '1RM TARGET', accent: true })
-    } else {
-      needsOneRM = true
-      cols.push({ val: tgt.intensityMin+(tgt.intensityMax&&tgt.intensityMax!==tgt.intensityMin?'–'+tgt.intensityMax:'')+'%', label: '1RM' })
-    }
+    // Always the PERCENTAGE — the derived kg lives in the KG field's ghost text (see wPlaceholder in
+    // renderStrengthTable), so showing it here too spent a whole column repeating one number.
+    const pct = tgt.intensityMin + (tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? '–' + tgt.intensityMax : '')
+    if (!ex.oneRM) needsOneRM = true   // banner still offers to set it; without a 1RM there is no kg to ghost
+    cols.push({ val: pct + '%', label: '1RM TARGET', accent: true })
   }
   // Value carries the NUMBER only — the column's own label already says RPE or RIR, so prefixing
   // the value with it just says the same word twice ("RPE / RPE 8–9"). Jake, 2026-07-11.
@@ -559,11 +556,24 @@ function renderStrengthTable(ex) {
       style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done ? 'var(--border)' : 'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
   }
   const inDone = (i, row) => `<button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}" style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:${row.done?'none':'2px solid #9ca3af'};font-size:18px;font-weight:800;cursor:pointer;background:${row.done?'var(--success)':'#fff'};color:${row.done?'#fff':'transparent'}">✓</button>`
-  const inDel = (i) => ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="height:44px;flex-shrink:0;padding:0 8px;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:11px;font-weight:700">Delete</button>` : ''
+  // Deliberately SMALLER than the 44x44 complete-set tick above: the destructive action must not be the
+  // easier target mid-set. Jake asked twice (2026-07-13, 2026-07-23). aria-label carries the full meaning
+  // for screen readers, so the shrunk visual label costs nothing there.
+  // margin-left stays >=8px — a separate Jake request from 2026-07-05 (deliberate spacing so the delete
+  // is not mis-tapped) with its own regression test. Smaller AND spaced; the two are not in conflict.
+  const inDel = (i) => ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="width:32px;height:32px;flex-shrink:0;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:15px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center">&times;</button>` : ''
   const inSetNum = (i, isCurrent) => `<span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text-muted)'};text-align:center">${i+1}</span>`
 
   const rows = ex.tableRows.map((row, i) => {
     const prev = prevMap[i]
+    // The %1RM-derived load, computed once for every metric_type. The target bar shows the PERCENTAGE
+    // (2026-07-23) so this ghost is the only place the actual kg appears — it must therefore reach
+    // unilateral too, not just weight_reps. A bodyweight set renders 'BW' and has no input to ghost,
+    // which is correct: there is no load to prescribe.
+    const rowTgt0 = ex.sets_json?.[i]
+    const oneRMPh = (rowTgt0?.intensityMin && ex.oneRM)
+      ? _calcWeightFromPct(ex.oneRM, rowTgt0.intensityMin) + (rowTgt0.intensityMax && rowTgt0.intensityMax !== rowTgt0.intensityMin ? '–' + _calcWeightFromPct(ex.oneRM, rowTgt0.intensityMax) : '')
+      : ''
     // The row for the set you're currently on is highlighted so it's visually obvious which set the
     // target bar above applies to (Jake: "highlighted, not entered as text underneath — ugly UI").
     const isCurrent = i === curIdx
@@ -574,7 +584,7 @@ function renderStrengthTable(ex) {
       // than cramming four. One ✓ logs the whole set; _syncLoggedSetsFromTable emits both sides.
       const side = (label, wField, rField) => `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
         <span style="width:14px;flex-shrink:0;font-size:11px;font-weight:800;color:var(--text-muted);text-align:center">${label}</span>
-        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, wField, { mode:'decimal', step:'0.5', ph:'kg' })}
+        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, wField, { mode:'decimal', step:'0.5', ph: oneRMPh || 'kg' })}
         ${inCell(i, row, rField, { mode:'numeric', ph:'reps' })}
       </div>`
       return `${cardOpen}<div style="display:flex;align-items:flex-start;gap:6px">
@@ -604,11 +614,7 @@ function renderStrengthTable(ex) {
     }
 
     // weight_reps (default) — behaviour unchanged incl. ghost placeholders (les 2026-07-11: no pre-fill).
-    const rowTgt = ex.sets_json?.[i]
-    const oneRMPlaceholder = (rowTgt?.intensityMin && ex.oneRM)
-      ? _calcWeightFromPct(ex.oneRM, rowTgt.intensityMin) + (rowTgt.intensityMax && rowTgt.intensityMax !== rowTgt.intensityMin ? '–' + _calcWeightFromPct(ex.oneRM, rowTgt.intensityMax) : '')
-      : ''
-    const wPlaceholder = (prev?.weight_kg != null ? String(prev.weight_kg) : oneRMPlaceholder) || '—'
+    const wPlaceholder = oneRMPh || (prev?.weight_kg != null ? String(prev.weight_kg) : '') || '—'
     const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || '—'
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}

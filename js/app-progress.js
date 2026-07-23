@@ -1900,42 +1900,65 @@ async function removeBrandingLogo() {
   renderSettings(document.getElementById('main-content'))
 }
 
-async function downloadMyData() {
-  const msg = document.getElementById('settings-data-msg')
-  if (msg) msg.textContent = 'Preparing download…'
-
-  try {
+// Builds the GDPR export bundle. Extracted from downloadMyData so it can be asserted directly in a
+// test — the download itself is a Blob + anchor click, which proves nothing about the contents.
+async function _buildMyDataBundle() {
+  {
     const role = currentProfile?.role
     let bundle = { exportedAt: new Date().toISOString(), profile: null }
 
     const { data: profile } = await db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single()
     bundle.profile = profile
 
-    if (role === 'coach') {
+    // GDPR Art. 15/20 covers every piece of personal data held on this person - which VIEW they happen
+    // to be in when they tap the button is irrelevant to the obligation. This used to be an if/else:
+    // a coach got coaching assets ONLY, so a coach who also trains here (i.e. holds a clients row -
+    // Jake's own account) could never export their own weights, workouts, PBs, goals or 1RMs by any
+    // route. Both halves now run independently. Found by the 2026-07-23 full-file review.
+    // No role gate: ownership is `coach_id = my uid` whether the user is in PT or Personal view, and a
+    // plain client simply owns none of these (three empty arrays). Gating on role made the export's
+    // CONTENTS depend on a UI toggle, which is the same class of bug as the if/else this replaced.
+    {
       const [{ data: clients }, { data: templates }, { data: programs }] = await Promise.all([
         db.from('clients').select('full_name, email, created_at').eq('coach_id', currentUser.id),
         db.from('workout_templates').select('name, created_at').eq('coach_id', currentUser.id),
         db.from('programs').select('name, created_at').eq('coach_id', currentUser.id),
       ])
       bundle.clients = clients; bundle.workoutTemplates = templates; bundle.programs = programs
-    } else {
-      const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-      if (clientRow) {
-        const cid = clientRow.id
-        const [{ data: weights }, { data: workouts }, { data: perf }, { data: goals }, { data: events }, { data: oneRMs }] = await Promise.all([
-          db.from('weight_logs').select('date, weight_kg, body_fat_pct').eq('client_id', cid).order('date'),
-          db.from('workout_logs').select('name, date').eq('client_id', cid).order('date'),
-          db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', cid).order('date'),
-          db.from('goals').select('title, target_date, status').eq('client_id', cid),
-          db.from('events').select('title, date, type').eq('client_id', cid).order('date'),
-          db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').eq('client_id', cid).order('recorded_at'),
+    }
+    {
+      // No .single(): clients.user_id is UNIQUE today so this is one row, but an export should not be
+      // brittle about a row count. .single() throws on anything but exactly one, and the old code
+      // DISCARDED that error - so any surprise silently produced an export containing no health data
+      // while still reporting success.
+      const { data: myClientRows, error: cErr } = await db.from('clients').select('id').eq('user_id', currentUser.id)
+      if (cErr) throw cErr
+      const cids = (myClientRows || []).map(r => r.id)
+      if (cids.length) {
+        const [{ data: weights }, { data: workouts }, { data: perf }, { data: goals }, { data: events }, { data: oneRMs }, { data: checkIns }] = await Promise.all([
+          db.from('weight_logs').select('date, weight_kg, body_fat_pct, resting_hr, notes').in('client_id', cids).order('date'),
+          db.from('workout_logs').select('name, date, notes, workout_log_exercises(exercise_name, exercise_type, metric_type, order_index, client_notes, workout_log_sets(set_number, side, weight_kg, reps_achieved, duration_seconds, distance_m, height_cm, effort_type, effort_value, avg_hr, max_hr, avg_watts))').in('client_id', cids).order('date'),
+          db.from('performance_logs').select('name, category, value, unit, date').in('client_id', cids).order('date'),
+          db.from('goals').select('title, target_date, status').in('client_id', cids),
+          db.from('events').select('title, date, type').in('client_id', cids).order('date'),
+          db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').in('client_id', cids).order('recorded_at'),
+          db.from('client_check_ins').select('*').in('client_id', cids).order('created_at'),
         ])
         bundle.weightLogs = weights; bundle.workoutLogs = workouts
         bundle.performanceLogs = perf; bundle.goals = goals; bundle.events = events
-        bundle.oneRepMaxes = oneRMs
+        bundle.oneRepMaxes = oneRMs; bundle.checkIns = checkIns
       }
     }
+    return bundle
+  }
+}
 
+async function downloadMyData() {
+  const msg = document.getElementById('settings-data-msg')
+  if (msg) msg.textContent = 'Preparing download…'
+
+  try {
+    const bundle = await _buildMyDataBundle()
     const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
