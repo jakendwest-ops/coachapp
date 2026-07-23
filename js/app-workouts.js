@@ -22,6 +22,78 @@ function fmtRestInput(raw) {
   if (digits.length <= 2) return '0:' + digits.padStart(2, '0')
   return (digits.slice(0, -2).replace(/^0+/, '') || '0') + ':' + digits.slice(-2)
 }
+// Cardio distance for a set — PRESCRIBED (sets_json) or ACHIEVED (loggedSets) — always in METRES.
+//
+// Both used the same `distance` key meaning km, and the runner multiplied by 1000 on save. From
+// 2026-07-22 both enter and write metres under a NEW key, `distanceM`; `distance` is never written
+// again and never rewritten, so every pre-existing template and in-flight draft keeps its original
+// meaning (fix forward, don't retroactively reclassify). One function for both because they are the
+// same conversion — duplicating it per call site is how sibling paths silently drift (les-037).
+//
+// NB: distinct from the `distance_m` set key / column, which is achieved metres for jump_distance and
+// distance-strength (carry/sled) and was always metres.
+function _cardioDistanceM(s) {
+  if (!s) return 0
+  if (s.distanceM != null && s.distanceM !== '') return parseFloat(s.distanceM) || 0
+  return s.distance ? (parseFloat(s.distance) || 0) * 1000 : 0
+}
+
+// Metres under 1km, km above — a 5000m row reads better as "5km" on a chart or a target chip, while
+// a 400m interval reads better as "400m". Entry is always metres; only display adapts.
+function fmtDistanceM(m) {
+  const n = Math.round(parseFloat(m) || 0)   // round BEFORE the threshold test, or 999.6 renders "1000 m"
+  if (!n) return ''
+  return n < 1000 ? `${n} m` : `${(n / 1000).toFixed(2).replace(/\.?0+$/, '')} km`
+}
+
+// A mm:ss target of '0:00' means "unset", but it is a truthy string — so a bare `s.pace500Min ?` check
+// treats every legacy cardio set as having a pace, rendering a "0:00 /500m" chip in the runner and
+// forcing the builder's optional-field disclosure permanently open. The builder used to default these
+// inputs to '0:00', so essentially every set built before 2026-07-22 carries them. Anything time-shaped
+// must go through here before being treated as present. Lives here, not in app-runner.js, because both
+// the runner AND the builder need it (found by the pre-push review, which caught the builder still
+// using raw truthiness while the runner had been fixed).
+function _hasTimeTarget(v) { return !!v && v !== '0:00' && v !== '00:00' }
+
+// THE single source of truth for a sets_json payload.
+//
+// This was an explicit key allowlist duplicated in TWO builders — saveExerciseToTemplate (here) and
+// _confirmRunnerExerciseFromModal (app-runner.js) — and it had silently dropped EVERY cardio-specific
+// target since the cardio fields were introduced: isDistanceBased, pace500Min/Max, hrZoneMin/Max,
+// restHrMax, strokeRateMin/Max, paceKmMin/Max. So a coach adding a cardio exercise kept only duration
+// and distance, while EDITING one (saveEditTemplateExercise, which writes sets_json raw) kept
+// everything. Two siblings doing one job, drifted, failing silently at every layer — les-036/les-037.
+// It became load-bearing on 2026-07-22: the runner branches on `tgt.isDistanceBased`, so a newly added
+// distance-cardio exercise rendered as duration and its metres target never appeared.
+// Found by the pre-push multi-agent review, independently, by two agents.
+//
+// One function, both callers. Do not re-inline it.
+function _cleanTemplateSets(sets, derived) {
+  return (sets || []).map(s => ({
+    amrap: !!s.amrap, unilateral: derived.unilateral, timed: derived.timed,
+    bodyweight: !!s.bodyweight, assisted: !!s.assisted, assistWeight: s.assistWeight || null,
+    repsMin: s.repsMin || null, repsMax: s.repsMax || null, weight: s.weight || null,
+    intensityMin: s.intensityMin || null, intensityMax: s.intensityMax || null,
+    restMin: s.restMin || null, restMax: s.restMax || null,
+    effortType: s.effortType || 'rpe', effortMin: s.effortMin || null, effortMax: s.effortMax || null,
+    tempo: s.tempo || null, countdown: s.countdown || null,
+    duration: s.duration || null,
+    // `distance` (km) is carried through untouched so legacy templates keep their original meaning;
+    // `distanceM` (metres) is what the builder writes from 2026-07-22. See _cardioDistanceM.
+    distance: s.distance || null, distanceM: s.distanceM || null,
+    // Cardio shape + targets. isDistanceBased is the one the runner branches on.
+    isDistanceBased: !!s.isDistanceBased,
+    pace500Min: s.pace500Min || null, pace500Max: s.pace500Max || null,
+    paceKmMin: s.paceKmMin || null, paceKmMax: s.paceKmMax || null,
+    wattsMin: s.wattsMin || null, wattsMax: s.wattsMax || null,
+    hrZoneMin: s.hrZoneMin || null, hrZoneMax: s.hrZoneMax || null,
+    restHrMax: s.restHrMax || null,
+    strokeRateMin: s.strokeRateMin || null, strokeRateMax: s.strokeRateMax || null,
+    // Jump targets.
+    targetHeightCm: s.targetHeightCm || null, targetDistanceM: s.targetDistanceM || null
+  }))
+}
+
 function fmtSet(s, type) {
   if (type === 'cardio') {
     const parts = [s.duration_seconds ? fmtDuration(s.duration_seconds) : null, s.distance_m ? (s.distance_m/1000).toFixed(2)+' km' : null]
@@ -66,7 +138,7 @@ async function openSessionDetail(templateId, name, ctx = {}) {
             const hrStr     = (s.hrZoneMin || s.hrZoneMax) ? `HR ${s.hrZoneMin||'?'}–${s.hrZoneMax||'?'}` : null
             const restHrStr = s.restHrMax ? `rest HR <${s.restHrMax}` : null
             const durStr    = s.duration ? Math.floor((parseRest(s.duration)||0) / 60) + ':' + String((parseRest(s.duration)||0) % 60).padStart(2, '0') : null
-            const distStr   = s.distance ? s.distance + ' km' : null
+            const distStr   = fmtDistanceM(_cardioDistanceM(s)) || null
             const parts = s.isDistanceBased
               ? [distStr, paceStr || paceKmStr, strokeStr, hrStr, restHrStr]
               : [durStr, paceStr || paceKmStr, strokeStr, hrStr, restHrStr]
@@ -879,7 +951,7 @@ async function openTemplate(id, ctx = {}) {
                       const restHrStr  = s.restHrMax ? `rest HR <${s.restHrMax}` : null
                       const durStr     = s.duration ? fmtDuration(parseRest(s.duration)||0) : null
                       parts = s.isDistanceBased
-                        ? [s.distance ? s.distance+' km' : null, paceStr||paceKmStr, strokeStr, restStr, hrStr, restHrStr]
+                        ? [fmtDistanceM(_cardioDistanceM(s)) || null, paceStr||paceKmStr, strokeStr, restStr, hrStr, restHrStr]
                         : [durStr, paceStr||paceKmStr, strokeStr, restStr, hrStr, restHrStr]
                     } else {
                       const restStr2 = s.restMin && s.restMin !== '0:00' ? s.restMin+(s.restMax&&s.restMax!==s.restMin?'–'+s.restMax:'')+' rest' : (s.rest ? s.rest+' rest' : null)
@@ -1007,16 +1079,24 @@ function flushTemplateSets(containerId) {
     s.tempo        = document.getElementById(`ts-tempo-${i}`)?.value    ?? s.tempo
     s.countdown    = document.getElementById(`ts-cd-${i}`)?.value       ?? s.countdown
     s.duration     = document.getElementById(`ts-duration-${i}`)?.value ?? s.duration
-    s.distance     = document.getElementById(`ts-distance-${i}`)?.value ?? s.distance
+    // METRES (2026-07-22). `s.distance` (km) is legacy-read-only and deliberately never written here —
+    // see _cardioDistanceM. A missing input leaves the existing value alone, per the ?? pattern above.
+    s.distanceM    = document.getElementById(`ts-distm-${i}`)?.value    ?? s.distanceM
     s.pace500Min    = document.getElementById(`ts-p500min-${i}`)?.value   ?? s.pace500Min
     s.pace500Max    = document.getElementById(`ts-p500max-${i}`)?.value   ?? s.pace500Max
     s.hrZoneMin     = document.getElementById(`ts-hrzmin-${i}`)?.value    ?? s.hrZoneMin
     s.hrZoneMax     = document.getElementById(`ts-hrzmax-${i}`)?.value    ?? s.hrZoneMax
+    s.wattsMin      = document.getElementById(`ts-wattsmin-${i}`)?.value  ?? s.wattsMin
+    s.wattsMax      = document.getElementById(`ts-wattsmax-${i}`)?.value  ?? s.wattsMax
+    // Legacy-only inputs (rendered solely when the set already carries a value) — the ?? keeps the
+    // stored value intact for every set where the input isn't rendered at all.
     s.paceKmMin     = document.getElementById(`ts-pkmmin-${i}`)?.value    ?? s.paceKmMin
     s.paceKmMax     = document.getElementById(`ts-pkmmax-${i}`)?.value    ?? s.paceKmMax
     s.restHrMax     = document.getElementById(`ts-resthr-${i}`)?.value    ?? s.restHrMax
     s.strokeRateMin = document.getElementById(`ts-srmin-${i}`)?.value     ?? s.strokeRateMin
     s.strokeRateMax = document.getElementById(`ts-srmax-${i}`)?.value     ?? s.strokeRateMax
+    s.targetHeightCm   = document.getElementById(`ts-jheight-${i}`)?.value ?? s.targetHeightCm
+    s.targetDistanceM  = document.getElementById(`ts-jdist-${i}`)?.value   ?? s.targetDistanceM
     s.assistWeight  = document.getElementById(`ts-assist-${i}`)?.value    ?? s.assistWeight
   })
 }
@@ -1046,17 +1126,25 @@ function renderTemplateSets(containerId, type) {
   const isJump = type === 'jump_height' || type === 'jump_distance'
   const showSetToggles = type === 'weight_reps' || type === 'unilateral'
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
-  const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f4f6"><span style="font-size:13px;font-weight:600;color:#374151">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
+  const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;font-weight:600;color:var(--text)">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
   const mini = (id, opts='') => `<input id="${id}" class="field-input" style="width:60px;padding:5px 8px;font-size:13px;text-align:center" ${opts}>`
-  const dash = `<span style="color:#9ca3af;font-size:12px">–</span>`
+  const dash = `<span style="color:var(--text-muted);font-size:12px">–</span>`
+  // Progressive disclosure for the fields that are genuinely optional. Native <details> so there is no
+  // open/closed state to track (a re-render would lose it anyway) and no extra key polluting sets_json.
+  // Collapsed inputs are still in the DOM, so flushTemplateSets reads them exactly as before.
+  //
+  // `open` is passed true whenever a field INSIDE already holds a value. Collapsing a populated field
+  // would hide real prescribed data behind a control the coach has no reason to open — the same class
+  // of silent loss as dropping an affordance along with the container that hosted it (les-043).
+  const more = (label, open, inner) => `<details class="ts-more"${open ? ' open' : ''}><summary>${label}${open ? ' <span style="font-weight:600;color:var(--text-muted)">· in use</span>' : ''}</summary><div style="padding-bottom:4px">${inner}</div></details>`
   container.innerHTML = (window._templateSets || []).map((s, i) => {
     const et = s.effortType || 'rpe'
-    const tog = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'#d1d5db'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'#6b7280'};cursor:pointer">${label}</button>`
-    const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'#d1d5db'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'#6b7280'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
-    return `<div style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:10px;padding:0 14px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #e5e7eb">
+    const tog = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
+    const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'var(--border)'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'var(--text-muted)'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
+    return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:12px;font-weight:700;color:#374151">Set ${i+1}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--text)">Set ${i+1}</span>
           ${i > 0 ? `<button type="button" onclick="copyPrevTemplateSet(${i},'${containerId}','${tid}')" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">Copy set ${i} ↑</button>` : ''}
         </div>
         <div style="display:flex;gap:4px">
@@ -1065,43 +1153,57 @@ function renderTemplateSets(containerId, type) {
             ${tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`)}
             ${tog('Assist', s.assisted, `toggleTsSet(${i},'assisted','${containerId}')`)}
           ` : ''}
-          <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid #d1d5db;background:transparent;color:#9ca3af;cursor:pointer;font-size:15px;line-height:1">×</button>
+          <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:15px;line-height:1">×</button>
         </div>
       </div>
       ${isCardio ? `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f4f6">
-          <span style="font-size:13px;font-weight:600;color:#374151">Target</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px;font-weight:600;color:var(--text)">Target</span>
           <div style="display:flex;gap:4px">
             ${tog('Duration', !s.isDistanceBased, `toggleTsSet(${i},'isDistanceBased','${containerId}')`)}
             ${tog('Distance', s.isDistanceBased, `toggleTsSet(${i},'isDistanceBased','${containerId}')`)}
           </div>
         </div>
         ${!s.isDistanceBased ? row('Duration', mini(`ts-duration-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.duration||'0:00')+'"')) : ''}
-        ${s.isDistanceBased ? row('Distance (km)', mini(`ts-distance-${i}`, `type="number" step="0.01" placeholder="—"${s.distance ? ` value="${s.distance}"` : ''}`)) : ''}
-        ${row('Pace / 500m', mini(`ts-p500min-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Min||'0:00'}"`) + dash + mini(`ts-p500max-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Max||'0:00'}"`))}
-
-        ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:13px;font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
+        ${s.isDistanceBased ? row('Distance (m)', mini(`ts-distm-${i}`, `type="number" step="1" inputmode="numeric" placeholder="—"${_cardioDistanceM(s) ? ` value="${_cardioDistanceM(s)}"` : ''}`)) : ''}
         ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
-        ${row('HR Zone (BPM)', mini(`ts-hrzmin-${i}`,'type="number" placeholder="—"'+(s.hrZoneMin?` value="${s.hrZoneMin}"`:'')) + dash + mini(`ts-hrzmax-${i}`,'type="number" placeholder="—"'+(s.hrZoneMax?` value="${s.hrZoneMax}"`:'')))}
-        ${row('Pace / km', mini(`ts-pkmmin-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMin||'0:00'}"`) + dash + mini(`ts-pkmmax-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMax||'0:00'}"`))}
-        ${row('Rest HR max (BPM)', mini(`ts-resthr-${i}`, 'type="number" placeholder="e.g. 150"'+(s.restHrMax ? ` value="${s.restHrMax}"` : '')))}
-        ${row('Stroke rate (spm)', mini(`ts-srmin-${i}`, 'type="number" placeholder="—"'+(s.strokeRateMin?` value="${s.strokeRateMin}"`:'')) + dash + mini(`ts-srmax-${i}`, 'type="number" placeholder="—"'+(s.strokeRateMax?` value="${s.strokeRateMax}"`:'')))}
+        ${more('+ More targets', !!(_hasTimeTarget(s.pace500Min) || _hasTimeTarget(s.pace500Max) || s.wattsMin || s.wattsMax || s.hrZoneMin || s.hrZoneMax || s.restHrMax || s.strokeRateMin || s.strokeRateMax || _hasTimeTarget(s.paceKmMin) || _hasTimeTarget(s.paceKmMax)), `
+          ${row('Pace / 500m', mini(`ts-p500min-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Min||''}"`) + dash + mini(`ts-p500max-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Max||''}"`))}
+          ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:13px;font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
+          ${row('Watts', mini(`ts-wattsmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.wattsMin?` value="${s.wattsMin}"`:'')) + dash + mini(`ts-wattsmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.wattsMax?` value="${s.wattsMax}"`:'')))}
+          ${row('HR Zone (BPM)', mini(`ts-hrzmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.hrZoneMin?` value="${s.hrZoneMin}"`:'')) + dash + mini(`ts-hrzmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.hrZoneMax?` value="${s.hrZoneMax}"`:'')))}
+          ${row('Rest HR max (BPM)', mini(`ts-resthr-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.restHrMax ? ` value="${s.restHrMax}"` : '')))}
+          ${/* Pace/km was removed 2026-07-22 as redundant — it duplicated the computed Pace/1000m row
+                above, derived from Pace/500m. But simply deleting the input would strand any legacy
+                template that already has a value: the runner would keep showing its "x /km" chip with
+                no way left to edit or clear it (les-043 — removing a control removes the ability to
+                undo what it set). So it renders for legacy sets ONLY, purely as an escape hatch. */''}
+          ${(_hasTimeTarget(s.paceKmMin) || _hasTimeTarget(s.paceKmMax)) ? row('Pace / km <span style="font-weight:500;color:var(--text-muted)">(legacy)</span>', mini(`ts-pkmmin-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMin||''}"`) + dash + mini(`ts-pkmmax-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMax||''}"`)) : ''}
+          ${row('Stroke rate (spm)', mini(`ts-srmin-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.strokeRateMin?` value="${s.strokeRateMin}"`:'')) + dash + mini(`ts-srmax-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.strokeRateMax?` value="${s.strokeRateMax}"`:'')))}
+        `)}
       ` : isTimedHold ? `
         ${row('Duration (mm:ss)', mini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.duration||'0:00'}"`))}
-        ${row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
+        ${row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${s.weight}"`:'')))}
         ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
         ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
       ` : isJump ? `
-        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
-      ` : `
-        ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
-        ${s.bodyweight ? '' : row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="Optional"'+(s.weight?` value="${s.weight}"`:'')))}
-        ${s.assisted ? row('Assist weight (kg)', mini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${s.assistWeight}"`:''))): ''}
-        ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${s.intensityMin}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${s.intensityMax}"`:'')))}
+        ${type === 'jump_height'
+          ? row('Target height (cm)', mini(`ts-jheight-${i}`, 'type="number" step="1" inputmode="numeric" placeholder="—"'+(s.targetHeightCm?` value="${s.targetHeightCm}"`:'')))
+          : row('Target distance (m)', mini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${s.targetDistanceM}"`:'')))}
+        ${row('Jumps per set', mini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${s.repsMin}"`:'')))}
         ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
         ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
-        ${row('Tempo', mini(`ts-tempo-${i}`,'type="text" maxlength="4" placeholder="e.g. 3011"'+(s.tempo?` value="${s.tempo}"`:'')))}
-        ${row('Countdown (s)', mini(`ts-cd-${i}`,'type="number" placeholder="Optional"'+(s.countdown?` value="${s.countdown}"`:'')))}
+      ` : `
+        ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
+        ${s.bodyweight ? '' : row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${s.weight}"`:'')))}
+        ${s.assisted ? row('Assist weight (kg)', mini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${s.assistWeight}"`:''))): ''}
+        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
+        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
+        ${more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `
+          ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${s.intensityMin}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${s.intensityMax}"`:'')))}
+          ${row('Tempo', mini(`ts-tempo-${i}`,'type="text" maxlength="4" placeholder="e.g. 3011"'+(s.tempo?` value="${s.tempo}"`:'')))}
+          ${row('Countdown (s)', mini(`ts-cd-${i}`,'type="number" placeholder="—"'+(s.countdown?` value="${s.countdown}"`:'')))}
+        `)}
       `}
     </div>`
   }).join('') + `
@@ -1436,16 +1538,7 @@ async function saveExerciseToTemplate(templateId) {
   const nextOrder = existing?.length ? (existing[0].order_index + 1) : 0
   const sets = window._templateSets || []
 
-  const cleanSets = sets.map(s => ({
-    amrap: !!s.amrap, unilateral: derived.unilateral, timed: derived.timed,
-    bodyweight: !!s.bodyweight, assisted: !!s.assisted, assistWeight: s.assistWeight||null,
-    repsMin: s.repsMin||null, repsMax: s.repsMax||null, weight: s.weight||null,
-    intensityMin: s.intensityMin||null, intensityMax: s.intensityMax||null,
-    restMin: s.restMin||null, restMax: s.restMax||null,
-    effortType: s.effortType||'rpe', effortMin: s.effortMin||null, effortMax: s.effortMax||null,
-    tempo: s.tempo||null, countdown: s.countdown||null,
-    duration: s.duration||null, distance: s.distance||null
-  }))
+  const cleanSets = _cleanTemplateSets(sets, derived)
   const { error } = await db.from('workout_template_exercises').insert({
     template_id:   targetId,
     exercise_id:   exerciseId || null,
@@ -1801,7 +1894,9 @@ async function _cloneSharedMasterTemplate(tmpl, overrides = {}) {
   if (origExs.length) {
     const { data: insertedExs, error: exErr } = await db.from('workout_template_exercises').insert(origExs.map(ex => ({
       template_id: newTmpl.id, exercise_id: ex.exercise_id || null, exercise_name: ex.exercise_name,
-      exercise_type: ex.exercise_type, order_index: ex.order_index, sets: ex.sets || null,
+      // See _cloneTemplateForClient — metric_type must survive a fork-on-edit clone too.
+      exercise_type: ex.exercise_type, metric_type: ex.metric_type || null,
+      order_index: ex.order_index, sets: ex.sets || null,
       sets_json: ex.sets_json || null, notes: ex.notes || null, superset_group: ex.superset_group || null
     }))).select('id, order_index')
     if (exErr) log.error('_cloneSharedMasterTemplate', 'exercise clone failed', exErr)

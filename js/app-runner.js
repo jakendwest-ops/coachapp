@@ -470,9 +470,21 @@ function _buildTargetCols(tgt, ex) {
     const durDisplay = secs != null ? (Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0')) : null
     if (durDisplay) cols.push({ val: durDisplay, label: 'DURATION', accent: true })
   }
-  const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
-  if (repsStr) cols.push({ val: repsStr, label: 'REPS', accent: true })
-  if (tgt.weight) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
+  // Jump targets (2026-07-22). Until now there was no jump branch at all, so jump_height/jump_distance
+  // rendered a target bar with nothing to aim at — capture and charting worked, but the coach could
+  // not prescribe. Label REPS as JUMPS here: for a jump, a "rep" is a contact.
+  const mt = _exMetricType(ex)
+  if (mt === 'jump_height' && tgt.targetHeightCm) cols.push({ val: tgt.targetHeightCm+' cm', label: 'TARGET', accent: true })
+  if (mt === 'jump_distance' && tgt.targetDistanceM) cols.push({ val: tgt.targetDistanceM+' m', label: 'TARGET', accent: true })
+  const isJumpMt0 = mt === 'jump_height' || mt === 'jump_distance'
+  // Jumps prescribe a single contact count; a stale repsMax from a previous metric_type render
+  // would otherwise print a range ("8–12 JUMPS") the builder never offered.
+  const repsStr = !tgt.timed && tgt.repsMin ? (isJumpMt0 ? String(tgt.repsMin) : tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
+  if (repsStr) cols.push({ val: repsStr, label: mt === 'jump_height' || mt === 'jump_distance' ? 'JUMPS' : 'REPS', accent: true })
+  // A stale `weight` survives a metric_type switch (flushTemplateSets preserves un-rendered
+  // fields), so a jump set can still carry one — don't render two columns both labelled TARGET.
+  const isJumpMt = mt === 'jump_height' || mt === 'jump_distance'
+  if (tgt.weight && !isJumpMt) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
   let needsOneRM = false
   if (tgt.intensityMin) {
     if (ex.oneRM) {
@@ -684,7 +696,7 @@ function renderRunner() {
               <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:48px;flex-shrink:0">Set ${i+1}</span>
               <span style="flex:1;display:flex;gap:10px;align-items:center">
                 ${ex.type === 'cardio'
-                  ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : s.distance ? s.distance+' km' : '—'}</span>`
+                  ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : fmtDistanceM(_cardioDistanceM(s)) || '—'}</span>`
                   : s.distance_m
                     ? `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
                     : s.duration
@@ -745,10 +757,11 @@ function renderRunner() {
           return `
           <!-- Cardio targets -->
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-            ${distBased && tgt.distance ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${tgt.distance} km</span>` : ''}
+            ${distBased && _cardioDistanceM(tgt) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${fmtDistanceM(_cardioDistanceM(tgt))}</span>` : ''}
             ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${normalizeDuration(tgt.duration)}</span>` : ''}
-            ${tgt.pace500Min ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.pace500Min}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+tgt.pace500Max:''} /500m</span>` : ''}
-            ${tgt.paceKmMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.paceKmMin}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+tgt.paceKmMax:''} /km</span>` : ''}
+            ${_hasTimeTarget(tgt.pace500Min) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.pace500Min}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+tgt.pace500Max:''} /500m</span>` : ''}
+            ${_hasTimeTarget(tgt.paceKmMin) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.paceKmMin}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+tgt.paceKmMax:''} /km</span>` : ''}
+            ${tgt.wattsMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.wattsMin}${tgt.wattsMax && tgt.wattsMax!==tgt.wattsMin?'–'+tgt.wattsMax:''} W</span>` : ''}
             ${tgt.hrZoneMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${tgt.hrZoneMin}${tgt.hrZoneMax?'–'+tgt.hrZoneMax:''} bpm</span>` : ''}
             ${tgt.restMin && tgt.restMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof tgt.restMin === 'number' ? fmtDuration(tgt.restMin) : tgt.restMin}</span>` : ''}
             ${tgt.strokeRateMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">${tgt.strokeRateMin}${tgt.strokeRateMax?'–'+tgt.strokeRateMax:''} spm</span>` : ''}
@@ -760,8 +773,8 @@ function renderRunner() {
           <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
             ${distBased ? `
               <div>
-                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance achieved (km)</div>
-                <input id="wr-cardio-dist" type="number" step="0.01" inputmode="decimal" placeholder="${tgt.distance||'0'}" value="${lastCardio?.distance||tgt.distance||''}"
+                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance achieved (m)</div>
+                <input id="wr-cardio-dist" type="number" step="1" inputmode="numeric" placeholder="${_cardioDistanceM(tgt)||'0'}" value="${_cardioDistanceM(lastCardio)||_cardioDistanceM(tgt)||''}"
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>
               <div>
@@ -787,6 +800,11 @@ function renderRunner() {
             <div style="flex:1">
               <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Max HR (bpm) — optional</div>
               <input id="wr-cardio-max-hr" type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="" value="${lastCardio?.maxHr||''}"
+                style="width:100%;padding:10px 12px;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+            </div>
+            <div style="flex:1">
+              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Avg watts — optional</div>
+              <input id="wr-cardio-watts" type="number" inputmode="numeric" step="1" min="0" max="2000" placeholder="${tgt.wattsMin||''}" value="${lastCardio?.avgWatts||''}"
                 style="width:100%;padding:10px 12px;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
             </div>
           </div>
@@ -913,9 +931,12 @@ function logRunnerSet() {
       const dist = document.getElementById('wr-cardio-dist')?.value?.trim()
       if (!dist) return
       const paceEl = document.getElementById('wr-cardio-pace')
-      setData = { distance: dist, paceAchieved: paceEl?.value?.trim() || null,
+      // METRES, matching the input above. Persisted straight to distance_m with no conversion —
+      // the old km input needed a x1000 at the save site, which is what made the units ambiguous.
+      setData = { distanceM: dist, paceAchieved: paceEl?.value?.trim() || null,
                   avgHr: document.getElementById('wr-cardio-avg-hr')?.value?.trim() || null,
-                  maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null }
+                  maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null,
+                  avgWatts: document.getElementById('wr-cardio-watts')?.value?.trim() || null }
     } else {
       // If interval timer is running, compute elapsed time; otherwise read the manual input field
       let dur
@@ -929,9 +950,10 @@ function logRunnerSet() {
       // Overlay inputs take priority over runner-form inputs (interval overlay is still mounted here)
       const distEl = document.getElementById('wr-cardio-dist-opt')
       const paceEl = document.getElementById('wr-cardio-pace')
-      setData = { duration: dur, distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null,
+      setData = { duration: dur, distanceM: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null,
                   avgHr: document.getElementById('wr-cardio-avg-hr')?.value?.trim() || null,
-                  maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null }
+                  maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null,
+                  avgWatts: document.getElementById('wr-cardio-watts')?.value?.trim() || null }
     }
     // stop any running interval timer
     stopIntervalTimer()
@@ -1172,7 +1194,12 @@ function startIntervalTimer(secs) {
       const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
       const distEl = document.getElementById('wr-cardio-dist-opt')
       const paceEl = document.getElementById('wr-cardio-pace')
-      const setData = { duration: tgt.duration || fmtRestCountdown(secs), distanceAchieved: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null }
+      const setData = { duration: tgt.duration || fmtRestCountdown(secs), distanceM: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null,
+                        // HR + watts inputs stay mounted beneath the interval overlay and are read by the
+                        // manual LOG path — this auto-log dropped them (same class as distanceAchieved).
+                        avgHr: document.getElementById('wr-cardio-avg-hr')?.value?.trim() || null,
+                        maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null,
+                        avgWatts: document.getElementById('wr-cardio-watts')?.value?.trim() || null }
       ex.loggedSets.push(setData)
       const restSecs = ex.restSecs || 90
       const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
@@ -1246,8 +1273,8 @@ function renderIntervalTimer() {
     <div style="font-size:13px;color:var(--text-muted);margin-bottom:24px">INTERVAL IN PROGRESS</div>
     <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
       <div>
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance covered (km) — optional</div>
-        <input id="wr-cardio-dist-opt" type="number" step="0.01" inputmode="decimal" placeholder="e.g. 1.24"
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance covered (m) — optional</div>
+        <input id="wr-cardio-dist-opt" type="number" step="1" inputmode="numeric" placeholder="e.g. 1240"
           style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--surface);color:var(--text)">
       </div>
       <div>
@@ -1481,16 +1508,11 @@ async function _confirmRunnerExerciseFromModal(mode) {
   const notes = document.getElementById('att-notes').value.trim() || null
   const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   const sets = window._templateSets || []
-  const cleanSets = sets.map(s => ({
-    amrap: !!s.amrap, unilateral: metricType === 'unilateral', timed: metricType === 'timed_hold',
-    bodyweight: !!s.bodyweight, assisted: !!s.assisted, assistWeight: s.assistWeight||null,
-    repsMin: s.repsMin||null, repsMax: s.repsMax||null, weight: s.weight||null,
-    intensityMin: s.intensityMin||null, intensityMax: s.intensityMax||null,
-    restMin: s.restMin||null, restMax: s.restMax||null,
-    effortType: s.effortType||'rpe', effortMin: s.effortMin||null, effortMax: s.effortMax||null,
-    tempo: s.tempo||null, countdown: s.countdown||null,
-    duration: s.duration||null, distance: s.distance||null
-  }))
+  // Shared with saveExerciseToTemplate — one allowlist, so these two cannot drift again (les-037).
+  // `derived` reproduces exactly what this function used to inline: unilateral === metricType is
+  // 'unilateral', timed === metricType is 'timed_hold'. Same helper the builder uses.
+  const derived = _deriveFromMetricType(metricType)
+  const cleanSets = _cleanTemplateSets(sets, derived)
   const oneRM = await _lookupClientOneRM(name, exerciseId)
   closeModal('add-to-template-modal')
 
@@ -1577,7 +1599,8 @@ async function showRunnerFinish() {
     const w = parseFloat(set.weight), r = parseInt(set.reps,10)
     return sv + (isNaN(w)||isNaN(r) ? 0 : w * r)
   }, 0), 0)
-  const totalDist = doneExs.filter(e=>e.type==='cardio').reduce((s,e) => s + e.loggedSets.reduce((sd,set) => sd + (parseFloat(set.distance)||0), 0), 0)
+  // METRES (2026-07-22) — via the shared reader so a legacy km draft still totals correctly.
+  const totalDist = doneExs.filter(e=>e.type==='cardio').reduce((s,e) => s + e.loggedSets.reduce((sd,set) => sd + _cardioDistanceM(set), 0), 0)
 
   // Show screen immediately while PR query runs
   const renderScreen = (prevBests = {}) => {
@@ -1611,7 +1634,7 @@ async function showRunnerFinish() {
               <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Volume</div>
             </div>` : ''}
             ${totalDist > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
-              <div style="font-size:17px;font-weight:800;color:var(--accent)">${totalDist.toFixed(1)} km</div>
+              <div style="font-size:17px;font-weight:800;color:var(--accent)">${fmtDistanceM(totalDist)}</div>
               <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Distance</div>
             </div>` : ''}
           </div>
@@ -1626,14 +1649,14 @@ async function showRunnerFinish() {
               const w = parseFloat(set.weight), r = parseInt(set.reps,10)
               return s + (isNaN(w)||isNaN(r) ? 0 : w*r)
             }, 0)
-            const exDist = isCardio ? e.loggedSets.reduce((s,set)=>s+(parseFloat(set.distance)||0),0) : 0
+            const exDist = isCardio ? e.loggedSets.reduce((s,set)=>s+_cardioDistanceM(set),0) : 0
             return `
             <div style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
               <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
                 <span style="font-weight:600;font-size:14px">${e.name}</span>
                 <div style="display:flex;align-items:center;gap:6px">
                   ${isPR ? `<span style="font-size:10px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.12);padding:2px 7px;border-radius:10px">🏆 PR</span>` : ''}
-                  <span style="font-size:12px;color:var(--text-muted)">${e.loggedSets.length} set${e.loggedSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+exVol.toLocaleString()+'kg':''} ${isCardio&&exDist>0?'· '+exDist.toFixed(1)+'km':''}</span>
+                  <span style="font-size:12px;color:var(--text-muted)">${e.loggedSets.length} set${e.loggedSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+exVol.toLocaleString()+'kg':''} ${isCardio&&exDist>0?'· '+fmtDistanceM(exDist):''}</span>
                 </div>
               </div>
               ${e.loggedSets.map((s,i) => {
@@ -1643,7 +1666,7 @@ async function showRunnerFinish() {
                   <span style="color:var(--text-muted)">Set ${i+1}</span>
                   <span style="font-weight:600${isSetPR?';color:#d97706':''}">
                     ${isCardio
-                      ? [s.duration, s.distance ? s.distance+' km' : ''].filter(Boolean).join(' · ')
+                      ? [s.duration, fmtDistanceM(_cardioDistanceM(s))].filter(Boolean).join(' · ')
                       : [s.weight&&s.weight!=='BW'?s.weight+' kg':s.weight==='BW'?'BW':'', s.reps?s.reps+' reps':''].filter(Boolean).join(' × ')
                     }
                     ${isSetPR ? ' 🏆' : ''}
@@ -1777,6 +1800,7 @@ async function saveRunnerSession() {
       const applyHr = (row) => {
         if (s.avgHr) row.avg_hr = parseInt(s.avgHr)
         if (s.maxHr) row.max_hr = parseInt(s.maxHr)
+        if (s.avgWatts) { const w = parseInt(s.avgWatts); if (!isNaN(w) && w > 0) row.avg_watts = Math.min(w, 2000) }
       }
 
       // Unilateral: the wizard captures both sides in ONE loggedSet. Persist as two rows sharing the
@@ -1800,7 +1824,10 @@ async function saveRunnerSession() {
       const row = { workout_log_exercise_id: logExId, set_number: setNumber }
       if (ex.type === 'cardio') {
         if (s.duration) row.duration_seconds = parseDuration(s.duration)
-        if (s.distance) row.distance_m = Math.round(parseFloat(s.distance) * 1000) // cardio distance is km
+        // Metres in, metres out (2026-07-22). `s.distance` is the legacy km key — still read so a draft
+        // or an in-flight session started before this change still saves the right number.
+        if (s.distanceM)     row.distance_m = Math.round(parseFloat(s.distanceM))
+        else if (s.distance) row.distance_m = Math.round(parseFloat(s.distance) * 1000)
       } else {
         // Timed hold: duration (+ optional load). Distance-strength / jump_distance: distance_m in METRES
         // (not km). Jump height: height_cm (populated by ②c). Plus the plain weight/reps/rpe case.
@@ -1912,7 +1939,7 @@ function flushLogState() {
       const g = (id) => document.getElementById(id)?.value ?? ''
       if (block.type === 'cardio') {
         set.duration = g(`ls-dur-${bi}-${si}`)
-        set.distance = g(`ls-dist-${bi}-${si}`)
+        set.distanceM = g(`ls-dist-${bi}-${si}`)   // METRES (2026-07-22) — see _cardioDistanceM
       } else {
         set.repsMin = g(`ls-rmin-${bi}-${si}`)
         set.repsMax = g(`ls-rmax-${bi}-${si}`) || set.repsMin
@@ -2102,7 +2129,7 @@ function renderLogExercises() {
           <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">${si + 1}</span>
           ${isCardio ? `
             <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.duration || '0:00'}" oninput="this.value=fmtRestInput(this.value)">
-            <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="0.01" placeholder="km" value="${s.distance || ''}">
+            <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="1" inputmode="numeric" placeholder="m" value="${_cardioDistanceM(s) || ''}">
           ` : isMobile ? `
             <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${s.repsMin || ''}">
             <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="kg" value="${s.weight || ''}">
@@ -2234,7 +2261,7 @@ function loadTemplateIntoLog(templateId) {
       let sets = []
       if (ex.sets_json?.length) {
         sets = ex.sets_json.map(s => {
-          if (isCardio) return { duration: s.duration || '', distance: s.distance || '' }
+          if (isCardio) return { duration: s.duration || '', distanceM: _cardioDistanceM(s) || '' }
           const repsStr = String(s.reps || '')
           const [rMin, rMax] = repsStr.includes('-') ? repsStr.split('-') : [repsStr, '']
           return { repsMin: rMin, repsMax: rMax, weight: s.weight || '', pctMin: '', pctMax: '', effort: s.rpe || '', rest: s.rest ? fmtDuration(s.rest) : '' }
@@ -2244,7 +2271,7 @@ function loadTemplateIntoLog(templateId) {
         const repsStr = String(ex.reps || '')
         const [rMin, rMax] = repsStr.includes('-') ? repsStr.split('-') : [repsStr, '']
         for (let i = 0; i < count; i++) {
-          if (isCardio) sets.push({ duration: '', distance: '' })
+          if (isCardio) sets.push({ duration: '', distanceM: '' })
           else sets.push({ repsMin: rMin, repsMax: rMax, weight: ex.weight_kg || '', pctMin: '', pctMax: '', effort: '', rest: '' })
         }
       }
@@ -2314,7 +2341,10 @@ async function saveWorkoutSession(clientId) {
       const row = { workout_log_exercise_id: logExId, set_number: si + 1 }
       if (block.type === 'cardio') {
         if (s.duration) row.duration_seconds = parseDuration(s.duration)
-        if (s.distance) row.distance_m = Math.round(parseFloat(s.distance) * 1000)
+        // Metres in, metres out — same shape as saveRunnerSession. `distance` (km) stays readable so a
+        // half-filled modal from before this change still saves the right number.
+        if (s.distanceM)     row.distance_m = Math.round(parseFloat(s.distanceM))
+        else if (s.distance) row.distance_m = Math.round(parseFloat(s.distance) * 1000)
       } else {
         const rMin = parseInt(s.repsMin)
         if (!isNaN(rMin)) row.reps_achieved = rMin
@@ -2481,7 +2511,7 @@ async function openWorkoutLog(logId, clientId) {
                       <tr style="border-bottom:1px solid var(--border)">
                         <td style="padding:8px 12px 8px 0;font-size:13px;color:var(--text-muted);font-weight:600">Set ${s.set_number}</td>
                         ${isCardio
-                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.distance_m ? (s.distance_m/1000).toFixed(2)+' km' : '—'}</td>`
+                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.distance_m ? fmtDistanceM(s.distance_m) : '—'}</td>`
                           : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${s.weight_kg ? s.weight_kg+' kg' : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? 'RPE '+s.effort_value : '—'}</td>` : ''}`
                         }
                       </tr>

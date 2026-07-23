@@ -12,6 +12,18 @@
   --text:            #111827;
   --text-muted:      #6b7280;
   --border:          #e5e7eb;
+  /* Referenced 54× across 7 JS modules since 2026-07-05 but never defined until 2026-07-22. An
+     undefined custom property makes the WHOLE declaration invalid at computed-value time, so every
+     one of those surfaces was rendering transparent/unstyled — the single biggest source of the
+     "UI looks inconsistent" report. Audited before defining: all 48 --surface-2 uses are
+     `background`, every one an inactive pill/chip or inset block paired with --text-muted, so one
+     value genuinely serves them all. Deliberately a shade darker than --bg so a chip stays visible
+     on the page background as well as on a white card. */
+  --surface-2:       #eceff3;
+  /* Icon-badge pair on activity-feed rows — aliases, because tokens with exactly this intent
+     already existed and a second hardcoded pale-indigo would just be new drift. */
+  --bg-accent:       var(--accent-light);
+  --text-accent:     var(--accent);
   --danger:          #ef4444;
   --danger-light:    #fef2f2;
   --success:         #10b981;
@@ -741,3 +753,26 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 .pwk-add:hover { border-color:var(--accent); color:var(--accent); }
 .pwk-add:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .pwk-weekhead { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-bottom:8px; }
+
+/* ─── Set-target builder: optional-field disclosure (2026-07-22) ────────────────
+   The cardio set card had 9 always-visible rows, 6 of which are rarely used. Native <details>
+   so there is no open/closed state to track across a re-render and no extra key polluting
+   sets_json. Collapsed inputs stay in the DOM, so flushTemplateSets still reads them. */
+.ts-more { border-bottom: none; }
+.ts-more > summary {
+  list-style: none;
+  cursor: pointer;
+  /* 44px minimum tap target (mobile-check step 3) — 9px padding on a 12px line came out ~30px,
+     which is under the threshold for a control you tap mid-build on a phone. */
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  user-select: none;
+}
+.ts-more > summary::-webkit-details-marker { display: none; }   /* Safari keeps its own triangle */
+.ts-more > summary::marker { content: ''; }
+.ts-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.ts-more[open] > summary { border-bottom: 1px solid var(--border); }

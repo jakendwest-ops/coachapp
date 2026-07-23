@@ -55,4 +55,49 @@ test.describe('Builder metric_type picker — save persistence', () => {
     expect(hold.sets_json[0].timed).toBe(true)
     expect(hold.sets_json[0].unilateral).toBe(false)
   })
+
+  // 2026-07-22 — the optional set-target fields moved behind a native <details> disclosure to cut the
+  // builder's scroll height. That introduces two ways to silently lose prescribed data, because
+  // flushTemplateSets reads every field back OUT of the DOM by id:
+  //   (a) a field the user typed into while it was COLLAPSED (still in the DOM — must still be read)
+  //   (b) a field NOT RENDERED AT ALL for the current metric_type (must be PRESERVED, not clobbered
+  //       to undefined — this is what the `??` in flushTemplateSets is for)
+  // Same class as les-043: removing/hiding a container must not remove what it held.
+  test('collapsed and unrendered set fields survive flushTemplateSets', async ({ page }) => {
+    await loginAsPT(page)
+
+    const r = await page.evaluate(() => {
+      const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+
+      window._templateSets = [{ effortType: 'rpe', isDistanceBased: true, distanceM: '500' }]
+      renderTemplateSets('att-sets-container', 'cardio')
+      const closedByDefault = document.querySelector('.ts-more')?.open === false
+      document.getElementById('ts-wattsmin-0').value = '210'   // typed while collapsed
+      flushTemplateSets('att-sets-container')
+      const collapsedWrite = window._templateSets[0].wattsMin
+
+      // Switch metric_type — the cardio inputs are now absent from the DOM entirely.
+      renderTemplateSets('att-sets-container', 'weight_reps')
+      flushTemplateSets('att-sets-container')
+      const afterSwitch = { d: window._templateSets[0].distanceM, w: window._templateSets[0].wattsMin }
+
+      // A set carrying a legacy km-era paceKm value must still get an editable input (its only
+      // remaining escape hatch — the field is otherwise retired) and the disclosure must auto-open.
+      window._templateSets = [{ effortType: 'rpe', isDistanceBased: true, paceKmMin: '4:30' }]
+      renderTemplateSets('att-sets-container', 'cardio')
+      return {
+        closedByDefault, collapsedWrite, afterSwitch,
+        legacyInput: !!document.getElementById('ts-pkmmin-0'),
+        legacyAutoOpen: document.querySelector('.ts-more')?.open === true,
+      }
+    })
+
+    expect(r.closedByDefault).toBe(true)
+    expect(r.collapsedWrite).toBe('210')        // read even though the user never expanded it
+    expect(r.afterSwitch.d).toBe('500')         // not clobbered when the input isn't rendered
+    expect(r.afterSwitch.w).toBe('210')
+    expect(r.legacyInput).toBe(true)            // legacy paceKm still editable/clearable
+    expect(r.legacyAutoOpen).toBe(true)         // and surfaced, not buried
+  })
 })

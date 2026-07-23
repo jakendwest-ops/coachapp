@@ -1037,7 +1037,7 @@ async function renderProgressPerSession(clientId, el) {
   _perfSessionCharts.forEach(c => c.destroy())
   _perfSessionCharts = []
   const { data: sessions } = await db.from('workout_logs')
-    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr))')
+    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr, avg_watts))')
     .eq('client_id', clientId).order('date', { ascending: false }).limit(10)
   if (myToken !== _perfSessionToken) return
   if (!sessions?.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet. Your recent workouts will show here.</p></div>'; return }
@@ -1277,6 +1277,8 @@ function _metricPointsFor(ex) {
         p.pace = p.totalDistance > 0 ? p.totalDuration / (p.totalDistance / 1000) : 0 // sec/km
         const hrs = sets.map(x => parseInt(x.avg_hr)).filter(Boolean)
         p.avgHr = hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : 0
+        const watts = sets.map(x => parseInt(x.avg_watts)).filter(Boolean)
+        p.avgWatts = watts.length ? Math.round(watts.reduce((a, b) => a + b, 0) / watts.length) : 0
         break
       }
       case 'unilateral': {
@@ -1366,7 +1368,7 @@ async function renderProgressStrength(el) {
 
 async function _buildExerciseSeries(clientId) {
   const { data: exRows } = await db.from('workout_log_exercises')
-    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side)')
+    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side, avg_watts)')
     .eq('workout_logs.client_id', clientId).order('exercise_name')
   const byName = {}
   for (const row of (exRows || [])) {
@@ -1391,6 +1393,7 @@ const _TREND_METRICS = {
     ['totalDuration','Duration','max', v => fmtRestCountdown(v)],
     ['pace','Pace','mean', v => fmtRestCountdown(v)+'/km', true],
     ['avgHr','Avg HR','mean', v => Math.round(v)+' bpm'],
+    ['avgWatts','Watts','mean', v => Math.round(v)+' W'],
   ],
   unilateral:    [['topWeight','Top weight','max', v => v+'kg']], // chart draws L/R as two lines
   timed_hold:    [['maxDuration','Hold time','max', v => fmtRestCountdown(v)]],
@@ -1404,7 +1407,7 @@ const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', unilateral:'Unil
 // each metric is recognisable at a glance.
 const _METRIC_COLORS = {
   topWeight:'#6366f1', e1rm:'#8b5cf6', volume:'#0ea5e9', intensity:'#f59e0b',
-  totalDistance:'#06b6d4', totalDuration:'#14b8a6', pace:'#0ea5e9', avgHr:'#ef4444',
+  totalDistance:'#06b6d4', totalDuration:'#14b8a6', pace:'#0ea5e9', avgHr:'#ef4444', avgWatts:'#f97316',
   maxDuration:'#14b8a6', bestHeight:'#22c55e', bestDistance:'#22c55e',
   sets:'#f59e0b', reps:'#22c55e', vol:'#0ea5e9', exercises:'#8b5cf6' // diary summary tiles
 }

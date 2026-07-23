@@ -133,7 +133,10 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     })
     expect(r.pace0).toBe(240)
     expect(r.avgHr0).toBe(150)
-    expect(r.chips).toEqual(['Distance', 'Duration', 'Pace', 'Avg HR'])
+    // 'Watts' added 2026-07-22. This reads the _TREND_METRICS config, not the rendered card, so it
+    // lists every CONFIGURED cardio chip — the render itself drops any chip whose data is all-zero,
+    // so nobody without logged watts ever sees it. Assertion kept exact rather than loosened.
+    expect(r.chips).toEqual(['Distance', 'Duration', 'Pace', 'Avg HR', 'Watts'])
     expect(r.rec['Best distance']).toBe('6.0 km')
     expect(r.rec['Avg HR']).toContain('bpm')
     expect(r.rec['Best pace']).toContain('/km')

@@ -333,6 +333,10 @@ async function _cloneTemplateForClient(tmpl, clientId) {
     exercise_id: ex.exercise_id || null,
     exercise_name: ex.exercise_name,
     exercise_type: ex.exercise_type,
+    // metric_type drives the runner's whole shape routing (fast table vs wizard, jump/timed/unilateral
+    // columns). Omitted here until 2026-07-22, so every ASSIGNED copy silently fell back to
+    // weight_reps. The source select is workout_template_exercises(*), so it was always available.
+    metric_type: ex.metric_type || null,
     order_index: ex.order_index,
     sets: ex.sets || null,
     sets_json: ex.sets_json || null,
