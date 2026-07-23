@@ -20,8 +20,8 @@ test.describe('Runner fast table — metric_type aware', () => {
         weight_reps:   [{ weight: '100', reps: '5', done: true }],
         unilateral:    [{ leftWeight: '20', leftReps: '10', rightWeight: '18', rightReps: '9', done: true }],
         timed_hold:    [{ duration: '1:30', weight: '5', done: true }],
-        jump_height:   [{ height_cm: '55', done: true }],
-        jump_distance: [{ distance_m: '2.4', done: true }]
+        jump_height:   [{ height_cm: '55', reps: '3', done: true }],
+        jump_distance: [{ distance_m: '2.4', reps: '5', done: true }]
       }
       for (const [mt, rows] of Object.entries(cases)) {
         const ex = mk(mt, rows)
@@ -43,7 +43,8 @@ test.describe('Runner fast table — metric_type aware', () => {
     expect(res.sync.weight_reps).toEqual({ weight: '100', reps: '5' })
     expect(res.sync.unilateral).toEqual({ leftWeight: '20', leftReps: '10', rightWeight: '18', rightReps: '9' })
     expect(res.sync.timed_hold).toEqual({ duration: '1:30', weight: '5' })
-    expect(res.sync.jump_height).toEqual({ height_cm: '55' })
-    expect(res.sync.jump_distance).toEqual({ distance_m: '2.4' })
+    // reps = contacts; added 2026-07-23 so a prescribed jump count can actually be logged.
+    expect(res.sync.jump_height).toEqual({ height_cm: '55', reps: '3' })
+    expect(res.sync.jump_distance).toEqual({ distance_m: '2.4', reps: '5' })
   })
 })

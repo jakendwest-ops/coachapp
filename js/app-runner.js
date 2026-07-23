@@ -346,8 +346,8 @@ function _blankTableRow(ex) {
   const mt = _exMetricType(ex)
   if (mt === 'unilateral') return { leftWeight: ex.bodyweight ? 'BW' : '', leftReps: '', rightWeight: ex.bodyweight ? 'BW' : '', rightReps: '', done: false }
   if (mt === 'timed_hold') return { duration: '', weight: ex.bodyweight ? 'BW' : '', done: false }
-  if (mt === 'jump_height') return { height_cm: '', done: false }
-  if (mt === 'jump_distance') return { distance_m: '', done: false }
+  if (mt === 'jump_height') return { height_cm: '', reps: '', done: false }
+  if (mt === 'jump_distance') return { distance_m: '', reps: '', done: false }
   return { weight: ex.bodyweight ? 'BW' : '', reps: '', done: false }
 }
 
@@ -367,8 +367,8 @@ function _syncLoggedSetsFromTable(ex) {
   ex.loggedSets = ex.tableRows.filter(r => r.done).map(r => {
     if (mt === 'unilateral') return { leftWeight: r.leftWeight || null, leftReps: r.leftReps || null, rightWeight: r.rightWeight || null, rightReps: r.rightReps || null }
     if (mt === 'timed_hold') return { duration: r.duration || null, weight: r.weight || null }
-    if (mt === 'jump_height') return { height_cm: r.height_cm || null }
-    if (mt === 'jump_distance') return { distance_m: r.distance_m || null }
+    if (mt === 'jump_height') return { height_cm: r.height_cm || null, reps: r.reps || null }
+    if (mt === 'jump_distance') return { distance_m: r.distance_m || null, reps: r.reps || null }
     return { weight: r.weight || null, reps: r.reps }
   })
 }
@@ -466,7 +466,7 @@ function _renderRepsTallyHtml(ex) {
 function _buildTargetCols(tgt, ex) {
   const cols = []
   if (tgt.timed) {
-    const secs = tgt.duration ? (parseRest(tgt.duration)||0) : (tgt.repsMin ? parseInt(tgt.repsMin) : null)
+    const secs = _hasTimeTarget(tgt.duration) ? (parseRest(tgt.duration)||0) : (tgt.repsMin ? parseInt(tgt.repsMin) : null)
     const durDisplay = secs != null ? (Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0')) : null
     if (durDisplay) cols.push({ val: durDisplay, label: 'DURATION', accent: true })
   }
@@ -486,7 +486,12 @@ function _buildTargetCols(tgt, ex) {
   const isJumpMt = mt === 'jump_height' || mt === 'jump_distance'
   if (tgt.weight && !isJumpMt) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
   let needsOneRM = false
-  if (tgt.intensityMin) {
+  // %1RM only means something on a type that HAS a weight to derive — weight_reps and unilateral.
+  // A jump has no weight input at all and a timed hold's cell never consumes the derived kg, so on
+  // those the banner promises a target it structurally cannot deliver. Same stale-field class the
+  // `tgt.weight` guard above already handles.
+  const takesLoad = mt === 'weight_reps' || mt === 'unilateral'
+  if (tgt.intensityMin && takesLoad) {
     // Always the PERCENTAGE — the derived kg lives in the KG field's ghost text (see wPlaceholder in
     // renderStrengthTable), so showing it here too spent a whole column repeating one number.
     const pct = tgt.intensityMin + (tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? '–' + tgt.intensityMax : '')
@@ -497,7 +502,7 @@ function _buildTargetCols(tgt, ex) {
   // the value with it just says the same word twice ("RPE / RPE 8–9"). Jake, 2026-07-11.
   if (tgt.effortMin) cols.push({ val: tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
   if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
-  if (tgt.tempo) cols.push({ val: tgt.tempo, label: 'TEMPO' })
+  if (tgt.tempo && takesLoad) cols.push({ val: escapeHtml(tgt.tempo), label: 'TEMPO' })
   return { cols, needsOneRM }
 }
 
@@ -546,12 +551,20 @@ function renderStrengthTable(ex) {
   // (regression-safe); unilateral/timed_hold/jump_height/jump_distance render their own inputs. Cardio
   // never reaches here (it stays on the wizard, gated by _isPlainStrengthExercise).
   const mt = _exMetricType(ex)
-  const showTargets = mt === 'weight_reps' || mt === 'unilateral' // %1RM/rep targets only apply to these
+  // EVERY table metric type has a prescription worth showing, not just the rep-based ones. This gate
+  // read `weight_reps || unilateral` with the comment "%1RM/rep targets only apply to these" — true
+  // when written, stale since 2026-07-22 when jumps gained target height/distance + jumps-per-set and
+  // timed holds already had duration/load. The effect was that the jump branch added to
+  // _buildTargetCols that same day was DEAD CODE: the columns were computed and never rendered, so a
+  // jump exercise showed no target, no rest and no RPE (Jake: "missing the wizard entirely").
+  // _renderTargetBarHtml returns '' for an empty column list, so widening this cannot produce an
+  // empty bar for a type with nothing prescribed.
+  const showTargets = _METRIC_TABLE_TYPES.has(mt)
   const inCell = (i, row, field, { mode = 'decimal', step = '', ph = '—', fmt = false } = {}) => {
     const bind = fmt
       ? `this.value=fmtRestInput(this.value);_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
       : `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
-    return `<input type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${row[field] || ''}" placeholder="${ph}"
+    return `<input type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${escapeHtml(String(row[field] ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
       oninput="${bind}"
       style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done ? 'var(--border)' : 'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
   }
@@ -605,10 +618,18 @@ function renderStrengthTable(ex) {
 
     if (mt === 'jump_height' || mt === 'jump_distance') {
       const f = mt === 'jump_height' ? 'height_cm' : 'distance_m'
-      const ph = mt === 'jump_height' ? 'cm' : 'm'
+      // Ghost the PRESCRIBED target (builder: target height / target distance, 2026-07-22) rather than
+      // a bare unit, matching how the weight column ghosts its %1RM target.
+      const tgtVal = mt === 'jump_height' ? rowTgt0?.targetHeightCm : rowTgt0?.targetDistanceM
+      const ph = tgtVal || (mt === 'jump_height' ? 'cm' : 'm')
+      // A jump's "rep" is a CONTACT. The builder prescribes a count per set; without this cell the
+      // athlete could not record how many they actually did, so contact volume was unrecordable and
+      // never reached the charts. Regression from the jump-targets work earlier the same day.
+      const jPh = rowTgt0?.repsMin ? String(rowTgt0.repsMin) : (prev?.reps_achieved != null ? String(prev.reps_achieved) : 'jumps')
       return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${inCell(i, row, f, { mode:'decimal', step:'0.01', ph })}
+        ${inCell(i, row, 'reps', { mode:'numeric', ph: jPh })}
         ${inDone(i, row)}${inDel(i)}
       </div></div>`
     }
@@ -633,9 +654,9 @@ function renderStrengthTable(ex) {
   } else if (mt === 'timed_hold') {
     header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : 'Kg')}<span style="width:44px"></span></div>`
   } else if (mt === 'jump_height') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Height (cm)')}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Height (cm)')}${th('Jumps')}<span style="width:44px"></span></div>`
   } else if (mt === 'jump_distance') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}${th('Jumps')}<span style="width:44px"></span></div>`
   } else {
     header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Kg')}${th('Reps')}<span style="width:44px"></span></div>`
   }
@@ -1595,10 +1616,9 @@ async function showRunnerFinish() {
   const clientId   = _runner.clientId
   const runnerName = _runner.name
   const startTime  = _runner.startTime
-  const exercises  = _runner.exercises
 
   const duration  = fmtRunnerTime(startTime)
-  const doneExs   = exercises.filter(e => e.loggedSets.length)
+  const doneExs   = _loggedExercises()   // same definition the save uses — they must not diverge
   const totalSets = doneExs.reduce((s,e) => s + e.loggedSets.length, 0)
   const totalReps = doneExs.reduce((s,e) => s + e.loggedSets.reduce((sr,set) => sr + (parseInt(set.reps,10)||0), 0), 0)
   const totalVol  = doneExs.reduce((s,e) => s + e.loggedSets.reduce((sv,set) => {
@@ -1659,7 +1679,7 @@ async function showRunnerFinish() {
             return `
             <div style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
               <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
-                <span style="font-weight:600;font-size:14px">${e.name}</span>
+                <span style="font-weight:600;font-size:14px">${escapeHtml(e.name)}</span>
                 <div style="display:flex;align-items:center;gap:6px">
                   ${isPR ? `<span style="font-size:10px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.12);padding:2px 7px;border-radius:10px">🏆 PR</span>` : ''}
                   <span style="font-size:12px;color:var(--text-muted)">${e.loggedSets.length} set${e.loggedSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+exVol.toLocaleString()+'kg':''} ${isCardio&&exDist>0?'· '+fmtDistanceM(exDist):''}</span>
@@ -1684,7 +1704,7 @@ async function showRunnerFinish() {
 
           <div class="field" style="margin-top:4px">
             <label class="field-label">Session name</label>
-            <input class="field-input" id="rf-name" value="${runnerName}">
+            <input class="field-input" id="rf-name" value="${escapeAttr(runnerName || '')}">
           </div>
           <div class="field">
             <label class="field-label">Notes</label>
@@ -1748,6 +1768,21 @@ function discardRunner() {
   _runner = null
 }
 
+// The single definition of "an exercise worth saving" — used by BOTH the finish screen and
+// saveRunnerSession. They were previously two separate filters over the same collection: the finish
+// screen required only `loggedSets.length` while the save also required `e.name`. A Custom/blank
+// workout seeds a nameless exercise and the fast table renders no name input, so a session could be
+// counted and itemised on the finish screen and then silently discarded on save. Names are backfilled
+// here rather than the row being dropped — losing logged work is never the right answer to a missing
+// label. NOTE the finish screen has no route back to the runner, so the fallback is visible but NOT
+// correctable in-session; renaming has to happen from the saved log.
+function _loggedExercises() {
+  if (!_runner) return []
+  const out = _runner.exercises.filter(e => e.loggedSets.length)
+  out.forEach((e, i) => { if (!e.name || !String(e.name).trim()) e.name = `Exercise ${i + 1}` })
+  return out
+}
+
 async function saveRunnerSession() {
   if (!_runner) return
   // Capture all _runner fields into locals before any await — discardRunner() can null _runner mid-save
@@ -1755,7 +1790,7 @@ async function saveRunnerSession() {
   const notes     = document.getElementById('rf-notes')?.value.trim() || null
   const clientId  = _runner.clientId
   const date      = _runner.date
-  const exercises = _runner.exercises.filter(e => e.name && e.loggedSets.length)
+  const exercises = _loggedExercises()
   if (!exercises.length) { showToast('No sets logged — nothing to save.', 'warn', 3000); return }
 
   const saveBtn = document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')

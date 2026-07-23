@@ -341,12 +341,12 @@ async function renderClientPerformance(clientId, el) {
                 style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer">
                 <div style="display:flex;align-items:center;gap:10px">
                   <div>
-                    <div style="font-size:13px;font-weight:600">${name}</div>
+                    <div style="font-size:13px;font-weight:600">${escapeHtml(name)}</div>
                     <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${records.length} entr${records.length !== 1 ? 'ies' : 'y'}</div>
                   </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:10px">
-                  <span style="font-size:15px;font-weight:700;color:${colour}">${best.value} ${best.unit}</span>
+                  <span style="font-size:15px;font-weight:700;color:${colour}">${escapeHtml(String(best.value))} ${escapeHtml(best.unit || '')}</span>
                   <span style="font-size:10px;font-weight:700;background:gold;color:#78350f;padding:2px 7px;border-radius:4px">PB</span>
                   <span id="perf-chevron-${slug}" style="color:var(--text-muted);font-size:12px;transition:transform 0.2s">▼</span>
                 </div>
@@ -376,10 +376,10 @@ async function renderClientPerformance(clientId, el) {
                     <tr style="border-top:${i > 0 ? '1px solid var(--border)' : 'none'}">
                       <td style="padding:9px 14px;font-size:12.5px;color:var(--text-muted)">${r.date}</td>
                       <td style="padding:9px 14px;text-align:right;font-size:13px;font-weight:${i === 0 ? '700' : '500'};color:${i === 0 ? colour : 'var(--text)'}">
-                        ${r.value} ${r.unit}
+                        ${escapeHtml(String(r.value))} ${escapeHtml(r.unit || '')}
                         ${i === 0 ? `<span style="font-size:9px;font-weight:700;background:gold;color:#78350f;padding:1px 5px;border-radius:3px;margin-left:4px">PB</span>` : ''}
                       </td>
-                      <td style="padding:9px 14px;font-size:12px;color:var(--text-muted)">${r.notes || '—'}</td>
+                      <td style="padding:9px 14px;font-size:12px;color:var(--text-muted)">${escapeHtml(r.notes || '—')}</td>
                       <td style="padding:9px 14px;text-align:right">
                         <button onclick="deletePerfLog('${r.id}','${clientId}')"
                           style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:2px 5px">×</button>
@@ -637,7 +637,7 @@ async function renderClientWeight(clientId, el) {
               <td style="padding:10px 14px;font-size:13px;color:var(--text);font-weight:${i === 0 ? '600' : '400'}">${l.date}</td>
               <td style="padding:10px 14px;font-size:13px;color:var(--text);font-weight:${i === 0 ? '700' : '500'};text-align:right">${fmt(l.weight_kg)}</td>
               <td style="padding:10px 14px;font-size:13px;color:var(--text-muted);text-align:right">${l.body_fat_pct != null ? l.body_fat_pct + '%' : '—'}</td>
-              <td style="padding:10px 14px;font-size:13px;color:var(--text-muted)">${l.notes || '—'}</td>
+              <td style="padding:10px 14px;font-size:13px;color:var(--text-muted)">${escapeHtml(l.notes || '—')}</td>
               <td style="padding:10px 14px;text-align:right">
                 <button onclick="deleteWeightLog('${l.id}','${clientId}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:15px;padding:2px 6px;border-radius:4px" title="Delete">×</button>
               </td>
@@ -1530,7 +1530,7 @@ function _renderPerfExerciseList(query) {
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Best ${r.active[1].toLowerCase()}: ${r.active[3](best)} · ${r.pts.length} session${r.pts.length===1?'':'s'}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-          ${r.metrics.map(([key,label]) => `<button onclick="_setTrendMetric('${r.ex.name.replace(/'/g,"\\'")}','${key}')"
+          ${r.metrics.map(([key,label]) => `<button onclick="_setTrendMetric('${escapeAttr(r.ex.name)}','${key}')"
             style="padding:4px 10px;border:none;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
                    background:${key===r.activeKey?(_METRIC_COLORS[key]||'var(--accent)'):'var(--surface-2)'};color:${key===r.activeKey?'#fff':'var(--text-muted)'}">${label}</button>`).join('')}
         </div>
@@ -1632,11 +1632,11 @@ async function renderProgressPBs(el) {
       <div style="margin-bottom:12px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
-            <div style="font-size:14px;font-weight:700">${name}</div>
-            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${category}</div>
+            <div style="font-size:14px;font-weight:700">${escapeHtml(name)}</div>
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${escapeHtml(category || '')}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:20px;font-weight:800;color:var(--accent)">${best.value} <span style="font-size:12px">${unit}</span></div>
+            <div style="font-size:20px;font-weight:800;color:var(--accent)">${escapeHtml(String(best.value))} <span style="font-size:12px">${escapeHtml(unit || '')}</span></div>
             <div style="font-size:11px;color:var(--text-muted)">${new Date(best.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
           </div>
         </div>
