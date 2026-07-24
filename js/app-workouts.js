@@ -1241,9 +1241,11 @@ function renderTemplateSets(containerId, type) {
     const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'var(--border)'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'var(--text-muted)'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
     return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:12px;font-weight:700;color:var(--text)">Set ${i+1}</span>
           ${i > 0 ? `<button type="button" onclick="copyPrevTemplateSet(${i},'${containerId}','${tid}')" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">Copy set ${i} ↑</button>` : ''}
+          <input id="ts-repeatn-${i}" type="number" min="2" step="1" placeholder="e.g. 5" style="width:52px;padding:3px 6px;font-size:11px;text-align:center;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)">
+          <button type="button" onclick="repeatTemplateSet(${i},'${containerId}','${tid}')" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer">Repeat ×</button>
         </div>
         <div style="display:flex;gap:4px">
           ${showSetToggles ? `
@@ -1314,6 +1316,26 @@ function copyPrevTemplateSet(i, containerId, tid) {
   if (i < 1 || i >= sets.length) return
   const prev = { ...sets[i - 1] }
   sets[i] = prev
+  renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
+}
+
+// Turns the existing one-clone-at-a-time "Copy set" motion into one click for N identical rounds —
+// coaches were hitting "+ Add set" then "Copy set i ↑" up to N-1 times to build e.g. 5 interval
+// rounds or a 5x5 straight-set scheme. Type-agnostic: clones the whole set object regardless of
+// metric type, same as copyPrevTemplateSet already does, so it works for cardio/weight_reps/jump/
+// timed_hold alike. `count` is the TOTAL rounds including this one (typing 5 on a single set produces
+// 5 identical sets), matching how a coach would say "x5 rounds".
+const _REPEAT_SET_MAX_ROUNDS = 50 // guards against a typo (e.g. "500" for "5") splicing hundreds of clones in
+
+function repeatTemplateSet(i, containerId, tid) {
+  flushTemplateSets(containerId)
+  const sets = window._templateSets || []
+  if (i < 0 || i >= sets.length) return
+  let count = parseInt(document.getElementById(`ts-repeatn-${i}`)?.value, 10)
+  if (!(count >= 2)) { showToast('Enter how many rounds in total (2 or more)', 'warn'); return }
+  if (count > _REPEAT_SET_MAX_ROUNDS) { showToast(`Capped at ${_REPEAT_SET_MAX_ROUNDS} rounds`, 'warn'); count = _REPEAT_SET_MAX_ROUNDS }
+  const clones = Array.from({ length: count - 1 }, () => ({ ...sets[i] }))
+  sets.splice(i + 1, 0, ...clones)
   renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
 

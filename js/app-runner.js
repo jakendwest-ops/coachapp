@@ -948,7 +948,7 @@ function renderRunner() {
 function logRunnerSet() {
   _unlockAudio() // user gesture — unlock AudioContext for iOS
   _unlockSpeech() // prime speechSynthesis for iOS mid-timer calls
-  if (_runner._restInterval) return // block LOG during rest
+  if (_runner._restInterval || _runner._countInInterval) return // block LOG during rest or the get-ready count-in
   // Every "required field missing" branch below toasts rather than silently no-opping — same reasoning
   // as toggleTableSet's identical guard: a bare `return` on an empty field reads as a broken LOG button.
   const ex = _runner.exercises[_runner.exIdx]
@@ -1203,7 +1203,53 @@ function startCardioTimer() {
   const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
   const durEl = document.getElementById('wr-cardio-dur')
   const secs = (durEl?.value?.trim() ? parseRest(durEl.value.trim()) : 0) || parseRest(tgt.duration) || 300
-  startIntervalTimer(secs)
+  startRunnerCountIn(secs)
+}
+
+// Get-ready lead-in before the FIRST work interval of a round only — every round after that already
+// gets a spoken count-in for free (startRestTimer speaks the last 5 seconds of rest, which doubles as
+// the count-in for the next round). This is purely a lead-in: at 0 it hands off to the existing
+// startIntervalTimer(workSecs), which already owns the whole work→rest→work loop.
+function startRunnerCountIn(workSecs) {
+  stopRunnerCountIn()
+  _runner._countInRemaining = 5
+  renderRunnerCountIn()
+  _runner._countInInterval = setInterval(() => {
+    _runner._countInRemaining--
+    if (_runner._countInRemaining <= 0) {
+      _runner._countInInterval = clearTimer(_runner._countInInterval)
+      document.getElementById('wr-countin-overlay')?.remove()
+      playBeep(1318, 0.2, 0.9) // short, higher blip — audibly distinct from the 1046Hz/0.5s interval-end beep
+      startIntervalTimer(workSecs)
+      return
+    }
+    speakCue(String(_runner._countInRemaining))
+    const el = document.getElementById('wr-countin-countdown')
+    if (el) el.textContent = _runner._countInRemaining
+  }, 1000)
+}
+
+function stopRunnerCountIn() {
+  _runner._countInInterval = clearTimer(_runner._countInInterval)
+  _runner._countInRemaining = null
+  document.getElementById('wr-countin-overlay')?.remove()
+}
+
+function renderRunnerCountIn() {
+  document.getElementById('wr-countin-overlay')?.remove()
+  const ex = _runner.exercises[_runner.exIdx]
+  const setNum = ex.loggedSets.length + 1
+  const roundLabel = ex.targetSets > 1 ? `Round ${setNum} of ${ex.targetSets}` : `Set ${setNum}`
+
+  const overlay = document.createElement('div')
+  overlay.id = 'wr-countin-overlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
+  overlay.innerHTML = `
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — ${roundLabel}</div>
+    <div id="wr-countin-countdown" style="font-size:64px;font-weight:800;color:var(--accent);margin-bottom:16px">${_runner._countInRemaining}</div>
+    <div style="font-size:13px;color:var(--text-muted)">GET READY</div>
+  `
+  mountModal(overlay)
 }
 
 function startIntervalTimer(secs) {
@@ -1282,12 +1328,13 @@ function renderIntervalTimer() {
   const pct = secs / total
   const ex = _runner.exercises[_runner.exIdx]
   const setNum = ex.loggedSets.length + 1
+  const roundLabel = ex.targetSets > 1 ? `Round ${setNum} of ${ex.targetSets}` : `Set ${setNum}`
 
   const overlay = document.createElement('div')
   overlay.id = 'wr-interval-overlay'
   overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
   overlay.innerHTML = `
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — Set ${setNum}</div>
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — ${roundLabel}</div>
     <div style="position:relative;display:inline-block;margin-bottom:24px">
       <svg width="140" height="140" viewBox="0 0 120 120">
         <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
@@ -1379,7 +1426,9 @@ function renderRestTimer() {
   const curEx    = _runner.exercises[_runner.exIdx]
   const hitTarget = curEx.targetSets > 0 && curEx.loggedSets.length >= curEx.targetSets
   const nextEx   = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name)
-  const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (curEx.loggedSets.length + 1)
+  const nextSetNum = curEx.loggedSets.length + 1
+  const nextRoundLabel = curEx.targetSets > 1 ? `Round ${nextSetNum} of ${curEx.targetSets}` : `Set ${nextSetNum}`
+  const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: ' + nextRoundLabel
 
   const overlay = document.createElement('div')
   overlay.id = 'rest-timer-overlay'
@@ -1459,6 +1508,7 @@ function deleteRunnerSet(exIdx, setIdx) {
 }
 
 function skipToNextExercise() {
+  stopRunnerCountIn()
   stopIntervalTimer()
   if (_runner.exIdx < _runner.exercises.length - 1) {
     _runner.exIdx++
@@ -1470,6 +1520,7 @@ function skipToNextExercise() {
 
 function runnerJumpTo(i) {
   if (!_runner || i < 0 || i >= _runner.exercises.length) return
+  stopRunnerCountIn()
   stopIntervalTimer()
   stopStrengthSetTimer()
   skipRestTimer()
@@ -1478,6 +1529,7 @@ function runnerJumpTo(i) {
 }
 
 function runnerGoBack() {
+  stopRunnerCountIn()
   stopIntervalTimer()
   stopStrengthSetTimer()
   // skipRestTimer() FIRES the pending _afterRest callback, and after logging a set that callback is
@@ -1602,6 +1654,7 @@ async function showRunnerFinish() {
   _runner._afterRest = null
   _runner._timerInterval = clearTimer(_runner._timerInterval)
   _runner._restInterval  = clearTimer(_runner._restInterval)
+  stopRunnerCountIn()
   stopIntervalTimer()
   stopStrengthSetTimer()
   _stopRunnerDraftSafetyNet()
@@ -1775,11 +1828,13 @@ function confirmDiscardRunner() {
 
 function discardRunner() {
   clearInterval(_runner?._timerInterval)
+  clearInterval(_runner?._countInInterval)
   clearInterval(_runner?._intervalInterval)
   clearInterval(_runner?._restInterval)
   _stopRunnerDraftSafetyNet()
   _clearRunnerDraft(_runner?.clientId)
   document.getElementById('workout-runner')?.remove()
+  document.getElementById('wr-countin-overlay')?.remove()
   document.getElementById('wr-interval-overlay')?.remove()
   document.getElementById('rest-timer-overlay')?.remove()
   _runner = null
