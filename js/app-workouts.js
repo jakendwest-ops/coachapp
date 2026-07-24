@@ -55,6 +55,38 @@ function fmtDistanceM(m) {
 // using raw truthiness while the runner had been fixed).
 function _hasTimeTarget(v) { return !!v && v !== '0:00' && v !== '00:00' }
 
+// Estimated 1RM (Epley), the ONE implementation. Returns null when it cannot be estimated: invalid
+// input, OR more than 12 reps — above which Epley overestimates wildly (60kg × 30 → 120kg, which then
+// drives every %1RM target weight in the runner). Four copies of this formula existed with different
+// validation and only the runner's post-session auto-detector capped reps; consolidating here applies
+// the cap to manual entry and to the Progress e1RM charts too. 12 is a generous upper bound — an
+// 11–12-rep set still estimates, a burnout set does not.
+const _ESTIMATE_1RM_MAX_REPS = 12
+function _estimate1RM(weight, reps) {
+  const w = parseFloat(weight), r = parseInt(reps)
+  if (!(w > 0) || !(r > 0) || r > _ESTIMATE_1RM_MAX_REPS) return null
+  return w * (1 + r / 30)
+}
+
+// Resolve an exercise's true metric_type. `metric_type` is NOT NULL DEFAULT 'weight_reps' (migration
+// 2026-07-18), and that migration backfilled ONLY cardio and jumps — so every LEGACY unilateral/timed
+// exercise still carries metric_type = 'weight_reps' while its sets_json[0] holds the old builder's
+// `unilateral`/`timed` flag. A non-default metric_type is explicit and trusted; the default is
+// ambiguous, so we fall back to those flags. Safe against a NEW weight_reps exercise, because the
+// builder writes `unilateral:false`/`timed:false` explicitly via _deriveFromMetricType on every save —
+// only a genuinely pre-2026-07-18 row has a TRUTHY flag alongside the default. Without this, a legacy
+// Bulgarian Split Squat logs as plain weight×reps with no `side` (L/R chart empty forever) and a
+// legacy Plank asks for reps instead of a hold time. Shared by the runner (_exMetricType) and the
+// builder's edit modal so the two cannot diverge (fix the class, not the instance).
+function _resolveMetricType(metricType, exerciseType, firstSet) {
+  if (metricType && metricType !== 'weight_reps') return metricType
+  if (exerciseType === 'cardio') return 'cardio'
+  const s0 = firstSet || {}
+  if (s0.unilateral) return 'unilateral'
+  if (s0.timed) return 'timed_hold'
+  return 'weight_reps'
+}
+
 // THE prescription formatter. One set → one human string ("8–10 reps · 60kg · RPE 8").
 //
 // This existed as TWO near-identical copies — openSessionDetail and openTemplate — and they had
@@ -198,7 +230,7 @@ function _cleanTemplateSets(sets, derived) {
 
 function fmtSet(s, type) {
   if (type === 'cardio') {
-    const parts = [s.duration_seconds ? fmtDuration(s.duration_seconds) : null, s.distance_m ? (s.distance_m/1000).toFixed(2)+' km' : null]
+    const parts = [s.duration_seconds ? fmtDuration(s.duration_seconds) : null, s.distance_m ? fmtDistanceM(s.distance_m) : null]
     return parts.filter(Boolean).join(' · ') || '—'
   }
   const parts = [s.reps_achieved ? s.reps_achieved+' reps' : null, s.weight_kg ? s.weight_kg+'kg' : null, s.effort_value ? 'RPE '+s.effort_value : null]
@@ -1641,7 +1673,7 @@ async function showEditTemplateExerciseModal(templateExId, templateId) {
     picked: { id: ex.exercise_id || null, name: ex.exercise_name },
     editingTexId: templateExId,
     existingSets: ex.sets_json?.length ? ex.sets_json : (ex.sets ? Array.from({ length: ex.sets }, () => ({})) : [{}]),
-    existingType: ex.metric_type || (ex.exercise_type === 'cardio' ? 'cardio' : 'weight_reps'),
+    existingType: _resolveMetricType(ex.metric_type, ex.exercise_type, ex.sets_json?.[0]),
     existingNotes: ex.notes || '',
     existingSuperset: ex.superset_group || ''
   })

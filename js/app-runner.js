@@ -269,12 +269,11 @@ const _METRIC_TABLE_TYPES = new Set(['weight_reps','unilateral','timed_hold','ju
 // Resolve an exercise's metric_type with a safe fallback for older drafts/rows that predate ②a/②b:
 // derive from the legacy type/flags so nothing silently drops onto the wrong path.
 function _exMetricType(ex) {
-  if (ex.metricType) return ex.metricType
-  if (ex.type === 'cardio') return 'cardio'
-  const s0 = ex.sets_json?.[0] || {}
-  if (s0.unilateral) return 'unilateral'
-  if (s0.timed) return 'timed_hold'
-  return 'weight_reps'
+  // Delegates to the shared resolver (app-workouts.js) so the runner and the builder agree on what a
+  // legacy exercise's type is. Was: `if (ex.metricType) return ex.metricType` — which, because
+  // launchRunner sets `metricType: ex.metric_type || 'weight_reps'` (always truthy), made the
+  // legacy-flag fallback below dead code, so legacy unilateral/timed exercises logged as weight×reps.
+  return _resolveMetricType(ex.metricType, ex.type, ex.sets_json?.[0])
 }
 
 function _isPlainStrengthExercise(ex) {
@@ -950,13 +949,15 @@ function logRunnerSet() {
   _unlockAudio() // user gesture — unlock AudioContext for iOS
   _unlockSpeech() // prime speechSynthesis for iOS mid-timer calls
   if (_runner._restInterval) return // block LOG during rest
+  // Every "required field missing" branch below toasts rather than silently no-opping — same reasoning
+  // as toggleTableSet's identical guard: a bare `return` on an empty field reads as a broken LOG button.
   const ex = _runner.exercises[_runner.exIdx]
   let setData
   if (ex.type === 'cardio') {
     const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
     if (tgt.isDistanceBased) {
       const dist = document.getElementById('wr-cardio-dist')?.value?.trim()
-      if (!dist) return
+      if (!dist) { showToast('Enter a distance first', 'warn'); return }
       const paceEl = document.getElementById('wr-cardio-pace')
       // METRES, matching the input above. Persisted straight to distance_m with no conversion —
       // the old km input needed a x1000 at the save site, which is what made the units ambiguous.
@@ -973,7 +974,7 @@ function logRunnerSet() {
       } else {
         dur = document.getElementById('wr-cardio-dur')?.value?.trim()
       }
-      if (!dur || dur === '0:00') return
+      if (!dur || dur === '0:00') { showToast('Enter a duration first', 'warn'); return }
       // Overlay inputs take priority over runner-form inputs (interval overlay is still mounted here)
       const distEl = document.getElementById('wr-cardio-dist-opt')
       const paceEl = document.getElementById('wr-cardio-pace')
@@ -990,7 +991,7 @@ function logRunnerSet() {
     const weight = ex.bodyweight ? 'BW' : (document.getElementById('wr-weight-input')?.value?.trim() || '')
     if (tgt.timed) {
       const dur = document.getElementById('wr-duration-input')?.value?.trim()
-      if (!dur || dur === '0:00') return
+      if (!dur || dur === '0:00') { showToast('Enter a duration first', 'warn'); return }
       setData = { weight: weight || null, duration: dur }
       _runner._setTimerDone = false
     } else if (tgt.unilateral && !isDistance) {
@@ -998,15 +999,15 @@ function logRunnerSet() {
       const leftReps   = document.getElementById('wr-left-reps')?.value?.trim()   || ''
       const rightWeight = document.getElementById('wr-right-weight')?.value?.trim() || ''
       const rightReps   = document.getElementById('wr-right-reps')?.value?.trim()   || ''
-      if (!leftReps && !rightReps) return
+      if (!leftReps && !rightReps) { showToast('Enter reps first', 'warn'); return }
       setData = { leftWeight: leftWeight || null, leftReps: leftReps || null, rightWeight: rightWeight || null, rightReps: rightReps || null }
     } else if (isDistance) {
       const dist = document.getElementById('wr-dist-input')?.value?.trim() || ''
-      if (!dist) return
+      if (!dist) { showToast('Enter a distance first', 'warn'); return }
       setData = { weight, distance_m: dist }
     } else {
       const reps = document.getElementById('wr-reps-input')?.value?.trim() || ''
-      if (!reps) return
+      if (!reps) { showToast('Enter reps first', 'warn'); return }
       setData = { weight, reps }
       if (ex.assisted) setData.assistWeight = weight
     }
@@ -1713,7 +1714,7 @@ async function showRunnerFinish() {
         </div>
 
         <div style="padding:12px 16px 24px;border-top:1px solid var(--border);display:flex;gap:8px">
-          <button onclick="discardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:13px;font-weight:600;cursor:pointer;color:var(--danger)">Discard</button>
+          <button onclick="confirmDiscardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:13px;font-weight:600;cursor:pointer;color:var(--danger)">Discard</button>
           <button onclick="saveRunnerSession()" style="flex:1;height:48px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:700;cursor:pointer">Save workout</button>
         </div>
       </div>
@@ -1752,8 +1753,24 @@ async function showRunnerFinish() {
 }
 
 function confirmEndRunner() {
+  // Tapping End with nothing logged has nothing to lose — discardRunner() runs bare here by design,
+  // same as it does after a successful save (below). The confirm belongs on the ONE call site where a
+  // tap can actually destroy real unsaved work: the Discard button beside Save. See
+  // confirmDiscardRunner. (An earlier version of this fix put the confirm inside discardRunner()
+  // itself, which meant it also fired here — on an empty session with nothing to lose — and again
+  // after a successful save, telling the user their just-saved workout was about to be lost. Neither
+  // is true. Fix the call site, not the shared teardown.)
   if (_runner.exercises.some(e=>e.loggedSets.length)) showRunnerFinish()
   else discardRunner()
+}
+
+// The ONLY confirming entry point to discardRunner() — the Discard button on the finish screen,
+// which sits directly beside Save. That is the one tap that can destroy real unsaved work with a
+// single accidental press; every other caller (confirmEndRunner's empty-session branch, and the
+// post-save teardown in saveRunnerSession) has nothing left to lose and must stay silent.
+function confirmDiscardRunner() {
+  if (!confirm('Discard this workout? Everything logged will be lost — this cannot be undone.')) return
+  discardRunner()
 }
 
 function discardRunner() {
@@ -1910,7 +1927,7 @@ async function saveRunnerSession() {
         const w = parseFloat(s.weight)
         const r = parseInt(s.reps)
         if (!w || !r || r < 1 || r > 10) return
-        const est = _epley1RM(w, r)
+        const est = _estimate1RM(w, r)
         if (est && (!best || est > best.estimate)) best = { estimate: est, weight: w, reps: r }
       })
       if (!best) return null
@@ -2003,11 +2020,6 @@ function _calcWeightFromPct(oneRM, pct) {
 }
 
 // Epley formula — estimates 1RM from a sub-max weight x reps performance
-function _epley1RM(weight, reps) {
-  if (!weight || !reps) return null
-  return weight * (1 + reps / 30)
-}
-
 function showRunnerOneRMSheet(exIdx) {
   const ex = _runner.exercises[exIdx]
   const existing = document.getElementById('modal-runner-1rm')
@@ -2065,8 +2077,9 @@ function _updateRunnerEpleyPreview() {
   const w = parseFloat(document.getElementById('rorm-est-weight')?.value)
   const r = parseInt(document.getElementById('rorm-est-reps')?.value)
   const preview = document.getElementById('rorm-epley-preview')
-  const est = _epley1RM(w, r)
-  preview.textContent = est ? `≈ Epley estimate: ${est.toFixed(1)} kg` : ''
+  const est = _estimate1RM(w, r)
+  preview.textContent = est ? `≈ Epley estimate: ${est.toFixed(1)} kg`
+    : (w && r > _ESTIMATE_1RM_MAX_REPS ? `Too many reps for a reliable estimate (max ${_ESTIMATE_1RM_MAX_REPS})` : '')
 }
 
 async function saveRunnerOneRM(exIdx) {
@@ -2079,7 +2092,7 @@ async function saveRunnerOneRM(exIdx) {
   } else {
     const w = parseFloat(document.getElementById('rorm-est-weight')?.value)
     const r = parseInt(document.getElementById('rorm-est-reps')?.value)
-    oneRM = _epley1RM(w, r)
+    oneRM = _estimate1RM(w, r)
   }
   if (!oneRM || oneRM <= 0) { errEl.textContent = 'Enter a valid value'; return }
 

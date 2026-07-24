@@ -193,9 +193,12 @@ function _updateAdd1RMEpleyPreview() {
   const r = parseInt(document.getElementById('orm-est-reps')?.value)
   const resultEl = document.getElementById('orm-epley-result')
   const valueEl = document.getElementById('orm-epley-value')
-  if (w && r) {
-    const est = w * (1 + r / 30)
+  const est = _estimate1RM(w, r)
+  if (est) {
     valueEl.textContent = est.toFixed(1) + ' kg'
+    resultEl.style.display = 'block'
+  } else if (w && r > _ESTIMATE_1RM_MAX_REPS) {
+    valueEl.textContent = `too many reps (max ${_ESTIMATE_1RM_MAX_REPS})`
     resultEl.style.display = 'block'
   } else {
     resultEl.style.display = 'none'
@@ -213,7 +216,7 @@ async function save1RM(clientId, existingId = null) {
   if (epleyMode) {
     const w = parseFloat(document.getElementById('orm-est-weight')?.value)
     const r = parseInt(document.getElementById('orm-est-reps')?.value)
-    weight = (w && r) ? w * (1 + r / 30) : null
+    weight = _estimate1RM(w, r)
   } else {
     weight = parseFloat(document.getElementById('1rm-weight')?.value)
   }
@@ -247,6 +250,43 @@ async function delete1RM(id, clientId) {
   const pbEl = document.getElementById('pb-1rms-section')
   if (pbEl) renderClient1RMs(clientId, pbEl)
   else renderClient1RMs(clientId, document.getElementById('tab-content'))
+}
+
+// ONE definition of "best" for a performance_logs record, shared by renderClientPerformance and
+// renderProgressPBs. Both queries order by `date desc`, and both previously took the FIRST row —
+// i.e. the most recently logged entry — and rendered it beside a gold "PB" badge. So a lighter/slower
+// entry logged more recently displayed as the personal best. "Best" is category-dependent: for TIME
+// units (min/sec — cardio splits, benchmark clock times) a LOWER value is better; for everything else
+// (kg/lbs, cm/in, km/mi, reps) a HIGHER value is better. The unit is a reliable signal because
+// PERF_CATEGORIES (app-runner.js) never mixes a time unit with a non-time one within one category.
+const _PERF_TIME_UNITS = new Set(['min', 'sec'])
+
+// PERF_CATEGORIES (app-runner.js) lets the SAME exercise name be logged in either unit of a pair
+// (kg/lbs, cm/in, min/sec, km/mi) — the unit is a free per-entry dropdown choice, not fixed per
+// exercise. _bestPerfLog compares raw `value`s, so two records must be converted to a common base
+// unit before comparing or a heavier/faster entry in the "other" unit loses purely on number size
+// (100kg vs 200lbs — 200 > 100 but 200lbs is the lighter lift). Multi-agent review, 2026-07-24.
+const _PERF_UNIT_BASE = {
+  kg: v => v, lbs: v => v * 0.45359237,
+  cm: v => v, in: v => v * 2.54,
+  sec: v => v, min: v => v * 60,
+  km: v => v, mi: v => v * 1.609344,
+  reps: v => v,
+}
+function _perfBaseValue(unit, value) {
+  const fn = _PERF_UNIT_BASE[unit]
+  return fn ? fn(value) : value
+}
+function _bestPerfLog(records) {
+  if (!records || !records.length) return null
+  const lowerIsBetter = _PERF_TIME_UNITS.has(records[0].unit)
+  return records.reduce((best, r) => {
+    const rv = _perfBaseValue(r.unit, parseFloat(r.value))
+    const bv = _perfBaseValue(best.unit, parseFloat(best.value))
+    if (!(rv > 0)) return best
+    if (!(bv > 0)) return r
+    return (lowerIsBetter ? rv < bv : rv > bv) ? r : best
+  }, records[0])
 }
 
 async function renderClientPerformance(clientId, el) {
@@ -330,7 +370,7 @@ async function renderClientPerformance(clientId, el) {
           </div>
 
           ${Object.entries(byName).map(([name, records]) => {
-            const best = records[0]
+            const best = _bestPerfLog(records)
             const slug = name.replace(/[^a-z0-9]/gi,'_') + '_' + cat.id
             const chartData = [...records].reverse() // oldest→newest for chart
             return `
@@ -372,19 +412,24 @@ async function renderClientPerformance(clientId, el) {
                     </tr>
                   </thead>
                   <tbody>
-                    ${records.map((r, i) => `
+                    ${records.map((r, i) => {
+                      // Badge the row that IS the best, not the row that happens to be newest —
+                      // same fix as `best` above, same reason (les-048 class: same bug, three sites).
+                      const isBest = r.id === best.id
+                      return `
                     <tr style="border-top:${i > 0 ? '1px solid var(--border)' : 'none'}">
                       <td style="padding:9px 14px;font-size:12.5px;color:var(--text-muted)">${r.date}</td>
-                      <td style="padding:9px 14px;text-align:right;font-size:13px;font-weight:${i === 0 ? '700' : '500'};color:${i === 0 ? colour : 'var(--text)'}">
+                      <td style="padding:9px 14px;text-align:right;font-size:13px;font-weight:${isBest ? '700' : '500'};color:${isBest ? colour : 'var(--text)'}">
                         ${escapeHtml(String(r.value))} ${escapeHtml(r.unit || '')}
-                        ${i === 0 ? `<span style="font-size:9px;font-weight:700;background:gold;color:#78350f;padding:1px 5px;border-radius:3px;margin-left:4px">PB</span>` : ''}
+                        ${isBest ? `<span style="font-size:9px;font-weight:700;background:gold;color:#78350f;padding:1px 5px;border-radius:3px;margin-left:4px">PB</span>` : ''}
                       </td>
                       <td style="padding:9px 14px;font-size:12px;color:var(--text-muted)">${escapeHtml(r.notes || '—')}</td>
                       <td style="padding:9px 14px;text-align:right">
                         <button onclick="deletePerfLog('${r.id}','${clientId}')"
                           style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:2px 5px">×</button>
                       </td>
-                    </tr>`).join('')}
+                    </tr>`
+                    }).join('')}
                   </tbody>
                 </table>
 
@@ -1008,8 +1053,8 @@ function _diaryExMetrics(ex) {
     const dur  = sets.reduce((s, x) => s + (parseInt(x.duration_seconds) || 0), 0)
     const useDist = dist > 0
     return { mt, isCardio: true, setLine, sets: sets.length, reps: 0, volume: 0,
-      main: { raw: useDist ? dist : dur, fmt: useDist ? (dist / 1000).toFixed(1) + ' km' : fmtRestCountdown(dur),
-              fmtNum: useDist ? (v => (v / 1000).toFixed(1) + 'km') : (v => fmtRestCountdown(v)) },
+      main: { raw: useDist ? dist : dur, fmt: useDist ? fmtDistanceM(dist) : fmtRestCountdown(dur),
+              fmtNum: useDist ? (v => fmtDistanceM(v)) : (v => fmtRestCountdown(v)) },
       sec:  useDist && dur > 0 ? { label: 'Time', raw: dur, fmt: fmtRestCountdown(dur), fmtNum: v => fmtRestCountdown(v) } : null }
   }
   const reps   = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
@@ -1259,10 +1304,6 @@ async function renderProgressWeight(el) {
 // workout_log_exercises (①); exercise_id is nullable, so series group by exercise_name, never a join.
 const _TREND_RANGES = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365, 'All': Infinity }
 
-function _epleyEst1RM(weightKg, reps) {
-  const w = parseFloat(weightKg) || 0, r = parseInt(reps) || 0
-  return w > 0 && r > 0 ? w * (1 + r / 30) : 0
-}
 
 // One point per session, with only the keys relevant to the metric_type populated.
 function _metricPointsFor(ex) {
@@ -1299,7 +1340,7 @@ function _metricPointsFor(ex) {
         break
       default: { // weight_reps (and any unknown → treat as weight_reps)
         p.topWeight = Math.max(0, ...sets.map(x => num(x.weight_kg)))
-        p.e1rm      = Math.max(0, ...sets.map(x => _epleyEst1RM(x.weight_kg, x.reps_achieved)))
+        p.e1rm      = Math.max(0, ...sets.map(x => _estimate1RM(x.weight_kg, x.reps_achieved) || 0))
         p.volume    = sets.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0)
         const totalReps = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
         p.intensity = totalReps > 0 ? p.volume / totalReps : 0 // weighted avg weight per rep
@@ -1389,7 +1430,7 @@ function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = 
 const _TREND_METRICS = {
   weight_reps: [['topWeight','Top weight','max',v=>v+'kg'], ['e1rm','Est 1RM','max',v=>Math.round(v)+'kg'], ['volume','Volume','max',v=>Math.round(v)+'kg'], ['intensity','Intensity','mean',v=>Math.round(v*10)/10+' kg/rep']],
   cardio: [
-    ['totalDistance','Distance','max', v => (v/1000).toFixed(1)+'km'],
+    ['totalDistance','Distance','max', v => fmtDistanceM(v)],
     ['totalDuration','Duration','max', v => fmtRestCountdown(v)],
     ['pace','Pace','mean', v => fmtRestCountdown(v)+'/km', true],
     ['avgHr','Avg HR','mean', v => Math.round(v)+' bpm'],
@@ -1424,7 +1465,7 @@ function _exerciseRecords(ex) {
     const paces = pts.map(p => p.pace).filter(v => v > 0)       // lower = faster
     const hrs   = pts.map(p => p.avgHr).filter(v => v > 0)
     const rows = []
-    if (dist > 0)      rows.push(['Best distance', (dist / 1000).toFixed(1) + ' km'])
+    if (dist > 0)      rows.push(['Best distance', fmtDistanceM(dist)])
     if (dur > 0)       rows.push(['Longest time', fmtRestCountdown(dur)])
     if (paces.length)  rows.push(['Best pace', fmtRestCountdown(Math.min(...paces)) + '/km'])
     if (hrs.length)    rows.push(['Avg HR', Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) + ' bpm'])
@@ -1456,7 +1497,7 @@ function _exerciseRecords(ex) {
   const num = v => parseFloat(v) || 0
   const allSets = (ex.sessions || []).flatMap(s => s.sets || [])
   const heaviest = Math.max(0, ...allSets.map(s => num(s.weight_kg)))
-  const best1rm  = Math.max(0, ...allSets.map(s => _epleyEst1RM(s.weight_kg, s.reps_achieved)))
+  const best1rm  = Math.max(0, ...allSets.map(s => _estimate1RM(s.weight_kg, s.reps_achieved) || 0))
   let bestSet = null // the single set with the highest weight×reps
   for (const s of allSets) {
     const w = num(s.weight_kg), r = parseInt(s.reps_achieved) || 0
@@ -1625,10 +1666,16 @@ async function renderProgressPBs(el) {
     const byExercise = {}
     for (const l of logs) {
       const name = l.name || 'Unknown'
-      if (!byExercise[name]) byExercise[name] = { best: l, all: [], unit: l.unit || '', category: l.category || '' }
+      if (!byExercise[name]) byExercise[name] = { all: [], category: l.category || '' }
       byExercise[name].all.push(l)
     }
-    pbListHtml = Object.entries(byExercise).map(([name, { best, all, unit, category }]) => `
+    // See _bestPerfLog — "best" is the true max/min-by-unit, not the most recently logged row. The
+    // displayed unit MUST come from `best` itself, never a group-level unit captured from a
+    // different (e.g. newest) record — PERF_CATEGORIES lets the same exercise be logged in either
+    // unit of a pair (kg/lbs, cm/in...), so a cached group unit can silently mismatch which record
+    // `best` actually resolved to. Multi-agent review, 2026-07-24.
+    Object.values(byExercise).forEach(ex => { ex.best = _bestPerfLog(ex.all) })
+    pbListHtml = Object.entries(byExercise).map(([name, { best, all, category }]) => `
       <div style="margin-bottom:12px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
@@ -1636,7 +1683,7 @@ async function renderProgressPBs(el) {
             <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${escapeHtml(category || '')}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:20px;font-weight:800;color:var(--accent)">${escapeHtml(String(best.value))} <span style="font-size:12px">${escapeHtml(unit || '')}</span></div>
+            <div style="font-size:20px;font-weight:800;color:var(--accent)">${escapeHtml(String(best.value))} <span style="font-size:12px">${escapeHtml(best.unit || '')}</span></div>
             <div style="font-size:11px;color:var(--text-muted)">${new Date(best.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
           </div>
         </div>

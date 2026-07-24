@@ -43,7 +43,9 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     await loginAsPT(page)
     await page.waitForTimeout(500)
     const r = await page.evaluate(() => {
-      const e1 = _epleyEst1RM(100, 5) // 100 * (1 + 5/30) = 116.67
+      // _epleyEst1RM was consolidated into the shared _estimate1RM on 2026-07-24 (four copies of the
+      // Epley formula existed with different validation; unified into one with a 12-rep cap).
+      const e1 = _estimate1RM(100, 5) // 100 * (1 + 5/30) = 116.67
       const p = _metricPointsFor({ name: 'Bench', metricType: 'weight_reps',
         sessions: [{ date: '2026-07-01', sets: [
           { weight_kg: 100, reps_achieved: 5 },   // Epley 116.7
@@ -73,7 +75,11 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     expect(r.top).toBe(120)
     expect(r.reps).toBe(28)
     expect(r.sets).toBe(3)
-    expect(r.cardioMain).toBe('5.0 km')
+    // fmtDistanceM (shared formatter, 2026-07-24) strips trailing zeros — '5 km' not '5.0 km'. This
+    // routes through the shared formatter rather than an inline (v/1000).toFixed(1) copy, which is
+    // exactly the class of bug the consolidation fixed: a 400m interval used to read "400 m" in the
+    // runner and "0.4 km" here, from four independent inline copies that had drifted.
+    expect(r.cardioMain).toBe('5 km')
   })
 
   test('runner vs-last-session totals (Workstream C)', async ({ page }) => {
@@ -137,7 +143,7 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     // lists every CONFIGURED cardio chip — the render itself drops any chip whose data is all-zero,
     // so nobody without logged watts ever sees it. Assertion kept exact rather than loosened.
     expect(r.chips).toEqual(['Distance', 'Duration', 'Pace', 'Avg HR', 'Watts'])
-    expect(r.rec['Best distance']).toBe('6.0 km')
+    expect(r.rec['Best distance']).toBe('6 km')  // fmtDistanceM strips trailing zeros — see B3 above
     expect(r.rec['Avg HR']).toContain('bpm')
     expect(r.rec['Best pace']).toContain('/km')
   })

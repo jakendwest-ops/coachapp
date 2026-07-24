@@ -466,8 +466,9 @@ function _updateOneRMQuickEntryPreview(idPrefix) {
   const w = parseFloat(document.getElementById(`${idPrefix}-est-weight`)?.value)
   const r = parseInt(document.getElementById(`${idPrefix}-est-reps`)?.value)
   const preview = document.getElementById(`${idPrefix}-epley-preview`)
-  const est = _epley1RM(w, r)
-  preview.textContent = est ? `≈ Epley estimate: ${est.toFixed(1)} kg` : ''
+  const est = _estimate1RM(w, r)
+  preview.textContent = est ? `≈ Epley estimate: ${est.toFixed(1)} kg`
+    : (w && r > _ESTIMATE_1RM_MAX_REPS ? `Too many reps for a reliable estimate (max ${_ESTIMATE_1RM_MAX_REPS})` : '')
 }
 
 // Reads back one row's entered value (direct or Epley-estimated). Null if nothing valid was entered.
@@ -479,7 +480,7 @@ function _readOneRMQuickEntry(idPrefix) {
   }
   const w = parseFloat(document.getElementById(`${idPrefix}-est-weight`)?.value)
   const r = parseInt(document.getElementById(`${idPrefix}-est-reps`)?.value)
-  return _epley1RM(w, r)
+  return _estimate1RM(w, r)
 }
 
 function _renderProgramOneRMChecklist(status) {
