@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // Regression, 2026-07-22 — found by the pre-push multi-agent review (Agent B).
 //
@@ -20,7 +20,7 @@ const { loginAsPT } = require('./helpers')
 test.describe('metric_type survives cloning', () => {
   test('_cloneTemplateForClient carries metric_type onto the assigned copy', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal')
+    await clickVisible(page, ['#vs-personal', '#mvs-personal'])
     await page.waitForTimeout(1500)
 
     const r = await page.evaluate(async () => {

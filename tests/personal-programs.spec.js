@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible, waitForVisible } = require('./helpers')
 
 // The Personal/PT program boundary (2026-07-13).
 //
@@ -31,7 +31,7 @@ async function plantSoloRecord(page) {
   }, TAG)
   if (res.error) return res
   await page.reload()
-  await page.waitForSelector('[data-page="programs"]', { timeout: 10000 })
+  await waitForVisible(page, '[data-page="programs"]', { timeout: 10000 })
   await page.waitForTimeout(600) // loadUserInfo resolves _soloClientId
   return res
 }
@@ -181,7 +181,7 @@ test.describe('Personal / PT program boundary', () => {
     let fx
     try {
       fx = await plantProgram(page, { name: `${TAG} Sealed Personal`, isPersonal: true })
-      await page.click('[data-page="programs"]')
+      await clickVisible(page, '[data-page="programs"]')
       await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
       await expect(page.locator(`text=${TAG} Sealed Personal`)).toHaveCount(0)
     } finally {
@@ -206,7 +206,7 @@ test.describe('Personal / PT program boundary', () => {
 
   test('a program created in PT view is stamped is_personal = false', async ({ page }) => {
     try {
-      await page.click('[data-page="programs"]')
+      await clickVisible(page, '[data-page="programs"]')
       await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
       await page.click('button:has-text("New program")')
       await page.fill('#pm-name', `${TAG} Created In PT`)

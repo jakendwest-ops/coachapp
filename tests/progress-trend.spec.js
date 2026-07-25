@@ -1,10 +1,10 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT, loginAsClient } = require('./helpers')
+const { loginAsPT, loginAsClient, clickVisible } = require('./helpers')
 
 // B4 — resting-HR trend chart appears on the Body Weight tab once ≥2 resting-HR entries exist.
 test('resting-HR trend chart shows on the Body tab with >=2 entries (B4)', async ({ page }) => {
   await loginAsPT(page)
-  await page.click('text=Personal')
+  await clickVisible(page, ['#vs-personal', '#mvs-personal'])
   await page.waitForTimeout(1000)
   await page.evaluate(async () => {
     const cid = await _getCurrentClientId()
@@ -211,7 +211,7 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
 
   test('Per-exercise view renders the range selector + a trend card for a logged session (smoke)', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal') // solo — own data, cleaned up below
+    await clickVisible(page, ['#vs-personal', '#mvs-personal']) // solo — own data, cleaned up below
     await page.waitForTimeout(1200)
     const errors = []
     page.on('pageerror', e => errors.push(e.message))

@@ -1,11 +1,11 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // Sub-project ②c: the fast table handles 5 metric_types and emits the loggedSet shapes ②b persists.
 test.describe('Runner fast table — metric_type aware', () => {
   test('routes 5 types to the table, cardio to wizard, and syncs correct loggedSet shapes', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal')
+    await clickVisible(page, ['#vs-personal', '#mvs-personal'])
     await page.waitForTimeout(1200)
 
     const res = await page.evaluate(() => {

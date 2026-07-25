@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // Regressions from the first-ever FULL-FILE multi-agent review (2026-07-13).
 //
@@ -26,7 +26,7 @@ test.describe('XSS — user-controlled strings must never render as HTML', () =>
         return data.id
       }, PAYLOAD)
 
-      await page.click('[data-page="workouts"]')
+      await clickVisible(page, '[data-page="workouts"]')
       await page.waitForSelector('h1:has-text("Workouts")', { timeout: 8000 })
       await page.waitForSelector(`.list-row`, { timeout: 8000 })
 

@@ -59,6 +59,39 @@ async function loginAsPT2(page) {
   )
 }
 
+// Clicks whichever match of `selectors` is actually visible right now.
+//
+// Why this exists: renderNav() (js/app-core.js) unconditionally writes an IDENTICAL data-page="x"
+// link into both the sidebar nav (.nav-item) and the bottom nav (.bottom-nav-item) for every page —
+// both are always in the DOM; only CSS (css/main.css's @media (max-width:900px) block) decides
+// which one is shown. The same duplication exists for the Personal view-switcher
+// (#vs-personal / #mvs-personal) and the Settings sign-out control.
+//
+// page.click(selector) is NOT strict-mode-checked — when a selector matches more than one element
+// it silently "proceeds with the first DOM-order match" and waits for THAT element to become
+// actionable. Sidebar markup is written before bottom-nav markup, so the sidebar copy is always
+// DOM-order-first — if it's the one CSS has hidden (real mobile viewport), the click waits out the
+// full timeout instead of ever trying the visible copy. Appending Playwright's native :visible
+// pseudo-class narrows resolution to only currently-visible elements before that first-match logic
+// runs — no custom polling needed. (Same trick already used ad hoc in client-workout.spec.js and
+// runner.spec.js's `button:has-text("Start"):visible, button:has-text("▶ Start"):visible` — this
+// just generalizes it into a shared helper.)
+//
+// `selectors` may be one selector string or an array of alternatives; each gets :visible appended
+// individually (a trailing :visible on only the last branch of a comma-list only filters that
+// branch), then they're OR'd together.
+async function clickVisible(page, selectors, options = {}) {
+  const list = Array.isArray(selectors) ? selectors : [selectors]
+  await page.click(list.map(s => `${s}:visible`).join(', '), options)
+}
+
+// Same idea as clickVisible, for call sites that only need to wait for one of the alternatives to
+// become visible (no click) — e.g. a readiness gate before reading page state.
+async function waitForVisible(page, selectors, options = {}) {
+  const list = Array.isArray(selectors) ? selectors : [selectors]
+  return page.waitForSelector(list.map(s => `${s}:visible`).join(', '), options)
+}
+
 // Log one set in the runner's fast table. Since sub-project ②c, every strength metric_type
 // (weight_reps/unilateral/timed_hold/jump_height/jump_distance) logs via the fast table, not the wizard —
 // so tests that used to drive `#wr-weight-input` + the LOG button now fill the row inputs and tick the ✓.
@@ -80,4 +113,4 @@ async function logTableSet(page, { weight = '60', reps = '10' } = {}) {
   return true
 }
 
-module.exports = { loginAsPT, loginAsClient, loginAsPT2, logTableSet }
+module.exports = { loginAsPT, loginAsClient, loginAsPT2, logTableSet, clickVisible, waitForVisible }

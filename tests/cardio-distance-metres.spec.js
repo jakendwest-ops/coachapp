@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // 2026-07-22 — cardio distance moves from km to METRES at the point of entry.
 //
@@ -39,7 +39,7 @@ test.describe('Cardio distance — metres entry, km-legacy compatibility', () =>
 
   test('builder saves distanceM in metres; runner persists it to distance_m without a x1000', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal')
+    await clickVisible(page, ['#vs-personal', '#mvs-personal'])
     await page.waitForTimeout(1500)
 
     const out = await page.evaluate(async () => {
@@ -90,7 +90,7 @@ test.describe('Cardio distance — metres entry, km-legacy compatibility', () =>
   // the new metres target would never appear.
   test('adding a cardio exercise preserves every cardio target, not just duration/distance', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal')
+    await clickVisible(page, ['#vs-personal', '#mvs-personal'])
     await page.waitForTimeout(1500)
 
     const saved = await page.evaluate(async () => {
@@ -142,7 +142,7 @@ test.describe('Cardio distance — metres entry, km-legacy compatibility', () =>
   // Same silent-drop class as ②b (2026-07-19), which this exact function was rewritten to fix.
   test('duration-based cardio persists its optional distance (was silently discarded)', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal')
+    await clickVisible(page, ['#vs-personal', '#mvs-personal'])
     await page.waitForTimeout(1500)
 
     const r = await page.evaluate(async () => {

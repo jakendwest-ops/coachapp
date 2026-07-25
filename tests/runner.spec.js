@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient, logTableSet } = require('./helpers')
+const { loginAsPT, loginAsClient, logTableSet, clickVisible } = require('./helpers')
 
 // Drives the exercise picker (2026-07-06): type a name, tap "Create new exercise", land on
 // the sets/reps screen with that exercise locked in. Shared by every add/swap test below.
@@ -24,7 +24,7 @@ test.describe('PT Workouts page', () => {
   })
 
   test('workouts page is not blank — shows templates or meaningful empty state', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     // Wait for Supabase to resolve — any of these three states means the page rendered correctly
     await page.waitForFunction(() => {
       const body = document.body.textContent || ''
@@ -39,7 +39,7 @@ test.describe('PT Workouts page', () => {
   })
 
   test('PT can open a template for editing', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     // If a template row exists, click it and expect the template editor to load
     const templateRow = page.locator('.list-row').first()
     const count = await page.locator('.list-row').count()
@@ -250,7 +250,7 @@ test.describe('Timed set render regression', () => {
 test.describe('Workout runner (client)', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsClient(page)
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     // Wait for page to settle — may show program accordion or flat template list
     await page.waitForTimeout(1500)
     // If phases are present (program accordion), expand the first one so Start buttons are visible

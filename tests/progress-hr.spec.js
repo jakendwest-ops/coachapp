@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // Sub-project ②d — manual HR capture.
 // ②b already proved saveRunnerSession PERSISTS avgHr/maxHr (runner-save-metrics.spec.js constructs a
@@ -8,7 +8,7 @@ const { loginAsPT } = require('./helpers')
 test.describe('Sub-project 2d — manual HR capture', () => {
   test('cardio input UI collects avg/max HR into the logged set', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal') // solo view — self-owned client, no cross-tenant setup
+    await clickVisible(page, ['#vs-personal', '#mvs-personal']) // solo view — self-owned client, no cross-tenant setup
     await page.waitForTimeout(1000)
 
     const set = await page.evaluate(async () => {
@@ -39,7 +39,7 @@ test.describe('Sub-project 2d — manual HR capture', () => {
 
   test('bodyweight log with resting HR round-trips to weight_logs', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal') // solo — own weight_logs, no cross-tenant setup
+    await clickVisible(page, ['#vs-personal', '#mvs-personal']) // solo — own weight_logs, no cross-tenant setup
     await page.waitForTimeout(800)
     // Render the Body Weight tab and open the log form (same pattern as progress.spec.js).
     await page.evaluate(() => { window._progressTab = 'Body Weight'; renderProgress(document.getElementById('main-content')) })

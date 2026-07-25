@@ -1899,7 +1899,7 @@ async function renderSettings(el) {
       <!-- Sign out -->
       <div class="card">
         <div class="card-body" style="padding:16px 20px">
-          <button onclick="db.auth.signOut().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Sign out</button>
+          <button id="settings-sign-out-btn" onclick="db.auth.signOut().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Sign out</button>
         </div>
       </div>
 

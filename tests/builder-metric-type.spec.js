@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // Sub-project ②a: the builder's save path (saveExerciseToTemplate) must persist metric_type and derive
 // the legacy exercise_type + per-set unilateral/timed flags from it, so the current runner keeps working.
@@ -8,7 +8,7 @@ const { loginAsPT } = require('./helpers')
 test.describe('Builder metric_type picker — save persistence', () => {
   test('saveExerciseToTemplate persists metric_type + derives exercise_type/flags', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal')
+    await clickVisible(page, ['#vs-personal', '#mvs-personal'])
     await page.waitForTimeout(1500)
 
     const rows = await page.evaluate(async () => {

@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // Solo/Personal account tests require Jake's master account (_soloClientId must be set).
 // The E2E PT test account (coachapp.e2e.pt@gmail.com) has no solo client record,
@@ -34,17 +34,20 @@ test.describe('Solo / Personal account', () => {
 
   test('solo nav shows Dashboard, Workouts, Library, Programs, Calendar, Progress', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await expect(page.locator('[data-page="solo-dashboard"]').first()).toBeVisible()
-    await expect(page.locator('[data-page="workouts"]').first()).toBeVisible()
-    await expect(page.locator('[data-page="library"]').first()).toBeVisible()
-    await expect(page.locator('[data-page="programs"]').first()).toBeVisible()
-    await expect(page.locator('[data-page="calendar"]').first()).toBeVisible()
-    await expect(page.locator('[data-page="progress"]').first()).toBeVisible()
+    // .bottom-nav-item, not the ambiguous bare [data-page] (which also matches the desktop
+    // sidebar copy) -- this suite runs at the real 390px mobile viewport, where only the
+    // bottom nav is ever actually shown, so its item is the single unambiguous match.
+    await expect(page.locator('.bottom-nav-item[data-page="solo-dashboard"]')).toBeVisible()
+    await expect(page.locator('.bottom-nav-item[data-page="workouts"]')).toBeVisible()
+    await expect(page.locator('.bottom-nav-item[data-page="library"]')).toBeVisible()
+    await expect(page.locator('.bottom-nav-item[data-page="programs"]')).toBeVisible()
+    await expect(page.locator('.bottom-nav-item[data-page="calendar"]')).toBeVisible()
+    await expect(page.locator('.bottom-nav-item[data-page="progress"]')).toBeVisible()
   })
 
   test('solo can reach the Library nav item and see Templates/Exercise Library tabs (2026-07-11)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await page.click('[data-page="library"]')
+    await clickVisible(page, '[data-page="library"]')
     await page.waitForTimeout(1000)
     await expect(page.locator('h1')).toContainText('Library', { timeout: 8000 })
     await expect(page.locator('#wt-tab-templates')).toBeVisible()
@@ -54,7 +57,7 @@ test.describe('Solo / Personal account', () => {
 
   test('solo Workouts page shows program accordion, not template builder', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     await page.waitForTimeout(1500)
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
     // Template builder "New template" button must NOT be visible in solo view
@@ -73,20 +76,20 @@ test.describe('Solo / Personal account', () => {
 
   test('solo Programs page loads', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await page.click('[data-page="programs"]')
+    await clickVisible(page, '[data-page="programs"]')
     await expect(page.locator('h1')).toContainText('Programs', { timeout: 8000 })
     await expect(page.locator('button:has-text("New program")')).toBeVisible()
   })
 
   test('solo Calendar page loads', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await page.click('[data-page="calendar"]')
+    await clickVisible(page, '[data-page="calendar"]')
     await expect(page.locator('h1')).toContainText('Calendar', { timeout: 8000 })
   })
 
   test('solo Progress page loads with tabs (2026-07-08: Cardio folded into Personal Bests, no longer its own top-level tab)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await page.click('[data-page="progress"]')
+    await clickVisible(page, '[data-page="progress"]')
     await page.waitForTimeout(1000)
     await expect(page.locator('h1')).toContainText('My Progress', { timeout: 8000 })
     await expect(page.locator('button:has-text("Body Weight")')).toBeVisible()
@@ -96,7 +99,7 @@ test.describe('Solo / Personal account', () => {
 
   test('tapping a day shows its workout inline, with no slider (2026-07-17 week-tabs redesign)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     await page.waitForTimeout(2000)
     // Skip if no program assigned (E2E account may not have one)
     const hasPhase = await page.locator('button[onclick*="cl-phase"]').first().isVisible({ timeout: 4000 }).catch(() => false)
@@ -122,7 +125,8 @@ test.describe('Solo / Personal account', () => {
     await page.evaluate(() => switchView('coach'))
     await page.waitForTimeout(800)
     await expect(page.locator('h1')).toContainText('Welcome back', { timeout: 8000 })
-    await expect(page.locator('[data-page="clients"]').first()).toBeVisible()
+    // Real 390px viewport — only .bottom-nav-item is ever shown, see the comment above.
+    await expect(page.locator('.bottom-nav-item[data-page="clients"]')).toBeVisible()
   })
 
   test('solo dashboard shows a "Current program" header with a View program button, when a program is assigned (2026-07-05)', async ({ page }) => {
@@ -147,7 +151,7 @@ test.describe('Solo / Personal account', () => {
     try {
       await page.evaluate(() => switchView('coach'))
       await page.waitForTimeout(800)
-      await page.click('[data-page="workouts"]')
+      await clickVisible(page, '[data-page="workouts"]')
       await page.waitForTimeout(1000)
       await page.click('button:has-text("Exercise Library")')
       await page.waitForTimeout(500)
@@ -186,14 +190,14 @@ test.describe('Solo / Personal account', () => {
       })
       await page.evaluate(() => switchView('coach'))
       await page.waitForTimeout(800)
-      await page.click('[data-page="workouts"]')
+      await clickVisible(page, '[data-page="workouts"]')
       await page.waitForTimeout(1000)
       await expect(page.locator('text=[E2E] PT-Only Template')).toBeVisible({ timeout: 5000 })
       await expect(page.locator('text=[E2E] Personal-Only Template')).not.toBeVisible()
 
       await page.evaluate(() => switchView('solo'))
       await page.waitForTimeout(800)
-      await page.click('[data-page="library"]')
+      await clickVisible(page, '[data-page="library"]')
       await page.waitForTimeout(1000)
       await expect(page.locator('text=[E2E] Personal-Only Template')).toBeVisible({ timeout: 5000 })
       await expect(page.locator('text=[E2E] PT-Only Template')).not.toBeVisible()
@@ -215,7 +219,7 @@ test.describe('Solo / Personal account', () => {
         await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: true, name: '[E2E] Personal Picker Template' })
         await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] PT Picker Template' })
       })
-      await page.click('[data-page="programs"]')
+      await clickVisible(page, '[data-page="programs"]')
       await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
       await page.click('button:has-text("New program")')
       await page.fill('#pm-name', '[E2E] Personal Picker Program')

@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient } = require('./helpers')
+const { loginAsPT, loginAsClient, clickVisible, waitForVisible } = require('./helpers')
 
 test.describe('Auth', () => {
   test('PT can log in and see coach dashboard', async ({ page }) => {
@@ -20,10 +20,13 @@ test.describe('Auth', () => {
 
   test('PT can sign out', async ({ page }) => {
     await loginAsPT(page)
-    // Navigate to Settings and click sign out
-    await page.click('[data-page="settings"]')
-    await page.waitForSelector('text=Sign out', { timeout: 8000 })
-    await page.click('button:has-text("Sign out")')
+    // Navigate to Settings and click sign out. Two sign-out buttons exist — the sidebar's
+    // #sign-out-btn (hidden below 900px) and the Settings page's own #settings-sign-out-btn
+    // (always present once Settings is open, viewport-independent) — clickVisible picks
+    // whichever is actually reachable at the current viewport.
+    await clickVisible(page, '[data-page="settings"]')
+    await waitForVisible(page, ['#sign-out-btn', '#settings-sign-out-btn'], { timeout: 8000 })
+    await clickVisible(page, ['#sign-out-btn', '#settings-sign-out-btn'])
     // Auth screen should reappear
     await expect(page.locator('#auth-screen')).toBeVisible({ timeout: 10000 })
   })

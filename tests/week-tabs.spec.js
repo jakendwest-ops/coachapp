@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient } = require('./helpers')
+const { loginAsPT, loginAsClient, clickVisible } = require('./helpers')
 
 // The 2026-07-17 week-tabs redesign: a week is a row of tabs (one week on screen at a time), days are
 // rows, and a day/slot opens its workout inline — the session-detail slider is gone on both the read
@@ -118,7 +118,7 @@ test.describe('Week-tabs redesign', () => {
     }, clientId)
 
     try {
-      await page.click('[data-page="workouts"]')
+      await clickVisible(page, '[data-page="workouts"]')
       await expect(page.locator('.week-tab[data-week="1"]')).toBeVisible({ timeout: 10000 })
       await expect(page.locator('.week-tab')).toHaveCount(3)
 

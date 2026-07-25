@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsClient } = require('./helpers')
+const { loginAsClient, clickVisible } = require('./helpers')
 
 test.describe('Progress page regressions (2026-07-05)', () => {
   test.beforeEach(async ({ page }) => {
@@ -53,7 +53,7 @@ test.describe('Progress page bug fixes (2026-07-08)', () => {
   })
 
   test('"Log PB" button on Personal Bests actually opens the form (regression — was wired to a Dashboard-only DOM node)', async ({ page }) => {
-    await page.click('[data-page="progress"]')
+    await clickVisible(page, '[data-page="progress"]')
     await page.waitForTimeout(500)
     await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(500)
@@ -99,7 +99,7 @@ test.describe('Progress page bug fixes (2026-07-08)', () => {
   })
 
   test('"Log weight" button on the Body Weight tab actually opens the form (regression — was wired to a Dashboard-only DOM node)', async ({ page }) => {
-    await page.click('[data-page="progress"]')
+    await clickVisible(page, '[data-page="progress"]')
     await page.waitForTimeout(500)
     await page.evaluate(() => { window._progressTab = 'Body Weight'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(500)
@@ -121,7 +121,7 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
   })
 
   test('Progress page top-level tabs are Body Weight / Personal Bests / Performance — Cardio is no longer its own tab', async ({ page }) => {
-    await page.click('[data-page="progress"]')
+    await clickVisible(page, '[data-page="progress"]')
     await page.waitForTimeout(500)
     await expect(page.locator('h1')).toContainText('My Progress')
     await expect(page.locator('button:has-text("Body Weight")')).toBeVisible()
@@ -168,7 +168,7 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
   })
 
   test('Workouts page no longer shows a standalone "Your 1RMs" section (moved into Personal Bests)', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     await page.waitForTimeout(1500)
     await expect(page.locator('text=Your 1RMs')).toHaveCount(0)
   })

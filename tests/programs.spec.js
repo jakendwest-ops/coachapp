@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // The day-slot workout picker became a tap-row modal on 2026-07-11, replacing the native <select>
 // (an <option> can only hold plain text, which is why three same-named workouts were impossible to
@@ -29,7 +29,7 @@ async function assignWorkoutToDay(page, day, templateId) {
 test.describe('Program periodization', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
-    await page.click('[data-page="programs"]')
+    await clickVisible(page, '[data-page="programs"]')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -110,7 +110,7 @@ test.describe('Program periodization', () => {
 test.describe('Inline assign grid', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
-    await page.click('[data-page="programs"]')
+    await clickVisible(page, '[data-page="programs"]')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -271,7 +271,7 @@ test.describe('Inline assign grid', () => {
 test.describe('Assignment-time 1RM check', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
-    await page.click('[data-page="programs"]')
+    await clickVisible(page, '[data-page="programs"]')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -377,7 +377,7 @@ test.describe('Assignment-time 1RM check', () => {
 test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
-    await page.click('[data-page="programs"]')
+    await clickVisible(page, '[data-page="programs"]')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -637,7 +637,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     })
 
     try {
-      await page.click('[data-page="programs"]')
+      await clickVisible(page, '[data-page="programs"]')
       await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
       await page.evaluate((programId) => openProgram(programId), setup.programId)
       await page.waitForSelector('.week-tab[data-week="3"]', { timeout: 8000 })
@@ -748,7 +748,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
 test.describe('Copy program workouts to Library + duplicate-week auto-extend (2026-07-11)', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
-    await page.click('[data-page="programs"]')
+    await clickVisible(page, '[data-page="programs"]')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 

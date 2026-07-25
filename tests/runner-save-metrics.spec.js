@@ -1,12 +1,12 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // Sub-project ②b: saveRunnerSession must persist unilateral (as two side-tagged rows), timed holds,
 // distance-strength, and heart rate — data the wizard captures but the old save silently dropped.
 test.describe('Runner save persists all metric shapes', () => {
   test('unilateral splits to L/R rows; timed, distance, and HR round-trip', async ({ page }) => {
     await loginAsPT(page)
-    await page.click('text=Personal') // solo view — self-owned client, avoids cross-tenant setup
+    await clickVisible(page, ['#vs-personal', '#mvs-personal']) // solo view — self-owned client, avoids cross-tenant setup
     await page.waitForTimeout(1500)
 
     const result = await page.evaluate(async () => {

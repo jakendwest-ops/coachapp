@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT, loginAsClient } = require('./helpers')
+const { loginAsPT, loginAsClient, clickVisible } = require('./helpers')
 
 // Five fixes from the 2026-07-23 bug ledger (full-file review, 2026-07-23). Each assertion below
 // went RED against the code as the review found it.
@@ -215,7 +215,7 @@ test.describe('Ledger fixes 2026-07-23 — Personal Bests unit pairing', () => {
     expect(insertErr).toBeNull()
 
     try {
-      await page.click('[data-page="progress"]')
+      await clickVisible(page, '[data-page="progress"]')
       await page.waitForTimeout(1000)
       await page.click('button:has-text("Personal Bests")')
       await page.waitForTimeout(1500)

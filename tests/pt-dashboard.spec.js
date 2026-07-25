@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 test.describe('PT Dashboard', () => {
   test.beforeEach(async ({ page }) => {
@@ -42,7 +42,7 @@ test.describe('PT Dashboard', () => {
   })
 
   test('clients list shows last session recency', async ({ page }) => {
-    await page.click('[data-page="clients"]')
+    await clickVisible(page, '[data-page="clients"]')
     await page.waitForSelector('#client-list', { timeout: 8000 })
     // Each row should have a recency label (Today / Xd ago / No sessions)
     const rows = page.locator('#client-list .list-row')

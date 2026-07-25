@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsClient, loginAsPT } = require('./helpers')
+const { loginAsClient, loginAsPT, clickVisible } = require('./helpers')
 
 test.describe('Client workout flow', () => {
   test.beforeEach(async ({ page }) => {
@@ -21,21 +21,21 @@ test.describe('Client workout flow', () => {
   })
 
   test('client can navigate to Workouts page', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     // Page renders the Workouts h1 and either a program accordion or templates list
     await page.waitForSelector('button:has-text("▶ Start"), button:has-text("Start")', { timeout: 10000 })
     await expect(page.locator('h1')).toContainText('Workouts')
   })
 
   test('workout sessions list is visible with Start buttons', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     await page.waitForSelector('button:has-text("▶ Start"), button:has-text("Start")', { timeout: 10000 })
     const startBtns = page.locator('button:has-text("▶ Start"), button:has-text("Start")')
     expect(await startBtns.count()).toBeGreaterThan(0)
   })
 
   test('program accordion phase expands to show sessions with exercise count', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     await page.waitForTimeout(1500)
 
     // Only run if this client has a program assigned (accordion will be present)
@@ -50,7 +50,7 @@ test.describe('Client workout flow', () => {
   })
 
   test('client can tap session name to see exercise list', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     await page.waitForTimeout(1500)
 
     // Only run if this client has a program assigned
@@ -74,7 +74,7 @@ test.describe('Client workout flow', () => {
   })
 
   test('session history is collapsed by default and expands on click', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     const historyToggle = page.locator('button[onclick="toggleClientPhase(\'client-session-history\')"]')
     if (await historyToggle.count() === 0) return // no sessions yet — nothing to expand
     const panel = page.locator('#client-session-history')
@@ -84,7 +84,7 @@ test.describe('Client workout flow', () => {
   })
 
   test('session history rows are tappable', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     // Session history is a collapsible section — expand it before checking rows
     const historyToggle = page.locator('button[onclick="toggleClientPhase(\'client-session-history\')"]')
     if (await historyToggle.count() === 0) return // no sessions yet — nothing to expand
@@ -103,7 +103,7 @@ test.describe('Client workout flow', () => {
   })
 
   test('client can start and cancel a workout', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     await page.waitForTimeout(1500)
     // If program accordion is present, expand first phase to reveal Start buttons
     const firstPhaseBtn = page.locator('button').filter({ hasText: /session/i }).first()
@@ -185,7 +185,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       })
 
       try {
-        await page.click('[data-page="workouts"]')
+        await clickVisible(page, '[data-page="workouts"]')
         await page.waitForTimeout(1000)
         await expect(page.locator('text=Up next')).toBeVisible({ timeout: 8000 })
         await expect(page.locator('button', { hasText: /Start/ }).first()).toBeVisible()
@@ -244,7 +244,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
         // empty-phase render crash (the bug this guards) would fire on load, before any click.
         const consoleErrors = []
         page.on('pageerror', err => consoleErrors.push(err.message))
-        await page.click('[data-page="workouts"]')
+        await clickVisible(page, '[data-page="workouts"]')
         await page.waitForTimeout(1000)
         // Deload is phase 1 (order_index 0) → expanded by default, so its empty-phase message shows
         // on load. If a phase ever defaults collapsed again, open it (scope to the accordion toggle
@@ -362,7 +362,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
   })
 
   test('"Recent sessions" replaces "Session history", capped to 5, date-only rows', async ({ page }) => {
-    await page.click('[data-page="workouts"]')
+    await clickVisible(page, '[data-page="workouts"]')
     await page.waitForTimeout(1000)
     const toggle = page.locator('button[onclick="toggleClientPhase(\'client-session-history\')"]')
     if (await toggle.count() === 0) return // no sessions yet
@@ -621,7 +621,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     expect(insertErr).toBeNull() // the WRITE was never the problem — only the read
 
     try {
-      await page.click('[data-page="progress"]')
+      await clickVisible(page, '[data-page="progress"]')
       await page.waitForTimeout(1000)
       await page.click('button:has-text("Personal Bests")')
       await page.waitForTimeout(1500)
