@@ -107,7 +107,7 @@
                                   // Same shared formatter as the client's own Workouts page and the
                                   // builder slot — a coach reviewing a client's plan must see the
                                   // prescription they wrote, not just a set count.
-                                  const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio' })
+                                  const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: (ex.metric_type || ex.exercise_type) === 'interval' })
                                   return `
                                   <div style="padding:5px 0;border-bottom:1px solid var(--border)">
                                     <div style="display:flex;justify-content:space-between;gap:8px">
@@ -1730,7 +1730,7 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
       // Same prescription line as the client/solo Workouts page, via the one shared formatter in
       // app-workouts.js — a coach building the week sees exactly what the client will read.
       ? exs.map(ex => {
-          const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio' })
+          const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: (ex.metric_type || ex.exercise_type) === 'interval' })
           return `<div class="pwk-ex"><div style="flex:1;min-width:0"><span>${escapeHtml(ex.exercise_name)}</span>${presc ? `<div class="pwk-presc">${escapeHtml(presc)}</div>` : ''}</div><span class="s">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span></div>`
         }).join('')
       : '<div class="pwk-ex" style="color:var(--text-muted)">No exercises yet</div>'

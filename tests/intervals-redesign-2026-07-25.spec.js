@@ -192,3 +192,17 @@ test.describe('Interval builder (2026-07-25)', () => {
     expect(s.workSecs).toBe(30)
   })
 })
+
+test.describe('Interval prescription display (2026-07-25)', () => {
+  test('day rows describe an interval block, not a bare set count', async ({ page }) => {
+    await loginAsPT(page)
+    const s = await page.evaluate(() => [
+      _fmtSetDetail({ workSecs: 30, restSecs: 30, sets: 8, cycles: 1 }, { isInterval: true }),
+      _fmtSetDetail({ isDistanceBased: true, workDistanceM: 400, restSecs: 90, sets: 8, cycles: 1 }, { isInterval: true }),
+      _fmtSetDetail({ workSecs: 60, restSecs: 30, sets: 4, cycles: 3, recoverySecs: 120 }, { isInterval: true }),
+    ])
+    expect(s[0]).toContain('8 × 0:30 / 0:30')
+    expect(s[1]).toContain('400')
+    expect(s[2]).toContain('3 cycles')
+  })
+})

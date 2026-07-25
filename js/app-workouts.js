@@ -181,8 +181,25 @@ function _intervalTotalSecs(phases) {
 // rate, HR…). It is NOT html-safe — every caller must escapeHtml() it before innerHTML. On a client
 // PLAN CLONE the underlying row belongs to the client, so an unescaped sink here is the client→coach
 // stored-XSS shape that hit this codebase on 2026-07-18.
-function _fmtSetDetail(s, { isCardio = false, includeRest = false, markAmrap = true } = {}) {
+function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = false, markAmrap = true } = {}) {
   if (!s) return '—'
+  // INTERVAL BLOCKS (2026-07-25): one entry describes the whole workout (work/rest × sets, × cycles),
+  // not a single set — so it gets its own branch, checked before isCardio (an interval's legacy
+  // exercise_type is 'cardio', see _deriveFromMetricType, so isCardio may ALSO be true here; isInterval
+  // must win). Rest is already folded into this branch's own string, so includeRest is irrelevant to it.
+  if (isInterval) {
+    const work = s.isDistanceBased
+      ? fmtDistanceM(s.workDistanceM)
+      : fmtRestCountdown(Math.max(0, parseInt(s.workSecs, 10) || 0))
+    const rest = fmtRestCountdown(Math.max(0, parseInt(s.restSecs, 10) || 0))
+    const sets = Math.max(1, parseInt(s.sets, 10) || 0)
+    const cycles = Math.max(1, parseInt(s.cycles, 10) || 0)
+    const parts = [`${sets} × ${work}${rest !== '0:00' ? ' / ' + rest : ''}`]
+    if (cycles > 1) parts.push(`${cycles} cycles`)
+    const { total, hasUnknown } = _intervalTotalSecs(_expandIntervalBlock(s))
+    if (total) parts.push(hasUnknown ? `${fmtRestCountdown(total)}+ total` : `${fmtRestCountdown(total)} total`)
+    return parts.join(' · ')
+  }
   // Renders a range only when both ends are real, otherwise the single end that IS set. The old
   // copies hardcoded '?' for a missing end ("24–? spm", "1:45–?/500m"), which reads as broken in a
   // compact day row when a coach prescribed only a floor.
@@ -255,12 +272,14 @@ function _fmtSetDetail(s, { isCardio = false, includeRest = false, markAmrap = t
 // Sets → ONE scannable line. Identical consecutive sets collapse to "4 × 8–10 · 60kg"; genuinely
 // differing sets fall back to a per-set list so nothing is hidden. Returns null for no sets, so
 // callers render nothing rather than a meaningless "0 sets".
-function _fmtSetsCollapsed(sets, { isCardio = false } = {}) {
+function _fmtSetsCollapsed(sets, { isCardio = false, isInterval = false } = {}) {
   const list = Array.isArray(sets) ? sets : []
   if (!list.length) return null
   const groups = []
   list.forEach(s => {
-    const detail = _fmtSetDetail(s, { isCardio, includeRest: true })
+    // An interval block is always exactly one entry — isInterval flows through to _fmtSetDetail, and
+    // with only one entry the grouping below naturally emits it straight, with no "N ×" collapse.
+    const detail = _fmtSetDetail(s, { isCardio, isInterval, includeRest: true })
     const last = groups[groups.length - 1]
     if (last && last.detail === detail) last.n++
     else groups.push({ detail, n: 1 })
@@ -333,7 +352,7 @@ async function openSessionDetail(templateId, name, ctx = {}) {
 
   const { data: exercises } = await db
     .from('workout_template_exercises')
-    .select('exercise_name, exercise_type, order_index, sets_json, notes')
+    .select('exercise_name, exercise_type, metric_type, order_index, sets_json, notes')
     .eq('template_id', templateId)
     .order('order_index')
 
@@ -346,13 +365,17 @@ async function openSessionDetail(templateId, name, ctx = {}) {
     : exercises.map((ex, i) => {
         const sets = ex.sets_json || []
         const isLast = i === exercises.length - 1
-        const isCardio = ex.exercise_type === 'cardio'
+        // metric_type is the source of truth; exercise_type alone can't tell an interval block from
+        // real cardio — _deriveFromMetricType writes 'cardio' as the legacy exercise_type for BOTH.
+        const _mt = ex.metric_type || ex.exercise_type
+        const isCardio = _mt === 'cardio'
+        const isInterval = _mt === 'interval'
         const setsHtml = sets.map((s, si) => {
           let label = `Set ${si + 1}`
           if (s.amrap) label = 'AMRAP'
 
           // Rest renders in its own right-aligned span here, so it is excluded from the detail string.
-          const detail = _fmtSetDetail(s, { isCardio, includeRest: false, markAmrap: false })
+          const detail = _fmtSetDetail(s, { isCardio, isInterval, includeRest: false, markAmrap: false })
           const rest = _hasTimeTarget(s.restMin)
             ? (_hasTimeTarget(s.restMax) && s.restMax !== s.restMin ? `${s.restMin}–${s.restMax}` : s.restMin) + ' rest'
             : null
@@ -614,7 +637,7 @@ async function renderClientWorkoutsPage(el) {
                             // Jake, 2026-07-22: name + set count alone is "not good UX or helpful to a
                             // user who wants to look at their week ahead to see what the plan has in
                             // store for them". Show the actual prescription, sets collapsed.
-                            const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio' })
+                            const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: (ex.metric_type || ex.exercise_type) === 'interval' })
                             return `
                             <div style="padding:5px 0;border-bottom:1px solid var(--border)">
                               <div style="display:flex;justify-content:space-between;gap:8px">
@@ -1126,7 +1149,11 @@ async function openTemplate(id, ctx = {}) {
           <button class="btn-primary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
         </div>
       ` : `<div class="list">${exercises.map((ex, i) => {
-        const isCardio = ex.exercise_type === 'cardio'
+        // metric_type is the source of truth; exercise_type alone can't tell an interval block from
+        // real cardio — _deriveFromMetricType writes 'cardio' as the legacy exercise_type for BOTH.
+        const _mt = ex.metric_type || ex.exercise_type
+        const isCardio = _mt === 'cardio'
+        const isInterval = _mt === 'interval'
         const meta = isCardio
           ? [ex.sets ? `${ex.sets} sets` : null, 'Cardio'].filter(Boolean).join(' · ')
           : [ex.sets ? `${ex.sets} sets` : null, ex.reps ? `${ex.reps} reps` : null, ex.weight_kg ? `${ex.weight_kg}kg` : null].filter(Boolean).join(' · ') || 'No defaults set'
@@ -1151,7 +1178,7 @@ async function openTemplate(id, ctx = {}) {
                   const rows = ex.sets_json.map((s, si) => {
                     // Shared with openSessionDetail + the day rows (_fmtSetDetail). Rest is folded
                     // INTO the string here, which is this surface's existing behaviour.
-                    const summary = _fmtSetDetail(s, { isCardio, includeRest: true })
+                    const summary = _fmtSetDetail(s, { isCardio, isInterval, includeRest: true })
                     return summary && summary !== '—' ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">Set ${si+1}:</span> ${escapeHtml(summary)}</div>` : null
                   }).filter(Boolean)
                   return rows.length ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:4px">${rows.join('')}</div>` : `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${meta}</div>`
