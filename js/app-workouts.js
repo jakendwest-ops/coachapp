@@ -305,7 +305,14 @@ function _cleanTemplateSets(sets, derived) {
     restHrMax: s.restHrMax || null,
     strokeRateMin: s.strokeRateMin || null, strokeRateMax: s.strokeRateMax || null,
     // Jump targets.
-    targetHeightCm: s.targetHeightCm || null, targetDistanceM: s.targetDistanceM || null
+    targetHeightCm: s.targetHeightCm || null, targetDistanceM: s.targetDistanceM || null,
+    // Interval block (2026-07-25). This allowlist is an allowlist — a key absent here is silently
+    // dropped on save, which is exactly how every cardio target was lost before les-036.
+    countdownSecs: s.countdownSecs ?? null, warmupSecs: s.warmupSecs ?? null,
+    workSecs: s.workSecs ?? null, workDistanceM: s.workDistanceM ?? null,
+    restSecs: s.restSecs ?? null, sets: s.sets ?? null,
+    recoverySecs: s.recoverySecs ?? null, cycles: s.cycles ?? null,
+    cooldownSecs: s.cooldownSecs ?? null
   }))
 }
 
@@ -1245,6 +1252,24 @@ function fmtRest(secs) {
 }
 
 function flushTemplateSets(containerId) {
+  // An interval block is a single entry with its own ids (no -${i} fan-out) — read it and return.
+  const intervalBlock = document.getElementById('ts-worksecs-0') || document.getElementById('ts-workdist-0')
+  if (intervalBlock && (window._templateSets || []).length === 1) {
+    const s = window._templateSets[0]
+    const num  = id => { const el = document.getElementById(id); return el ? (parseInt(el.value, 10) || 0) : undefined }
+    const mmss = id => { const el = document.getElementById(id); return el ? (parseRest(el.value) || 0) : undefined }
+    const set = (k, v) => { if (v !== undefined) s[k] = v }
+    set('countdownSecs', num('ts-countdown-0'))
+    set('warmupSecs',    mmss('ts-warmup-0'))
+    set('workSecs',      mmss('ts-worksecs-0'))
+    set('restSecs',      mmss('ts-restsecs-0'))
+    set('sets',          num('ts-sets-0'))
+    set('recoverySecs',  mmss('ts-recovery-0'))
+    set('cycles',        num('ts-cycles-0'))
+    set('cooldownSecs',  mmss('ts-cooldown-0'))
+    { const el = document.getElementById('ts-workdist-0'); if (el) s.workDistanceM = distanceFromPref(el.value) ?? null }
+    return
+  }
   ;(window._templateSets || []).forEach((s, i) => {
     s.repsMin      = document.getElementById(`ts-rmin-${i}`)?.value     ?? s.repsMin
     s.repsMax      = document.getElementById(`ts-rmax-${i}`)?.value     ?? s.repsMax
@@ -1311,6 +1336,7 @@ function renderTemplateSets(containerId, type) {
   const isCardio = type === 'cardio'
   const isTimedHold = type === 'timed_hold'
   const isJump = type === 'jump_height' || type === 'jump_distance'
+  const isInterval = type === 'interval'
   const showSetToggles = type === 'weight_reps' || type === 'unilateral'
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
   const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;font-weight:600;color:var(--text)">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
@@ -1324,6 +1350,58 @@ function renderTemplateSets(containerId, type) {
   // would hide real prescribed data behind a control the coach has no reason to open — the same class
   // of silent loss as dropping an affordance along with the container that hosted it (les-043).
   const more = (label, open, inner) => `<details class="ts-more"${open ? ' open' : ''}><summary>${label}${open ? ' <span style="font-weight:600;color:var(--text-muted)">· in use</span>' : ''}</summary><div style="padding-bottom:4px">${inner}</div></details>`
+
+  // INTERVALS (2026-07-25). One block describes the whole interval workout — no per-set cards, no
+  // "Repeat ×" cloning control. A block is one thing. Anything that arrived as N rows (a type switch
+  // from cardio, a clone) collapses to the first; anything empty seeds sensible defaults.
+  if (isInterval) {
+    const b = (window._templateSets || [])[0] || {}
+    window._templateSets = [{ countdownSecs: b.countdownSecs ?? 5, warmupSecs: b.warmupSecs ?? 0,
+      isDistanceBased: !!b.isDistanceBased, workSecs: b.workSecs ?? 30, workDistanceM: b.workDistanceM ?? null,
+      restSecs: b.restSecs ?? 30, sets: b.sets ?? 8, recoverySecs: b.recoverySecs ?? 0,
+      cycles: b.cycles ?? 1, cooldownSecs: b.cooldownSecs ?? 0, ...b }]
+    const s = window._templateSets[0]
+    const i = 0   // the More-targets rows below are copied verbatim from the cardio branch, which
+                  // keys its ids off `i` — a block is always index 0.
+    const tog = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
+    container.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:8px">
+      ${row('Initial countdown', mini('ts-countdown-0', 'type="number" placeholder="0"'+(s.countdownSecs != null ? ` value="${s.countdownSecs}"` : '')))}
+      ${row('Warm-up', mini('ts-warmup-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.warmupSecs||0)}"`))}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:13px;font-weight:600;color:var(--text)">Work measured by</span>
+        <div style="display:flex;gap:4px">
+          ${tog('Time', !s.isDistanceBased, `toggleTsSet(0,'isDistanceBased','${containerId}')`)}
+          ${tog('Distance', s.isDistanceBased, `toggleTsSet(0,'isDistanceBased','${containerId}')`)}
+        </div>
+      </div>
+      ${!s.isDistanceBased ? row('Work', mini('ts-worksecs-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.workSecs||0)}"`)) : ''}
+      ${s.isDistanceBased ? row(`Work (${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'})`, mini('ts-workdist-0', `type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="—"${s.workDistanceM ? ` value="${distanceToPref(s.workDistanceM)}"` : ''}`)) : ''}
+      ${row('Rest', mini('ts-restsecs-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.restSecs||0)}"`))}
+      ${row('Sets', mini('ts-sets-0', 'type="number" min="1" placeholder="8"'+(s.sets ? ` value="${s.sets}"` : '')))}
+      ${row('Recovery', mini('ts-recovery-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.recoverySecs||0)}"`))}
+      ${row('Cycles', mini('ts-cycles-0', 'type="number" min="1" placeholder="1"'+(s.cycles ? ` value="${s.cycles}"` : '')))}
+      ${row('Cool-down', mini('ts-cooldown-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.cooldownSecs||0)}"`))}
+      ${(() => {
+        const { total, hasUnknown } = _intervalTotalSecs(_expandIntervalBlock(s))
+        // Never present a confident total for a distance block — work-round duration is unknowable
+        // without a sensor, so say so rather than show a number that is simply wrong.
+        const txt = hasUnknown ? `${fmtRestCountdown(total)} + work time` : fmtRestCountdown(total)
+        return row('<span style="font-weight:700">Total time</span>',
+          `<span id="ts-interval-total" style="font-size:13px;font-weight:700;color:var(--accent)">${txt}</span>`)
+      })()}
+      ${more('+ More targets', !!(_hasTimeTarget(s.pace500Min) || _hasTimeTarget(s.pace500Max) || s.wattsMin || s.wattsMax || s.hrZoneMin || s.hrZoneMax || s.restHrMax || s.strokeRateMin || s.strokeRateMax || _hasTimeTarget(s.paceKmMin) || _hasTimeTarget(s.paceKmMax)), `
+        ${row('Pace / 500m', mini(`ts-p500min-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Min||''}"`) + dash + mini(`ts-p500max-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Max||''}"`))}
+        ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:13px;font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
+        ${row('Watts', mini(`ts-wattsmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.wattsMin?` value="${s.wattsMin}"`:'')) + dash + mini(`ts-wattsmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.wattsMax?` value="${s.wattsMax}"`:'')))}
+        ${row('HR Zone (BPM)', mini(`ts-hrzmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.hrZoneMin?` value="${s.hrZoneMin}"`:'')) + dash + mini(`ts-hrzmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.hrZoneMax?` value="${s.hrZoneMax}"`:'')))}
+        ${row('Rest HR max (BPM)', mini(`ts-resthr-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.restHrMax ? ` value="${s.restHrMax}"` : '')))}
+        ${(_hasTimeTarget(s.paceKmMin) || _hasTimeTarget(s.paceKmMax)) ? row('Pace / km <span style="font-weight:500;color:var(--text-muted)">(legacy)</span>', mini(`ts-pkmmin-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMin||''}"`) + dash + mini(`ts-pkmmax-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.paceKmMax||''}"`)) : ''}
+        ${row('Stroke rate (spm)', mini(`ts-srmin-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.strokeRateMin?` value="${s.strokeRateMin}"`:'')) + dash + mini(`ts-srmax-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.strokeRateMax?` value="${s.strokeRateMax}"`:'')))}
+      `)}
+    </div>`
+    return
+  }
+
   container.innerHTML = (window._templateSets || []).map((s, i) => {
     const et = s.effortType || 'rpe'
     const tog = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
@@ -1510,12 +1588,13 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
       <div class="field">
         <label class="field-label">Type</label>
         <select class="field-input" id="att-type" onchange="flushTemplateSets('att-sets-container');renderTemplateSets('att-sets-container',this.value)">
-          <option value="weight_reps"   ${existingType === 'weight_reps'   || (existingType !== 'cardio' && existingType !== 'unilateral' && existingType !== 'timed_hold' && existingType !== 'jump_height' && existingType !== 'jump_distance') ? 'selected' : ''}>Weight &amp; reps</option>
+          <option value="weight_reps"   ${existingType === 'weight_reps'   || (existingType !== 'cardio' && existingType !== 'unilateral' && existingType !== 'timed_hold' && existingType !== 'jump_height' && existingType !== 'jump_distance' && existingType !== 'interval') ? 'selected' : ''}>Weight &amp; reps</option>
           <option value="unilateral"    ${existingType === 'unilateral'    ? 'selected' : ''}>Unilateral (per side)</option>
           <option value="timed_hold"    ${existingType === 'timed_hold'    ? 'selected' : ''}>Timed hold</option>
           <option value="cardio"        ${existingType === 'cardio'        ? 'selected' : ''}>Cardio</option>
           <option value="jump_height"   ${existingType === 'jump_height'   ? 'selected' : ''}>Jump height</option>
           <option value="jump_distance" ${existingType === 'jump_distance' ? 'selected' : ''}>Jump distance</option>
+          <option value="interval"      ${existingType === 'interval'      ? 'selected' : ''}>Intervals</option>
         </select>
       </div>
 
@@ -1711,7 +1790,12 @@ function _closeExercisePicker() {
 // keeps working until sub-project ②c switches it to read metric_type directly.
 function _deriveFromMetricType(metricType) {
   return {
-    exercise_type: metricType === 'cardio' ? 'cardio' : 'strength',
+    // 'interval' MUST resolve to the legacy 'cardio' exercise_type. The runner's cardio input branch
+    // (app-runner.js:803), logRunnerSet's chaining (:1068) and saveRunnerSession's column mapping
+    // (:1962) all gate on `ex.type === 'cardio'`, NOT on metric_type. An interval exercise typed
+    // 'strength' here falls into the strength branch of all three and silently loses its
+    // duration_seconds / distance_m on save, with no error anywhere.
+    exercise_type: (metricType === 'cardio' || metricType === 'interval') ? 'cardio' : 'strength',
     unilateral: metricType === 'unilateral',
     timed: metricType === 'timed_hold'
   }
