@@ -1252,7 +1252,14 @@ function fmtRest(secs) {
 }
 
 function flushTemplateSets(containerId) {
-  // An interval block is a single entry with its own ids (no -${i} fan-out) — read it and return.
+  // An interval block is a single entry with its own ids (no -${i} fan-out) — read the block-specific
+  // fields here, then FALL THROUGH (no return) into the general per-index loop below so its i=0 pass
+  // still picks up the "+ More targets" pace/watts/HR/stroke-rate ids the interval editor renders
+  // verbatim from the cardio branch. Those ids don't collide with anything read above (this block uses
+  // ts-worksecs/-restsecs/-workdist, not the generic ts-duration/-restmin/-restmax/-distm), and every
+  // id the loop reads that ISN'T rendered for an interval is a no-op (`?? s.field` keeps the existing
+  // value when the element is absent) — so running both is safe. Dropping those targets on save would
+  // be the exact silent-loss shape (les-036/037) this file already guards against everywhere else.
   const intervalBlock = document.getElementById('ts-worksecs-0') || document.getElementById('ts-workdist-0')
   if (intervalBlock && (window._templateSets || []).length === 1) {
     const s = window._templateSets[0]
@@ -1268,7 +1275,6 @@ function flushTemplateSets(containerId) {
     set('cycles',        num('ts-cycles-0'))
     set('cooldownSecs',  mmss('ts-cooldown-0'))
     { const el = document.getElementById('ts-workdist-0'); if (el) s.workDistanceM = distanceFromPref(el.value) ?? null }
-    return
   }
   ;(window._templateSets || []).forEach((s, i) => {
     s.repsMin      = document.getElementById(`ts-rmin-${i}`)?.value     ?? s.repsMin

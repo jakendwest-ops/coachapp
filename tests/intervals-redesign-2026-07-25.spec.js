@@ -142,4 +142,24 @@ test.describe('Interval builder (2026-07-25)', () => {
     expect(b.cycles).toBe(3)
     expect(b.cooldownSecs).toBe(180)
   })
+
+  test('+ More targets survive a flush on an interval block (les-036 shape)', async ({ page }) => {
+    await loginAsPT(page)
+    const b = await page.evaluate(() => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      window._templateSets = [{}]
+      renderTemplateSets('att-sets-container', 'interval')
+      document.getElementById('ts-worksecs-0').value = '0:30'
+      document.getElementById('ts-p500min-0').value  = '1:50'
+      document.getElementById('ts-wattsmin-0').value = '240'
+      document.getElementById('ts-hrzmin-0').value   = '150'
+      flushTemplateSets('att-sets-container')
+      return window._templateSets[0]
+    })
+    expect(b.workSecs).toBe(30)     // the block field still round-trips
+    expect(b.pace500Min).toBe('1:50')
+    expect(b.wattsMin).toBe('240')
+    expect(b.hrZoneMin).toBe('150')
+  })
 })
