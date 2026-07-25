@@ -162,4 +162,33 @@ test.describe('Interval builder (2026-07-25)', () => {
     expect(b.wattsMin).toBe('240')
     expect(b.hrZoneMin).toBe('150')
   })
+
+  test('switching a multi-row exercise to Intervals collapses it to a single block', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      // Three cardio rows, as a real type-switch would arrive.
+      window._templateSets = [{ duration: '1:00' }, { duration: '2:00' }, { duration: '3:00' }]
+      renderTemplateSets('att-sets-container', 'interval')
+      return {
+        n: window._templateSets.length,
+        repeatBoxes: document.querySelectorAll('[id^="ts-repeatn-"]').length,
+      }
+    })
+    expect(r.n).toBe(1)
+    expect(r.repeatBoxes).toBe(0)
+  })
+
+  test('a deliberate 0 for warmup/recovery/cooldown survives the save allowlist (?? not ||)', async ({ page }) => {
+    await loginAsPT(page)
+    const s = await page.evaluate(() => _cleanTemplateSets(
+      [{ countdownSecs: 5, warmupSecs: 0, workSecs: 30, restSecs: 30, sets: 8, recoverySecs: 0, cycles: 1, cooldownSecs: 0 }],
+      { exercise_type: 'cardio', unilateral: false, timed: false }
+    )[0])
+    expect(s.warmupSecs).toBe(0)
+    expect(s.recoverySecs).toBe(0)
+    expect(s.cooldownSecs).toBe(0)
+    expect(s.workSecs).toBe(30)
+  })
 })
