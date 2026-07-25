@@ -26,7 +26,7 @@ async function saveBig5OneRMs(clientId) {
   const errEl = document.getElementById('big5-error')
   const today = new Date().toISOString().split('T')[0]
   const named = BIG_5_EXERCISES
-    .map(name => ({ name, weight: parseFloat(document.getElementById(`big5-${name.replace(/\s+/g,'-')}`)?.value) }))
+    .map(name => ({ name, weight: weightFromPref(document.getElementById(`big5-${name.replace(/\s+/g,'-')}`)?.value) }))
     .filter(r => r.weight && r.weight > 0)
   if (!named.length) { errEl.textContent = 'Enter at least one value'; _saveBig5Pending = false; return }
   const coachId = await _effectiveCoachIdForClient(clientId)
@@ -66,7 +66,7 @@ async function renderClient1RMs(clientId, el) {
           ${BIG_5_EXERCISES.map(name => `
             <div style="display:flex;align-items:center;gap:8px">
               <span style="flex:1;font-size:13px;font-weight:600">${name}</span>
-              <input class="field-input" id="big5-${name.replace(/\s+/g,'-')}" type="number" step="0.5" inputmode="decimal" placeholder="kg" style="width:80px">
+              <input class="field-input" id="big5-${name.replace(/\s+/g,'-')}" type="number" step="0.5" inputmode="decimal" placeholder="${window._unitPrefs.weight}" style="width:80px">
             </div>`).join('')}
         </div>
         <p class="modal-error" id="big5-error" style="margin-top:10px"></p>
@@ -83,7 +83,7 @@ async function renderClient1RMs(clientId, el) {
               <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Recorded ${new Date(latest.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px">
-              <span style="font-size:22px;font-weight:800;color:var(--accent)">${parseFloat(latest.one_rm_kg).toFixed(1)} kg</span>
+              <span style="font-size:22px;font-weight:800;color:var(--accent)">${fmtWeight(parseFloat(latest.one_rm_kg), { spaced: true, decimals: 1 })}</span>
               <button onclick="showAdd1RMModal('${clientId}','${escapeAttr(exName)}'${latest.exercise_id ? `,'${latest.exercise_id}'` : ''})" style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Update</button>
               <button onclick="delete1RM('${latest.id}','${clientId}')" style="padding:5px 10px;border:1px solid #ef4444;border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:#ef4444">Delete</button>
             </div>
@@ -92,7 +92,7 @@ async function renderClient1RMs(clientId, el) {
           <div style="border-top:1px solid var(--border);padding:10px 16px;background:var(--surface-2)">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px">History</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px">
-              ${history.map(h => `<span style="font-size:12px;color:var(--text-muted)">${parseFloat(h.one_rm_kg).toFixed(1)} kg <span style="font-size:10px">${new Date(h.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span></span>`).join('<span style="color:var(--border)">·</span>')}
+              ${history.map(h => `<span style="font-size:12px;color:var(--text-muted)">${fmtWeight(parseFloat(h.one_rm_kg), { spaced: true, decimals: 1 })} <span style="font-size:10px">${new Date(h.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span></span>`).join('<span style="color:var(--border)">·</span>')}
             </div>
           </div>` : ''}
         </div>`
@@ -139,13 +139,13 @@ function _showOneRMDetailModal(clientId, picked, opts = {}) {
       </div>
       <div id="orm-direct-fields">
         <div class="field">
-          <label class="field-label">1RM (kg)</label>
+          <label class="field-label">1RM (${window._unitPrefs.weight})</label>
           <input class="field-input" id="1rm-weight" type="number" step="0.5" inputmode="decimal" placeholder="e.g. 120" value="${weight}">
         </div>
       </div>
       <div id="orm-epley-fields" style="display:none">
         <div class="field">
-          <label class="field-label">Weight (kg)</label>
+          <label class="field-label">Weight (${window._unitPrefs.weight})</label>
           <input class="field-input" id="orm-est-weight" type="number" step="0.5" inputmode="decimal" oninput="_updateAdd1RMEpleyPreview()">
         </div>
         <div class="field">
@@ -189,13 +189,13 @@ function _setAdd1RMMode(mode) {
 }
 
 function _updateAdd1RMEpleyPreview() {
-  const w = parseFloat(document.getElementById('orm-est-weight')?.value)
+  const w = weightFromPref(document.getElementById('orm-est-weight')?.value)
   const r = parseInt(document.getElementById('orm-est-reps')?.value)
   const resultEl = document.getElementById('orm-epley-result')
   const valueEl = document.getElementById('orm-epley-value')
   const est = _estimate1RM(w, r)
   if (est) {
-    valueEl.textContent = est.toFixed(1) + ' kg'
+    valueEl.textContent = fmtWeight(est, { spaced: true, decimals: 1 })
     resultEl.style.display = 'block'
   } else if (w && r > _ESTIMATE_1RM_MAX_REPS) {
     valueEl.textContent = `too many reps (max ${_ESTIMATE_1RM_MAX_REPS})`
@@ -214,11 +214,11 @@ async function save1RM(clientId, existingId = null) {
   const epleyMode  = document.getElementById('orm-epley-fields') && document.getElementById('orm-epley-fields').style.display === 'block'
   let weight
   if (epleyMode) {
-    const w = parseFloat(document.getElementById('orm-est-weight')?.value)
+    const w = weightFromPref(document.getElementById('orm-est-weight')?.value)
     const r = parseInt(document.getElementById('orm-est-reps')?.value)
     weight = _estimate1RM(w, r)
   } else {
-    weight = parseFloat(document.getElementById('1rm-weight')?.value)
+    weight = weightFromPref(document.getElementById('1rm-weight')?.value)
   }
   const date     = document.getElementById('1rm-date')?.value
   const errEl    = document.getElementById('1rm-error')
@@ -336,7 +336,7 @@ async function renderClientPerformance(clientId, el) {
           <div>
             <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Unit</label>
             <select id="pl-unit" class="field-input">
-              ${PERF_CATEGORIES[0].units.map(u => `<option value="${u}">${u}</option>`).join('')}
+              ${PERF_CATEGORIES[0].units.map(u => `<option value="${u}"${u === _preferredPerfUnit(PERF_CATEGORIES[0].units) ? ' selected' : ''}>${u}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -513,13 +513,24 @@ function togglePerfHistory(slug) {
   }
 }
 
+// This form lets a coach log a PB in whatever free-text unit they type (unlike the canonical-storage
+// metric types elsewhere) — so there's nothing to convert here, only a sensible default to pick. Tries
+// jump height pref first since body_metric's example (Vertical/Broad Jump) is the one category where
+// cm/in and kg/lbs both appear, then cardio distance, then weight; falls back to the category's own
+// first unit (old behaviour) if nothing in its list matches any preference.
+function _preferredPerfUnit(units) {
+  const w = window._unitPrefs.weight === 'lb' ? 'lbs' : 'kg'
+  return units.find(u => u === window._unitPrefs.jumpHeight) || units.find(u => u === window._unitPrefs.cardioDistance) || units.find(u => u === w) || units[0]
+}
+
 function updatePerfUnits() {
   const cat = document.getElementById('pl-category')?.value
   const unitSel = document.getElementById('pl-unit')
   const nameSel = document.getElementById('pl-name')
   const catDef = PERF_CATEGORIES.find(c => c.id === cat)
   if (!catDef || !unitSel) return
-  unitSel.innerHTML = catDef.units.map(u => `<option value="${u}">${u}</option>`).join('')
+  const preferred = _preferredPerfUnit(catDef.units)
+  unitSel.innerHTML = catDef.units.map(u => `<option value="${u}"${u === preferred ? ' selected' : ''}>${u}</option>`).join('')
   if (nameSel) nameSel.placeholder = catDef.placeholder
 }
 
@@ -578,7 +589,7 @@ async function renderClientWeight(clientId, el) {
   const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
   const goalWeightKg     = clientRow?.goal_weight_kg != null ? parseFloat(clientRow.goal_weight_kg) : null
 
-  const fmt = kg => `${parseFloat(kg).toFixed(1)} kg`
+  const fmt = kg => fmtWeight(kg, { spaced: true, decimals: 1 })
   const latest = logs[0]
   const oldest = logs[logs.length - 1]
   const change = logs.length >= 2 ? (parseFloat(latest.weight_kg) - parseFloat(oldest.weight_kg)).toFixed(1) : null
@@ -596,7 +607,7 @@ async function renderClientWeight(clientId, el) {
             <input id="wl-date" type="date" class="field-input" value="${new Date().toISOString().split('T')[0]}">
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Weight (kg)</label>
+            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Weight (${window._unitPrefs.weight})</label>
             <input id="wl-weight" type="number" step="0.1" class="field-input" placeholder="e.g. 82.5">
           </div>
           <div>
@@ -618,12 +629,12 @@ async function renderClientWeight(clientId, el) {
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (kg)</label>
-            <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg ?? ''}">
+            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (${window._unitPrefs.weight})</label>
+            <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg != null ? weightToPref(startingWeightKg) : ''}">
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (kg)</label>
-            <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg ?? ''}">
+            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (${window._unitPrefs.weight})</label>
+            <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg != null ? weightToPref(goalWeightKg) : ''}">
           </div>
         </div>
         <p id="wg-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
@@ -640,7 +651,7 @@ async function renderClientWeight(clientId, el) {
         </div>
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
           <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">CHANGE</div>
-          <div style="font-size:20px;font-weight:700;color:${changeColour}">${change !== null ? (change > 0 ? '+' : '') + change + ' kg' : '—'}</div>
+          <div style="font-size:20px;font-weight:700;color:${changeColour}">${change !== null ? (change > 0 ? '+' : '') + fmtWeight(change, { spaced: true, decimals: 1 }) : '—'}</div>
           <div style="font-size:11px;color:var(--text-muted)">${logs.length >= 2 ? oldest.date + ' → now' : 'Need 2+ entries'}</div>
         </div>
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
@@ -714,13 +725,15 @@ async function renderClientWeight(clientId, el) {
       const filtered = cutoff ? chronological.filter(l => new Date(l.date + 'T00:00:00') >= cutoff) : chronological
       if (filtered.length < 2) return
 
-      const weights = filtered.map(l => parseFloat(l.weight_kg))
+      // Converted to the display unit BEFORE the rolling average / anchors math — averaging is
+      // linear, so avg-of-converted equals converted-avg, and keeps the whole chart in one unit.
+      const weights = filtered.map(l => weightToPref(parseFloat(l.weight_kg)))
       const hasBf = filtered.some(l => l.body_fat_pct != null)
       const avg = rollingAvg(weights)
 
       const datasets = [
         {
-          label: 'Weight (kg)',
+          label: `Weight (${window._unitPrefs.weight})`,
           data: weights,
           borderColor: '#6366f1',
           backgroundColor: 'rgba(99,102,241,0.07)',
@@ -750,8 +763,10 @@ async function renderClientWeight(clientId, el) {
       // previously this only activated when BOTH fields were set, so entering just one (the common
       // case) silently had zero visible effect. Math.min/max (not "goal is always below starting") so
       // a weight-gain goal doesn't invert the axis.
-      const anchors = [goalWeightKg, startingWeightKg, ...weights].filter(v => v != null)
-      const yRange = (goalWeightKg != null || startingWeightKg != null)
+      const dispGoal = goalWeightKg != null ? weightToPref(goalWeightKg) : null
+      const dispStarting = startingWeightKg != null ? weightToPref(startingWeightKg) : null
+      const anchors = [dispGoal, dispStarting, ...weights].filter(v => v != null)
+      const yRange = (dispGoal != null || dispStarting != null)
         ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
         : {}
 
@@ -763,11 +778,11 @@ async function renderClientWeight(clientId, el) {
           interaction: { mode: 'index', intersect: false },
           plugins: {
             legend: { display: true, labels: { font: { size: 11 }, color: '#6b7280', boxWidth: 20 } },
-            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + (ctx.dataset.yAxisID === 'y2' ? '%' : ' kg') } }
+            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + (ctx.dataset.yAxisID === 'y2' ? '%' : ' ' + window._unitPrefs.weight) } }
           },
           scales: {
             x: { ticks: { color: '#9ca3af', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
-            y: { position: 'left', ...yRange, ticks: { color: '#6366f1', font: { size: 11 }, stepSize: 0.5, callback: v => v + ' kg' }, grid: { color: 'rgba(0,0,0,0.05)' } },
+            y: { position: 'left', ...yRange, ticks: { color: '#6366f1', font: { size: 11 }, stepSize: window._unitPrefs.weight === 'lb' ? 1 : 0.5, callback: v => v + ' ' + window._unitPrefs.weight }, grid: { color: 'rgba(0,0,0,0.05)' } },
             ...(hasBf ? { y2: { position: 'right', ticks: { color: '#f59e0b', font: { size: 11 }, callback: v => v + '%' }, grid: { drawOnChartArea: false } } } : {})
           }
         }
@@ -842,7 +857,7 @@ async function saveWeightLog(clientId) {
   const { error } = await db.from('weight_logs').insert({
     client_id:    clientId,
     date,
-    weight_kg:    parseFloat(weight),
+    weight_kg:    weightFromPref(weight),
     body_fat_pct: bf ? parseFloat(bf) : null,
     notes:        notes || null
   })
@@ -860,8 +875,8 @@ async function saveWeightGoals(clientId) {
 
   log.info('saveWeightGoals', 'updating weight goals', { clientId })
   const { error } = await db.from('clients').update({
-    starting_weight_kg: startingRaw ? parseFloat(startingRaw) : null,
-    goal_weight_kg:      goalRaw ? parseFloat(goalRaw) : null
+    starting_weight_kg: startingRaw ? weightFromPref(startingRaw) : null,
+    goal_weight_kg:      goalRaw ? weightFromPref(goalRaw) : null
   }).eq('id', clientId)
 
   if (error) { log.error('saveWeightGoals', 'update failed', error); if (errEl) errEl.textContent = error.message; return }
@@ -1041,12 +1056,12 @@ async function renderPerformance(el) {
 function _setDetailsLine(sets) {
   const num = v => parseFloat(v) || 0
   return (sets || []).map(x => {
-    if (x.side) return `${x.side[0].toUpperCase()} ${num(x.weight_kg) || 'BW'}×${x.reps_achieved || 0}`
-    if (x.height_cm) return `${num(x.height_cm)} cm`
+    if (x.side) return `${x.side[0].toUpperCase()} ${weightToPref(x.weight_kg) || 'BW'}×${x.reps_achieved || 0}`
+    if (x.height_cm) return fmtJumpHeight(x.height_cm)
     if (x.duration_seconds && x.weight_kg == null) return fmtRestCountdown(parseInt(x.duration_seconds))
-    if (x.weight_kg != null && x.reps_achieved != null) return `${num(x.weight_kg)}×${x.reps_achieved}`
+    if (x.weight_kg != null && x.reps_achieved != null) return `${weightToPref(x.weight_kg)}×${x.reps_achieved}`
     if (x.reps_achieved != null) return `${x.reps_achieved} rep`
-    if (x.distance_m) return `${num(x.distance_m)} m`
+    if (x.distance_m) return fmtDistanceM(x.distance_m)
     return ''
   }).filter(Boolean).join(', ')
 }
@@ -1071,9 +1086,13 @@ function _diaryExMetrics(ex) {
   const reps   = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
   const volume = sets.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0)
   const top    = Math.max(0, ...sets.map(x => num(x.weight_kg)))
+  // `raw` stays canonical kg (consumers like _diaryDelta compute a diff against a PREVIOUS raw kg
+  // value, then format the result — the same "convert only at display time" pattern used throughout).
   return { mt, isCardio: false, setLine, sets: sets.length, reps, volume,
-    main: { raw: top, fmt: top + ' kg', fmtNum: v => v + 'kg' },
-    sec:  { label: 'Volume', raw: volume, fmt: Math.round(volume).toLocaleString() + ' kg', fmtNum: v => Math.round(v).toLocaleString() + 'kg' } }
+    main: { raw: top, fmt: fmtWeight(top, { spaced: true }), fmtNum: v => fmtWeight(v) },
+    sec:  { label: 'Volume', raw: volume,
+            fmt: Math.round(weightToPref(volume)).toLocaleString() + ' ' + window._unitPrefs.weight,
+            fmtNum: v => Math.round(weightToPref(v)).toLocaleString() + window._unitPrefs.weight } }
 }
 
 // "▲ +X (+Y%)" / "▼ −X (−Y%)" delta vs previous occurrence — green up / red down, our wording.
@@ -1111,7 +1130,7 @@ async function renderProgressPerSession(clientId, el) {
   el.innerHTML = sessions.map((s, i) => {
     const exs = (s.workout_log_exercises || []).filter(e => e.exercise_name)
     const totals = exs.reduce((t, ex) => { const m = _diaryExMetrics(ex); t.sets += m.sets; t.reps += m.reps; t.vol += m.volume; return t }, { sets: 0, reps: 0, vol: 0 })
-    const tiles = [['Sets', totals.sets, 'sets'], ['Reps', totals.reps, 'reps'], ['Volume', Math.round(totals.vol).toLocaleString() + 'kg', 'vol'], ['Exercises', exs.length, 'exercises']]
+    const tiles = [['Sets', totals.sets, 'sets'], ['Reps', totals.reps, 'reps'], ['Volume', Math.round(weightToPref(totals.vol)).toLocaleString() + window._unitPrefs.weight, 'vol'], ['Exercises', exs.length, 'exercises']]
     return `
     <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden">
       <button onclick="_togglePerfSession(${i})" style="width:100%;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
@@ -1212,7 +1231,7 @@ async function renderProgressWeight(el) {
     <div id="client-weight-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div><label class="form-label">Date</label><input type="date" id="cwf-date" class="form-input" value="${new Date().toISOString().split('T')[0]}"></div>
-        <div><label class="form-label">Weight (kg)</label><input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300"></div>
+        <div><label class="form-label">Weight (${window._unitPrefs.weight})</label><input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div><label class="form-label">Body fat % <span style="color:var(--text-muted)">(optional)</span></label><input type="number" id="cwf-bf" class="form-input" placeholder="e.g. 19.5" step="0.1" min="1" max="60"></div>
@@ -1233,12 +1252,12 @@ async function renderProgressWeight(el) {
       <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
-          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (kg)</label>
-          <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg ?? ''}">
+          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (${window._unitPrefs.weight})</label>
+          <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg != null ? weightToPref(startingWeightKg) : ''}">
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (kg)</label>
-          <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg ?? ''}">
+          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (${window._unitPrefs.weight})</label>
+          <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg != null ? weightToPref(goalWeightKg) : ''}">
         </div>
       </div>
       <p id="wg-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
@@ -1257,7 +1276,7 @@ async function renderProgressWeight(el) {
     ${addWeightBtn}
     ${goalsCard}
     <div style="display:flex;gap:12px;margin-bottom:16px">
-      ${[['Starting', effectiveStarting + ' kg'], ['Current', latest.weight_kg + ' kg'], ['Change', sign + change + ' kg']].map(([l,v])=>`
+      ${[['Starting', fmtWeight(effectiveStarting, { spaced: true })], ['Current', fmtWeight(latest.weight_kg, { spaced: true })], ['Change', sign + fmtWeight(change, { spaced: true, decimals: 1 })]].map(([l,v])=>`
         <div style="flex:1;padding:12px;border-radius:12px;background:var(--surface);text-align:center">
           <div style="font-size:18px;font-weight:800;color:var(--accent)">${v}</div>
           <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${l}</div>
@@ -1268,7 +1287,7 @@ async function renderProgressWeight(el) {
       ${logs.slice().reverse().slice(0,10).map(l=>`
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border)">
           <span style="font-size:13px;color:var(--text-muted)">${new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
-          <span style="font-size:14px;font-weight:700">${l.weight_kg} kg${l.body_fat_pct ? ' · '+l.body_fat_pct+'% BF' : ''}</span>
+          <span style="font-size:14px;font-weight:700">${fmtWeight(l.weight_kg, { spaced: true })}${l.body_fat_pct ? ' · '+l.body_fat_pct+'% BF' : ''}</span>
         </div>`).join('')}
     </div>
     ${(() => { const hr = logs.filter(l => l.resting_hr != null); if (hr.length < 2) return ''
@@ -1281,20 +1300,25 @@ async function renderProgressWeight(el) {
   // previously this only activated when BOTH fields were set, so entering just one (the common
   // case) silently had zero visible effect. Math.min/max (not "goal is always below starting") so
   // a weight-gain goal doesn't invert the axis.
-  const loggedWeights = logs.map(l => l.weight_kg)
-  const anchors = [goalWeightKg, startingWeightKg, ...loggedWeights].filter(v => v != null)
-  const yRange = (goalWeightKg != null || startingWeightKg != null)
+  // Convert to the display unit BEFORE the min/max math, so the plotted points and the axis bounds
+  // stay in the same unit as each other (converting only the axis label would mismatch them).
+  const weightUnit = window._unitPrefs.weight
+  const dispWeights = logs.map(l => weightToPref(l.weight_kg))
+  const dispGoal = goalWeightKg != null ? weightToPref(goalWeightKg) : null
+  const dispStarting = startingWeightKg != null ? weightToPref(startingWeightKg) : null
+  const anchors = [dispGoal, dispStarting, ...dispWeights].filter(v => v != null)
+  const yRange = (dispGoal != null || dispStarting != null)
     ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
     : {}
   new Chart(document.getElementById('pw-chart').getContext('2d'), {
     type: 'line',
     data: { labels: logs.map(l => new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
-            datasets: [{ data: logs.map(l => l.weight_kg), borderColor: accent, borderWidth: 2,
+            datasets: [{ data: dispWeights, borderColor: accent, borderWidth: 2,
               pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
     options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
       plugins: { legend: { display: false } },
       scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 9 }, maxRotation: 0 } },
-                y: { ...yRange, grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 9 }, stepSize: 0.5, callback: v => v + 'kg' } } } }
+                y: { ...yRange, grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 9 }, stepSize: weightUnit === 'lb' ? 1 : 0.5, callback: v => v + weightUnit } } } }
   })
   const hrLogs = logs.filter(l => l.resting_hr != null)
   if (hrLogs.length >= 2 && document.getElementById('resting-hr-chart')) {
@@ -1439,7 +1463,7 @@ function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = 
 // Per-type chip config: [metricKey, label, aggMode, formatter, lowerBetter?]. Chips with all-zero
 // data are dropped. lowerBetter=true (pace) makes the headline "best" a min, not a max.
 const _TREND_METRICS = {
-  weight_reps: [['topWeight','Top weight','max',v=>v+'kg'], ['e1rm','Est 1RM','max',v=>Math.round(v)+'kg'], ['volume','Volume','max',v=>Math.round(v)+'kg'], ['intensity','Intensity','mean',v=>Math.round(v*10)/10+' kg/rep']],
+  weight_reps: [['topWeight','Top weight','max',v=>fmtWeight(v)], ['e1rm','Est 1RM','max',v=>fmtWeight(Math.round(v))], ['volume','Volume','max',v=>fmtWeight(Math.round(v))], ['intensity','Intensity','mean',v=>`${Math.round(weightToPref(v)*10)/10} ${window._unitPrefs.weight}/rep`]],
   cardio: [
     ['totalDistance','Distance','max', v => fmtDistanceM(v)],
     ['totalDuration','Duration','max', v => fmtRestCountdown(v)],
@@ -1447,9 +1471,9 @@ const _TREND_METRICS = {
     ['avgHr','Avg HR','mean', v => Math.round(v)+' bpm'],
     ['avgWatts','Watts','mean', v => Math.round(v)+' W'],
   ],
-  unilateral:    [['topWeight','Top weight','max', v => v+'kg']], // chart draws L/R as two lines
+  unilateral:    [['topWeight','Top weight','max', v => fmtWeight(v)]], // chart draws L/R as two lines
   timed_hold:    [['maxDuration','Hold time','max', v => fmtRestCountdown(v)]],
-  jump_height:   [['bestHeight','Height','max', v => v+' cm']],
+  jump_height:   [['bestHeight','Height','max', v => fmtJumpHeight(v, { spaced: true })]],
   jump_distance: [['bestDistance','Distance','max', v => v.toFixed(2)+' m']],
 }
 const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', unilateral:'Unilateral', timed_hold:'Timed', jump_height:'Jump', jump_distance:'Jump' }
@@ -1487,8 +1511,8 @@ function _exerciseRecords(ex) {
     const bestL = Math.max(0, ...pts.map(p => p.leftTop || 0))
     const bestR = Math.max(0, ...pts.map(p => p.rightTop || 0))
     const rows = []
-    if (bestL > 0) rows.push(['Best left', bestL + ' kg'])
-    if (bestR > 0) rows.push(['Best right', bestR + ' kg'])
+    if (bestL > 0) rows.push(['Best left', fmtWeight(bestL, { spaced: true })])
+    if (bestR > 0) rows.push(['Best right', fmtWeight(bestR, { spaced: true })])
     if (bestL > 0 && bestR > 0) rows.push(['L/R balance', Math.round(Math.min(bestL, bestR) / Math.max(bestL, bestR) * 100) + '%'])
     return rows
   }
@@ -1499,7 +1523,7 @@ function _exerciseRecords(ex) {
   }
   if (mt === 'jump_height') {
     const best = Math.max(0, ...flat.map(x => parseFloat(x.height_cm) || 0))
-    return best > 0 ? [['Best height', best + ' cm']] : []
+    return best > 0 ? [['Best height', fmtJumpHeight(best, { spaced: true })]] : []
   }
   if (mt === 'jump_distance') {
     const best = Math.max(0, ...flat.map(x => parseFloat(x.distance_m) || 0))
@@ -1520,10 +1544,10 @@ function _exerciseRecords(ex) {
     if (vol > bestSessVol) bestSessVol = vol
   }
   const rows = []
-  if (heaviest > 0)    rows.push(['Heaviest weight', heaviest + ' kg'])
-  if (best1rm > 0)     rows.push(['Best est. 1RM', Math.round(best1rm) + ' kg'])
-  if (bestSet)         rows.push(['Best set', `${bestSet.w} kg × ${bestSet.r}`])
-  if (bestSessVol > 0) rows.push(['Best session vol', Math.round(bestSessVol).toLocaleString() + ' kg'])
+  if (heaviest > 0)    rows.push(['Heaviest weight', fmtWeight(heaviest, { spaced: true })])
+  if (best1rm > 0)     rows.push(['Best est. 1RM', fmtWeight(Math.round(best1rm), { spaced: true })])
+  if (bestSet)         rows.push(['Best set', `${weightToPref(bestSet.w)} ${window._unitPrefs.weight} × ${bestSet.r}`])
+  if (bestSessVol > 0) rows.push(['Best session vol', Math.round(weightToPref(bestSessVol)).toLocaleString() + ' ' + window._unitPrefs.weight])
   return rows
 }
 
@@ -1610,7 +1634,7 @@ function _renderPerfExerciseList(query) {
         options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
           plugins: { legend: { display: true, labels: { color: muted, font: { size: 9 }, boxWidth: 10 } } },
           scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
-                    y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 }, callback: v => v + 'kg' } } } }
+                    y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 }, callback: v => fmtWeight(v) } } } }
       }))
       return
     }
@@ -1800,6 +1824,40 @@ async function renderSettings(el) {
 
       ${brandingCard}
 
+      <!-- Units -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Units</h2>
+        </div>
+        <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
+          <div class="field">
+            <label class="field-label">Weight</label>
+            <select class="field-input" id="settings-unit-weight">
+              <option value="kg"${window._unitPrefs.weight==='kg'?' selected':''}>Kilograms (kg)</option>
+              <option value="lb"${window._unitPrefs.weight==='lb'?' selected':''}>Pounds (lb)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Jump height</label>
+            <select class="field-input" id="settings-unit-jump">
+              <option value="cm"${window._unitPrefs.jumpHeight==='cm'?' selected':''}>Centimetres (cm)</option>
+              <option value="in"${window._unitPrefs.jumpHeight==='in'?' selected':''}>Inches (in)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Cardio distance</label>
+            <select class="field-input" id="settings-unit-distance">
+              <option value="km"${window._unitPrefs.cardioDistance==='km'?' selected':''}>Kilometres (km)</option>
+              <option value="mi"${window._unitPrefs.cardioDistance==='mi'?' selected':''}>Miles (mi)</option>
+            </select>
+          </div>
+          <div>
+            <button class="btn-primary" style="font-size:14px" onclick="saveSettingsUnits()">Save units</button>
+            <span id="settings-units-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+      </div>
+
       <!-- Password -->
       <div class="card">
         <div class="card-header" style="padding:16px 20px 0">
@@ -1875,6 +1933,25 @@ async function saveSettingsProfile() {
   }
   if (currentProfile) currentProfile.full_name = name
   document.getElementById('user-name').textContent = name
+  if (msg) { msg.style.color = '#22c55e'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
+}
+
+async function saveSettingsUnits() {
+  const weight     = document.getElementById('settings-unit-weight')?.value
+  const jumpHeight = document.getElementById('settings-unit-jump')?.value
+  const cardioDistance = document.getElementById('settings-unit-distance')?.value
+  const msg = document.getElementById('settings-units-msg')
+
+  const { error } = await db.from('profiles').update({
+    weight_unit: weight, jump_height_unit: jumpHeight, cardio_distance_unit: cardioDistance
+  }).eq('id', currentUser.id)
+  if (error) {
+    log.error('saveSettingsUnits', 'update failed', error)
+    if (msg) { msg.style.color = '#ef4444'; msg.textContent = 'Save failed. Try again.' }
+    return
+  }
+  // No page reload needed — every render function reads window._unitPrefs fresh on each render.
+  window._unitPrefs = { weight, jumpHeight, cardioDistance }
   if (msg) { msg.style.color = '#22c55e'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
 }
 

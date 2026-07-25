@@ -54,13 +54,13 @@ async function saveClientCheckIn(clientId) {
 
 async function saveClientWeight(clientId) {
   const date   = document.getElementById('cwf-date').value
-  const weight = parseFloat(document.getElementById('cwf-weight').value)
+  const weight = weightFromPref(document.getElementById('cwf-weight').value)
   const bf     = document.getElementById('cwf-bf').value
   const notes  = document.getElementById('cwf-notes').value.trim()
   const restingHr = document.getElementById('cwf-resting-hr')?.value
   const errorEl = document.getElementById('cwf-error')
 
-  if (!date || isNaN(weight)) { errorEl.textContent = 'Date and weight are required.'; return }
+  if (!date || weight == null) { errorEl.textContent = 'Date and weight are required.'; return }
   errorEl.textContent = ''
 
   const row = { client_id: clientId, date, weight_kg: weight }

@@ -439,15 +439,15 @@ function _renderOneRMQuickEntry(idPrefix, exerciseName) {
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">
       <div style="font-size:12px;font-weight:700;margin-bottom:8px">${escapeHtml(exerciseName)}</div>
       <div style="display:flex;gap:6px;margin-bottom:8px">
-        <button type="button" id="${idPrefix}-mode-direct" onclick="_setOneRMQuickEntryMode('${idPrefix}','direct')" class="btn-primary" style="flex:1;font-size:11px;padding:6px">I know it (kg)</button>
+        <button type="button" id="${idPrefix}-mode-direct" onclick="_setOneRMQuickEntryMode('${idPrefix}','direct')" class="btn-primary" style="flex:1;font-size:11px;padding:6px">I know it (${window._unitPrefs.weight})</button>
         <button type="button" id="${idPrefix}-mode-epley" onclick="_setOneRMQuickEntryMode('${idPrefix}','epley')" class="btn-secondary" style="flex:1;font-size:11px;padding:6px">Estimate from a set</button>
       </div>
       <div id="${idPrefix}-direct-fields">
-        <input class="field-input" id="${idPrefix}-weight" type="number" step="0.5" inputmode="decimal" placeholder="1RM (kg)">
+        <input class="field-input" id="${idPrefix}-weight" type="number" step="0.5" inputmode="decimal" placeholder="1RM (${window._unitPrefs.weight})">
       </div>
       <div id="${idPrefix}-epley-fields" style="display:none">
         <div style="display:flex;gap:6px">
-          <input class="field-input" id="${idPrefix}-est-weight" type="number" step="0.5" inputmode="decimal" placeholder="Weight (kg)" oninput="_updateOneRMQuickEntryPreview('${idPrefix}')">
+          <input class="field-input" id="${idPrefix}-est-weight" type="number" step="0.5" inputmode="decimal" placeholder="Weight (${window._unitPrefs.weight})" oninput="_updateOneRMQuickEntryPreview('${idPrefix}')">
           <input class="field-input" id="${idPrefix}-est-reps" type="number" inputmode="numeric" placeholder="Reps" oninput="_updateOneRMQuickEntryPreview('${idPrefix}')">
         </div>
         <p id="${idPrefix}-epley-preview" style="font-size:11px;color:var(--text-muted);margin:6px 0 0"></p>
@@ -463,22 +463,23 @@ function _setOneRMQuickEntryMode(idPrefix, mode) {
 }
 
 function _updateOneRMQuickEntryPreview(idPrefix) {
-  const w = parseFloat(document.getElementById(`${idPrefix}-est-weight`)?.value)
+  const w = weightFromPref(document.getElementById(`${idPrefix}-est-weight`)?.value)
   const r = parseInt(document.getElementById(`${idPrefix}-est-reps`)?.value)
   const preview = document.getElementById(`${idPrefix}-epley-preview`)
   const est = _estimate1RM(w, r)
-  preview.textContent = est ? `≈ Epley estimate: ${est.toFixed(1)} kg`
+  preview.textContent = est ? `≈ Epley estimate: ${fmtWeight(est, { spaced: true, decimals: 1 })}`
     : (w && r > _ESTIMATE_1RM_MAX_REPS ? `Too many reps for a reliable estimate (max ${_ESTIMATE_1RM_MAX_REPS})` : '')
 }
 
-// Reads back one row's entered value (direct or Epley-estimated). Null if nothing valid was entered.
+// Reads back one row's entered value (direct or Epley-estimated), converted to canonical kg. Null if
+// nothing valid was entered.
 function _readOneRMQuickEntry(idPrefix) {
   const mode = document.getElementById(`${idPrefix}-epley-fields`)?.style.display === 'block' ? 'epley' : 'direct'
   if (mode === 'direct') {
-    const v = parseFloat(document.getElementById(`${idPrefix}-weight`)?.value)
+    const v = weightFromPref(document.getElementById(`${idPrefix}-weight`)?.value)
     return (v && v > 0) ? v : null
   }
-  const w = parseFloat(document.getElementById(`${idPrefix}-est-weight`)?.value)
+  const w = weightFromPref(document.getElementById(`${idPrefix}-est-weight`)?.value)
   const r = parseInt(document.getElementById(`${idPrefix}-est-reps`)?.value)
   return _estimate1RM(w, r)
 }
@@ -489,7 +490,7 @@ function _renderProgramOneRMChecklist(status) {
   const haveHtml = status.have.map(h => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:12px;color:var(--text-muted)">
       <span>✓ ${escapeHtml(h.name)}</span>
-      <span>${parseFloat(h.kg).toFixed(1)} kg (on file)</span>
+      <span>${fmtWeight(parseFloat(h.kg), { spaced: true, decimals: 1 })} (on file)</span>
     </div>`).join('')
   const missingHtml = status.missing.map((name, i) => _renderOneRMQuickEntry(`mor-${i}`, name)).join('')
   return `

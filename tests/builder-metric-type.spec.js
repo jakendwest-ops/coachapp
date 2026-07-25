@@ -95,7 +95,10 @@ test.describe('Builder metric_type picker — save persistence', () => {
 
     expect(r.closedByDefault).toBe(true)
     expect(r.collapsedWrite).toBe('210')        // read even though the user never expanded it
-    expect(r.afterSwitch.d).toBe('500')         // not clobbered when the input isn't rendered
+    // A number, not the original string '500': the units-toggle work (2026-07-24) routed this field
+    // through distanceFromPref (like every other converted entry field), which always parseFloats.
+    // Preservation is what this assertion is really about — the value below is what matters.
+    expect(r.afterSwitch.d).toBe(500)           // not clobbered when the input isn't rendered
     expect(r.afterSwitch.w).toBe('210')
     expect(r.legacyInput).toBe(true)            // legacy paceKm still editable/clearable
     expect(r.legacyAutoOpen).toBe(true)         // and surfaced, not buried

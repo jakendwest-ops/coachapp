@@ -65,6 +65,72 @@ window._brandingFile  = null
 window._soloClientId  = null  // personal account client record (coach_id = null)
 window._masterClientId = null  // coached client record (coach_id = coach's uid)
 
+// ─── UNIT PREFERENCES ─────────────────────────────────────────────────────────
+// Account-wide, per-metric-type (2026-07-24). Storage everywhere else stays canonical (kg, cm,
+// metres) — these only drive display/entry conversion. Populated from profiles in loadUserInfo();
+// default to metric until that fetch resolves, matching the DB column defaults.
+window._unitPrefs = { weight: 'kg', jumpHeight: 'cm', cardioDistance: 'km' }
+
+const _WEIGHT_KG_TO_LB = 2.2046226218
+const _JUMP_CM_TO_IN   = 0.3937007874
+
+// Strips a trailing .0 the same way fmtDistanceM already does, so a converted "100.0" reads "100".
+function _stripTrailingZero(v) { return String(v).replace(/\.0$/, '') }
+
+// Bare number (no unit suffix) in the user's preferred unit, for populating an input's value/
+// placeholder. In the NATIVE unit (kg) this normalizes via parseFloat exactly the way most existing
+// display sites already did (`parseFloat(x.weight_kg) || 0`) — a clean number, no forced decimal
+// rounding — so nobody who hasn't touched the Settings toggle sees a meaningful difference. Only the
+// converted (lb) case rounds to 1 decimal, since there's no prior behaviour to preserve there.
+function weightToPref(kg) {
+  if (kg == null || kg === '') return ''
+  const v = parseFloat(kg)
+  if (isNaN(v)) return ''
+  if (window._unitPrefs.weight !== 'lb') return v
+  return _stripTrailingZero((v * _WEIGHT_KG_TO_LB).toFixed(1))
+}
+// User's-unit value -> canonical kg, for reading a typed input back before save. Null (not '') on
+// blank/invalid input, matching how every save path already treats a missing weight.
+function weightFromPref(val) {
+  if (val == null || val === '') return null
+  const v = parseFloat(val)
+  if (isNaN(v)) return null
+  return window._unitPrefs.weight === 'lb' ? v / _WEIGHT_KG_TO_LB : v
+}
+// Full display string with unit suffix, for read-only contexts. `spaced` matches each call site's
+// existing convention (some sites render "100kg", others "100 kg") — not standardized here, only the
+// unit itself becomes preference-aware. `decimals` forces a fixed precision (e.g. "100.0") for sites
+// that always showed one before the toggle existed (1RM cards, weight-change deltas) — without it,
+// weightToPref's kg-native passthrough shows a clean number with no padding, which is correct for
+// most sites but would silently drop a decimal these specific ones always displayed.
+function fmtWeight(kg, { spaced = false, decimals = null } = {}) {
+  if (kg == null || kg === '') return ''
+  let v = weightToPref(kg)
+  if (v === '') return ''
+  if (decimals != null) v = parseFloat(v).toFixed(decimals)
+  return `${v}${spaced ? ' ' : ''}${window._unitPrefs.weight}`
+}
+
+function jumpHeightToPref(cm) {
+  if (cm == null || cm === '') return ''
+  const v = parseFloat(cm)
+  if (isNaN(v)) return ''
+  if (window._unitPrefs.jumpHeight !== 'in') return v
+  return _stripTrailingZero((v * _JUMP_CM_TO_IN).toFixed(1))
+}
+function jumpHeightFromPref(val) {
+  if (val == null || val === '') return null
+  const v = parseFloat(val)
+  if (isNaN(v)) return null
+  return window._unitPrefs.jumpHeight === 'in' ? v / _JUMP_CM_TO_IN : v
+}
+function fmtJumpHeight(cm, { spaced = false } = {}) {
+  if (cm == null || cm === '') return ''
+  const v = jumpHeightToPref(cm)
+  if (v === '') return ''
+  return `${v}${spaced ? ' ' : ''}${window._unitPrefs.jumpHeight}`
+}
+
 // ─── SHELL HELPERS ────────────────────────────────────────────────────────────
 function escapeHtml(str) {
   if (!str) return ''
@@ -149,12 +215,17 @@ async function loadUserInfo() {
   log.info('loadUserInfo', 'fetching profile', { userId: currentUser.id })
   const { data, error } = await db
     .from('profiles')
-    .select('full_name, role, starter_seeded, solo_only')
+    .select('full_name, role, starter_seeded, solo_only, weight_unit, jump_height_unit, cardio_distance_unit')
     .eq('id', currentUser.id)
     .single()
 
   if (error) log.error('loadUserInfo', 'profile fetch failed', error)
   currentProfile = data
+  window._unitPrefs = {
+    weight: data?.weight_unit || 'kg',
+    jumpHeight: data?.jump_height_unit || 'cm',
+    cardioDistance: data?.cardio_distance_unit || 'km',
+  }
 
   // If profile has no role (invited client whose profile row may have been created without role),
   // check the clients table to determine correct role. Gated on `!error`: a FAILED fetch (network

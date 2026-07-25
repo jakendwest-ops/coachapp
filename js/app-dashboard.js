@@ -31,7 +31,7 @@
 
   // Activity feed — merge weight + workout logs, sort newest first
   const feed = [
-    ...(recentWeights  || []).map(w => ({ type: 'weight',  client_id: w.client_id, logged_at: w.created_at, detail: `${w.weight_kg} kg` })),
+    ...(recentWeights  || []).map(w => ({ type: 'weight',  client_id: w.client_id, logged_at: w.created_at, detail: fmtWeight(w.weight_kg, { spaced: true }) })),
     ...(recentWorkouts || []).map(w => ({ type: 'session', client_id: w.client_id, logged_at: w.created_at || w.date, detail: 'Session logged' }))
   ].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at)).slice(0, 8)
 
@@ -467,12 +467,12 @@ async function renderClientDashboard(el) {
           </div>
         ${latestWeight ? `
           <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
-            <span style="font-size:32px;font-weight:700">${latestWeight.weight_kg}</span>
-            <span style="font-size:16px;color:var(--text-muted)">kg</span>
+            <span style="font-size:32px;font-weight:700">${weightToPref(latestWeight.weight_kg)}</span>
+            <span style="font-size:16px;color:var(--text-muted)">${window._unitPrefs.weight}</span>
             <span style="font-size:22px;color:${trendColour};margin-left:4px">${weightTrend}</span>
           </div>
           <p style="font-size:12px;color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
-          ${prevWeight ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">Previous: ${prevWeight.weight_kg} kg</p>` : ''}
+          ${prevWeight ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">Previous: ${fmtWeight(prevWeight.weight_kg, { spaced: true })}</p>` : ''}
         ` : `<p style="color:var(--text-muted);font-size:13px">No weight logged yet.</p>`}
         <div id="client-weight-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
@@ -481,7 +481,7 @@ async function renderClientDashboard(el) {
               <input type="date" id="cwf-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
             </div>
             <div>
-              <label class="form-label">Weight (kg)</label>
+              <label class="form-label">Weight (${window._unitPrefs.weight})</label>
               <input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300">
             </div>
           </div>
@@ -694,7 +694,7 @@ async function renderSoloDashboard(el) {
     </div>
 
     <div class="solo-stats">
-      ${[['Sessions',sessionsThisWeek,'This week'],['Weight',latestWeight?latestWeight.weight_kg+' kg':'—','Current'],['Goals',goals?.length||0,'Active'],['Bests',pbs.length,'On record']].map(([label,val,sub])=>`
+      ${[['Sessions',sessionsThisWeek,'This week'],['Weight',latestWeight?fmtWeight(latestWeight.weight_kg, { spaced: true }):'—','Current'],['Goals',goals?.length||0,'Active'],['Bests',pbs.length,'On record']].map(([label,val,sub])=>`
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${label}</div>
           <div style="font-size:22px;font-weight:700;color:var(--text)">${val}</div>
@@ -768,17 +768,17 @@ async function renderSoloDashboard(el) {
           </div>
           ${latestWeight ? `
             <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px">
-              <span style="font-size:30px;font-weight:700">${latestWeight.weight_kg}</span>
-              <span style="font-size:15px;color:var(--text-muted)">kg</span>
+              <span style="font-size:30px;font-weight:700">${weightToPref(latestWeight.weight_kg)}</span>
+              <span style="font-size:15px;color:var(--text-muted)">${window._unitPrefs.weight}</span>
               <span style="font-size:18px;color:${trendColour};margin-left:2px">${weightTrend}</span>
             </div>
             <p style="font-size:12px;color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
-            ${prevWeight ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">Previous: ${prevWeight.weight_kg} kg</p>` : ''}
+            ${prevWeight ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">Previous: ${fmtWeight(prevWeight.weight_kg, { spaced: true })}</p>` : ''}
           ` : `<p style="color:var(--text-muted);font-size:13px">No weight logged yet.</p>`}
           <div id="client-weight-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
               <div><label class="form-label">Date</label><input type="date" id="cwf-date" class="form-input" value="${todayStr}"></div>
-              <div><label class="form-label">Weight (kg)</label><input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300"></div>
+              <div><label class="form-label">Weight (${window._unitPrefs.weight})</label><input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300"></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
               <div><label class="form-label">Body fat % <span style="color:var(--text-muted)">(opt)</span></label><input type="number" id="cwf-bf" class="form-input" placeholder="e.g. 19.5" step="0.1"></div>

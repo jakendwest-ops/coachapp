@@ -38,12 +38,35 @@ function _cardioDistanceM(s) {
   return s.distance ? (parseFloat(s.distance) || 0) * 1000 : 0
 }
 
+const _METRES_PER_MILE = 1609.344
+
 // Metres under 1km, km above — a 5000m row reads better as "5km" on a chart or a target chip, while
-// a 400m interval reads better as "400m". Entry is always metres; only display adapts.
+// a 400m interval reads better as "400m". Entry is always metres; only display adapts. Imperial
+// mirrors the same under/over split: feet under a mile, miles above.
 function fmtDistanceM(m) {
   const n = Math.round(parseFloat(m) || 0)   // round BEFORE the threshold test, or 999.6 renders "1000 m"
   if (!n) return ''
+  if (window._unitPrefs?.cardioDistance === 'mi') {
+    return n < _METRES_PER_MILE ? `${Math.round(n * 3.280839895)} ft` : `${(n / _METRES_PER_MILE).toFixed(2).replace(/\.?0+$/, '')} mi`
+  }
   return n < 1000 ? `${n} m` : `${(n / 1000).toFixed(2).replace(/\.?0+$/, '')} km`
+}
+
+// Bare number (no unit) in the user's preferred unit, for an entry field's value/placeholder — the
+// builder/runner distance inputs always store metres, so the native (km-pref) case is a pure
+// passthrough, same reasoning as weightToPref/jumpHeightToPref.
+function distanceToPref(m) {
+  if (m == null || m === '') return ''
+  const v = parseFloat(m)
+  if (isNaN(v)) return ''
+  if (window._unitPrefs?.cardioDistance !== 'mi') return v
+  return (v / _METRES_PER_MILE).toFixed(2).replace(/\.?0+$/, '')
+}
+function distanceFromPref(val) {
+  if (val == null || val === '') return null
+  const v = parseFloat(val)
+  if (isNaN(v)) return null
+  return window._unitPrefs?.cardioDistance === 'mi' ? v * _METRES_PER_MILE : v
 }
 
 // A mm:ss target of '0:00' means "unset", but it is a truthy string — so a bare `s.pace500Min ?` check
@@ -145,10 +168,11 @@ function _fmtSetDetail(s, { isCardio = false, includeRest = false, markAmrap = t
     // Two storage shapes for a timed set: `duration` as mm:ss from the editor, or `repsMin` as a
     // seconds integer from a programmatic build. Both must render (STATUS continuity block).
     const secs = _hasTimeTarget(s.duration) ? (parseRest(s.duration) || 0) : (s.repsMin ? parseInt(s.repsMin) : null)
-    parts = [secs != null ? fmtDuration(secs) : null, s.weight ? s.weight + 'kg' : null]
+    parts = [secs != null ? fmtDuration(secs) : null, s.weight ? fmtWeight(s.weight) : null]
   } else if (s.targetHeightCm || s.targetDistanceM) {
-    // Jump. A "rep" here is a contact, so label it jumps rather than reps.
-    const target = s.targetHeightCm ? s.targetHeightCm + 'cm' : s.targetDistanceM + 'm'
+    // Jump. A "rep" here is a contact, so label it jumps rather than reps. Jump DISTANCE stays
+    // metric-only (no toggle scoped for it yet); jump HEIGHT respects the preference.
+    const target = s.targetHeightCm ? fmtJumpHeight(s.targetHeightCm) : s.targetDistanceM + 'm'
     const jumpEffort = s.effortMin
       ? (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + range(s.effortMin, s.effortMax) : null
     parts = [target, s.repsMin ? s.repsMin + ' jumps' : null, jumpEffort]
@@ -160,7 +184,7 @@ function _fmtSetDetail(s, { isCardio = false, includeRest = false, markAmrap = t
     const repsRange = range(s.repsMin, s.repsMax) || s.reps || null
     const reps = repsRange ? repsRange + ' reps' : null
     const repsPart = s.amrap && markAmrap ? (reps ? `${reps} (AMRAP)` : 'AMRAP') : reps
-    const weight = s.weight ? s.weight + 'kg' : null
+    const weight = s.weight ? fmtWeight(s.weight) : null
     const intensity = range(s.intensityMin, s.intensityMax, '% 1RM')
     const effort = s.effortMin
       ? (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + range(s.effortMin, s.effortMax)
@@ -233,7 +257,7 @@ function fmtSet(s, type) {
     const parts = [s.duration_seconds ? fmtDuration(s.duration_seconds) : null, s.distance_m ? fmtDistanceM(s.distance_m) : null]
     return parts.filter(Boolean).join(' · ') || '—'
   }
-  const parts = [s.reps_achieved ? s.reps_achieved+' reps' : null, s.weight_kg ? s.weight_kg+'kg' : null, s.effort_value ? 'RPE '+s.effort_value : null]
+  const parts = [s.reps_achieved ? s.reps_achieved+' reps' : null, s.weight_kg ? fmtWeight(s.weight_kg) : null, s.effort_value ? 'RPE '+s.effort_value : null]
   return parts.filter(Boolean).join(' · ') || '—'
 }
 
@@ -1167,7 +1191,12 @@ function flushTemplateSets(containerId) {
   ;(window._templateSets || []).forEach((s, i) => {
     s.repsMin      = document.getElementById(`ts-rmin-${i}`)?.value     ?? s.repsMin
     s.repsMax      = document.getElementById(`ts-rmax-${i}`)?.value     ?? s.repsMax
-    s.weight       = document.getElementById(`ts-weight-${i}`)?.value   ?? s.weight
+    // Convert typed value (user's preferred unit) back to canonical kg. Element existence and "value
+    // is blank/absent" are different cases: the `?? ''` only covers a genuinely-cleared field (typed
+    // then deleted) — weightFromPref returns null there too, so it must NOT fall through to the old
+    // s.weight the way a missing element correctly does, or clearing the field would silently un-clear
+    // itself on the next flush.
+    { const wEl = document.getElementById(`ts-weight-${i}`); s.weight = wEl ? (weightFromPref(wEl.value) ?? '') : s.weight }
     s.intensityMin = document.getElementById(`ts-imin-${i}`)?.value     ?? s.intensityMin
     s.intensityMax = document.getElementById(`ts-imax-${i}`)?.value     ?? s.intensityMax
     s.restMin      = document.getElementById(`ts-restmin-${i}`)?.value  ?? s.restMin
@@ -1179,7 +1208,10 @@ function flushTemplateSets(containerId) {
     s.duration     = document.getElementById(`ts-duration-${i}`)?.value ?? s.duration
     // METRES (2026-07-22). `s.distance` (km) is legacy-read-only and deliberately never written here —
     // see _cardioDistanceM. A missing input leaves the existing value alone, per the ?? pattern above.
-    s.distanceM    = document.getElementById(`ts-distm-${i}`)?.value    ?? s.distanceM
+    // Typed value is in the user's preferred distance unit; converted back to canonical metres here,
+    // same existence-check pattern as s.weight above (distanceFromPref returns null for both "missing
+    // element" and "blank value" — only the latter should actually clear the stored value).
+    { const dmEl = document.getElementById(`ts-distm-${i}`); s.distanceM = dmEl ? (distanceFromPref(dmEl.value) ?? '') : s.distanceM }
     s.pace500Min    = document.getElementById(`ts-p500min-${i}`)?.value   ?? s.pace500Min
     s.pace500Max    = document.getElementById(`ts-p500max-${i}`)?.value   ?? s.pace500Max
     s.hrZoneMin     = document.getElementById(`ts-hrzmin-${i}`)?.value    ?? s.hrZoneMin
@@ -1193,9 +1225,9 @@ function flushTemplateSets(containerId) {
     s.restHrMax     = document.getElementById(`ts-resthr-${i}`)?.value    ?? s.restHrMax
     s.strokeRateMin = document.getElementById(`ts-srmin-${i}`)?.value     ?? s.strokeRateMin
     s.strokeRateMax = document.getElementById(`ts-srmax-${i}`)?.value     ?? s.strokeRateMax
-    s.targetHeightCm   = document.getElementById(`ts-jheight-${i}`)?.value ?? s.targetHeightCm
+    { const jhEl = document.getElementById(`ts-jheight-${i}`); s.targetHeightCm = jhEl ? (jumpHeightFromPref(jhEl.value) ?? '') : s.targetHeightCm }
     s.targetDistanceM  = document.getElementById(`ts-jdist-${i}`)?.value   ?? s.targetDistanceM
-    s.assistWeight  = document.getElementById(`ts-assist-${i}`)?.value    ?? s.assistWeight
+    { const awEl = document.getElementById(`ts-assist-${i}`); s.assistWeight = awEl ? (weightFromPref(awEl.value) ?? '') : s.assistWeight }
   })
 }
 
@@ -1265,7 +1297,7 @@ function renderTemplateSets(containerId, type) {
           </div>
         </div>
         ${!s.isDistanceBased ? row('Duration', mini(`ts-duration-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.duration||'0:00')+'"')) : ''}
-        ${s.isDistanceBased ? row('Distance (m)', mini(`ts-distm-${i}`, `type="number" step="1" inputmode="numeric" placeholder="—"${_cardioDistanceM(s) ? ` value="${_cardioDistanceM(s)}"` : ''}`)) : ''}
+        ${s.isDistanceBased ? row(`Distance (${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'})`, mini(`ts-distm-${i}`, `type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="—"${_cardioDistanceM(s) ? ` value="${distanceToPref(_cardioDistanceM(s))}"` : ''}`)) : ''}
         ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
         ${more('+ More targets', !!(_hasTimeTarget(s.pace500Min) || _hasTimeTarget(s.pace500Max) || s.wattsMin || s.wattsMax || s.hrZoneMin || s.hrZoneMax || s.restHrMax || s.strokeRateMin || s.strokeRateMax || _hasTimeTarget(s.paceKmMin) || _hasTimeTarget(s.paceKmMax)), `
           ${row('Pace / 500m', mini(`ts-p500min-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Min||''}"`) + dash + mini(`ts-p500max-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${s.pace500Max||''}"`))}
@@ -1283,20 +1315,20 @@ function renderTemplateSets(containerId, type) {
         `)}
       ` : isTimedHold ? `
         ${row('Duration (mm:ss)', mini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.duration||'0:00'}"`))}
-        ${row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${s.weight}"`:'')))}
+        ${row(`Weight (${window._unitPrefs.weight})`, mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
         ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
         ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
       ` : isJump ? `
         ${type === 'jump_height'
-          ? row('Target height (cm)', mini(`ts-jheight-${i}`, 'type="number" step="1" inputmode="numeric" placeholder="—"'+(s.targetHeightCm?` value="${s.targetHeightCm}"`:'')))
+          ? row(`Target height (${window._unitPrefs.jumpHeight})`, mini(`ts-jheight-${i}`, 'type="number" step="1" inputmode="numeric" placeholder="—"'+(s.targetHeightCm?` value="${jumpHeightToPref(s.targetHeightCm)}"`:'')))
           : row('Target distance (m)', mini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${s.targetDistanceM}"`:'')))}
         ${row('Jumps per set', mini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${s.repsMin}"`:'')))}
         ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
         ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
       ` : `
         ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
-        ${s.bodyweight ? '' : row('Weight (kg)', mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${s.weight}"`:'')))}
-        ${s.assisted ? row('Assist weight (kg)', mini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${s.assistWeight}"`:''))): ''}
+        ${s.bodyweight ? '' : row(`Weight (${window._unitPrefs.weight})`, mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
+        ${s.assisted ? row(`Assist weight (${window._unitPrefs.weight})`, mini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${weightToPref(s.assistWeight)}"`:''))): ''}
         ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
         ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
         ${more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `

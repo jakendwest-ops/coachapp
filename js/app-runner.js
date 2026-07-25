@@ -234,7 +234,7 @@ function renderRunnerLastSession(exName) {
           ${data.sets.map(s => `
             <span style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap">
               <span style="color:var(--text-muted)">S${s.set_number}</span>
-              ${s.weight_kg ? s.weight_kg + 'kg' : ''}${s.weight_kg && s.reps_achieved ? ' × ' : ''}${s.reps_achieved ? s.reps_achieved : ''}
+              ${s.weight_kg ? fmtWeight(Math.round(s.weight_kg * 10) / 10) : ''}${s.weight_kg && s.reps_achieved ? ' × ' : ''}${s.reps_achieved ? s.reps_achieved : ''}
             </span>`).join('')}
         </div>
       `
@@ -302,21 +302,28 @@ function _renderRunnerVsLast(ex) {
   const d = _runnerVsLast(ex)
   if (!d) return ''
   const dateStr = new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-  const chip = (label, cur, prev, unit) => {
+  // `cur`/`prev`/`diff`/`pct` are computed in canonical kg throughout — only the DISPLAYED numbers
+  // convert to the user's preference; percentage change is unit-invariant so it never needs converting.
+  const chip = (label, cur, prev, isWeight) => {
+    const unit = isWeight ? window._unitPrefs.weight : ''
+    // Round to 1 decimal FIRST (matches this chip's original always-rounded kg display), then convert
+    // — weightToPref passes a kg value through unchanged, so the kg case still shows exactly the same
+    // number it always did; only the lb case adds a second (harmless) round on the converted value.
+    const disp = v => isWeight ? weightToPref(Math.round(v * 10) / 10) : Math.round(v * 10) / 10
     let bottom
     if (!d.logged) {
       // Before your first set this session: show last session's number as the target to beat.
-      bottom = `<span style="color:var(--text-muted)">last ${Math.round(prev * 10) / 10}${unit}</span>`
+      bottom = `<span style="color:var(--text-muted)">last ${disp(prev)}${unit}</span>`
     } else {
       const diff = cur - prev, flat = Math.abs(diff) < 0.005, up = diff > 0
       const pct = prev ? Math.round(Math.abs(diff) / prev * 100) : null
       const col = flat ? 'var(--text-muted)' : (up ? '#16a34a' : '#ef4444')
       bottom = flat ? `<span style="color:var(--text-muted)">—</span>`
-        : `<span style="color:${col}">${up ? '▲' : '▼'} ${up ? '+' : '−'}${Math.round(Math.abs(diff) * 10) / 10}${unit}${pct != null ? ` (${pct}%)` : ''}</span>`
+        : `<span style="color:${col}">${up ? '▲' : '▼'} ${up ? '+' : '−'}${disp(Math.abs(diff))}${unit}${pct != null ? ` (${pct}%)` : ''}</span>`
     }
     return `<div style="flex:1;min-width:0;text-align:center">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</div>
-      <div style="font-size:13px;font-weight:800">${Math.round(cur * 10) / 10}${unit}</div>
+      <div style="font-size:13px;font-weight:800">${disp(cur)}${unit}</div>
       <div style="font-size:9px;font-weight:700;white-space:nowrap">${bottom}</div></div>`
   }
   const heading = d.logged ? `vs last session · ${dateStr}` : `last session · ${dateStr} · beat it`
@@ -324,10 +331,10 @@ function _renderRunnerVsLast(ex) {
     <div style="margin-bottom:12px;padding:10px 12px;border-radius:10px;background:var(--surface-2)">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">${heading}</div>
       <div style="display:flex;gap:6px">
-        ${chip('Volume', d.cur.vol, d.prev.vol, 'kg')}
-        ${chip('Top', d.cur.top, d.prev.top, 'kg')}
-        ${chip('Reps', d.cur.reps, d.prev.reps, '')}
-        ${chip('Sets', d.cur.sets, d.prev.sets, '')}
+        ${chip('Volume', d.cur.vol, d.prev.vol, true)}
+        ${chip('Top', d.cur.top, d.prev.top, true)}
+        ${chip('Reps', d.cur.reps, d.prev.reps, false)}
+        ${chip('Sets', d.cur.sets, d.prev.sets, false)}
       </div>
     </div>`
 }
@@ -473,7 +480,7 @@ function _buildTargetCols(tgt, ex) {
   // rendered a target bar with nothing to aim at — capture and charting worked, but the coach could
   // not prescribe. Label REPS as JUMPS here: for a jump, a "rep" is a contact.
   const mt = _exMetricType(ex)
-  if (mt === 'jump_height' && tgt.targetHeightCm) cols.push({ val: tgt.targetHeightCm+' cm', label: 'TARGET', accent: true })
+  if (mt === 'jump_height' && tgt.targetHeightCm) cols.push({ val: fmtJumpHeight(tgt.targetHeightCm, { spaced: true }), label: 'TARGET', accent: true })
   if (mt === 'jump_distance' && tgt.targetDistanceM) cols.push({ val: tgt.targetDistanceM+' m', label: 'TARGET', accent: true })
   const isJumpMt0 = mt === 'jump_height' || mt === 'jump_distance'
   // Jumps prescribe a single contact count; a stale repsMax from a previous metric_type render
@@ -483,7 +490,7 @@ function _buildTargetCols(tgt, ex) {
   // A stale `weight` survives a metric_type switch (flushTemplateSets preserves un-rendered
   // fields), so a jump set can still carry one — don't render two columns both labelled TARGET.
   const isJumpMt = mt === 'jump_height' || mt === 'jump_distance'
-  if (tgt.weight && !isJumpMt) cols.push({ val: tgt.weight+' kg', label: 'TARGET', accent: true })
+  if (tgt.weight && !isJumpMt) cols.push({ val: fmtWeight(tgt.weight, { spaced: true }), label: 'TARGET', accent: true })
   let needsOneRM = false
   // %1RM only means something on a type that HAS a weight to derive — weight_reps and unilateral.
   // A jump has no weight input at all and a timed hold's cell never consumes the derived kg, so on
@@ -559,11 +566,21 @@ function renderStrengthTable(ex) {
   // _renderTargetBarHtml returns '' for an empty column list, so widening this cannot produce an
   // empty bar for a type with nothing prescribed.
   const showTargets = _METRIC_TABLE_TYPES.has(mt)
-  const inCell = (i, row, field, { mode = 'decimal', step = '', ph = '—', fmt = false } = {}) => {
+  // `tableRows` always holds CANONICAL kg/cm — same as loggedSets and the eventual DB write. `unit`
+  // ('weight'|'jumpHeight') is the only thing that makes a cell preference-aware: the DISPLAYED value
+  // is converted for show (weightToPref/jumpHeightToPref), and the typed value is converted back to
+  // canonical (weightFromPref/jumpHeightFromPref) before it's written into tableRows — so every
+  // consumer downstream of tableRows (volume calc, loggedSets, the save path) keeps working in kg/cm
+  // exactly as before, untouched by this feature.
+  const inCell = (i, row, field, { mode = 'decimal', step = '', ph = '—', fmt = false, unit = null } = {}) => {
+    const toDisplay = v => unit === 'weight' ? weightToPref(v) : unit === 'jumpHeight' ? jumpHeightToPref(v) : v
+    const parseFn = unit === 'weight' ? 'weightFromPref' : unit === 'jumpHeight' ? 'jumpHeightFromPref' : null
     const bind = fmt
       ? `this.value=fmtRestInput(this.value);_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
-      : `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
-    return `<input type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${escapeHtml(String(row[field] ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
+      : parseFn
+        ? `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=${parseFn}(this.value)`
+        : `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
+    return `<input type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${escapeHtml(String(toDisplay(row[field]) ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
       oninput="${bind}"
       style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done ? 'var(--border)' : 'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
   }
@@ -583,8 +600,10 @@ function renderStrengthTable(ex) {
     // unilateral too, not just weight_reps. A bodyweight set renders 'BW' and has no input to ghost,
     // which is correct: there is no load to prescribe.
     const rowTgt0 = ex.sets_json?.[i]
+    // The %1RM rounding (nearest 2.5kg, a barbell-plate constraint) stays in kg regardless of
+    // preference — only the DISPLAYED number converts, same as every other weight ghost value.
     const oneRMPh = (rowTgt0?.intensityMin && ex.oneRM)
-      ? _calcWeightFromPct(ex.oneRM, rowTgt0.intensityMin) + (rowTgt0.intensityMax && rowTgt0.intensityMax !== rowTgt0.intensityMin ? '–' + _calcWeightFromPct(ex.oneRM, rowTgt0.intensityMax) : '')
+      ? weightToPref(_calcWeightFromPct(ex.oneRM, rowTgt0.intensityMin)) + (rowTgt0.intensityMax && rowTgt0.intensityMax !== rowTgt0.intensityMin ? '–' + weightToPref(_calcWeightFromPct(ex.oneRM, rowTgt0.intensityMax)) : '')
       : ''
     // The row for the set you're currently on is highlighted so it's visually obvious which set the
     // target bar above applies to (Jake: "highlighted, not entered as text underneath — ugly UI").
@@ -596,7 +615,7 @@ function renderStrengthTable(ex) {
       // than cramming four. One ✓ logs the whole set; _syncLoggedSetsFromTable emits both sides.
       const side = (label, wField, rField) => `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
         <span style="width:14px;flex-shrink:0;font-size:11px;font-weight:800;color:var(--text-muted);text-align:center">${label}</span>
-        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, wField, { mode:'decimal', step:'0.5', ph: oneRMPh || 'kg' })}
+        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, wField, { mode:'decimal', step:'0.5', ph: oneRMPh || window._unitPrefs.weight, unit:'weight' })}
         ${inCell(i, row, rField, { mode:'numeric', ph:'reps' })}
       </div>`
       return `${cardOpen}<div style="display:flex;align-items:flex-start;gap:6px">
@@ -610,7 +629,7 @@ function renderStrengthTable(ex) {
       return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${inCell(i, row, 'duration', { mode:'numeric', ph:'0:00', fmt:true })}
-        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:'kg' })}
+        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:window._unitPrefs.weight, unit:'weight' })}
         ${inDone(i, row)}${inDel(i)}
       </div></div>`
     }
@@ -618,29 +637,32 @@ function renderStrengthTable(ex) {
     if (mt === 'jump_height' || mt === 'jump_distance') {
       const f = mt === 'jump_height' ? 'height_cm' : 'distance_m'
       // Ghost the PRESCRIBED target (builder: target height / target distance, 2026-07-22) rather than
-      // a bare unit, matching how the weight column ghosts its %1RM target.
+      // a bare unit, matching how the weight column ghosts its %1RM target. Jump DISTANCE stays
+      // metric-only; jump HEIGHT respects the preference.
       const tgtVal = mt === 'jump_height' ? rowTgt0?.targetHeightCm : rowTgt0?.targetDistanceM
-      const ph = tgtVal || (mt === 'jump_height' ? 'cm' : 'm')
+      const ph = mt === 'jump_height'
+        ? (tgtVal != null ? jumpHeightToPref(tgtVal) : window._unitPrefs.jumpHeight)
+        : (tgtVal || 'm')
       // A jump's "rep" is a CONTACT. The builder prescribes a count per set; without this cell the
       // athlete could not record how many they actually did, so contact volume was unrecordable and
       // never reached the charts. Regression from the jump-targets work earlier the same day.
       const jPh = rowTgt0?.repsMin ? String(rowTgt0.repsMin) : (prev?.reps_achieved != null ? String(prev.reps_achieved) : 'jumps')
       return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
-        ${inCell(i, row, f, { mode:'decimal', step:'0.01', ph })}
+        ${inCell(i, row, f, { mode:'decimal', step:'0.01', ph, unit: mt === 'jump_height' ? 'jumpHeight' : null })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph: jPh })}
         ${inDone(i, row)}${inDel(i)}
       </div></div>`
     }
 
     // weight_reps (default) — behaviour unchanged incl. ghost placeholders (les 2026-07-11: no pre-fill).
-    const wPlaceholder = oneRMPh || (prev?.weight_kg != null ? String(prev.weight_kg) : '') || '—'
+    const wPlaceholder = oneRMPh || (prev?.weight_kg != null ? weightToPref(prev.weight_kg) : '') || '—'
     const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || '—'
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${ex.bodyweight
           ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>`
-          : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder })}
+          : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder, unit:'weight' })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
         ${inDone(i, row)}${inDel(i)}
       </div></div>`
@@ -648,16 +670,18 @@ function renderStrengthTable(ex) {
 
   const th = (label, w) => `<span style="${w ? `width:${w}` : 'flex:1'};text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</span>`
   let header
+  const weightLabel = window._unitPrefs.weight === 'lb' ? 'Lb' : 'Kg'
+  const jumpHeightLabel = window._unitPrefs.jumpHeight === 'in' ? 'Height (in)' : 'Height (cm)'
   if (mt === 'unilateral') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('L / R · kg × reps')}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(`L / R · ${weightLabel.toLowerCase()} × reps`)}<span style="width:44px"></span></div>`
   } else if (mt === 'timed_hold') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : 'Kg')}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : weightLabel)}<span style="width:44px"></span></div>`
   } else if (mt === 'jump_height') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Height (cm)')}${th('Jumps')}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(jumpHeightLabel)}${th('Jumps')}<span style="width:44px"></span></div>`
   } else if (mt === 'jump_distance') {
     header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}${th('Jumps')}<span style="width:44px"></span></div>`
   } else {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Kg')}${th('Reps')}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}<span style="width:44px"></span></div>`
   }
   // Reps tally only makes sense for rep-based types.
   const tally = (mt === 'weight_reps' || mt === 'unilateral') ? _renderRepsTallyHtml(ex) : ''
@@ -698,7 +722,7 @@ function renderRunner() {
               <span style="font-size:11px;font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
             <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${escapeHtml(ex.name)||'Exercise name'}</div>
-            ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?ex.targetReps+' reps':null,ex.targetWeight?'@ '+ex.targetWeight+'kg':null].filter(Boolean).join(' · ')}</div>` : ''}
+            ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?ex.targetReps+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
             ${nextEx ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
           </div>
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
@@ -724,12 +748,12 @@ function renderRunner() {
                 ${ex.type === 'cardio'
                   ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : fmtDistanceM(_cardioDistanceM(s)) || '—'}</span>`
                   : s.distance_m
-                    ? `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
+                    ? `<span style="font-size:15px;font-weight:700">${s.weight?fmtWeight(s.weight, { spaced: true }):'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
                     : s.duration
-                    ? `<span style="font-size:15px;font-weight:700">⏱ ${s.duration}</span>${s.weight?`<span style="font-size:14px;font-weight:600;color:var(--text-muted)">${s.weight} kg</span>`:''}`
+                    ? `<span style="font-size:15px;font-weight:700">⏱ ${s.duration}</span>${s.weight?`<span style="font-size:14px;font-weight:600;color:var(--text-muted)">${fmtWeight(s.weight, { spaced: true })}</span>`:''}`
                     : s.leftReps != null
-                    ? `<span style="font-size:13px;font-weight:700">L: ${s.leftReps||'—'}${s.leftWeight?' @ '+s.leftWeight+'kg':''}</span><span style="font-size:13px;font-weight:700">R: ${s.rightReps||'—'}${s.rightWeight?' @ '+s.rightWeight+'kg':''}</span>`
-                    : `<span style="font-size:15px;font-weight:700">${s.weight?s.weight+' kg':'—'}</span><span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
+                    ? `<span style="font-size:13px;font-weight:700">L: ${s.leftReps||'—'}${s.leftWeight?' @ '+fmtWeight(s.leftWeight):''}</span><span style="font-size:13px;font-weight:700">R: ${s.rightReps||'—'}${s.rightWeight?' @ '+fmtWeight(s.rightWeight):''}</span>`
+                    : `<span style="font-size:15px;font-weight:700">${s.weight&&s.weight!=='BW'?fmtWeight(s.weight, { spaced: true }):s.weight==='BW'?'BW':'—'}</span><span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
               </span>
               <button onclick="editRunnerSet(${_runner.exIdx},${i})" style="flex-shrink:0;padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--accent)">✎ Edit</button>
             </div>`).join('')}</div>`}
@@ -858,7 +882,7 @@ function renderRunner() {
           </div>` : ''
           const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
           const distTarget = ex.notes?.match(/(\d+)[–\-](\d+)\s*m/)?.[0] || tgt.distance || ''
-          const weightPlaceholder = tgt.weight || '—'
+          const weightPlaceholder = tgt.weight ? weightToPref(tgt.weight) : '—'
           // Same prescribed-rep string _buildTargetCols builds for its REPS column, but this one is
           // the input's ghost text, so it stays local rather than being read off the shared helper.
           const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin + (tgt.repsMax && tgt.repsMax !== tgt.repsMin ? '–' + tgt.repsMax : '')) : null
@@ -879,7 +903,7 @@ function renderRunner() {
                 style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
               <input id="wr-left-reps" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
                 style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>kg</span><span>reps</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>${window._unitPrefs.weight}</span><span>reps</span></div>
             </div>
             <div style="flex:1;display:flex;flex-direction:column;gap:4px">
               <div style="font-size:10px;font-weight:700;text-transform:uppercase;text-align:center;color:var(--accent)">Right</div>
@@ -887,7 +911,7 @@ function renderRunner() {
                 style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
               <input id="wr-right-reps" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
                 style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>kg</span><span>reps</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>${window._unitPrefs.weight}</span><span>reps</span></div>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
               <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
@@ -907,7 +931,7 @@ function renderRunner() {
                   <div style="font-size:20px;font-weight:700;color:var(--text)">BW</div>
                  </div>`
               : `<div style="flex:1;display:flex;flex-direction:column">
-                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${ex.assisted?'Assist (kg)':'Kilograms'}</div>
+                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${ex.assisted?`Assist (${window._unitPrefs.weight})`:(window._unitPrefs.weight==='lb'?'Pounds':'Kilograms')}</div>
                   <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
                     style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
                  </div>`}
@@ -988,16 +1012,16 @@ function logRunnerSet() {
   } else {
     const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
     const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
-    const weight = ex.bodyweight ? 'BW' : (document.getElementById('wr-weight-input')?.value?.trim() || '')
+    const weight = ex.bodyweight ? 'BW' : (weightFromPref(document.getElementById('wr-weight-input')?.value?.trim()) ?? '')
     if (tgt.timed) {
       const dur = document.getElementById('wr-duration-input')?.value?.trim()
       if (!dur || dur === '0:00') { showToast('Enter a duration first', 'warn'); return }
       setData = { weight: weight || null, duration: dur }
       _runner._setTimerDone = false
     } else if (tgt.unilateral && !isDistance) {
-      const leftWeight = document.getElementById('wr-left-weight')?.value?.trim() || ''
+      const leftWeight = weightFromPref(document.getElementById('wr-left-weight')?.value?.trim()) ?? ''
       const leftReps   = document.getElementById('wr-left-reps')?.value?.trim()   || ''
-      const rightWeight = document.getElementById('wr-right-weight')?.value?.trim() || ''
+      const rightWeight = weightFromPref(document.getElementById('wr-right-weight')?.value?.trim()) ?? ''
       const rightReps   = document.getElementById('wr-right-reps')?.value?.trim()   || ''
       if (!leftReps && !rightReps) { showToast('Enter reps first', 'warn'); return }
       setData = { leftWeight: leftWeight || null, leftReps: leftReps || null, rightWeight: rightWeight || null, rightReps: rightReps || null }
@@ -1475,8 +1499,8 @@ function editRunnerSet(exIdx, setIdx) {
       <div style="font-size:15px;font-weight:700;margin-bottom:16px">Edit Set ${setIdx+1}</div>
       <div style="display:flex;gap:10px;margin-bottom:16px">
         <div style="flex:1">
-          <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">kg</label>
-          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.weight||''}" placeholder="—">
+          <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">${window._unitPrefs.weight}</label>
+          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.weight && s.weight !== 'BW' ? weightToPref(s.weight) : (s.weight||'')}" placeholder="—">
         </div>
         <div style="flex:1">
           <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">Reps</label>
@@ -1493,7 +1517,7 @@ function editRunnerSet(exIdx, setIdx) {
 }
 
 function saveEditRunnerSet(exIdx, setIdx) {
-  const weight = document.getElementById('wr-edit-weight')?.value.trim()
+  const weight = weightFromPref(document.getElementById('wr-edit-weight')?.value.trim()) ?? ''
   const reps   = document.getElementById('wr-edit-reps')?.value.trim()
   if (!reps) return
   _runner.exercises[exIdx].loggedSets[setIdx] = { ..._runner.exercises[exIdx].loggedSets[setIdx], weight, reps }
@@ -1710,7 +1734,7 @@ async function showRunnerFinish() {
               <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Reps</div>
             </div>` : ''}
             ${totalVol > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
-              <div style="font-size:17px;font-weight:800;color:var(--accent)">${totalVol>=1000?(totalVol/1000).toFixed(1)+'t':totalVol.toLocaleString()+'kg'}</div>
+              <div style="font-size:17px;font-weight:800;color:var(--accent)">${window._unitPrefs.weight==='lb' ? Math.round(weightToPref(totalVol)).toLocaleString()+'lb' : (totalVol>=1000?(totalVol/1000).toFixed(1)+'t':totalVol.toLocaleString()+'kg')}</div>
               <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Volume</div>
             </div>` : ''}
             ${totalDist > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
@@ -1736,7 +1760,7 @@ async function showRunnerFinish() {
                 <span style="font-weight:600;font-size:14px">${escapeHtml(e.name)}</span>
                 <div style="display:flex;align-items:center;gap:6px">
                   ${isPR ? `<span style="font-size:10px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.12);padding:2px 7px;border-radius:10px">🏆 PR</span>` : ''}
-                  <span style="font-size:12px;color:var(--text-muted)">${e.loggedSets.length} set${e.loggedSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+exVol.toLocaleString()+'kg':''} ${isCardio&&exDist>0?'· '+fmtDistanceM(exDist):''}</span>
+                  <span style="font-size:12px;color:var(--text-muted)">${e.loggedSets.length} set${e.loggedSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+Math.round(weightToPref(exVol)).toLocaleString()+window._unitPrefs.weight:''} ${isCardio&&exDist>0?'· '+fmtDistanceM(exDist):''}</span>
                 </div>
               </div>
               ${e.loggedSets.map((s,i) => {
@@ -1747,7 +1771,7 @@ async function showRunnerFinish() {
                   <span style="font-weight:600${isSetPR?';color:#d97706':''}">
                     ${isCardio
                       ? [s.duration, fmtDistanceM(_cardioDistanceM(s))].filter(Boolean).join(' · ')
-                      : [s.weight&&s.weight!=='BW'?s.weight+' kg':s.weight==='BW'?'BW':'', s.reps?s.reps+' reps':''].filter(Boolean).join(' × ')
+                      : [s.weight&&s.weight!=='BW'?fmtWeight(s.weight, { spaced: true }):s.weight==='BW'?'BW':'', s.reps?s.reps+' reps':''].filter(Boolean).join(' × ')
                     }
                     ${isSetPR ? ' 🏆' : ''}
                   </span>
@@ -2015,8 +2039,8 @@ function showPostSessionOneRMModal(clientId, candidates) {
       <div id="psorm-rows">
         ${candidates.map((c, i) => `
           <div id="psorm-row-${i}" style="background:rgba(99,102,241,.07);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
-            <div style="font-size:13px;font-weight:700;color:var(--accent)">${escapeHtml(c.name)} — ${c.weight}kg × ${c.reps} reps</div>
-            <div style="font-size:12px;color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${c.estimate.toFixed(1)} kg</div>
+            <div style="font-size:13px;font-weight:700;color:var(--accent)">${escapeHtml(c.name)} — ${fmtWeight(c.weight)} × ${c.reps} reps</div>
+            <div style="font-size:12px;color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${fmtWeight(c.estimate, { spaced: true, decimals: 1 })}</div>
             <div style="display:flex;gap:6px">
               <button class="btn-primary" style="flex:1;font-size:12px;padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${escapeAttr(c.name)}',${c.estimate})">Save as my 1RM</button>
               <button class="btn-secondary" style="flex:1;font-size:12px;padding:8px" onclick="document.getElementById('psorm-row-${i}').remove()">Skip</button>
@@ -2047,16 +2071,16 @@ window._logBlocks = []
 function flushLogState() {
   window._logBlocks.forEach((block, bi) => {
     const orm = document.getElementById(`ls-orm-${bi}`)
-    if (orm) block.oneRM = orm.value
+    if (orm) block.oneRM = weightFromPref(orm.value) ?? ''
     block.sets.forEach((set, si) => {
       const g = (id) => document.getElementById(id)?.value ?? ''
       if (block.type === 'cardio') {
         set.duration = g(`ls-dur-${bi}-${si}`)
-        set.distanceM = g(`ls-dist-${bi}-${si}`)   // METRES (2026-07-22) — see _cardioDistanceM
+        set.distanceM = distanceFromPref(g(`ls-dist-${bi}-${si}`)) ?? ''   // METRES (2026-07-22) — see _cardioDistanceM
       } else {
         set.repsMin = g(`ls-rmin-${bi}-${si}`)
         set.repsMax = g(`ls-rmax-${bi}-${si}`) || set.repsMin
-        set.weight  = g(`ls-weight-${bi}-${si}`)
+        set.weight  = weightFromPref(g(`ls-weight-${bi}-${si}`)) ?? ''
         set.pctMin  = g(`ls-pmin-${bi}-${si}`)
         set.pctMax  = g(`ls-pmax-${bi}-${si}`)
         set.effort  = g(`ls-effort-${bi}-${si}`)
@@ -2091,18 +2115,18 @@ function showRunnerOneRMSheet(exIdx) {
         <button class="modal-close" onclick="document.getElementById('modal-runner-1rm').remove()">✕</button>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:14px">
-        <button id="rorm-mode-direct" onclick="_setRunnerOneRMMode('direct')" class="btn-primary" style="flex:1;font-size:12px;padding:8px">I know it (kg)</button>
+        <button id="rorm-mode-direct" onclick="_setRunnerOneRMMode('direct')" class="btn-primary" style="flex:1;font-size:12px;padding:8px">I know it (${window._unitPrefs.weight})</button>
         <button id="rorm-mode-epley" onclick="_setRunnerOneRMMode('epley')" class="btn-secondary" style="flex:1;font-size:12px;padding:8px">Estimate from a set</button>
       </div>
       <div id="rorm-direct-fields">
         <div class="field">
-          <label class="field-label">1RM (kg)</label>
+          <label class="field-label">1RM (${window._unitPrefs.weight})</label>
           <input class="field-input" id="rorm-weight" type="number" step="0.5" inputmode="decimal" placeholder="e.g. 120">
         </div>
       </div>
       <div id="rorm-epley-fields" style="display:none">
         <div class="field">
-          <label class="field-label">Weight lifted (kg)</label>
+          <label class="field-label">Weight lifted (${window._unitPrefs.weight})</label>
           <input class="field-input" id="rorm-est-weight" type="number" step="0.5" inputmode="decimal" oninput="_updateRunnerEpleyPreview()">
         </div>
         <div class="field">
@@ -2129,11 +2153,11 @@ function _setRunnerOneRMMode(mode) {
 }
 
 function _updateRunnerEpleyPreview() {
-  const w = parseFloat(document.getElementById('rorm-est-weight')?.value)
+  const w = weightFromPref(document.getElementById('rorm-est-weight')?.value)
   const r = parseInt(document.getElementById('rorm-est-reps')?.value)
   const preview = document.getElementById('rorm-epley-preview')
   const est = _estimate1RM(w, r)
-  preview.textContent = est ? `≈ Epley estimate: ${est.toFixed(1)} kg`
+  preview.textContent = est ? `≈ Epley estimate: ${fmtWeight(est, { spaced: true, decimals: 1 })}`
     : (w && r > _ESTIMATE_1RM_MAX_REPS ? `Too many reps for a reliable estimate (max ${_ESTIMATE_1RM_MAX_REPS})` : '')
 }
 
@@ -2143,9 +2167,9 @@ async function saveRunnerOneRM(exIdx) {
   const mode = document.getElementById('rorm-epley-fields').style.display === 'block' ? 'epley' : 'direct'
   let oneRM
   if (mode === 'direct') {
-    oneRM = parseFloat(document.getElementById('rorm-weight')?.value)
+    oneRM = weightFromPref(document.getElementById('rorm-weight')?.value)
   } else {
-    const w = parseFloat(document.getElementById('rorm-est-weight')?.value)
+    const w = weightFromPref(document.getElementById('rorm-est-weight')?.value)
     const r = parseInt(document.getElementById('rorm-est-reps')?.value)
     oneRM = _estimate1RM(w, r)
   }
@@ -2195,12 +2219,12 @@ function renderLogExercises() {
     const colHeaders = isCardio ? `
       ${hdr('')}
       ${hdr('Duration')}
-      ${hdr('Distance (km)')}
+      ${hdr(`Distance (${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'})`)}
       <span></span>
     ` : isMobile ? `
       ${hdr('#')}
       ${hdr('Reps')}
-      ${hdr('Weight (kg)')}
+      ${hdr(`Weight (${window._unitPrefs.weight})`)}
       ${hdr(isRIR ? 'RIR' : 'RPE')}
       <span></span>
     ` : `
@@ -2211,7 +2235,7 @@ function renderLogExercises() {
           ${hdr('min')}${hdr('max')}
         </div>
       </div>
-      ${hdr('Weight (kg)')}
+      ${hdr(`Weight (${window._unitPrefs.weight})`)}
       <div style="grid-column:span 2;display:flex;flex-direction:column;align-items:center;gap:1px">
         ${hdr('% 1RM')}
         <div style="display:flex;gap:3px;width:100%">
@@ -2230,7 +2254,7 @@ function renderLogExercises() {
 
     const setsHtml = block.sets.map((s, si) => {
       const wFromPct = orm
-        ? `<div style="font-size:9px;color:var(--accent);text-align:center;margin-top:1px">${_calcWeightFromPct(orm, s.pctMin) || ''}${s.pctMax && s.pctMax !== s.pctMin ? '–' + _calcWeightFromPct(orm, s.pctMax) : ''}${orm && (s.pctMin || s.pctMax) ? 'kg' : ''}</div>`
+        ? `<div style="font-size:9px;color:var(--accent);text-align:center;margin-top:1px">${_calcWeightFromPct(orm, s.pctMin) ? weightToPref(_calcWeightFromPct(orm, s.pctMin)) : ''}${s.pctMax && s.pctMax !== s.pctMin && _calcWeightFromPct(orm, s.pctMax) ? '–' + weightToPref(_calcWeightFromPct(orm, s.pctMax)) : ''}${orm && (s.pctMin || s.pctMax) ? window._unitPrefs.weight : ''}</div>`
         : ''
       const delBtn = `<button onclick="flushLogState();window._logBlocks[${bi}].sets.splice(${si},1);renderLogExercises()" style="width:${isMobile?'28px':'22px'};height:${isMobile?'36px':'22px'};border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;padding:0">×</button>`
       return `
@@ -2238,16 +2262,16 @@ function renderLogExercises() {
           <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">${si + 1}</span>
           ${isCardio ? `
             <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.duration || '0:00'}" oninput="this.value=fmtRestInput(this.value)">
-            <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="1" inputmode="numeric" placeholder="m" value="${_cardioDistanceM(s) || ''}">
+            <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'}" value="${_cardioDistanceM(s) ? distanceToPref(_cardioDistanceM(s)) : ''}">
           ` : isMobile ? `
             <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${s.repsMin || ''}">
-            <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="kg" value="${s.weight || ''}">
+            <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="${window._unitPrefs.weight}" value="${s.weight ? weightToPref(s.weight) : ''}">
             <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${s.effort || ''}">
           ` : `
             <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${s.repsMin || ''}">
             <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${s.repsMax || ''}">
             <div>
-              <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="kg" value="${orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||s.weight||'') : (s.weight||'')}">
+              <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="${window._unitPrefs.weight}" value="${weightToPref(orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||s.weight||'') : (s.weight||''))}">
             </div>
             <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${s.pctMin || ''}" oninput="flushLogState()" onchange="renderLogExercises()">
             <div>
@@ -2276,8 +2300,8 @@ function renderLogExercises() {
         ${!isCardio ? `
         <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)">
           <span style="font-size:11px;font-weight:500;color:var(--text-muted);white-space:nowrap">1 Rep Max</span>
-          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:12px;text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM || ''}" oninput="window._logBlocks[${bi}].oneRM=this.value" onchange="flushLogState();renderLogExercises()">
-          <span style="font-size:11px;color:var(--text-muted)">kg</span>
+          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:12px;text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM ? weightToPref(block.oneRM) : ''}" oninput="window._logBlocks[${bi}].oneRM=this.value" onchange="flushLogState();renderLogExercises()">
+          <span style="font-size:11px;color:var(--text-muted)">${window._unitPrefs.weight}</span>
           <span style="font-size:11px;color:var(--text-muted);margin-left:2px">${orm ? '— % 1RM will auto-fill weight' : '— enter to enable % 1RM'}</span>
         </div>
         ` : ''}
@@ -2569,9 +2593,9 @@ async function openWorkoutLog(logId, clientId) {
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
-        <div style="font-size:17px;font-weight:700">${totalVol > 0 ? Math.round(totalVol).toLocaleString()+' kg' : '—'}</div>
+        <div style="font-size:17px;font-weight:700">${totalVol > 0 ? Math.round(weightToPref(totalVol)).toLocaleString()+' '+window._unitPrefs.weight : '—'}</div>
         <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Volume</div>
-        ${volDelta !== null && totalVol > 0 ? `<div style="font-size:11px;font-weight:600;margin-top:3px;color:${volDelta >= 0 ? '#10b981' : '#ef4444'}">${volDelta >= 0 ? '+' : ''}${Math.round(volDelta).toLocaleString()} kg</div>` : ''}
+        ${volDelta !== null && totalVol > 0 ? `<div style="font-size:11px;font-weight:600;margin-top:3px;color:${volDelta >= 0 ? '#10b981' : '#ef4444'}">${volDelta >= 0 ? '+' : ''}${Math.round(weightToPref(volDelta)).toLocaleString()} ${window._unitPrefs.weight}</div>` : ''}
       </div>
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
         <div style="font-size:17px;font-weight:700">${totalSets}</div>
@@ -2593,7 +2617,7 @@ async function openWorkoutLog(logId, clientId) {
         const prevSummary = prevSets.length
           ? (isCardio
               ? `${prevSets.length} set${prevSets.length > 1 ? 's' : ''}`
-              : prevVol > 0 ? `${Math.round(prevVol).toLocaleString()} kg volume` : `${prevSets.length} set${prevSets.length > 1 ? 's' : ''}`)
+              : prevVol > 0 ? `${Math.round(weightToPref(prevVol)).toLocaleString()} ${window._unitPrefs.weight} volume` : `${prevSets.length} set${prevSets.length > 1 ? 's' : ''}`)
           : null
         return `
           <div class="card" style="margin-bottom:12px">
@@ -2621,7 +2645,7 @@ async function openWorkoutLog(logId, clientId) {
                         <td style="padding:8px 12px 8px 0;font-size:13px;color:var(--text-muted);font-weight:600">Set ${s.set_number}</td>
                         ${isCardio
                           ? `<td style="padding:8px 12px 8px 0;font-size:13px">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.distance_m ? fmtDistanceM(s.distance_m) : '—'}</td>`
-                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${s.weight_kg ? s.weight_kg+' kg' : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? 'RPE '+s.effort_value : '—'}</td>` : ''}`
+                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${s.weight_kg ? fmtWeight(s.weight_kg, { spaced: true }) : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? 'RPE '+s.effort_value : '—'}</td>` : ''}`
                         }
                       </tr>
                     `).join('')}

@@ -289,40 +289,47 @@ test.describe('Assignment-time 1RM check', () => {
     })
     test.skip(!setup.clientId, 'E2E PT account has no clients to assign to')
 
-    await page.reload()
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
-    await page.click('text=[E2E] 1RM Check Program')
-    await page.waitForSelector('button:has-text("Assign to client")', { timeout: 8000 })
-    await page.click('button:has-text("Assign to client")')
-    await expect(page.locator('#apc-modal')).toBeVisible({ timeout: 4000 })
-    await page.selectOption('#apc-client', setup.clientId)
-    await expect(page.locator('#apc-missing-1rm')).toContainText('[E2E] Test Squat', { timeout: 6000 })
-    await expect(page.locator('#apc-missing-1rm')).toContainText('missing 1', { timeout: 4000 })
+    // Cleanup must run even if an assertion below fails — an earlier version of this test had the
+    // cleanup AFTER the assertions with no try/finally, so any failed assertion (e.g. the 2026-07-25
+    // weight_unit fixture-pollution incident) left the assignment, its cloned template, and the
+    // program permanently stuck on the shared PT/client fixture. Found when that pollution incident's
+    // failure leaked exactly this debris, which then made an unrelated client-workout.spec.js test
+    // start failing (it had been silently vacuous every prior run because the client had no program).
+    try {
+      await page.reload()
+      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.click('text=[E2E] 1RM Check Program')
+      await page.waitForSelector('button:has-text("Assign to client")', { timeout: 8000 })
+      await page.click('button:has-text("Assign to client")')
+      await expect(page.locator('#apc-modal')).toBeVisible({ timeout: 4000 })
+      await page.selectOption('#apc-client', setup.clientId)
+      await expect(page.locator('#apc-missing-1rm')).toContainText('[E2E] Test Squat', { timeout: 6000 })
+      await expect(page.locator('#apc-missing-1rm')).toContainText('missing 1', { timeout: 4000 })
 
-    await page.fill('#mor-0-weight', '100')
-    await page.click('#apc-modal .modal-footer button:has-text("Assign")')
-    await page.waitForSelector('#apc-modal', { state: 'detached', timeout: 8000 })
+      await page.fill('#mor-0-weight', '100')
+      await page.click('#apc-modal .modal-footer button:has-text("Assign")')
+      await page.waitForSelector('#apc-modal', { state: 'detached', timeout: 8000 })
 
-    const saved = await page.evaluate(async (clientId) => {
-      const { data } = await db.from('client_1rms').select('one_rm_kg').eq('client_id', clientId).eq('exercise_name', '[E2E] Test Squat')
-      return data
-    }, setup.clientId)
-    expect(saved.length).toBe(1)
-    expect(saved[0].one_rm_kg).toBe(100)
-
-    // Cleanup
-    await page.evaluate(async ({ programId, templateId, clientId }) => {
-      const { data: cpRows } = await db.from('client_programs').select('id').eq('client_id', clientId).eq('program_id', programId)
-      for (const cp of cpRows || []) {
-        const { data: cpwRows } = await db.from('client_program_workouts').select('workout_template_id').eq('client_program_id', cp.id)
-        await db.from('client_programs').delete().eq('id', cp.id)
-        const ids = cpwRows.map(r => r.workout_template_id).filter(Boolean)
-        if (ids.length) await db.from('workout_templates').delete().in('id', ids)
-      }
-      await db.from('client_1rms').delete().eq('client_id', clientId).eq('exercise_name', '[E2E] Test Squat')
-      await db.from('programs').delete().eq('id', programId)
-      await db.from('workout_templates').delete().eq('id', templateId)
-    }, { programId: setup.programId, templateId: setup.templateId, clientId: setup.clientId })
+      const saved = await page.evaluate(async (clientId) => {
+        const { data } = await db.from('client_1rms').select('one_rm_kg').eq('client_id', clientId).eq('exercise_name', '[E2E] Test Squat')
+        return data
+      }, setup.clientId)
+      expect(saved.length).toBe(1)
+      expect(saved[0].one_rm_kg).toBe(100)
+    } finally {
+      await page.evaluate(async ({ programId, templateId, clientId }) => {
+        const { data: cpRows } = await db.from('client_programs').select('id').eq('client_id', clientId).eq('program_id', programId)
+        for (const cp of cpRows || []) {
+          const { data: cpwRows } = await db.from('client_program_workouts').select('workout_template_id').eq('client_program_id', cp.id)
+          await db.from('client_programs').delete().eq('id', cp.id)
+          const ids = (cpwRows || []).map(r => r.workout_template_id).filter(Boolean)
+          if (ids.length) await db.from('workout_templates').delete().in('id', ids)
+        }
+        await db.from('client_1rms').delete().eq('client_id', clientId).eq('exercise_name', '[E2E] Test Squat')
+        await db.from('programs').delete().eq('id', programId)
+        await db.from('workout_templates').delete().eq('id', templateId)
+      }, { programId: setup.programId, templateId: setup.templateId, clientId: setup.clientId })
+    }
   })
 
   test('missing-1RM checklist shows read-only "on file" entries alongside the quick-entry ones', async ({ page }) => {
@@ -342,25 +349,28 @@ test.describe('Assignment-time 1RM check', () => {
     })
     test.skip(!setup.clientId, 'E2E PT account has no clients to assign to')
 
-    await page.reload()
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
-    await page.click('text=[E2E] 1RM Have Program')
-    await page.waitForSelector('button:has-text("Assign to client")', { timeout: 8000 })
-    await page.click('button:has-text("Assign to client")')
-    await expect(page.locator('#apc-modal')).toBeVisible({ timeout: 4000 })
-    await page.selectOption('#apc-client', setup.clientId)
-    await expect(page.locator('#apc-missing-1rm')).toContainText('all on file', { timeout: 6000 })
-    await expect(page.locator('#apc-missing-1rm')).toContainText('123.0 kg (on file)')
+    // See the sibling test above for why this is try/finally — a failed assertion here left
+    // "[E2E] 1RM Have Program"/"[E2E] 1RM Have Squat" debris behind the same way.
+    try {
+      await page.reload()
+      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.click('text=[E2E] 1RM Have Program')
+      await page.waitForSelector('button:has-text("Assign to client")', { timeout: 8000 })
+      await page.click('button:has-text("Assign to client")')
+      await expect(page.locator('#apc-modal')).toBeVisible({ timeout: 4000 })
+      await page.selectOption('#apc-client', setup.clientId)
+      await expect(page.locator('#apc-missing-1rm')).toContainText('all on file', { timeout: 6000 })
+      await expect(page.locator('#apc-missing-1rm')).toContainText('123.0 kg (on file)')
 
-    await page.click('#apc-modal .modal-footer button:has-text("Cancel")')
-    await page.waitForSelector('#apc-modal', { state: 'detached', timeout: 4000 })
-
-    // Cleanup
-    await page.evaluate(async ({ programId, templateId, clientId }) => {
-      await db.from('client_1rms').delete().eq('client_id', clientId).eq('exercise_name', '[E2E] Have Squat')
-      await db.from('programs').delete().eq('id', programId)
-      await db.from('workout_templates').delete().eq('id', templateId)
-    }, { programId: setup.programId, templateId: setup.templateId, clientId: setup.clientId })
+      await page.click('#apc-modal .modal-footer button:has-text("Cancel")')
+      await page.waitForSelector('#apc-modal', { state: 'detached', timeout: 4000 })
+    } finally {
+      await page.evaluate(async ({ programId, templateId, clientId }) => {
+        await db.from('client_1rms').delete().eq('client_id', clientId).eq('exercise_name', '[E2E] Have Squat')
+        await db.from('programs').delete().eq('id', programId)
+        await db.from('workout_templates').delete().eq('id', templateId)
+      }, { programId: setup.programId, templateId: setup.templateId, clientId: setup.clientId })
+    }
   })
 })
 
