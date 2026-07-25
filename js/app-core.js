@@ -118,6 +118,16 @@ async function showApp() {
   document.getElementById('auth-screen').style.display = 'none'
   document.getElementById('app-shell').style.display   = 'flex'
   await loadUserInfo()
+  // A failed profiles fetch (network blip, transient RLS/schema hiccup) leaves currentProfile null.
+  // Every role check below (`role === 'client' ? ... : role === 'solo' ? ... : coach-default`) treats
+  // an unrecognised role as 'coach' — so falling through here would silently hand a solo_only or
+  // client account the full coach nav/dashboard shell, exactly the outcome solo_only exists to
+  // prevent, on nothing more than a transient error. Fail closed instead of fail open. Found by
+  // multi-agent review, 2026-07-24.
+  if (!currentProfile) {
+    document.getElementById('main-content').innerHTML = '<div class="loading-state">Couldn\'t load your account. <a href="#" onclick="showApp();return false" style="color:var(--accent)">Retry</a></div>'
+    return
+  }
   applyRoleUI()
   const role = currentProfile?.role
   const defaultPage = role === 'client' ? 'client-dashboard' : role === 'solo' ? 'solo-dashboard' : 'dashboard'
@@ -139,7 +149,7 @@ async function loadUserInfo() {
   log.info('loadUserInfo', 'fetching profile', { userId: currentUser.id })
   const { data, error } = await db
     .from('profiles')
-    .select('full_name, role, starter_seeded')
+    .select('full_name, role, starter_seeded, solo_only')
     .eq('id', currentUser.id)
     .single()
 
@@ -147,8 +157,15 @@ async function loadUserInfo() {
   currentProfile = data
 
   // If profile has no role (invited client whose profile row may have been created without role),
-  // check the clients table to determine correct role
-  if (!currentProfile?.role || currentProfile.role === null) {
+  // check the clients table to determine correct role. Gated on `!error`: a FAILED fetch (network
+  // blip, a stale column in this select during a migration window, any transient error) also leaves
+  // currentProfile.role falsy, and this block WRITES role:'client' back to the row the moment it finds
+  // any clients record for this user_id — including a coach's own self-referential solo row. A real
+  // coach account was silently downgraded to 'client' this way on 2026-07-24 (a select referencing a
+  // column added moments earlier by a live migration failed mid-session; the self-repair "healed" a
+  // perfectly fine coach into a client because it couldn't tell a genuinely-null role from a failed
+  // fetch). Only ever infer/patch a role from an actually-successful, genuinely-null read.
+  if (!error && (!currentProfile?.role || currentProfile.role === null)) {
     const { data: clientRec } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
     if (clientRec) {
       currentProfile = { ...(currentProfile || {}), role: 'client' }
@@ -164,7 +181,28 @@ async function loadUserInfo() {
   document.getElementById('user-avatar').textContent = initial
 
   // Check if this account also has client records (master account detection)
-  if (currentProfile?.role === 'coach') {
+  if (currentProfile?.role === 'coach' && currentProfile.solo_only) {
+    // Locked to the solo/personal experience ONLY (2026-07-24) — same underlying shape as a normal
+    // master account (role stays 'coach', a self-referential clients row gives the solo dashboard
+    // something to query), but window._masterAccount is deliberately never set here, so the
+    // view-switcher never renders and switchView()'s own `if (!window._masterAccount) return` guard
+    // blocks any attempt to reach the coach or client view regardless. Distinct from the normal
+    // master-account branch below, which keeps full coach access via the switcher.
+    //
+    // Only reassign role to 'solo' when the row is ACTUALLY found — matching the master-account
+    // branch's own `if (soloRec)` pattern below. Provisioning is two separate manual steps (insert
+    // the clients row, then flip solo_only); forcing role:'solo' unconditionally here would trap an
+    // account whose row doesn't exist yet (or whose lookup transiently failed) in a personal
+    // dashboard with nothing to query and — because switchView is deliberately blocked — no in-app
+    // way out. Falling through leaves role at its real DB value ('coach') instead. Found by
+    // multi-agent review, 2026-07-24.
+    const { data: soloRec, error: soloErr } = await db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle()
+    if (soloErr) log.error('loadUserInfo', 'solo_only clients lookup failed', soloErr)
+    if (soloRec) {
+      window._soloClientId = soloRec.id
+      currentProfile = { ...currentProfile, role: 'solo' }
+    }
+  } else if (currentProfile?.role === 'coach') {
     const [{ data: coachedRec }, { data: soloRec }] = await Promise.all([
       db.from('clients').select('id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle(),
       db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle(),
@@ -184,13 +222,14 @@ async function loadUserInfo() {
   await _loadBranding()
 
   // Brand-new coach: seed the starter library/workout/program once, before anything renders, so the
-  // dashboard isn't a blank slate on first login. Idempotent (see _seedStarterContent). role is
-  // re-checked here because a master account's currentProfile.role may have been switched to
-  // 'client'/'solo' above — starter seeding is only for a genuine coach that has never seeded. Jake
-  // and every existing account carry starter_seeded=true from the migration, so this never fires for
-  // them; a brand-new coach has no client rows, so the master-detection block above is a no-op and
-  // role stays 'coach'.
-  if (currentProfile?.role === 'coach' && currentProfile?.starter_seeded === false) {
+  // dashboard isn't a blank slate on first login. Idempotent (see _seedStarterContent). Checked
+  // against the RAW fetched `data.role`, not `currentProfile.role` — the block above may already have
+  // reassigned currentProfile.role to 'client'/'solo' (master account OR solo_only), but the
+  // underlying account is still genuinely a never-seeded coach either way. Jake and every existing
+  // account carry starter_seeded=true from the migration, so this never fires for them; a brand-new
+  // coach (solo_only or not) has no client rows yet the first time this runs, so it seeds correctly
+  // regardless of which branch above reassigned the display role.
+  if (data?.role === 'coach' && data?.starter_seeded === false) {
     const main = document.getElementById('main-content')
     if (main) main.innerHTML = '<div class="loading-state">Setting up your account…</div>'
     await _seedStarterContent()
@@ -327,17 +366,11 @@ function switchView(view) {
 }
 
 // ─── AUTH FORMS ───────────────────────────────────────────────────────────────
-document.getElementById('show-signup').addEventListener('click', e => {
-  e.preventDefault()
-  document.getElementById('login-form').style.display  = 'none'
-  document.getElementById('signup-form').style.display = 'block'
-})
-
-document.getElementById('show-login').addEventListener('click', e => {
-  e.preventDefault()
-  document.getElementById('signup-form').style.display = 'none'
-  document.getElementById('login-form').style.display  = 'block'
-})
+// Public self-signup removed 2026-07-24 (Jake): accounts are provisioned only by Jake creating the
+// auth user directly and handing over credentials — the login screen must not offer any path to
+// create one. This closes the CLIENT-SIDE path; Supabase Auth's "Allow new users to sign up" must
+// also be turned off in the dashboard, since db.auth.signUp() is callable directly (devtools/API)
+// regardless of whether this UI exists.
 
 document.getElementById('login-form').addEventListener('submit', async e => {
   e.preventDefault()
@@ -361,45 +394,6 @@ document.getElementById('login-form').addEventListener('submit', async e => {
     btn.textContent = 'Sign in'
   } else {
     log.ok('login', 'sign in successful')
-  }
-})
-
-document.getElementById('signup-form').addEventListener('submit', async e => {
-  e.preventDefault()
-  const btn     = document.getElementById('signup-submit')
-  const errorEl = document.getElementById('signup-error')
-  btn.disabled    = true
-  btn.textContent = 'Creating account…'
-  errorEl.textContent  = ''
-  errorEl.style.color  = ''
-
-  if (!document.getElementById('signup-consent')?.checked) {
-    errorEl.textContent = 'Please accept the privacy policy to continue.'
-    btn.disabled = false; btn.textContent = 'Create account'; return
-  }
-
-  const email = document.getElementById('signup-email').value
-  log.info('signup', 'attempting sign up')
-  const { data, error } = await db.auth.signUp({
-    email,
-    password: document.getElementById('signup-password').value,
-    options:  { data: { full_name: document.getElementById('signup-name').value.trim() } }
-  })
-
-  if (error) {
-    log.error('signup', 'sign up failed', error)
-    errorEl.textContent = error.message || 'Something went wrong. Please try again.'
-    btn.disabled    = false
-    btn.textContent = 'Create account'
-  } else if (data.session) {
-    log.ok('signup', 'account created and session active')
-    errorEl.style.color = 'var(--success)'
-    errorEl.textContent = 'Account created! Signing you in…'
-  } else {
-    errorEl.style.color = 'var(--warning)'
-    errorEl.textContent = 'Check your email to confirm your account.'
-    btn.disabled    = false
-    btn.textContent = 'Create account'
   }
 })
 

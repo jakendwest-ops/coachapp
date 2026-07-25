@@ -889,7 +889,6 @@ function showInviteForm() {
   document.getElementById('auth-screen').style.display = 'flex'
   document.getElementById('app-shell').style.display   = 'none'
   document.getElementById('login-form').style.display  = 'none'
-  document.getElementById('signup-form').style.display = 'none'
   document.getElementById('invite-form').style.display = 'block'
 }
 
@@ -949,6 +948,18 @@ db.auth.onAuthStateChange((event, session) => {
     }
   } else {
     _appLoaded = false
+    // Master-account/solo state is session-scoped, not per-account — loadUserInfo only ever SETS
+    // these true/populates them, never resets them, so on a shared/gym device the NEXT account to
+    // sign in on the same tab (no page reload — the primary sidebar sign-out button doesn't reload)
+    // would inherit the PREVIOUS account's _masterAccount=true and a visible view-switcher.
+    // switchView()'s own guard (`if (!window._masterAccount) return`) is the only thing standing
+    // between a solo_only account and the full coach dashboard — a stale true here defeats it
+    // entirely, not just cosmetically. Found by multi-agent review, 2026-07-24.
+    window._masterAccount = false
+    window._masterClientId = null
+    window._soloClientId = null
+    const switcher = document.getElementById('view-switcher')
+    if (switcher) switcher.style.display = 'none'
     showAuth()
   }
 })
