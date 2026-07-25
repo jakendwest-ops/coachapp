@@ -110,6 +110,63 @@ function _resolveMetricType(metricType, exerciseType, firstSet) {
   return 'weight_reps'
 }
 
+// ─── INTERVAL BLOCKS (2026-07-25) ─────────────────────────────────────────────
+// An interval exercise's sets_json holds ONE entry describing the whole block; this expands it into
+// the flat, ordered phase list both the builder (for its total-time readout) and the runner (which
+// walks it by index) consume.
+//
+// Deliberately PURE — no DOM, no globals, no timers. The previous interval implementation chained
+// work -> rest -> a one-shot `_afterRest` callback, which is untestable without driving a browser and
+// is the shape behind past stray-timer bugs. An array you can assert on is the point of this rewrite.
+//
+// Rest runs after EVERY work round and recovery after EVERY cycle, including the last of each. That
+// is not arbitrary: it reproduces the reference app's own 27:00 arithmetic (see the spec). Zero-valued
+// phases are omitted entirely rather than emitted as 0-second entries.
+function _expandIntervalBlock(b) {
+  const block = b || {}
+  const n = v => Math.max(0, parseInt(v, 10) || 0)
+  const countdown = n(block.countdownSecs)
+  const warmup    = n(block.warmupSecs)
+  const work      = n(block.workSecs)
+  const rest      = n(block.restSecs)
+  const recovery  = n(block.recoverySecs)
+  const cooldown  = n(block.cooldownSecs)
+  // Clamped so a blank/0 never collapses the block to nothing at all.
+  const sets      = Math.max(1, n(block.sets))
+  const cycles    = Math.max(1, n(block.cycles))
+  const isDist    = !!block.isDistanceBased
+  const workDist  = isDist ? (parseFloat(block.workDistanceM) || 0) : null
+
+  const phases = []
+  if (countdown) phases.push({ phase: 'countdown', secs: countdown })
+  if (warmup)    phases.push({ phase: 'warmup',    secs: warmup })
+  for (let cycle = 1; cycle <= cycles; cycle++) {
+    for (let set = 1; set <= sets; set++) {
+      // secs:null marks a round that cannot auto-advance — there is no distance sensor, so the
+      // athlete taps Done. The runner branches on exactly this.
+      phases.push(isDist
+        ? { phase: 'work', secs: null, distanceM: workDist, set, cycle }
+        : { phase: 'work', secs: work, set, cycle })
+      if (rest) phases.push({ phase: 'rest', secs: rest, set, cycle })
+    }
+    if (recovery) phases.push({ phase: 'recovery', secs: recovery, cycle })
+  }
+  if (cooldown) phases.push({ phase: 'cooldown', secs: cooldown })
+  return phases
+}
+
+// Sum of a phase list. `hasUnknown` is true when any work round is distance-based, because its
+// duration genuinely cannot be known up front — callers must qualify the number rather than present
+// a confident total that is simply wrong.
+function _intervalTotalSecs(phases) {
+  let total = 0, hasUnknown = false
+  for (const p of (phases || [])) {
+    if (p.secs == null) hasUnknown = true
+    else total += p.secs
+  }
+  return { total, hasUnknown }
+}
+
 // THE prescription formatter. One set → one human string ("8–10 reps · 60kg · RPE 8").
 //
 // This existed as TWO near-identical copies — openSessionDetail and openTemplate — and they had
