@@ -167,6 +167,20 @@ function _intervalTotalSecs(phases) {
   return { total, hasUnknown }
 }
 
+// THE "N sets" badge count for a prescribed exercise. A plain exercise's sets_json.length IS its set
+// count, but an interval block is deliberately always exactly ONE sets_json entry describing the
+// whole workout — so a raw .length badge reads "1 set" for an 8-round session (a real UX regression
+// the block model introduced; pre-redesign, 8 rounds were 8 rows and the badge correctly said "8
+// sets"). The true round count is sets × cycles, but that arithmetic is hand-rolled and can drift
+// from what the runner actually walks — so this derives it from the SAME expansion instead
+// (_expandIntervalBlock, Task 2), counting 'work' phases. One function so every badge site (day rows,
+// client-profile tab, builder slot, calendar day modal) reads the same number, always.
+function _prescribedSetCount(sets, isInterval) {
+  const list = Array.isArray(sets) ? sets : []
+  if (isInterval) return _expandIntervalBlock(list[0] || {}).filter(p => p.phase === 'work').length
+  return list.length
+}
+
 // THE prescription formatter. One set → one human string ("8–10 reps · 60kg · RPE 8").
 //
 // This existed as TWO near-identical copies — openSessionDetail and openTemplate — and they had
@@ -637,12 +651,14 @@ async function renderClientWorkoutsPage(el) {
                             // Jake, 2026-07-22: name + set count alone is "not good UX or helpful to a
                             // user who wants to look at their week ahead to see what the plan has in
                             // store for them". Show the actual prescription, sets collapsed.
-                            const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: (ex.metric_type || ex.exercise_type) === 'interval' })
+                            const _exIsInterval = (ex.metric_type || ex.exercise_type) === 'interval'
+                            const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval })
+                            const _setCount = _prescribedSetCount(ex.sets_json, _exIsInterval)
                             return `
                             <div style="padding:5px 0;border-bottom:1px solid var(--border)">
                               <div style="display:flex;justify-content:space-between;gap:8px">
                                 <span style="font-size:12px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
-                                <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
+                                <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
                               </div>
                               ${presc ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
                             </div>`

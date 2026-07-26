@@ -24,7 +24,7 @@
     const [evRes, cpRes] = await Promise.all([
       db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
       clientsId
-        ? db.from('client_programs').select('id, start_date, programs(program_phases(duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, workout_templates(id, name, workout_template_exercises(exercise_name, exercise_type, order_index, sets_json)))))').eq('client_id', clientsId).order('created_at', { ascending: false }).limit(1)
+        ? db.from('client_programs').select('id, start_date, programs(program_phases(duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, workout_templates(id, name, workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json)))))').eq('client_id', clientsId).order('created_at', { ascending: false }).limit(1)
         : Promise.resolve({ data: [] })
     ])
     events = evRes.data
@@ -243,11 +243,19 @@ function showClientDayDetail(dateStr) {
             </div>
             ${exs.length ? `
             <div style="margin-bottom:10px;padding:6px 8px;background:var(--surface-2);border-radius:8px">
-              ${exs.map(ex => `
+              ${exs.map(ex => {
+                // metric_type is the source of truth; exercise_type alone can't tell an interval
+                // block from real cardio — _deriveFromMetricType writes 'cardio' as the legacy
+                // exercise_type for both. _prescribedSetCount (app-workouts.js) reports the real
+                // work-round count (sets × cycles) for a block instead of its raw sets_json.length
+                // of 1 — see that function's comment for why.
+                const _exIsInterval = (ex.metric_type || ex.exercise_type) === 'interval'
+                const _setCount = _prescribedSetCount(ex.sets_json, _exIsInterval)
+                return `
                 <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
                   <span style="font-size:12px">${ex.exercise_name}</span>
-                  <span style="font-size:11px;color:var(--text-muted)">${ex.sets_json?.length || 0} set${(ex.sets_json?.length || 0) !== 1 ? 's' : ''}</span>
-                </div>`).join('')}
+                  <span style="font-size:11px;color:var(--text-muted)">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
+                </div>`}).join('')}
             </div>` : ''}
             <button onclick="startWorkoutRunner('${clientId}','${pw._clientTemplateId||pw.workout_templates?.id}');document.getElementById('client-day-modal').remove()" class="btn-primary" style="width:100%">▶ Start workout</button>
           </div>`}).join('') : `

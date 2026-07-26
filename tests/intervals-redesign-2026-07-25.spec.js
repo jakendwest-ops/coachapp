@@ -205,4 +205,17 @@ test.describe('Interval prescription display (2026-07-25)', () => {
     expect(s[1]).toContain('400')
     expect(s[2]).toContain('3 cycles')
   })
+
+  test('the set-count badge reports real work rounds for an interval block, not sets_json.length', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => ({
+      // A block is always ONE sets_json entry — a raw .length badge would read "1 set" for this
+      // 4-set x 3-cycle session (12 work rounds), which is the regression the block model introduced.
+      interval: _prescribedSetCount([{ workSecs: 60, restSecs: 30, sets: 4, cycles: 3, recoverySecs: 120 }], true),
+      // Non-interval passthrough must be untouched — still the plain row count.
+      plain: _prescribedSetCount([{}, {}, {}], false),
+    }))
+    expect(r.interval).toBe(12)
+    expect(r.plain).toBe(3)
+  })
 })
