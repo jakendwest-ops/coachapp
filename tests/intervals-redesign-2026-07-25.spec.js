@@ -795,6 +795,31 @@ test.describe('Progress aggregates exclude warmup/cooldown (2026-07-26, Task 8)'
     expect(m.sets).toBe(2)
     expect(m.volume).toBe(1000)
   })
+
+  // Fix round 2 (2026-07-26): _exerciseRecords and _metricPointsFor were widened to treat 'interval'
+  // as cardio-family, but _diaryExMetrics — edited in this SAME task for the sets-count fix above —
+  // kept its narrow `mt === 'cardio'` gate. An interval fell through to the weight_reps branch and
+  // the Progress > Per Session diary (plus its mini trend chart) showed "0 kg" / a flat zero line for
+  // every interval session, permanently. This pins the diary headline itself, not just the set count.
+  test('an interval exercise reports a distance/duration headline in the diary, not "0 kg"', async ({ page }) => {
+    await loginAsPT(page)
+    const m = await page.evaluate(() => {
+      const metrics = _diaryExMetrics({
+        exercise_name: 'Row', exercise_type: 'cardio', metric_type: 'interval',
+        workout_log_sets: [
+          { set_number: 1, phase: 'warmup',   duration_seconds: 60 },
+          { set_number: 1, phase: 'work',     duration_seconds: 30, distance_m: 200 },
+          { set_number: 2, phase: 'work',     duration_seconds: 30, distance_m: 210 },
+          { set_number: 3, phase: 'cooldown', duration_seconds: 45 },
+        ]
+      })
+      return { ...metrics, expectedFmt: fmtDistanceM(410) }
+    })
+    expect(m.isCardio).toBe(true)
+    expect(m.main.fmt).not.toContain('kg')  // the weight_reps branch this used to fall through to
+    expect(m.main.raw).toBe(410)            // work-round distance only (200 + 210)
+    expect(m.main.fmt).toBe(m.expectedFmt)  // "410 m" — real distance formatting, not a bare 0
+  })
 })
 
 test.describe('Interval exercises chart as cardio-family (2026-07-26, Task 8)', () => {

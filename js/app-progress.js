@@ -1082,7 +1082,7 @@ function _diaryExMetrics(ex) {
   const num = v => parseFloat(v) || 0
   const mt = ex.metric_type || (ex.exercise_type === 'cardio' ? 'cardio' : 'weight_reps')
   const setLine = _setDetailsLine(sets)
-  if (mt === 'cardio') {
+  if (mt === 'cardio' || mt === 'interval') { // interval is cardio-family — see _TREND_METRICS.interval
     const dist = sets.reduce((s, x) => s + num(x.distance_m), 0)
     const dur  = sets.reduce((s, x) => s + (parseInt(x.duration_seconds) || 0), 0)
     const useDist = dist > 0
