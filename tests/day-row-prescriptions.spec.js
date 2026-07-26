@@ -161,4 +161,47 @@ test.describe('Set prescription formatting', () => {
     expect(r.templateCardEscapes).toBe(true)
     expect(r.escapedPayload).toBe(true)
   })
+
+  // Fix round 2 of the intervals-redesign Task 4 badge fix (2026-07-26): showClientDayDetail
+  // (app-calendar-goals.js) interpolated the workout template's name and each exercise's name
+  // straight into innerHTML, unescaped — a THIRD surface with the same client→coach stored-XSS
+  // shape as the test above, on a modal the _fmtSetDetail audit never covered (it doesn't call the
+  // formatter at all — just a bare name + set-count badge). This codebase has shipped this exact
+  // bug three separate times (2026-07-13, 2026-07-18, 2026-07-23), so a source-regex check alone
+  // felt thin here — this one is behavioural: it renders real payloads through the actual function
+  // and asserts the browser never materialised them as elements (a raw sink would create a real
+  // <img>/<b> tag with our marker id; an escaped one renders the tag as inert text).
+  test('showClientDayDetail escapes workout and exercise names before innerHTML', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      window._calClientId = 'test-client'
+      window._calProgramWorkouts = {
+        '2026-07-26': [{
+          id: 'pw-1',
+          workout_templates: {
+            id: 'tmpl-1',
+            name: '<b id="xss-name-marker">Evil</b>',
+            workout_template_exercises: [{
+              exercise_name: '<img src=x id="xss-ex-marker" onerror="window.__xssFired=true">',
+              exercise_type: 'strength', metric_type: 'weight_reps', order_index: 0, sets_json: []
+            }]
+          }
+        }]
+      }
+      window.__xssFired = false
+      showClientDayDetail('2026-07-26')
+      const result = {
+        nameMarkerCreated: !!document.getElementById('xss-name-marker'),
+        exMarkerCreated: !!document.getElementById('xss-ex-marker'),
+        xssFired: window.__xssFired,
+        modalMounted: !!document.getElementById('client-day-modal'),
+      }
+      document.getElementById('client-day-modal')?.remove()
+      return result
+    })
+    expect(r.modalMounted).toBe(true)   // sanity: the function actually ran and mounted the modal
+    expect(r.nameMarkerCreated).toBe(false)
+    expect(r.exMarkerCreated).toBe(false)
+    expect(r.xssFired).toBe(false)
+  })
 })
