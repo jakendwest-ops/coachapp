@@ -219,3 +219,48 @@ test.describe('Interval prescription display (2026-07-25)', () => {
     expect(r.plain).toBe(3)
   })
 })
+
+test.describe('Interval runner phase walk (2026-07-25)', () => {
+  test('an interval exercise carries an expanded phase list and starts at phase 0', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ warmupSecs: 60, workSecs: 30, restSecs: 30, sets: 4, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      return { n: _runner.exercises[0].phases.length, first: _runner.exercises[0].phases[0].phase }
+    })
+    expect(r.n).toBe(9)          // warmup + 4 x (work + rest)
+    expect(r.first).toBe('warmup')
+  })
+
+  test('advancing walks phases in order and stops at the end', async ({ page }) => {
+    await loginAsPT(page)
+    const seq = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ workSecs: 10, restSecs: 5, sets: 2, cycles: 1, cooldownSecs: 20 }]
+      }], exIdx: 0, startTime: Date.now() }
+      const ex = _runner.exercises[0]
+      _initIntervalPhases(ex)
+      return ex.phases.map(p => p.phase)
+    })
+    expect(seq).toEqual(['work', 'rest', 'work', 'rest', 'cooldown'])
+  })
+
+  test('a distance work round is marked as needing a manual advance', async ({ page }) => {
+    await loginAsPT(page)
+    const p = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Run', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ isDistanceBased: true, workDistanceM: 400, restSecs: 60, sets: 3, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      return _runner.exercises[0].phases.find(x => x.phase === 'work')
+    })
+    // secs:null is the runner's signal to show Done instead of auto-advancing — and is why distance
+    // rounds no longer dead-end the way they did before this redesign.
+    expect(p.secs).toBeNull()
+  })
+})

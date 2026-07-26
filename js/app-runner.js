@@ -45,6 +45,11 @@ async function _startFreshRunner(clientId) {
   document.getElementById('runner-setup')?.remove()
 
   _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null }
+  // Interval exercises store ONE sets_json entry describing the whole block, so the generic
+  // `targetSets: ex.sets_json?.length || 3` above always comes out as 1 (or 3, on a legacy fallback)
+  // for them — expand now so targetSets reflects the real work-round count everywhere it's read
+  // (round labels, badges, hitTarget checks), not the raw row count.
+  exercises.forEach(ex => { if (_isIntervalExercise(ex)) _initIntervalPhases(ex) })
   renderRunner()
   _startRunnerTimerTick()
   _startRunnerDraftSafetyNet()
@@ -1276,6 +1281,52 @@ function renderRunnerCountIn() {
   mountModal(overlay)
 }
 
+// Interval exercises walk a pre-expanded phase list rather than chaining one-shot callbacks. The old
+// approach (work -> rest -> _afterRest) is a single-slot callback with no queue; across 8 phase types
+// and 2 nesting levels it becomes the shape that has produced stray-timer bugs here before.
+function _isIntervalExercise(ex) {
+  return !!ex && _exMetricType(ex) === 'interval'
+}
+
+function _initIntervalPhases(ex) {
+  ex.phases = _expandIntervalBlock(ex.sets_json?.[0] || {})
+  ex.targetSets = ex.phases.filter(p => p.phase === 'work').length
+  _runner._phaseIdx = 0
+  return ex.phases
+}
+
+// Starts the phase at `idx`. Timed phases auto-advance; a distance work round (secs === null) waits
+// for the athlete's Done tap, since there is no sensor to end it.
+function _startPhaseAt(idx) {
+  const ex = _runner.exercises[_runner.exIdx]
+  const phases = ex.phases || []
+  _runner._phaseIdx = idx
+  if (idx >= phases.length) { _finishIntervalExercise(); return }
+  const p = phases[idx]
+  if (p.phase === 'rest' || p.phase === 'recovery') {
+    // Rest and recovery reuse the existing rest bar and are never logged.
+    _runner._afterRest = () => _advancePhase()
+    startRestTimer(p.secs)
+    return
+  }
+  if (p.secs == null) { renderIntervalTimer(); return }   // distance round — Done tap advances
+  startIntervalPhaseTimer(p.secs)
+}
+
+function _advancePhase() {
+  _startPhaseAt((_runner._phaseIdx || 0) + 1)
+}
+
+// The phase list is exhausted — the block behaves like any other exercise's set-target being hit.
+// No extra rest is started here: the phase list already ended on a timed rest/recovery/cooldown, so
+// adding another would double up. Mirrors the "hitTarget" branch below (next exercise, else finish).
+function _finishIntervalExercise() {
+  stopIntervalTimer()
+  const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+  if (nextExIdx !== -1) { _runner.exIdx = nextExIdx; renderRunner() }
+  else showRunnerFinish()
+}
+
 function startIntervalTimer(secs) {
   stopIntervalTimer()
   _runner._intervalSecs = secs
@@ -1319,6 +1370,44 @@ function startIntervalTimer(secs) {
         }
         startRestTimer(restSecs)
       }
+      renderRunner()
+      return
+    }
+    if (_runner._intervalRemaining <= 5) speakCue(String(_runner._intervalRemaining))
+    const el = document.getElementById('wr-interval-countdown')
+    if (el) {
+      el.textContent = fmtRestCountdown(_runner._intervalRemaining)
+      el.style.color = _runner._intervalRemaining <= 5 ? '#ef4444' : 'var(--accent)'
+    }
+    const ring = document.getElementById('wr-interval-ring')
+    if (ring) {
+      const circ = 2 * Math.PI * 54
+      const pct = _runner._intervalRemaining / _runner._intervalSecs
+      ring.style.strokeDashoffset = circ * (1 - pct)
+    }
+  }, 1000)
+}
+
+// Interval-exercise counterpart to startIntervalTimer, for a single timed PHASE (work/warmup/cooldown)
+// rather than a whole work->rest->work round trip. Shares the same _runner._interval* state and
+// stopIntervalTimer/renderIntervalTimer as the legacy timer, so every existing teardown path
+// (stopIntervalTimer itself, discardRunner, showRunnerFinish, runnerGoBack, skipToNextExercise) already
+// clears it correctly without any changes there. Do not repurpose startIntervalTimer for this — steady-
+// state cardio still owns it and is out of scope for the interval redesign.
+function startIntervalPhaseTimer(secs) {
+  stopIntervalTimer()
+  _runner._intervalSecs = secs
+  _runner._intervalRemaining = secs
+  _runner._intervalRunning = true
+  renderIntervalTimer()
+  _runner._intervalInterval = setInterval(() => {
+    _runner._intervalRemaining--
+    if (_runner._intervalRemaining <= 0) {
+      stopIntervalTimer()
+      playBeep(1046, 0.5, 0.95)
+      const p = (_runner.exercises[_runner.exIdx].phases || [])[_runner._phaseIdx] || {}
+      if (p.phase === 'work' || p.phase === 'warmup' || p.phase === 'cooldown') _logIntervalPhase(p)
+      _advancePhase()
       renderRunner()
       return
     }
