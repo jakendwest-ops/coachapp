@@ -1066,11 +1066,19 @@ function _setDetailsLine(sets) {
   }).filter(Boolean).join(', ')
 }
 
+// Warmup and cooldown are recorded (Jake, 2026-07-25) but are not training volume. Every aggregate
+// must filter through this, or recording a warmup silently inflates every session's set count.
+// NULL phase = an ordinary set: all strength, all steady-state cardio, and every row logged before
+// the phase column existed.
+function _countableSets(sets) {
+  return (sets || []).filter(s => !s.phase || s.phase === 'work')
+}
+
 // One exercise-occurrence's metrics for the diary: a `main` value (top weight / cardio distance-or-time)
 // and a `sec` value (volume / cardio time), each with a raw number + display + delta-number formatter,
 // plus the set-details line and strength totals used for the per-workout summary.
 function _diaryExMetrics(ex) {
-  const sets = ex.workout_log_sets || []
+  const sets = _countableSets(ex.workout_log_sets)
   const num = v => parseFloat(v) || 0
   const mt = ex.metric_type || (ex.exercise_type === 'cardio' ? 'cardio' : 'weight_reps')
   const setLine = _setDetailsLine(sets)
@@ -1112,7 +1120,7 @@ async function renderProgressPerSession(clientId, el) {
   _perfSessionCharts.forEach(c => c.destroy())
   _perfSessionCharts = []
   const { data: sessions } = await db.from('workout_logs')
-    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr, avg_watts))')
+    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr, avg_watts, phase))')
     .eq('client_id', clientId).order('date', { ascending: false }).limit(10)
   if (myToken !== _perfSessionToken) return
   if (!sessions?.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet. Your recent workouts will show here.</p></div>'; return }
@@ -1343,11 +1351,12 @@ const _TREND_RANGES = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365, 'All': Infinit
 // One point per session, with only the keys relevant to the metric_type populated.
 function _metricPointsFor(ex) {
   const points = (ex.sessions || []).map(sess => {
-    const sets = sess.sets || []
+    const sets = _countableSets(sess.sets)
     const num = (v) => parseFloat(v) || 0
     const p = { date: sess.date }
     switch (ex.metricType) {
-      case 'cardio': {
+      case 'cardio':
+      case 'interval': {
         p.totalDistance = sets.reduce((s, x) => s + num(x.distance_m), 0)          // metres
         p.totalDuration = sets.reduce((s, x) => s + (parseInt(x.duration_seconds) || 0), 0)
         p.pace = p.totalDistance > 0 ? p.totalDuration / (p.totalDistance / 1000) : 0 // sec/km
@@ -1444,7 +1453,7 @@ async function renderProgressStrength(el) {
 
 async function _buildExerciseSeries(clientId) {
   const { data: exRows } = await db.from('workout_log_exercises')
-    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side, avg_watts)')
+    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side, avg_watts, phase)')
     .eq('workout_logs.client_id', clientId).order('exercise_name')
   const byName = {}
   for (const row of (exRows || [])) {
@@ -1476,7 +1485,12 @@ const _TREND_METRICS = {
   jump_height:   [['bestHeight','Height','max', v => fmtJumpHeight(v, { spaced: true })]],
   jump_distance: [['bestDistance','Distance','max', v => v.toFixed(2)+' m']],
 }
-const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', unilateral:'Unilateral', timed_hold:'Timed', jump_height:'Jump', jump_distance:'Jump' }
+// An interval IS a cardio-family exercise for charting purposes (distance/duration/pace/HR/watts) —
+// _metricPointsFor's 'interval' case computes the exact same fields as 'cardio' (aggregated over work
+// rounds only, via _countableSets). Aliasing the reference here, instead of a hand-copied parallel
+// array, is what keeps the two from drifting apart the way this codebase's duplicated logic has before.
+_TREND_METRICS.interval = _TREND_METRICS.cardio
+const _TREND_BADGE = { weight_reps:'Strength', cardio:'Cardio', interval:'Cardio', unilateral:'Unilateral', timed_hold:'Timed', jump_height:'Jump', jump_distance:'Jump' }
 
 // B6 — our own metric colour palette (NOT SetGraph's assignment). Mid-tone hexes that read on both
 // light + dark themes. Used for the active chip, the trend chart line, and the diary summary tiles so
@@ -1493,7 +1507,7 @@ const _METRIC_COLORS = {
 // ③ Tasks 2–3; weight_reps/unilateral compute weight/reps records now.
 function _exerciseRecords(ex) {
   const mt = ex.metricType
-  if (mt === 'cardio') {
+  if (mt === 'cardio' || mt === 'interval') { // interval is cardio-family — see _TREND_METRICS.interval
     const pts = _metricPointsFor(ex).points
     const dist = Math.max(0, ...pts.map(p => p.totalDistance || 0))
     const dur  = Math.max(0, ...pts.map(p => p.totalDuration || 0))
@@ -1516,7 +1530,7 @@ function _exerciseRecords(ex) {
     if (bestL > 0 && bestR > 0) rows.push(['L/R balance', Math.round(Math.min(bestL, bestR) / Math.max(bestL, bestR) * 100) + '%'])
     return rows
   }
-  const flat = (ex.sessions || []).flatMap(s => s.sets || [])
+  const flat = _countableSets((ex.sessions || []).flatMap(s => s.sets || []))
   if (mt === 'timed_hold') {
     const best = Math.max(0, ...flat.map(x => parseInt(x.duration_seconds) || 0))
     return best > 0 ? [['Best hold', fmtRestCountdown(best)]] : []
@@ -1530,7 +1544,7 @@ function _exerciseRecords(ex) {
     return best > 0 ? [['Best distance', best.toFixed(2) + ' m']] : []
   }
   const num = v => parseFloat(v) || 0
-  const allSets = (ex.sessions || []).flatMap(s => s.sets || [])
+  const allSets = _countableSets((ex.sessions || []).flatMap(s => s.sets || []))
   const heaviest = Math.max(0, ...allSets.map(s => num(s.weight_kg)))
   const best1rm  = Math.max(0, ...allSets.map(s => _estimate1RM(s.weight_kg, s.reps_achieved) || 0))
   let bestSet = null // the single set with the highest weight×reps
@@ -1540,7 +1554,7 @@ function _exerciseRecords(ex) {
   }
   let bestSessVol = 0
   for (const sess of (ex.sessions || [])) {
-    const vol = (sess.sets || []).reduce((t, s) => t + num(s.weight_kg) * (parseInt(s.reps_achieved) || 0), 0)
+    const vol = _countableSets(sess.sets).reduce((t, s) => t + num(s.weight_kg) * (parseInt(s.reps_achieved) || 0), 0)
     if (vol > bestSessVol) bestSessVol = vol
   }
   const rows = []

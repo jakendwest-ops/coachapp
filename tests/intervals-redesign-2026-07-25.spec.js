@@ -765,3 +765,59 @@ test.describe('Interval save — phase persistence (2026-07-26, Task 7)', () => 
     expect(r.phases.every(p => p === null)).toBe(true)
   })
 })
+
+// Task 8 — Progress aggregates must exclude warmup/cooldown, and interval must chart as cardio-family.
+// Both pure-function tests: no DB, no fixtures to clean up.
+test.describe('Progress aggregates exclude warmup/cooldown (2026-07-26, Task 8)', () => {
+  test('warmup and cooldown rows do not inflate set counts or volume', async ({ page }) => {
+    await loginAsPT(page)
+    const m = await page.evaluate(() => _diaryExMetrics({
+      exercise_name: 'Row', exercise_type: 'cardio', metric_type: 'interval',
+      workout_log_sets: [
+        { set_number: 1, phase: 'warmup',   duration_seconds: 60 },
+        { set_number: 1, phase: 'work',     duration_seconds: 30, distance_m: 200 },
+        { set_number: 2, phase: 'work',     duration_seconds: 30, distance_m: 210 },
+        { set_number: 3, phase: 'cooldown', duration_seconds: 45 },
+      ]
+    }))
+    expect(m.sets).toBe(2)   // two work rounds — not four rows
+  })
+
+  test('an ordinary strength exercise (null phase) still counts every set — the filter must not exclude untagged rows', async ({ page }) => {
+    await loginAsPT(page)
+    const m = await page.evaluate(() => _diaryExMetrics({
+      exercise_name: 'Squat', exercise_type: 'strength', metric_type: 'weight_reps',
+      workout_log_sets: [
+        { set_number: 1, weight_kg: 100, reps_achieved: 5 },
+        { set_number: 2, weight_kg: 100, reps_achieved: 5 },
+      ]
+    }))
+    expect(m.sets).toBe(2)
+    expect(m.volume).toBe(1000)
+  })
+})
+
+test.describe('Interval exercises chart as cardio-family (2026-07-26, Task 8)', () => {
+  test('an interval exercise produces non-empty cardio-family chart points instead of falling through to empty weight_reps metrics', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const ex = { name: 'Row', metricType: 'interval', sessions: [
+        { date: '2026-07-01', sets: [
+          { phase: 'warmup',   duration_seconds: 60 },
+          { phase: 'work',     duration_seconds: 30, distance_m: 200 },
+          { phase: 'work',     duration_seconds: 30, distance_m: 210 },
+          { phase: 'cooldown', duration_seconds: 45 },
+        ] }
+      ] }
+      const points = _metricPointsFor(ex).points
+      const metrics = _TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps
+      return { point: points[0], metricKeys: metrics.map(x => x[0]) }
+    })
+    // Cardio-family chip set, not the weight_reps default (topWeight/e1rm/volume/intensity).
+    expect(r.metricKeys).toEqual(expect.arrayContaining(['totalDistance', 'totalDuration']))
+    expect(r.point.topWeight).toBeUndefined()
+    // And aggregated from work rounds only — warmup/cooldown seconds must not leak into the totals.
+    expect(r.point.totalDistance).toBe(410)   // 200 + 210, not counting warmup/cooldown (no distance anyway)
+    expect(r.point.totalDuration).toBe(60)    // 30 + 30 work only — excludes the 60s warmup + 45s cooldown
+  })
+})
