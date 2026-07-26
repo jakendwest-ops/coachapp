@@ -239,7 +239,7 @@ function showClientDayDetail(dateStr) {
           <div style="padding:14px 0;border-bottom:1px solid var(--border)">
             ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${workouts.length}</div>` : ''}
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '10px'}">
-              <span style="font-size:15px;font-weight:600">${(pw.workout_templates?.name || 'Workout').replace(/ — W\d+/, '')}</span>
+              <span style="font-size:15px;font-weight:600">${escapeHtml((pw.workout_templates?.name || 'Workout').replace(/ — W\d+/, ''))}</span>
             </div>
             ${exs.length ? `
             <div style="margin-bottom:10px;padding:6px 8px;background:var(--surface-2);border-radius:8px">
@@ -253,7 +253,7 @@ function showClientDayDetail(dateStr) {
                 const _setCount = _prescribedSetCount(ex.sets_json, _exIsInterval)
                 return `
                 <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-                  <span style="font-size:12px">${ex.exercise_name}</span>
+                  <span style="font-size:12px">${escapeHtml(ex.exercise_name)}</span>
                   <span style="font-size:11px;color:var(--text-muted)">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
                 </div>`}).join('')}
             </div>` : ''}
