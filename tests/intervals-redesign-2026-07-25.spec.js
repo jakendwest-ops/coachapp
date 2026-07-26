@@ -336,4 +336,39 @@ test.describe('Interval runner Start-trigger wiring (2026-07-26 fix round 1)', (
     expect(r.targetSets).toBe(8)          // 4 sets x 2 cycles of work — not sets_json.length (always 1)
     expect(r.rawSetsJsonLength).toBe(1)
   })
+
+  // Fix round 2/5: the idle (pre-Start) card's LOG button ran the plain single-round cardio log path,
+  // which bypasses the phase walk entirely — a bogus, non-phase-tagged set with no warning. A block has
+  // one sensible entry point (Start); LOG is hidden for interval exercises, same invariant reason
+  // "+ Add extra set" was hidden in fix round 1. The distance-round Done control lives on the in-progress
+  // overlay (renderIntervalTimer's own "Done early — LOG" button), not on this idle card, so hiding this
+  // LOG does not remove any athlete's only way to finish a round.
+  test('an interval exercise hides the idle-card LOG button; steady-state cardio keeps it', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const hasLogButton = () => Array.from(document.querySelectorAll('#workout-runner button'))
+        .some(b => b.textContent.trim() === 'LOG')
+
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ workSecs: 30, restSecs: 30, sets: 4, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      renderRunner()
+      const intervalHasLog = hasLogButton()
+      discardRunner()
+
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Bike', type: 'cardio', metricType: 'cardio', loggedSets: [],
+        sets_json: [{ duration: '5:00' }]
+      }], exIdx: 0, startTime: Date.now() }
+      renderRunner()
+      const cardioHasLog = hasLogButton()
+      discardRunner()
+
+      return { intervalHasLog, cardioHasLog }
+    })
+    expect(r.intervalHasLog).toBe(false)
+    expect(r.cardioHasLog).toBe(true)
+  })
 })
