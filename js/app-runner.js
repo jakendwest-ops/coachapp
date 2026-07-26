@@ -2158,6 +2158,11 @@ async function saveRunnerSession() {
         // or an in-flight session started before this change still saves the right number.
         if (s.distanceM)     row.distance_m = Math.round(parseFloat(s.distanceM))
         else if (s.distance) row.distance_m = Math.round(parseFloat(s.distance) * 1000)
+        // Interval phase (warmup/work/cooldown only — _logIntervalPhase's own guard is the sole
+        // producer of this key; rest/recovery/countdown never reach it). Ordinary strength sets and
+        // steady-state cardio sets never carry `phase`, so the column stays null for them — matching
+        // the CHECK constraint (phase is null or in ('warmup','work','cooldown')).
+        if (s.phase) row.phase = s.phase
       } else {
         // Timed hold: duration (+ optional load). Distance-strength / jump_distance: distance_m in METRES
         // (not km). Jump height: height_cm (populated by ②c). Plus the plain weight/reps/rpe case.

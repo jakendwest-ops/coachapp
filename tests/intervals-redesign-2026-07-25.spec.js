@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, clickVisible } = require('./helpers')
 
 // The block model's whole value is that it's a pure function: block in, ordered phases out.
 // No DOM, no Supabase, no timers — so these run fast and pin the arithmetic exactly.
@@ -675,5 +675,93 @@ test.describe('Interval runner overlay (2026-07-26, Task 6)', () => {
     expect(r.firstPhase).toBe('countdown')
     expect(r.phaseIdxAfterClick).toBe(1)   // the walk still advanced, straight into the work phase
     expect(r.loggedSets).toEqual([])       // but nothing was logged for the skipped countdown
+  })
+})
+
+// Task 7, 2026-07-26: saveRunnerSession had no concept of `phase` at all — the workout_log_sets.phase
+// column existed (CHECK constraint: null, or one of 'warmup'/'work'/'cooldown') but nothing wrote it.
+// A review found that tapping Done during the get-ready countdown pushed a phantom {phase:'countdown'}
+// entry into loggedSets, and it would have persisted as a real row precisely BECAUSE save had no
+// handling for the key at all. _logIntervalPhase's own guard (see above, and both call sites at the
+// zero-tick / manual Done) already keeps rest/recovery/countdown out of loggedSets in the first place —
+// these tests pin the other half of the fix: that whatever DOES reach loggedSets with a `phase` key
+// round-trips into the DB unchanged, and that ordinary (non-interval) sessions are untouched.
+test.describe('Interval save — phase persistence (2026-07-26, Task 7)', () => {
+  test('an interval session persists phase per set; rest was never logged, so there is nothing for save to have written', async ({ page }) => {
+    await loginAsPT(page)
+    await clickVisible(page, ['#vs-personal', '#mvs-personal']) // solo view — self-owned client, avoids cross-tenant setup
+    await page.waitForTimeout(1500)
+
+    const r = await page.evaluate(async () => {
+      const clientId = await _getCurrentClientId()
+      const tag = '[E2E] interval-phase-save ' + Date.now()
+      _runner = { clientId, name: tag, date: new Date().toISOString().split('T')[0], exercises: [{
+        name: tag + ' Row', type: 'cardio', metricType: 'interval', exerciseId: null, loggedSets: [],
+        sets_json: [{ warmupSecs: 60, workSecs: 30, restSecs: 30, sets: 3, cycles: 1, cooldownSecs: 45 }]
+      }], exIdx: 0, startTime: Date.now() }
+      const ex = _runner.exercises[0]
+      _initIntervalPhases(ex)
+      // Same guard both real call sites use (startIntervalPhaseTimer's zero-tick, _doneIntervalPhase) —
+      // rest is timed only and never reaches _logIntervalPhase, so it never becomes a loggedSet at all.
+      ex.phases.forEach(p => { if (p.phase === 'work' || p.phase === 'warmup' || p.phase === 'cooldown') _logIntervalPhase(p) })
+      const loggedPhaseCount = ex.loggedSets.length
+      await saveRunnerSession()
+
+      const { data: log } = await db.from('workout_logs').select('id').eq('client_id', clientId).eq('name', tag).single()
+      try {
+        const { data: exs } = await db.from('workout_log_exercises')
+          .select('id, workout_log_sets(set_number, phase)').eq('log_id', log.id)
+        const rows = exs[0].workout_log_sets.sort((a, b) => a.set_number - b.set_number)
+        return { loggedPhaseCount, rowCount: rows.length, phases: rows.map(s => s.phase) }
+      } finally {
+        // try/finally so a failed assertion above can never strand [E2E] rows (les-041)
+        const { data: exs2 } = await db.from('workout_log_exercises').select('id').eq('log_id', log.id)
+        await db.from('workout_log_sets').delete().in('workout_log_exercise_id', exs2.map(e => e.id))
+        await db.from('workout_log_exercises').delete().eq('log_id', log.id)
+        await db.from('workout_logs').delete().eq('id', log.id)
+      }
+    })
+
+    // warmup + 3 x work + cooldown = 5 logged phases; the 3 rests between rounds were never logged in
+    // the first place (timed only), so there was never a row for save to have written for them.
+    expect(r.loggedPhaseCount).toBe(5)
+    expect(r.rowCount).toBe(5)
+    expect(r.phases).toEqual(['warmup', 'work', 'work', 'work', 'cooldown'])
+  })
+
+  test('a normal strength + steady-state cardio session still writes rows with phase null — unaffected by the interval save path', async ({ page }) => {
+    await loginAsPT(page)
+    await clickVisible(page, ['#vs-personal', '#mvs-personal'])
+    await page.waitForTimeout(1500)
+
+    const r = await page.evaluate(async () => {
+      const clientId = await _getCurrentClientId()
+      const tag = '[E2E] normal-session-phase-null ' + Date.now()
+      _runner = {
+        clientId, name: tag, date: new Date().toISOString().split('T')[0], exercises: [
+          { name: tag + ' Squat', type: 'strength', metricType: 'weight_reps', exerciseId: null,
+            loggedSets: [{ weight: '100', reps: '5' }, { weight: '100', reps: '5' }] },
+          { name: tag + ' Bike', type: 'cardio', metricType: 'cardio', exerciseId: null,
+            loggedSets: [{ duration: '20:00', distance: '5' }] }
+        ]
+      }
+      await saveRunnerSession()
+
+      const { data: log } = await db.from('workout_logs').select('id').eq('client_id', clientId).eq('name', tag).single()
+      try {
+        const { data: exs } = await db.from('workout_log_exercises')
+          .select('id, workout_log_sets(phase, reps_achieved, duration_seconds)').eq('log_id', log.id)
+        const allSets = exs.flatMap(e => e.workout_log_sets)
+        return { count: allSets.length, phases: allSets.map(s => s.phase) }
+      } finally {
+        const { data: exs2 } = await db.from('workout_log_exercises').select('id').eq('log_id', log.id)
+        await db.from('workout_log_sets').delete().in('workout_log_exercise_id', exs2.map(e => e.id))
+        await db.from('workout_log_exercises').delete().eq('log_id', log.id)
+        await db.from('workout_logs').delete().eq('id', log.id)
+      }
+    })
+
+    expect(r.count).toBe(3)   // 2 squat sets + 1 bike set
+    expect(r.phases.every(p => p === null)).toBe(true)
   })
 })
