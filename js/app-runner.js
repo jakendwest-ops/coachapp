@@ -1547,9 +1547,16 @@ function renderIntervalTimer() {
 }
 
 // Rewires the overlay's Done control for an interval exercise (see renderIntervalTimer above): unlike
-// logRunnerSet(), this actually logs the CURRENT PHASE and advances the walk. Mirrors the zero-tick
-// branch in startIntervalPhaseTimer (stop -> log -> advance -> renderRunner) so a manual "done early"
-// tap and a timer reaching 0 behave identically.
+// logRunnerSet(), this actually logs the CURRENT PHASE and advances the walk. Deliberately mirrors the
+// zero-tick branch in startIntervalPhaseTimer — SAME phase-type guard (only work/warmup/cooldown ever
+// get logged) — not just the same stop->log->advance shape. A block's "Initial countdown"
+// (countdownSecs) expands to a timed phase too, so it renders this same overlay with this same Done
+// button; without the guard, an impatient tap during the get-ready countdown pushed a phantom
+// {phase:'countdown'} row into loggedSets — a permanent 5-second "set" in the athlete's saved history
+// that also shifted every real set's set_number up by one (array position). No beep here, unlike the
+// zero-tick: that beep alerts an athlete who ISN'T looking at the screen that time is up; a manual tap
+// means they are already looking at and touching it, so it's redundant — and would be actively
+// confusing on the countdown-skip case, which beeps for something that was just deliberately NOT logged.
 function _doneIntervalPhase() {
   _unlockAudio()
   _unlockSpeech()
@@ -1558,7 +1565,7 @@ function _doneIntervalPhase() {
   const p = (ex.phases || [])[_runner._phaseIdx]
   if (!p) return
   stopIntervalTimer()
-  _logIntervalPhase(p)
+  if (p.phase === 'work' || p.phase === 'warmup' || p.phase === 'cooldown') _logIntervalPhase(p)
   _advancePhase()
   renderRunner()
 }

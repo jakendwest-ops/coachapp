@@ -641,4 +641,39 @@ test.describe('Interval runner overlay (2026-07-26, Task 6)', () => {
     expect(r.exIdxAfterWait).toBe(1)    // still there 3.2s later — no stray timer bounced it again
     expect(r.loggedCount).toBe(1)       // exactly one logged round, not a duplicate from a leaked interval
   })
+
+  // Fix round 2/5, 2026-07-26: a block's "Initial countdown" (countdownSecs) expands to a TIMED phase,
+  // so it renders this same overlay with this same Done button. _doneIntervalPhase originally logged
+  // unconditionally (unlike the zero-tick, which only logs work/warmup/cooldown) — an impatient tap
+  // during the get-ready countdown pushed a phantom {phase:'countdown'} row into loggedSets: a permanent
+  // 5-second "set" in the athlete's saved history that also shifted every real set's set_number up by
+  // one (set_number derives from array position). No existing test configured a countdown at all, which
+  // is exactly why this slipped past review once already.
+  test('tapping Done during the initial countdown advances the walk but logs nothing', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ countdownSecs: 5, workSecs: 30, restSecs: 30, sets: 1, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      const firstPhase = _runner.exercises[0].phases[0].phase
+      _startPhaseAt(0)   // real 5s countdown timer — the block's first phase
+      await new Promise(resolve => setTimeout(resolve, 300))
+      const btn = Array.from(document.querySelectorAll('#wr-interval-overlay button')).find(b => /^Done/.test(b.textContent.trim()))
+      btn?.click()   // an impatient tap, well before the countdown would finish on its own
+      const out = {
+        firstPhase,
+        phaseIdxAfterClick: _runner._phaseIdx,
+        loggedSets: _runner.exercises[0].loggedSets,
+      }
+      stopIntervalTimer()
+      document.getElementById('wr-interval-overlay')?.remove()
+      document.getElementById('workout-runner')?.remove()
+      return out
+    })
+    expect(r.firstPhase).toBe('countdown')
+    expect(r.phaseIdxAfterClick).toBe(1)   // the walk still advanced, straight into the work phase
+    expect(r.loggedSets).toEqual([])       // but nothing was logged for the skipped countdown
+  })
 })
