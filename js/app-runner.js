@@ -1466,10 +1466,18 @@ function renderIntervalTimer() {
   const secs = _runner._intervalRemaining
   const total = _runner._intervalSecs
   const circ = 2 * Math.PI * 54
-  const pct = secs / total
   const ex = _runner.exercises[_runner.exIdx]
   const isInterval = _isIntervalExercise(ex)
   const p = isInterval ? ((ex.phases || [])[_runner._phaseIdx] || {}) : null
+  // A distance work round has no timer (secs === null) — _startPhaseAt's null-secs branch renders
+  // straight to this overlay WITHOUT ever setting _intervalRemaining/_intervalSecs, since there is
+  // nothing to count down. Dividing undefined by undefined here produced "NaN:NaN" in the ring's
+  // countdown — the first thing an athlete sees when a distance round starts. Branch on it explicitly:
+  // the ring shows no progress (an empty track — not a full circle, which would misleadingly read as
+  // "complete") and the countdown number becomes the target distance instead.
+  const isDistanceRound = isInterval && p.phase === 'work' && p.secs == null
+  const pct = isDistanceRound ? 0 : (secs / total)
+  const countdownDisplay = isDistanceRound ? escapeHtml(fmtDistanceM(p.distanceM)) : fmtRestCountdown(secs)
 
   // Non-interval (steady-state) cardio keeps its original top line and phase caption untouched —
   // out of scope for the whole interval redesign.
@@ -1495,7 +1503,7 @@ function renderIntervalTimer() {
     // cardio path and never touches the phase list. This matters most for a distance work round, where
     // there is no timer to reach zero and this tap is the athlete's ONLY way to end the round.
     doneOnclick = '_doneIntervalPhase()'
-    if (p.phase === 'work' && p.secs == null) doneLabel = `Done — ${fmtDistanceM(p.distanceM)}`
+    if (isDistanceRound) doneLabel = `Done — ${fmtDistanceM(p.distanceM)}`
   } else {
     const setNum = ex.loggedSets.length + 1
     const roundLabel = ex.targetSets > 1 ? `Round ${setNum} of ${ex.targetSets}` : `Set ${setNum}`
@@ -1516,7 +1524,7 @@ function renderIntervalTimer() {
           stroke-linecap="round" transform="rotate(-90 60 60)"
           style="transition:stroke-dashoffset .9s linear"/>
       </svg>
-      <div id="wr-interval-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
+      <div id="wr-interval-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:var(--accent)">${countdownDisplay}</div>
     </div>
     <div style="font-size:13px;color:var(--text-muted);margin-bottom:${isInterval ? '4px' : '24px'}">${phaseNameLabel}</div>
     ${isInterval ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:24px">${remainingLine}</div>` : ''}

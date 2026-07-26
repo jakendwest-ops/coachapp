@@ -521,6 +521,31 @@ test.describe('Interval runner overlay (2026-07-26, Task 6)', () => {
     expect(r.loggedDistance).toBe('400')
   })
 
+  // Fix round 1/5, 2026-07-26: a distance round's overlay divided undefined by undefined for its
+  // countdown (_intervalRemaining/_intervalSecs are never set when there is no timer to run — see
+  // _startPhaseAt's null-secs branch), rendering a literal "NaN:NaN" where the countdown ring's number
+  // goes. That's the first thing an athlete sees when a distance round starts. Asserting on the
+  // rendered text (not just internal state) is deliberate — a state-only assertion would have passed
+  // right through this exact bug, same as the button-label test above already does without noticing it.
+  test('a distance work round shows the target distance in place of the countdown, with no NaN', async ({ page }) => {
+    await loginAsPT(page)
+    const txt = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Run', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ isDistanceBased: true, workDistanceM: 400, restSecs: 30, sets: 2, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      _runner._phaseIdx = 0   // no _intervalRemaining/_intervalSecs seeded — matches how a real distance
+                              // round actually arrives here, via _startPhaseAt, which never sets them
+      renderIntervalTimer()
+      const t = document.getElementById('wr-interval-overlay')?.innerText || ''
+      document.getElementById('wr-interval-overlay')?.remove()
+      return t
+    })
+    expect(txt).not.toMatch(/NaN/)
+    expect(txt).toMatch(/400/)
+  })
+
   test('a timed work round\'s Done button also logs the phase and advances, not the legacy cardio log', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
