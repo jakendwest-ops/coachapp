@@ -264,3 +264,76 @@ test.describe('Interval runner phase walk (2026-07-25)', () => {
     expect(p.secs).toBeNull()
   })
 })
+
+// Fix round 1/5: Task 5 built the phase-walk engine but nothing actually started it — the runner's
+// "Start timer" button called startCardioTimer(), which always ran the legacy count-in/timer chain,
+// for every metric type including 'interval'. These tests pin the wiring itself, not just the pure
+// phase-expansion functions above.
+test.describe('Interval runner Start-trigger wiring (2026-07-26 fix round 1)', () => {
+  test('starting an interval exercise enters the phase walk, not the legacy count-in/timer', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Run', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ isDistanceBased: true, workDistanceM: 400, restSecs: 60, sets: 1, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      // Deliberately no _initIntervalPhases call here — startCardioTimer must build phases itself,
+      // the same way it has to for an exercise that reached the runner without going through
+      // launchRunner's mapping (e.g. added/swapped in mid-session).
+      startCardioTimer()
+      const out = {
+        phaseIdx: _runner._phaseIdx,
+        phaseCount: (_runner.exercises[0].phases || []).length,
+        firstPhase: _runner.exercises[0].phases?.[0]?.phase,
+        tookLegacyPath: !!_runner._countInInterval,   // startRunnerCountIn is the legacy entry point
+      }
+      stopIntervalTimer()
+      document.getElementById('wr-interval-overlay')?.remove()
+      return out
+    })
+    expect(r.phaseIdx).toBe(0)
+    expect(r.phaseCount).toBeGreaterThan(0)
+    expect(r.firstPhase).toBe('work')
+    expect(r.tookLegacyPath).toBe(false)
+  })
+
+  test('a plain (non-interval) cardio exercise still takes the legacy count-in/timer path, untouched', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Bike', type: 'cardio', metricType: 'cardio', loggedSets: [],
+        sets_json: [{ duration: '5:00' }]
+      }], exIdx: 0, startTime: Date.now() }
+      startCardioTimer()
+      const out = { tookLegacyPath: !!_runner._countInInterval, hasPhases: !!_runner.exercises[0].phases }
+      stopRunnerCountIn()
+      return out
+    })
+    expect(r.tookLegacyPath).toBe(true)
+    expect(r.hasPhases).toBe(false)
+  })
+
+  test("launchRunner's mapping builds phases and a real work-round targetSets, not sets_json.length", async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      window._runnerTemplates = [{
+        id: 'fake-tmpl-2026-07-26', description: null,
+        workout_template_exercises: [{
+          order_index: 0, exercise_name: 'Row', exercise_id: null, exercise_type: 'cardio', metric_type: 'interval',
+          sets_json: [{ workSecs: 30, restSecs: 30, sets: 4, cycles: 2 }],   // 8 real work rounds
+          reps: '', weight_kg: null, rest_seconds: null, notes: null, superset_group: null
+        }]
+      }]
+      window._fakeRsTemplate = 'fake-tmpl-2026-07-26'
+      window._fakeRsName = 'Fix-round test workout'
+      await _startFreshRunner('fake-client-2026-07-26')
+      const ex = _runner.exercises[0]
+      const out = { hasPhases: !!ex.phases, targetSets: ex.targetSets, rawSetsJsonLength: ex.sets_json.length }
+      discardRunner()
+      return out
+    })
+    expect(r.hasPhases).toBe(true)
+    expect(r.targetSets).toBe(8)          // 4 sets x 2 cycles of work — not sets_json.length (always 1)
+    expect(r.rawSetsJsonLength).toBe(1)
+  })
+})

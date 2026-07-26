@@ -866,10 +866,10 @@ function renderRunner() {
           <!-- Buttons -->
           <div style="display:flex;gap:8px;margin-bottom:6px">
             ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
-            ${!distBased ? `<button onclick="event.stopPropagation();startCardioTimer()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--surface-2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
+            ${(!distBased || _isIntervalExercise(ex)) ? `<button onclick="event.stopPropagation();startCardioTimer()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--surface-2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
             <button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>
           </div>
-          <button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>`
+          ${!_isIntervalExercise(ex) ? `<button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
         })() : `
         <!-- Strength input -->
         ${(() => {
@@ -1229,6 +1229,15 @@ function startCardioTimer() {
   _unlockAudio() // user gesture — unlock AudioContext for iOS
   _unlockSpeech() // prime speechSynthesis for the interval timer's spoken countdown
   const ex = _runner.exercises[_runner.exIdx]
+  // Interval exercises fork here into the phase walk instead of the legacy single-round count-in ->
+  // startIntervalTimer chain. `if (!ex.phases)` covers an exercise that reached the runner without
+  // going through launchRunner's mapping (e.g. swapped/added mid-session via _confirmRunnerExerciseFromModal,
+  // which doesn't call _initIntervalPhases). Steady-state cardio below is completely unchanged.
+  if (_isIntervalExercise(ex)) {
+    if (!ex.phases) _initIntervalPhases(ex)
+    _startPhaseAt(0)
+    return
+  }
   const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
   const durEl = document.getElementById('wr-cardio-dur')
   const secs = (durEl?.value?.trim() ? parseRest(durEl.value.trim()) : 0) || parseRest(tgt.duration) || 300
@@ -1697,14 +1706,19 @@ async function _confirmRunnerExerciseFromModal(mode) {
   const name = picked.name
   const exerciseId = picked.id || null
   const metricType = document.getElementById('att-type').value || 'weight_reps'
-  const type = metricType === 'cardio' ? 'cardio' : 'strength'
   const notes = document.getElementById('att-notes').value.trim() || null
   const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   const sets = window._templateSets || []
   // Shared with saveExerciseToTemplate — one allowlist, so these two cannot drift again (les-037).
   // `derived` reproduces exactly what this function used to inline: unilateral === metricType is
-  // 'unilateral', timed === metricType is 'timed_hold'. Same helper the builder uses.
+  // 'unilateral', timed === metricType is 'timed_hold'. Same helper the builder uses. `type` (ex.type,
+  // the legacy column the runner's cardio-vs-strength render branch and startCardioTimer both gate on)
+  // now comes from the same derivation, not a separate inline `metricType === 'cardio' ? ... : 'strength'`
+  // — that old ternary didn't know about 'interval', so a mid-session swap/add to Intervals silently
+  // typed the exercise 'strength' and could never reach the cardio branch or the phase-walk Start
+  // trigger. Found 2026-07-26 while wiring that trigger; same les-036/037 drift shape.
   const derived = _deriveFromMetricType(metricType)
+  const type = derived.exercise_type
   const cleanSets = _cleanTemplateSets(sets, derived)
   const oneRM = await _lookupClientOneRM(name, exerciseId)
   closeModal('add-to-template-modal')
