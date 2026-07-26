@@ -432,3 +432,188 @@ test.describe('Interval runner Start-trigger wiring (2026-07-26 fix round 1)', (
     expect(r.leakedOverlay).toBe(false)
   })
 })
+
+test.describe('Interval runner overlay (2026-07-26, Task 6)', () => {
+  test('the overlay names the current phase and shows set/cycle position', async ({ page }) => {
+    await loginAsPT(page)
+    const txt = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ workSecs: 30, restSecs: 30, sets: 4, cycles: 2 }]
+      }], exIdx: 0, startTime: Date.now(), _intervalRemaining: 30, _intervalSecs: 30 }
+      _initIntervalPhases(_runner.exercises[0])
+      _runner._phaseIdx = 0
+      renderIntervalTimer()
+      const t = document.getElementById('wr-interval-overlay')?.innerText || ''
+      document.getElementById('wr-interval-overlay')?.remove()
+      return t
+    })
+    expect(txt).toMatch(/WORK/i)
+    expect(txt).toMatch(/Set 1 of 4/i)
+    expect(txt).toMatch(/Cycle 1 of 2/i)
+  })
+
+  test('the overlay shows a remaining-total line summing the phases still ahead', async ({ page }) => {
+    await loginAsPT(page)
+    const txt = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ workSecs: 30, restSecs: 30, sets: 2, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now(), _intervalRemaining: 30, _intervalSecs: 30 }
+      _initIntervalPhases(_runner.exercises[0])
+      _runner._phaseIdx = 0   // work+rest+work+rest still ahead = 30+30+30+30 = 2:00
+      renderIntervalTimer()
+      const t = document.getElementById('wr-interval-overlay')?.innerText || ''
+      document.getElementById('wr-interval-overlay')?.remove()
+      return t
+    })
+    expect(txt).toMatch(/2:00/)
+  })
+
+  test('the remaining-total line is qualified with + when a distance round lies ahead', async ({ page }) => {
+    await loginAsPT(page)
+    const txt = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Run', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ isDistanceBased: true, workDistanceM: 400, restSecs: 30, sets: 2, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now(), _intervalRemaining: 30, _intervalSecs: 30 }
+      _initIntervalPhases(_runner.exercises[0])
+      _runner._phaseIdx = 0   // both work rounds are unknowable — only the two 30s rests are countable
+      renderIntervalTimer()
+      const t = document.getElementById('wr-interval-overlay')?.innerText || ''
+      document.getElementById('wr-interval-overlay')?.remove()
+      return t
+    })
+    expect(txt).toMatch(/\+1:00/)
+  })
+
+  // The Task 5 carry-forward fix: the overlay's Done control used to always call the legacy
+  // logRunnerSet(), which never touches the phase list — so a distance round (which has no timer and
+  // relies on this tap as its ONLY way to end) froze the walk forever. It must now log the phase and
+  // advance instead, and read the target distance in its own label.
+  test('a distance work round shows a Done button carrying the target distance, wired to log + advance', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Run', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ isDistanceBased: true, workDistanceM: 400, restSecs: 30, sets: 2, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      _runner._phaseIdx = 0
+      renderIntervalTimer()
+      const btn = Array.from(document.querySelectorAll('#wr-interval-overlay button')).find(b => /^Done/.test(b.textContent.trim()))
+      const label = btn?.textContent.trim()
+      btn?.click()
+      const out = {
+        label,
+        phaseIdx: _runner._phaseIdx,
+        loggedPhase: _runner.exercises[0].loggedSets[0]?.phase,
+        loggedDistance: _runner.exercises[0].loggedSets[0]?.distanceM,
+      }
+      document.getElementById('wr-interval-overlay')?.remove()
+      document.getElementById('rest-timer-overlay')?.remove()
+      document.getElementById('workout-runner')?.remove()
+      return out
+    })
+    expect(r.label).toMatch(/^Done — 400/)
+    expect(r.phaseIdx).toBe(1)          // advanced from the work round into the rest that follows it
+    expect(r.loggedPhase).toBe('work')
+    expect(r.loggedDistance).toBe('400')
+  })
+
+  test('a timed work round\'s Done button also logs the phase and advances, not the legacy cardio log', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ workSecs: 30, restSecs: 30, sets: 2, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now(), _intervalRemaining: 30, _intervalSecs: 30 }
+      _initIntervalPhases(_runner.exercises[0])
+      _runner._phaseIdx = 0
+      renderIntervalTimer()
+      const btn = Array.from(document.querySelectorAll('#wr-interval-overlay button')).find(b => /^Done/.test(b.textContent.trim()))
+      const label = btn?.textContent.trim()
+      btn?.click()
+      const out = {
+        label,
+        phaseIdx: _runner._phaseIdx,
+        loggedPhase: _runner.exercises[0].loggedSets[0]?.phase,
+      }
+      document.getElementById('wr-interval-overlay')?.remove()
+      document.getElementById('rest-timer-overlay')?.remove()
+      document.getElementById('workout-runner')?.remove()
+      return out
+    })
+    expect(r.label).toBe('Done early — LOG')
+    expect(r.phaseIdx).toBe(1)
+    expect(r.loggedPhase).toBe('work')
+  })
+
+  // Steady-state cardio is explicitly out of scope for the whole redesign — its Done control must
+  // still go through the untouched legacy path (no `phase` key on the logged set, no phase list built).
+  test('a non-interval cardio Done button still goes through the legacy logRunnerSet path, untouched', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Bike', type: 'cardio', metricType: 'cardio', loggedSets: [],
+        sets_json: [{ duration: '5:00' }]
+      }], exIdx: 0, startTime: Date.now() }
+      startIntervalTimer(30)   // mounts the same overlay via the legacy steady-state timer
+      const btn = Array.from(document.querySelectorAll('#wr-interval-overlay button')).find(b => /^Done/.test(b.textContent.trim()))
+      const label = btn?.textContent.trim()
+      btn?.click()
+      const out = {
+        label,
+        hasPhases: !!_runner.exercises[0].phases,
+        loggedSet: _runner.exercises[0].loggedSets[0],
+      }
+      stopIntervalTimer()
+      document.getElementById('wr-interval-overlay')?.remove()
+      document.getElementById('rest-timer-overlay')?.remove()
+      document.getElementById('workout-runner')?.remove()
+      return out
+    })
+    expect(r.label).toBe('Done early — LOG')
+    expect(r.hasPhases).toBe(false)
+    expect(r.loggedSet?.phase).toBeUndefined()   // a phase-tagged set would carry this key; legacy sets never do
+    expect(r.loggedSet?.duration).toBe('5:00')
+  })
+
+  // A synchronous assert right after clicking Done only proves the button's onclick was rewired —
+  // it doesn't prove _doneIntervalPhase() actually stopped the REAL setInterval that startIntervalPhaseTimer
+  // started for that phase. If stopIntervalTimer() were skipped/misordered, the old timer would keep
+  // ticking a shared _runner._intervalRemaining in the background and fire its own zero-tick later,
+  // double-logging the round and yanking exIdx around again — exactly the class of stray-timer bug
+  // this phase-walk rewrite exists to avoid (see _isIntervalExercise's comment above). This test lets
+  // a real 3s phase run, taps Done at 500ms, then waits past the 3s mark to prove nothing fires again.
+  test('tapping Done early stops the real phase timer for good — no stray double-log/double-advance', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      _runner = { clientId: 'x', exercises: [
+        { name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+          sets_json: [{ workSecs: 3, restSecs: 0, sets: 1, cycles: 1 }] },
+        { name: 'Plank', type: 'strength', metricType: 'timed_hold', loggedSets: [], sets_json: [{ timed: true }] }
+      ], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      _startPhaseAt(0)   // real 3s timer — the only phase in this block (restSecs:0 is omitted)
+      await new Promise(resolve => setTimeout(resolve, 500))
+      const btn = Array.from(document.querySelectorAll('#wr-interval-overlay button')).find(b => /^Done/.test(b.textContent.trim()))
+      btn?.click()   // ends the round ~2.5s before the real 3s timer would have fired on its own
+      const exIdxAfterClick = _runner.exIdx
+      // Wait well past the original 3s mark — a leaked timer would fire here and bounce exIdx/log again.
+      await new Promise(resolve => setTimeout(resolve, 3200))
+      const out = {
+        exIdxAfterClick,
+        exIdxAfterWait: _runner.exIdx,
+        loggedCount: _runner.exercises[0].loggedSets.length,
+      }
+      stopIntervalTimer()
+      document.getElementById('wr-interval-overlay')?.remove()
+      document.getElementById('workout-runner')?.remove()
+      return out
+    })
+    expect(r.exIdxAfterClick).toBe(1)   // phase list exhausted immediately — straight into the next exercise
+    expect(r.exIdxAfterWait).toBe(1)    // still there 3.2s later — no stray timer bounced it again
+    expect(r.loggedCount).toBe(1)       // exactly one logged round, not a duplicate from a leaked interval
+  })
+})

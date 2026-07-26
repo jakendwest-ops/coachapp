@@ -1456,6 +1456,11 @@ function stopIntervalTimer() {
   document.getElementById('wr-interval-overlay')?.remove()
 }
 
+// Upper-cased labels for the overlay's phase-name line. 'countdown' technically also flows through
+// here (it takes the same timed branch as warmup/work/cooldown in _startPhaseAt) even though the
+// brief only names the other five — falls back to a bare uppercase of the phase key otherwise.
+const _PHASE_NAME_LABELS = { countdown: 'COUNTDOWN', warmup: 'WARM-UP', work: 'WORK', rest: 'REST', recovery: 'RECOVERY', cooldown: 'COOL-DOWN' }
+
 function renderIntervalTimer() {
   document.getElementById('wr-interval-overlay')?.remove()
   const secs = _runner._intervalRemaining
@@ -1463,14 +1468,46 @@ function renderIntervalTimer() {
   const circ = 2 * Math.PI * 54
   const pct = secs / total
   const ex = _runner.exercises[_runner.exIdx]
-  const setNum = ex.loggedSets.length + 1
-  const roundLabel = ex.targetSets > 1 ? `Round ${setNum} of ${ex.targetSets}` : `Set ${setNum}`
+  const isInterval = _isIntervalExercise(ex)
+  const p = isInterval ? ((ex.phases || [])[_runner._phaseIdx] || {}) : null
+
+  // Non-interval (steady-state) cardio keeps its original top line and phase caption untouched —
+  // out of scope for the whole interval redesign.
+  let topLabel, phaseNameLabel, remainingLine = ''
+  let doneLabel = 'Done early — LOG'
+  let doneOnclick = 'logRunnerSet()'
+  if (isInterval) {
+    phaseNameLabel = _PHASE_NAME_LABELS[p.phase] || String(p.phase || '').toUpperCase()
+    const block = ex.sets_json?.[0] || {}
+    const setsPerCycle = Math.max(1, parseInt(block.sets, 10) || 0)
+    const cyclesTotal  = Math.max(1, parseInt(block.cycles, 10) || 0)
+    let posLabel = ''
+    if (p.set != null) {
+      posLabel = `Set ${p.set} of ${setsPerCycle}`
+      if (cyclesTotal > 1) posLabel += ` · Cycle ${p.cycle} of ${cyclesTotal}`
+    } else if (p.cycle != null && cyclesTotal > 1) {
+      posLabel = `Cycle ${p.cycle} of ${cyclesTotal}`
+    }
+    topLabel = posLabel ? `${escapeHtml(ex.name)} — ${escapeHtml(posLabel)}` : escapeHtml(ex.name)
+    const { total: remSecs, hasUnknown } = _intervalTotalSecs((ex.phases || []).slice(_runner._phaseIdx))
+    remainingLine = `${hasUnknown ? '+' : ''}${fmtRestCountdown(remSecs)} remaining`
+    // The Done control must log the phase and advance the walk itself — logRunnerSet() is the legacy
+    // cardio path and never touches the phase list. This matters most for a distance work round, where
+    // there is no timer to reach zero and this tap is the athlete's ONLY way to end the round.
+    doneOnclick = '_doneIntervalPhase()'
+    if (p.phase === 'work' && p.secs == null) doneLabel = `Done — ${fmtDistanceM(p.distanceM)}`
+  } else {
+    const setNum = ex.loggedSets.length + 1
+    const roundLabel = ex.targetSets > 1 ? `Round ${setNum} of ${ex.targetSets}` : `Set ${setNum}`
+    topLabel = `${escapeHtml(ex.name)} — ${roundLabel}`
+    phaseNameLabel = 'INTERVAL IN PROGRESS'
+  }
 
   const overlay = document.createElement('div')
   overlay.id = 'wr-interval-overlay'
   overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
   overlay.innerHTML = `
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — ${roundLabel}</div>
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${topLabel}</div>
     <div style="position:relative;display:inline-block;margin-bottom:24px">
       <svg width="140" height="140" viewBox="0 0 120 120">
         <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
@@ -1481,7 +1518,8 @@ function renderIntervalTimer() {
       </svg>
       <div id="wr-interval-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
     </div>
-    <div style="font-size:13px;color:var(--text-muted);margin-bottom:24px">INTERVAL IN PROGRESS</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:${isInterval ? '4px' : '24px'}">${phaseNameLabel}</div>
+    ${isInterval ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:24px">${remainingLine}</div>` : ''}
     <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
       <div>
         <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance covered (m) — optional</div>
@@ -1495,9 +1533,26 @@ function renderIntervalTimer() {
           style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--surface);color:var(--text)">
       </div>
     </div>
-    <button onclick="event.stopPropagation();logRunnerSet()" style="width:100%;max-width:340px;padding:16px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">Done early — LOG</button>
+    <button onclick="event.stopPropagation();${doneOnclick}" style="width:100%;max-width:340px;padding:16px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">${escapeHtml(doneLabel)}</button>
   `
   mountModal(overlay)
+}
+
+// Rewires the overlay's Done control for an interval exercise (see renderIntervalTimer above): unlike
+// logRunnerSet(), this actually logs the CURRENT PHASE and advances the walk. Mirrors the zero-tick
+// branch in startIntervalPhaseTimer (stop -> log -> advance -> renderRunner) so a manual "done early"
+// tap and a timer reaching 0 behave identically.
+function _doneIntervalPhase() {
+  _unlockAudio()
+  _unlockSpeech()
+  if (_runner._restInterval || _runner._countInInterval) return // same guard logRunnerSet uses
+  const ex = _runner.exercises[_runner.exIdx]
+  const p = (ex.phases || [])[_runner._phaseIdx]
+  if (!p) return
+  stopIntervalTimer()
+  _logIntervalPhase(p)
+  _advancePhase()
+  renderRunner()
 }
 
 function startRestTimer(secs) {
