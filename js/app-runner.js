@@ -1336,6 +1336,20 @@ function _finishIntervalExercise() {
   else showRunnerFinish()
 }
 
+// Records one phase as a logged set. Rest and recovery never reach here — they are timed only
+// (Jake's call: rest 2026-07-23, recovery 2026-07-25, both being rests between efforts). The phase
+// value is what lets the Progress page exclude warmup/cooldown from set counts and volume.
+function _logIntervalPhase(p) {
+  const ex = _runner.exercises[_runner.exIdx]
+  const g = id => document.getElementById(id)?.value?.trim() || null
+  ex.loggedSets.push({
+    phase: p.phase,
+    duration: p.secs != null ? fmtRestCountdown(p.secs) : null,
+    distanceM: p.distanceM != null ? String(p.distanceM) : g('wr-cardio-dist-opt'),
+    avgHr: g('wr-cardio-avg-hr'), maxHr: g('wr-cardio-max-hr'), avgWatts: g('wr-cardio-watts')
+  })
+}
+
 function startIntervalTimer(secs) {
   stopIntervalTimer()
   _runner._intervalSecs = secs
@@ -1645,6 +1659,12 @@ function runnerJumpTo(i) {
   stopRunnerCountIn()
   stopIntervalTimer()
   stopStrengthSetTimer()
+  // skipRestTimer() FIRES the pending _afterRest callback — and at this point exIdx still points at the
+  // OLD exercise, so a queued callback (e.g. an interval block's `() => _advancePhase()`) runs against
+  // the wrong exercise: starts a new interval timer / mounts the overlay on top of whatever renders
+  // next, or reaches the end of the wrong phase list and calls _finishIntervalExercise(), discarding
+  // whatever the jump was headed toward. Same trap as runnerGoBack / showRunnerFinish — null first.
+  _runner._afterRest = null
   skipRestTimer()
   _runner.exIdx = i
   renderRunner()

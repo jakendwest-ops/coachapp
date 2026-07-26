@@ -371,4 +371,64 @@ test.describe('Interval runner Start-trigger wiring (2026-07-26 fix round 1)', (
     expect(r.intervalHasLog).toBe(false)
     expect(r.cardioHasLog).toBe(true)
   })
+
+  // Fix round 3/5, Critical 1: _logIntervalPhase was called by startIntervalPhaseTimer's zero-tick but
+  // never defined (it was scoped to a later task) — every real work/warmup/cooldown phase threw a
+  // ReferenceError AFTER stopIntervalTimer() but BEFORE _advancePhase()/renderRunner(), freezing the
+  // runner on the finished phase with no way forward. None of the earlier tests caught it because none
+  // let a real countdown reach zero — this one drives an actual 1-second phase to completion.
+  test('a completed work phase logs the set and advances (the zero-tick path)', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ workSecs: 1, restSecs: 0, sets: 2, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      _startPhaseAt(0)   // real 1s timer — the same call startCardioTimer makes
+      await new Promise(resolve => setTimeout(resolve, 1300))
+      const out = {
+        phaseIdx: _runner._phaseIdx,
+        loggedPhases: _runner.exercises[0].loggedSets.map(s => s.phase),
+      }
+      stopIntervalTimer()
+      document.getElementById('wr-interval-overlay')?.remove()
+      document.getElementById('workout-runner')?.remove()
+      return out
+    })
+    expect(r.phaseIdx).toBe(1)                 // advanced into the second work round
+    expect(r.loggedPhases).toEqual(['work'])   // the finished phase was logged, not lost
+  })
+
+  // Fix round 3/5, Critical 2: runnerJumpTo called skipRestTimer() WITHOUT nulling _afterRest first,
+  // unlike its siblings runnerGoBack/showRunnerFinish. skipRestTimer() fires the pending callback
+  // immediately, while exIdx still points at the OLD exercise — so a queued `_advancePhase()` from an
+  // interval rest phase runs against the wrong exercise, starting a new interval timer and mounting its
+  // overlay on top of whatever the jump lands on.
+  test('jumping to another exercise mid-rest does not leak a queued phase-advance onto it', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [
+        { name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+          sets_json: [{ workSecs: 1, restSecs: 5, sets: 2, cycles: 1 }] },
+        { name: 'Plank', type: 'strength', metricType: 'timed_hold', loggedSets: [], sets_json: [{ timed: true }] }
+      ], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      _startPhaseAt(1)   // land mid-rest, as if the first work round just finished
+      runnerJumpTo(1)    // tap "jump to Plank" while still resting on Row
+      const out = {
+        exIdx: _runner.exIdx,
+        leakedIntervalTimer: !!_runner._intervalInterval,
+        leakedOverlay: !!document.getElementById('wr-interval-overlay'),
+      }
+      stopIntervalTimer()
+      document.getElementById('wr-interval-overlay')?.remove()
+      document.getElementById('rest-timer-overlay')?.remove()
+      document.getElementById('workout-runner')?.remove()
+      return out
+    })
+    expect(r.exIdx).toBe(1)
+    expect(r.leakedIntervalTimer).toBe(false)
+    expect(r.leakedOverlay).toBe(false)
+  })
 })
