@@ -1,5 +1,7 @@
 const { test, expect } = require('@playwright/test')
 const { loginAsPT } = require('./helpers')
+const fs = require('fs')
+const path = require('path')
 
 // GDPR Art. 15/20 — "Download my data" must actually contain the user's data.
 //
@@ -101,5 +103,22 @@ test.describe('GDPR data export', () => {
     })
     expect(r.rejected, 'a second clients row was ACCEPTED — .single() audits needed').toBe(true)
     expect(r.msg).toContain('clients_user_id_idx')
+  })
+
+  // Source-level pin, not a DB round-trip: this is exactly the CRITICAL 2026-07-23 failure shape —
+  // an explicit select() allowlist goes stale as a new column (here: workout_log_sets.phase, added for
+  // interval exercises 2026-07-25) is added elsewhere but never added to this embed. The column then
+  // silently never appears in the export, which for special-category health data is an incomplete
+  // legal disclosure, not a cosmetic gap. A behavioural round-trip couldn't tell "phase omitted" apart
+  // from "phase genuinely null" (every non-interval set has null phase), so this asserts on the actual
+  // query text instead.
+  test('the workout_log_exercises embed in the GDPR export selects workout_log_sets.phase', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'app-progress.js'), 'utf8')
+    const anchor = 'order_index, client_notes, workout_log_sets('
+    const start = src.indexOf(anchor)
+    expect(start, '_buildMyDataBundle\'s workout_logs select has changed shape — locate its workout_log_sets embed and update this anchor').toBeGreaterThan(-1)
+    const embedEnd = src.indexOf(')', start + anchor.length)
+    const embed = src.slice(start, embedEnd)
+    expect(embed, `export's workout_log_sets embed is missing "phase": ${embed}`).toContain('phase')
   })
 })

@@ -2086,7 +2086,7 @@ async function _buildMyDataBundle() {
       if (cids.length) {
         const [{ data: weights }, { data: workouts }, { data: perf }, { data: goals }, { data: events }, { data: oneRMs }, { data: checkIns }] = await Promise.all([
           db.from('weight_logs').select('date, weight_kg, body_fat_pct, resting_hr, notes').in('client_id', cids).order('date'),
-          db.from('workout_logs').select('name, date, notes, workout_log_exercises(exercise_name, exercise_type, metric_type, order_index, client_notes, workout_log_sets(set_number, side, weight_kg, reps_achieved, duration_seconds, distance_m, height_cm, effort_type, effort_value, avg_hr, max_hr, avg_watts))').in('client_id', cids).order('date'),
+          db.from('workout_logs').select('name, date, notes, workout_log_exercises(exercise_name, exercise_type, metric_type, order_index, client_notes, workout_log_sets(set_number, side, weight_kg, reps_achieved, duration_seconds, distance_m, height_cm, effort_type, effort_value, avg_hr, max_hr, avg_watts, phase))').in('client_id', cids).order('date'),
           db.from('performance_logs').select('name, category, value, unit, date').in('client_id', cids).order('date'),
           db.from('goals').select('title, target_date, status').in('client_id', cids),
           db.from('events').select('title, date, type').in('client_id', cids).order('date'),
