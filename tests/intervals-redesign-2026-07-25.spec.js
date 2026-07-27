@@ -896,8 +896,16 @@ test.describe('Pre-push review fixes (2026-07-27)', () => {
   // Important: countdownSecs/sets/cycles/workDistanceM flow from client-writable sets_json straight into
   // an HTML attribute (mini()'s `value="${...}"`) with no escapeAttr. Through the normal UI they're
   // always numeric, but a raw API write can put anything in sets_json — this pins that a breakout
-  // payload lands as inert attribute text (and round-trips back out of .value unchanged) rather than
-  // splitting into a second live attribute/handler the moment a coach opens the block editor.
+  // payload lands as inert attribute text rather than splitting into a second live attribute/handler
+  // the moment a coach opens the block editor.
+  //
+  // These fields are all `type="number"` — the browser itself refuses to store a non-numeric string
+  // as .value, even when the escaped `value="..."` attribute is well-formed HTML (confirmed directly:
+  // an escaped payload in a number input's value attribute round-trips through .value as "", not the
+  // payload). So countdown/sets/cycles read back empty, and workDistanceM (routed through
+  // distanceToPref()'s parseFloat first) reads back its leading numeric prefix. Neither is a
+  // byte-for-byte round-trip — that's the browser's own number-input validation adding a second layer
+  // on top of escapeAttr, not a weaker guarantee.
   test('interval block fields carrying a breakout payload cannot inject an attribute/handler', async ({ page }) => {
     await loginAsPT(page)
     const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
@@ -931,13 +939,15 @@ test.describe('Pre-push review fixes (2026-07-27)', () => {
     expect(r.sets.hasHandlerProp).toBe(false)
     expect(r.cycles.hasHandlerProp).toBe(false)
     expect(r.workdist.hasHandlerProp).toBe(false)
-    // countdownSecs/sets/cycles interpolate the raw value — escaping must round-trip it byte-for-byte.
-    expect(r.countdown.value).toBe(payload)
-    expect(r.sets.value).toBe(payload)
-    expect(r.cycles.value).toBe(payload)
+    // countdownSecs/sets/cycles: the browser blanks a number input's .value whenever its escaped
+    // `value="..."` attribute isn't a valid number — the payload is neutralised in the DOM (proven by
+    // the handler/attribute assertions above) but never surfaces through .value at all.
+    expect(r.countdown.value).toBe('')
+    expect(r.sets.value).toBe('')
+    expect(r.cycles.value).toBe('')
     // workDistanceM is additionally routed through distanceToPref() first, which parseFloat()s it down
-    // to its leading numeric prefix ("1") before escapeAttr ever sees it — safe either way, but that's
-    // why this one field's round-trip is intentionally "1", not the full payload.
+    // to its leading numeric prefix ("1") before escapeAttr ever sees it — that prefix IS a valid
+    // number, so it's the one field here whose .value survives the round-trip.
     expect(r.workdist.value).toBe('1')
   })
 
