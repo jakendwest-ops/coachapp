@@ -348,3 +348,93 @@ test.describe('Log-session: editing the 1RM must not wipe in-progress set inputs
     }
   })
 })
+
+test.describe('Log-session: exercise-name and set-field attribute escaping (2026-07-27 pre-push sweep)', () => {
+  // renderLogExercises interpolates block.name (an exercise name — client-authored via the runner's
+  // add/swap-exercise flow, per this same night's builder-editor sweep) and several raw set fields
+  // straight into value="..." with no escapeAttr. loadTemplateIntoLog populates block.name from a real
+  // workout_template_exercises row's exercise_name, so a coach loading their own template into "Log
+  // session" can render a client-poisoned exercise name unescaped. Same client->coach stored-XSS shape
+  // fixed repeatedly in js/app-workouts.js tonight, just reached via a different modal/file.
+  test('a breakout exercise name and set fields cannot inject an attribute/handler', async ({ page }) => {
+    // The full 7-field desktop branch (repsMax/pctMin/pctMax/rest only render when !isMobile) —
+    // force desktop width so this test actually reaches every sink, rather than silently checking
+    // fewer fields under the suite's mobile-first default viewport.
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await loginAsPT(page)
+    let clientId = null
+    try {
+      clientId = await page.evaluate(async () => {
+        const { data } = await db.from('clients')
+          .insert({ coach_id: currentUser.id, full_name: '[E2E] log-session xss client' }).select('id').single()
+        return data.id
+      })
+      await page.evaluate(async (cid) => { await showLogSessionModal(cid) }, clientId)
+      await page.waitForSelector('#log-session-modal', { state: 'visible', timeout: 5000 })
+      const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
+      const r = await page.evaluate((payload) => {
+        window.__xssFired = 0
+        window._logBlocks = [{
+          type: 'strength', name: payload, effortMode: 'RPE', oneRM: '',
+          sets: [{ repsMin: payload, repsMax: payload, effort: payload, pctMin: payload, pctMax: payload, rest: payload }],
+        }]
+        renderLogExercises()
+        const ids = ['ls-exname-0', 'ls-rmin-0-0', 'ls-rmax-0-0', 'ls-effort-0-0', 'ls-pmin-0-0', 'ls-pmax-0-0', 'ls-rest-0-0']
+        ids.forEach(id => document.getElementById(id)?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+        return {
+          fired: window.__xssFired,
+          strayDataAttr: document.querySelectorAll('[data-x]').length,
+          anyHandlerProp: ids.some(id => typeof document.getElementById(id)?.onmouseover === 'function'),
+          fieldsFound: ids.filter(id => !!document.getElementById(id)).length,
+        }
+      }, payload)
+      expect(r.fieldsFound).toBe(7)
+      expect(r.fired).toBe(0)
+      expect(r.strayDataAttr).toBe(0)
+      expect(r.anyHandlerProp).toBe(false)
+    } finally {
+      await page.evaluate(() => { try { closeModal('log-session-modal') } catch(e){} })
+      if (clientId) await page.evaluate(async (id) => { await db.from('clients').delete().eq('id', id) }, clientId)
+    }
+  })
+
+  // The cardio branch (duration field) and the mobile-viewport branch (a DIFFERENT set of ids —
+  // repsMin/effort only, no repsMax/pctMin/pctMax/rest) take different code paths through
+  // renderLogExercises than the desktop test above — cover both so a fix to one branch can't leave
+  // a sibling branch unescaped. Uses the suite's own mobile-first default viewport (390px).
+  test('cardio duration field and the mobile-viewport branch also escape a breakout payload', async ({ page }) => {
+    await loginAsPT(page)
+    let clientId = null
+    try {
+      clientId = await page.evaluate(async () => {
+        const { data } = await db.from('clients')
+          .insert({ coach_id: currentUser.id, full_name: '[E2E] log-session xss client 2' }).select('id').single()
+        return data.id
+      })
+      await page.evaluate(async (cid) => { await showLogSessionModal(cid) }, clientId)
+      await page.waitForSelector('#log-session-modal', { state: 'visible', timeout: 5000 })
+      const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
+      const r = await page.evaluate((payload) => {
+        window.__xssFired = 0
+        window._logBlocks = [
+          { type: 'cardio', name: 'Row', effortMode: 'RPE', oneRM: '', sets: [{ duration: payload }] },
+          { type: 'strength', name: 'Bench', effortMode: 'RPE', oneRM: '', sets: [{ repsMin: payload, effort: payload }] },
+        ]
+        renderLogExercises()
+        const ids = ['ls-dur-0-0', 'ls-rmin-1-0', 'ls-effort-1-0']
+        ids.forEach(id => document.getElementById(id)?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+        return {
+          fired: window.__xssFired,
+          strayDataAttr: document.querySelectorAll('[data-x]').length,
+          fieldsFound: ids.filter(id => !!document.getElementById(id)).length,
+        }
+      }, payload)
+      expect(r.fieldsFound).toBe(3)
+      expect(r.fired).toBe(0)
+      expect(r.strayDataAttr).toBe(0)
+    } finally {
+      await page.evaluate(() => { try { closeModal('log-session-modal') } catch(e){} })
+      if (clientId) await page.evaluate(async (id) => { await db.from('clients').delete().eq('id', id) }, clientId)
+    }
+  })
+})

@@ -2474,25 +2474,25 @@ function renderLogExercises() {
         <div style="display:grid;grid-template-columns:${GRID};gap:${isMobile?'5px':'3px'};align-items:center;margin-bottom:${isMobile?'6px':'3px'}">
           <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">${si + 1}</span>
           ${isCardio ? `
-            <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.duration || '0:00'}" oninput="this.value=fmtRestInput(this.value)">
+            <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${escapeAttr(String(s.duration || '0:00'))}" oninput="this.value=fmtRestInput(this.value)">
             <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'}" value="${_cardioDistanceM(s) ? distanceToPref(_cardioDistanceM(s)) : ''}">
           ` : isMobile ? `
-            <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${s.repsMin || ''}">
+            <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${escapeAttr(String(s.repsMin || ''))}">
             <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="${window._unitPrefs.weight}" value="${s.weight ? weightToPref(s.weight) : ''}">
-            <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${s.effort || ''}">
+            <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${escapeAttr(String(s.effort || ''))}">
           ` : `
-            <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${s.repsMin || ''}">
-            <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${s.repsMax || ''}">
+            <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${escapeAttr(String(s.repsMin || ''))}">
+            <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${escapeAttr(String(s.repsMax || ''))}">
             <div>
               <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="${window._unitPrefs.weight}" value="${weightToPref(orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||s.weight||'') : (s.weight||''))}">
             </div>
-            <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${s.pctMin || ''}" oninput="flushLogState()" onchange="renderLogExercises()">
+            <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${escapeAttr(String(s.pctMin || ''))}" oninput="flushLogState()" onchange="renderLogExercises()">
             <div>
-              <input id="ls-pmax-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${s.pctMax || ''}" oninput="flushLogState()" onchange="renderLogExercises()">
+              <input id="ls-pmax-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${escapeAttr(String(s.pctMax || ''))}" oninput="flushLogState()" onchange="renderLogExercises()">
               ${wFromPct}
             </div>
-            <input id="ls-effort-${bi}-${si}" ${si_style} type="number" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${s.effort || ''}">
-            <input id="ls-rest-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${s.rest || '0:00'}" oninput="this.value=fmtRestInput(this.value)">
+            <input id="ls-effort-${bi}-${si}" ${si_style} type="number" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${escapeAttr(String(s.effort || ''))}">
+            <input id="ls-rest-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${escapeAttr(String(s.rest || '0:00'))}" oninput="this.value=fmtRestInput(this.value)">
           `}
           ${delBtn}
         </div>
@@ -2503,7 +2503,7 @@ function renderLogExercises() {
       <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(99,102,241,.06);border-bottom:1px solid var(--border)">
           <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">${String.fromCharCode(65+bi)}</div>
-          <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:13px;font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${block.name}" oninput="window._logBlocks[${bi}].name=this.value">
+          <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:13px;font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${escapeAttr(String(block.name || ''))}" oninput="window._logBlocks[${bi}].name=this.value">
           <select id="ls-extype-${bi}" class="field-input" style="padding:5px 8px;font-size:12px;width:100px;flex-shrink:0" onchange="flushLogState();window._logBlocks[${bi}].type=this.value;renderLogExercises()">
             <option value="strength" ${!isCardio?'selected':''}>Strength</option>
             <option value="cardio" ${isCardio?'selected':''}>Cardio</option>
