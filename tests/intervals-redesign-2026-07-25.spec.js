@@ -1033,4 +1033,123 @@ test.describe('Pre-push review fixes (2026-07-27)', () => {
     expect(r.titleHtml).not.toContain('<img')      // stayed as escaped text in the markup
     expect(r.titleText).toBe(`Edit: ${payload}`)   // but the coach still sees the real (if odd) name
   })
+
+  // Critical (final sweep, 2026-07-27): the two "+ More targets" fixes above only covered the interval
+  // block and cardio's copy of the shared pace/watts/HR-zone fields. A scoped re-review of the REST of
+  // renderTemplateSets found the identical unescaped `value="${s.x}"` pattern still live in every OTHER
+  // exercise-type branch — pre-existing, unrelated to intervals, and reachable the same way: sets_json
+  // is client-writable via the runner's add/swap-exercise flow, and a real coach later opens that
+  // exercise in the builder. This sweeps the remainder: cardio's own duration/rest, timed_hold, jump
+  // (distance variant, since jump_height's own field routes through jumpHeightToPref and is already
+  // safe), and the default weight_reps/unilateral branch including its own separate "+ More targets".
+  test('cardio branch\'s own duration/rest fields carrying a breakout payload cannot inject an attribute/handler', async ({ page }) => {
+    await loginAsPT(page)
+    const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
+    const r = await page.evaluate((payload) => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      window._unitPrefs = window._unitPrefs || {}
+      window._unitPrefs.cardioDistance = 'm'
+      window.__xssFired = 0
+      window._templateSets = [{ isDistanceBased: false, duration: payload, restMin: payload, restMax: payload }]
+      renderTemplateSets('att-sets-container', 'cardio')
+      const ids = ['ts-duration-0', 'ts-restmin-0', 'ts-restmax-0']
+      ids.forEach(id => document.getElementById(id)?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      return {
+        fired: window.__xssFired,
+        strayDataAttr: document.querySelectorAll('[data-x]').length,
+        fieldsFound: ids.filter(id => !!document.getElementById(id)).length,
+        anyHandlerProp: ids.some(id => typeof document.getElementById(id)?.onmouseover === 'function'),
+      }
+    }, payload)
+    expect(r.fieldsFound).toBe(3)
+    expect(r.fired).toBe(0)
+    expect(r.strayDataAttr).toBe(0)
+    expect(r.anyHandlerProp).toBe(false)
+  })
+
+  test('timed_hold branch fields carrying a breakout payload cannot inject an attribute/handler', async ({ page }) => {
+    await loginAsPT(page)
+    const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
+    const r = await page.evaluate((payload) => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      window._unitPrefs = window._unitPrefs || {}
+      window._unitPrefs.weight = 'kg'
+      window.__xssFired = 0
+      window._templateSets = [{ duration: payload, restMin: payload, restMax: payload, effortMin: payload, effortMax: payload }]
+      renderTemplateSets('att-sets-container', 'timed_hold')
+      const ids = ['ts-duration-0', 'ts-restmin-0', 'ts-restmax-0', 'ts-emin-0', 'ts-emax-0']
+      ids.forEach(id => document.getElementById(id)?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      return {
+        fired: window.__xssFired,
+        strayDataAttr: document.querySelectorAll('[data-x]').length,
+        fieldsFound: ids.filter(id => !!document.getElementById(id)).length,
+        anyHandlerProp: ids.some(id => typeof document.getElementById(id)?.onmouseover === 'function'),
+      }
+    }, payload)
+    expect(r.fieldsFound).toBe(5)
+    expect(r.fired).toBe(0)
+    expect(r.strayDataAttr).toBe(0)
+    expect(r.anyHandlerProp).toBe(false)
+  })
+
+  test('jump_distance branch fields carrying a breakout payload cannot inject an attribute/handler', async ({ page }) => {
+    await loginAsPT(page)
+    const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
+    const r = await page.evaluate((payload) => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      window._unitPrefs = window._unitPrefs || {}
+      window.__xssFired = 0
+      window._templateSets = [{ targetDistanceM: payload, repsMin: payload, restMin: payload, restMax: payload, effortMin: payload, effortMax: payload }]
+      renderTemplateSets('att-sets-container', 'jump_distance')
+      const ids = ['ts-jdist-0', 'ts-rmin-0', 'ts-restmin-0', 'ts-restmax-0', 'ts-emin-0', 'ts-emax-0']
+      ids.forEach(id => document.getElementById(id)?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      return {
+        fired: window.__xssFired,
+        strayDataAttr: document.querySelectorAll('[data-x]').length,
+        fieldsFound: ids.filter(id => !!document.getElementById(id)).length,
+        anyHandlerProp: ids.some(id => typeof document.getElementById(id)?.onmouseover === 'function'),
+      }
+    }, payload)
+    expect(r.fieldsFound).toBe(6)
+    expect(r.fired).toBe(0)
+    expect(r.strayDataAttr).toBe(0)
+    expect(r.anyHandlerProp).toBe(false)
+  })
+
+  test('default weight_reps branch fields, including its own "+ More targets", carrying a breakout payload cannot inject an attribute/handler', async ({ page }) => {
+    await loginAsPT(page)
+    const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
+    const r = await page.evaluate((payload) => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      window._unitPrefs = window._unitPrefs || {}
+      window._unitPrefs.weight = 'kg'
+      window.__xssFired = 0
+      window._templateSets = [{
+        repsMin: payload, repsMax: payload, restMin: payload, restMax: payload,
+        effortMin: payload, effortMax: payload,
+        intensityMin: payload, intensityMax: payload, tempo: payload, countdown: payload,
+      }]
+      renderTemplateSets('att-sets-container', 'weight_reps')
+      // more() renders "+ More targets" as a native <details>, open="" already set since these fields
+      // carry values — force it open regardless so the test doesn't depend on that.
+      document.getElementById('att-sets-container').querySelectorAll('details').forEach(d => d.open = true)
+      const ids = ['ts-rmin-0', 'ts-rmax-0', 'ts-restmin-0', 'ts-restmax-0', 'ts-emin-0', 'ts-emax-0',
+                   'ts-imin-0', 'ts-imax-0', 'ts-tempo-0', 'ts-cd-0']
+      ids.forEach(id => document.getElementById(id)?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      return {
+        fired: window.__xssFired,
+        strayDataAttr: document.querySelectorAll('[data-x]').length,
+        fieldsFound: ids.filter(id => !!document.getElementById(id)).length,
+        anyHandlerProp: ids.some(id => typeof document.getElementById(id)?.onmouseover === 'function'),
+      }
+    }, payload)
+    expect(r.fieldsFound).toBe(10)
+    expect(r.fired).toBe(0)
+    expect(r.strayDataAttr).toBe(0)
+    expect(r.anyHandlerProp).toBe(false)
+  })
 })

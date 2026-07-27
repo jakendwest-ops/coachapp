@@ -1480,9 +1480,9 @@ function renderTemplateSets(containerId, type) {
             ${tog('Distance', s.isDistanceBased, `toggleTsSet(${i},'isDistanceBased','${containerId}')`)}
           </div>
         </div>
-        ${!s.isDistanceBased ? row('Duration', mini(`ts-duration-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.duration||'0:00')+'"')) : ''}
+        ${!s.isDistanceBased ? row('Duration', mini(`ts-duration-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.duration||'0:00'))+'"')) : ''}
         ${s.isDistanceBased ? row(`Distance (${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'})`, mini(`ts-distm-${i}`, `type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="—"${_cardioDistanceM(s) ? ` value="${distanceToPref(_cardioDistanceM(s))}"` : ''}`)) : ''}
-        ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
+        ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
         ${more('+ More targets', !!(_hasTimeTarget(s.pace500Min) || _hasTimeTarget(s.pace500Max) || s.wattsMin || s.wattsMax || s.hrZoneMin || s.hrZoneMax || s.restHrMax || s.strokeRateMin || s.strokeRateMax || _hasTimeTarget(s.paceKmMin) || _hasTimeTarget(s.paceKmMax)), `
           ${row('Pace / 500m', mini(`ts-p500min-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${escapeAttr(s.pace500Min||'')}"`) + dash + mini(`ts-p500max-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${escapeAttr(s.pace500Max||'')}"`))}
           ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:13px;font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
@@ -1498,27 +1498,27 @@ function renderTemplateSets(containerId, type) {
           ${row('Stroke rate (spm)', mini(`ts-srmin-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.strokeRateMin?` value="${escapeAttr(String(s.strokeRateMin))}"`:'')) + dash + mini(`ts-srmax-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.strokeRateMax?` value="${escapeAttr(String(s.strokeRateMax))}"`:'')))}
         `)}
       ` : isTimedHold ? `
-        ${row('Duration (mm:ss)', mini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${s.duration||'0:00'}"`))}
+        ${row('Duration (mm:ss)', mini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${escapeAttr(String(s.duration||'0:00'))}"`))}
         ${row(`Weight (${window._unitPrefs.weight})`, mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
-        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
-        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
+        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:'')))}
       ` : isJump ? `
         ${type === 'jump_height'
           ? row(`Target height (${window._unitPrefs.jumpHeight})`, mini(`ts-jheight-${i}`, 'type="number" step="1" inputmode="numeric" placeholder="—"'+(s.targetHeightCm?` value="${jumpHeightToPref(s.targetHeightCm)}"`:'')))
-          : row('Target distance (m)', mini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${s.targetDistanceM}"`:'')))}
-        ${row('Jumps per set', mini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${s.repsMin}"`:'')))}
-        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
-        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
+          : row('Target distance (m)', mini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${escapeAttr(String(s.targetDistanceM))}"`:'')))}
+        ${row('Jumps per set', mini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${escapeAttr(String(s.repsMin))}"`:'')))}
+        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:'')))}
       ` : `
-        ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${s.repsMin}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${s.repsMax}"`:'')))}
+        ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${escapeAttr(String(s.repsMin))}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${escapeAttr(String(s.repsMax))}"`:'')))}
         ${s.bodyweight ? '' : row(`Weight (${window._unitPrefs.weight})`, mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
         ${s.assisted ? row(`Assist weight (${window._unitPrefs.weight})`, mini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${weightToPref(s.assistWeight)}"`:''))): ''}
-        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMin||'0:00')+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+(s.restMax||'0:00')+'"'))}
-        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${s.effortMin}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${s.effortMax}"`:'')))}
+        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:'')))}
         ${more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `
-          ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${s.intensityMin}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${s.intensityMax}"`:'')))}
-          ${row('Tempo', mini(`ts-tempo-${i}`,'type="text" maxlength="4" placeholder="e.g. 3011"'+(s.tempo?` value="${s.tempo}"`:'')))}
-          ${row('Countdown (s)', mini(`ts-cd-${i}`,'type="number" placeholder="—"'+(s.countdown?` value="${s.countdown}"`:'')))}
+          ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${escapeAttr(String(s.intensityMin))}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${escapeAttr(String(s.intensityMax))}"`:'')))}
+          ${row('Tempo', mini(`ts-tempo-${i}`,'type="text" maxlength="4" placeholder="e.g. 3011"'+(s.tempo?` value="${escapeAttr(String(s.tempo))}"`:'')))}
+          ${row('Countdown (s)', mini(`ts-cd-${i}`,'type="number" placeholder="—"'+(s.countdown?` value="${escapeAttr(String(s.countdown))}"`:'')))}
         `)}
       `}
     </div>`
