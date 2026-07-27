@@ -951,6 +951,57 @@ test.describe('Pre-push review fixes (2026-07-27)', () => {
     expect(r.workdist.value).toBe('1')
   })
 
+  // Critical (found by pre-push review, 2026-07-27): the "+ More targets" fields (pace/500m, watts,
+  // HR zone, rest-HR max, legacy pace/km, stroke rate) had the SAME unescaped `value="${s.x}"` flaw as
+  // the fields above, in BOTH the interval branch (this feature's own new code) and the pre-existing
+  // cardio branch it was copied from verbatim (js/app-workouts.js:1413's own comment says so). Proven
+  // exploitable live before this fix: an escaped-nothing payload produced a real firing onmouseover
+  // handler and a stray data-x attribute on 9 of 11 fields. Unlike the countdown/sets/cycles fields
+  // above, most of these are type="text" or plain type="number" with NO incidental browser-side
+  // sanitization to fall back on — escapeAttr is the only thing standing between a client-writable
+  // sets_json value and a live handler in the coach's own template editor.
+  for (const branchType of ['interval', 'cardio']) {
+    test(`"+ More targets" fields (${branchType} branch) carrying a breakout payload cannot inject an attribute/handler`, async ({ page }) => {
+      await loginAsPT(page)
+      const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
+      const r = await page.evaluate(({ payload, branchType }) => {
+        const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div')
+        window._unitPrefs = window._unitPrefs || {}
+        window._unitPrefs.cardioDistance = 'm'
+        window.__xssFired = 0
+        const base = branchType === 'interval'
+          ? { workSecs: 30, restSecs: 30 }
+          : { duration: '0:30', restMin: '0:30', restMax: '0:30' }
+        window._templateSets = [{
+          ...base,
+          pace500Min: payload, pace500Max: payload, wattsMin: payload, wattsMax: payload,
+          hrZoneMin: payload, hrZoneMax: payload, restHrMax: payload,
+          paceKmMin: payload, paceKmMax: payload, strokeRateMin: payload, strokeRateMax: payload,
+        }]
+        renderTemplateSets('att-sets-container', branchType)
+        // more() renders "+ More targets" as a native <details>, open="" already set since these
+        // fields carry values — force it open regardless so the test doesn't depend on that.
+        document.getElementById('att-sets-container').querySelectorAll('details').forEach(d => d.open = true)
+        const ids = ['ts-p500min-0','ts-p500max-0','ts-wattsmin-0','ts-wattsmax-0','ts-hrzmin-0','ts-hrzmax-0',
+                     'ts-resthr-0','ts-pkmmin-0','ts-pkmmax-0','ts-srmin-0','ts-srmax-0']
+        ids.forEach(id => document.getElementById(id)?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+        return {
+          fired: window.__xssFired,
+          strayDataAttr: document.querySelectorAll('[data-x]').length,
+          fieldsFound: ids.filter(id => !!document.getElementById(id)).length,
+          anyHandlerProp: ids.some(id => typeof document.getElementById(id)?.onmouseover === 'function'),
+        }
+      }, { payload, branchType })
+      // paceKm only renders for legacy sets with an existing value (les-043 escape hatch) — the other
+      // 9 fields must always be present so this test can't silently pass by finding nothing to probe.
+      expect(r.fieldsFound).toBeGreaterThanOrEqual(9)
+      expect(r.fired).toBe(0)
+      expect(r.strayDataAttr).toBe(0)
+      expect(r.anyHandlerProp).toBe(false)
+    })
+  }
+
   // Important: the edit-modal title interpolated picked.name RAW into innerHTML two lines above the
   // IDENTICAL value, correctly escaped, going into att-name-display right below it — an inconsistency,
   // not a deliberate exception. picked.name comes from ex.exercise_name, which clients author via the
