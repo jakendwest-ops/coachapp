@@ -806,7 +806,7 @@ async function renderExerciseLibrary(el) {
           ${exs.map(e => `
             <div class="list-row">
               <div class="row-info">
-                <div class="row-name">${e.name}</div>
+                <div class="row-name">${escapeHtml(e.name)}</div>
                 <div class="row-meta">${[e.category, e.default_sets ? `${e.default_sets} sets × ${e.default_reps} reps` : null].filter(Boolean).join(' · ')}</div>
               </div>
               <button class="btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0" onclick="showEditExerciseModal('${e.id}');event.stopPropagation()">Edit</button>
@@ -945,7 +945,7 @@ async function showEditExerciseModal(id) {
       </div>
       <div class="field">
         <label class="field-label">Exercise name</label>
-        <input class="field-input" id="ee-name" value="${e.name}">
+        <input class="field-input" id="ee-name" value="${escapeAttr(e.name)}">
       </div>
       <div class="field-row">
         <div class="field">

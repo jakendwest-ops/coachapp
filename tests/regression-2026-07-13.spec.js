@@ -438,3 +438,57 @@ test.describe('Log-session: exercise-name and set-field attribute escaping (2026
     }
   })
 })
+
+test.describe('Exercise library: name escaping (2026-07-27 pre-push sweep)', () => {
+  // A client can create a coach-owned exercises row with an arbitrary name via the exercise picker's
+  // "+ Create new exercise" action (_createExerciseFromPicker, js/app-workouts.js — shared by the
+  // builder, runner swap/add, and 1RM entry; inserts with coach_id resolved to the CLIENT's coach, not
+  // the client). That row then rendered raw in two coach-facing surfaces: the library list row and the
+  // edit-exercise modal's name input. No session-save or template-load needed — opening the library or
+  // tapping Edit on a poisoned row is enough. Same client->coach stored-XSS shape closed 3 times
+  // already tonight, found this time by a review sweeping for a possible 4th location.
+  test('a breakout exercise name cannot inject markup in the library list or the edit-exercise modal', async ({ page }) => {
+    await loginAsPT(page)
+    let exId = null
+    try {
+      const payload = '<img src=x id="xss-lib-marker" onerror="window.__xssFired=(window.__xssFired||0)+1">'
+      exId = await page.evaluate(async (name) => {
+        const { data } = await db.from('exercises')
+          .insert({ coach_id: currentUser.id, name, is_personal: false }).select('id').single()
+        return data.id
+      }, payload)
+
+      const r1 = await page.evaluate(async () => {
+        window.__xssFired = 0
+        const el = document.createElement('div')
+        document.body.appendChild(el)
+        await renderExerciseLibrary(el)
+        return { fired: window.__xssFired, markerExists: !!document.getElementById('xss-lib-marker') }
+      })
+      expect(r1.fired).toBe(0)
+      expect(r1.markerExists).toBe(false)
+
+      const attrPayload = '1" onmouseover="window.__xssFired2=(window.__xssFired2||0)+1" data-x="'
+      await page.evaluate(async ({ id, name }) => {
+        await db.from('exercises').update({ name }).eq('id', id)
+      }, { id: exId, name: attrPayload })
+      const r2 = await page.evaluate(async (id) => {
+        window.__xssFired2 = 0
+        await showEditExerciseModal(id)
+        const el = document.getElementById('ee-name')
+        el?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+        return {
+          fired: window.__xssFired2,
+          strayDataAttr: document.querySelectorAll('[data-x]').length,
+          hasHandlerProp: typeof el?.onmouseover === 'function',
+        }
+      }, exId)
+      expect(r2.fired).toBe(0)
+      expect(r2.strayDataAttr).toBe(0)
+      expect(r2.hasHandlerProp).toBe(false)
+    } finally {
+      await page.evaluate(() => { try { closeModal('edit-exercise-modal') } catch(e){} })
+      if (exId) await page.evaluate(async (id) => { await db.from('exercises').delete().eq('id', id) }, exId)
+    }
+  })
+})
