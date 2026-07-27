@@ -846,3 +846,130 @@ test.describe('Interval exercises chart as cardio-family (2026-07-26, Task 8)', 
     expect(r.point.totalDuration).toBe(60)    // 30 + 30 work only — excludes the 60s warmup + 45s cooldown
   })
 })
+
+// Final pre-push review before ship (2026-07-27), three findings.
+test.describe('Pre-push review fixes (2026-07-27)', () => {
+  // Critical: startIntervalPhaseTimer's zero-tick (and _doneIntervalPhase, the manual "Done early" tap,
+  // which deliberately mirrors it) called renderRunner() UNCONDITIONALLY right after _advancePhase().
+  // Every _startPhaseAt branch already renders whatever the new phase needs for itself — EXCEPT the one
+  // that matters most: on the LAST phase of the LAST exercise, _advancePhase() -> _startPhaseAt() runs
+  // off the end of the phase list -> _finishIntervalExercise() -> showRunnerFinish() (no next exercise),
+  // which paints "Workout complete" — including the session-name/notes inputs — into #workout-runner.
+  // The very next line then called renderRunner() again, which innerHTML-replaces that exact element,
+  // discarding the finish screen the instant a real interval workout ended. This file already carries
+  // a documented history of this exact bug class (showRunnerFinish's own "FULL teardown" comment). A
+  // synchronous assert right after starting the timer would not catch this — the repaint only happens
+  // once the real timer reaches zero — so this drives an actual 1s work phase, the ONLY phase of the
+  // ONLY exercise, to real completion and checks what's left in the DOM afterward.
+  test('finishing the LAST phase of the LAST exercise leaves the finish screen intact — no repaint', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      _runner = { clientId: 'x', name: '', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ workSecs: 1, restSecs: 0, sets: 1, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      // Mount #workout-runner the way a real session does — launchRunner's initial renderRunner()
+      // call, before the athlete ever taps "Start timer". showRunnerFinish() itself does nothing if
+      // this element doesn't already exist (`if (!el) return`), so skipping this would silently pass
+      // for the wrong reason.
+      renderRunner()
+      _initIntervalPhases(_runner.exercises[0])
+      _startPhaseAt(0)   // real 1s timer — the block's only phase
+      await new Promise(resolve => setTimeout(resolve, 1300))
+      const out = {
+        hasFinishHeading: Array.from(document.querySelectorAll('#workout-runner h2'))
+          .some(h => /Workout complete/i.test(h.textContent)),
+        hasSessionNameInput: !!document.getElementById('rf-name'),
+        hasNotesInput: !!document.getElementById('rf-notes'),
+        hasIntervalOverlay: !!document.getElementById('wr-interval-overlay'),
+      }
+      document.getElementById('wr-interval-overlay')?.remove()
+      document.getElementById('workout-runner')?.remove()
+      return out
+    })
+    expect(r.hasFinishHeading).toBe(true)
+    expect(r.hasSessionNameInput).toBe(true)
+    expect(r.hasNotesInput).toBe(true)
+    expect(r.hasIntervalOverlay).toBe(false)
+  })
+
+  // Important: countdownSecs/sets/cycles/workDistanceM flow from client-writable sets_json straight into
+  // an HTML attribute (mini()'s `value="${...}"`) with no escapeAttr. Through the normal UI they're
+  // always numeric, but a raw API write can put anything in sets_json — this pins that a breakout
+  // payload lands as inert attribute text (and round-trips back out of .value unchanged) rather than
+  // splitting into a second live attribute/handler the moment a coach opens the block editor.
+  test('interval block fields carrying a breakout payload cannot inject an attribute/handler', async ({ page }) => {
+    await loginAsPT(page)
+    const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
+    const r = await page.evaluate((payload) => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      window._unitPrefs = window._unitPrefs || {}
+      window._unitPrefs.cardioDistance = 'm'
+      window.__xssFired = 0
+      window._templateSets = [{
+        workSecs: 30, restSecs: 30, isDistanceBased: true,
+        countdownSecs: payload, sets: payload, cycles: payload, workDistanceM: payload
+      }]
+      renderTemplateSets('att-sets-container', 'interval')
+      const ids = ['ts-countdown-0', 'ts-sets-0', 'ts-cycles-0', 'ts-workdist-0']
+      ids.forEach(id => document.getElementById(id)?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      const field = id => {
+        const el = document.getElementById(id)
+        return { value: el?.value, hasHandlerProp: typeof el?.onmouseover === 'function' }
+      }
+      return {
+        fired: window.__xssFired,
+        strayDataAttr: document.querySelectorAll('[data-x]').length,
+        countdown: field('ts-countdown-0'), sets: field('ts-sets-0'),
+        cycles: field('ts-cycles-0'), workdist: field('ts-workdist-0'),
+      }
+    }, payload)
+    expect(r.fired).toBe(0)                 // the injected handler never became live, so it never ran
+    expect(r.strayDataAttr).toBe(0)          // the payload's trailing attribute never broke free either
+    expect(r.countdown.hasHandlerProp).toBe(false)
+    expect(r.sets.hasHandlerProp).toBe(false)
+    expect(r.cycles.hasHandlerProp).toBe(false)
+    expect(r.workdist.hasHandlerProp).toBe(false)
+    // countdownSecs/sets/cycles interpolate the raw value — escaping must round-trip it byte-for-byte.
+    expect(r.countdown.value).toBe(payload)
+    expect(r.sets.value).toBe(payload)
+    expect(r.cycles.value).toBe(payload)
+    // workDistanceM is additionally routed through distanceToPref() first, which parseFloat()s it down
+    // to its leading numeric prefix ("1") before escapeAttr ever sees it — safe either way, but that's
+    // why this one field's round-trip is intentionally "1", not the full payload.
+    expect(r.workdist.value).toBe('1')
+  })
+
+  // Important: the edit-modal title interpolated picked.name RAW into innerHTML two lines above the
+  // IDENTICAL value, correctly escaped, going into att-name-display right below it — an inconsistency,
+  // not a deliberate exception. picked.name comes from ex.exercise_name, which clients author via the
+  // runner's add/swap flow. Predates this feature but is the same bug class, in a template this feature
+  // edits, so it's in scope for this review round.
+  test('editing an exercise with a breakout name cannot inject markup into the modal title', async ({ page }) => {
+    await loginAsPT(page)
+    const payload = '<img src=x onerror="window.__xssFired2=(window.__xssFired2||0)+1">'
+    const r = await page.evaluate((payload) => {
+      document.getElementById('edit-tex-modal')?.remove()
+      window.__xssFired2 = 0
+      _showExerciseSetsModal({
+        targetId: 'fake-template-id', runnerCtx: null, coachId: 'fake-coach-id',
+        picked: { name: payload, id: null }, editingTexId: 'fake-tex-id',
+        existingSets: [{}], existingType: 'weight_reps', existingNotes: '', existingSuperset: ''
+      })
+      const titleEl = document.querySelector('#edit-tex-modal .modal-title')
+      const out = {
+        fired: window.__xssFired2,
+        titleHtml: titleEl?.innerHTML || '',
+        titleText: titleEl?.textContent || '',
+        injectedImgCount: document.querySelectorAll('#edit-tex-modal img').length,
+      }
+      document.getElementById('edit-tex-modal')?.remove()
+      return out
+    }, payload)
+    expect(r.fired).toBe(0)
+    expect(r.injectedImgCount).toBe(0)            // never became a real <img> element
+    expect(r.titleHtml).not.toContain('<img')      // stayed as escaped text in the markup
+    expect(r.titleText).toBe(`Edit: ${payload}`)   // but the coach still sees the real (if odd) name
+  })
+})

@@ -1414,7 +1414,7 @@ function renderTemplateSets(containerId, type) {
                   // keys its ids off `i` — a block is always index 0.
     const tog = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
     container.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:8px">
-      ${row('Initial countdown', mini('ts-countdown-0', 'type="number" placeholder="0"'+(s.countdownSecs != null ? ` value="${s.countdownSecs}"` : '')))}
+      ${row('Initial countdown', mini('ts-countdown-0', 'type="number" placeholder="0"'+(s.countdownSecs != null ? ` value="${escapeAttr(String(s.countdownSecs))}"` : '')))}
       ${row('Warm-up', mini('ts-warmup-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.warmupSecs||0)}"`))}
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
         <span style="font-size:13px;font-weight:600;color:var(--text)">Work measured by</span>
@@ -1424,11 +1424,11 @@ function renderTemplateSets(containerId, type) {
         </div>
       </div>
       ${!s.isDistanceBased ? row('Work', mini('ts-worksecs-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.workSecs||0)}"`)) : ''}
-      ${s.isDistanceBased ? row(`Work (${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'})`, mini('ts-workdist-0', `type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="—"${s.workDistanceM ? ` value="${distanceToPref(s.workDistanceM)}"` : ''}`)) : ''}
+      ${s.isDistanceBased ? row(`Work (${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'})`, mini('ts-workdist-0', `type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="—"${s.workDistanceM ? ` value="${escapeAttr(String(distanceToPref(s.workDistanceM)))}"` : ''}`)) : ''}
       ${row('Rest', mini('ts-restsecs-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.restSecs||0)}"`))}
-      ${row('Sets', mini('ts-sets-0', 'type="number" min="1" placeholder="8"'+(s.sets ? ` value="${s.sets}"` : '')))}
+      ${row('Sets', mini('ts-sets-0', 'type="number" min="1" placeholder="8"'+(s.sets ? ` value="${escapeAttr(String(s.sets))}"` : '')))}
       ${row('Recovery', mini('ts-recovery-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.recoverySecs||0)}"`))}
-      ${row('Cycles', mini('ts-cycles-0', 'type="number" min="1" placeholder="1"'+(s.cycles ? ` value="${s.cycles}"` : '')))}
+      ${row('Cycles', mini('ts-cycles-0', 'type="number" min="1" placeholder="1"'+(s.cycles ? ` value="${escapeAttr(String(s.cycles))}"` : '')))}
       ${row('Cool-down', mini('ts-cooldown-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.cooldownSecs||0)}"`))}
       ${(() => {
         const { total, hasUnknown } = _intervalTotalSecs(_expandIntervalBlock(s))
@@ -1604,7 +1604,7 @@ async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
 // Shared by the workout builder (add + edit) and the runner swap/add modal.
 function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingTexId = null, existingSets = null, existingType = 'weight_reps', existingNotes = '', existingSuperset = '' }) {
   const isRunner = !!runnerCtx
-  const title = editingTexId ? `Edit: ${picked.name}` : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap exercise' : 'Add exercise') : 'Add exercise')
+  const title = editingTexId ? `Edit: ${escapeHtml(picked.name)}` : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap exercise' : 'Add exercise') : 'Add exercise')
   const confirmLabel = editingTexId ? 'Save' : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap' : 'Add') : 'Add exercise')
   const modalId = editingTexId ? 'edit-tex-modal' : 'add-to-template-modal'
   const confirmAction = editingTexId

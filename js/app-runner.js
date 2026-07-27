@@ -1306,24 +1306,33 @@ function _initIntervalPhases(ex) {
 
 // Starts the phase at `idx`. Timed phases auto-advance; a distance work round (secs === null) waits
 // for the athlete's Done tap, since there is no sensor to end it.
+// Returns true when another phase was actually started (i.e. it already rendered whatever the new
+// phase needs — the rest overlay, the interval overlay, or nothing yet because a timer owns the next
+// render) and false when the walk ended (_finishIntervalExercise already rendered the next exercise
+// OR the finish screen). Callers use this to decide whether a trailing renderRunner() is safe — see
+// startIntervalPhaseTimer's zero-tick and _doneIntervalPhase, both of which used to renderRunner()
+// unconditionally and, on the LAST phase of the LAST exercise, repainted the runner straight back over
+// showRunnerFinish()'s screen (same "renderRunner destroys the finish screen" bug class documented on
+// showRunnerFinish itself).
 function _startPhaseAt(idx) {
   const ex = _runner.exercises[_runner.exIdx]
   const phases = ex.phases || []
   _runner._phaseIdx = idx
-  if (idx >= phases.length) { _finishIntervalExercise(); return }
+  if (idx >= phases.length) { _finishIntervalExercise(); return false }
   const p = phases[idx]
   if (p.phase === 'rest' || p.phase === 'recovery') {
     // Rest and recovery reuse the existing rest bar and are never logged.
     _runner._afterRest = () => _advancePhase()
     startRestTimer(p.secs)
-    return
+    return true
   }
-  if (p.secs == null) { renderIntervalTimer(); return }   // distance round — Done tap advances
+  if (p.secs == null) { renderIntervalTimer(); return true }   // distance round — Done tap advances
   startIntervalPhaseTimer(p.secs)
+  return true
 }
 
 function _advancePhase() {
-  _startPhaseAt((_runner._phaseIdx || 0) + 1)
+  return _startPhaseAt((_runner._phaseIdx || 0) + 1)
 }
 
 // The phase list is exhausted — the block behaves like any other exercise's set-target being hit.
@@ -1430,8 +1439,12 @@ function startIntervalPhaseTimer(secs) {
       playBeep(1046, 0.5, 0.95)
       const p = (_runner.exercises[_runner.exIdx].phases || [])[_runner._phaseIdx] || {}
       if (p.phase === 'work' || p.phase === 'warmup' || p.phase === 'cooldown') _logIntervalPhase(p)
-      _advancePhase()
-      renderRunner()
+      // _advancePhase() already rendered whatever the walk needed (next phase's overlay, the next
+      // exercise, or showRunnerFinish()) — see _startPhaseAt's comment. renderRunner() here ONLY when
+      // it did NOT (there is no such branch today, but this must not silently regress): on the last
+      // phase of the last exercise, unconditionally calling renderRunner() after _advancePhase() used
+      // to repaint the runner straight back over showRunnerFinish()'s screen.
+      if (_advancePhase()) renderRunner()
       return
     }
     if (_runner._intervalRemaining <= 5) speakCue(String(_runner._intervalRemaining))
@@ -1566,8 +1579,10 @@ function _doneIntervalPhase() {
   if (!p) return
   stopIntervalTimer()
   if (p.phase === 'work' || p.phase === 'warmup' || p.phase === 'cooldown') _logIntervalPhase(p)
-  _advancePhase()
-  renderRunner()
+  // Same guard as startIntervalPhaseTimer's zero-tick (this function deliberately mirrors it, per the
+  // comment above): only renderRunner() when _advancePhase() didn't already render for itself, so a
+  // manual "Done" tap on the LAST phase of the LAST exercise doesn't repaint over showRunnerFinish().
+  if (_advancePhase()) renderRunner()
 }
 
 function startRestTimer(secs) {
