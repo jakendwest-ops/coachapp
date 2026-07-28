@@ -72,6 +72,9 @@ test.describe('Interval builder (2026-07-25)', () => {
       const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
       mk('att-type', 'select'); mk('att-notes'); mk('att-superset'); mk('att-error'); mk('add-to-template-modal', 'div')
       document.getElementById('att-type').innerHTML = '<option value="interval">Interval</option>'
+      // A bare <select>.value assignment silently no-ops without a matching <option> — append one
+      // first, matching how the real builder modal's att-type select is actually populated.
+      document.getElementById('att-type').innerHTML = '<option value="interval">Interval</option>'
       document.getElementById('att-type').value = 'interval'
       window._exerciseDetailPicked = { id: null, name: tag + ' Row' }
       window._templateSets = [{ countdownSecs: 5, warmupSecs: 0, workSecs: 30, restSecs: 30, sets: 8, recoverySecs: 0, cycles: 1, cooldownSecs: 0 }]
@@ -1151,5 +1154,96 @@ test.describe('Pre-push review fixes (2026-07-27)', () => {
     expect(r.fired).toBe(0)
     expect(r.strayDataAttr).toBe(0)
     expect(r.anyHandlerProp).toBe(false)
+  })
+})
+
+test.describe('Whole-branch review fixes (2026-07-28)', () => {
+  // Two independent review agents found the same bug from different angles: swapping or adding an
+  // interval exercise mid-session set targetSets = cleanSets.length (always 1, since a block is one
+  // sets_json row), so the idle card read "Set 1 of 1" for what might be an 8-round block. The initial
+  // session-load path (_startFreshRunner, tested above) was already fixed for this; this sibling
+  // wasn't. Self-heals the moment Start is tapped (startCardioTimer's own !ex.phases guard), but the
+  // idle card is wrong until then.
+  test('swapping to an interval exercise mid-session sets a real work-round targetSets, not 1', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-error'); mk('att-type', 'select'); mk('att-notes'); mk('att-sets-container', 'div')
+      _runner = { clientId: 'x', exercises: [{ name: 'Old Exercise', type: 'strength', metricType: 'weight_reps', targetSets: 3, loggedSets: [], sets_json: [] }], exIdx: 0 }
+      window._exerciseDetailPicked = { name: 'Row Intervals', id: null }
+      window._templateSets = [{ workSecs: 30, restSecs: 30, sets: 4, cycles: 2 }]   // 8 real work rounds
+      // A bare <select>.value assignment silently no-ops without a matching <option> — append one
+      // first, matching how the real builder modal's att-type select is actually populated.
+      document.getElementById('att-type').innerHTML = '<option value="interval">Interval</option>'
+      document.getElementById('att-type').value = 'interval'
+      await _confirmRunnerExerciseFromModal('swap')
+      const ex = _runner.exercises[0]
+      return { targetSets: ex.targetSets, hasPhases: !!ex.phases, rawSetsJsonLength: ex.sets_json.length }
+    })
+    expect(r.hasPhases).toBe(true)
+    expect(r.targetSets).toBe(8)
+    expect(r.rawSetsJsonLength).toBe(1)
+  })
+
+  test('adding a new interval exercise mid-session sets a real work-round targetSets, not 1', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-error'); mk('att-type', 'select'); mk('att-notes'); mk('att-sets-container', 'div')
+      _runner = { clientId: 'x', exercises: [{ name: 'Existing', type: 'strength', metricType: 'weight_reps', targetSets: 3, loggedSets: [], sets_json: [] }], exIdx: 0 }
+      window._exerciseDetailPicked = { name: 'Ski Erg Intervals', id: null }
+      window._templateSets = [{ workSecs: 20, restSecs: 10, sets: 5, cycles: 1 }]   // 5 real work rounds
+      // A bare <select>.value assignment silently no-ops without a matching <option> — append one
+      // first, matching how the real builder modal's att-type select is actually populated.
+      document.getElementById('att-type').innerHTML = '<option value="interval">Interval</option>'
+      document.getElementById('att-type').value = 'interval'
+      await _confirmRunnerExerciseFromModal('add')
+      const ex = _runner.exercises[_runner.exIdx]
+      return { targetSets: ex.targetSets, hasPhases: !!ex.phases }
+    })
+    expect(r.hasPhases).toBe(true)
+    expect(r.targetSets).toBe(5)
+  })
+
+  // Two independent review agents also found: loadTemplateIntoLog (the "Log session" manual/retroactive
+  // entry modal) mapped an interval block through the plain-cardio branch (duration/distanceM), neither
+  // of which exists on a block — producing one blank row with the right exercise name and zero
+  // prescription, no error shown. This modal has no interval-block editor of its own (its type select
+  // only offers Strength/Cardio), so rather than building one, the fix seeds the row with the block's
+  // total time as a sane starting point for a coach logging a session retroactively.
+  test('loading a template with an interval exercise into Log Session seeds total time, not a blank row', async ({ page }) => {
+    await loginAsPT(page)
+    let clientId = null, templateId = null
+    try {
+      const ids = await page.evaluate(async () => {
+        const { data: tmpl } = await db.from('workout_templates')
+          .insert({ coach_id: currentUser.id, name: '[E2E] log-into-template intervals', is_personal: false }).select('id').single()
+        await db.from('workout_template_exercises').insert({
+          template_id: tmpl.id, order_index: 0, exercise_name: 'Row Intervals',
+          exercise_type: 'cardio', metric_type: 'interval',
+          sets_json: [{ warmupSecs: 120, workSecs: 240, restSecs: 120, sets: 4, cooldownSecs: 60 }],
+        })
+        const { data: client } = await db.from('clients')
+          .insert({ coach_id: currentUser.id, full_name: '[E2E] log-into-template client' }).select('id').single()
+        return { templateId: tmpl.id, clientId: client.id }
+      })
+      templateId = ids.templateId; clientId = ids.clientId
+      await page.evaluate(async (cid) => { await showLogSessionModal(cid) }, clientId)
+      await page.waitForSelector('#log-session-modal', { state: 'visible', timeout: 5000 })
+      const r = await page.evaluate(async (tid) => {
+        loadTemplateIntoLog(tid)
+        const block = window._logBlocks[0]
+        return { name: block?.name, duration: block?.sets?.[0]?.duration, setCount: block?.sets?.length }
+      }, templateId)
+      // warmup 2:00 + 4x work 4:00 + rest 2:00 (no recovery/cycles here) + cooldown 1:00 = 27:00,
+      // matching the same reference arithmetic this feature's own design spec was verified against.
+      expect(r.name).toBe('Row Intervals')
+      expect(r.setCount).toBe(1)
+      expect(r.duration).toBe('27:00')
+    } finally {
+      await page.evaluate(() => { try { closeModal('log-session-modal') } catch(e){} })
+      if (templateId) await page.evaluate(async (id) => { await db.from('workout_templates').delete().eq('id', id) }, templateId)
+      if (clientId) await page.evaluate(async (id) => { await db.from('clients').delete().eq('id', id) }, clientId)
+    }
   })
 })

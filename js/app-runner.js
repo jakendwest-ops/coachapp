@@ -1845,15 +1845,23 @@ async function _confirmRunnerExerciseFromModal(mode) {
     ex.supersetGroup = supersetGroup
     ex.loggedSets = []
     delete ex.tableRows
+    delete ex.phases
     ex.oneRM = oneRM
+    // targetSets above is cleanSets.length, always 1 for an interval block — _initIntervalPhases
+    // overwrites it with the real work-round count, matching how the initial session-load path
+    // (line ~52) already handles this. Without it the idle card reads "Set 1 of 1" for an N-round
+    // block until Start self-heals it via startCardioTimer's own !ex.phases guard.
+    if (_isIntervalExercise(ex)) _initIntervalPhases(ex)
     if (type !== 'cardio') fetchRunnerLastSession(name, exerciseId)
     renderRunner()
   } else {
-    _runner.exercises.push({
+    const ex = {
       name, exerciseId, type, metricType, targetSets: cleanSets.length || 3, targetReps: '', targetWeight: '',
       restSecs, loggedSets: [], bodyweight: !!cleanSets[0]?.bodyweight, assisted: !!cleanSets[0]?.assisted,
       supersetGroup, sets_json: cleanSets, notes, oneRM
-    })
+    }
+    if (_isIntervalExercise(ex)) _initIntervalPhases(ex)
+    _runner.exercises.push(ex)
     _runner.exIdx = _runner.exercises.length - 1
     fetchRunnerLastSession(name, exerciseId)
     renderRunner()
@@ -2604,8 +2612,18 @@ function loadTemplateIntoLog(templateId) {
     const sorted = (t.workout_template_exercises || []).sort((a, b) => a.order_index - b.order_index)
     sorted.forEach(ex => {
       const isCardio = ex.exercise_type === 'cardio'
+      // An interval block also has exercise_type:'cardio' (the legacy-column derivation this whole
+      // feature relies on), but its sets_json[0] has no duration/distanceM keys — mapping it through
+      // the plain cardio branch below silently produced one blank row with the right name and zero
+      // prescription, no error. This modal has no interval-block editor (its type <select> only
+      // offers Strength/Cardio), so rather than inventing one here, seed the row with the block's
+      // total time as a sane starting point for retroactive logging — the coach can still edit it.
+      const isInterval = ex.metric_type === 'interval'
       let sets = []
-      if (ex.sets_json?.length) {
+      if (isInterval && ex.sets_json?.length) {
+        const { total, hasUnknown } = _intervalTotalSecs(_expandIntervalBlock(ex.sets_json[0] || {}))
+        sets = [{ duration: fmtRestCountdown(total) + (hasUnknown ? '+' : ''), distanceM: '' }]
+      } else if (ex.sets_json?.length) {
         sets = ex.sets_json.map(s => {
           if (isCardio) return { duration: s.duration || '', distanceM: _cardioDistanceM(s) || '' }
           const repsStr = String(s.reps || '')
