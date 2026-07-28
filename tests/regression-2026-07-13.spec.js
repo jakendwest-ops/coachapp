@@ -539,6 +539,13 @@ test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-br
       expect(r.markerExists).toBe(false)
       expect(r.containsNoteText).toBe(true)   // the literal text survived, just not as markup
     } finally {
+      // client_check_ins has NO delete grant for either role via the client API — confirmed directly
+      // (both client- and coach-session deletes return success with 0 rows affected, no error, no
+      // effect). This call is a no-op today; kept in case a future policy adds delete rights. Until
+      // then this test leaves one inert row (the escaped payload text, harmless — nothing renders it
+      // unescaped anywhere anymore) in the shared Test Client fixture on every run. Jake has the
+      // one-line cleanup SQL; this is the same class of accepted, tracked fixture debris as the
+      // existing workout_logs erosion issue, not something worth an RLS change at this hour.
       if (checkInId) await client.evaluate(async (id) => { await db.from('client_check_ins').delete().eq('id', id) }, checkInId)
       await clientCtx.close()
     }
@@ -665,4 +672,48 @@ test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-br
   // boundary crossed) was also fixed for consistency but isn't separately tested here — the coach-
   // facing test above already proves escapeHtml neutralises this exact payload shape, and a second
   // dual-context test for a self-XSS-only surface isn't worth the added fixture complexity.
+
+  // The scoped re-review of the fix above found 9 more raw sinks in sibling functions in the same
+  // two files: goal/milestone title on the coach's own "Goals due soon" widget and the client/solo
+  // dashboards' own Goals widgets (js/app-dashboard.js), and workout template description across its
+  // list row, detail page, and edit modal (js/app-workouts.js). Confirmed non-client-reachable
+  // (`goals` INSERT is RLS-blocked for a client session, tested directly) -- self-XSS tier, not the
+  // client->coach shape everything else tonight closed. Fixing them anyway for consistency, given a
+  // source check rather than a full dashboard-fixture behavioural test: these render functions pull
+  // in the whole dashboard (sessions, workouts, streaks) to reach one small sink, and the escaping
+  // primitive itself (escapeHtml neutralising a real payload) is already proven behaviourally many
+  // times over elsewhere in this file. Matches the established lighter-rigor pattern this codebase
+  // already uses for confirmed-lower-risk sweep items (tests/review-fixes-2026-07-23.spec.js).
+  test('goal/milestone title and template description sinks are escaped, not raw, in every render site', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const dashboardSrc = renderDashboard.toString() + renderClientDashboard.toString() + renderSoloDashboard.toString()
+      const templateSrc  = renderWorkoutTemplates.toString() + openTemplate.toString() + showEditTemplateModal.toString()
+      return {
+        rawGoalTitle: /\$\{g\.title\}|\$\{goal\.title\}/.test(dashboardSrc),
+        rawMilestoneTitle: /\$\{m\.title\}/.test(dashboardSrc),
+        rawClientFullName: /\$\{g\.clients\?\.full_name/.test(dashboardSrc),
+        // Checks the exact pre-fix raw literals (not a generic heuristic) -- a negative-lookahead
+        // regex here would false-positive on the fixed `? \`<p>${escapeHtml(...)}` site, since
+        // escapeHtml doesn't immediately follow `${t.description`. Verified against the real source.
+        rawDescription: templateSrc.includes("t.description || (t.workout_template_exercises.length")
+          || templateSrc.includes('`<p class="page-subtitle">${t.description}</p>`')
+          || templateSrc.includes('id="et-desc" rows="2" style="resize:vertical">${t.description || \'\'}</textarea>'),
+        escapedGoalTitle: (dashboardSrc.match(/escapeHtml\((?:g|goal)\.title\)/g) || []).length,
+        escapedMilestoneTitle: (dashboardSrc.match(/escapeHtml\(m\.title\)/g) || []).length,
+        escapedDescription: (templateSrc.match(/escapeHtml\(t\.description/g) || []).length,
+        neutralised: escapeHtml('<img src=x onerror=alert(1)>').includes('&lt;img'),
+      }
+    })
+    expect(r.rawGoalTitle, 'goal title still interpolated raw somewhere').toBe(false)
+    expect(r.rawMilestoneTitle, 'milestone title still interpolated raw somewhere').toBe(false)
+    expect(r.rawClientFullName, 'client full_name still interpolated raw on the coach dashboard goals widget').toBe(false)
+    expect(r.rawDescription, 'template description still interpolated raw somewhere').toBe(false)
+    // 3 dashboards (coach/client/solo) each show goal title at least once; 2 show a milestone title;
+    // 3 template surfaces (list row, detail page, edit modal) each show description once.
+    expect(r.escapedGoalTitle).toBeGreaterThanOrEqual(3)
+    expect(r.escapedMilestoneTitle).toBeGreaterThanOrEqual(2)
+    expect(r.escapedDescription).toBeGreaterThanOrEqual(3)
+    expect(r.neutralised).toBe(true)
+  })
 })

@@ -772,7 +772,7 @@ async function renderWorkoutTemplates(el) {
       <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
       <div class="row-info">
         <div class="row-name">${escapeHtml(t.name)}</div>
-        <div class="row-meta">${t.description || (t.workout_template_exercises.length + ' exercise' + (t.workout_template_exercises.length !== 1 ? 's' : ''))}</div>
+        <div class="row-meta">${t.description ? escapeHtml(t.description) : (t.workout_template_exercises.length + ' exercise' + (t.workout_template_exercises.length !== 1 ? 's' : ''))}</div>
       </div>
       <div class="row-right">
         <span style="font-size:12px;color:var(--text-muted)">${t.workout_template_exercises.length} ex</span>
@@ -1143,7 +1143,7 @@ async function openTemplate(id, ctx = {}) {
     <div class="page-header">
       <div>
         <h1 class="page-title">${escapeHtml(t.name)}</h1>
-        ${t.description ? `<p class="page-subtitle">${t.description}</p>` : ''}
+        ${t.description ? `<p class="page-subtitle">${escapeHtml(t.description)}</p>` : ''}
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-secondary" onclick="showEditTemplateModal('${id}')">Edit</button>
@@ -2390,7 +2390,7 @@ async function showEditTemplateModal(id) {
       </div>
       <div class="field">
         <label class="field-label">Description</label>
-        <textarea class="field-input" id="et-desc" rows="2" style="resize:vertical">${t.description || ''}</textarea>
+        <textarea class="field-input" id="et-desc" rows="2" style="resize:vertical">${escapeHtml(t.description || '')}</textarea>
       </div>
       <p class="modal-error" id="et-error"></p>
       <div class="modal-footer">

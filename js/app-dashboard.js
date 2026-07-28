@@ -173,8 +173,8 @@
           ` : upcomingGoals.map(g => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
               <div>
-                <div style="font-size:13px;font-weight:500">${g.title}</div>
-                <div style="font-size:11.5px;color:var(--text-muted)">${g.clients?.full_name || ''}</div>
+                <div style="font-size:13px;font-weight:500">${escapeHtml(g.title)}</div>
+                <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(g.clients?.full_name || '')}</div>
               </div>
               <div style="font-size:11.5px;font-weight:600;color:var(--accent);white-space:nowrap">${daysUntil(g.target_date)}</div>
             </div>
@@ -399,7 +399,7 @@ async function renderClientDashboard(el) {
             return `
             <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-                <div style="font-size:14px;font-weight:600">${goal.title}</div>
+                <div style="font-size:14px;font-weight:600">${escapeHtml(goal.title)}</div>
                 ${daysLeft ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
               </div>
               ${goal.target_value != null ? `
@@ -422,7 +422,7 @@ async function renderClientDashboard(el) {
               <div style="display:flex;flex-wrap:wrap;gap:5px">
                 ${milestones.map(m => `
                   <button onclick="toggleClientMilestone('${m.id}')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:20px;border:none;cursor:pointer;background:${m.completed_at ? 'var(--accent)' : 'var(--surface-2)'};color:${m.completed_at ? '#fff' : 'var(--text-muted)'}">
-                    ${m.completed_at ? '✓' : '○'} ${m.title}
+                    ${m.completed_at ? '✓' : '○'} ${escapeHtml(m.title)}
                   </button>`).join('')}
               </div>` : ''}
             </div>`
@@ -741,7 +741,7 @@ async function renderSoloDashboard(el) {
             return `
             <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px">
-                <div style="font-size:14px;font-weight:600">${goal.title}</div>
+                <div style="font-size:14px;font-weight:600">${escapeHtml(goal.title)}</div>
                 ${daysLeft ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
               </div>
               ${goal.target_value != null ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:5px">Current: <strong style="color:var(--text)">${goal.current_value ?? '—'}</strong> → Target: <strong style="color:var(--accent)">${goal.target_value}</strong></div>` : ''}
@@ -751,7 +751,7 @@ async function renderSoloDashboard(el) {
               ${milestones.length ? `
               <div style="display:flex;flex-wrap:wrap;gap:5px">
                 ${milestones.map(m => `<button onclick="toggleClientMilestone('${m.id}')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:20px;border:none;cursor:pointer;background:${m.completed_at?'var(--accent)':'var(--surface-2)'};color:${m.completed_at?'#fff':'var(--text-muted)'}">
-                  ${m.completed_at?'✓':'○'} ${m.title}</button>`).join('')}
+                  ${m.completed_at?'✓':'○'} ${escapeHtml(m.title)}</button>`).join('')}
               </div>` : ''}
             </div>`
           }).join('')}
