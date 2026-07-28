@@ -130,7 +130,7 @@ async function renderClients(el) {
           <div class="avatar">${c.full_name.charAt(0).toUpperCase()}</div>
           <div class="row-info">
             <div class="row-name">${escapeHtml(c.full_name)}</div>
-            <div class="row-meta">${c.email || 'No email'}</div>
+            <div class="row-meta">${c.email ? escapeHtml(c.email) : 'No email'}</div>
           </div>
           <div class="row-right" style="flex-direction:column;align-items:flex-end;gap:4px">
             <span class="badge badge-${c.status}">${c.status}</span>
@@ -246,19 +246,19 @@ async function openClient(id) {
         <div class="avatar" style="width:48px;height:48px;font-size:18px">${client.full_name.charAt(0).toUpperCase()}</div>
         <div>
           <h1 class="page-title" style="margin-bottom:2px">${escapeHtml(client.full_name)}</h1>
-          <p class="page-subtitle">${client.email || ''}</p>
+          <p class="page-subtitle">${escapeHtml(client.email || '')}</p>
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         ${!client.invited_at ? `
-        <button class="btn-secondary" onclick="sendClientInvite('${client.id}','${client.email}')"
+        <button class="btn-secondary" onclick="sendClientInvite('${client.id}','${escapeAttr(client.email || '')}')"
           style="background:rgba(99,102,241,0.08);color:var(--accent);border-color:var(--accent)">
           ✉ Send invite
         </button>` : `
-        <button class="btn-secondary" onclick="sendClientInvite('${client.id}','${client.email}')">
+        <button class="btn-secondary" onclick="sendClientInvite('${client.id}','${escapeAttr(client.email || '')}')">
           ✉ Resend invite
         </button>`}
-        <button class="btn-secondary" onclick="showUpdateEmailModal('${client.id}','${client.email || ''}')">Update email</button>
+        <button class="btn-secondary" onclick="showUpdateEmailModal('${client.id}','${escapeAttr(client.email || '')}')">Update email</button>
         <button class="btn-secondary" onclick="showEditClientModal('${client.id}')">Update details</button>
       </div>
     </div>
@@ -308,12 +308,12 @@ function clientOverviewTab(client, programName = null) {
         ${programName ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Active program</span><span style="font-size:14px;font-weight:600;color:var(--accent)">${programName}</span></div>` : ''}
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:20px">
           ${infoItem('Status', `<span class="badge badge-${client.status}">${client.status}</span>`)}
-          ${infoItem('Email', client.email || '—')}
-          ${infoItem('Phone', client.phone || '—')}
+          ${infoItem('Email', client.email ? escapeHtml(client.email) : '—')}
+          ${infoItem('Phone', client.phone ? escapeHtml(client.phone) : '—')}
           ${infoItem('Date of birth', age ? `${dob} (age ${age})` : dob)}
           ${infoItem('Height', client.height_cm ? `${client.height_cm} cm` : '—')}
         </div>
-        ${client.notes ? `<div class="divider"></div><p style="color:var(--text-muted);font-size:13.5px;line-height:1.6">${client.notes}</p>` : ''}
+        ${client.notes ? `<div class="divider"></div><p style="color:var(--text-muted);font-size:13.5px;line-height:1.6">${escapeHtml(client.notes)}</p>` : ''}
       </div>
     </div>
   `
@@ -353,7 +353,7 @@ async function renderClientOverview(id, el) {
             ${ciTrend(key)}
           </div>`).join('')}
         </div>
-        ${latestCI.notes ? `<p style="font-size:13px;color:var(--text-muted);margin:0;font-style:italic">"${latestCI.notes}"</p>` : ''}
+        ${latestCI.notes ? `<p style="font-size:13px;color:var(--text-muted);margin:0;font-style:italic">"${escapeHtml(latestCI.notes)}"</p>` : ''}
         ${(checkIns?.length || 0) > 1 ? `
         <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Previous check-ins</div>
@@ -438,11 +438,11 @@ async function showEditClientModal(id) {
       <div class="field-row">
         <div class="field">
           <label class="field-label">Email</label>
-          <input class="field-input" id="ec-email" type="email" value="${c.email || ''}">
+          <input class="field-input" id="ec-email" type="email" value="${escapeHtml(c.email || '')}">
         </div>
         <div class="field">
           <label class="field-label">Phone</label>
-          <input class="field-input" id="ec-phone" value="${c.phone || ''}">
+          <input class="field-input" id="ec-phone" value="${escapeHtml(c.phone || '')}">
         </div>
       </div>
       <div class="field-row">
@@ -465,7 +465,7 @@ async function showEditClientModal(id) {
       </div>
       <div class="field">
         <label class="field-label">Notes</label>
-        <textarea class="field-input" id="ec-notes" rows="2" style="resize:vertical">${c.notes || ''}</textarea>
+        <textarea class="field-input" id="ec-notes" rows="2" style="resize:vertical">${escapeHtml(c.notes || '')}</textarea>
       </div>
       <p class="modal-error" id="ec-error"></p>
       <div class="modal-footer">

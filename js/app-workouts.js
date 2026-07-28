@@ -975,7 +975,7 @@ async function showEditExerciseModal(id) {
       </div>
       <div class="field">
         <label class="field-label">Notes / coaching cues</label>
-        <textarea class="field-input" id="ee-notes" rows="2" style="resize:vertical">${e.notes || ''}</textarea>
+        <textarea class="field-input" id="ee-notes" rows="2" style="resize:vertical">${escapeHtml(e.notes || '')}</textarea>
       </div>
       <p class="modal-error" id="ee-error"></p>
       <div class="modal-footer">
@@ -1202,8 +1202,8 @@ async function openTemplate(id, ctx = {}) {
                 ${(() => {
                   if (!ex.notes) return ''
                   const m = ex.notes.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
-                  if (m) return `<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:4px;background:rgba(99,102,241,.1);color:var(--accent);display:inline-block">${m[1]}</span>${m[2] ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:1px;font-style:italic">${m[2]}</div>` : ''}</div>`
-                  return `<div style="font-size:11.5px;color:var(--accent);margin-top:3px;font-style:italic">${ex.notes}</div>`
+                  if (m) return `<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:4px;background:rgba(99,102,241,.1);color:var(--accent);display:inline-block">${escapeHtml(m[1])}</span>${m[2] ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:1px;font-style:italic">${escapeHtml(m[2])}</div>` : ''}</div>`
+                  return `<div style="font-size:11.5px;color:var(--accent);margin-top:3px;font-style:italic">${escapeHtml(ex.notes)}</div>`
                 })()}
               </div>
               <button class="btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>

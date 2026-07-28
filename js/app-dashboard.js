@@ -517,7 +517,7 @@ async function renderClientDashboard(el) {
             <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
               <div style="width:3px;min-width:3px;height:34px;border-radius:2px;background:${s.colour};margin-top:2px"></div>
               <div>
-                <div style="font-size:13px;font-weight:500">${ev.title}</div>
+                <div style="font-size:13px;font-weight:500">${escapeHtml(ev.title)}</div>
                 <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${s.label} · ${formatDate(ev.date)} · ${daysUntil(ev.date)}</div>
               </div>
             </div>`
@@ -567,7 +567,7 @@ async function renderClientDashboard(el) {
                 <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${label}</div>
               </div>`).join('')}
             </div>
-            ${lastCheckIn.notes ? `<p style="font-size:13px;color:var(--text-muted);margin:0 0 10px">${lastCheckIn.notes}</p>` : ''}
+            ${lastCheckIn.notes ? `<p style="font-size:13px;color:var(--text-muted);margin:0 0 10px">${escapeHtml(lastCheckIn.notes)}</p>` : ''}
             <button onclick="document.getElementById('checkin-form').style.display='block'" class="btn-secondary" style="font-size:13px">Submit new check-in</button>
           ` : `<p style="font-size:13px;color:var(--text-muted);margin:0 0 10px">${checkInDue ? 'Your weekly check-in is due. Let your coach know how you\'re feeling.' : 'No check-ins yet.'}</p>`}
           <div id="checkin-form" style="${checkInDue ? '' : 'display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)'}">
@@ -581,7 +581,7 @@ async function renderClientDashboard(el) {
             </div>
             <div class="field">
               <label class="field-label">Notes for your coach <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
-              <textarea id="ci-notes" class="field-input" rows="2" placeholder="How's training feeling? Any injuries or concerns?">${lastCheckIn?.notes||''}</textarea>
+              <textarea id="ci-notes" class="field-input" rows="2" placeholder="How's training feeling? Any injuries or concerns?">${escapeHtml(lastCheckIn?.notes||'')}</textarea>
             </div>
             <p id="ci-error" style="color:var(--danger);font-size:12px;margin:4px 0"></p>
             <button onclick="saveClientCheckIn('${clientId}')" class="btn-primary" style="margin-top:8px">Submit check-in</button>
@@ -831,7 +831,7 @@ async function renderSoloDashboard(el) {
             <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
               <div style="width:3px;min-width:3px;height:34px;border-radius:2px;background:${eventColour(ev.type)};margin-top:2px"></div>
               <div>
-                <div style="font-size:13px;font-weight:500">${ev.title}</div>
+                <div style="font-size:13px;font-weight:500">${escapeHtml(ev.title)}</div>
                 <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${formatDate(ev.date)} · ${daysUntil(ev.date)}</div>
               </div>
             </div>`).join('')}

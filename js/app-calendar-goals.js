@@ -185,7 +185,7 @@ function renderEventList(events, clientMap) {
                 <div style="font-size:18px;font-weight:700;line-height:1.1">${dateLabel.split(' ')[1]}</div>
               </div>
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:600">${e.title}</div>
+                <div style="font-size:13px;font-weight:600">${escapeHtml(e.title)}</div>
                 <div style="display:flex;gap:6px;margin-top:3px;align-items:center">
                   <span style="font-size:11px;padding:2px 7px;border-radius:4px;background:${col.bg};color:${col.text};font-weight:600">${e.type}</span>
                   ${e.client_id ? `<span style="font-size:11.5px;color:var(--text-muted)">${clientMap[e.client_id] || ''}</span>` : ''}
@@ -498,8 +498,8 @@ function goalCard(g, clientId) {
       <div class="card-body">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px">
           <div>
-            <div style="font-weight:600;font-size:15px;margin-bottom:3px">${g.title}</div>
-            ${g.description ? `<div style="color:var(--text-muted);font-size:13px">${g.description}</div>` : ''}
+            <div style="font-weight:600;font-size:15px;margin-bottom:3px">${escapeHtml(g.title)}</div>
+            ${g.description ? `<div style="color:var(--text-muted);font-size:13px">${escapeHtml(g.description)}</div>` : ''}
           </div>
           <span class="badge badge-${g.status === 'active' ? 'accent' : g.status === 'completed' ? 'active' : 'inactive'}">${g.status}</span>
         </div>
@@ -660,8 +660,8 @@ async function openGoal(goalId, clientId) {
 
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:24px;flex-wrap:wrap">
       <div>
-        <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${g.title}</h2>
-        ${g.description ? `<p style="color:var(--text-muted)">${g.description}</p>` : ''}
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${escapeHtml(g.title)}</h2>
+        ${g.description ? `<p style="color:var(--text-muted)">${escapeHtml(g.description)}</p>` : ''}
       </div>
       <div style="display:flex;gap:8px">
         <span class="badge badge-${g.status === 'active' ? 'accent' : g.status === 'completed' ? 'active' : 'inactive'}">${g.status}</span>
@@ -707,7 +707,7 @@ async function openGoal(goalId, clientId) {
                     </div>
                   </button>
                   <div>
-                    <div style="font-weight:500;font-size:13.5px;${m.completed_at ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${m.title}</div>
+                    <div style="font-weight:500;font-size:13.5px;${m.completed_at ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${escapeHtml(m.title)}</div>
                     ${m.target_date ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${new Date(m.target_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>` : ''}
                   </div>
                 </div>
@@ -731,7 +731,7 @@ async function openGoal(goalId, clientId) {
                     <span style="font-size:12px;color:var(--text-muted)">${new Date(ci.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
                     ${ci.current_value != null ? `<span style="font-weight:600;color:var(--accent)">${ci.current_value} ${g.metric_unit || ''}</span>` : ''}
                   </div>
-                  ${ci.notes ? `<div style="font-size:13px;color:var(--text-muted)">${ci.notes}</div>` : ''}
+                  ${ci.notes ? `<div style="font-size:13px;color:var(--text-muted)">${escapeHtml(ci.notes)}</div>` : ''}
                 </div>
               </div>
             `).join('')}
@@ -921,11 +921,11 @@ async function showEditGoalModal(goalId, clientId) {
       </div>
       <div class="field">
         <label class="field-label">Goal title</label>
-        <input class="field-input" id="eg-title" value="${g.title}">
+        <input class="field-input" id="eg-title" value="${escapeHtml(g.title)}">
       </div>
       <div class="field">
         <label class="field-label">Description</label>
-        <textarea class="field-input" id="eg-desc" rows="2" style="resize:vertical">${g.description || ''}</textarea>
+        <textarea class="field-input" id="eg-desc" rows="2" style="resize:vertical">${escapeHtml(g.description || '')}</textarea>
       </div>
       <div class="field-row">
         <div class="field">

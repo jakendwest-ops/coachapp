@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, loginAsClient, clickVisible } = require('./helpers')
 
 // Regressions from the first-ever FULL-FILE multi-agent review (2026-07-13).
 //
@@ -491,4 +491,178 @@ test.describe('Exercise library: name escaping (2026-07-27 pre-push sweep)', () 
       if (exId) await page.evaluate(async (id) => { await db.from('exercises').delete().eq('id', id) }, exId)
     }
   })
+})
+
+test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-branch review)', () => {
+  // The whole-branch pre-push review (run before the intervals feature's final push) found this same
+  // recurring client->coach stored-XSS class in an area the intervals branch never touched at all:
+  // client_check_ins.notes (a client's own weekly check-in, free-typed on their dashboard) rendered
+  // completely raw on the COACH's client-profile Overview tab -- the first thing a coach sees opening
+  // a client. Confirmed live on production, unrelated to intervals. While closing it, a wider sweep of
+  // the same three files found ~20 more unescaped sinks: client email/phone/notes (3 separate render
+  // locations each), goal/milestone title/description, and event titles (saveClientEvent proves a
+  // client can create their own event, stamped is_pt_assigned:false specifically to mark it
+  // client-authored -- and the coach's own calendar renders it). All wrapped in escapeHtml/escapeAttr.
+  const PAYLOAD = '"><img src=x id="xss-marker" onerror="window.__xssFired=(window.__xssFired||0)+1">'
+
+  // client_check_ins RLS (correctly) refuses an insert unless the session IS the client submitting
+  // it — a coach cannot plant a check-in on a client's behalf (confirmed directly: attempting it
+  // returns 42501, and tests/rls-audit.spec.js already documents this same refusal). So the write
+  // must come from a genuine client session, not a coach-authored fixture — matching the real
+  // vulnerability's actual trigger path. Two browser contexts, same pattern rls-audit.spec.js uses
+  // for exactly this reason (no sign-out dance, cleanup can't be skipped by a failed re-login).
+  test('a check-in note cannot inject markup on the coach client-profile Overview tab', async ({ page, browser }) => {
+    const clientCtx = await browser.newContext()
+    const client = await clientCtx.newPage()
+    let checkInId = null, clientId = null
+    try {
+      await loginAsClient(client)
+      const planted = await client.evaluate(async (payload) => {
+        const cid = await _getCurrentClientId()
+        const { data, error } = await db.from('client_check_ins')
+          .insert({ client_id: cid, sleep: 3, energy: 3, stress: 3, soreness: 3, notes: payload })
+          .select('id').single()
+        return { clientId: cid, checkInId: data?.id, error: error?.message }
+      }, PAYLOAD)
+      expect(planted.error, 'could not plant the check-in as a real client, so this proves nothing').toBeUndefined()
+      clientId = planted.clientId; checkInId = planted.checkInId
+
+      await loginAsPT(page)
+      const r = await page.evaluate(async (id) => {
+        window.__xssFired = 0
+        const el = document.createElement('div')
+        document.body.appendChild(el)
+        await renderClientOverview(id, el)
+        return { fired: window.__xssFired, markerExists: !!document.getElementById('xss-marker'), containsNoteText: el.textContent.includes('img src=x') }
+      }, clientId)
+      expect(r.fired).toBe(0)
+      expect(r.markerExists).toBe(false)
+      expect(r.containsNoteText).toBe(true)   // the literal text survived, just not as markup
+    } finally {
+      if (checkInId) await client.evaluate(async (id) => { await db.from('client_check_ins').delete().eq('id', id) }, checkInId)
+      await clientCtx.close()
+    }
+  })
+
+  test('client email, phone, and notes cannot inject markup or break an attribute anywhere on the profile page', async ({ page }) => {
+    await loginAsPT(page)
+    let clientId = null
+    try {
+      const attrPayload = '1" onmouseover="window.__xssFired2=(window.__xssFired2||0)+1" data-x="'
+      clientId = await page.evaluate(async ({ payload, attrPayload }) => {
+        const { data } = await db.from('clients')
+          .insert({ coach_id: currentUser.id, full_name: '[E2E] contact xss client', email: attrPayload, phone: attrPayload, notes: payload })
+          .select('id').single()
+        return data.id
+      }, { payload: PAYLOAD, attrPayload })
+      const r = await page.evaluate(async (id) => {
+        window.__xssFired = 0; window.__xssFired2 = 0
+        // Client list row
+        const listEl = document.createElement('div')
+        document.body.appendChild(listEl)
+        await renderClients(listEl)
+        // Full profile page (subtitle, invite/update-email buttons' onclick args)
+        await openClient(id)
+        // Edit-client modal (value= attributes + notes textarea)
+        await showEditClientModal(id)
+        document.getElementById('ec-email')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+        document.getElementById('ec-phone')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+        return {
+          fired: window.__xssFired, fired2: window.__xssFired2,
+          markerExists: !!document.getElementById('xss-marker'),
+          strayDataAttr: document.querySelectorAll('[data-x]').length,
+          emailHandlerProp: typeof document.getElementById('ec-email')?.onmouseover === 'function',
+          phoneHandlerProp: typeof document.getElementById('ec-phone')?.onmouseover === 'function',
+        }
+      }, clientId)
+      expect(r.fired).toBe(0)
+      expect(r.fired2).toBe(0)
+      expect(r.markerExists).toBe(false)
+      expect(r.strayDataAttr).toBe(0)
+      expect(r.emailHandlerProp).toBe(false)
+      expect(r.phoneHandlerProp).toBe(false)
+    } finally {
+      await page.evaluate(() => { try { closeModal('edit-client-modal') } catch(e){} })
+      if (clientId) await page.evaluate(async (id) => { await db.from('clients').delete().eq('id', id) }, clientId)
+    }
+  })
+
+  test('a goal title/description and a milestone title cannot inject markup anywhere they render', async ({ page }) => {
+    await loginAsPT(page)
+    let clientId = null, goalId = null
+    try {
+      const ids = await page.evaluate(async (payload) => {
+        const { data: client } = await db.from('clients')
+          .insert({ coach_id: currentUser.id, full_name: '[E2E] goal xss client' }).select('id').single()
+        const { data: goal } = await db.from('goals')
+          .insert({ client_id: client.id, created_by: currentUser.id, title: payload, description: payload, goal_type: 'custom' })
+          .select('id').single()
+        await db.from('goal_milestones').insert({ goal_id: goal.id, title: payload })
+        return { clientId: client.id, goalId: goal.id }
+      }, PAYLOAD)
+      clientId = ids.clientId; goalId = ids.goalId
+      const r = await page.evaluate(async ({ clientId, goalId }) => {
+        window.__xssFired = 0
+        if (!document.getElementById('tab-content')) {
+          const tc = document.createElement('div'); tc.id = 'tab-content'; document.body.appendChild(tc)
+        }
+        await openGoal(goalId, clientId)
+        const afterOpenGoal = { fired: window.__xssFired, markerExists: !!document.getElementById('xss-marker') }
+        await showEditGoalModal(goalId, clientId)
+        const afterEditModal = { fired: window.__xssFired, markerExists: !!document.getElementById('xss-marker') }
+        return { afterOpenGoal, afterEditModal }
+      }, { clientId, goalId })
+      expect(r.afterOpenGoal.fired).toBe(0)
+      expect(r.afterOpenGoal.markerExists).toBe(false)
+      expect(r.afterEditModal.fired).toBe(0)
+      expect(r.afterEditModal.markerExists).toBe(false)
+    } finally {
+      await page.evaluate(() => { try { closeModal('edit-goal-modal') } catch(e){} })
+      if (goalId) await page.evaluate(async (id) => { await db.from('goals').delete().eq('id', id) }, goalId)
+      if (clientId) await page.evaluate(async (id) => { await db.from('clients').delete().eq('id', id) }, clientId)
+    }
+  })
+
+  // events has no coach_id column at all -- RLS scopes it via client_id's owning coach, and the real
+  // saveClientEvent() insert never sets one either. Same dual-context reasoning as the check-in test:
+  // plant as the real client (matching its exact insert shape, is_pt_assigned:false marking it
+  // client-authored), read back as the coach, matching the real unscoped events fetch this app uses.
+  test('an event title created via the client-writable saveClientEvent path cannot inject markup on the coach calendar', async ({ page, browser }) => {
+    const clientCtx = await browser.newContext()
+    const client = await clientCtx.newPage()
+    let eventId = null, eventDate = null
+    try {
+      await loginAsClient(client)
+      const planted = await client.evaluate(async (payload) => {
+        const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+        const date = new Date().toISOString().split('T')[0]
+        const { data, error } = await db.from('events')
+          .insert({ title: payload, date, type: 'other', notes: null, client_id: clientRow.id, is_pt_assigned: false, created_by: currentUser.id })
+          .select('id').single()
+        return { eventId: data?.id, date, error: error?.message }
+      }, PAYLOAD)
+      expect(planted.error, 'could not plant the event as a real client, so this proves nothing').toBeUndefined()
+      eventId = planted.eventId; eventDate = planted.date
+
+      await loginAsPT(page)
+      const r = await page.evaluate(async (date) => {
+        window.__xssFired = 0
+        const { data: events } = await db.from('events').select('*').gte('date', date).lte('date', date).order('date')
+        const el = document.createElement('div')
+        document.body.appendChild(el)
+        el.innerHTML = renderEventList(events || [], {})
+        return { fired: window.__xssFired, markerExists: !!document.getElementById('xss-marker') }
+      }, eventDate)
+      expect(r.fired).toBe(0)
+      expect(r.markerExists).toBe(false)
+    } finally {
+      if (eventId) await client.evaluate(async (id) => { await db.from('events').delete().eq('id', id) }, eventId)
+      await clientCtx.close()
+    }
+  })
+
+  // The client's own dashboard rendering of their own check-in note (self-view, no privilege
+  // boundary crossed) was also fixed for consistency but isn't separately tested here — the coach-
+  // facing test above already proves escapeHtml neutralises this exact payload shape, and a second
+  // dual-context test for a self-XSS-only surface isn't worth the added fixture complexity.
 })
