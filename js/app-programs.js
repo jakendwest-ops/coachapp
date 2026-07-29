@@ -365,7 +365,22 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
     .eq('program_id', programId)
     .order('order_index')
 
-  if (phErr || !phases?.length) { log.error('_cloneProgramForClient', 'phase fetch failed', phErr); return }
+  // FAIL LOUD, same reasoning as the `skipped` counter below: a bare return here left the
+  // client_programs row sitting there with zero client_program_workouts and NOTHING telling either
+  // side why — the Workouts page's hasProgram check (Object.keys(cpwMap).length > 0) treats it
+  // identically to "no program assigned at all", so "assign a program with no phases yet" reproduced
+  // exactly as "assign a program, then it's not there" with no error anywhere. Reported live 2026-07-29.
+  // Return value is a plain success flag the CALLER must check before showing its own "done" toast —
+  // every early-return/failure branch below already shows its own toast, and showToast (app-core.js)
+  // keeps a single DOM node with no queue, so an unconditional caller-side success toast would
+  // instantly clobber whatever this function just told the user. Bit solo's self-assign flow exactly
+  // this way until fixed 2026-07-29 (multi-agent review, Agent B).
+  if (phErr) { log.error('_cloneProgramForClient', 'phase fetch failed', phErr); showToast('Could not copy this program’s sessions — try assigning it again', 'error', 8000); return false }
+  if (!phases?.length) {
+    log.error('_cloneProgramForClient', 'program has no phases yet — nothing to assign', { clientId, programId })
+    showToast('Assigned — but this program has no phases/workouts yet, so there’s nothing to do until you add some', 'warn', 8000)
+    return false
+  }
 
   const cpwInserts = []
 
@@ -384,9 +399,14 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
     }
   }
 
+  let insertError = false
   if (cpwInserts.length) {
     const { error } = await db.from('client_program_workouts').insert(cpwInserts)
-    if (error) log.error('_cloneProgramForClient', 'cpw insert failed', error)
+    if (error) {
+      insertError = true
+      log.error('_cloneProgramForClient', 'cpw insert failed', error)
+      showToast('Could not save this program’s sessions — try assigning it again', 'error', 8000)
+    }
   }
 
   if (skipped) {
@@ -394,6 +414,7 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
     showToast(`${skipped} session${skipped > 1 ? 's' : ''} could not be copied to this client — do not rely on this assignment`, 'error', 8000)
   }
   log.ok('_cloneProgramForClient', `cloned ${cpwInserts.length} workouts`, { clientId, programId, skipped })
+  return !insertError && !skipped
 }
 
 // ─── Assignment-time 1RM check ─────────────────────────────────────────────────
@@ -670,8 +691,11 @@ async function saveAssignProgramToClient(programId, soloClientId) {
   // the client_program_workouts rows must exist before any view reads them. Then re-render the
   // current page so the new assignment shows immediately (Workouts/Calendar/dashboard), no refresh.
   showToast('Adding program…', 'info', 1500)
-  await _cloneProgramForClient(cp.id, programId, clientId)
-  if (soloClientId) showToast('Program added to your plan', 'success')
+  const cloneOk = await _cloneProgramForClient(cp.id, programId, clientId)
+  // Only show our own "done" toast when the clone had nothing to report — otherwise this single-toast
+  // UI (app-core.js's showToast keeps no queue) would instantly clobber whatever _cloneProgramForClient
+  // just told the user (a phase-count warning, a skip count, an insert failure). Fixed 2026-07-29.
+  if (soloClientId && cloneOk) showToast('Program added to your plan', 'success')
   if (typeof currentPage === 'string') navigate(currentPage, 'replace')
 }
 

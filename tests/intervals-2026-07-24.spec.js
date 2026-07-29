@@ -55,12 +55,15 @@ test.describe('Intervals 2026-07-24 — get-ready countdown + repeat-set builder
     const r = await page.evaluate(() => ({
       skipToNext: /stopRunnerCountIn\(\)/.test(skipToNextExercise.toString()),
       jumpTo: /stopRunnerCountIn\(\)/.test(runnerJumpTo.toString()),
-      goBack: /stopRunnerCountIn\(\)/.test(runnerGoBack.toString()),
+      // runnerGoBack was folded into runnerJumpTo(exIdx - 1) on 2026-07-29 (the nav-persistent rest
+      // redesign) — it no longer calls stopRunnerCountIn() directly, but inherits it by delegating to
+      // runnerJumpTo, which the assertion above already proves still stops the count-in.
+      goBack: /runnerJumpTo\(/.test(runnerGoBack.toString()),
       discard: /clearInterval\(_runner\?\._countInInterval\)/.test(discardRunner.toString()),
     }))
     expect(r.skipToNext, 'skipToNextExercise must stop a running count-in').toBe(true)
     expect(r.jumpTo, 'runnerJumpTo must stop a running count-in').toBe(true)
-    expect(r.goBack, 'runnerGoBack must stop a running count-in').toBe(true)
+    expect(r.goBack, 'runnerGoBack must delegate to runnerJumpTo (which stops the count-in)').toBe(true)
     expect(r.discard, 'discardRunner must clear the count-in interval').toBe(true)
   })
 
@@ -169,13 +172,43 @@ test.describe('Intervals 2026-07-24 — get-ready countdown + repeat-set builder
   test('logRunnerSet is blocked during the count-in, and showRunnerFinish tears it down', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
-      const guarded = /_runner\._restInterval\s*\|\|\s*_runner\._countInInterval/.test(logRunnerSet.toString())
       const finishTearsDown = /stopRunnerCountIn\(\)/.test(showRunnerFinish.toString())
-      return { guarded, finishTearsDown }
+      return { finishTearsDown }
     })
-    // RED before: logRunnerSet only checked _restInterval; showRunnerFinish cleared _timerInterval/
-    // _restInterval/stopIntervalTimer/stopStrengthSetTimer but never stopRunnerCountIn.
-    expect(r.guarded, 'logRunnerSet must also block while the count-in is running').toBe(true)
     expect(r.finishTearsDown, 'showRunnerFinish must stop a still-running count-in').toBe(true)
+  })
+
+  // 2026-07-29: rewritten as a BEHAVIORAL test (was a source-text regex, flagged by multi-agent review
+  // as provable-but-not-enforced — it could pass even if the real `if` no longer combined the
+  // conditions correctly). Also covers the rest half's new ownership qualifier from the nav-persistent
+  // rest redesign: a rest belonging to a DIFFERENT exercise must NOT block logging on this one.
+  test('logRunnerSet is blocked by count-in and an own-exercise rest, but not by another exercise\'s rest', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const mkEx = () => ({ name: 'X', type: 'strength', metricType: 'weight_reps', loggedSets: [], sets_json: [{}] })
+      const run = (setup) => {
+        const ex = mkEx()
+        _runner = { exercises: [ex, mkEx()], exIdx: 0, ...setup }
+        document.getElementById('wr-reps-input')?.remove()
+        const input = document.createElement('input'); input.id = 'wr-reps-input'; input.value = '5'
+        document.body.appendChild(input)
+        const before = ex.loggedSets.length
+        logRunnerSet()
+        const logged = ex.loggedSets.length > before
+        input.remove()
+        _runner = null
+        return logged
+      }
+      return {
+        blockedByCountIn: run({ _countInInterval: 999 }) === false,
+        blockedByOwnRest: run({ _restInterval: 999, _restForExIdx: 0 }) === false,
+        notBlockedByOtherRest: run({ _restInterval: 999, _restForExIdx: 1 }) === true,
+        notBlockedWhenIdle: run({}) === true,
+      }
+    })
+    expect(r.blockedByCountIn, 'LOG must not fire mid-count-in').toBe(true)
+    expect(r.blockedByOwnRest, 'LOG must not fire while THIS exercise is resting').toBe(true)
+    expect(r.notBlockedByOtherRest, 'a DIFFERENT exercise\'s rest must not block this one').toBe(true)
+    expect(r.notBlockedWhenIdle, 'LOG must work normally with no timer active').toBe(true)
   })
 })

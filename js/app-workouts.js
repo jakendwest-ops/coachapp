@@ -880,7 +880,7 @@ function showAddExerciseModal() {
           <select class="field-input" id="ae-category">
             <option value="">— Select —</option>
             <option>Compound</option><option>Isolation</option>
-            <option>Cardio</option><option>Bodyweight</option><option>Stretching</option>
+            <option>Cardio</option><option>Stretching</option>
           </select>
         </div>
       </div>
@@ -959,7 +959,7 @@ async function showEditExerciseModal(id) {
           <label class="field-label">Category</label>
           <select class="field-input" id="ee-category">
             <option value="">— Select —</option>
-            ${['Compound','Isolation','Cardio','Bodyweight','Stretching'].map(c => `<option ${e.category===c?'selected':''}>${c}</option>`).join('')}
+            ${['Compound','Isolation','Cardio','Stretching'].map(c => `<option ${e.category===c?'selected':''}>${c}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -1905,7 +1905,7 @@ async function saveExerciseToTemplate(templateId) {
     notes: document.getElementById('att-notes').value.trim() || null,
     superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   } }
-  _checkClientPlanPropagation(targetId)
+  _afterTemplateExerciseSave(targetId)
 }
 
 async function showEditTemplateExerciseModal(templateExId, templateId) {
@@ -1955,7 +1955,7 @@ async function saveEditTemplateExercise(texId, templateId) {
   _rememberExerciseMetricType(picked.id || null, metricType)
   closeModal('edit-tex-modal')
   window._lastExerciseChange = { op: 'update', matchName: origRow?.exercise_name || picked.name, row: newRow }
-  _checkClientPlanPropagation(targetId)
+  _afterTemplateExerciseSave(targetId)
 }
 
 async function deleteTemplateExercise(texId, templateId) {
@@ -1972,7 +1972,7 @@ async function deleteTemplateExercise(texId, templateId) {
   // just reopen.
   if (!delRow?.exercise_name) { window._lastExerciseChange = null; return openTemplate(targetId, window._templateCtx) }
   window._lastExerciseChange = { op: 'delete', matchName: delRow.exercise_name, row: null }
-  _checkClientPlanPropagation(targetId)
+  _afterTemplateExerciseSave(targetId)
 }
 
 // Applies ONE captured exercise change (window._lastExerciseChange) to a set of target templates,
@@ -2073,9 +2073,40 @@ async function _assignedCopiesForSession(masterTemplateIds) {
 // (#2) First keep already-assigned copies of THIS session in sync so the edit shows on the calendar
 //      without re-assigning: the user's own solo copies update silently; real clients' copies update
 //      only after a confirm. (#3) Then offer to apply the same change to other same-named sessions.
-async function _checkClientPlanPropagation(templateId) {
-  const ctx = window._templateCtx
-  const change = window._lastExerciseChange
+// Shared by saveExerciseToTemplate/saveEditTemplateExercise/deleteTemplateExercise. Each of those
+// three used to end with a bare, un-awaited, uncaught _checkClientPlanPropagation(targetId) call —
+// re-rendering #template-exercise-list was entirely delegated to that chain's own eventual
+// openTemplate() call, so ANY rejection anywhere inside it (a network blip, an RLS path that
+// behaves differently on a real account than a clean test fixture) silently left the stale
+// pre-edit list on screen with no error, reachable only by a manual reload. Reported live 3 times
+// (2026-07-13, -22, -28) before this was root-caused. Now the re-render is immediate and
+// unconditional; propagation still runs afterward but a failure surfaces a toast instead of
+// vanishing. One helper for all three call sites so they can't drift apart again (2026-07-29).
+async function _afterTemplateExerciseSave(targetId) {
+  // Snapshot BEFORE the await — window._templateCtx/window._lastExerciseChange are single global
+  // slots, and openTemplate() below does a real network round-trip. If the coach navigates to a
+  // DIFFERENT client's plan during that gap (a completely normal fast click), that navigation's own
+  // openTemplate() call overwrites window._templateCtx before this save's propagation check would
+  // otherwise re-read it — causing it to sync/prompt-to-update against the wrong client. Passing an
+  // explicit snapshot through keeps propagation acting on what THIS save actually captured. Found by
+  // multi-agent review, 2026-07-29.
+  const ctxSnapshot = window._templateCtx
+  const changeSnapshot = window._lastExerciseChange
+  await openTemplate(targetId, ctxSnapshot)
+  try {
+    await _checkClientPlanPropagation(targetId, ctxSnapshot, changeSnapshot)
+  } catch (err) {
+    log.error('_afterTemplateExerciseSave', 'propagation failed', err)
+    showToast('Saved — syncing to assigned plans failed, refresh to check', 'warn')
+  }
+}
+
+// ctxOverride/changeOverride let _afterTemplateExerciseSave pass a pre-await snapshot through (see
+// its comment). The other caller (_continueAfterClientCopy, a later independent modal-button click)
+// omits them, correctly falling back to whatever is live at that fresh moment.
+async function _checkClientPlanPropagation(templateId, ctxOverride, changeOverride) {
+  const ctx = ctxOverride || window._templateCtx
+  const change = changeOverride !== undefined ? changeOverride : window._lastExerciseChange
 
   // (#2) Sync assigned copies of the edited session — master program edits only (a direct client-plan
   // edit is already editing the client's own copy, so there's nothing downstream to sync).
@@ -2095,7 +2126,7 @@ async function _checkClientPlanPropagation(templateId) {
     }
   }
 
-  return _checkSiblingPropagation(templateId)
+  return _checkSiblingPropagation(templateId, ctx)
 }
 
 // (#2) prompt shown when real clients have the edited session assigned.
@@ -2129,9 +2160,12 @@ async function _continueAfterClientCopy(templateId, doIt) {
   _checkSiblingPropagation(templateId)
 }
 
-// (#3) offer to apply the same change to other sessions that share this one's name.
-async function _checkSiblingPropagation(templateId) {
-  const ctx = window._templateCtx
+// (#3) offer to apply the same change to other sessions that share this one's name. ctxOverride lets
+// _checkClientPlanPropagation forward its own (possibly pre-await-snapshotted) ctx through rather than
+// this function re-reading window._templateCtx fresh; the other caller (_continueAfterClientCopy)
+// omits it and correctly falls back to whatever is live.
+async function _checkSiblingPropagation(templateId, ctxOverride) {
+  const ctx = ctxOverride || window._templateCtx
 
   const _showPropagateModal = (name, count, label) => {
     const overlay = document.createElement('div')

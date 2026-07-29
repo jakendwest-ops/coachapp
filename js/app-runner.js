@@ -204,11 +204,13 @@ async function fetchRunnerLastSession(exName, exerciseId) {
   const logIds = logs.map(l => l.id)
   // Prefer matching by exercise_id (survives the name being retyped/renamed since); fall back
   // to the exact-name match for rows logged before this exercise had a library link.
+  // height_cm/distance_m added alongside weight_kg/reps_achieved (2026-07-29) — jump sets never
+  // write weight_kg, so they were invisibly excluded from "last session" everywhere below.
   let exRows = exerciseId
-    ? (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)').eq('exercise_id', exerciseId).in('log_id', logIds)).data
+    ? (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m)').eq('exercise_id', exerciseId).in('log_id', logIds)).data
     : null
   if (!exRows?.length) {
-    exRows = (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)').eq('exercise_name', exName).in('log_id', logIds)).data
+    exRows = (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m)').eq('exercise_name', exName).in('log_id', logIds)).data
   }
   if (!exRows?.length) { _runner.lastSession[exName] = null; return }
 
@@ -217,8 +219,10 @@ async function fetchRunnerLastSession(exName, exerciseId) {
     logs.findIndex(l => l.id === a.log_id) - logs.findIndex(l => l.id === b.log_id)
   )[0]
   const date = logs.find(l => l.id === best.log_id)?.date
+  // A jump set can be logged with height_cm/distance_m set and reps_achieved (contacts) still
+  // null (contacts aren't required to log a jump) — must count as real data too.
   const sets = (best.workout_log_sets || [])
-    .filter(s => s.weight_kg || s.reps_achieved)
+    .filter(s => s.weight_kg || s.reps_achieved || s.height_cm || s.distance_m)
     .sort((a, b) => a.set_number - b.set_number)
 
   _runner.lastSession[exName] = sets.length ? { date, sets } : null
@@ -351,6 +355,11 @@ function _prevSetsByIndex(ex) {
   return map
 }
 
+// A weight value is "present" whenever it isn't null/undefined/''. A real 0 (e.g. a bodyweight-only
+// set logged under a normal, non-flagged exercise) must count as present — `!w`/`w &&` treat 0 as
+// missing, which silently blocked entry and then silently dropped the value on save (Jake, 2026-07-29).
+const _hasWeightVal = w => w != null && w !== ''
+
 // Blank row shape for a fresh table set, per metric_type. Shared by _ensureTableRows (initial fill)
 // and addTableRow (appended set) so the shape literal isn't duplicated in two places.
 function _blankTableRow(ex) {
@@ -377,10 +386,10 @@ function _syncLoggedSetsFromTable(ex) {
   const mt = _exMetricType(ex)
   ex.loggedSets = ex.tableRows.filter(r => r.done).map(r => {
     if (mt === 'unilateral') return { leftWeight: r.leftWeight || null, leftReps: r.leftReps || null, rightWeight: r.rightWeight || null, rightReps: r.rightReps || null }
-    if (mt === 'timed_hold') return { duration: r.duration || null, weight: r.weight || null }
+    if (mt === 'timed_hold') return { duration: r.duration || null, weight: _hasWeightVal(r.weight) ? r.weight : null }
     if (mt === 'jump_height') return { height_cm: r.height_cm || null, reps: r.reps || null }
     if (mt === 'jump_distance') return { distance_m: r.distance_m || null, reps: r.reps || null }
-    return { weight: r.weight || null, reps: r.reps }
+    return { weight: _hasWeightVal(r.weight) ? r.weight : null, reps: r.reps }
   })
 }
 
@@ -408,7 +417,7 @@ function toggleTableSet(rowIdx) {
       if (!row.distance_m) { showToast('Enter a distance first', 'warn'); return }
     } else {
       if (!row.reps) { showToast('Enter reps first', 'warn'); return }
-      if (!ex.bodyweight && !row.weight) { showToast('Enter weight first', 'warn'); return }
+      if (!ex.bodyweight && !_hasWeightVal(row.weight)) { showToast('Enter weight first', 'warn'); return }
     }
     _unlockAudio()
     _unlockSpeech()
@@ -543,7 +552,9 @@ function renderStrengthTable(ex) {
     </div>` : ''
 
   let restBar = ''
-  if (_runner.restRemaining != null) {
+  // Gated on _restForExIdx, not just restRemaining != null — a rest can now be running for a
+  // DIFFERENT exercise (2026-07-29 redesign) and must not paint this exercise's inline bar.
+  if (_runner.restRemaining != null && _runner._restForExIdx === _runner.exIdx) {
     const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
     const nextEx = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name)
     const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (ex.loggedSets.length + 1)
@@ -645,9 +656,11 @@ function renderStrengthTable(ex) {
       // a bare unit, matching how the weight column ghosts its %1RM target. Jump DISTANCE stays
       // metric-only; jump HEIGHT respects the preference.
       const tgtVal = mt === 'jump_height' ? rowTgt0?.targetHeightCm : rowTgt0?.targetDistanceM
+      // Target takes priority when prescribed; last session is the fallback, same order the
+      // weight_reps branch below already uses for its own ghost text (2026-07-29).
       const ph = mt === 'jump_height'
-        ? (tgtVal != null ? jumpHeightToPref(tgtVal) : window._unitPrefs.jumpHeight)
-        : (tgtVal || 'm')
+        ? (tgtVal != null ? jumpHeightToPref(tgtVal) : prev?.height_cm != null ? jumpHeightToPref(prev.height_cm) : window._unitPrefs.jumpHeight)
+        : (tgtVal || (prev?.distance_m != null ? String(prev.distance_m) : 'm'))
       // A jump's "rep" is a CONTACT. The builder prescribes a count per set; without this cell the
       // athlete could not record how many they actually did, so contact volume was unrecordable and
       // never reached the charts. Regression from the jump-targets work earlier the same day.
@@ -733,6 +746,11 @@ function renderRunner() {
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
         </div>
         ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${e.name||'Exercise '+(i+1)}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
+        ${_runner.restRemaining != null && _runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx ? `
+        <div onclick="runnerJumpTo(${_runner._restForExIdx})" style="display:flex;align-items:center;gap:8px;margin-top:8px;min-height:44px;padding:10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--accent);cursor:pointer;box-sizing:border-box">
+          <span id="wr-rest-chip-countdown" style="font-size:13px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;flex-shrink:0">${_runner._restPendingFire ? 'Done' : fmtRestCountdown(_runner.restRemaining)}</span>
+          <span style="font-size:12px;font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_runner._restPendingFire ? 'Rest done — tap to continue' : 'Resting ' + escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '') + ' — tap to return'}</span>
+        </div>` : ''}
         <div style="display:flex;gap:14px;margin-top:8px">
           <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">⇄ Swap exercise</button>
           <button id="wr-add-btn" onclick="showExercisePicker('add')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">+ Add exercise</button>
@@ -801,7 +819,7 @@ function renderRunner() {
           ${ex.loggedSets.length > 0
             ? `<button onclick="skipToNextExercise()" style="width:100%;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">${isLast?'Finish 🏁':'Next exercise →'}</button>`
             : `<div style="text-align:center;padding:14px;font-size:12px;color:var(--text-muted)">Check off a set to continue</div>`}
-        ` : _runner._restInterval ? `
+        ` : _runner._restInterval && _runner._restForExIdx === _runner.exIdx ? `
           <div style="padding:14px;text-align:center;border-radius:10px;background:var(--surface-2)">
             <div style="font-size:13px;font-weight:600;color:var(--text-muted)">Resting — inputs available after rest</div>
           </div>
@@ -977,7 +995,9 @@ function renderRunner() {
 function logRunnerSet() {
   _unlockAudio() // user gesture — unlock AudioContext for iOS
   _unlockSpeech() // prime speechSynthesis for iOS mid-timer calls
-  if (_runner._restInterval || _runner._countInInterval) return // block LOG during rest or the get-ready count-in
+  // A rest belonging to a DIFFERENT exercise (2026-07-29 redesign) must not block THIS exercise's
+  // own LOG — only a rest/count-in for the exercise currently on screen should.
+  if ((_runner._restInterval && _runner._restForExIdx === _runner.exIdx) || _runner._countInInterval) return // block LOG during rest or the get-ready count-in
   // Every "required field missing" branch below toasts rather than silently no-opping — same reasoning
   // as toggleTableSet's identical guard: a bare `return` on an empty field reads as a broken LOG button.
   const ex = _runner.exercises[_runner.exIdx]
@@ -1573,7 +1593,7 @@ function renderIntervalTimer() {
 function _doneIntervalPhase() {
   _unlockAudio()
   _unlockSpeech()
-  if (_runner._restInterval || _runner._countInInterval) return // same guard logRunnerSet uses
+  if ((_runner._restInterval && _runner._restForExIdx === _runner.exIdx) || _runner._countInInterval) return // same guard logRunnerSet uses
   const ex = _runner.exercises[_runner.exIdx]
   const p = (ex.phases || [])[_runner._phaseIdx]
   if (!p) return
@@ -1589,6 +1609,16 @@ function startRestTimer(secs) {
   _runner._restInterval = clearTimer(_runner._restInterval)
   _runner.restRemaining = secs
   _runner.restTotal     = secs
+  // Which exercise this rest belongs to — kept stable even if the athlete navigates elsewhere to
+  // look ahead, so a returning tap (or the chip) knows where to reattach. `_restPendingFire` marks
+  // a rest that reached zero while the athlete was looking at a DIFFERENT exercise: the beep/voice
+  // cues still fire on schedule, but any queued _afterRest is deliberately held until they actually
+  // return to the owning exercise — firing it immediately would run against whatever exercise is
+  // currently on screen (the exact corruption runnerJumpTo/runnerGoBack already guard against
+  // elsewhere). Jake, 2026-07-29: "the timer stops" when glancing at another exercise — fixed by
+  // decoupling "is a rest running" from "is it the one on screen", not by making rests un-stoppable.
+  _runner._restForExIdx  = _runner.exIdx
+  _runner._restPendingFire = false
   // Table-mode rest renders inline inside renderStrengthTable (via the caller's imminent
   // renderRunner() call right after this), so the non-blocking table stays visible/editable
   // underneath — it never gets the floating page-top overlay that wizard mode still uses.
@@ -1598,29 +1628,45 @@ function startRestTimer(secs) {
     _runner.restRemaining--
     if (_runner.restRemaining <= 0) {
       _runner._restInterval = clearTimer(_runner._restInterval)
-      _runner.restRemaining = null
-      playBeep(1046, 0.5, 0.95) // higher, longer beep on finish
-      document.getElementById('rest-timer-overlay')?.remove()
-      const cb = _runner._afterRest
-      if (cb) { _runner._afterRest = null; cb() }
-      else renderRunner() // clears the inline rest bar (table mode) / stale "Resting…" state
+      playBeep(1046, 0.5, 0.95) // higher, longer beep on finish — fires regardless of which exercise is on screen
+      if (_runner.exIdx === _runner._restForExIdx) {
+        // Common case, and the ONLY case before this fix: the athlete is still looking at the
+        // resting exercise. Behaviour unchanged from before this change.
+        _runner.restRemaining = null
+        _runner._restForExIdx = null
+        document.getElementById('rest-timer-overlay')?.remove()
+        const cb = _runner._afterRest
+        if (cb) { _runner._afterRest = null; cb() }
+        else renderRunner() // clears the inline rest bar (table mode) / stale "Resting…" state
+      } else {
+        // Elapsed while the athlete was viewing a different exercise. Leave _afterRest queued and
+        // restForExIdx pointing at the owning exercise — runnerJumpTo consumes it the moment they
+        // return. restRemaining stays 0 (not null) so the chip can render a "done" state.
+        _runner.restRemaining = 0
+        _runner._restPendingFire = true
+        document.getElementById('rest-timer-overlay')?.remove()
+        renderRunner() // updates the chip on whichever exercise is currently on screen
+      }
     } else {
       _unlockAudio()
       if (_runner.restRemaining === 10) speakCue('10 seconds')
       if (_runner.restRemaining <= 5) speakCue(String(_runner.restRemaining))
-      const el = document.getElementById('rt-countdown')
+      const onScreen = _runner.exIdx === _runner._restForExIdx
+      const el = onScreen ? document.getElementById('rt-countdown') : null
       if (el) {
         const r = _runner.restRemaining
         const inTableMode = _isPlainStrengthExercise(_runner.exercises[_runner.exIdx])
         el.textContent = inTableMode ? fmtRestCountdown(r) : (r < 60 ? r+'s' : fmtRestCountdown(r))
         el.style.color = r <= 3 ? '#ef4444' : 'var(--accent)'
       }
-      const ring = document.getElementById('rt-ring')
+      const ring = onScreen ? document.getElementById('rt-ring') : null
       if (ring) {
         const pct = _runner.restRemaining / _runner.restTotal
         const circ = 2 * Math.PI * 18
         ring.style.strokeDashoffset = circ * (1 - pct)
       }
+      const chipEl = document.getElementById('wr-rest-chip-countdown')
+      if (chipEl) chipEl.textContent = fmtRestCountdown(_runner.restRemaining)
     }
   }, 1000)
 }
@@ -1630,8 +1676,20 @@ function fmtRestCountdown(secs) {
 }
 
 function skipRestTimer() {
+  // Defense in depth: this is only ever meant to be reachable from the inline table bar / floating
+  // overlay for the exercise the rest actually belongs to, both correctly gated on
+  // _restForExIdx === exIdx elsewhere — but if some future path ever leaves a stale overlay/button
+  // mounted for a rest that no longer belongs to the exercise on screen (the exact class of bug the
+  // add/swap-mid-rest gap had, found by multi-agent review 2026-07-29), this must not fire the wrong
+  // exercise's _afterRest. Just clear the stray DOM node and stop.
+  if (_runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx) {
+    document.getElementById('rest-timer-overlay')?.remove()
+    return
+  }
   _runner._restInterval = clearTimer(_runner._restInterval)
   _runner.restRemaining = null
+  _runner._restForExIdx = null
+  _runner._restPendingFire = false
   document.getElementById('rest-timer-overlay')?.remove()
   const cb = _runner._afterRest
   if (cb) { _runner._afterRest = null; cb() }
@@ -1744,31 +1802,57 @@ function runnerJumpTo(i) {
   stopRunnerCountIn()
   stopIntervalTimer()
   stopStrengthSetTimer()
-  // skipRestTimer() FIRES the pending _afterRest callback — and at this point exIdx still points at the
-  // OLD exercise, so a queued callback (e.g. an interval block's `() => _advancePhase()`) runs against
-  // the wrong exercise: starts a new interval timer / mounts the overlay on top of whatever renders
-  // next, or reaches the end of the wrong phase list and calls _finishIntervalExercise(), discarding
-  // whatever the jump was headed toward. Same trap as runnerGoBack / showRunnerFinish — null first.
+
+  const restActive = _runner.restRemaining != null
+
+  if (restActive && i === _runner._restForExIdx) {
+    // Landing on (or staying on) the exercise the active/pending rest belongs to.
+    if (_runner._restPendingFire) {
+      // It already reached zero while the athlete was elsewhere — consume the deferred fire now,
+      // at the moment of return, the same way an on-screen zero-tick would have (startRestTimer).
+      _runner.restRemaining = null
+      _runner._restForExIdx = null
+      _runner._restPendingFire = false
+      const cb = _runner._afterRest
+      _runner.exIdx = i
+      if (cb) { _runner._afterRest = null; cb() } else renderRunner()
+      return
+    }
+    // Still counting down — nothing to tear down. Table mode's inline bar reappears on its own via
+    // renderRunner() (renderStrengthTable rebuilds it fresh, gated on _restForExIdx === exIdx). Wizard
+    // mode's floating overlay is a SEPARATE DOM node outside #workout-runner's innerHTML tree though —
+    // it was explicitly removed on the way out (below), so renderRunner() alone won't bring it back;
+    // it must be recreated explicitly here or "navigate back restores the full countdown" silently
+    // wouldn't hold for any cardio/interval exercise.
+    _runner.exIdx = i
+    renderRunner()
+    if (!_isPlainStrengthExercise(_runner.exercises[i])) renderRestTimer()
+    return
+  }
+
+  if (restActive) {
+    // Navigating to a DIFFERENT exercise while a rest is running elsewhere. Redesigned 2026-07-29
+    // (Jake: "the timer stops" when glancing ahead) — the countdown (and its beep/voice cues) keeps
+    // running; only the big page-top overlay DOM node is dropped, since the persistent chip
+    // (rendered by renderRunner, gated on _restForExIdx !== exIdx) takes over visually. Deliberately
+    // NOT touching _restInterval/_afterRest/_restForExIdx — nulling _afterRest here (as this
+    // function used to, unconditionally) is exactly what the redesign removes: it's what let a
+    // queued callback fire against the wrong exercise before; now it simply stays queued for
+    // whichever exercise it belongs to until they return to it.
+    document.getElementById('rest-timer-overlay')?.remove()
+    _runner.exIdx = i
+    renderRunner()
+    return
+  }
+
+  // No rest active — unchanged from before this fix.
   _runner._afterRest = null
-  skipRestTimer()
   _runner.exIdx = i
   renderRunner()
 }
 
 function runnerGoBack() {
-  stopRunnerCountIn()
-  stopIntervalTimer()
-  stopStrengthSetTimer()
-  // skipRestTimer() FIRES the pending _afterRest callback, and after logging a set that callback is
-  // `() => { _runner.exIdx = nextExIdx; renderRunner() }` — i.e. it advances FORWARD. So tapping
-  // "← Back" during a rest went forward one, then back one, landing you on the screen you were
-  // already on (and double-rendering). The button simply looked broken. Null the callback first.
-  _runner._afterRest = null
-  skipRestTimer()
-  if (_runner.exIdx > 0) {
-    _runner.exIdx--
-    renderRunner()
-  }
+  if (_runner && _runner.exIdx > 0) runnerJumpTo(_runner.exIdx - 1)
 }
 
 // Swap/add exercise are both session-only — neither writes to workout_templates.
@@ -1831,6 +1915,22 @@ async function _confirmRunnerExerciseFromModal(mode) {
   const restSecs = parseRest(cleanSets[0]?.restMin || '') || 90
 
   if (mode === 'swap') {
+    // Swapping the exercise a rest currently belongs to changes its identity/shape from under that
+    // rest (name, type, deleted phases/tableRows below) — any queued _afterRest referencing the old
+    // ex.phases would now break, and "resting" no longer means anything for whatever this slot holds
+    // next. Abandon it silently (no callback fired) rather than let a stale overlay/chip linger for a
+    // rest that no longer describes anything real. A rest belonging to a DIFFERENT exercise is
+    // untouched — swapping doesn't affect it. Neither "⇄ Swap exercise" nor "+ Add exercise" is
+    // gated off during a rest, so this bypasses runnerJumpTo entirely; found by multi-agent review,
+    // 2026-07-29.
+    if (_runner.restRemaining != null && _runner._restForExIdx === _runner.exIdx) {
+      _runner._restInterval = clearTimer(_runner._restInterval)
+      _runner.restRemaining = null
+      _runner._restForExIdx = null
+      _runner._restPendingFire = false
+      _runner._afterRest = null
+      document.getElementById('rest-timer-overlay')?.remove()
+    }
     const ex = _runner.exercises[_runner.exIdx]
     ex.name = name
     ex.exerciseId = exerciseId
@@ -1863,6 +1963,13 @@ async function _confirmRunnerExerciseFromModal(mode) {
     if (_isIntervalExercise(ex)) _initIntervalPhases(ex)
     _runner.exercises.push(ex)
     _runner.exIdx = _runner.exercises.length - 1
+    // A new exercise always lands on a brand-new last index, which can never be the one an active
+    // rest belongs to — this is always the "navigated away" case runnerJumpTo already handles for
+    // real navigation. Same treatment here: leave the rest running (untouched _restInterval/
+    // _afterRest/_restForExIdx, the new chip picks it up), just drop the stale floating overlay so it
+    // doesn't linger frozen over the newly-added exercise. "+ Add exercise" isn't gated off during a
+    // rest, so this bypasses runnerJumpTo entirely; found by multi-agent review, 2026-07-29.
+    if (_runner.restRemaining != null) document.getElementById('rest-timer-overlay')?.remove()
     fetchRunnerLastSession(name, exerciseId)
     renderRunner()
   }
@@ -1894,6 +2001,8 @@ async function showRunnerFinish() {
   _runner._afterRest = null
   _runner._timerInterval = clearTimer(_runner._timerInterval)
   _runner._restInterval  = clearTimer(_runner._restInterval)
+  _runner._restForExIdx = null
+  _runner._restPendingFire = false
   stopRunnerCountIn()
   stopIntervalTimer()
   stopStrengthSetTimer()
@@ -2167,7 +2276,7 @@ async function saveRunnerSession() {
         ]) {
           const row = { workout_log_exercise_id: logExId, set_number: setNumber, side: sd.side }
           if (sd.reps) row.reps_achieved = parseInt(sd.reps)
-          if (sd.weight && sd.weight !== 'BW') row.weight_kg = parseFloat(sd.weight)
+          if (sd.weight !== 'BW' && _hasWeightVal(sd.weight)) row.weight_kg = parseFloat(sd.weight)
           applyHr(row)
           if (Object.keys(row).length > 3) allSets.push(row)
         }
@@ -2193,7 +2302,7 @@ async function saveRunnerSession() {
         if (s.distance_m) row.distance_m = Math.round(parseFloat(s.distance_m)) // already metres
         if (s.height_cm)  row.height_cm = parseFloat(s.height_cm)
         if (s.reps)       row.reps_achieved = parseInt(s.reps)
-        if (s.weight && s.weight !== 'BW') row.weight_kg = parseFloat(s.weight)
+        if (s.weight !== 'BW' && _hasWeightVal(s.weight)) row.weight_kg = parseFloat(s.weight)
         if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
       }
       applyHr(row)
