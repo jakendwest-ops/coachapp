@@ -978,7 +978,7 @@ async function saveEditGoal(goalId, clientId) {
     current_value: document.getElementById('eg-current').value         || null,
     target_value:  document.getElementById('eg-target').value          || null,
     updated_at:    new Date().toISOString()
-  }).eq('id', goalId)
+  }).eq('id', goalId).eq('created_by', currentUser.id)
 
   if (error) { log.error('saveEditGoal', 'update failed', error); errorEl.textContent = error.message; return }
   log.ok('saveEditGoal', 'goal updated', { goalId })

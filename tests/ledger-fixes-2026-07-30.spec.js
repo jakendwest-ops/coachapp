@@ -483,3 +483,147 @@ test.describe('deleteEvent/deleteGoal — anchored by created_by, an unrelated c
     }
   })
 })
+
+// Follow-on to the CRITICAL workout_logs fix, same session's proposed next step: probe the two child
+// tables (reasoned-safe isn't proven-safe) and anchor the remaining goals/milestone writes of the same
+// shape. Confirmed: workout_log_exercises/workout_log_sets, goals, and goal_milestones ALL already
+// reject a cross-tenant write at the RLS layer — none needed a policy fix. saveGoalProgress (client-
+// reachable — a client updates progress on a goal THEIR COACH created, so anchoring on created_by would
+// break that legitimate path) and toggleMilestone/toggleClientMilestone (goal_milestones has no direct
+// owner column) are deliberately left without a JS-level anchor: RLS already protects them, and getting
+// a role-aware anchor right risks a real regression for zero remaining security gain. saveEditGoal IS
+// coach-only reachable, so it got the same anchor as deleteGoal.
+test.describe('workout_log_exercises/workout_log_sets + goals/goal_milestones — confirmed already RLS-safe (permanent regression coverage)', () => {
+  test('an unrelated coach cannot insert into workout_log_exercises/workout_log_sets against a real existing log they don\'t own', async ({ browser }) => {
+    const ptCtx = await browser.newContext()
+    const pt2Ctx = await browser.newContext()
+    const ptPage = await ptCtx.newPage()
+    const pt2Page = await pt2Ctx.newPage()
+    let victimLogId
+    const result = {}
+
+    try {
+      await loginAsPT(ptPage)
+      victimLogId = await ptPage.evaluate(async () => {
+        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data: log } = await db.from('workout_logs').insert({
+          coach_id: currentUser.id, client_id: client.id, name: '[E2E] child-table-probe ' + Date.now(),
+          date: new Date().toISOString().split('T')[0]
+        }).select('id').single()
+        return log.id
+      })
+
+      await loginAsPT2(pt2Page)
+      result.exerciseInsert = await pt2Page.evaluate(async (logId) => {
+        const { error } = await db.from('workout_log_exercises').insert({
+          log_id: logId, exercise_name: '[E2E] probe', exercise_type: 'strength', order_index: 999
+        })
+        return { blocked: !!error }
+      }, victimLogId)
+
+      const plantedExId = await ptPage.evaluate(async (logId) => {
+        const { data } = await db.from('workout_log_exercises').insert({
+          log_id: logId, exercise_name: '[E2E] owner-planted', exercise_type: 'strength', order_index: 998
+        }).select('id').single()
+        return data.id
+      }, victimLogId)
+      result.setInsert = await pt2Page.evaluate(async (exId) => {
+        const { error } = await db.from('workout_log_sets').insert({ workout_log_exercise_id: exId, set_number: 1, weight_kg: 999 })
+        return { blocked: !!error }
+      }, plantedExId)
+    } finally {
+      await ptPage.evaluate(async (logId) => {
+        const { data: exs } = await db.from('workout_log_exercises').select('id').eq('log_id', logId)
+        const exIds = (exs || []).map(e => e.id)
+        if (exIds.length) await db.from('workout_log_sets').delete().in('workout_log_exercise_id', exIds)
+        await db.from('workout_log_exercises').delete().eq('log_id', logId)
+        await db.from('workout_logs').delete().eq('id', logId)
+      }, victimLogId).catch(() => {})
+      await ptCtx.close().catch(() => {})
+      await pt2Ctx.close().catch(() => {})
+    }
+
+    expect(result.exerciseInsert.blocked).toBe(true)
+    expect(result.setInsert.blocked).toBe(true)
+  })
+
+  test('an unrelated coach cannot update another coach\'s goal or goal_milestone', async ({ browser }) => {
+    const ptCtx = await browser.newContext()
+    const pt2Ctx = await browser.newContext()
+    const ptPage = await ptCtx.newPage()
+    const pt2Page = await pt2Ctx.newPage()
+    let goalId, milestoneId
+    const result = {}
+
+    try {
+      await loginAsPT(ptPage)
+      const planted = await ptPage.evaluate(async () => {
+        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data: goal } = await db.from('goals').insert({
+          client_id: client.id, created_by: currentUser.id, title: '[E2E] goal-anchor-probe ' + Date.now(),
+          goal_type: 'custom', priority: 1, status: 'active', current_value: 0
+        }).select('id').single()
+        const { data: ms } = await db.from('goal_milestones').insert({ goal_id: goal.id, title: '[E2E] milestone-probe' }).select('id').single()
+        return { goalId: goal.id, milestoneId: ms.id }
+      })
+      goalId = planted.goalId
+      milestoneId = planted.milestoneId
+
+      await loginAsPT2(pt2Page)
+      result.goalUpdate = await pt2Page.evaluate(async (id) => {
+        const { data } = await db.from('goals').update({ current_value: 999 }).eq('id', id).select()
+        return { rowsAffected: (data || []).length }
+      }, goalId)
+      result.milestoneUpdate = await pt2Page.evaluate(async (id) => {
+        const { data } = await db.from('goal_milestones').update({ completed_at: new Date().toISOString() }).eq('id', id).select()
+        return { rowsAffected: (data || []).length }
+      }, milestoneId)
+    } finally {
+      await ptPage.evaluate(async ({ goalId, milestoneId }) => {
+        await db.from('goal_milestones').delete().eq('id', milestoneId)
+        await db.from('goals').delete().eq('id', goalId)
+      }, { goalId, milestoneId }).catch(() => {})
+      await ptCtx.close().catch(() => {})
+      await pt2Ctx.close().catch(() => {})
+    }
+
+    expect(result.goalUpdate.rowsAffected).toBe(0)
+    expect(result.milestoneUpdate.rowsAffected).toBe(0)
+  })
+
+  test('saveEditGoal (the real app function) no-ops against a foreign goal', async ({ browser }) => {
+    const ptCtx = await browser.newContext()
+    const pt2Ctx = await browser.newContext()
+    const ptPage = await ptCtx.newPage()
+    const pt2Page = await pt2Ctx.newPage()
+    let goalId
+
+    try {
+      await loginAsPT(ptPage)
+      goalId = await ptPage.evaluate(async () => {
+        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data: goal } = await db.from('goals').insert({
+          client_id: client.id, created_by: currentUser.id, title: '[E2E] saveEditGoal-anchor-probe ' + Date.now(),
+          goal_type: 'custom', priority: 1, status: 'active'
+        }).select('id').single()
+        return goal.id
+      })
+
+      await loginAsPT2(pt2Page)
+      await pt2Page.evaluate(async (id) => {
+        document.getElementById('eg-error')?.remove()
+        const errEl = document.createElement('p'); errEl.id = 'eg-error'; document.body.appendChild(errEl)
+        const mk = (elId, val) => { const el = document.createElement('input'); el.id = elId; el.value = val; document.body.appendChild(el) }
+        mk('eg-title', 'PWNED'); mk('eg-desc', ''); mk('eg-status', 'active'); mk('eg-date', ''); mk('eg-current', ''); mk('eg-target', '')
+        await saveEditGoal(id, null)
+      }, goalId)
+
+      const after = await ptPage.evaluate(async (id) => (await db.from('goals').select('title').eq('id', id).single()).data, goalId)
+      expect(after.title).not.toBe('PWNED')
+    } finally {
+      if (goalId) await ptPage.evaluate(async (id) => { await db.from('goals').delete().eq('id', id) }, goalId).catch(() => {})
+      await ptCtx.close().catch(() => {})
+      await pt2Ctx.close().catch(() => {})
+    }
+  })
+})
