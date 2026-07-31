@@ -544,7 +544,7 @@ async function savePerformanceLog(clientId) {
 
   if (!category || !date || !name || !value || !unit) { showToast('Please fill in all required fields.', 'warn', 3000); return }
 
-  log.info('savePerformanceLog', 'inserting performance record', { clientId, category, name, value, unit })
+  log.info('savePerformanceLog', 'inserting performance record', { clientId, category })
   const { data: { user } } = await db.auth.getUser()
 
   const { error } = await db.from('performance_logs').insert({
@@ -559,7 +559,7 @@ async function savePerformanceLog(clientId) {
   })
 
   if (error) { log.error('savePerformanceLog', 'insert failed', error); document.getElementById('perf-error') && (document.getElementById('perf-error').textContent = error.message); return }
-  log.ok('savePerformanceLog', 'record saved', { clientId, name, value, unit })
+  log.ok('savePerformanceLog', 'record saved', { clientId, category })
   renderClientPerformance(clientId, document.getElementById('tab-content'))
 }
 
@@ -1057,11 +1057,13 @@ function _setDetailsLine(sets) {
   const num = v => parseFloat(v) || 0
   return (sets || []).map(x => {
     if (x.side) return `${x.side[0].toUpperCase()} ${weightToPref(x.weight_kg) || 'BW'}×${x.reps_achieved || 0}`
-    if (x.height_cm) return fmtJumpHeight(x.height_cm)
+    // != null, not truthy — a real 0cm/0m jump attempt must still show, same falsy-zero shape as
+    // the runner's weight guard (Jake, 2026-07-29/30).
+    if (x.height_cm != null) return fmtJumpHeight(x.height_cm)
     if (x.duration_seconds && x.weight_kg == null) return fmtRestCountdown(parseInt(x.duration_seconds))
     if (x.weight_kg != null && x.reps_achieved != null) return `${weightToPref(x.weight_kg)}×${x.reps_achieved}`
     if (x.reps_achieved != null) return `${x.reps_achieved} rep`
-    if (x.distance_m) return fmtDistanceM(x.distance_m)
+    if (x.distance_m != null) return fmtDistanceM(x.distance_m)
     return ''
   }).filter(Boolean).join(', ')
 }

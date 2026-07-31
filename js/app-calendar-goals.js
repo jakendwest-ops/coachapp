@@ -273,7 +273,7 @@ function showClientDayDetail(dateStr) {
 async function deleteEvent(id) {
   if (!confirm('Delete this event?')) return
   log.info('deleteEvent', 'deleting event', { eventId: id })
-  const { error } = await db.from('events').delete().eq('id', id)
+  const { error } = await db.from('events').delete().eq('id', id).eq('created_by', currentUser.id)
   if (error) { log.error('deleteEvent', 'delete failed', error); return }
   log.ok('deleteEvent', 'event deleted', { eventId: id })
   renderCalendar(document.getElementById('main-content'))
@@ -359,7 +359,7 @@ async function saveEvent() {
   if (!title) { errorEl.textContent = 'Title is required'; return }
   if (!date)  { errorEl.textContent = 'Date is required'; return }
 
-  log.info('saveEvent', 'inserting event', { title, date, type, clientId })
+  log.info('saveEvent', 'inserting event', { date, type, clientId })
   const { data: { user } } = await db.auth.getUser()
   const { error } = await db.from('events').insert({
     title,
@@ -372,7 +372,7 @@ async function saveEvent() {
   })
 
   if (error) { log.error('saveEvent', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveEvent', 'event saved', { title, date })
+  log.ok('saveEvent', 'event saved', { date })
 
   closeModal('add-event-modal')
   renderCalendar(document.getElementById('main-content'))
@@ -609,7 +609,7 @@ async function saveNewGoal(clientId) {
   const errorEl = document.getElementById('ag-error')
   if (!title) { errorEl.textContent = 'Title is required'; return }
 
-  log.info('saveNewGoal', 'inserting goal', { clientId, title })
+  log.info('saveNewGoal', 'inserting goal', { clientId })
   const startVal = document.getElementById('ag-start').value
   const { error } = await db.from('goals').insert({
     client_id:    clientId,
@@ -628,7 +628,7 @@ async function saveNewGoal(clientId) {
   })
 
   if (error) { log.error('saveNewGoal', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveNewGoal', 'goal created', { clientId, title })
+  log.ok('saveNewGoal', 'goal created', { clientId })
 
   closeModal('add-goal-modal')
   const tabContent = document.getElementById('tab-content')
@@ -791,7 +791,7 @@ async function saveNewMilestone(goalId, clientId) {
   const errorEl = document.getElementById('am-error')
   if (!title) { errorEl.textContent = 'Title is required'; return }
 
-  log.info('saveNewMilestone', 'inserting milestone', { goalId, title })
+  log.info('saveNewMilestone', 'inserting milestone', { goalId })
   const { error } = await db.from('goal_milestones').insert({
     goal_id:      goalId,
     title,
@@ -801,7 +801,7 @@ async function saveNewMilestone(goalId, clientId) {
   })
 
   if (error) { log.error('saveNewMilestone', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveNewMilestone', 'milestone created', { goalId, title })
+  log.ok('saveNewMilestone', 'milestone created', { goalId })
   closeModal('add-milestone-modal')
   openGoal(goalId, clientId)
 }
@@ -884,7 +884,7 @@ async function saveCheckIn(goalId, clientId) {
   const errorEl = document.getElementById('ci-error')
   const value   = document.getElementById('ci-value').value
 
-  log.info('saveCheckIn', 'inserting check-in', { goalId, value })
+  log.info('saveCheckIn', 'inserting check-in', { goalId })
   const { error } = await db.from('goal_check_ins').insert({
     goal_id:       goalId,
     created_by:    currentUser.id,
@@ -894,11 +894,11 @@ async function saveCheckIn(goalId, clientId) {
   })
 
   if (error) { log.error('saveCheckIn', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveCheckIn', 'check-in saved', { goalId, value })
+  log.ok('saveCheckIn', 'check-in saved', { goalId })
 
   // Update goal's current_value if a value was provided
   if (value) {
-    log.info('saveCheckIn', 'updating goal current_value', { goalId, value })
+    log.info('saveCheckIn', 'updating goal current_value', { goalId })
     const { error: updateErr } = await db.from('goals').update({ current_value: parseFloat(value), updated_at: new Date().toISOString() }).eq('id', goalId)
     if (updateErr) log.error('saveCheckIn', 'goal current_value update failed', updateErr)
   }
@@ -969,7 +969,7 @@ async function saveEditGoal(goalId, clientId) {
   const title   = document.getElementById('eg-title').value.trim()
   if (!title) { errorEl.textContent = 'Title is required'; return }
 
-  log.info('saveEditGoal', 'updating goal', { goalId, title })
+  log.info('saveEditGoal', 'updating goal', { goalId })
   const { error } = await db.from('goals').update({
     title,
     description:   document.getElementById('eg-desc').value.trim()    || null,
@@ -989,7 +989,7 @@ async function saveEditGoal(goalId, clientId) {
 async function deleteGoal(goalId, clientId) {
   if (!confirm('Delete this goal and all its milestones and check-ins? This cannot be undone.')) return
   log.info('deleteGoal', 'deleting goal', { goalId })
-  const { error } = await db.from('goals').delete().eq('id', goalId)
+  const { error } = await db.from('goals').delete().eq('id', goalId).eq('created_by', currentUser.id)
   if (error) { log.error('deleteGoal', 'delete failed', error); return }
   log.ok('deleteGoal', 'goal deleted', { goalId })
   closeModal('edit-goal-modal')

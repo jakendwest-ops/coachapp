@@ -220,9 +220,13 @@ async function fetchRunnerLastSession(exName, exerciseId) {
   )[0]
   const date = logs.find(l => l.id === best.log_id)?.date
   // A jump set can be logged with height_cm/distance_m set and reps_achieved (contacts) still
-  // null (contacts aren't required to log a jump) — must count as real data too.
+  // null (contacts aren't required to log a jump) — must count as real data too. A truthy check
+  // on any of these four also excludes a real 0 (0cm/0m/0kg/0 reps) — same falsy-zero shape as the
+  // save-side guards, found via the blast-radius sweep for that fix, 2026-07-30. This is very
+  // likely the actual mechanism behind "Depth Jump last-session history doesn't show": a jump set
+  // logged with height_cm:0 and no reps was invisible here even after it saved correctly.
   const sets = (best.workout_log_sets || [])
-    .filter(s => s.weight_kg || s.reps_achieved || s.height_cm || s.distance_m)
+    .filter(s => _hasNumVal(s.weight_kg) || _hasNumVal(s.reps_achieved) || _hasNumVal(s.height_cm) || _hasNumVal(s.distance_m))
     .sort((a, b) => a.set_number - b.set_number)
 
   _runner.lastSession[exName] = sets.length ? { date, sets } : null
@@ -355,10 +359,12 @@ function _prevSetsByIndex(ex) {
   return map
 }
 
-// A weight value is "present" whenever it isn't null/undefined/''. A real 0 (e.g. a bodyweight-only
-// set logged under a normal, non-flagged exercise) must count as present — `!w`/`w &&` treat 0 as
-// missing, which silently blocked entry and then silently dropped the value on save (Jake, 2026-07-29).
-const _hasWeightVal = w => w != null && w !== ''
+// A numeric value is "present" whenever it isn't null/undefined/''. A real 0 (a bodyweight-only
+// load, or a 0cm/0m jump attempt) must count as present — `!w`/`w &&` treat 0 as missing, which
+// silently blocked entry and then silently dropped the value on save. Found for weight (Jake,
+// 2026-07-29); the identical shape existed for jump height_cm/distance_m too, reported the same day
+// once the weight fix shipped and Jake tried 0 on a Depth Jump instead.
+const _hasNumVal = w => w != null && w !== ''
 
 // Blank row shape for a fresh table set, per metric_type. Shared by _ensureTableRows (initial fill)
 // and addTableRow (appended set) so the shape literal isn't duplicated in two places.
@@ -386,10 +392,10 @@ function _syncLoggedSetsFromTable(ex) {
   const mt = _exMetricType(ex)
   ex.loggedSets = ex.tableRows.filter(r => r.done).map(r => {
     if (mt === 'unilateral') return { leftWeight: r.leftWeight || null, leftReps: r.leftReps || null, rightWeight: r.rightWeight || null, rightReps: r.rightReps || null }
-    if (mt === 'timed_hold') return { duration: r.duration || null, weight: _hasWeightVal(r.weight) ? r.weight : null }
-    if (mt === 'jump_height') return { height_cm: r.height_cm || null, reps: r.reps || null }
-    if (mt === 'jump_distance') return { distance_m: r.distance_m || null, reps: r.reps || null }
-    return { weight: _hasWeightVal(r.weight) ? r.weight : null, reps: r.reps }
+    if (mt === 'timed_hold') return { duration: r.duration || null, weight: _hasNumVal(r.weight) ? r.weight : null }
+    if (mt === 'jump_height') return { height_cm: _hasNumVal(r.height_cm) ? r.height_cm : null, reps: r.reps || null }
+    if (mt === 'jump_distance') return { distance_m: _hasNumVal(r.distance_m) ? r.distance_m : null, reps: r.reps || null }
+    return { weight: _hasNumVal(r.weight) ? r.weight : null, reps: r.reps }
   })
 }
 
@@ -412,12 +418,12 @@ function toggleTableSet(rowIdx) {
     } else if (mt === 'timed_hold') {
       if (!row.duration || row.duration === '0:00') { showToast('Enter a duration first', 'warn'); return }
     } else if (mt === 'jump_height') {
-      if (!row.height_cm) { showToast('Enter a height first', 'warn'); return }
+      if (!_hasNumVal(row.height_cm)) { showToast('Enter a height first', 'warn'); return }
     } else if (mt === 'jump_distance') {
-      if (!row.distance_m) { showToast('Enter a distance first', 'warn'); return }
+      if (!_hasNumVal(row.distance_m)) { showToast('Enter a distance first', 'warn'); return }
     } else {
       if (!row.reps) { showToast('Enter reps first', 'warn'); return }
-      if (!ex.bodyweight && !_hasWeightVal(row.weight)) { showToast('Enter weight first', 'warn'); return }
+      if (!ex.bodyweight && !_hasNumVal(row.weight)) { showToast('Enter weight first', 'warn'); return }
     }
     _unlockAudio()
     _unlockSpeech()
@@ -769,7 +775,7 @@ function renderRunner() {
               <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:48px;flex-shrink:0">Set ${i+1}</span>
               <span style="flex:1;display:flex;gap:10px;align-items:center">
                 ${ex.type === 'cardio'
-                  ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : fmtDistanceM(_cardioDistanceM(s)) || '—'}</span>`
+                  ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : (_cardioDistanceM(s) > 0 ? fmtDistanceM(_cardioDistanceM(s)) : '—')}</span>`
                   : s.distance_m
                     ? `<span style="font-size:15px;font-weight:700">${s.weight?fmtWeight(s.weight, { spaced: true }):'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
                     : s.duration
@@ -1755,7 +1761,7 @@ function editRunnerSet(exIdx, setIdx) {
       <div style="display:flex;gap:10px;margin-bottom:16px">
         <div style="flex:1">
           <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">${window._unitPrefs.weight}</label>
-          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.weight && s.weight !== 'BW' ? weightToPref(s.weight) : (s.weight||'')}" placeholder="—">
+          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.weight === 'BW' ? 'BW' : (_hasNumVal(s.weight) ? weightToPref(s.weight) : '')}" placeholder="—">
         </div>
         <div style="flex:1">
           <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">Reps</label>
@@ -2095,7 +2101,12 @@ async function showRunnerFinish() {
                   <span style="color:var(--text-muted)">Set ${i+1}</span>
                   <span style="font-weight:600${isSetPR?';color:#d97706':''}">
                     ${isCardio
-                      ? [s.duration, fmtDistanceM(_cardioDistanceM(s))].filter(Boolean).join(' · ')
+                      // _cardioDistanceM(s) > 0, not a bare call: it returns a literal 0 (never
+                      // null) for "distance not entered", by design — every OTHER caller sums/
+                      // compares it as a number. fmtDistanceM itself was fixed 2026-07-30 to render
+                      // a real 0 as "0 m" (needed for jump_distance) — so a bare call here would
+                      // wrongly print "0 m" on every duration-only cardio set (the common case).
+                      ? [s.duration, _cardioDistanceM(s) > 0 ? fmtDistanceM(_cardioDistanceM(s)) : null].filter(Boolean).join(' · ')
                       : [s.weight&&s.weight!=='BW'?fmtWeight(s.weight, { spaced: true }):s.weight==='BW'?'BW':'', s.reps?s.reps+' reps':''].filter(Boolean).join(' × ')
                     }
                     ${isSetPR ? ' 🏆' : ''}
@@ -2217,10 +2228,21 @@ async function saveRunnerSession() {
   const saveBtn = document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…' }
 
-  // showUserError: false — a failure here already has a safe fallback (currentUser.id) and the
-  // save continues normally, so surfacing a "Save failed" toast here would be a false positive.
-  const { data: clientRecord } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
-  const coachId = clientRecord?.coach_id || currentUser.id
+  // showUserError: false — this shows its own error message below, tailored to what actually failed
+  // (a real network blip vs. a clientId that doesn't resolve to a client this account can see at all).
+  // MUST fail loud, not fall back to currentUser.id: a solo/coach's own record legitimately comes back
+  // with coach_id:null (a real row, not a lookup failure) and correctly falls through to currentUser.id
+  // a line below — but a clientId RLS denies (0 rows) used to silently do the exact same fallback,
+  // which would have inserted a workout_logs row for someone else's client, attributed to whoever is
+  // currently logged in. Confirmed exploitable via a live cross-tenant probe, 2026-07-30.
+  const { data: clientRecord, error: clientErr } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
+  if (!clientRecord) {
+    log.error('saveRunnerSession', 'client ownership could not be verified — refusing to save', clientErr)
+    showToast('Could not verify this client — please refresh and try again.', 'error')
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
+    return
+  }
+  const coachId = clientRecord.coach_id || currentUser.id
 
   const { data: sessionLog, error } = await db.from('workout_logs').insert({
     coach_id: coachId, client_id: clientId, name, date, notes
@@ -2276,7 +2298,7 @@ async function saveRunnerSession() {
         ]) {
           const row = { workout_log_exercise_id: logExId, set_number: setNumber, side: sd.side }
           if (sd.reps) row.reps_achieved = parseInt(sd.reps)
-          if (sd.weight !== 'BW' && _hasWeightVal(sd.weight)) row.weight_kg = parseFloat(sd.weight)
+          if (sd.weight !== 'BW' && _hasNumVal(sd.weight)) row.weight_kg = parseFloat(sd.weight)
           applyHr(row)
           if (Object.keys(row).length > 3) allSets.push(row)
         }
@@ -2299,10 +2321,10 @@ async function saveRunnerSession() {
         // Timed hold: duration (+ optional load). Distance-strength / jump_distance: distance_m in METRES
         // (not km). Jump height: height_cm (populated by ②c). Plus the plain weight/reps/rpe case.
         if (s.duration)   row.duration_seconds = parseDuration(s.duration)
-        if (s.distance_m) row.distance_m = Math.round(parseFloat(s.distance_m)) // already metres
-        if (s.height_cm)  row.height_cm = parseFloat(s.height_cm)
+        if (_hasNumVal(s.distance_m)) row.distance_m = Math.round(parseFloat(s.distance_m)) // already metres
+        if (_hasNumVal(s.height_cm))  row.height_cm = parseFloat(s.height_cm)
         if (s.reps)       row.reps_achieved = parseInt(s.reps)
-        if (s.weight !== 'BW' && _hasWeightVal(s.weight)) row.weight_kg = parseFloat(s.weight)
+        if (s.weight !== 'BW' && _hasNumVal(s.weight)) row.weight_kg = parseFloat(s.weight)
         if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
       }
       applyHr(row)
@@ -2325,7 +2347,7 @@ async function saveRunnerSession() {
       return
     }
   }
-  log.ok('saveRunnerSession', 'session saved', { name, exercises: exercises.length })
+  log.ok('saveRunnerSession', 'session saved', { logId: sessionLog.id, exercises: exercises.length })
   showToast('Workout saved!', 'success', 2500)
 
   const candidates = exercises
@@ -2595,13 +2617,13 @@ function renderLogExercises() {
             <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'}" value="${_cardioDistanceM(s) ? distanceToPref(_cardioDistanceM(s)) : ''}">
           ` : isMobile ? `
             <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${escapeAttr(String(s.repsMin || ''))}">
-            <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="${window._unitPrefs.weight}" value="${s.weight ? weightToPref(s.weight) : ''}">
+            <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="${window._unitPrefs.weight}" value="${_hasNumVal(s.weight) ? weightToPref(s.weight) : ''}">
             <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${escapeAttr(String(s.effort || ''))}">
           ` : `
             <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${escapeAttr(String(s.repsMin || ''))}">
             <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${escapeAttr(String(s.repsMax || ''))}">
             <div>
-              <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="${window._unitPrefs.weight}" value="${weightToPref(orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||s.weight||'') : (s.weight||''))}">
+              <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="${window._unitPrefs.weight}" value="${weightToPref(orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||(_hasNumVal(s.weight)?s.weight:'')) : (_hasNumVal(s.weight)?s.weight:''))}">
             </div>
             <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${escapeAttr(String(s.pctMin || ''))}" oninput="flushLogState()" onchange="renderLogExercises()">
             <div>
@@ -2764,12 +2786,17 @@ async function saveWorkoutSession(clientId) {
   if (blocks.length === 0) { errorEl.textContent = 'Add at least one exercise'; return }
 
   // Derive coach_id from the client record — works for both coach and client self-logging.
-  // showUserError: false — same false-positive-toast fix as saveRunnerSession: a failure here
-  // already has a safe fallback (currentUser.id) and the save continues normally.
-  const { data: clientRecord } = await dbq('saveWorkoutSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
-  const coachId = clientRecord?.coach_id || currentUser.id
+  // MUST fail loud, not fall back to currentUser.id — see saveRunnerSession's identical fix, same
+  // confirmed cross-tenant-write risk, 2026-07-30.
+  const { data: clientRecord, error: clientErr } = await dbq('saveWorkoutSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
+  if (!clientRecord) {
+    log.error('saveWorkoutSession', 'client ownership could not be verified — refusing to save', clientErr)
+    errorEl.textContent = 'Could not verify this client — please refresh and try again.'
+    return
+  }
+  const coachId = clientRecord.coach_id || currentUser.id
 
-  log.info('saveWorkoutSession', 'saving session', { clientId, name, exerciseCount: blocks.length })
+  log.info('saveWorkoutSession', 'saving session', { clientId, exerciseCount: blocks.length })
   const { data: sessionLog, error } = await db.from('workout_logs').insert({
     coach_id:    coachId,
     client_id:   clientId,
@@ -2821,7 +2848,10 @@ async function saveWorkoutSession(clientId) {
       } else {
         const rMin = parseInt(s.repsMin)
         if (!isNaN(rMin)) row.reps_achieved = rMin
-        if (s.weight) row.weight_kg = parseFloat(s.weight)
+        // Same falsy-zero shape as saveRunnerSession's weight guard (Jake, 2026-07-29) — this
+        // sibling function was missed the first time since Jake's report came from the live runner,
+        // not this manual Log Session modal, but a typed 0kg here was silently dropped the same way.
+        if (_hasNumVal(s.weight)) row.weight_kg = parseFloat(s.weight)
         if (s.effort) {
           row.effort_type = block.effortMode === 'RIR' ? 'rir' : 'rpe'
           row.effort_value = parseFloat(s.effort)
@@ -2846,7 +2876,7 @@ async function saveWorkoutSession(clientId) {
     log.ok('saveWorkoutSession', 'sets saved', { count: allSets.length })
   }
 
-  log.ok('saveWorkoutSession', 'session fully saved', { clientId, name })
+  log.ok('saveWorkoutSession', 'session fully saved', { clientId, logId: sessionLog.id })
   showToast('Session saved ✓', 'success', 2000)
   closeModal('log-session-modal')
   window._logBlocks = []
@@ -2951,7 +2981,10 @@ async function openWorkoutLog(logId, clientId) {
       exercises.map((ex, i) => {
         const sets = (ex.workout_log_sets || []).sort((a, b) => a.set_number - b.set_number)
         const isCardio = ex.exercise_type === 'cardio'
-        const hasRpe   = !isCardio && sets.some(s => s.effort_value != null)
+        const mt = _resolveMetricType(ex.metric_type, ex.exercise_type, sets[0])
+        const isJumpHeight = mt === 'jump_height'
+        const isJumpDistance = mt === 'jump_distance'
+        const hasRpe   = !isCardio && !isJumpHeight && !isJumpDistance && sets.some(s => s.effort_value != null)
         const prevSets = prevExMap[ex.exercise_name] || []
         const prevVol  = prevSets.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
         const prevSummary = prevSets.length
@@ -2975,6 +3008,10 @@ async function openWorkoutLog(logId, clientId) {
                       <th style="${thStyle}">Set</th>
                       ${isCardio
                         ? `<th style="${thStyle}">Duration</th><th style="${thStyle}">Distance</th>`
+                        : isJumpHeight
+                        ? `<th style="${thStyle}">Height (${window._unitPrefs.jumpHeight === 'in' ? 'in' : 'cm'})</th><th style="${thStyle}">Jumps</th>`
+                        : isJumpDistance
+                        ? `<th style="${thStyle}">Distance (m)</th><th style="${thStyle}">Jumps</th>`
                         : `<th style="${thStyle}">Reps</th><th style="${thStyle}">Weight</th>${hasRpe ? `<th style="${thStyle}">RPE</th>` : ''}`
                       }
                     </tr>
@@ -2984,8 +3021,12 @@ async function openWorkoutLog(logId, clientId) {
                       <tr style="border-bottom:1px solid var(--border)">
                         <td style="padding:8px 12px 8px 0;font-size:13px;color:var(--text-muted);font-weight:600">Set ${s.set_number}</td>
                         ${isCardio
-                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.distance_m ? fmtDistanceM(s.distance_m) : '—'}</td>`
-                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${s.weight_kg ? fmtWeight(s.weight_kg, { spaced: true }) : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? 'RPE '+s.effort_value : '—'}</td>` : ''}`
+                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:13px">${_hasNumVal(s.distance_m) ? fmtDistanceM(s.distance_m) : '—'}</td>`
+                          : isJumpHeight
+                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.height_cm) ? fmtJumpHeight(s.height_cm, { spaced: true }) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.reps_achieved || '—'}</td>`
+                          : isJumpDistance
+                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.distance_m) ? fmtDistanceM(s.distance_m) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.reps_achieved || '—'}</td>`
+                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.weight_kg) ? fmtWeight(s.weight_kg, { spaced: true }) : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? 'RPE '+s.effort_value : '—'}</td>` : ''}`
                         }
                       </tr>
                     `).join('')}

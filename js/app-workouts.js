@@ -44,8 +44,13 @@ const _METRES_PER_MILE = 1609.344
 // a 400m interval reads better as "400m". Entry is always metres; only display adapts. Imperial
 // mirrors the same under/over split: feet under a mile, miles above.
 function fmtDistanceM(m) {
-  const n = Math.round(parseFloat(m) || 0)   // round BEFORE the threshold test, or 999.6 renders "1000 m"
-  if (!n) return ''
+  // != null/'', not a truthy check on the parsed result — a real 0m (a jump_distance attempt with no
+  // distance recorded) must still render "0 m", not blank. Cardio distance is never actually written
+  // as a literal 0 today (its save path only sets distance_m when a value was entered), so this only
+  // changes behaviour for jump_distance, 2026-07-30.
+  if (m == null || m === '') return ''
+  const n = Math.round(parseFloat(m))          // round BEFORE the threshold test, or 999.6 renders "1000 m"
+  if (isNaN(n)) return ''
   if (window._unitPrefs?.cardioDistance === 'mi') {
     return n < _METRES_PER_MILE ? `${Math.round(n * 3.280839895)} ft` : `${(n / _METRES_PER_MILE).toFixed(2).replace(/\.?0+$/, '')} mi`
   }
@@ -249,7 +254,10 @@ function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = 
     const hr = hrRange ? 'HR ' + hrRange : null
     const restHr = s.restHrMax ? `rest HR <${s.restHrMax}` : null
     const dur = _hasTimeTarget(s.duration) ? fmtDuration(parseRest(s.duration) || 0) : null
-    const dist = fmtDistanceM(_cardioDistanceM(s)) || null
+    // > 0, not a bare call — _cardioDistanceM returns a literal 0 (never null) for "not entered",
+    // and fmtDistanceM(0) now correctly renders "0 m" (needed for jump_distance) — a bare call here
+    // would show "0 m" for every duration-only cardio prescription instead of omitting it.
+    const dist = _cardioDistanceM(s) > 0 ? fmtDistanceM(_cardioDistanceM(s)) : null
     // isDistanceBased decides which of duration/distance leads — same branch the runner uses.
     parts = [s.isDistanceBased ? dist : dur, pace || paceKm, watts, stroke, hr, restHr]
   } else if (s.timed) {
@@ -844,7 +852,7 @@ function _toggleArchivedExerciseLibrary() {
 }
 
 async function toggleExerciseArchived(id, archive) {
-  const { error } = await db.from('exercises').update({ is_archived: archive }).eq('id', id)
+  const { error } = await db.from('exercises').update({ is_archived: archive }).eq('id', id).eq('coach_id', currentUser.id)
   if (error) { log.error('toggleExerciseArchived', 'update failed', error); showToast('Could not update — try again.', 'error'); return }
   closeModal('edit-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
@@ -914,7 +922,7 @@ async function saveNewExercise() {
   const errorEl = document.getElementById('ae-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
-  log.info('saveNewExercise', 'inserting exercise', { name })
+  log.info('saveNewExercise', 'inserting exercise', {})
   const { error } = await db.from('exercises').insert({
     coach_id:      currentUser.id,
     is_personal:   currentProfile?.role === 'solo',
@@ -927,7 +935,7 @@ async function saveNewExercise() {
   })
 
   if (error) { log.error('saveNewExercise', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveNewExercise', 'exercise created', { name })
+  log.ok('saveNewExercise', 'exercise created', {})
   closeModal('add-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
 }
@@ -995,7 +1003,7 @@ async function saveEditExercise(id) {
   const errorEl = document.getElementById('ee-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
-  log.info('saveEditExercise', 'updating exercise', { id, name })
+  log.info('saveEditExercise', 'updating exercise', { id })
   const { error } = await db.from('exercises').update({
     name,
     muscle_group:  document.getElementById('ee-muscle').value    || null,
@@ -1003,10 +1011,10 @@ async function saveEditExercise(id) {
     default_sets:  document.getElementById('ee-sets').value      || null,
     default_reps:  document.getElementById('ee-reps').value      || null,
     notes:         document.getElementById('ee-notes').value.trim() || null
-  }).eq('id', id)
+  }).eq('id', id).eq('coach_id', currentUser.id)
 
   if (error) { log.error('saveEditExercise', 'update failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveEditExercise', 'exercise updated', { id, name })
+  log.ok('saveEditExercise', 'exercise updated', { id })
   closeModal('edit-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
 }
@@ -1014,7 +1022,7 @@ async function saveEditExercise(id) {
 async function deleteExercise(id) {
   if (!confirm('Delete this exercise? This only works if it has never been used in a template, log, or 1RM entry — use Archive instead for exercises with history.')) return
   log.info('deleteExercise', 'deleting exercise', { id })
-  const { error } = await db.from('exercises').delete().eq('id', id)
+  const { error } = await db.from('exercises').delete().eq('id', id).eq('coach_id', currentUser.id)
   if (error) {
     // 23503 = foreign_key_violation — this exercise is still referenced by real history
     if (error.code === '23503') { showToast('This exercise has history attached — archive it instead of deleting.', 'warn', 5000); return }
@@ -1070,7 +1078,7 @@ async function saveNewTemplate() {
   const errorEl = document.getElementById('ct-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
-  log.info('saveNewTemplate', 'creating template', { name })
+  log.info('saveNewTemplate', 'creating template', {})
   const ctx = window._phaseWorkoutContext
   const { data, error } = await db.from('workout_templates').insert({
     coach_id:    currentUser.id,
@@ -1081,7 +1089,7 @@ async function saveNewTemplate() {
   }).select().single()
 
   if (error) { log.error('saveNewTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveNewTemplate', 'template created', { id: data.id, name })
+  log.ok('saveNewTemplate', 'template created', { id: data.id })
   closeModal('create-template-modal')
 
   if (ctx?.programId) {
@@ -1854,7 +1862,7 @@ function _deriveFromMetricType(metricType) {
 // next time. A convenience default, not correctness-critical — never block the modal close on it.
 function _rememberExerciseMetricType(libId, metricType) {
   if (!libId) return
-  db.from('exercises').update({ metric_type: metricType }).eq('id', libId)
+  db.from('exercises').update({ metric_type: metricType }).eq('id', libId).eq('coach_id', currentUser.id)
     .then(({ error }) => { if (error) log.error('_rememberExerciseMetricType', 'update failed', error) })
 }
 
@@ -1867,8 +1875,16 @@ async function saveExerciseToTemplate(templateId) {
   const exerciseId = picked.id || null
   const metricType = document.getElementById('att-type').value || 'weight_reps'
   const derived = _deriveFromMetricType(metricType)
+  // Read once, before closeModal() removes these nodes — closeModal does a real
+  // document.getElementById(id)?.remove(), so re-reading #att-notes/#att-superset after it ran a
+  // second time (for _lastExerciseChange, below) threw "Cannot read properties of null", which
+  // aborted this function before it ever reached _afterTemplateExerciseSave. The insert itself had
+  // already gone through by that point, so the exercise was really added — it just never appeared
+  // without a manual refresh. Reported live 4 times (2026-07-13, -22, -28, -29) before this was found.
+  const notes = document.getElementById('att-notes').value.trim() || null
+  const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   const { templateId: targetId } = await _resolveEditableTemplateId(templateId)
-  log.info('saveExerciseToTemplate', 'adding exercise to template', { templateId: targetId, name })
+  log.info('saveExerciseToTemplate', 'adding exercise to template', { templateId: targetId })
 
   const { data: existing } = await db
     .from('workout_template_exercises')
@@ -1890,20 +1906,19 @@ async function saveExerciseToTemplate(templateId) {
     order_index:   nextOrder,
     sets:           cleanSets.length || null,
     sets_json:      cleanSets.length ? cleanSets : null,
-    notes:          document.getElementById('att-notes').value.trim() || null,
-    superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
+    notes,
+    superset_group: supersetGroup
   })
 
   if (error) { log.error('saveExerciseToTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveExerciseToTemplate', 'exercise added to template', { templateId: targetId, name })
+  log.ok('saveExerciseToTemplate', 'exercise added to template', { templateId: targetId })
   _rememberExerciseMetricType(exerciseId, metricType)
   closeModal('add-to-template-modal')
   window._lastExerciseChange = { op: 'add', matchName: name, row: {
     exercise_id: exerciseId || null, exercise_name: name,
     exercise_type: derived.exercise_type, metric_type: metricType,
     sets: cleanSets.length || null, sets_json: cleanSets.length ? cleanSets : null,
-    notes: document.getElementById('att-notes').value.trim() || null,
-    superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
+    notes, superset_group: supersetGroup
   } }
   _afterTemplateExerciseSave(targetId)
 }
@@ -1948,7 +1963,7 @@ async function saveEditTemplateExercise(texId, templateId) {
     notes:          document.getElementById('att-notes').value.trim() || null,
     superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   }
-  log.info('saveEditTemplateExercise', 'updating template exercise', { texId: targetExId, name: picked.name })
+  log.info('saveEditTemplateExercise', 'updating template exercise', { texId: targetExId })
   const { error } = await db.from('workout_template_exercises').update(newRow).eq('id', targetExId)
   if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
   log.ok('saveEditTemplateExercise', 'template exercise updated', { texId: targetExId })
