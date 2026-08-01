@@ -16,7 +16,7 @@
 - Master accounts (one login, both coach and personal capability) must be completely unaffected by every change in this plan — verify this explicitly in Task 4.
 - Every fix needs a red-first Playwright test in the same commit, per this project's standing convention — write the failing test, confirm it fails, then implement.
 - `tests/*.spec.js` files are gitignored-safe to leave in the repo (this project commits its Playwright specs) — but any ad hoc/throwaway spec named `_adhoc.spec.js` must be deleted before the final commit; it is gitignored and never checked in.
-- Test fixtures: never leave a shared account (`PT2`, the second unrelated coach used across many other tests) in a mutated state after a test — every test that temporarily changes PT2 must restore it in a `finally` block.
+- Test fixtures: never leave a shared account (`PT`, the master account used across most of the suite; `PT2`, the second unrelated coach used by the RLS audit) in a mutated state after a test — every test that temporarily changes either must restore it in a `finally` block. (Revised 2026-08-01: `clients` INSERT requires `coach_id = auth.uid()`, so a `coach_id IS NULL` row can never be self-planted via the app's RLS-governed client for either fixture — Task 2 reuses PT's existing solo clients row instead of inserting one.)
 
 ---
 
@@ -104,47 +104,54 @@ Create `tests/solo-genuine-role-2026-08-01.spec.js`:
 
 ```js
 const { test, expect } = require('@playwright/test')
-const { loginAsPT2 } = require('./helpers')
+const { loginAsPT } = require('./helpers')
 
 test.describe('loadUserInfo treats role=solo as a native value, not a reassignment', () => {
   test('a native role=solo account gets window._soloClientId set correctly, with no solo_only flag needed', async ({ page }) => {
-    await loginAsPT2(page)
+    await loginAsPT(page)
 
+    // PT is used here, not PT2: this test needs an account with an existing self-referential
+    // clients row (coach_id IS NULL) to flip role='solo' against. Confirmed live (2026-08-01):
+    // the clients table's INSERT policy requires coach_id = auth.uid(), so a coach_id-IS-NULL row
+    // can NEVER be self-inserted by any authenticated user via the app's normal RLS-governed
+    // client — the one real solo_only account's row was always provisioned by Jake directly in
+    // the SQL editor (an admin/service connection that bypasses RLS), never through app code. That
+    // matches this feature's explicit scope boundary (no RLS policy change, no self-service
+    // provisioning) — so this test reuses PT's own EXISTING solo clients row (part of its normal
+    // master-account setup) instead of trying to plant a new one. Only `profiles.role` is mutated,
+    // and only for the instant between the update and the restore, guarded by try/finally since PT
+    // is the primary fixture used across nearly the whole suite.
     const result = await page.evaluate(async () => {
-      // Plant: PT2 becomes a genuinely-solo account for this test only. PT2 normally owns zero
-      // clients (it's the "unrelated coach" fixture used by rls-audit.spec.js's Probe A) — this test
-      // must restore that exactly, or every test relying on "PT2 owns nothing" breaks.
-      const { data: existing } = await db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle()
-      let plantedClientId = null
-      if (!existing) {
-        const { data, error } = await db.from('clients').insert({ user_id: currentUser.id, coach_id: null, full_name: 'PT2 Solo Test' }).select('id').single()
-        if (error) return { fatal: error.message }
-        plantedClientId = data.id
+      const { data: existingSoloRec, error: lookupErr } = await db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle()
+      if (lookupErr) return { fatal: lookupErr.message }
+      if (!existingSoloRec) return { fatal: 'PT has no existing solo clients row — test precondition not met' }
+
+      let resultRole, resultSoloId, resultMasterAccount
+      try {
+        const { error: roleErr } = await db.from('profiles').update({ role: 'solo' }).eq('id', currentUser.id)
+        if (roleErr) return { fatal: roleErr.message }
+
+        // Reset in-memory state so loadUserInfo's own DB fetch is what's actually being tested, not
+        // stale state from the normal loginAsPT(page) flow that already ran once this page load.
+        window._soloClientId = undefined
+        window._masterAccount = undefined
+
+        await loadUserInfo()
+
+        resultRole = currentProfile?.role
+        resultSoloId = window._soloClientId
+        resultMasterAccount = window._masterAccount
+      } finally {
+        // Restore PT to its normal master-account state, unconditionally, even if loadUserInfo threw.
+        await db.from('profiles').update({ role: 'coach' }).eq('id', currentUser.id)
       }
-      const { error: roleErr } = await db.from('profiles').update({ role: 'solo' }).eq('id', currentUser.id)
-      if (roleErr) return { fatal: roleErr.message }
 
-      // Reset in-memory state so loadUserInfo's own DB fetch is what's actually being tested, not
-      // stale state from the normal loginAsPT2() flow that already ran once this page load.
-      window._soloClientId = undefined
-      window._masterAccount = undefined
-
-      await loadUserInfo()
-
-      const resultRole = currentProfile?.role
-      const resultSoloId = window._soloClientId
-      const resultMasterAccount = window._masterAccount
-
-      // Restore PT2 to its normal state, unconditionally, before returning.
-      await db.from('profiles').update({ role: 'coach' }).eq('id', currentUser.id)
-      if (plantedClientId) await db.from('clients').delete().eq('id', plantedClientId)
-
-      return { resultRole, resultSoloId, resultMasterAccount }
+      return { resultRole, resultSoloId, resultMasterAccount, expectedSoloId: existingSoloRec.id }
     })
 
     expect(result.fatal, 'setup failed, this test proves nothing').toBeUndefined()
     expect(result.resultRole).toBe('solo')
-    expect(result.resultSoloId).toBeTruthy()
+    expect(result.resultSoloId).toBe(result.expectedSoloId)
     expect(result.resultMasterAccount).toBeUndefined() // a native solo account is never a master account
   })
 })
@@ -152,15 +159,15 @@ test.describe('loadUserInfo treats role=solo as a native value, not a reassignme
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx playwright test tests/solo-genuine-role-2026-08-01.spec.js --reporter=list`
-Expected: FAIL — with today's code, `role: 'solo'` is written to the DB by the test, but `loadUserInfo` only reassigns role to `'solo'` when it sees `role === 'coach' && solo_only === true` (`app-core.js:255`). Since the test sets `role='solo'` directly (not `role='coach', solo_only=true`), that branch's condition is false, `currentProfile.role` stays `'solo'` from the raw fetch (which is actually already correct by coincidence!) — but `window._soloClientId` is NEVER set, because neither branch (`:255` nor `:276`) matches a raw `role === 'solo'` fetch. Confirm the actual failure is `resultSoloId` being falsy, not `resultRole`.
+Run: `BASE_URL=http://localhost:3002 npx playwright test tests/solo-genuine-role-2026-08-01.spec.js --reporter=list` (adjust `BASE_URL` to whatever dedicated server this task is running against — never point it at another session's port 3001).
+Expected: FAIL — with today's code, `role: 'solo'` is written to the DB by the test, but `loadUserInfo` only reassigns role to `'solo'` when it sees `role === 'coach' && solo_only === true` (`app-core.js:255`). Since the test sets `role='solo'` directly (not `role='coach', solo_only=true`), that branch's condition is false, `currentProfile.role` stays `'solo'` from the raw fetch (which is actually already correct by coincidence!) — but `window._soloClientId` is NEVER set, because neither branch (`:255` nor `:276`) matches a raw `role === 'solo'` fetch. Confirm the actual failure is `resultSoloId` being falsy (not equal to `expectedSoloId`), not `resultRole`.
 
 - [ ] **Step 3: Implement — replace the branch**
 
 In `js/app-core.js`, replace lines 255-275 (the entire `if (currentProfile?.role === 'coach' && currentProfile.solo_only) { ... }` block) with:
 
 ```js
-  } else if (currentProfile?.role === 'solo') {
+  if (currentProfile?.role === 'solo') {
     // role='solo' is now a genuine, permanently-stored value (migrated 2026-08-01) — no more
     // reassignment needed. The one thing this account still needs looked up is its own
     // self-referential clients row, for window._soloClientId (used throughout the other 8 modules).
@@ -169,6 +176,8 @@ In `js/app-core.js`, replace lines 255-275 (the entire `if (currentProfile?.role
     if (soloRec) window._soloClientId = soloRec.id
   } else if (currentProfile?.role === 'coach') {
 ```
+
+(This block is the *first* `if` in the chain, not an `else if` fragment — the old `solo_only`-checking block being replaced was itself the chain's opening `if`, not a middle link.)
 
 The `else if (currentProfile?.role === 'coach') { ... }` block that follows (previously starting at line 276) is unchanged — this edit only replaces the opening of the `if`/`else if` chain, turning the old `if (...solo_only) { A } else if (role === 'coach') { B }` into `if (role === 'solo') { A' } else if (role === 'coach') { B }`, with `B` byte-for-byte identical to before.
 

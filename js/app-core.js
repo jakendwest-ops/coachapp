@@ -252,27 +252,29 @@ async function loadUserInfo() {
   document.getElementById('user-avatar').textContent = initial
 
   // Check if this account also has client records (master account detection)
-  if (currentProfile?.role === 'coach' && currentProfile.solo_only) {
-    // Locked to the solo/personal experience ONLY (2026-07-24) — same underlying shape as a normal
-    // master account (role stays 'coach', a self-referential clients row gives the solo dashboard
-    // something to query), but window._masterAccount is deliberately never set here, so the
-    // view-switcher never renders and switchView()'s own `if (!window._masterAccount) return` guard
-    // blocks any attempt to reach the coach or client view regardless. Distinct from the normal
-    // master-account branch below, which keeps full coach access via the switcher.
-    //
-    // Only reassign role to 'solo' when the row is ACTUALLY found — matching the master-account
-    // branch's own `if (soloRec)` pattern below. Provisioning is two separate manual steps (insert
-    // the clients row, then flip solo_only); forcing role:'solo' unconditionally here would trap an
-    // account whose row doesn't exist yet (or whose lookup transiently failed) in a personal
-    // dashboard with nothing to query and — because switchView is deliberately blocked — no in-app
-    // way out. Falling through leaves role at its real DB value ('coach') instead. Found by
-    // multi-agent review, 2026-07-24.
+  // The `|| (role === 'coach' && solo_only)` half is deliberate defense against migration/deploy
+  // ordering: scripts/migrate-solo-role-2026-08-01.sql must be run by hand to flip role to 'solo',
+  // and this app auto-deploys on push — so if the code deploys before someone runs the SQL, the one
+  // real solo_only account is still sitting at role='coach', solo_only=true. This branch ensures BOTH
+  // the role display AND the lockout are correct regardless of migration timing: without the OR
+  // clause AND the reassignment just inside it, that account would either fall through to the
+  // master-account branch below (reopening the "no escape hatch to coach" lockdown a previous session
+  // closed, and permanently mis-seeding starter content with is_personal:false), or — with only the
+  // OR clause and no reassignment — get stuck rendering the full coach dashboard shell with no path to
+  // its solo view at all (role stays 'coach' downstream, _masterAccount correctly never gets set so
+  // switchView is a no-op). Both pre- and post-migration shapes now hit this SAME branch AND end up
+  // with the same in-memory role.
+  if (currentProfile?.role === 'solo' || (currentProfile?.role === 'coach' && currentProfile?.solo_only)) {
+    // role='solo' is now a genuine, permanently-stored value for a MIGRATED account (2026-08-01).
+    // For the transitional (not-yet-migrated) shape above, currentProfile.role is still 'coach' at
+    // this point — reassign it so applyRoleUI/renderNav, defaultPage/validPages (below), and every
+    // other role === 'solo' check downstream treats this account identically to a migrated one.
+    if (currentProfile?.role !== 'solo') currentProfile = { ...currentProfile, role: 'solo' }
+    // The one thing this account still needs looked up is its own self-referential clients row, for
+    // window._soloClientId (used throughout the other 8 modules).
     const { data: soloRec, error: soloErr } = await db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle()
-    if (soloErr) log.error('loadUserInfo', 'solo_only clients lookup failed', soloErr)
-    if (soloRec) {
-      window._soloClientId = soloRec.id
-      currentProfile = { ...currentProfile, role: 'solo' }
-    }
+    if (soloErr) log.error('loadUserInfo', 'solo clients lookup failed', soloErr)
+    if (soloRec) window._soloClientId = soloRec.id
   } else if (currentProfile?.role === 'coach') {
     const [{ data: coachedRec }, { data: soloRec }] = await Promise.all([
       db.from('clients').select('id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle(),
@@ -292,15 +294,17 @@ async function loadUserInfo() {
   }
   await _loadBranding()
 
-  // Brand-new coach: seed the starter library/workout/program once, before anything renders, so the
-  // dashboard isn't a blank slate on first login. Idempotent (see _seedStarterContent). Checked
-  // against the RAW fetched `data.role`, not `currentProfile.role` — the block above may already have
-  // reassigned currentProfile.role to 'client'/'solo' (master account OR solo_only), but the
-  // underlying account is still genuinely a never-seeded coach either way. Jake and every existing
-  // account carry starter_seeded=true from the migration, so this never fires for them; a brand-new
-  // coach (solo_only or not) has no client rows yet the first time this runs, so it seeds correctly
-  // regardless of which branch above reassigned the display role.
-  if (data?.role === 'coach' && data?.starter_seeded === false) {
+  // Brand-new coach OR native solo account: seed the starter library/workout/program once, before
+  // anything renders, so the dashboard isn't a blank slate on first login. Idempotent (see
+  // _seedStarterContent). Checked against the RAW fetched `data.role`, not `currentProfile.role` —
+  // the block above may already have reassigned currentProfile.role to 'client'/'solo' (master
+  // account view-switch), but the underlying account is still genuinely a never-seeded coach either
+  // way. Jake and every existing account carry starter_seeded=true from the migration, so this never
+  // fires for them; a brand-new coach (master account or not) has no client rows yet the first time
+  // this runs, so it seeds correctly regardless of which branch above reassigned the display role. A
+  // genuinely native role='solo' account (its own real, stored role — not a master-account
+  // view-switch reassignment) also needs seeding on its first login, hence 'coach' OR 'solo' here.
+  if ((data?.role === 'coach' || data?.role === 'solo') && data?.starter_seeded === false) {
     const main = document.getElementById('main-content')
     if (main) main.innerHTML = '<div class="loading-state">Setting up your account…</div>'
     await _seedStarterContent()

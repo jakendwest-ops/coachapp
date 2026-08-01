@@ -92,6 +92,31 @@ async function waitForVisible(page, selectors, options = {}) {
   return page.waitForSelector(list.map(s => `${s}:visible`).join(', '), options)
 }
 
+// PT2's steady state (across the whole suite) is "owns nothing" — see tests/onboarding.spec.js's
+// documented convention. Deletes, in FK-safe order, everything _seedStarterContent can create for
+// PT2: program_phase_workouts → program_phases → programs, then workout_template_exercises →
+// workout_templates, then exercises — all scoped to PT2's own coach_id — then resets
+// starter_seeded: true so PT2 doesn't look like a never-seeded coach to any other test. Any test
+// that seeds content onto PT2 (directly or via loadUserInfo's wiring) must call this once up front
+// (self-heal from a prior strand that died mid-test) and once more in a `finally` so it fires even
+// if an assertion mid-test throws.
+async function sweepPT2(page) {
+  await page.evaluate(async () => {
+    const prog = await db.from('programs').select('id').eq('coach_id', currentUser.id)
+    for (const p of prog.data || []) {
+      const ph = await db.from('program_phases').select('id').eq('program_id', p.id)
+      for (const phase of ph.data || []) await db.from('program_phase_workouts').delete().eq('phase_id', phase.id)
+      await db.from('program_phases').delete().eq('program_id', p.id)
+    }
+    await db.from('programs').delete().eq('coach_id', currentUser.id)
+    const tmpl = await db.from('workout_templates').select('id').eq('coach_id', currentUser.id)
+    for (const t of tmpl.data || []) await db.from('workout_template_exercises').delete().eq('template_id', t.id)
+    await db.from('workout_templates').delete().eq('coach_id', currentUser.id)
+    await db.from('exercises').delete().eq('coach_id', currentUser.id)
+    await db.from('profiles').update({ starter_seeded: true }).eq('id', currentUser.id)
+  })
+}
+
 // Log one set in the runner's fast table. Since sub-project ②c, every strength metric_type
 // (weight_reps/unilateral/timed_hold/jump_height/jump_distance) logs via the fast table, not the wizard —
 // so tests that used to drive `#wr-weight-input` + the LOG button now fill the row inputs and tick the ✓.
@@ -113,4 +138,4 @@ async function logTableSet(page, { weight = '60', reps = '10' } = {}) {
   return true
 }
 
-module.exports = { loginAsPT, loginAsClient, loginAsPT2, logTableSet, clickVisible, waitForVisible }
+module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible }
