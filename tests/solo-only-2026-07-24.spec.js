@@ -9,16 +9,24 @@ const { loginAsPT } = require('./helpers')
 // the existing master-account pattern always ALSO exposes the coach side via the switcher. This adds
 // a genuinely locked-down variant: profiles.solo_only skips window._masterAccount entirely, so the
 // switcher never renders and switchView()'s own guard blocks reaching the coach view regardless.
+//
+// UPDATE 2026-08-01: solo_only was retired in favor of a genuinely-stored profiles.role='solo' value
+// (migration scripts/migrate-solo-role-2026-08-01.sql, see also tests/solo-genuine-role-2026-08-01.spec.js).
+// loadUserInfo's dedicated `if (currentProfile?.role === 'solo')` branch (js/app-core.js) now covers what
+// the old solo_only-flag branch used to do — no in-memory role reassignment, no separate flag. The tests
+// below are adjusted to set the real role directly rather than the retired flag; the safety properties
+// they guard (never a master account, switchView can't escape it, starter-seed checks the raw role,
+// _soloClientId only ever set when the row is actually found) still hold for the new native branch.
 test.describe('solo_only — locked personal-only account (2026-07-24)', () => {
   test('loadUserInfo never sets _masterAccount for a solo_only account, and switchView cannot escape it', async ({ page }) => {
     await loginAsPT(page) // has a permanent self-referential "E2E PT Solo" clients row already
 
-    // The mutation to the real, shared PT fixture (solo_only:true) must not happen until AFTER the
+    // The mutation to the real, shared PT fixture (role='solo') must not happen until AFTER the
     // precondition it depends on is confirmed — and everything from here on must be inside try/finally,
-    // so any assertion failure still resets the flag. An earlier version of this test mutated first and
-    // asserted after, outside the try block: if the clients-row check had ever failed, solo_only would
-    // have been left stuck true on the shared PT account with no cleanup — the exact class of damage
-    // that already happened once this session to the PT2 fixture. Found by multi-agent review, 2026-07-24.
+    // so any assertion failure still resets it. An earlier version of this test mutated first and
+    // asserted after, outside the try block: if the clients-row check had ever failed, the mutation would
+    // have been left stuck on the shared PT account with no cleanup — the exact class of damage that
+    // already happened once this session to the PT2 fixture. Found by multi-agent review, 2026-07-24.
     try {
       const setup = await page.evaluate(async () => {
         // RLS doesn't permit a user to self-insert a coach_id:null clients row for themselves — real
@@ -28,7 +36,7 @@ test.describe('solo_only — locked personal-only account (2026-07-24)', () => {
         // restricted) permissions.
         const { data: existing, error } = await db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle()
         if (error || !existing) return { error: error?.message || 'PT\'s self-referential clients row is missing' }
-        await db.from('profiles').update({ solo_only: true }).eq('id', currentUser.id)
+        await db.from('profiles').update({ role: 'solo' }).eq('id', currentUser.id)
         return { clientId: existing.id }
       })
       expect(setup.error).toBeFalsy()
@@ -65,32 +73,33 @@ test.describe('solo_only — locked personal-only account (2026-07-24)', () => {
       expect(r.after.role, 'switchView(\'coach\') must be a no-op — role must stay solo').toBe('solo')
     } finally {
       // Never creates a row (PT's self-referential clients row is borrowed, not owned by this test —
-      // see setup above), so cleanup is just resetting the flag. Runs regardless of which assertion
+      // see setup above), so cleanup is just restoring the real role. Runs regardless of which assertion
       // above failed, or even if the precondition check itself failed before any mutation happened.
       await page.evaluate(async () => {
-        await db.from('profiles').update({ solo_only: false }).eq('id', currentUser.id)
+        await db.from('profiles').update({ role: 'coach' }).eq('id', currentUser.id)
       })
     }
   })
 
-  // Starter-content seeding must still work for a solo_only account on its genuine first login —
-  // checked against the RAW fetched role, not the display role the block above may have reassigned.
+  // Starter-content seeding must still work for a native role='solo' account on its genuine first
+  // login — checked against the RAW fetched role, not the display role the master-account branch may
+  // reassign for a view-switch. (Text updated 2026-08-01 for Task 3's coach-OR-solo starter-seed gate.)
   test('loadUserInfo checks the raw fetched role for starter-seeding, not the display-reassigned role', async ({ page }) => {
     await loginAsPT(page)
-    const r = await page.evaluate(() => loadUserInfo.toString().includes("data?.role === 'coach' && data?.starter_seeded === false"))
+    const r = await page.evaluate(() => loadUserInfo.toString().includes("(data?.role === 'coach' || data?.role === 'solo') && data?.starter_seeded === false"))
     expect(r, 'the starter-seed check must use the raw data.role, immune to any role reassignment above it').toBe(true)
   })
 
-  // Caught by multi-agent review: the solo_only branch used to force role:'solo' EVEN IF the
-  // self-referential clients-row lookup came back empty or errored — unlike the sibling master-account
-  // branch, which only reassigns role when a row is actually found. Since switchView is deliberately
-  // blocked for a solo_only account, a bad lookup would trap it in a personal dashboard with nothing
-  // to query and no in-app way out (provisioning is two separate manual SQL steps — insert the row,
-  // then flip the flag — so a wrong order is a realistic mistake, not a hypothetical one).
+  // Caught by multi-agent review (2026-07-24): the OLD solo_only branch used to force role:'solo' EVEN IF
+  // the self-referential clients-row lookup came back empty or errored — unlike the sibling master-account
+  // branch, which only reassigns role when a row is actually found. That in-memory reassignment no longer
+  // exists (2026-08-01: role='solo' arrives natively — see UPDATE note at top of file); the equivalent
+  // guarantee now is that window._soloClientId is only ever set when the self-referential row is actually
+  // found, so a bad lookup can't strand a native solo account with a populated dashboard pointing nowhere.
   test('the solo_only branch only reassigns role when the self-referential clients row is actually found', async ({ page }) => {
     await loginAsPT(page)
-    const guarded = await page.evaluate(() => /if \(soloRec\) \{[\s\S]{0,150}role: 'solo'/.test(loadUserInfo.toString()))
-    expect(guarded, 'role:\'solo\' must only be assigned inside an `if (soloRec)` check').toBe(true)
+    const guarded = await page.evaluate(() => /if \(soloRec\) window\._soloClientId = soloRec\.id/.test(loadUserInfo.toString()))
+    expect(guarded, 'window._soloClientId must only be assigned inside an `if (soloRec)` check').toBe(true)
   })
 
   // Caught by multi-agent review: window._masterAccount/_soloClientId/_masterClientId and the
