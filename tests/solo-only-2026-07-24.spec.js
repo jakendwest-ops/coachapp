@@ -93,9 +93,18 @@ test.describe('solo_only — locked personal-only account (2026-07-24)', () => {
   // Caught by multi-agent review (2026-07-24): the OLD solo_only branch used to force role:'solo' EVEN IF
   // the self-referential clients-row lookup came back empty or errored — unlike the sibling master-account
   // branch, which only reassigns role when a row is actually found. That in-memory reassignment no longer
-  // exists (2026-08-01: role='solo' arrives natively — see UPDATE note at top of file); the equivalent
-  // guarantee now is that window._soloClientId is only ever set when the self-referential row is actually
-  // found, so a bad lookup can't strand a native solo account with a populated dashboard pointing nowhere.
+  // exists (2026-08-01: role='solo' arrives natively — see UPDATE note at top of file).
+  //
+  // UPDATE 2026-08-01 (final whole-branch review, Finding 1/2): with the code's deploy-ordering fix,
+  // loadUserInfo's native-solo branch now fires for role='solo' OR (role='coach' AND solo_only=true) —
+  // either way it ALWAYS lands the account on the solo dashboard, with no fallback to the coach view
+  // in either case (by design: falling back to 'coach' would hand a locked-down account the coach UI,
+  // which is worse than an empty solo one). A missing self-referential clients row just means
+  // window._soloClientId stays unset and the solo dashboard has nothing to query — never an escape
+  // hatch to coach. The "row must actually exist" safety property is instead enforced upstream, once,
+  // for the one real account: scripts/migrate-solo-role-2026-08-01.sql's Step 2 UPDATE only flips
+  // solo_only accounts to role='solo' when that clients row is confirmed present (Finding 2). This
+  // test itself still just proves window._soloClientId is only ever assigned inside `if (soloRec)`.
   test('the native-solo branch only sets _soloClientId when the self-referential clients row is actually found', async ({ page }) => {
     await loginAsPT(page)
     const guarded = await page.evaluate(() => /if \(soloRec\) window\._soloClientId = soloRec\.id/.test(loadUserInfo.toString()))

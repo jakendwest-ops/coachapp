@@ -11,5 +11,7 @@ desktop.ini
 
 # Throwaway ad-hoc Playwright specs (run-coachapp / mobile-check) — never commit
 tests/_adhoc.spec.js
+tests/zz-*.spec.js
+tests/_debug-*.spec.js
 adhoc.png
 mobile.png

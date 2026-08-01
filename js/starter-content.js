@@ -88,7 +88,12 @@ async function _seedStarterContent() {
   // here means isSoloAccount reflects the account's own genuine, natively-stored role — not a
   // display-only view switch — even if this function is invoked on a later (non-first) login while
   // that master account's view happens to be parked on 'solo'.
-  const isSoloAccount = currentProfile?.role === 'solo' && !window._masterAccount
+  // The `|| (role === 'coach' && solo_only)` half mirrors loadUserInfo's same defense in app-core.js:
+  // if the code deploys before scripts/migrate-solo-role-2026-08-01.sql has been run by hand, the one
+  // real account is still role='coach', solo_only=true — without this OR clause it would seed with
+  // is_personal:false and then permanently set starter_seeded=true, so the mis-seeded content stays
+  // invisible forever once the migration does run (every solo read path filters is_personal=true).
+  const isSoloAccount = (currentProfile?.role === 'solo' || (currentProfile?.role === 'coach' && currentProfile?.solo_only)) && !window._masterAccount
   if (!(currentProfile?.role === 'coach' || isSoloAccount) || currentProfile?.starter_seeded) return
 
   // 1. Exercises — insert only those the coach doesn't already have (by name); build the full map.

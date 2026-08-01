@@ -135,8 +135,12 @@ test.describe('master accounts are unaffected by the solo=native-role change', (
     // queries in js/app-core.js:263-265 are mutually exclusive by construction, not by fixture gap.
     // Asserting masterClientId truthy here (as an earlier draft of this test did, per review feedback)
     // would be asserting something structurally impossible — PT's real data confirms it's unset.
-    // (page.evaluate's return value crosses a serialization boundary that turns JS `undefined` into
-    // `null`, so the real in-page value is undefined; toBeNull() is what actually observes here.)
+    // window._masterClientId is initialized to `null` at js/app-core.js:66 and this account never
+    // populates it (only the coachedRec branch at js/app-core.js:267 would set it, and PT has no
+    // coachedRec) — so the in-page value genuinely is `null`, not `undefined`. (It can't be a
+    // serialization-boundary artifact either: the sibling assertion two lines below,
+    // `expect(result.resultMasterAccount).toBeUndefined()` in this same file, proves `undefined`
+    // really does survive page.evaluate's boundary unchanged.)
     expect(result.masterClientId).toBeNull()
   })
 })

@@ -252,7 +252,14 @@ async function loadUserInfo() {
   document.getElementById('user-avatar').textContent = initial
 
   // Check if this account also has client records (master account detection)
-  if (currentProfile?.role === 'solo') {
+  // The `|| (role === 'coach' && solo_only)` half is deliberate defense against migration/deploy
+  // ordering: scripts/migrate-solo-role-2026-08-01.sql must be run by hand to flip role to 'solo',
+  // and this app auto-deploys on push — so if the code deploys before someone runs the SQL, the one
+  // real solo_only account is still sitting at role='coach', solo_only=true. Without this OR clause
+  // that account would fall through to the master-account branch below (reopening the "no escape
+  // hatch to coach" lockdown a previous session closed, and permanently mis-seeding starter content
+  // with is_personal:false). Both pre- and post-migration shapes now hit this SAME branch.
+  if (currentProfile?.role === 'solo' || (currentProfile?.role === 'coach' && currentProfile?.solo_only)) {
     // role='solo' is now a genuine, permanently-stored value (migrated 2026-08-01) — no more
     // reassignment needed. The one thing this account still needs looked up is its own
     // self-referential clients row, for window._soloClientId (used throughout the other 8 modules).
