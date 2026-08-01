@@ -167,7 +167,7 @@ Expected: FAIL — with today's code, `role: 'solo'` is written to the DB by the
 In `js/app-core.js`, replace lines 255-275 (the entire `if (currentProfile?.role === 'coach' && currentProfile.solo_only) { ... }` block) with:
 
 ```js
-  } else if (currentProfile?.role === 'solo') {
+  if (currentProfile?.role === 'solo') {
     // role='solo' is now a genuine, permanently-stored value (migrated 2026-08-01) — no more
     // reassignment needed. The one thing this account still needs looked up is its own
     // self-referential clients row, for window._soloClientId (used throughout the other 8 modules).
@@ -176,6 +176,8 @@ In `js/app-core.js`, replace lines 255-275 (the entire `if (currentProfile?.role
     if (soloRec) window._soloClientId = soloRec.id
   } else if (currentProfile?.role === 'coach') {
 ```
+
+(This block is the *first* `if` in the chain, not an `else if` fragment — the old `solo_only`-checking block being replaced was itself the chain's opening `if`, not a middle link.)
 
 The `else if (currentProfile?.role === 'coach') { ... }` block that follows (previously starting at line 276) is unchanged — this edit only replaces the opening of the `if`/`else if` chain, turning the old `if (...solo_only) { A } else if (role === 'coach') { B }` into `if (role === 'solo') { A' } else if (role === 'coach') { B }`, with `B` byte-for-byte identical to before.
 
