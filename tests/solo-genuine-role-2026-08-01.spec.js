@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT, loginAsPT2 } = require('./helpers')
+const { loginAsPT, loginAsPT2, sweepPT2 } = require('./helpers')
 
 test.describe('loadUserInfo treats role=solo as a native value, not a reassignment', () => {
   test('a native role=solo account gets window._soloClientId set correctly, with no solo_only flag needed', async ({ page }) => {
@@ -54,37 +54,51 @@ test.describe('loadUserInfo treats role=solo as a native value, not a reassignme
 test.describe('starter-content seeding works for a native role=solo account', () => {
   test('_seedStarterContent runs for role=solo and writes is_personal:true, not false', async ({ page }) => {
     await loginAsPT2(page)
+    try {
+      await sweepPT2(page) // self-heal any prior strand — PT2's steady state is "owns nothing"
 
-    const result = await page.evaluate(async () => {
-      const tag = ' [E2E-solo-seed ' + Date.now() + ']'
-      const origProfile = { ...currentProfile }
+      // Stubbing STARTER_EXERCISES down to one tagged entry only changes what step 1 (exercises)
+      // inserts. Steps 2–3 (workout_templates/workout_template_exercises, programs/program_phases/
+      // program_phase_workouts) key off the hardcoded STARTER_TEMPLATE/STARTER_PROGRAM names, not
+      // STARTER_EXERCISES — and since the sweep above leaves PT2 owning nothing, their own
+      // existence-checks fall through to real INSERTs regardless of the stub. sweepPT2 in the
+      // `finally` below cleans up those rows too, not just the tagged exercise.
+      const result = await page.evaluate(async () => {
+        const tag = ' [E2E-solo-seed ' + Date.now() + ']'
+        const origProfile = { ...currentProfile }
 
-      // Simulate: PT2 is (for this test only) a brand-new, native role=solo account that has never
-      // been seeded. Don't touch the real profiles row's starter_seeded — only currentProfile, which
-      // is all _seedStarterContent actually reads.
-      currentProfile = { ...currentProfile, role: 'solo', starter_seeded: false }
+        // Simulate: PT2 is (for this test only) a brand-new, native role=solo account that has never
+        // been seeded. Don't touch the real profiles row's starter_seeded — only currentProfile, which
+        // is all _seedStarterContent actually reads.
+        currentProfile = { ...currentProfile, role: 'solo', starter_seeded: false }
 
-      // Give the starter exercises a unique marker so this test's cleanup can find exactly what it
-      // created, without touching PT2's own real seeded data (PT2 already carries starter_seeded=true
-      // from its own real onboarding).
-      const originalExercises = STARTER_EXERCISES.map(e => ({ ...e }))
-      STARTER_EXERCISES.length = 0
-      STARTER_EXERCISES.push({ name: 'E2E Solo Seed Test' + tag, muscle_group: 'Test', category: null })
+        // Give the starter exercises a unique marker so this test's cleanup can find exactly what it
+        // created, without touching PT2's own real seeded data (PT2 already carries starter_seeded=true
+        // from its own real onboarding).
+        const originalExercises = STARTER_EXERCISES.map(e => ({ ...e }))
+        STARTER_EXERCISES.length = 0
+        STARTER_EXERCISES.push({ name: 'E2E Solo Seed Test' + tag, muscle_group: 'Test', category: null })
 
-      await _seedStarterContent()
+        await _seedStarterContent()
 
-      const { data: seededEx } = await db.from('exercises').select('id, is_personal').eq('coach_id', currentUser.id).eq('name', 'E2E Solo Seed Test' + tag).maybeSingle()
+        const { data: seededEx } = await db.from('exercises').select('id, is_personal').eq('coach_id', currentUser.id).eq('name', 'E2E Solo Seed Test' + tag).maybeSingle()
 
-      // cleanup: restore the real STARTER_EXERCISES list and currentProfile, delete the test row
-      STARTER_EXERCISES.length = 0
-      originalExercises.forEach(e => STARTER_EXERCISES.push(e))
-      currentProfile = origProfile
-      if (seededEx?.id) await db.from('exercises').delete().eq('id', seededEx.id)
+        // cleanup: restore the real STARTER_EXERCISES list and currentProfile, delete the test row
+        STARTER_EXERCISES.length = 0
+        originalExercises.forEach(e => STARTER_EXERCISES.push(e))
+        currentProfile = origProfile
+        if (seededEx?.id) await db.from('exercises').delete().eq('id', seededEx.id)
 
-      return { seededEx }
-    })
+        return { seededEx }
+      })
 
-    expect(result.seededEx, 'seeding did not run at all for role=solo — the race is still present').toBeTruthy()
-    expect(result.seededEx.is_personal).toBe(true)
+      expect(result.seededEx, 'seeding did not run at all for role=solo — the race is still present').toBeTruthy()
+      expect(result.seededEx.is_personal).toBe(true)
+    } finally {
+      // Always restore PT2 to owning nothing, even if an assert above failed — this catches the
+      // real workout_templates/programs (+ child) rows the run above creates as a side effect,
+      // which the in-page cleanup above only ever touched for the one tagged exercise row.
+      await sweepPT2(page)
+    }
   })
 })

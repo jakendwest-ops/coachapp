@@ -1,28 +1,13 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT2 } = require('./helpers')
+const { loginAsPT2, sweepPT2 } = require('./helpers')
 
 // PT2 owns nothing by design (the RLS audit depends on that). These tests borrow it as a
 // "brand-new coach" fixture: sweep it clean, force its flag false, seed, and assert. Every test
 // sweeps at the START (self-healing — a prior strand can never compound into a wrong count) and
 // afterEach restores PT2 to owning nothing even if the body throws, so the RLS audit's premise holds.
+// sweepPT2 itself lives in tests/helpers.js (shared with tests/solo-genuine-role-2026-08-01.spec.js,
+// which also seeds onto PT2 and must leave it clean).
 test.describe('New-coach starter content', () => {
-
-  async function sweepPT2(page) {
-    await page.evaluate(async () => {
-      const prog = await db.from('programs').select('id').eq('coach_id', currentUser.id)
-      for (const p of prog.data || []) {
-        const ph = await db.from('program_phases').select('id').eq('program_id', p.id)
-        for (const phase of ph.data || []) await db.from('program_phase_workouts').delete().eq('phase_id', phase.id)
-        await db.from('program_phases').delete().eq('program_id', p.id)
-      }
-      await db.from('programs').delete().eq('coach_id', currentUser.id)
-      const tmpl = await db.from('workout_templates').select('id').eq('coach_id', currentUser.id)
-      for (const t of tmpl.data || []) await db.from('workout_template_exercises').delete().eq('template_id', t.id)
-      await db.from('workout_templates').delete().eq('coach_id', currentUser.id)
-      await db.from('exercises').delete().eq('coach_id', currentUser.id)
-      await db.from('profiles').update({ starter_seeded: true }).eq('id', currentUser.id)
-    })
-  }
 
   test('_seedStarterContent creates the library, sample workout, and sample program, once', async ({ page }) => {
     await loginAsPT2(page)

@@ -81,8 +81,15 @@ async function _markSeeded() {
 // flag is flipped only once all six artifacts exist. Each step returns on error, leaving the flag
 // false so the next login retries.
 async function _seedStarterContent() {
-  const isSoloAccount = currentProfile?.role === 'solo'
-  if ((currentProfile?.role !== 'coach' && !isSoloAccount) || currentProfile?.starter_seeded) return
+  // Deliberately NOT just `currentProfile?.role === 'solo'`: currentProfile.role gets reassigned to
+  // 'solo' in-memory for a master account whose stored view-switcher state (localStorage
+  // '_activeView') happens to be 'solo' (see loadUserInfo's window._masterAccount branch in
+  // app-core.js). window._masterAccount is only ever set truthy inside that branch, so excluding it
+  // here means isSoloAccount reflects the account's own genuine, natively-stored role — not a
+  // display-only view switch — even if this function is invoked on a later (non-first) login while
+  // that master account's view happens to be parked on 'solo'.
+  const isSoloAccount = currentProfile?.role === 'solo' && !window._masterAccount
+  if (!(currentProfile?.role === 'coach' || isSoloAccount) || currentProfile?.starter_seeded) return
 
   // 1. Exercises — insert only those the coach doesn't already have (by name); build the full map.
   const { data: existingEx, error: exReadErr } = await db.from('exercises').select('id, name').eq('coach_id', currentUser.id)
