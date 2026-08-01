@@ -96,7 +96,7 @@ test.describe('solo_only — locked personal-only account (2026-07-24)', () => {
   // exists (2026-08-01: role='solo' arrives natively — see UPDATE note at top of file); the equivalent
   // guarantee now is that window._soloClientId is only ever set when the self-referential row is actually
   // found, so a bad lookup can't strand a native solo account with a populated dashboard pointing nowhere.
-  test('the solo_only branch only reassigns role when the self-referential clients row is actually found', async ({ page }) => {
+  test('the native-solo branch only sets _soloClientId when the self-referential clients row is actually found', async ({ page }) => {
     await loginAsPT(page)
     const guarded = await page.evaluate(() => /if \(soloRec\) window\._soloClientId = soloRec\.id/.test(loadUserInfo.toString()))
     expect(guarded, 'window._soloClientId must only be assigned inside an `if (soloRec)` check').toBe(true)

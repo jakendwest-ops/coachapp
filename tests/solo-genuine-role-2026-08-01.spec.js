@@ -104,11 +104,13 @@ test.describe('starter-content seeding works for a native role=solo account', ()
 })
 
 test.describe('master accounts are unaffected by the solo=native-role change', () => {
-  test('a master account (coach + own solo view) still gets window._masterAccount and both client ids', async ({ page }) => {
+  test('a master account (coach + own solo view) still gets window._masterAccount, its solo clientId, and role; masterClientId is mutually exclusive with it by schema', async ({ page }) => {
     await loginAsPT(page)
     const result = await page.evaluate(() => ({
       masterAccount: window._masterAccount,
       role: currentProfile?.role,
+      masterClientId: window._masterClientId,
+      soloClientId: window._soloClientId,
     }))
     // PT is a master account with role='coach' in the DB — untouched by this whole change.
     expect(result.masterAccount).toBe(true)
@@ -119,5 +121,22 @@ test.describe('master accounts are unaffected by the solo=native-role change', (
     // branch were broken outright (e.g. if it always fell through to 'client'), so it's tightened to
     // the one value this fixture actually produces deterministically.
     expect(result.role).toBe('coach')
+    // window._soloClientId comes from PT's own self-referential clients row (coach_id IS NULL) — the
+    // "own solo view" half of "master account" — and is genuinely populated for PT. Verified 2026-08-01
+    // via a direct query: PT's clients table currently holds exactly one row for its user_id, with
+    // coach_id null.
+    expect(result.soloClientId).toBeTruthy()
+    // window._masterClientId (the OTHER branch of the untouched master-account code, js/app-core.js:
+    // 263-267) comes from a DIFFERENT clients row for the same user_id where coach_id IS NOT NULL — i.e.
+    // this account being coached BY someone else, not its own solo view. `clients.user_id` carries a
+    // UNIQUE constraint (proven in tests/gdpr-export.spec.js:87, "clients.user_id is UNIQUE — a user
+    // cannot hold two client records" — the DB refuses a second row), so one account can never have both
+    // a soloRec (coach_id IS NULL) and a coachedRec (coach_id IS NOT NULL) at the same time: the two
+    // queries in js/app-core.js:263-265 are mutually exclusive by construction, not by fixture gap.
+    // Asserting masterClientId truthy here (as an earlier draft of this test did, per review feedback)
+    // would be asserting something structurally impossible — PT's real data confirms it's unset.
+    // (page.evaluate's return value crosses a serialization boundary that turns JS `undefined` into
+    // `null`, so the real in-page value is undefined; toBeNull() is what actually observes here.)
+    expect(result.masterClientId).toBeNull()
   })
 })
