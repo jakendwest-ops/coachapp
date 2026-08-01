@@ -95,11 +95,15 @@ test.describe('solo_only — locked personal-only account (2026-07-24)', () => {
   // branch, which only reassigns role when a row is actually found. That in-memory reassignment no longer
   // exists (2026-08-01: role='solo' arrives natively — see UPDATE note at top of file).
   //
-  // UPDATE 2026-08-01 (final whole-branch review, Finding 1/2): with the code's deploy-ordering fix,
-  // loadUserInfo's native-solo branch now fires for role='solo' OR (role='coach' AND solo_only=true) —
-  // either way it ALWAYS lands the account on the solo dashboard, with no fallback to the coach view
-  // in either case (by design: falling back to 'coach' would hand a locked-down account the coach UI,
-  // which is worse than an empty solo one). A missing self-referential clients row just means
+  // UPDATE 2026-08-01 (final whole-branch review, Finding 1/2, plus a re-review round that caught the
+  // branch condition alone wasn't enough): loadUserInfo's native-solo branch now fires for role='solo'
+  // OR (role='coach' AND solo_only=true), AND — inside the branch — reassigns currentProfile.role to
+  // 'solo' for the transitional (not-yet-migrated) shape too, so it's actually TRUE post-fix that
+  // either way the account ALWAYS lands on the solo dashboard, with no fallback to the coach view in
+  // either case (by design: falling back to 'coach' would hand a locked-down account the coach UI,
+  // which is worse than an empty solo one — and, the re-review found, so would silently getting stuck
+  // rendering the coach shell with role never reassigned, which is what a role-condition-only fix
+  // without the reassignment would have produced). A missing self-referential clients row just means
   // window._soloClientId stays unset and the solo dashboard has nothing to query — never an escape
   // hatch to coach. The "row must actually exist" safety property is instead enforced upstream, once,
   // for the one real account: scripts/migrate-solo-role-2026-08-01.sql's Step 2 UPDATE only flips

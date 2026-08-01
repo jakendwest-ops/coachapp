@@ -49,6 +49,56 @@ test.describe('loadUserInfo treats role=solo as a native value, not a reassignme
     expect(result.resultSoloId).toBe(result.expectedSoloId)
     expect(result.resultMasterAccount).toBeUndefined() // a native solo account is never a master account
   })
+
+  // This is the exact gap a re-review of Finding 1's fix found (final whole-branch review, 2026-08-01):
+  // widening loadUserInfo's branch CONDITION to include `role='coach' AND solo_only=true` wasn't
+  // enough on its own — the branch body only set window._soloClientId, it never reassigned
+  // currentProfile.role. That meant the transitional shape (the real production account's state
+  // BEFORE scripts/migrate-solo-role-2026-08-01.sql is run by hand) would render the full coach
+  // dashboard shell with no path to its solo view: defaultPage/validPages (js/app-core.js ~199-203)
+  // stay coach-shaped since currentProfile.role never changes, and _masterAccount correctly never
+  // gets set, so switchView is a no-op — there's nowhere to switch TO. Confirmed RED against the code
+  // before the role-reassignment fix, GREEN after (see final-review-fix-report.md for the transcript).
+  // Deliberately sets solo_only=true and leaves role='coach' untouched (unlike the sibling test above,
+  // which sets role='solo' directly) to reproduce the exact pre-migration shape end-to-end.
+  test('the transitional shape (role=coach, solo_only=true, before the SQL migration runs) also lands on the solo dashboard, not stuck on the coach shell', async ({ page }) => {
+    await loginAsPT(page)
+
+    const result = await page.evaluate(async () => {
+      const { data: existingSoloRec, error: lookupErr } = await db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle()
+      if (lookupErr) return { fatal: lookupErr.message }
+      if (!existingSoloRec) return { fatal: 'PT has no existing solo clients row — test precondition not met' }
+
+      let resultRole, resultSoloId, resultMasterAccount
+      try {
+        const { error: flagErr } = await db.from('profiles').update({ solo_only: true }).eq('id', currentUser.id)
+        if (flagErr) return { fatal: flagErr.message }
+
+        // Reset in-memory state so loadUserInfo's own DB fetch is what's actually being tested, not
+        // stale state from the normal loginAsPT(page) flow that already ran once this page load.
+        window._soloClientId = undefined
+        window._masterAccount = undefined
+
+        await loadUserInfo()
+
+        resultRole = currentProfile?.role
+        resultSoloId = window._soloClientId
+        resultMasterAccount = window._masterAccount
+      } finally {
+        // Restore PT to its normal master-account steady state (solo_only=false), unconditionally,
+        // even if loadUserInfo threw. profiles.role is never touched by this test — it stays 'coach'
+        // throughout, exactly matching the real pre-migration production shape.
+        await db.from('profiles').update({ solo_only: false }).eq('id', currentUser.id)
+      }
+
+      return { resultRole, resultSoloId, resultMasterAccount, expectedSoloId: existingSoloRec.id }
+    })
+
+    expect(result.fatal, 'setup failed, this test proves nothing').toBeUndefined()
+    expect(result.resultRole, 'the transitional shape must reassign currentProfile.role to solo in memory, not leave it stuck at coach').toBe('solo')
+    expect(result.resultSoloId).toBe(result.expectedSoloId)
+    expect(result.resultMasterAccount, 'the transitional shape must never become a master account').toBeUndefined()
+  })
 })
 
 test.describe('starter-content seeding works for a native role=solo account', () => {
@@ -127,20 +177,20 @@ test.describe('master accounts are unaffected by the solo=native-role change', (
     // coach_id null.
     expect(result.soloClientId).toBeTruthy()
     // window._masterClientId (the OTHER branch of the untouched master-account code, js/app-core.js:
-    // 263-267) comes from a DIFFERENT clients row for the same user_id where coach_id IS NOT NULL — i.e.
+    // 283) comes from a DIFFERENT clients row for the same user_id where coach_id IS NOT NULL — i.e.
     // this account being coached BY someone else, not its own solo view. `clients.user_id` carries a
     // UNIQUE constraint (proven in tests/gdpr-export.spec.js:87, "clients.user_id is UNIQUE — a user
     // cannot hold two client records" — the DB refuses a second row), so one account can never have both
     // a soloRec (coach_id IS NULL) and a coachedRec (coach_id IS NOT NULL) at the same time: the two
-    // queries in js/app-core.js:263-265 are mutually exclusive by construction, not by fixture gap.
+    // queries in js/app-core.js:280-281 are mutually exclusive by construction, not by fixture gap.
     // Asserting masterClientId truthy here (as an earlier draft of this test did, per review feedback)
     // would be asserting something structurally impossible — PT's real data confirms it's unset.
     // window._masterClientId is initialized to `null` at js/app-core.js:66 and this account never
-    // populates it (only the coachedRec branch at js/app-core.js:267 would set it, and PT has no
+    // populates it (only the coachedRec branch at js/app-core.js:283 would set it, and PT has no
     // coachedRec) — so the in-page value genuinely is `null`, not `undefined`. (It can't be a
-    // serialization-boundary artifact either: the sibling assertion two lines below,
-    // `expect(result.resultMasterAccount).toBeUndefined()` in this same file, proves `undefined`
-    // really does survive page.evaluate's boundary unchanged.)
+    // serialization-boundary artifact either: the corroborating `_masterAccount` assertion in the
+    // FIRST test in this file, ~90 lines above — `expect(result.resultMasterAccount).toBeUndefined()`,
+    // line 50 — proves `undefined` really does survive page.evaluate's boundary unchanged.)
     expect(result.masterClientId).toBeNull()
   })
 })

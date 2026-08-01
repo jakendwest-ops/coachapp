@@ -255,14 +255,23 @@ async function loadUserInfo() {
   // The `|| (role === 'coach' && solo_only)` half is deliberate defense against migration/deploy
   // ordering: scripts/migrate-solo-role-2026-08-01.sql must be run by hand to flip role to 'solo',
   // and this app auto-deploys on push — so if the code deploys before someone runs the SQL, the one
-  // real solo_only account is still sitting at role='coach', solo_only=true. Without this OR clause
-  // that account would fall through to the master-account branch below (reopening the "no escape
-  // hatch to coach" lockdown a previous session closed, and permanently mis-seeding starter content
-  // with is_personal:false). Both pre- and post-migration shapes now hit this SAME branch.
+  // real solo_only account is still sitting at role='coach', solo_only=true. This branch ensures BOTH
+  // the role display AND the lockout are correct regardless of migration timing: without the OR
+  // clause AND the reassignment just inside it, that account would either fall through to the
+  // master-account branch below (reopening the "no escape hatch to coach" lockdown a previous session
+  // closed, and permanently mis-seeding starter content with is_personal:false), or — with only the
+  // OR clause and no reassignment — get stuck rendering the full coach dashboard shell with no path to
+  // its solo view at all (role stays 'coach' downstream, _masterAccount correctly never gets set so
+  // switchView is a no-op). Both pre- and post-migration shapes now hit this SAME branch AND end up
+  // with the same in-memory role.
   if (currentProfile?.role === 'solo' || (currentProfile?.role === 'coach' && currentProfile?.solo_only)) {
-    // role='solo' is now a genuine, permanently-stored value (migrated 2026-08-01) — no more
-    // reassignment needed. The one thing this account still needs looked up is its own
-    // self-referential clients row, for window._soloClientId (used throughout the other 8 modules).
+    // role='solo' is now a genuine, permanently-stored value for a MIGRATED account (2026-08-01).
+    // For the transitional (not-yet-migrated) shape above, currentProfile.role is still 'coach' at
+    // this point — reassign it so applyRoleUI/renderNav, defaultPage/validPages (below), and every
+    // other role === 'solo' check downstream treats this account identically to a migrated one.
+    if (currentProfile?.role !== 'solo') currentProfile = { ...currentProfile, role: 'solo' }
+    // The one thing this account still needs looked up is its own self-referential clients row, for
+    // window._soloClientId (used throughout the other 8 modules).
     const { data: soloRec, error: soloErr } = await db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle()
     if (soloErr) log.error('loadUserInfo', 'solo clients lookup failed', soloErr)
     if (soloRec) window._soloClientId = soloRec.id

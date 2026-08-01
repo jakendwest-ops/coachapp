@@ -3,12 +3,15 @@
 -- code shipped a safety net. js/app-core.js's loadUserInfo and js/starter-content.js's
 -- _seedStarterContent both now treat `role='coach' AND solo_only=true` the same as a native
 -- `role='solo'` account (added 2026-08-01, see the "defense against migration/deploy ordering"
--- comments at each site). That fallback exists ONLY so this app's auto-deploy-on-push can't reopen
--- the coach-view lockdown or mis-seed starter content with is_personal:false if the code lands before
--- this script runs — it is not a substitute for running the migration. Until you run it, the account
--- keeps being treated via that transitional `solo_only` check instead of a genuine, natively-stored
--- `role='solo'` value, and `solo_only` stays load-bearing rather than the inert legacy column it's
--- meant to become.
+-- comments at each site) — including reassigning the in-memory role to 'solo' for that transitional
+-- shape, not just skipping the master-account branch. That fallback exists ONLY so this app's
+-- auto-deploy-on-push can't hurt the one real account if the code lands before this script runs: it
+-- closes BOTH failure modes — no reopened escape hatch to the coach view (_masterAccount never gets
+-- set), AND no getting stuck rendering the coach dashboard shell with no path to the solo view either
+-- (role gets reassigned to 'solo' in memory, so nav/pages render solo-shaped). It is not a substitute
+-- for running the migration. Until you run it, the account keeps being treated via that transitional
+-- `solo_only` check instead of a genuine, natively-stored `role='solo'` value, and `solo_only` stays
+-- load-bearing rather than the inert legacy column it's meant to become.
 --
 -- Solo becomes a genuine, stored role. See docs/superpowers/specs/2026-08-01-solo-genuine-role-design.md
 --
