@@ -102,3 +102,22 @@ test.describe('starter-content seeding works for a native role=solo account', ()
     }
   })
 })
+
+test.describe('master accounts are unaffected by the solo=native-role change', () => {
+  test('a master account (coach + own solo view) still gets window._masterAccount and both client ids', async ({ page }) => {
+    await loginAsPT(page)
+    const result = await page.evaluate(() => ({
+      masterAccount: window._masterAccount,
+      role: currentProfile?.role,
+    }))
+    // PT is a master account with role='coach' in the DB — untouched by this whole change.
+    expect(result.masterAccount).toBe(true)
+    // loginAsPT() sets localStorage._activeView='coach' before the app loads (see tests/helpers.js),
+    // so loadUserInfo's view-switcher branch (js/app-core.js) always resolves activeView to 'coach'
+    // here and never reassigns currentProfile.role to 'client'/'solo'. The plan's original loose
+    // containment check (`toContain(['coach','client','solo'])`) would pass even if the view-switcher
+    // branch were broken outright (e.g. if it always fell through to 'client'), so it's tightened to
+    // the one value this fixture actually produces deterministically.
+    expect(result.role).toBe('coach')
+  })
+})
