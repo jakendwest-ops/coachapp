@@ -252,27 +252,13 @@ async function loadUserInfo() {
   document.getElementById('user-avatar').textContent = initial
 
   // Check if this account also has client records (master account detection)
-  if (currentProfile?.role === 'coach' && currentProfile.solo_only) {
-    // Locked to the solo/personal experience ONLY (2026-07-24) — same underlying shape as a normal
-    // master account (role stays 'coach', a self-referential clients row gives the solo dashboard
-    // something to query), but window._masterAccount is deliberately never set here, so the
-    // view-switcher never renders and switchView()'s own `if (!window._masterAccount) return` guard
-    // blocks any attempt to reach the coach or client view regardless. Distinct from the normal
-    // master-account branch below, which keeps full coach access via the switcher.
-    //
-    // Only reassign role to 'solo' when the row is ACTUALLY found — matching the master-account
-    // branch's own `if (soloRec)` pattern below. Provisioning is two separate manual steps (insert
-    // the clients row, then flip solo_only); forcing role:'solo' unconditionally here would trap an
-    // account whose row doesn't exist yet (or whose lookup transiently failed) in a personal
-    // dashboard with nothing to query and — because switchView is deliberately blocked — no in-app
-    // way out. Falling through leaves role at its real DB value ('coach') instead. Found by
-    // multi-agent review, 2026-07-24.
+  if (currentProfile?.role === 'solo') {
+    // role='solo' is now a genuine, permanently-stored value (migrated 2026-08-01) — no more
+    // reassignment needed. The one thing this account still needs looked up is its own
+    // self-referential clients row, for window._soloClientId (used throughout the other 8 modules).
     const { data: soloRec, error: soloErr } = await db.from('clients').select('id').eq('user_id', currentUser.id).is('coach_id', null).maybeSingle()
-    if (soloErr) log.error('loadUserInfo', 'solo_only clients lookup failed', soloErr)
-    if (soloRec) {
-      window._soloClientId = soloRec.id
-      currentProfile = { ...currentProfile, role: 'solo' }
-    }
+    if (soloErr) log.error('loadUserInfo', 'solo clients lookup failed', soloErr)
+    if (soloRec) window._soloClientId = soloRec.id
   } else if (currentProfile?.role === 'coach') {
     const [{ data: coachedRec }, { data: soloRec }] = await Promise.all([
       db.from('clients').select('id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle(),
