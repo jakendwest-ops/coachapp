@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, loginAsPT2 } = require('./helpers')
 
 test.describe('loadUserInfo treats role=solo as a native value, not a reassignment', () => {
   test('a native role=solo account gets window._soloClientId set correctly, with no solo_only flag needed', async ({ page }) => {
@@ -48,5 +48,43 @@ test.describe('loadUserInfo treats role=solo as a native value, not a reassignme
     expect(result.resultRole).toBe('solo')
     expect(result.resultSoloId).toBe(result.expectedSoloId)
     expect(result.resultMasterAccount).toBeUndefined() // a native solo account is never a master account
+  })
+})
+
+test.describe('starter-content seeding works for a native role=solo account', () => {
+  test('_seedStarterContent runs for role=solo and writes is_personal:true, not false', async ({ page }) => {
+    await loginAsPT2(page)
+
+    const result = await page.evaluate(async () => {
+      const tag = ' [E2E-solo-seed ' + Date.now() + ']'
+      const origProfile = { ...currentProfile }
+
+      // Simulate: PT2 is (for this test only) a brand-new, native role=solo account that has never
+      // been seeded. Don't touch the real profiles row's starter_seeded — only currentProfile, which
+      // is all _seedStarterContent actually reads.
+      currentProfile = { ...currentProfile, role: 'solo', starter_seeded: false }
+
+      // Give the starter exercises a unique marker so this test's cleanup can find exactly what it
+      // created, without touching PT2's own real seeded data (PT2 already carries starter_seeded=true
+      // from its own real onboarding).
+      const originalExercises = STARTER_EXERCISES.map(e => ({ ...e }))
+      STARTER_EXERCISES.length = 0
+      STARTER_EXERCISES.push({ name: 'E2E Solo Seed Test' + tag, muscle_group: 'Test', category: null })
+
+      await _seedStarterContent()
+
+      const { data: seededEx } = await db.from('exercises').select('id, is_personal').eq('coach_id', currentUser.id).eq('name', 'E2E Solo Seed Test' + tag).maybeSingle()
+
+      // cleanup: restore the real STARTER_EXERCISES list and currentProfile, delete the test row
+      STARTER_EXERCISES.length = 0
+      originalExercises.forEach(e => STARTER_EXERCISES.push(e))
+      currentProfile = origProfile
+      if (seededEx?.id) await db.from('exercises').delete().eq('id', seededEx.id)
+
+      return { seededEx }
+    })
+
+    expect(result.seededEx, 'seeding did not run at all for role=solo — the race is still present').toBeTruthy()
+    expect(result.seededEx.is_personal).toBe(true)
   })
 })

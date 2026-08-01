@@ -278,15 +278,17 @@ async function loadUserInfo() {
   }
   await _loadBranding()
 
-  // Brand-new coach: seed the starter library/workout/program once, before anything renders, so the
-  // dashboard isn't a blank slate on first login. Idempotent (see _seedStarterContent). Checked
-  // against the RAW fetched `data.role`, not `currentProfile.role` — the block above may already have
-  // reassigned currentProfile.role to 'client'/'solo' (master account OR solo_only), but the
-  // underlying account is still genuinely a never-seeded coach either way. Jake and every existing
-  // account carry starter_seeded=true from the migration, so this never fires for them; a brand-new
-  // coach (solo_only or not) has no client rows yet the first time this runs, so it seeds correctly
-  // regardless of which branch above reassigned the display role.
-  if (data?.role === 'coach' && data?.starter_seeded === false) {
+  // Brand-new coach OR native solo account: seed the starter library/workout/program once, before
+  // anything renders, so the dashboard isn't a blank slate on first login. Idempotent (see
+  // _seedStarterContent). Checked against the RAW fetched `data.role`, not `currentProfile.role` —
+  // the block above may already have reassigned currentProfile.role to 'client'/'solo' (master
+  // account view-switch), but the underlying account is still genuinely a never-seeded coach either
+  // way. Jake and every existing account carry starter_seeded=true from the migration, so this never
+  // fires for them; a brand-new coach (master account or not) has no client rows yet the first time
+  // this runs, so it seeds correctly regardless of which branch above reassigned the display role. A
+  // genuinely native role='solo' account (its own real, stored role — not a master-account
+  // view-switch reassignment) also needs seeding on its first login, hence 'coach' OR 'solo' here.
+  if ((data?.role === 'coach' || data?.role === 'solo') && data?.starter_seeded === false) {
     const main = document.getElementById('main-content')
     if (main) main.innerHTML = '<div class="loading-state">Setting up your account…</div>'
     await _seedStarterContent()

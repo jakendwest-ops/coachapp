@@ -81,7 +81,8 @@ async function _markSeeded() {
 // flag is flipped only once all six artifacts exist. Each step returns on error, leaving the flag
 // false so the next login retries.
 async function _seedStarterContent() {
-  if (currentProfile?.role !== 'coach' || currentProfile?.starter_seeded) return
+  const isSoloAccount = currentProfile?.role === 'solo'
+  if ((currentProfile?.role !== 'coach' && !isSoloAccount) || currentProfile?.starter_seeded) return
 
   // 1. Exercises — insert only those the coach doesn't already have (by name); build the full map.
   const { data: existingEx, error: exReadErr } = await db.from('exercises').select('id, name').eq('coach_id', currentUser.id)
@@ -90,7 +91,7 @@ async function _seedStarterContent() {
   const missingEx = STARTER_EXERCISES.filter(e => !(e.name in exIdByName))
   if (missingEx.length) {
     const { data: exRows, error: exErr } = await db.from('exercises').insert(
-      missingEx.map(e => ({ coach_id: currentUser.id, is_personal: false, name: e.name, muscle_group: e.muscle_group, category: e.category }))
+      missingEx.map(e => ({ coach_id: currentUser.id, is_personal: isSoloAccount, name: e.name, muscle_group: e.muscle_group, category: e.category }))
     ).select('id, name')
     if (exErr) { log.error('_seedStarterContent', 'exercise seed failed', exErr); return }
     ;(exRows || []).forEach(r => { exIdByName[r.name] = r.id })
@@ -105,7 +106,7 @@ async function _seedStarterContent() {
     templateId = existingTmpl[0].id
   } else {
     const { data: tmpl, error: tErr } = await db.from('workout_templates').insert({
-      coach_id: currentUser.id, program_id: null, client_id: null, is_personal: false,
+      coach_id: currentUser.id, program_id: null, client_id: null, is_personal: isSoloAccount,
       name: STARTER_TEMPLATE.name, description: STARTER_TEMPLATE.description,
     }).select('id').single()
     if (tErr || !tmpl) { log.error('_seedStarterContent', 'template seed failed', tErr); return }
@@ -123,14 +124,14 @@ async function _seedStarterContent() {
 
   // 3. Sample program → phase → phase-workouts — each created only if missing.
   let programId, phaseId
-  const { data: existingProg } = await db.from('programs').select('id').eq('coach_id', currentUser.id).eq('is_personal', false).eq('name', STARTER_PROGRAM.name).limit(1)
+  const { data: existingProg } = await db.from('programs').select('id').eq('coach_id', currentUser.id).eq('is_personal', isSoloAccount).eq('name', STARTER_PROGRAM.name).limit(1)
   if (existingProg?.length) {
     programId = existingProg[0].id
     const { data: existingPhase } = await db.from('program_phases').select('id').eq('program_id', programId).limit(1)
     phaseId = existingPhase?.[0]?.id
   } else {
     const { data: prog, error: pErr } = await db.from('programs').insert({
-      coach_id: currentUser.id, is_personal: false, name: STARTER_PROGRAM.name, description: STARTER_PROGRAM.description,
+      coach_id: currentUser.id, is_personal: isSoloAccount, name: STARTER_PROGRAM.name, description: STARTER_PROGRAM.description,
     }).select('id').single()
     if (pErr || !prog) { log.error('_seedStarterContent', 'program seed failed', pErr); return }
     programId = prog.id
