@@ -682,7 +682,7 @@ async function renderClientWorkoutsPage(el) {
             return `<div style="margin-bottom:6px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
               <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
                 <div>
-                  <span style="font-size:13px;font-weight:700;color:var(--text)">${phase.name}</span>
+                  <span style="font-size:13px;font-weight:700;color:var(--text)">${escapeHtml(phase.name)}</span>
                   <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${_builtWeekCount(allSessions)}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
                 </div>
                 <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0;transform:rotate(${pi === 0 ? '180deg' : '0deg'})"><polyline points="6 9 12 15 18 9"/></svg>
@@ -809,7 +809,7 @@ async function renderExerciseLibrary(el) {
     })
     return Object.entries(groups).sort().map(([group, exs]) => `
       <div style="margin-bottom:24px">
-        <div class="section-header"><h3 class="section-title">${group}</h3></div>
+        <div class="section-header"><h3 class="section-title">${escapeHtml(group)}</h3></div>
         <div class="list">
           ${exs.map(e => `
             <div class="list-row">
@@ -1180,7 +1180,7 @@ async function openTemplate(id, ctx = {}) {
         const isInterval = _mt === 'interval'
         const meta = isCardio
           ? [ex.sets ? `${ex.sets} sets` : null, 'Cardio'].filter(Boolean).join(' · ')
-          : [ex.sets ? `${ex.sets} sets` : null, ex.reps ? `${ex.reps} reps` : null, ex.weight_kg ? `${ex.weight_kg}kg` : null].filter(Boolean).join(' · ') || 'No defaults set'
+          : [ex.sets ? `${ex.sets} sets` : null, ex.reps ? `${escapeHtml(String(ex.reps))} reps` : null, ex.weight_kg ? `${ex.weight_kg}kg` : null].filter(Boolean).join(' · ') || 'No defaults set'
         return `
         <div class="card" style="margin-bottom:0">
           <div class="card-body" style="padding:12px 16px">
@@ -1194,7 +1194,7 @@ async function openTemplate(id, ctx = {}) {
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                   <span style="font-weight:600;font-size:14px">${escapeHtml(ex.exercise_name)}</span>
                   ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
-                  ${ex.superset_group ? `<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:4px;background:rgba(245,158,11,.15);color:#d97706">SS: ${ex.superset_group}</span>` : ''}
+                  ${ex.superset_group ? `<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:4px;background:rgba(245,158,11,.15);color:#d97706">SS: ${escapeHtml(ex.superset_group)}</span>` : ''}
                   ${ex.sets_json?.[0]?.bodyweight ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(16,185,129,.12);color:#059669">BW</span>` : ''}
                   ${ex.sets_json?.[0]?.assisted ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(139,92,246,.12);color:#7c3aed">Assisted</span>` : ''}
                 </div>
@@ -2535,7 +2535,7 @@ async function renderClientWorkouts(clientId, el) {
             <div class="list-row" onclick="openTemplate('${r.workout_templates?.id||r.workout_template_id}',{backTo:'client',backLabel:'${escapeAttr((clientData?.full_name||'Client'))}',clientId:'${clientId}',clientName:'${escapeAttr((clientData?.full_name||'Client'))}',clientProgramId:'${cpIds[0]||''}'})">
               <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
               <div class="row-info">
-                <div class="row-name">${r.workout_templates?.name||'Workout'}</div>
+                <div class="row-name">${escapeHtml(r.workout_templates?.name||'Workout')}</div>
                 <div class="row-meta">Tap to edit for this client</div>
               </div>
               <div class="row-right">

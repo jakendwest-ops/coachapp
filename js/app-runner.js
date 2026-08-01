@@ -501,12 +501,17 @@ function _buildTargetCols(tgt, ex) {
   // not prescribe. Label REPS as JUMPS here: for a jump, a "rep" is a contact.
   const mt = _exMetricType(ex)
   if (mt === 'jump_height' && tgt.targetHeightCm) cols.push({ val: fmtJumpHeight(tgt.targetHeightCm, { spaced: true }), label: 'TARGET', accent: true })
-  if (mt === 'jump_distance' && tgt.targetDistanceM) cols.push({ val: tgt.targetDistanceM+' m', label: 'TARGET', accent: true })
+  if (mt === 'jump_distance' && tgt.targetDistanceM) cols.push({ val: escapeHtml(tgt.targetDistanceM+' m'), label: 'TARGET', accent: true })
   const isJumpMt0 = mt === 'jump_height' || mt === 'jump_distance'
   // Jumps prescribe a single contact count; a stale repsMax from a previous metric_type render
   // would otherwise print a range ("8–12 JUMPS") the builder never offered.
   const repsStr = !tgt.timed && tgt.repsMin ? (isJumpMt0 ? String(tgt.repsMin) : tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
-  if (repsStr) cols.push({ val: repsStr, label: mt === 'jump_height' || mt === 'jump_distance' ? 'JUMPS' : 'REPS', accent: true })
+  // sets_json is an unvalidated JSONB blob (coach-authored, no schema enforcement) — every raw field
+  // below is escaped at the point it enters `cols`, same discipline as the pre-existing `tempo` escape,
+  // rather than trusted because the builder's own inputs happen to be numeric today. Found by the
+  // 2026-07-30 weekly full-file review: this whole function escaped tempo only, leaving reps/%1RM/
+  // effort/rest raw into _renderTargetBarHtml's innerHTML sink.
+  if (repsStr) cols.push({ val: escapeHtml(repsStr), label: mt === 'jump_height' || mt === 'jump_distance' ? 'JUMPS' : 'REPS', accent: true })
   // A stale `weight` survives a metric_type switch (flushTemplateSets preserves un-rendered
   // fields), so a jump set can still carry one — don't render two columns both labelled TARGET.
   const isJumpMt = mt === 'jump_height' || mt === 'jump_distance'
@@ -522,12 +527,12 @@ function _buildTargetCols(tgt, ex) {
     // renderStrengthTable), so showing it here too spent a whole column repeating one number.
     const pct = tgt.intensityMin + (tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? '–' + tgt.intensityMax : '')
     if (!ex.oneRM) needsOneRM = true   // banner still offers to set it; without a 1RM there is no kg to ghost
-    cols.push({ val: pct + '%', label: '1RM TARGET', accent: true })
+    cols.push({ val: escapeHtml(pct) + '%', label: '1RM TARGET', accent: true })
   }
   // Value carries the NUMBER only — the column's own label already says RPE or RIR, so prefixing
   // the value with it just says the same word twice ("RPE / RPE 8–9"). Jake, 2026-07-11.
-  if (tgt.effortMin) cols.push({ val: tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:''), label: tgt.effortType==='rir'?'RIR':'RPE' })
-  if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:''), label: 'REST' })
+  if (tgt.effortMin) cols.push({ val: escapeHtml(tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:'')), label: tgt.effortType==='rir'?'RIR':'RPE' })
+  if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: escapeHtml(tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:'')), label: 'REST' })
   if (tgt.tempo && takesLoad) cols.push({ val: escapeHtml(tgt.tempo), label: 'TEMPO' })
   return { cols, needsOneRM }
 }
@@ -746,7 +751,7 @@ function renderRunner() {
               <span style="font-size:11px;font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
             <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${escapeHtml(ex.name)||'Exercise name'}</div>
-            ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?ex.targetReps+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
+            ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
             ${nextEx ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
           </div>
           <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
@@ -794,9 +799,12 @@ function renderRunner() {
           const label = noteMatch ? noteMatch[1] : 'Coach note'
           const noteText = noteMatch ? noteMatch[2] : ex.notes
           if (!noteText.trim()) return ''
+          // escapeHtml both — the sibling render of this exact regex on this exact column
+          // (app-workouts.js's session-detail preview) already escapes all 3 branches; this one
+          // didn't. Found by the 2026-07-30 full-file review.
           return `<div style="margin:8px 0 4px;padding:10px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)">
-            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">${label}</span>
-            <div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.5">${noteText}</div>
+            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">${escapeHtml(label)}</span>
+            <div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.5">${escapeHtml(noteText)}</div>
           </div>`
         })()}
 
@@ -837,14 +845,14 @@ function renderRunner() {
           <!-- Cardio targets -->
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
             ${distBased && _cardioDistanceM(tgt) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${fmtDistanceM(_cardioDistanceM(tgt))}</span>` : ''}
-            ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${normalizeDuration(tgt.duration)}</span>` : ''}
-            ${_hasTimeTarget(tgt.pace500Min) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.pace500Min}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+tgt.pace500Max:''} /500m</span>` : ''}
-            ${_hasTimeTarget(tgt.paceKmMin) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.paceKmMin}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+tgt.paceKmMax:''} /km</span>` : ''}
-            ${tgt.wattsMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${tgt.wattsMin}${tgt.wattsMax && tgt.wattsMax!==tgt.wattsMin?'–'+tgt.wattsMax:''} W</span>` : ''}
-            ${tgt.hrZoneMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${tgt.hrZoneMin}${tgt.hrZoneMax?'–'+tgt.hrZoneMax:''} bpm</span>` : ''}
-            ${tgt.restMin && tgt.restMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof tgt.restMin === 'number' ? fmtDuration(tgt.restMin) : tgt.restMin}</span>` : ''}
-            ${tgt.strokeRateMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">${tgt.strokeRateMin}${tgt.strokeRateMax?'–'+tgt.strokeRateMax:''} spm</span>` : ''}
-            ${tgt.restHrMax ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest HR &lt;${tgt.restHrMax}</span>` : ''}
+            ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${escapeHtml(normalizeDuration(tgt.duration))}</span>` : ''}
+            ${_hasTimeTarget(tgt.pace500Min) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.pace500Min))}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+escapeHtml(String(tgt.pace500Max)):''} /500m</span>` : ''}
+            ${_hasTimeTarget(tgt.paceKmMin) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.paceKmMin))}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+escapeHtml(String(tgt.paceKmMax)):''} /km</span>` : ''}
+            ${tgt.wattsMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.wattsMin))}${tgt.wattsMax && tgt.wattsMax!==tgt.wattsMin?'–'+escapeHtml(String(tgt.wattsMax)):''} W</span>` : ''}
+            ${tgt.hrZoneMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${escapeHtml(String(tgt.hrZoneMin))}${tgt.hrZoneMax?'–'+escapeHtml(String(tgt.hrZoneMax)):''} bpm</span>` : ''}
+            ${tgt.restMin && tgt.restMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof tgt.restMin === 'number' ? fmtDuration(tgt.restMin) : escapeHtml(tgt.restMin)}</span>` : ''}
+            ${tgt.strokeRateMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">${escapeHtml(String(tgt.strokeRateMin))}${tgt.strokeRateMax?'–'+escapeHtml(String(tgt.strokeRateMax)):''} spm</span>` : ''}
+            ${tgt.restHrMax ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest HR &lt;${escapeHtml(String(tgt.restHrMax))}</span>` : ''}
           </div>
           <!-- Set label -->
           <div style="text-align:center;font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Set ${setNum}</div>
@@ -864,7 +872,7 @@ function renderRunner() {
               </div>` : `
               <div>
                 <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Duration (MM:SS)</div>
-                <input id="wr-cardio-dur" type="text" inputmode="numeric" placeholder="${normalizeDuration(tgt.duration)||'0:00'}" value="${normalizeDuration(lastCardio?.duration||tgt.duration||'')}"
+                <input id="wr-cardio-dur" type="text" inputmode="numeric" placeholder="${escapeHtml(normalizeDuration(tgt.duration))||'0:00'}" value="${escapeHtml(normalizeDuration(lastCardio?.duration||tgt.duration||''))}"
                   oninput="this.value=fmtRestInput(this.value)"
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>`}
@@ -873,7 +881,7 @@ function renderRunner() {
           <div style="display:flex;gap:8px;margin-bottom:10px">
             <div style="flex:1">
               <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Avg HR (bpm) — optional</div>
-              <input id="wr-cardio-avg-hr" type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${tgt.hrZoneMin||''}" value="${lastCardio?.avgHr||''}"
+              <input id="wr-cardio-avg-hr" type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${escapeHtml(String(tgt.hrZoneMin||''))}" value="${lastCardio?.avgHr||''}"
                 style="width:100%;padding:10px 12px;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
             </div>
             <div style="flex:1">
@@ -883,7 +891,7 @@ function renderRunner() {
             </div>
             <div style="flex:1">
               <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Avg watts — optional</div>
-              <input id="wr-cardio-watts" type="number" inputmode="numeric" step="1" min="0" max="2000" placeholder="${tgt.wattsMin||''}" value="${lastCardio?.avgWatts||''}"
+              <input id="wr-cardio-watts" type="number" inputmode="numeric" step="1" min="0" max="2000" placeholder="${escapeHtml(String(tgt.wattsMin||''))}" value="${lastCardio?.avgWatts||''}"
                 style="width:100%;padding:10px 12px;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
             </div>
           </div>
@@ -910,12 +918,15 @@ function renderRunner() {
             <div style="font-size:11px;color:#b45309;margin-top:2px">Tap to add</div>
           </div>` : ''
           const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
-          const distTarget = ex.notes?.match(/(\d+)[–\-](\d+)\s*m/)?.[0] || tgt.distance || ''
+          // escapeHtml here, not at each of the 2 render sites below — sets_json/notes are
+          // coach-authored JSONB with no schema enforcement, same class the 2026-07-30 full-file
+          // review found unescaped throughout this render path (_buildTargetCols, cardio chips).
+          const distTarget = escapeHtml(ex.notes?.match(/(\d+)[–\-](\d+)\s*m/)?.[0] || tgt.distance || '')
           const weightPlaceholder = tgt.weight ? weightToPref(tgt.weight) : '—'
           // Same prescribed-rep string _buildTargetCols builds for its REPS column, but this one is
           // the input's ghost text, so it stays local rather than being read off the shared helper.
           const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin + (tgt.repsMax && tgt.repsMax !== tgt.repsMin ? '–' + tgt.repsMax : '')) : null
-          const repsPlaceholder = repsStr ? repsStr.replace('–', '-') : '—'
+          const repsPlaceholder = repsStr ? escapeHtml(repsStr.replace('–', '-')) : '—'
           return `
           ${oneRMBanner}
           ${targetBar}
@@ -969,7 +980,7 @@ function renderRunner() {
               ? (_runner._setTimerDone
                   ? `<div style="flex:1;display:flex;flex-direction:column">
                       <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Duration</div>
-                      <input id="wr-duration-input" type="text" inputmode="numeric" placeholder="${tgt.duration||'0:00'}" oninput="this.value=fmtRestInput(this.value)"
+                      <input id="wr-duration-input" type="text" inputmode="numeric" placeholder="${escapeHtml(String(tgt.duration||'0:00'))}" oninput="this.value=fmtRestInput(this.value)"
                         style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box">
                      </div>`
                   : '')
