@@ -54,7 +54,11 @@ html, body {
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button { cursor: pointer; border: none; background: none; font-family: inherit; font-size: inherit; }
-input, textarea, select { font-family: inherit; font-size: inherit; color: var(--text); }
+/* 16px, not inherit (14px): iOS Safari auto-zooms the whole page on focus for any input rendered
+   below 16px. Needed now that index.html's viewport no longer sets maximum-scale=1.0 (2026-08-01,
+   restoring pinch-to-zoom for accessibility) -- without this, removing that lock would trade "can't
+   zoom" for "the page jump-zooms every time you tap a field," which is worse, not better. */
+input, textarea, select { font-family: inherit; font-size: 16px; color: var(--text); }
 input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 
 /* ─── Auth Screen ────────────────────────────────────────────────────────────── */
