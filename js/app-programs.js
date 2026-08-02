@@ -1716,7 +1716,11 @@ async function loadAllPhaseWorkouts(phases) {
     window._builderWeekData[ph.id] = { phase: fullPhase, byWeek }
 
     const tabsHtml = weekNums.length > 1
-      ? `<div class="week-tabs">${weekNums.map(w => `<button class="week-tab" data-phase="${ph.id}" data-week="${w}" aria-selected="${w === active}" onclick="_selectBuilderWeek('${ph.id}',${w})"><span class="wt-n">WEEK</span>${w}</button>`).join('')}</div>`
+      // Label is the tab's sequential position (1..N), not the raw week_number -- a phase whose rows
+      // carry non-contiguous week_number values (e.g. 2 and 3, skipping 1) previously showed "WEEK 2 /
+      // WEEK 3" instead of "WEEK 1 / WEEK 2". data-week/onclick still carry the real value, which is
+      // what _selectBuilderWeek needs to look up the right entry in byWeek.
+      ? `<div class="week-tabs">${weekNums.map(w => `<button class="week-tab" data-phase="${ph.id}" data-week="${w}" aria-selected="${w === active}" onclick="_selectBuilderWeek('${ph.id}',${w})"><span class="wt-n">WEEK</span>${weekNums.indexOf(w) + 1}</button>`).join('')}</div>`
       : ''
     // Only the active week's grid is in the DOM at once — keeps the day/add/remove controls unambiguous
     // (one set on screen) and avoids duplicating a whole phase's grid per week.

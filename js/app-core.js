@@ -505,7 +505,12 @@ function navigate(page, _historyOp = 'push') {
     case 'dashboard':        _catch('dashboard',        renderDashboard);        break
     case 'client-dashboard': _catch('client-dashboard', renderClientDashboard);  break
     case 'solo-dashboard':   _catch('solo-dashboard',   renderSoloDashboard);    break
-    case 'programs':         _catch('programs',         renderPrograms);         break
+    case 'programs':
+      // Defense-in-depth only: RLS already returns 0 rows for a client here, so nothing leaks --
+      // but the builder chrome itself (e.g. "+ New program") still rendered for a client with no
+      // server-side reason to ever reach this page. Found by the multi-agent review, 2026-07-18.
+      if (currentProfile?.role === 'client') { container.innerHTML = '<div class="loading-state">Page not found</div>'; break }
+      _catch('programs',         renderPrograms);         break
     case 'clients':          _catch('clients',          renderClients);          break
     case 'workouts':         _catch('workouts',         renderWorkouts);         break
     case 'library':          _catch('library',          renderWorkoutLibrary);   break

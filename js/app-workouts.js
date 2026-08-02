@@ -690,7 +690,9 @@ async function renderClientWorkoutsPage(el) {
               <div id="${panelId}" style="display:${pi === 0 ? 'block' : 'none'}">
                 ${!weekNums.length ? '<div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">No sessions added to this phase yet</div>' :
                   !showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : `
-                  <div class="week-tabs" style="padding:12px 12px 0;margin-bottom:2px">${weekNums.map((w, wi) => `<button class="week-tab" data-panel="${panelId}" data-week="${w}" aria-selected="${wi === 0}" onclick="_selectReadWeek('${panelId}',${w})"><span class="wt-n">WEEK</span>${w}</button>`).join('')}</div>
+                  <!-- Label is the tab's sequential position (wi+1), not the raw week_number -- see the
+                       matching fix in app-programs.js's builder tabs for the same finding. -->
+                  <div class="week-tabs" style="padding:12px 12px 0;margin-bottom:2px">${weekNums.map((w, wi) => `<button class="week-tab" data-panel="${panelId}" data-week="${w}" aria-selected="${wi === 0}" onclick="_selectReadWeek('${panelId}',${w})"><span class="wt-n">WEEK</span>${wi + 1}</button>`).join('')}</div>
                   ${weekNums.map((w, wi) => `<div class="rw-week" data-panel="${panelId}" data-week="${w}" style="display:${wi === 0 ? 'block' : 'none'}">${renderDays(weekMap[w], `${panelId}-w${w}`)}</div>`).join('')}`}
               </div>
             </div>`

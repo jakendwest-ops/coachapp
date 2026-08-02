@@ -982,6 +982,14 @@ db.auth.onAuthStateChange((event, session) => {
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 
 async function renderProgress(el) {
+  // Destroy any charts left over from whichever Performance sub-view was active before this
+  // top-level tab switch -- the per-render destroy calls inside _renderPerfExerciseList/
+  // renderProgressPerSession only guard re-renders WITHIN the same sub-view (a keystroke, a range
+  // change); they never ran when the container itself was torn down by switching to a different
+  // top-level Progress tab, leaking every chart instance bound to the canvases this innerHTML
+  // rebuild is about to detach. Found by the 2026-07-23 full-file review.
+  _perfExerciseCharts.forEach(c => c.destroy()); _perfExerciseCharts = []
+  _perfSessionCharts.forEach(c => c.destroy()); _perfSessionCharts = []
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   // 2026-07-08 restructure: "Cardio" folded into Personal Bests (alongside 1RMs) instead of its
@@ -1009,6 +1017,12 @@ async function renderProgress(el) {
 }
 
 async function renderPerformance(el) {
+  // Same reasoning as renderProgress's own destroy call: switching between THIS view's own two
+  // sub-tabs ('Per exercise' <-> 'Recent sessions') re-enters renderPerformance directly, tearing
+  // down #progress-tab-content without ever going through renderProgress -- guard here too so
+  // neither direction leaks whichever chart array the sub-tab being left behind was using.
+  _perfExerciseCharts.forEach(c => c.destroy()); _perfExerciseCharts = []
+  _perfSessionCharts.forEach(c => c.destroy()); _perfSessionCharts = []
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
 
