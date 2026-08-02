@@ -1399,7 +1399,10 @@ function renderTemplateSets(containerId, type) {
   const showSetToggles = type === 'weight_reps' || type === 'unilateral'
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
   const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;font-weight:600;color:var(--text)">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
-  const mini = (id, opts='') => `<input id="${id}" class="field-input" style="width:60px;padding:5px 8px;font-size:13px;text-align:center" ${opts}>`
+  // 16px, not smaller -- an inline font-size beats the global input{font-size:16px} rule (css/main.css),
+  // and below 16px iOS Safari re-triggers the auto-zoom-on-focus the pinch-to-zoom fix was paired
+  // against (2026-08-01). Same reasoning at every other inline input/select font-size in this codebase.
+  const mini = (id, opts='') => `<input id="${id}" class="field-input" style="width:60px;padding:5px 8px;font-size:16px;text-align:center" ${opts}>`
   const dash = `<span style="color:var(--text-muted);font-size:12px">–</span>`
   // Progressive disclosure for the fields that are genuinely optional. Native <details> so there is no
   // open/closed state to track (a re-render would lose it anyway) and no extra key polluting sets_json.
@@ -1470,7 +1473,7 @@ function renderTemplateSets(containerId, type) {
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:12px;font-weight:700;color:var(--text)">Set ${i+1}</span>
           ${i > 0 ? `<button type="button" onclick="copyPrevTemplateSet(${i},'${containerId}','${tid}')" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">Copy set ${i} ↑</button>` : ''}
-          <input id="ts-repeatn-${i}" type="number" min="2" step="1" placeholder="e.g. 5" style="width:52px;padding:3px 6px;font-size:11px;text-align:center;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)">
+          <input id="ts-repeatn-${i}" type="number" min="2" step="1" placeholder="e.g. 5" style="width:52px;padding:3px 6px;font-size:16px;text-align:center;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)">
           <button type="button" onclick="repeatTemplateSet(${i},'${containerId}','${tid}')" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer">Repeat ×</button>
         </div>
         <div style="display:flex;gap:4px">

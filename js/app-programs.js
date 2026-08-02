@@ -1432,7 +1432,7 @@ async function loadDayTierAssignment(phaseId) {
   el.innerHTML = pws.map(pw => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
       <span style="font-size:12px">${pw.day_label} — ${pw.workout_templates?.name || 'Untitled'}</span>
-      <select class="field-input" style="width:120px;padding:4px 8px;font-size:12px" onchange="_pzTierChange('${pw.id}', this.value)">
+      <select class="field-input" style="width:120px;padding:4px 8px;font-size:16px" onchange="_pzTierChange('${pw.id}', this.value)">
         <option value="heavy" ${pw.tier === 'heavy' ? 'selected' : ''}>Heavy</option>
         <option value="moderate" ${(!pw.tier || pw.tier === 'moderate') ? 'selected' : ''}>Moderate</option>
         <option value="light" ${pw.tier === 'light' ? 'selected' : ''}>Light</option>

@@ -2653,8 +2653,8 @@ function renderLogExercises() {
       <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(99,102,241,.06);border-bottom:1px solid var(--border)">
           <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">${String.fromCharCode(65+bi)}</div>
-          <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:13px;font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${escapeAttr(String(block.name || ''))}" oninput="window._logBlocks[${bi}].name=this.value">
-          <select id="ls-extype-${bi}" class="field-input" style="padding:5px 8px;font-size:12px;width:100px;flex-shrink:0" onchange="flushLogState();window._logBlocks[${bi}].type=this.value;renderLogExercises()">
+          <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:16px;font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${escapeAttr(String(block.name || ''))}" oninput="window._logBlocks[${bi}].name=this.value">
+          <select id="ls-extype-${bi}" class="field-input" style="padding:5px 8px;font-size:16px;width:100px;flex-shrink:0" onchange="flushLogState();window._logBlocks[${bi}].type=this.value;renderLogExercises()">
             <option value="strength" ${!isCardio?'selected':''}>Strength</option>
             <option value="cardio" ${isCardio?'selected':''}>Cardio</option>
           </select>
@@ -2663,7 +2663,7 @@ function renderLogExercises() {
         ${!isCardio ? `
         <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)">
           <span style="font-size:11px;font-weight:500;color:var(--text-muted);white-space:nowrap">1 Rep Max</span>
-          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:12px;text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM ? weightToPref(block.oneRM) : ''}" oninput="window._logBlocks[${bi}].oneRM=this.value" onchange="flushLogState();renderLogExercises()">
+          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:16px;text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM ? weightToPref(block.oneRM) : ''}" oninput="window._logBlocks[${bi}].oneRM=this.value" onchange="flushLogState();renderLogExercises()">
           <span style="font-size:11px;color:var(--text-muted)">${window._unitPrefs.weight}</span>
           <span style="font-size:11px;color:var(--text-muted);margin-left:2px">${orm ? '— % 1RM will auto-fill weight' : '— enter to enable % 1RM'}</span>
         </div>

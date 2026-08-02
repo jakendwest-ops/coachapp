@@ -409,7 +409,7 @@ async function renderClientDashboard(el) {
               </div>
               <div id="gpf-${goal.id}" style="display:none;margin-bottom:6px">
                 <div style="display:flex;gap:6px;align-items:center">
-                  <input type="number" id="gpf-val-${goal.id}" class="field-input" style="width:100px;padding:4px 8px;font-size:13px" step="0.1" placeholder="New value">
+                  <input type="number" id="gpf-val-${goal.id}" class="field-input" style="width:100px;padding:4px 8px;font-size:16px" step="0.1" placeholder="New value">
                   <button class="btn-primary" style="font-size:12px;padding:4px 12px" onclick="saveGoalProgress('${goal.id}')">Save</button>
                   <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="document.getElementById('gpf-${goal.id}').style.display='none'">Cancel</button>
                 </div>
