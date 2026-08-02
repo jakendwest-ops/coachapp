@@ -1155,6 +1155,10 @@ async function renderProgressPerSession(clientId, el) {
     const exs = (s.workout_log_exercises || []).filter(e => e.exercise_name)
     const totals = exs.reduce((t, ex) => { const m = _diaryExMetrics(ex); t.sets += m.sets; t.reps += m.reps; t.vol += m.volume; return t }, { sets: 0, reps: 0, vol: 0 })
     const tiles = [['Sets', totals.sets, 'sets'], ['Reps', totals.reps, 'reps'], ['Volume', Math.round(weightToPref(totals.vol)).toLocaleString() + window._unitPrefs.weight, 'vol'], ['Exercises', exs.length, 'exercises']]
+    // A session can genuinely have exercises but no logged sets (e.g. a custom/blank workout, or one
+    // ended early) -- the 4 tiles above would then read "0 · 0 · 0kg · N", which reads as broken data
+    // rather than an accurate empty state. Show a plain note instead of the tile row in that case.
+    const noSetsLogged = totals.sets === 0
     return `
     <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden">
       <button onclick="_togglePerfSession(${i})" style="width:100%;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
@@ -1162,11 +1166,13 @@ async function renderProgressPerSession(clientId, el) {
           <span style="font-size:13px;font-weight:700">${escapeHtml(s.name || 'Session')}</span>
           <span style="font-size:12px;color:var(--text-muted)">${new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
         </div>
-        <div style="display:flex;gap:6px">
+        ${noSetsLogged
+          ? `<div style="font-size:12px;color:var(--text-muted)">No sets logged</div>`
+          : `<div style="display:flex;gap:6px">
           ${tiles.map(([l, v, key]) => `<div style="flex:1;text-align:center;background:var(--surface);border-radius:8px;padding:6px 4px">
             <div style="font-size:13px;font-weight:800;color:${_METRIC_COLORS[key] || 'var(--accent)'}">${v}</div>
             <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${l}</div></div>`).join('')}
-        </div>
+        </div>`}
       </button>
       <div id="perf-sess-${i}" style="display:none;padding:6px 14px 12px"></div>
     </div>`

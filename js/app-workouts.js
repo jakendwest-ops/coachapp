@@ -1955,6 +1955,12 @@ async function saveEditTemplateExercise(texId, templateId) {
   // metric_type is the single source of truth; keep each set's legacy flags in sync with it.
   sets.forEach(s => { s.unilateral = derived.unilateral; s.timed = derived.timed })
   const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
+  const coachId = await _resolveTemplateOwnerCoachId()
+  if (!(await _verifyTemplateOwnership(targetId, coachId))) {
+    log.error('saveEditTemplateExercise', 'ownership check failed', { templateId: targetId })
+    errorEl.textContent = 'Save failed — template not found or permission denied.'
+    return
+  }
   // Capture the ORIGINAL name before the update — propagation matches the changed exercise by name
   // across other sessions (Jake's choice, 2026-07-12), and a rename must still find the old row.
   const { data: origRow } = await db.from('workout_template_exercises').select('exercise_name').eq('id', targetExId).single()
@@ -1969,8 +1975,9 @@ async function saveEditTemplateExercise(texId, templateId) {
     superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   }
   log.info('saveEditTemplateExercise', 'updating template exercise', { texId: targetExId })
-  const { error } = await db.from('workout_template_exercises').update(newRow).eq('id', targetExId)
+  const { data: updated, error } = await db.from('workout_template_exercises').update(newRow).eq('id', targetExId).eq('template_id', targetId).select()
   if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
+  if (!updated?.length) { log.error('saveEditTemplateExercise', 'no rows updated — permission denied?', { texId: targetExId }); errorEl.textContent = 'Save failed — template not found or permission denied.'; return }
   log.ok('saveEditTemplateExercise', 'template exercise updated', { texId: targetExId })
   _rememberExerciseMetricType(picked.id || null, metricType)
   closeModal('edit-tex-modal')
@@ -1980,11 +1987,17 @@ async function saveEditTemplateExercise(texId, templateId) {
 
 async function deleteTemplateExercise(texId, templateId) {
   const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
+  const coachId = await _resolveTemplateOwnerCoachId()
+  if (!(await _verifyTemplateOwnership(targetId, coachId))) {
+    log.error('deleteTemplateExercise', 'ownership check failed', { templateId: targetId })
+    return
+  }
   // Capture the name before deleting so the change can propagate by name to other sessions.
   const { data: delRow } = await db.from('workout_template_exercises').select('exercise_name').eq('id', targetExId).single()
   log.info('deleteTemplateExercise', 'removing exercise from template', { texId: targetExId, templateId: targetId })
-  const { error } = await db.from('workout_template_exercises').delete().eq('id', targetExId)
+  const { data: deleted, error } = await db.from('workout_template_exercises').delete().eq('id', targetExId).eq('template_id', targetId).select()
   if (error) { log.error('deleteTemplateExercise', 'delete failed', error); return }
+  if (!deleted?.length) { log.error('deleteTemplateExercise', 'no rows deleted — permission denied or already gone', { texId: targetExId }); return }
   log.ok('deleteTemplateExercise', 'exercise removed', { texId: targetExId })
   closeModal('edit-tex-modal')
   // If the pre-delete name fetch failed, DON'T propagate: a stale window._lastExerciseChange from a
@@ -2466,6 +2479,18 @@ async function _resolveTemplateOwnerCoachId() {
   if (currentProfile?.role !== 'client') return currentUser.id
   const { data } = await db.from('clients').select('coach_id').eq('user_id', currentUser.id).single()
   return data?.coach_id || currentUser.id
+}
+
+// workout_template_exercises has no coach_id column of its own (it's linked via template_id ->
+// workout_templates.id), so it can't take the same `.eq('coach_id', coachId)` anchor its sibling
+// tables (workout_templates itself, exercises) use directly on the write. This verifies ownership
+// through the parent first. App-level hardening only — a live 2-account probe (2026-08-01) already
+// confirmed RLS blocks a foreign write here regardless; this matches the "every sibling in the
+// template family anchors AND verifies" convention (saveEditTemplate/deleteTemplate/saveEditExercise/
+// deleteExercise/toggleExerciseArchived) rather than leaving this one write path as the odd one out.
+async function _verifyTemplateOwnership(templateId, coachId) {
+  const { data } = await db.from('workout_templates').select('id').eq('id', templateId).eq('coach_id', coachId).maybeSingle()
+  return !!data
 }
 
 async function saveEditTemplate(id) {

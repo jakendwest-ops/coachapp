@@ -3012,6 +3012,7 @@ async function openWorkoutLog(logId, clientId) {
                 ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
               </div>
               ${prevSummary ? `<div style="font-size:11px;color:var(--text-muted);margin-left:36px;margin-bottom:10px">Last time: ${prevSummary}</div>` : `<div style="margin-bottom:10px"></div>`}
+              ${ex.client_notes ? `<div style="font-size:12px;color:var(--text);background:rgba(99,102,241,.06);border-radius:8px;padding:8px 10px;margin-bottom:10px"><span style="font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px">Client note</span><div style="margin-top:2px;white-space:pre-wrap">${escapeHtml(ex.client_notes)}</div></div>` : ''}
               ${sets.length === 0 ? `<div style="color:var(--text-muted);font-size:13px">No sets recorded</div>` : `
                 <table style="width:100%;border-collapse:collapse">
                   <thead>
