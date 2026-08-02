@@ -171,10 +171,25 @@ test.describe('saveEditTemplateExercise/deleteTemplateExercise — an unrelated 
       })
 
       await loginAsPT2(pt2Page)
+      // saveEditTemplateExercise(texId, templateId) reads its payload from injected modal DOM/globals,
+      // not from function args -- same minimal-DOM pattern as tests/builder-metric-type.spec.js. Must be
+      // set up so the call actually reaches _verifyTemplateOwnership instead of throwing/bailing earlier
+      // (an earlier draft of this test passed the ids in swapped positions and never exercised the anchor).
       await pt2Page.evaluate(async ({ templateId, wteId }) => {
-        await saveEditTemplateExercise(templateId, wteId, { id: null, name: '[E2E] Renamed By PT2' }, [], 'weight_reps')
+        window._templateCtx = {} // _resolveEditableTemplateId becomes a passthrough
+        const mk = (id, tag2 = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(tag2); e.id = id; document.body.appendChild(e) } return e }
+        mk('att-type'); mk('att-notes'); mk('att-superset'); mk('att-error')
+        document.getElementById('att-type').value = 'weight_reps'
+        document.getElementById('att-notes').value = ''
+        document.getElementById('att-superset').value = ''
+        window._exerciseDetailPicked = { id: null, name: '[E2E] Renamed By PT2' }
+        window._templateSets = []
+        await saveEditTemplateExercise(wteId, templateId)
       }, setup).catch(() => {})
-      await pt2Page.evaluate(async (wteId) => { await deleteTemplateExercise(wteId, null) }, setup.wteId).catch(() => {})
+      await pt2Page.evaluate(async ({ templateId, wteId }) => {
+        window._templateCtx = {}
+        await deleteTemplateExercise(wteId, templateId)
+      }, setup).catch(() => {})
 
       const after = await ptPage.evaluate(async (id) => (await db.from('workout_template_exercises').select('id, exercise_name').eq('id', id).maybeSingle()).data, setup.wteId)
       expect(after?.id, 'deleteTemplateExercise must not have deleted a foreign exercise row').toBe(setup.wteId)
