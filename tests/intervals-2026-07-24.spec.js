@@ -109,58 +109,6 @@ test.describe('Intervals 2026-07-24 — get-ready countdown + repeat-set builder
     expect(r.singleEffortText).not.toContain('Round')
   })
 
-  // ── 5. Builder: "Repeat this set x N" replaces N-1 rounds of Add-set+Copy-set clicking ──────────
-  test('repeatTemplateSet clones a set N-1 more times, and guards on invalid input', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(() => {
-      const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) } return e }
-      mk('att-type', 'select'); mk('att-sets-container', 'div')
-
-      // A single 30s-on/30s-off cardio round, about to become 5.
-      window._templateSets = [{ effortType: 'rpe', isDistanceBased: false, duration: '0:30', restMin: '0:30' }]
-      renderTemplateSets('att-sets-container', 'cardio')
-
-      document.getElementById('ts-repeatn-0').value = '5'
-      repeatTemplateSet(0, 'att-sets-container', 'att-type')
-      const afterValid = {
-        count: window._templateSets.length,
-        allMatch: window._templateSets.every(s => s.duration === '0:30' && s.restMin === '0:30'),
-      }
-
-      // Invalid input (blank / < 2) must guard, not silently no-op AND not corrupt the array further.
-      window._templateSets = [{ effortType: 'rpe', duration: '0:20' }]
-      renderTemplateSets('att-sets-container', 'cardio')
-      document.getElementById('ts-repeatn-0').value = '1'
-      repeatTemplateSet(0, 'att-sets-container', 'att-type')
-      const afterInvalid = window._templateSets.length
-
-      return { afterValid, afterInvalid }
-    })
-    // RED before: no repeatTemplateSet function existed at all (ReferenceError), and building 5
-    // rounds required "+ Add set" then "Copy set i (up arrow)" 4 more times by hand.
-    expect(r.afterValid.count, 'typing 5 should produce 5 TOTAL rounds, not 5 more').toBe(5)
-    expect(r.afterValid.allMatch, 'every cloned round should carry the original round\'s values').toBe(true)
-    expect(r.afterInvalid, 'an invalid count (< 2) must not modify the set list').toBe(1)
-  })
-
-  // ── 6. repeatTemplateSet has no upper bound — a typo ("500" for "5") splices hundreds of clones ──
-  // Caught by multi-agent-review. The input's `min="2"` is a UI hint only, not enforced in code.
-  test('repeatTemplateSet caps an absurd round count instead of splicing hundreds of clones', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(() => {
-      const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) } return e }
-      mk('att-type', 'select'); mk('att-sets-container', 'div')
-      window._templateSets = [{ effortType: 'rpe', duration: '0:30' }]
-      renderTemplateSets('att-sets-container', 'cardio')
-      document.getElementById('ts-repeatn-0').value = '500'
-      repeatTemplateSet(0, 'att-sets-container', 'att-type')
-      return window._templateSets.length
-    })
-    // RED before: this produced 500 rounds, not a capped, sane number.
-    expect(r, 'a typo like 500 should be capped, not taken literally').toBeLessThanOrEqual(50)
-    expect(r).toBeGreaterThan(1)
-  })
-
   // ── 7. LOG must not fire mid-count-in, and showRunnerFinish must not leave the count-in ticking ──
   // Caught by multi-agent-review: logRunnerSet already blocks itself during rest
   // (`if (_runner._restInterval) return`) but had no equivalent guard for the new count-in state —

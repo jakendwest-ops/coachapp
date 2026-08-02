@@ -202,3 +202,109 @@ test.describe('saveEditTemplateExercise/deleteTemplateExercise — an unrelated 
     }
   })
 })
+
+// ─── Jump reps only took a single value, not a range (2026-08-02 finding) ─────────────────────────
+// Jake, live, on Full Body A > Box Jump: switching an exercise to Jump height turned a 3-5 rep range
+// into a single "3" on screen (the DB value survived -- flushTemplateSets preserves an un-rendered
+// field). Root cause was one 2026-07-22 design choice shared by 3 sites: the builder only rendered one
+// reps box for jumps, and the runner target bar + day-row formatter both deliberately special-cased
+// jump reps to a single value BECAUSE the builder never offered a range. All 3 fixed together.
+test.describe('Jump height/distance reps render as a range, matching every other set type', () => {
+  test('builder renders TWO reps boxes for a jump exercise, not one', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      window._templateSets = [{ repsMin: '3', repsMax: '5', targetHeightCm: '40', effortType: 'rpe' }]
+      const mk = (id, tag2 = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(tag2); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type'); mk('att-sets-container', 'div')
+      renderTemplateSets('att-sets-container', 'jump_height')
+      return {
+        min: document.getElementById('ts-rmin-0')?.value,
+        max: document.getElementById('ts-rmax-0')?.value,
+      }
+    })
+    expect(r.min).toBe('3')
+    expect(r.max, 'jump branch must render a second reps box (ts-rmax) like every other set type').toBe('5')
+  })
+
+  test('runner target bar shows a JUMPS range, not just the minimum', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const tgt = { repsMin: '3', repsMax: '5', targetHeightCm: '40' }
+      const { cols } = _buildTargetCols(tgt, { name: 'x', metricType: 'jump_height', oneRM: null })
+      return cols.find(c => c.label === 'JUMPS')?.val
+    })
+    expect(r).toBe('3–5')
+  })
+
+  test('runner target bar shows a single value (no dash) when only one end is prescribed', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const tgt = { repsMin: '3', targetHeightCm: '40' }
+      const { cols } = _buildTargetCols(tgt, { name: 'x', metricType: 'jump_height', oneRM: null })
+      return cols.find(c => c.label === 'JUMPS')?.val
+    })
+    expect(r).toBe('3')
+  })
+
+  test('day-row prescription text shows a jumps range', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => _fmtSetDetail({ targetHeightCm: '40', repsMin: '3', repsMax: '5', effortType: 'rpe' }))
+    expect(r).toContain('3–5 jumps')
+  })
+
+  test('day-row prescription text falls back to a single value when only one end is prescribed', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => _fmtSetDetail({ targetHeightCm: '40', repsMin: '3', effortType: 'rpe' }))
+    expect(r).toContain('3 jumps')
+    expect(r).not.toContain('undefined')
+  })
+})
+
+// ─── Builder set-editor decluttered: BW/Assist/Repeat removed (2026-08-02 finding) ────────────────
+// Jake, live: "delete 'BW', 'Assist', 'Repeat' and the blank box next to the set number." Repeat (the
+// number input + button) is a pure UI action with nothing persisted, so it and its only test coverage
+// (intervals-2026-07-24.spec.js) are removed outright, not just hidden. BW/Assist are stored per-set
+// flags (bodyweight/assisted) that drive other rendering (weight row visibility, runner BW badge) --
+// removing their toggle entirely would strand any set that already has the flag set with no way to see
+// or undo it (les-043 shape), so they render only when the set already carries the flag: a legacy
+// escape hatch, same pattern this file already uses for the "Pace / km (legacy)" row.
+test.describe('Builder set-editor decluttered: BW/Assist/Repeat removed', () => {
+  test('a NEW set (no bodyweight/assisted flags) shows AMRAP only -- no BW, Assist, or Repeat controls', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      window._templateSets = [{ effortType: 'rpe', repsMin: '8' }]
+      const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      renderTemplateSets('att-sets-container', 'weight_reps')
+      const html = document.getElementById('att-sets-container').innerHTML
+      return {
+        hasAmrap: />AMRAP</.test(html),
+        hasBw: />BW</.test(html),
+        hasAssist: />Assist</.test(html),
+        hasRepeatBox: !!document.getElementById('ts-repeatn-0'),
+        hasRepeatBtn: /Repeat ×/.test(html),
+        repeatFnGone: typeof repeatTemplateSet === 'undefined',
+      }
+    })
+    expect(r.hasAmrap, 'AMRAP was not part of this cleanup and must still render').toBe(true)
+    expect(r.hasBw, 'BW must not show for a set that was never bodyweight').toBe(false)
+    expect(r.hasAssist, 'Assist must not show for a set that was never assisted').toBe(false)
+    expect(r.hasRepeatBox, 'the blank round-count box next to the set number must be gone').toBe(false)
+    expect(r.hasRepeatBtn, 'the Repeat button must be gone').toBe(false)
+    expect(r.repeatFnGone, 'repeatTemplateSet had only one caller (this button) -- removed as dead code').toBe(true)
+  })
+
+  test('a set already carrying bodyweight/assisted keeps its toggle visible, as an edit/undo path for legacy data', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      window._templateSets = [{ effortType: 'rpe', repsMin: '8', bodyweight: true }, { effortType: 'rpe', repsMin: '8', assisted: true, assistWeight: '20' }]
+      const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      renderTemplateSets('att-sets-container', 'weight_reps')
+      const html = document.getElementById('att-sets-container').innerHTML
+      return { hasBw: />BW</.test(html), hasAssist: />Assist</.test(html) }
+    })
+    expect(r.hasBw, 'a legacy bodyweight set must still show BW so it can be un-toggled').toBe(true)
+    expect(r.hasAssist, 'a legacy assisted set must still show Assist so it can be un-toggled').toBe(true)
+  })
+})

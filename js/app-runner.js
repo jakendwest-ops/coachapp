@@ -502,10 +502,10 @@ function _buildTargetCols(tgt, ex) {
   const mt = _exMetricType(ex)
   if (mt === 'jump_height' && tgt.targetHeightCm) cols.push({ val: fmtJumpHeight(tgt.targetHeightCm, { spaced: true }), label: 'TARGET', accent: true })
   if (mt === 'jump_distance' && tgt.targetDistanceM) cols.push({ val: escapeHtml(tgt.targetDistanceM+' m'), label: 'TARGET', accent: true })
-  const isJumpMt0 = mt === 'jump_height' || mt === 'jump_distance'
-  // Jumps prescribe a single contact count; a stale repsMax from a previous metric_type render
-  // would otherwise print a range ("8–12 JUMPS") the builder never offered.
-  const repsStr = !tgt.timed && tgt.repsMin ? (isJumpMt0 ? String(tgt.repsMin) : tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
+  // Jumps prescribe a contact-count RANGE, same as reps for every other set type (2026-08-02 —
+  // the builder now offers a second box for jump reps too, so this no longer needs a single-value
+  // special case).
+  const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin+(tgt.repsMax&&tgt.repsMax!==tgt.repsMin?'–'+tgt.repsMax:'')) : null
   // sets_json is an unvalidated JSONB blob (coach-authored, no schema enforcement) — every raw field
   // below is escaped at the point it enters `cols`, same discipline as the pre-existing `tempo` escape,
   // rather than trusted because the builder's own inputs happen to be numeric today. Found by the
