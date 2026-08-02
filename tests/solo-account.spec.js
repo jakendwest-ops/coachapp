@@ -143,7 +143,17 @@ test.describe('Solo / Personal account', () => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     // Personal and PT share the same coach_id (same auth.uid()) — exercises used to be
     // distinguished by nothing at all, so a lift created in either context leaked into both.
+    // Self-heal from a prior strand first (same convention as tests/helpers.js's sweepPT2): if an
+    // earlier run of this exact test crashed between its own insert and its `finally` cleanup, a
+    // stale same-named row would still be here, and inserting another on top of it produces two
+    // exercises with byte-identical names — a Playwright strict-mode "resolved to 2 elements"
+    // failure on the locator below that has nothing to do with the regression this test guards
+    // against. Found live 2026-08-01 (solo-account.spec.js had been silently skipping for a long
+    // time before this session's Solo-genuine-role work gave PT a genuine solo clients record, so
+    // an old crashed run's debris was never swept).
     const fixture = await page.evaluate(async () => {
+      await db.from('exercises').delete().eq('coach_id', currentUser.id).eq('name', '[E2E] Personal-Only Lift')
+      await db.from('exercises').delete().eq('coach_id', currentUser.id).eq('name', '[E2E] PT-Only Lift')
       const { data: personalEx } = await db.from('exercises').insert({ coach_id: currentUser.id, is_personal: true, name: '[E2E] Personal-Only Lift' }).select('id').single()
       const { data: ptEx } = await db.from('exercises').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] PT-Only Lift' }).select('id').single()
       return { personalId: personalEx.id, ptId: ptEx.id }
