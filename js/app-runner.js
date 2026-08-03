@@ -927,10 +927,43 @@ function renderRunner() {
           // the input's ghost text, so it stays local rather than being read off the shared helper.
           const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin + (tgt.repsMax && tgt.repsMax !== tgt.repsMin ? '–' + tgt.repsMax : '')) : null
           const repsPlaceholder = repsStr ? escapeHtml(repsStr.replace('–', '-')) : '—'
+          // 2026-08-02: this whole wizard branch predates the metric_type system and dispatched on
+          // legacy per-set flags (tgt.unilateral/tgt.timed) + a name regex, never on metric_type — so
+          // jump_height/jump_distance had NO branch here at all. In normal operation a jump exercise
+          // always renders via renderStrengthTable instead (_isPlainStrengthExercise), so this gap was
+          // unreachable through the ordinary launch/swap/add paths, but a jump exercise that DOES land
+          // here for any reason fell into the plain weight/reps branch below with nowhere to enter a
+          // height at all — matching Jake's live report of a Box Jump height going unrecorded.
+          const mt = _exMetricType(ex)
+          const isJump = mt === 'jump_height' || mt === 'jump_distance'
+          const jumpMeasurePlaceholder = mt === 'jump_height'
+            ? (tgt.targetHeightCm != null ? String(jumpHeightToPref(tgt.targetHeightCm)) : '—')
+            : (tgt.targetDistanceM != null ? String(tgt.targetDistanceM) : '—')
           return `
           ${oneRMBanner}
           ${targetBar}
-          ${tgt.unilateral && !isDistance ? `
+          ${isJump ? `
+          <!-- Jump height/distance input -->
+          <div style="display:flex;align-items:stretch;gap:6px">
+            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
+              <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column">
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${mt === 'jump_height' ? `Height (${window._unitPrefs.jumpHeight})` : 'Distance (m)'}</div>
+              <input id="wr-jump-measure-input" type="number" inputmode="decimal" step="${mt === 'jump_height' ? '1' : '0.01'}" placeholder="${escapeHtml(jumpMeasurePlaceholder)}"
+                style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column">
+              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Jumps</div>
+              <input id="wr-jump-reps-input" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
+                style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
+              <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
+              ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
+            </div>
+          </div>` : tgt.unilateral && !isDistance ? `
           <!-- Unilateral L/R input -->
           <div style="display:flex;gap:6px;margin-bottom:6px">
             <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
@@ -1055,7 +1088,15 @@ function logRunnerSet() {
     const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
     const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
     const weight = ex.bodyweight ? 'BW' : (weightFromPref(document.getElementById('wr-weight-input')?.value?.trim()) ?? '')
-    if (tgt.timed) {
+    const mt = _exMetricType(ex)
+    if (mt === 'jump_height' || mt === 'jump_distance') {
+      const measure = document.getElementById('wr-jump-measure-input')?.value?.trim()
+      if (!_hasNumVal(measure)) { showToast(mt === 'jump_height' ? 'Enter a height first' : 'Enter a distance first', 'warn'); return }
+      const jreps = document.getElementById('wr-jump-reps-input')?.value?.trim() || ''
+      setData = mt === 'jump_height'
+        ? { height_cm: jumpHeightFromPref(measure), reps: jreps }
+        : { distance_m: measure, reps: jreps }
+    } else if (tgt.timed) {
       const dur = document.getElementById('wr-duration-input')?.value?.trim()
       if (!dur || dur === '0:00') { showToast('Enter a duration first', 'warn'); return }
       setData = { weight: weight || null, duration: dur }

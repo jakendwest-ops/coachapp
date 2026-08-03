@@ -308,3 +308,203 @@ test.describe('Builder set-editor decluttered: BW/Assist/Repeat removed', () => 
     expect(r.hasAssist, 'a legacy assisted set must still show Assist so it can be un-toggled').toBe(true)
   })
 })
+
+// ─── Box Jump height not recorded, live (2026-08-02 finding) ──────────────────────────────────────
+// Jake, live: "on live after my session this morning. the box jump height was not recorded." Traced:
+// jump_height/jump_distance always route to renderStrengthTable in normal use (_isPlainStrengthExercise),
+// where height/distance capture already worked -- but the WIZARD path (logRunnerSet + its render branch)
+// predates the metric_type system entirely and had NO jump case at all: it dispatched on legacy
+// tgt.timed/tgt.unilateral flags + a name regex, so a jump exercise reaching the wizard fell into the
+// plain weight/reps branch with no height field anywhere. Root cause of exactly this shape, whether or
+// not it's confirmed as THIS morning's specific trigger -- fixed regardless, since it's a real hole.
+test.describe('Wizard-mode jump logging (box jump height was not recorded)', () => {
+  test('logRunnerSet reads the jump height/distance input, not just weight/reps', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const mkEx = (mt) => ({ name: 'Box Jump', type: 'strength', metricType: mt, loggedSets: [], targetSets: 3, sets_json: [{ targetHeightCm: '40' }] })
+      const mk = (id) => { document.getElementById(id)?.remove(); const e = document.createElement('input'); e.id = id; document.body.appendChild(e); return e }
+
+      const exHeight = mkEx('jump_height')
+      _runner = { exercises: [exHeight], exIdx: 0, startTime: Date.now() }
+      mk('wr-jump-measure-input').value = '42'
+      mk('wr-jump-reps-input').value = '5'
+      logRunnerSet()
+      const heightLogged = { ...exHeight.loggedSets[0] }
+
+      const exDist = mkEx('jump_distance')
+      _runner = { exercises: [exDist], exIdx: 0, startTime: Date.now() }
+      mk('wr-jump-measure-input').value = '2.4'
+      mk('wr-jump-reps-input').value = '3'
+      logRunnerSet()
+      const distLogged = { ...exDist.loggedSets[0] }
+
+      document.getElementById('wr-jump-measure-input')?.remove()
+      document.getElementById('wr-jump-reps-input')?.remove()
+      _runner = null
+      return { heightLogged, distLogged }
+    })
+    expect(r.heightLogged.height_cm, 'jump_height must persist the typed height, not silently drop it').toBe(42)
+    expect(r.heightLogged.reps).toBe('5')
+    expect(r.distLogged.distance_m, 'jump_distance must persist the typed distance').toBe('2.4')
+    expect(r.distLogged.reps).toBe('3')
+  })
+
+  test('logRunnerSet refuses to log a jump set with no height/distance entered, same as the table guard', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const ex = { name: 'Box Jump', type: 'strength', metricType: 'jump_height', loggedSets: [], targetSets: 3, sets_json: [{}] }
+      _runner = { exercises: [ex], exIdx: 0, startTime: Date.now() }
+      document.getElementById('wr-jump-measure-input')?.remove()
+      document.getElementById('wr-jump-reps-input')?.remove()
+      const measureEl = document.createElement('input'); measureEl.id = 'wr-jump-measure-input'; document.body.appendChild(measureEl)
+      const before = ex.loggedSets.length
+      logRunnerSet()
+      const after = ex.loggedSets.length
+      measureEl.remove()
+      _runner = null
+      return { before, after }
+    })
+    expect(r.after, 'a blank height must not silently log a set with no measurement').toBe(r.before)
+  })
+
+  test('the wizard render branch shows height + jumps inputs for a jump exercise, if that path is ever reached', async ({ page }) => {
+    await loginAsPT(page)
+    const html = await page.evaluate(() => {
+      const orig = _isPlainStrengthExercise
+      _isPlainStrengthExercise = () => false // force the wizard branch to render, matching the one condition under which this gap was reachable
+      const ex = { name: 'Box Jump', type: 'strength', metricType: 'jump_height', loggedSets: [], targetSets: 3, sets_json: [{ targetHeightCm: '40' }] }
+      _runner = { exercises: [ex], exIdx: 0, startTime: Date.now() }
+      renderRunner()
+      const out = document.getElementById('workout-runner')?.innerHTML || ''
+      document.getElementById('workout-runner')?.remove()
+      _runner = null
+      _isPlainStrengthExercise = orig
+      return out
+    })
+    expect(html, 'the wizard must render a height input for a jump_height exercise').toContain('wr-jump-measure-input')
+    expect(html, 'the wizard must render a jumps-count input for a jump_height exercise').toContain('wr-jump-reps-input')
+  })
+})
+
+// ─── PT/Personal boundary audit — remaining tables: client_1rms, goals, events (2026-07-13 ask) ───
+// weight_logs and workout_template_exercises were probed 2026-08-01/02 (see above); these 4 probes
+// close out the rest of the original "audit EVERY remaining table" list.
+test.describe('PT/Personal boundary audit — client_1rms, goals, events', () => {
+  test('client_1rms INSERT — an unrelated coach cannot write a 1RM for a client they do not own', async ({ browser }) => {
+    const ptCtx = await browser.newContext()
+    const pt2Ctx = await browser.newContext()
+    const ptPage = await ptCtx.newPage()
+    const pt2Page = await pt2Ctx.newPage()
+    let plantedId = null
+    try {
+      await loginAsPT(ptPage)
+      const realClientId = await ptPage.evaluate(async () => {
+        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        return data.id
+      })
+      await loginAsPT2(pt2Page)
+      const attempt = await pt2Page.evaluate(async (clientId) => {
+        const { data, error } = await db.from('client_1rms').insert({ client_id: clientId, exercise_name: '[E2E] Boundary Probe', one_rm_kg: 999, recorded_at: '2026-01-01' }).select('id').single()
+        return { insertedId: data?.id || null, errorMessage: error?.message || null }
+      }, realClientId)
+      plantedId = attempt.insertedId
+      const actualFromPT = await ptPage.evaluate(async (clientId) => {
+        const { data } = await db.from('client_1rms').select('id').eq('client_id', clientId).eq('exercise_name', '[E2E] Boundary Probe')
+        return data?.length || 0
+      }, realClientId)
+      expect(attempt.insertedId, 'an unrelated coach must not be able to insert a client_1rms row for a client they do not own').toBeNull()
+      expect(actualFromPT, 'no row should have actually been written').toBe(0)
+    } finally {
+      if (plantedId) await ptPage.evaluate(async (id) => { await db.from('client_1rms').delete().eq('id', id) }, plantedId).catch(() => {})
+      await ptCtx.close().catch(() => {})
+      await pt2Ctx.close().catch(() => {})
+    }
+  })
+
+  test('client_1rms DELETE — an unrelated coach cannot delete another client\'s 1RM by id (delete1RM has no client_id anchor of its own)', async ({ browser }) => {
+    const ptCtx = await browser.newContext()
+    const pt2Ctx = await browser.newContext()
+    const ptPage = await ptCtx.newPage()
+    const pt2Page = await pt2Ctx.newPage()
+    let rowId = null
+    try {
+      await loginAsPT(ptPage)
+      const setup = await ptPage.evaluate(async () => {
+        const { data: clientRow } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data } = await db.from('client_1rms').insert({ client_id: clientRow.id, exercise_name: '[E2E] Delete-Probe 1RM', one_rm_kg: 100, recorded_at: '2026-01-01' }).select('id').single()
+        return data.id
+      })
+      rowId = setup
+      await loginAsPT2(pt2Page)
+      await pt2Page.evaluate(async (id) => { await db.from('client_1rms').delete().eq('id', id) }, rowId).catch(() => {})
+      const stillThere = await ptPage.evaluate(async (id) => (await db.from('client_1rms').select('id').eq('id', id).maybeSingle()).data, rowId)
+      expect(stillThere?.id, 'an unrelated coach must not be able to delete another coach\'s client_1rms row by id').toBe(rowId)
+    } finally {
+      if (rowId) await ptPage.evaluate(async (id) => { await db.from('client_1rms').delete().eq('id', id) }, rowId).catch(() => {})
+      await ptCtx.close().catch(() => {})
+      await pt2Ctx.close().catch(() => {})
+    }
+  })
+
+  test('goals INSERT — an unrelated coach cannot create a goal for a client they do not own', async ({ browser }) => {
+    const ptCtx = await browser.newContext()
+    const pt2Ctx = await browser.newContext()
+    const ptPage = await ptCtx.newPage()
+    const pt2Page = await pt2Ctx.newPage()
+    let plantedId = null
+    try {
+      await loginAsPT(ptPage)
+      const realClientId = await ptPage.evaluate(async () => {
+        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        return data.id
+      })
+      await loginAsPT2(pt2Page)
+      const attempt = await pt2Page.evaluate(async (clientId) => {
+        const { data, error } = await db.from('goals').insert({ client_id: clientId, created_by: currentUser.id, title: '[E2E] Boundary Probe Goal', goal_type: 'custom', priority: 1, status: 'active' }).select('id').single()
+        return { insertedId: data?.id || null, errorMessage: error?.message || null }
+      }, realClientId)
+      plantedId = attempt.insertedId
+      const actualFromPT = await ptPage.evaluate(async (clientId) => {
+        const { data } = await db.from('goals').select('id').eq('client_id', clientId).eq('title', '[E2E] Boundary Probe Goal')
+        return data?.length || 0
+      }, realClientId)
+      expect(attempt.insertedId, 'an unrelated coach must not be able to insert a goal for a client they do not own').toBeNull()
+      expect(actualFromPT, 'no row should have actually been written').toBe(0)
+    } finally {
+      if (plantedId) await ptPage.evaluate(async (id) => { await db.from('goals').delete().eq('id', id) }, plantedId).catch(() => {})
+      await ptCtx.close().catch(() => {})
+      await pt2Ctx.close().catch(() => {})
+    }
+  })
+
+  test('events INSERT — an unrelated coach cannot create a calendar event for a client they do not own', async ({ browser }) => {
+    const ptCtx = await browser.newContext()
+    const pt2Ctx = await browser.newContext()
+    const ptPage = await ptCtx.newPage()
+    const pt2Page = await pt2Ctx.newPage()
+    let plantedId = null
+    try {
+      await loginAsPT(ptPage)
+      const realClientId = await ptPage.evaluate(async () => {
+        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        return data.id
+      })
+      await loginAsPT2(pt2Page)
+      const attempt = await pt2Page.evaluate(async (clientId) => {
+        const { data, error } = await db.from('events').insert({ client_id: clientId, created_by: currentUser.id, title: '[E2E] Boundary Probe Event', date: '2026-01-01', type: 'session', is_pt_assigned: true }).select('id').single()
+        return { insertedId: data?.id || null, errorMessage: error?.message || null }
+      }, realClientId)
+      plantedId = attempt.insertedId
+      const actualFromPT = await ptPage.evaluate(async (clientId) => {
+        const { data } = await db.from('events').select('id').eq('client_id', clientId).eq('title', '[E2E] Boundary Probe Event')
+        return data?.length || 0
+      }, realClientId)
+      expect(attempt.insertedId, 'an unrelated coach must not be able to insert an event for a client they do not own').toBeNull()
+      expect(actualFromPT, 'no row should have actually been written').toBe(0)
+    } finally {
+      if (plantedId) await ptPage.evaluate(async (id) => { await db.from('events').delete().eq('id', id) }, plantedId).catch(() => {})
+      await ptCtx.close().catch(() => {})
+      await pt2Ctx.close().catch(() => {})
+    }
+  })
+})
