@@ -508,3 +508,44 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
     }
   })
 })
+
+// ─── Mobile calendar view overspilling (2026-07-13 finding) ───────────────────────────────────────
+// Roadmap Area 3 #12: "zero calendar CSS classes exist anywhere (all inline styles); grid cells lack
+// min-width:0, text is white-space:nowrap -- classic CSS Grid overflow." Confirmed live: injecting a
+// long workout name into a day cell blew out that column's grid track, misaligning every other column
+// and running text off the visible page -- even though the text itself already had
+// overflow:hidden/text-overflow:ellipsis, because a CSS Grid item's default min-width is `auto`
+// (content-based), not 0, so the ellipsis never got the chance to apply within the track's own space.
+test.describe('Mobile calendar grid no longer blows out on a long workout name', () => {
+  test('every day cell has min-width:0 + overflow:hidden, so a long name can\'t widen its grid column', async ({ page }) => {
+    await loginAsClient(page)
+    await clickVisible(page, '[data-page="calendar"]')
+    await page.waitForTimeout(1500)
+    const html = await page.evaluate(() => document.querySelector('[style*="grid-template-columns:repeat(7"]')?.outerHTML || '')
+    const dayCellStyleMatch = html.match(/<div onclick="showDayEvents\([^)]*\)" style="([^"]*)"/)
+    expect(dayCellStyleMatch, 'expected at least one day cell to exist in the rendered calendar').not.toBeNull()
+    expect(dayCellStyleMatch[1]).toContain('min-width:0')
+    expect(dayCellStyleMatch[1]).toContain('overflow:hidden')
+  })
+
+  test('a long workout name truncates within its cell instead of breaking the grid layout', async ({ page }) => {
+    await loginAsClient(page)
+    await clickVisible(page, '[data-page="calendar"]')
+    await page.waitForTimeout(1500)
+    const result = await page.evaluate(() => {
+      const grid = document.querySelector('[style*="grid-template-columns:repeat(7"]')
+      const dayCells = Array.from(grid.querySelectorAll('div[onclick^="showDayEvents"]'))
+      const target = dayCells[0]
+      const workoutDiv = document.createElement('div')
+      workoutDiv.innerHTML = `<div style="font-size:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">A Very Long Workout Name That Should Overflow The Cell Badly</div>`
+      target.appendChild(workoutDiv)
+      const widths = dayCells.map(c => c.getBoundingClientRect().width)
+      return {
+        docOverflowsX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        columnsRoughlyEqual: (Math.max(...widths) - Math.min(...widths)) < 2,
+      }
+    })
+    expect(result.docOverflowsX, 'a long workout name must not push the page into horizontal scroll').toBe(false)
+    expect(result.columnsRoughlyEqual, 'every grid column must stay the same width regardless of cell content length').toBe(true)
+  })
+})

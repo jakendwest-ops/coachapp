@@ -129,7 +129,7 @@
             const hasWorkouts = dayWorkouts.length > 0
             return `
               <div onclick="showDayEvents('${dateStr}')" style="
-                padding:4px;border-radius:8px;cursor:pointer;min-height:52px;
+                padding:4px;border-radius:8px;cursor:pointer;min-height:52px;min-width:0;overflow:hidden;
                 background:${isToday ? 'var(--accent)' : hasWorkouts ? 'var(--surface-2)' : 'transparent'};
                 border:1px solid ${isToday ? 'transparent' : hasWorkouts ? 'var(--border)' : 'transparent'};
                 transition:background 0.15s
