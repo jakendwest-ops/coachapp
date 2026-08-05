@@ -1405,6 +1405,12 @@ function renderTemplateSets(containerId, type) {
   // against (2026-08-01). Same reasoning at every other inline input/select font-size in this codebase.
   const mini = (id, opts='') => `<input id="${id}" class="field-input" style="width:60px;padding:5px 8px;font-size:16px;text-align:center" ${opts}>`
   const dash = `<span style="color:var(--text-muted);font-size:12px">–</span>`
+  // Grid variant of `mini`/`row` (2026-08-05) — same input, flexible width instead of a fixed 60px,
+  // so it can sit inside a `.ts-cell` half-width grid column. `cell()` wraps it with a small caption
+  // label above instead of `row()`'s label-left/value-right — same ids, same flushTemplateSets reads,
+  // just packs 2 fields per line instead of 1. See .ts-grid in main.css.
+  const gmini = (id, opts='') => `<input id="${id}" class="field-input" style="padding:6px 6px;font-size:16px;text-align:center" ${opts}>`
+  const cell = (label, inner) => `<div class="ts-cell"><label>${label}</label><div class="ts-cell-inputs">${inner}</div></div>`
   // Progressive disclosure for the fields that are genuinely optional. Native <details> so there is no
   // open/closed state to track (a re-render would lose it anyway) and no extra key polluting sets_json.
   // Collapsed inputs are still in the DOM, so flushTemplateSets reads them exactly as before.
@@ -1510,27 +1516,35 @@ function renderTemplateSets(containerId, type) {
           ${row('Stroke rate (spm)', mini(`ts-srmin-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.strokeRateMin?` value="${escapeAttr(String(s.strokeRateMin))}"`:'')) + dash + mini(`ts-srmax-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.strokeRateMax?` value="${escapeAttr(String(s.strokeRateMax))}"`:'')))}
         `)}
       ` : isTimedHold ? `
-        ${row('Duration (mm:ss)', mini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${escapeAttr(String(s.duration||'0:00'))}"`))}
-        ${row(`Weight (${window._unitPrefs.weight})`, mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
-        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
-        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:'')))}
+        <div class="ts-grid">
+          ${cell('Duration (mm:ss)', gmini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${escapeAttr(String(s.duration||'0:00'))}"`))}
+          ${cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
+          ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:''))}</div></div>
+        </div>
       ` : isJump ? `
-        ${type === 'jump_height'
-          ? row(`Target height (${window._unitPrefs.jumpHeight})`, mini(`ts-jheight-${i}`, 'type="number" step="1" inputmode="numeric" placeholder="—"'+(s.targetHeightCm?` value="${jumpHeightToPref(s.targetHeightCm)}"`:'')))
-          : row('Target distance (m)', mini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${escapeAttr(String(s.targetDistanceM))}"`:'')))}
-        ${row('Jumps per set', mini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${escapeAttr(String(s.repsMin))}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMax?` value="${escapeAttr(String(s.repsMax))}"`:'')))}
-        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
-        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:'')))}
+        <div class="ts-grid">
+          ${type === 'jump_height'
+            ? cell(`Target height (${window._unitPrefs.jumpHeight})`, gmini(`ts-jheight-${i}`, 'type="number" step="1" inputmode="numeric" placeholder="—"'+(s.targetHeightCm?` value="${jumpHeightToPref(s.targetHeightCm)}"`:'')))
+            : cell('Target distance (m)', gmini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${escapeAttr(String(s.targetDistanceM))}"`:'')))}
+          ${cell('Jumps per set', gmini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${escapeAttr(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMax?` value="${escapeAttr(String(s.repsMax))}"`:'')))}
+          ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:''))}</div></div>
+        </div>
       ` : `
-        ${row('Reps', mini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${escapeAttr(String(s.repsMin))}"`:'')) + dash + mini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${escapeAttr(String(s.repsMax))}"`:'')))}
-        ${s.bodyweight ? '' : row(`Weight (${window._unitPrefs.weight})`, mini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
-        ${s.assisted ? row(`Assist weight (${window._unitPrefs.weight})`, mini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${weightToPref(s.assistWeight)}"`:''))): ''}
-        ${row('Rest between sets', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
-        ${row(etbtn('RPE','rpe')+etbtn('RIR','rir'), mini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:'')) + dash + mini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:'')))}
+        <div class="ts-grid">
+          ${cell('Reps', gmini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${escapeAttr(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${escapeAttr(String(s.repsMax))}"`:'')))}
+          ${s.bodyweight ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
+          ${s.assisted ? cell(`Assist weight (${window._unitPrefs.weight})`, gmini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${weightToPref(s.assistWeight)}"`:''))): ''}
+          ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:''))}</div></div>
+        </div>
         ${more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `
-          ${row('Intensity (%1RM)', mini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${escapeAttr(String(s.intensityMin))}"`:'')) + dash + mini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${escapeAttr(String(s.intensityMax))}"`:'')))}
-          ${row('Tempo', mini(`ts-tempo-${i}`,'type="text" maxlength="4" placeholder="e.g. 3011"'+(s.tempo?` value="${escapeAttr(String(s.tempo))}"`:'')))}
-          ${row('Countdown (s)', mini(`ts-cd-${i}`,'type="number" placeholder="—"'+(s.countdown?` value="${escapeAttr(String(s.countdown))}"`:'')))}
+          <div class="ts-grid">
+            ${cell('Intensity (%1RM)', gmini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${escapeAttr(String(s.intensityMin))}"`:'')) + dash + gmini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${escapeAttr(String(s.intensityMax))}"`:'')))}
+            ${cell('Tempo', gmini(`ts-tempo-${i}`,'type="text" maxlength="4" placeholder="e.g. 3011"'+(s.tempo?` value="${escapeAttr(String(s.tempo))}"`:'')))}
+            ${cell('Countdown (s)', gmini(`ts-cd-${i}`,'type="number" placeholder="—"'+(s.countdown?` value="${escapeAttr(String(s.countdown))}"`:'')))}
+          </div>
         `)}
       `}
     </div>`
