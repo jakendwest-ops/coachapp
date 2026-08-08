@@ -835,22 +835,25 @@ async function openProgram(programId) {
   log.info('openProgram', 'loading', { programId })
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const [{ data: program, error }, { data: templates }] = await Promise.all([
-    db.from('programs').select('id, name, description, created_at, is_personal, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)').eq('id', programId).single(),
-    // .is('program_id', null) excludes templates already created inline for a specific day slot
-    // ("+ Create new workout") -- without it, every one-off slot creation stayed in this reuse
-    // pool forever, ballooning the picker with indistinguishable same-named entries the coach had
-    // no way to tell apart (found live, 2026-07-10: a 12-phase program's picker showed the same
-    // "Lower Body - Dynamic Effort" name 4+ times with no indication which day each belonged to).
-    // To genuinely reuse one workout across multiple days, build it once in the Workouts library.
-    db.from('workout_templates').select('id, name, description, workout_template_exercises(exercise_name, order_index)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name'),
-  ])
+  const { data: program, error } = await db.from('programs').select('id, name, description, created_at, is_personal, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)').eq('id', programId).single()
 
   if (error) { log.error('openProgram', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
   const phases = (program.program_phases || []).sort((a, b) => a.order_index - b.order_index)
   const totalWeeks = phases.reduce((sum, p) => sum + p.duration_weeks, 0)
-  window._programTemplates = await _buildProgramTemplatePool(templates)
+  // The day-slot picker's reuse pool is deliberately NOT fetched here (2026-08-07, Jake's live
+  // "major slowdown ... going into programs" report). It was by far the heaviest thing on this page:
+  // an UNCAPPED workout_templates query carrying a nested workout_template_exercises join for every
+  // row, followed by _buildProgramTemplatePool's own extra round-trip per 100 templates -- and since
+  // _editPhaseWorkout hands the template editor `backFn: () => openProgram(programId)`, every single
+  // "Back to program" press paid that entire cost again. Editing three days meant paying it four
+  // times. Nothing rendered by THIS function reads window._programTemplates; its only consumer is
+  // _renderWorkoutPickerResults, so it is now built lazily on first picker open (see
+  // _openWorkoutPicker). Slot previews are unaffected -- those come from loadAllPhaseWorkouts, a
+  // separate query -- so this cannot make the grid go stale, which an in-memory cache of the pool
+  // WOULD have risked. Nulled here so a different program (or a return to this one) can never serve
+  // a stale pool built for a previous page.
+  window._programTemplates = null
   window._openProgramId = programId
   window._openProgramPhases = phases
 
@@ -1959,22 +1962,45 @@ async function deletePhaseWeek(phaseId, weekNumber) {
 // same visualViewport height sync for the mobile keyboard. Same component family, no new patterns.
 let _workoutPickerState = null
 
-// Rebuilds window._programTemplates (the picker's pool) without redrawing the page. Needed after a
-// copy-to-Library: only openProgram() builds that pool, so without this the workout you just copied
-// wouldn't appear in the picker on the page you're standing on — making the "you can now reuse it in
-// any program" toast untrue until a reload. Mirrors openProgram's own query + shaping exactly.
+// Builds window._programTemplates (the day-slot picker's reuse pool). Since 2026-08-07 this is the
+// ONLY place that pool is built — openProgram no longer fetches it up front (see the comment there),
+// so this runs lazily on first picker open, and again after a copy-to-Library so the workout you just
+// copied appears without a reload (otherwise the "you can now reuse it in any program" toast is
+// untrue until you refresh).
+//   .is('program_id', null) excludes templates created inline for one specific day slot ("+ Create
+//   new workout") — without it every one-off slot creation stayed in this reuse pool forever,
+//   ballooning the picker with indistinguishable same-named entries (found live 2026-07-10: a
+//   12-phase program's picker showed "Lower Body - Dynamic Effort" 4+ times with nothing to tell
+//   them apart). To genuinely reuse one workout across days, build it once in the Workouts library.
+//   .limit(2000) matches app-workouts.js:2647 — the runner's "Load from template" picker, the only
+//   true sibling of THIS query, because it is the other search-over-the-pool surface. The two
+//   .limit(100) siblings (app-workouts.js:604/:771) render plain scrollable lists, where truncation
+//   just shows as a short list. Here the search is filtered CLIENT-SIDE over whatever we fetched
+//   (_renderWorkoutPickerResults), so a low cap silently turns "workout 101, alphabetically" into
+//   "No workouts match that search" — indistinguishable from it not existing. A first cut of this
+//   used 100 and claimed it matched all three siblings; that was wrong on the facts (:2647 is 2000)
+//   and would have HALVED the effective pool, since the un-limited original rode the 200-row server
+//   cap. Caught by all three review agents, 2026-08-07.
 async function _refreshProgramTemplates() {
   if (!window._openProgramId) return
-  const { data: templates } = await db.from('workout_templates')
+  const { data: templates, error } = await db.from('workout_templates')
     .select('id, name, description, workout_template_exercises(exercise_name, order_index)')
     .eq('coach_id', currentUser.id)
     .is('client_id', null).is('program_id', null).is('generated_from_phase_id', null)
     .eq('is_personal', currentProfile?.role === 'solo')
     .order('name')
+    .limit(2000)
+  // On failure leave the pool NULL, don't cache an empty one. _buildProgramTemplatePool(null) returns
+  // [], which is TRUTHY — so assigning it would make _openWorkoutPicker's `if (!window._programTemplates)`
+  // guard false forever, and the picker would claim "No reusable workouts yet" on every reopen for the
+  // rest of the visit, with no retry and no breadcrumb. Before this became lazy that self-healed,
+  // because openProgram rebuilt the pool on every load and every "Back to program". Leaving it null
+  // restores the retry. Found by review, 2026-08-07.
+  if (error) { log.error('_refreshProgramTemplates', 'pool fetch failed', error); window._programTemplates = null; return }
   window._programTemplates = await _buildProgramTemplatePool(templates)
 }
 
-function _openWorkoutPicker(phaseId, dayOfWeek, sessionOrder, weekNumber) {
+async function _openWorkoutPicker(phaseId, dayOfWeek, sessionOrder, weekNumber) {
   // Re-entrancy guard, same as _openExercisePicker's. Without it a fast double-tap appends a SECOND
   // overlay sharing the same element ids — getElementById then resolves to the buried first copy, so
   // results render into the hidden modal while the visible one stays empty, and one close leaves a
@@ -2001,7 +2027,29 @@ function _openWorkoutPicker(phaseId, dayOfWeek, sessionOrder, weekNumber) {
     _syncWorkoutPickerHeight()
     window.visualViewport.addEventListener('resize', _syncWorkoutPickerHeight)
   }
-  _renderWorkoutPickerResults('')
+  // The pool is built lazily now (openProgram no longer pre-fetches it), so the cost lands here —
+  // once, on the first picker open — instead of on every program load and every "Back to program".
+  // Show a loading state rather than letting the list paint briefly and WRONGLY empty, which would
+  // read as "I have no workouts" at the exact moment the coach is trying to pick one.
+  if (!window._programTemplates) {
+    // Keep the "＋ Create new workout" row visible while loading — it needs no pool, and blanking the
+    // whole results area would leave ✕ as the coach's only option on the first open of every visit.
+    // Removing a container removes every affordance it hosted (les-043), in miniature.
+    const r = document.getElementById('wkp-results')
+    if (r) r.innerHTML = _workoutPickerCreateRowHtml() + '<div class="loading-state">Loading…</div>'
+    // A rejection here would leave the modal wedged on "Loading…" forever with nothing to catch it —
+    // this is called from an inline onclick, so the rejection would be unhandled and invisible.
+    try { await _refreshProgramTemplates() }
+    catch (err) { log.error('_openWorkoutPicker', 'pool build failed', err); window._programTemplates = null }
+    // The picker may have been closed during that fetch — don't paint into a dead modal, and don't
+    // let a late resolve resurrect results for a picker the user already dismissed.
+    if (!document.getElementById('workout-picker-modal')) return
+  }
+  // Re-read the search box rather than passing '' — the input is focused and live from the moment the
+  // modal mounts, so on a slow pool fetch the user can type BEFORE this resolves. Passing '' here
+  // would silently wipe what they had typed and re-show the unfiltered list. Empty on the fast path,
+  // which is the same as the old behaviour.
+  _renderWorkoutPickerResults(document.getElementById('wkp-search')?.value || '')
 }
 
 function _syncWorkoutPickerHeight() {
@@ -2018,6 +2066,12 @@ function _closeWorkoutPicker() {
   document.getElementById('workout-picker-modal')?.remove()
 }
 
+// One definition, used by both the results list and the lazy-load's own loading state — this row
+// depends on no data, so it stays tappable while the pool is still being fetched.
+function _workoutPickerCreateRowHtml() {
+  return `<div onclick="_createWorkoutFromPicker()" style="padding:12px;border:1.5px dashed var(--accent);border-radius:10px;background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:12px">＋ Create new workout (this day only)</div>`
+}
+
 function _renderWorkoutPickerResults(query) {
   const resultsEl = document.getElementById('wkp-results')
   if (!resultsEl || !_workoutPickerState) return
@@ -2027,7 +2081,7 @@ function _renderWorkoutPickerResults(query) {
     ? all.filter(t => (t.name + ' ' + (t.description || '') + ' ' + (t._exPreview || '')).toLowerCase().includes(q))
     : all
 
-  const createRow = `<div onclick="_createWorkoutFromPicker()" style="padding:12px;border:1.5px dashed var(--accent);border-radius:10px;background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:12px">＋ Create new workout (this day only)</div>`
+  const createRow = _workoutPickerCreateRowHtml()
 
   // Name + description + exercise preview distinguishes DIFFERENT workouts — but for two genuine
   // duplicates all three are identical, which is exactly what Jake hit (2026-07-22). The usage line

@@ -8,7 +8,16 @@ const daySlotBtn = day => `button.pwg-add[data-day="${day}"]`
 const pickerRow = id => `#wkp-results div[onclick="_pickWorkout('${id}')"]`
 const CREATE_ROW = '#wkp-results div[onclick="_createWorkoutFromPicker()"]'
 
-const availableTemplateIds = page => page.evaluate(() => (window._programTemplates || []).map(t => t.id))
+// Builds the picker's pool before reading it. As of 2026-08-07 openProgram no longer pre-fetches
+// window._programTemplates (it sets it to null and the picker builds it lazily on first open), so
+// reading the global straight after openProgram now always yields [] — which made every
+// `test.skip(templateIds.length === 0, ...)` below fire unconditionally. Four tests went silently
+// green-as-skipped, including the only DOM-level coverage of this picker's live search. Caught by
+// all three review agents; corroborated by the suite's own skip count going 2 -> 6.
+const availableTemplateIds = page => page.evaluate(async () => {
+  await _refreshProgramTemplates()
+  return (window._programTemplates || []).map(t => t.id)
+})
 
 async function openDayPicker(page, day) {
   await page.click(daySlotBtn(day))
@@ -255,10 +264,14 @@ test.describe('Inline assign grid', () => {
     }, programId)
 
     try {
-      await page.evaluate(async (programId) => { await openProgram(programId) }, programId)
-      await page.waitForTimeout(800)
-      const appears = await page.evaluate(() => (window._programTemplates || []).some(t => t.name === '[E2E] Day-Only Template'))
-      expect(appears).toBe(false)
+      // Build the pool explicitly (openProgram no longer does — 2026-08-07 lazy-load). Without this
+      // the assertion below reads [] and passes vacuously, so the `.is('program_id', null)` filter
+      // this test exists to guard could be deleted entirely and it would still go green.
+      await page.evaluate(async (programId) => { await openProgram(programId); await _refreshProgramTemplates() }, programId)
+      await page.waitForTimeout(300)
+      const pool = await page.evaluate(() => (window._programTemplates || []).map(t => t.name))
+      expect(pool.length).toBeGreaterThan(0)   // guards against the vacuous-pass shape above
+      expect(pool).not.toContain('[E2E] Day-Only Template')
     } finally {
       await page.evaluate(async (templateId) => { await db.from('workout_templates').delete().eq('id', templateId) }, templateId)
       page.once('dialog', d => d.accept())

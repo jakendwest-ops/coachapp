@@ -236,6 +236,16 @@ test.describe('Solo / Personal account', () => {
       await page.click('#pm-save-btn')
       await page.waitForSelector('h1:has-text("[E2E] Personal Picker Program")', { timeout: 8000 })
 
+      // The picker's pool is built LAZILY as of 2026-08-07 (openProgram used to fetch it eagerly on
+      // every program load and every "Back to program" -- 391ms/77 templates on Jake's real account).
+      // So reading window._programTemplates straight after openProgram now correctly returns null.
+      // Drive the same builder the picker itself calls, so this keeps asserting the REAL guarantee
+      // (a solo account's pool contains ONLY Personal templates, never the PT's) instead of the old
+      // implementation detail of WHEN the pool happened to be built. Verified red->green by
+      // temporarily removing the is_personal filter from _refreshProgramTemplates.
+      // DOM-level coverage that the picker actually renders these lives in
+      // tests/programs-builder-perf-2026-08-07.spec.js.
+      await page.evaluate(() => _refreshProgramTemplates())
       const names = await page.evaluate(() => (window._programTemplates || []).map(t => t.name))
       expect(names).toContain('[E2E] Personal Picker Template')
       expect(names).not.toContain('[E2E] PT Picker Template')
