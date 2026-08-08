@@ -375,6 +375,36 @@ test.describe('Interval runner Start-trigger wiring (2026-07-26 fix round 1)', (
     expect(r.cardioHasLog).toBe(true)
   })
 
+  // Jake, live, 2026-08-08: the Workouts-page preview showed his Skierg interval prescribed at
+  // 20:00 work / 5:00 rest (workSecs/restSecs, the fields the interval editor writes), but the
+  // runner's pre-Start screen showed 10:00 / 3:00 — a real earlier value, sitting unrefreshed in the
+  // SAME block object's duration/restMin fields, which the interval editor's own inputs never render
+  // and flushTemplateSets therefore never touches. This card is shared with ordinary cardio (both
+  // report exercise_type:'cardio'), and read those legacy fields unconditionally.
+  test('interval pre-Start card shows the live workSecs/restSecs, not stale duration/restMin left over from before the block was last edited', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Skierg', type: 'cardio', metricType: 'interval', loggedSets: [],
+        // Exactly Jake's real shape: workSecs/restSecs hold the CURRENT prescription (20:00/5:00);
+        // duration/restMin are the stale leftover (10:00/3:00) that a plain-cardio block would use.
+        sets_json: [{ workSecs: 1200, restSecs: 300, duration: '10:00', restMin: '3:00', restMax: '3:00', sets: 2, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      renderRunner()
+      const text = document.getElementById('workout-runner')?.innerText || ''
+      const durEl = document.getElementById('wr-cardio-dur')
+      const out = { text, placeholder: durEl?.placeholder, value: durEl?.value }
+      discardRunner()
+      return out
+    })
+    expect(r.text).toContain('20:00')
+    expect(r.text).toContain('5:00')
+    expect(r.text).not.toContain('10:00')
+    expect(r.text).not.toContain('Rest: 3:00')
+    expect(r.placeholder).toBe('20:00')
+  })
+
   // Fix round 3/5, Critical 1: _logIntervalPhase was called by startIntervalPhaseTimer's zero-tick but
   // never defined (it was scoped to a later task) — every real work/warmup/cooldown phase threw a
   // ReferenceError AFTER stopIntervalTimer() but BEFORE _advancePhase()/renderRunner(), freezing the

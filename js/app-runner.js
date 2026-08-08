@@ -841,16 +841,29 @@ function renderRunner() {
           const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
           const lastCardio = ex.loggedSets[ex.loggedSets.length - 1]
           const distBased = tgt.isDistanceBased
+          // Intervals store per-round work/rest as workSecs/restSecs (seconds) on the ONE block
+          // object -- the interval editor's own fields (ts-worksecs-0/ts-restsecs-0) are the only
+          // thing that ever writes them. `duration`/`restMin` are the ordinary-cardio fields; they
+          // are NOT rendered by the interval editor, so flushTemplateSets's "missing input leaves the
+          // value alone" rule (its own comment) means they silently keep whatever they were BEFORE
+          // this exercise's work/rest was last edited via the interval editor -- a stale value baked
+          // into the same object as the current one, with nothing to ever clear it. This pre-Start
+          // screen is shared with ordinary cardio (both derive exercise_type:'cardio'), so it read
+          // those legacy fields unconditionally and showed the stale prescription. Reported live,
+          // 2026-08-08 (Skierg: preview correctly read workSecs=20:00, runner showed duration=10:00).
+          const isInterval = _isIntervalExercise(ex)
+          const effDuration = isInterval ? fmtRestCountdown(tgt.workSecs || 0) : tgt.duration
+          const effRestMin  = isInterval ? fmtRestCountdown(tgt.restSecs || 0) : tgt.restMin
           return `
           <!-- Cardio targets -->
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
             ${distBased && _cardioDistanceM(tgt) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${fmtDistanceM(_cardioDistanceM(tgt))}</span>` : ''}
-            ${!distBased && tgt.duration ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${escapeHtml(normalizeDuration(tgt.duration))}</span>` : ''}
+            ${!distBased && effDuration && effDuration !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${escapeHtml(normalizeDuration(effDuration))}</span>` : ''}
             ${_hasTimeTarget(tgt.pace500Min) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.pace500Min))}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+escapeHtml(String(tgt.pace500Max)):''} /500m</span>` : ''}
             ${_hasTimeTarget(tgt.paceKmMin) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.paceKmMin))}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+escapeHtml(String(tgt.paceKmMax)):''} /km</span>` : ''}
             ${tgt.wattsMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.wattsMin))}${tgt.wattsMax && tgt.wattsMax!==tgt.wattsMin?'–'+escapeHtml(String(tgt.wattsMax)):''} W</span>` : ''}
             ${tgt.hrZoneMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${escapeHtml(String(tgt.hrZoneMin))}${tgt.hrZoneMax?'–'+escapeHtml(String(tgt.hrZoneMax)):''} bpm</span>` : ''}
-            ${tgt.restMin && tgt.restMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof tgt.restMin === 'number' ? fmtDuration(tgt.restMin) : escapeHtml(tgt.restMin)}</span>` : ''}
+            ${effRestMin && effRestMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof effRestMin === 'number' ? fmtDuration(effRestMin) : escapeHtml(effRestMin)}</span>` : ''}
             ${tgt.strokeRateMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">${escapeHtml(String(tgt.strokeRateMin))}${tgt.strokeRateMax?'–'+escapeHtml(String(tgt.strokeRateMax)):''} spm</span>` : ''}
             ${tgt.restHrMax ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest HR &lt;${escapeHtml(String(tgt.restHrMax))}</span>` : ''}
           </div>
@@ -872,7 +885,7 @@ function renderRunner() {
               </div>` : `
               <div>
                 <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Duration (MM:SS)</div>
-                <input id="wr-cardio-dur" type="text" inputmode="numeric" placeholder="${escapeHtml(normalizeDuration(tgt.duration))||'0:00'}" value="${escapeHtml(normalizeDuration(lastCardio?.duration||tgt.duration||''))}"
+                <input id="wr-cardio-dur" type="text" inputmode="numeric" placeholder="${escapeHtml(normalizeDuration(effDuration))||'0:00'}" value="${escapeHtml(normalizeDuration(lastCardio?.duration||effDuration||''))}"
                   oninput="this.value=fmtRestInput(this.value)"
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>`}
