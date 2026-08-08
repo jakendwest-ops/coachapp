@@ -26,7 +26,12 @@ test.describe('Runner save persists all metric shapes', () => {
           { name: tag + ' Jump', type: 'strength', metricType: 'jump_distance', exerciseId: null,
             loggedSets: [{ distance_m: '2.4' }] },
           { name: tag + ' Row', type: 'cardio', metricType: 'cardio', exerciseId: null,
-            loggedSets: [{ duration: '20:00', distance: '5', avgHr: '150', maxHr: '175' }] }
+            // pace/strokeRate: captured once at exercise-finish by renderCardioCaptureCard
+            // (2026-08-08), applied onto the last logged set via _applyCardioCapture — this test
+            // constructs the same shape directly to prove saveRunnerSession's own write side, without
+            // needing to drive the capture card's DOM (that's covered separately, see
+            // tests/runner-cardio-capture-2026-08-08.spec.js).
+            loggedSets: [{ duration: '20:00', distance: '5', avgHr: '150', maxHr: '175', pace: '2:07', strokeRate: '32' }] }
         ]
       }
       await saveRunnerSession()
@@ -34,7 +39,7 @@ test.describe('Runner save persists all metric shapes', () => {
       // Read the log back through the app's authed db client.
       const { data: log } = await db.from('workout_logs').select('id').eq('client_id', clientId).eq('name', tag).single()
       const { data: exs } = await db.from('workout_log_exercises')
-        .select('id, exercise_name, metric_type, workout_log_sets(set_number, side, reps_achieved, weight_kg, duration_seconds, distance_m, avg_hr, max_hr)')
+        .select('id, exercise_name, metric_type, workout_log_sets(set_number, side, reps_achieved, weight_kg, duration_seconds, distance_m, avg_hr, max_hr, pace_500m_secs, stroke_rate_spm)')
         .eq('log_id', log.id)
       // cleanup
       const exIds = exs.map(e => e.id)
@@ -66,11 +71,16 @@ test.describe('Runner save persists all metric shapes', () => {
     expect(jump.metric_type).toBe('jump_distance')
     expect(jump.workout_log_sets[0].distance_m).toBe(2)
 
-    // Cardio → duration + km-scaled distance + heart rate.
+    // Cardio → duration + km-scaled distance + heart rate + pace + stroke rate.
     const row = byName['Row']
     expect(row.workout_log_sets[0].duration_seconds).toBe(1200)
     expect(row.workout_log_sets[0].distance_m).toBe(5000)
     expect(row.workout_log_sets[0].avg_hr).toBe(150)
     expect(row.workout_log_sets[0].max_hr).toBe(175)
+    // 2:07 -> 127 seconds. This is the actual red-before/green-after proof for the 2026-08-08 fix —
+    // pace_500m_secs didn't exist as a column until this session's migration, and nothing wrote to it
+    // until applyCardioMetrics was extended, so this assertion fails on unmigrated/pre-fix code.
+    expect(row.workout_log_sets[0].pace_500m_secs).toBe(127)
+    expect(row.workout_log_sets[0].stroke_rate_spm).toBe(32)
   })
 })

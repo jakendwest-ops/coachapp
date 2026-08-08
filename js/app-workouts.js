@@ -1157,6 +1157,7 @@ async function openTemplate(id, ctx = {}) {
         ${t.description ? `<p class="page-subtitle">${escapeHtml(t.description)}</p>` : ''}
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${_quickPrefsIconHtml()}
         <button class="btn-secondary" onclick="showEditTemplateModal('${id}')">Edit</button>
         <button class="btn-secondary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
         ${currentProfile?.role === 'solo'

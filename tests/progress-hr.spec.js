@@ -3,32 +3,37 @@ const { loginAsPT, clickVisible } = require('./helpers')
 
 // Sub-project ②d — manual HR capture.
 // ②b already proved saveRunnerSession PERSISTS avgHr/maxHr (runner-save-metrics.spec.js constructs a
-// loggedSet with HR already in it). What ②d adds is the runner UI actually COLLECTING avg/max HR from
-// input fields, and a resting-HR body metric on the bodyweight form. These tests guard the collection.
+// loggedSet with HR already in it). What ②d adds is the runner UI actually COLLECTING avg/max HR.
+// 2026-08-08: collection moved from always-visible-but-overlay-occluded pre-Start inputs to the
+// exercise-finish capture card (renderCardioCaptureCard) — this test now drives THAT flow. See
+// tests/runner-cardio-capture-2026-08-08.spec.js for the card's own dedicated coverage.
 test.describe('Sub-project 2d — manual HR capture', () => {
-  test('cardio input UI collects avg/max HR into the logged set', async ({ page }) => {
+  test('exercise-finish capture card collects avg/max HR into the logged set', async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, ['#vs-personal', '#mvs-personal']) // solo view — self-owned client, no cross-tenant setup
     await page.waitForTimeout(1000)
 
     const set = await page.evaluate(async () => {
       const clientId = await _getCurrentClientId()
-      // Construct a minimal in-progress runner with ONE duration-based cardio exercise, then render it.
-      // Bare `_runner` (not window._runner) — it's a top-level `let` in app-workouts.js (same gotcha the
-      // ②b test documents), so the bare identifier is the binding renderRunner/logRunnerSet actually read.
+      // targetSets:1 so logging the one round hits target and triggers the exercise-finish capture
+      // card, instead of the rest-timer/next-round path. Bare `_runner` (not window._runner) — it's a
+      // top-level `let`, so the bare identifier is the binding renderRunner/logRunnerSet actually read.
       _runner = {
         clientId, name: '[E2E] 2d hr-capture', date: new Date().toISOString().split('T')[0],
         exIdx: 0, startTime: Date.now(), lastSession: {},
         exercises: [{ name: 'HR Row', type: 'cardio', metricType: 'cardio', exerciseId: null,
-          targetSets: 0, loggedSets: [], sets_json: [{ duration: '20:00' }] }]
+          targetSets: 1, loggedSets: [], sets_json: [{ duration: '20:00' }] }]
       }
       renderRunner()
-      // The avg/max HR inputs are exactly what ②d adds — before it, these getElementById calls are null
-      // and the .value assignment throws (the RED state).
       document.getElementById('wr-cardio-dur').value = '20:00'
-      document.getElementById('wr-cardio-avg-hr').value = '142'
-      document.getElementById('wr-cardio-max-hr').value = '168'
       logRunnerSet()
+      // Force HR on regardless of whatever this browser's localStorage last had toggled, so the test
+      // doesn't depend on toggle state left over from another test/run.
+      const t = _loadCardioCaptureToggles()
+      if (!t.hr) _toggleCardioCaptureMetric('hr')
+      document.getElementById('wr-capture-avg-hr').value = '142'
+      document.getElementById('wr-capture-max-hr').value = '168'
+      _applyCardioCapture(_runner.exercises[0])
       return _runner.exercises[0].loggedSets[0]
     })
 

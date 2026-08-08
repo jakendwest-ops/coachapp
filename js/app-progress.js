@@ -1978,16 +1978,14 @@ async function saveSettingsUnits() {
   const cardioDistance = document.getElementById('settings-unit-distance')?.value
   const msg = document.getElementById('settings-units-msg')
 
-  const { error } = await db.from('profiles').update({
-    weight_unit: weight, jump_height_unit: jumpHeight, cardio_distance_unit: cardioDistance
-  }).eq('id', currentUser.id)
+  // DB-write core shared with the quick-prefs popover (app-core.js, 2026-08-08) — this function is
+  // now just "read these 3 selects, call the shared helper, show my own inline message".
+  const error = await _saveUnitPrefs(weight, jumpHeight, cardioDistance)
   if (error) {
     log.error('saveSettingsUnits', 'update failed', error)
     if (msg) { msg.style.color = '#ef4444'; msg.textContent = 'Save failed. Try again.' }
     return
   }
-  // No page reload needed — every render function reads window._unitPrefs fresh on each render.
-  window._unitPrefs = { weight, jumpHeight, cardioDistance }
   if (msg) { msg.style.color = '#22c55e'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
 }
 

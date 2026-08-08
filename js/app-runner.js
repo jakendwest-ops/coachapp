@@ -754,7 +754,10 @@ function renderRunner() {
             ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
             ${nextEx ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
           </div>
-          <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            ${_quickPrefsIconHtml()}
+            <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
+          </div>
         </div>
         ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${e.name||'Exercise '+(i+1)}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
         ${_runner.restRemaining != null && _runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx ? `
@@ -876,12 +879,6 @@ function renderRunner() {
                 <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance achieved (m)</div>
                 <input id="wr-cardio-dist" type="number" step="1" inputmode="numeric" placeholder="${_cardioDistanceM(tgt)||'0'}" value="${_cardioDistanceM(lastCardio)||_cardioDistanceM(tgt)||''}"
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
-              </div>
-              <div>
-                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Pace /500m achieved — optional</div>
-                <input id="wr-cardio-pace" type="text" inputmode="numeric" placeholder="e.g. 2:32" value="${lastCardio?.paceAchieved||''}"
-                  oninput="this.value=fmtRestInput(this.value)"
-                  style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>` : `
               <div>
                 <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Duration (MM:SS)</div>
@@ -890,24 +887,8 @@ function renderRunner() {
                   style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
               </div>`}
           </div>
-          <!-- Optional heart rate (sub-project ②d) — shown for both distance- and duration-based cardio -->
-          <div style="display:flex;gap:8px;margin-bottom:10px">
-            <div style="flex:1">
-              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Avg HR (bpm) — optional</div>
-              <input id="wr-cardio-avg-hr" type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${escapeHtml(String(tgt.hrZoneMin||''))}" value="${lastCardio?.avgHr||''}"
-                style="width:100%;padding:10px 12px;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
-            </div>
-            <div style="flex:1">
-              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Max HR (bpm) — optional</div>
-              <input id="wr-cardio-max-hr" type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="" value="${lastCardio?.maxHr||''}"
-                style="width:100%;padding:10px 12px;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
-            </div>
-            <div style="flex:1">
-              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Avg watts — optional</div>
-              <input id="wr-cardio-watts" type="number" inputmode="numeric" step="1" min="0" max="2000" placeholder="${escapeHtml(String(tgt.wattsMin||''))}" value="${lastCardio?.avgWatts||''}"
-                style="width:100%;padding:10px 12px;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
-            </div>
-          </div>
+          <!-- HR/watts/pace/stroke rate are captured once, on the exercise-finish card
+               (renderCardioCaptureCard) — not here (2026-08-08). -->
           <!-- Buttons -->
           <div style="display:flex;gap:8px;margin-bottom:6px">
             ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
@@ -1070,13 +1051,11 @@ function logRunnerSet() {
     if (tgt.isDistanceBased) {
       const dist = document.getElementById('wr-cardio-dist')?.value?.trim()
       if (!dist) { showToast('Enter a distance first', 'warn'); return }
-      const paceEl = document.getElementById('wr-cardio-pace')
       // METRES, matching the input above. Persisted straight to distance_m with no conversion —
       // the old km input needed a x1000 at the save site, which is what made the units ambiguous.
-      setData = { distanceM: dist, paceAchieved: paceEl?.value?.trim() || null,
-                  avgHr: document.getElementById('wr-cardio-avg-hr')?.value?.trim() || null,
-                  maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null,
-                  avgWatts: document.getElementById('wr-cardio-watts')?.value?.trim() || null }
+      // HR/watts/pace/stroke rate are captured once, on the exercise-finish card
+      // (renderCardioCaptureCard) — not per round here (2026-08-08).
+      setData = { distanceM: dist }
     } else {
       // If interval timer is running, compute elapsed time; otherwise read the manual input field
       let dur
@@ -1089,11 +1068,7 @@ function logRunnerSet() {
       if (!dur || dur === '0:00') { showToast('Enter a duration first', 'warn'); return }
       // Overlay inputs take priority over runner-form inputs (interval overlay is still mounted here)
       const distEl = document.getElementById('wr-cardio-dist-opt')
-      const paceEl = document.getElementById('wr-cardio-pace')
-      setData = { duration: dur, distanceM: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null,
-                  avgHr: document.getElementById('wr-cardio-avg-hr')?.value?.trim() || null,
-                  maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null,
-                  avgWatts: document.getElementById('wr-cardio-watts')?.value?.trim() || null }
+      setData = { duration: dur, distanceM: distEl?.value?.trim() || null }
     }
     // stop any running interval timer
     stopIntervalTimer()
@@ -1145,20 +1120,25 @@ function logRunnerSet() {
   // If all target sets for this exercise are done, advance or finish
   const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
   if (hitTarget) {
-    const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
-    if (nextExIdx !== -1) {
-      // More exercises — rest then advance. Start the rest timer (which sets
-      // _restInterval) before re-rendering, so the page shows the "resting"
-      // placeholder instead of a phantom next-set input for a set that doesn't exist.
-      _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
-      startRestTimer(ex.restSecs || 90)
-      renderRunner()
-      return
-    } else {
-      // All done — go straight to finish
-      showRunnerFinish()
-      return
+    const proceed = () => {
+      const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+      if (nextExIdx !== -1) {
+        // More exercises — rest then advance. Start the rest timer (which sets
+        // _restInterval) before re-rendering, so the page shows the "resting"
+        // placeholder instead of a phantom next-set input for a set that doesn't exist.
+        _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
+        startRestTimer(ex.restSecs || 90)
+        renderRunner()
+      } else {
+        // All done — go straight to finish
+        showRunnerFinish()
+      }
     }
+    // Cardio's only "exercise finished" moment that isn't already the interval phase-walk (see
+    // _finishIntervalExercise) — ask for HR/watts/pace/stroke rate once, here, before moving on.
+    if (ex.type === 'cardio') { renderCardioCaptureCard(ex, proceed); return }
+    proceed()
+    return
   }
   const restSecs = ex.restSecs || 90
   if (ex.type === 'cardio') {
@@ -1431,9 +1411,16 @@ function _advancePhase() {
 // adding another would double up. Mirrors the "hitTarget" branch below (next exercise, else finish).
 function _finishIntervalExercise() {
   stopIntervalTimer()
-  const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
-  if (nextExIdx !== -1) { _runner.exIdx = nextExIdx; renderRunner() }
-  else showRunnerFinish()
+  const ex = _runner.exercises[_runner.exIdx]
+  const proceed = () => {
+    const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+    if (nextExIdx !== -1) { _runner.exIdx = nextExIdx; renderRunner() }
+    else showRunnerFinish()
+  }
+  // Ask for HR/watts/pace/stroke rate once, here — the interval phase-walk's own "exercise finished"
+  // moment, and the one point in the whole exercise the fullscreen timer overlay is guaranteed gone.
+  if (ex.loggedSets.length) renderCardioCaptureCard(ex, proceed)
+  else proceed()
 }
 
 // Records one phase as a logged set. Rest and recovery never reach here — they are timed only
@@ -1442,11 +1429,13 @@ function _finishIntervalExercise() {
 function _logIntervalPhase(p) {
   const ex = _runner.exercises[_runner.exIdx]
   const g = id => document.getElementById(id)?.value?.trim() || null
+  // avgHr/maxHr/avgWatts deliberately NOT read here (2026-08-08) — renderCardioCaptureCard is now the
+  // sole writer of those fields, once at exercise-finish; reading them per-phase here as well would be
+  // a second writer racing the first, and the DOM nodes this used to read no longer exist.
   ex.loggedSets.push({
     phase: p.phase,
     duration: p.secs != null ? fmtRestCountdown(p.secs) : null,
-    distanceM: p.distanceM != null ? String(p.distanceM) : g('wr-cardio-dist-opt'),
-    avgHr: g('wr-cardio-avg-hr'), maxHr: g('wr-cardio-max-hr'), avgWatts: g('wr-cardio-watts')
+    distanceM: p.distanceM != null ? String(p.distanceM) : g('wr-cardio-dist-opt')
   })
 }
 
@@ -1465,27 +1454,29 @@ function startIntervalTimer(secs) {
       const ex = _runner.exercises[_runner.exIdx]
       const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
       const distEl = document.getElementById('wr-cardio-dist-opt')
-      const paceEl = document.getElementById('wr-cardio-pace')
-      const setData = { duration: tgt.duration || fmtRestCountdown(secs), distanceM: distEl?.value?.trim() || null, paceAchieved: paceEl?.value?.trim() || null,
-                        // HR + watts inputs stay mounted beneath the interval overlay and are read by the
-                        // manual LOG path — this auto-log dropped them (same class as distanceAchieved).
-                        avgHr: document.getElementById('wr-cardio-avg-hr')?.value?.trim() || null,
-                        maxHr: document.getElementById('wr-cardio-max-hr')?.value?.trim() || null,
-                        avgWatts: document.getElementById('wr-cardio-watts')?.value?.trim() || null }
+      // HR/watts/pace/stroke rate are captured once, on the exercise-finish card
+      // (renderCardioCaptureCard) — not per round here (2026-08-08).
+      const setData = { duration: tgt.duration || fmtRestCountdown(secs), distanceM: distEl?.value?.trim() || null }
       ex.loggedSets.push(setData)
       const restSecs = ex.restSecs || 90
       const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
       // startRestTimer runs before renderRunner in every branch below so the
       // page shows the "resting" placeholder instead of a stale/phantom set input.
       if (hitTarget) {
-        const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
-        if (nextExIdx !== -1) {
-          _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
-          startRestTimer(restSecs)
-        } else {
-          startRestTimer(restSecs)
-          _runner._afterRest = () => showRunnerFinish()
+        const proceed = () => {
+          const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+          if (nextExIdx !== -1) {
+            _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
+            startRestTimer(restSecs)
+          } else {
+            startRestTimer(restSecs)
+            _runner._afterRest = () => showRunnerFinish()
+          }
+          renderRunner()
         }
+        // Same "ask once, at exercise-finish" capture point as logRunnerSet's hitTarget branch.
+        renderCardioCaptureCard(ex, proceed)
+        return
       } else {
         const nextTgt2 = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
         if (!nextTgt2.isDistanceBased) {
@@ -1636,12 +1627,6 @@ function renderIntervalTimer() {
       <div>
         <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance covered (m) — optional</div>
         <input id="wr-cardio-dist-opt" type="number" step="1" inputmode="numeric" placeholder="e.g. 1240"
-          style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--surface);color:var(--text)">
-      </div>
-      <div>
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Pace /500m achieved — optional</div>
-        <input id="wr-cardio-pace" type="text" inputmode="numeric" placeholder="e.g. 2:07"
-          oninput="this.value=fmtRestInput(this.value)"
           style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--surface);color:var(--text)">
       </div>
     </div>
@@ -1805,6 +1790,101 @@ function renderRestTimer() {
     <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:8px;background:var(--surface-2);font-size:13px;font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
   `
   mountModal(overlay)
+}
+
+// ─── Cardio/interval exercise-finish capture card (2026-08-08) ────────────────────────────────
+// Replaces the old always-rendered-but-unreachable-during-a-timer HR/watts/pace inputs on the
+// pre-Start cardio card. Capture happens ONCE, here, at the moment a cardio or interval exercise
+// finishes — the one point in the whole exercise the fullscreen timer overlay
+// (wr-interval-overlay, z-index:350) is guaranteed gone, sidestepping the occlusion bug
+// structurally rather than patching z-index/DOM nesting. Which metrics get asked for is a
+// per-device toggle (localStorage, not a DB/Settings preference — Jake's explicit call), shared
+// with the quick-prefs popover (app-core.js) so changing it from either place is visible in the
+// other immediately.
+
+function _loadCardioCaptureToggles() {
+  try {
+    const raw = localStorage.getItem('_cardioCaptureToggles')
+    return { hr: true, watts: true, pace: false, strokeRate: false, ...(raw ? JSON.parse(raw) : {}) }
+  } catch (e) { return { hr: true, watts: true, pace: false, strokeRate: false } }
+}
+function _saveCardioCaptureToggles(t) {
+  try { localStorage.setItem('_cardioCaptureToggles', JSON.stringify(t)) } catch (e) {}
+}
+
+// onContinue is stashed on _runner so the toggle handler (which only knows the exercise index,
+// not the caller's own closure) can re-invoke this exact render after a chip flips, without losing
+// track of what "done" means for this particular call site (next exercise vs rest vs finish).
+function renderCardioCaptureCard(ex, onContinue, prefill = {}) {
+  _runner._captureOnContinue = onContinue
+  const t = _loadCardioCaptureToggles()
+  // Same prescribed-target lookup the pre-Start card used — carries the hrZoneMin/wattsMin hint
+  // through so the placeholder regression Agent C flagged (values shown while typing) doesn't reappear.
+  const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+  const chip = (label, key) => `<button type="button" onclick="_toggleCardioCaptureMetric('${key}')" style="padding:8px 14px;font-size:13px;font-weight:700;border-radius:20px;cursor:pointer;border:1px solid ${t[key]?'var(--accent)':'var(--border)'};background:${t[key]?'var(--accent)':'var(--surface-2)'};color:${t[key]?'#fff':'var(--text-muted)'}">${label}</button>`
+  const field = (label, id, val, opts, wrapStyle) => `
+    <div style="${wrapStyle || 'margin-bottom:10px'}">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${label}</div>
+      <input id="${id}" value="${escapeAttr(val || '')}" ${opts}
+        style="width:100%;padding:12px;font-size:20px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+    </div>`
+
+  let el = document.getElementById('workout-runner')
+  if (!el) { el = document.createElement('div'); el.id = 'workout-runner'; document.body.appendChild(el) }
+  el.innerHTML = `
+    <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:20px 20px 12px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${escapeHtml(ex.name)} — done</div>
+        <div style="font-size:19px;font-weight:800;color:var(--text)">Log what you saw on the machine</div>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:16px 20px">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+          ${chip('HR', 'hr')}${chip('Watts', 'watts')}${chip('Pace', 'pace')}${chip('Stroke rate', 'strokeRate')}
+        </div>
+        ${t.hr ? `<div style="display:flex;gap:8px;margin-bottom:10px">${field('Avg HR (bpm)', 'wr-capture-avg-hr', prefill.avgHr, `type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${escapeAttr(String(tgt.hrZoneMin||''))}"`, 'flex:1')}${field('Max HR (bpm)', 'wr-capture-max-hr', prefill.maxHr, `type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${escapeAttr(String(tgt.hrZoneMax||''))}"`, 'flex:1')}</div>` : ''}
+        ${t.watts ? field('Avg watts', 'wr-capture-watts', prefill.watts, `type="number" inputmode="numeric" step="1" min="0" max="2000" placeholder="${escapeAttr(String(tgt.wattsMin||''))}"`) : ''}
+        ${t.pace ? field('Pace /500m', 'wr-capture-pace', prefill.pace, 'type="text" inputmode="numeric" placeholder="e.g. 2:07" oninput="this.value=fmtRestInput(this.value)"') : ''}
+        ${t.strokeRate ? field('Stroke rate (spm)', 'wr-capture-stroke-rate', prefill.strokeRate, 'type="number" inputmode="numeric" step="1" min="0" max="100"') : ''}
+        ${!t.hr && !t.watts && !t.pace && !t.strokeRate ? `<p style="color:var(--text-muted);font-size:13px;text-align:center;padding:24px 0">Nothing toggled on — tap a chip above, or just continue.</p>` : ''}
+      </div>
+      <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px">
+        <button onclick="_applyCardioCapture(_runner.exercises[_runner.exIdx]);_runner._captureOnContinue()" style="width:100%;padding:16px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">Continue</button>
+        <button onclick="_runner._captureOnContinue()" style="width:100%;padding:8px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-muted)">Skip — don't log numbers this time</button>
+      </div>
+    </div>
+  `
+}
+
+// Toggling mid-card must not blow away whatever's already typed into the OTHER active fields — a
+// naive re-render on toggle would (les-048 class: "both surfaces still render a plausible string,
+// just missing a field, so nothing throws"). Snapshot before re-rendering, pass back as prefill.
+function _toggleCardioCaptureMetric(key) {
+  const snapshot = {
+    avgHr: document.getElementById('wr-capture-avg-hr')?.value || '',
+    maxHr: document.getElementById('wr-capture-max-hr')?.value || '',
+    watts: document.getElementById('wr-capture-watts')?.value || '',
+    pace:  document.getElementById('wr-capture-pace')?.value || '',
+    strokeRate: document.getElementById('wr-capture-stroke-rate')?.value || ''
+  }
+  const t = _loadCardioCaptureToggles()
+  t[key] = !t[key]
+  _saveCardioCaptureToggles(t)
+  renderCardioCaptureCard(_runner.exercises[_runner.exIdx], _runner._captureOnContinue, snapshot)
+}
+
+// Attaches captured values to the MOST RECENT logged round only, not every round of a multi-round
+// cardio exercise — one glance at the console, taken once, shouldn't be stamped across earlier
+// rounds as if it were measured then too. Only reads inputs for toggled-on metrics; an inactive
+// metric's field doesn't exist in the DOM, so there's nothing stale to accidentally pick up.
+function _applyCardioCapture(ex) {
+  const last = ex.loggedSets[ex.loggedSets.length - 1]
+  if (!last) return
+  const g = id => document.getElementById(id)?.value?.trim() || null
+  const t = _loadCardioCaptureToggles()
+  if (t.hr)    { last.avgHr = g('wr-capture-avg-hr'); last.maxHr = g('wr-capture-max-hr') }
+  if (t.watts) { last.avgWatts = g('wr-capture-watts') }
+  if (t.pace)  { last.pace = g('wr-capture-pace') }
+  if (t.strokeRate) { last.strokeRate = g('wr-capture-stroke-rate') }
 }
 
 
@@ -2345,11 +2425,24 @@ async function saveRunnerSession() {
     const logExId = exerciseIdByOrderIndex[bi]
     ex.loggedSets.forEach((s, si) => {
       const setNumber = si + 1
-      // Heart rate is common to any set shape (populated by sub-project ②d); apply it uniformly.
-      const applyHr = (row) => {
+      // HR/watts/pace/stroke rate are common to any set shape (populated once, at exercise-finish,
+      // by renderCardioCaptureCard — 2026-08-08); apply uniformly. s.pace/s.strokeRate stay raw
+      // strings on the in-memory logged set (matching how duration/distanceM are stored raw and
+      // converted only here at save) — parseRest() does the mm:ss->seconds conversion for pace,
+      // matching the existing prescribed sets_json.pace500Min/Max semantic (seconds per 500m).
+      const applyCardioMetrics = (row) => {
         if (s.avgHr) row.avg_hr = parseInt(s.avgHr)
         if (s.maxHr) row.max_hr = parseInt(s.maxHr)
         if (s.avgWatts) { const w = parseInt(s.avgWatts); if (!isNaN(w) && w > 0) row.avg_watts = Math.min(w, 2000) }
+        // Bounded BOTH ends, matching the DB's CHECK constraint exactly (30-1800) — Math.min alone
+        // (the pattern avgWatts/strokeRate use below) isn't enough here because their columns have no
+        // lower-bound CHECK, so an under-range value just looks oddly low; pace_500m_secs DOES have
+        // one, and a single fat-fingered short entry (e.g. "0:15") would otherwise violate the CHECK
+        // and fail the whole batched workout_log_sets insert for every exercise in the session, not
+        // just this one field. Out-of-range silently drops the value instead (same "best-effort,
+        // optional" spirit as every other field here) rather than crashing the save. Found by review.
+        if (s.pace) { const p = parseRest(s.pace); if (p >= 30 && p <= 1800) row.pace_500m_secs = p }
+        if (s.strokeRate) { const sr = parseInt(s.strokeRate); if (!isNaN(sr) && sr > 0) row.stroke_rate_spm = Math.min(sr, 100) }
       }
 
       // Unilateral: the wizard captures both sides in ONE loggedSet. Persist as two rows sharing the
@@ -2364,7 +2457,7 @@ async function saveRunnerSession() {
           const row = { workout_log_exercise_id: logExId, set_number: setNumber, side: sd.side }
           if (sd.reps) row.reps_achieved = parseInt(sd.reps)
           if (sd.weight !== 'BW' && _hasNumVal(sd.weight)) row.weight_kg = parseFloat(sd.weight)
-          applyHr(row)
+          applyCardioMetrics(row)
           if (Object.keys(row).length > 3) allSets.push(row)
         }
         return
@@ -2392,7 +2485,7 @@ async function saveRunnerSession() {
         if (s.weight !== 'BW' && _hasNumVal(s.weight)) row.weight_kg = parseFloat(s.weight)
         if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
       }
-      applyHr(row)
+      applyCardioMetrics(row)
       if (Object.keys(row).length > 2) allSets.push(row)
     })
   })

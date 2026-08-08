@@ -863,7 +863,10 @@ async function openProgram(programId) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="15 18 9 12 15 6"/></svg>
         All programs
       </a>
-      <h1 class="page-title" style="margin-bottom:4px">${escapeHtml(program.name)}</h1>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <h1 class="page-title" style="margin-bottom:4px">${escapeHtml(program.name)}</h1>
+        ${_quickPrefsIconHtml()}
+      </div>
       ${program.description ? `<p style="color:var(--text-muted);font-size:14px">${program.description}</p>` : ''}
       <p style="font-size:12px;color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">

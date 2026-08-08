@@ -657,6 +657,9 @@ test.describe('Interval runner overlay (2026-07-26, Task 6)', () => {
       await new Promise(resolve => setTimeout(resolve, 500))
       const btn = Array.from(document.querySelectorAll('#wr-interval-overlay button')).find(b => /^Done/.test(b.textContent.trim()))
       btn?.click()   // ends the round ~2.5s before the real 3s timer would have fired on its own
+      // A round was just logged, so the exercise-finish capture card appears here now (2026-08-08) —
+      // skip it to actually advance, same as tapping the card's own "Skip" button would.
+      _runner._captureOnContinue?.()
       const exIdxAfterClick = _runner.exIdx
       // Wait well past the original 3s mark — a leaked timer would fire here and bounce exIdx/log again.
       await new Promise(resolve => setTimeout(resolve, 3200))
@@ -797,6 +800,39 @@ test.describe('Interval save — phase persistence (2026-07-26, Task 7)', () => 
     expect(r.count).toBe(3)   // 2 squat sets + 1 bike set
     expect(r.phases.every(p => p === null)).toBe(true)
   })
+
+  // 2026-08-08: capture moved from per-phase (_logIntervalPhase, reading one shared hidden DOM node on
+  // every phase completion — the source of a real pre-existing bug where a multi-round exercise got an
+  // identical HR/watts snapshot on every round) to once, at exercise-finish (renderCardioCaptureCard).
+  // Proves the removal actually landed, not just that nothing happens to call this path with a value
+  // present — plants decoy inputs at the exact ids this function used to read.
+  test('_logIntervalPhase no longer reads HR/watts from the DOM — capture moved to exercise-finish', async ({ page }) => {
+    await loginAsPT(page)
+    await page.waitForTimeout(300)
+
+    const r = await page.evaluate(() => {
+      document.body.insertAdjacentHTML('beforeend', `
+        <input id="wr-cardio-avg-hr" value="142">
+        <input id="wr-cardio-max-hr" value="168">
+        <input id="wr-cardio-watts" value="210">
+      `)
+      _runner = { clientId: 'x', exercises: [{
+        name: 'Row', type: 'cardio', metricType: 'interval', loggedSets: [],
+        sets_json: [{ workSecs: 30, restSecs: 30, sets: 1, cycles: 1 }]
+      }], exIdx: 0, startTime: Date.now() }
+      _initIntervalPhases(_runner.exercises[0])
+      _logIntervalPhase(_runner.exercises[0].phases.find(p => p.phase === 'work'))
+      document.getElementById('wr-cardio-avg-hr')?.remove()
+      document.getElementById('wr-cardio-max-hr')?.remove()
+      document.getElementById('wr-cardio-watts')?.remove()
+      return _runner.exercises[0].loggedSets[0]
+    })
+
+    expect(r.phase).toBe('work')   // the phase-tagging itself is unaffected
+    expect(r.avgHr).toBeUndefined()
+    expect(r.maxHr).toBeUndefined()
+    expect(r.avgWatts).toBeUndefined()
+  })
 })
 
 // Task 8 — Progress aggregates must exclude warmup/cooldown, and interval must chart as cardio-family.
@@ -909,6 +945,9 @@ test.describe('Pre-push review fixes (2026-07-27)', () => {
       _initIntervalPhases(_runner.exercises[0])
       _startPhaseAt(0)   // real 1s timer — the block's only phase
       await new Promise(resolve => setTimeout(resolve, 1300))
+      // The exercise-finish capture card appears here now (2026-08-08) — skip it, same as an athlete
+      // tapping "Skip", to actually reach showRunnerFinish() and exercise the repaint this test guards.
+      _runner._captureOnContinue?.()
       const out = {
         hasFinishHeading: Array.from(document.querySelectorAll('#workout-runner h2'))
           .some(h => /Workout complete/i.test(h.textContent)),

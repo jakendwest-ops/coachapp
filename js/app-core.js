@@ -131,6 +131,107 @@ function fmtJumpHeight(cm, { spaced = false } = {}) {
   return `${v}${spaced ? ' ' : ''}${window._unitPrefs.jumpHeight}`
 }
 
+// Shared DB-write core for the units preference (2026-08-08) — extracted so the Settings page's own
+// units card and the new quick-prefs popover (below) both write through one place instead of
+// duplicating the update/overwrite logic. Returns the Supabase error (or null) so each caller can
+// show its own inline success/failure message in whatever shape it already uses.
+async function _saveUnitPrefs(weight, jumpHeight, cardioDistance) {
+  const { error } = await db.from('profiles').update({
+    weight_unit: weight, jump_height_unit: jumpHeight, cardio_distance_unit: cardioDistance
+  }).eq('id', currentUser.id)
+  // No page reload needed — every render function reads window._unitPrefs fresh on each render.
+  if (!error) window._unitPrefs = { weight, jumpHeight, cardioDistance }
+  return error
+}
+
+// ─── QUICK PREFERENCES — icon + popover (2026-08-08) ───────────────────────────
+// Jake, live: the units toggle (above) and the cardio-capture toggles (app-runner.js) both need to be
+// reachable "on the fly" from the builder and the runner, not just buried in Settings — via a small
+// icon that opens a compact panel, not permanent inline pills. One shared component, dropped into
+// any page header with a single call to _quickPrefsIconHtml(). Reuses the app's existing
+// .modal-overlay/.modal pattern (mountModal, standard z-index:200) rather than a new anchored-popover
+// mechanism — this app has no anchored-popover precedent, and a small centered modal gives the same
+// "tap icon, get a compact panel" feel with zero new CSS.
+function _quickPrefsIconHtml() {
+  return `<button onclick="_openQuickPrefsPopover()" title="Preferences" style="width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">⚙</button>`
+}
+
+function _openQuickPrefsPopover() {
+  // Cardio-capture toggles live in app-runner.js (_loadCardioCaptureToggles) — this popover is the
+  // second of two entry points into that SAME localStorage-backed state (the runner's own
+  // exercise-finish capture card is the other), so a change from either place is visible in both.
+  const capture = typeof _loadCardioCaptureToggles === 'function' ? _loadCardioCaptureToggles() : null
+  const chip = (label, key) => `<button type="button" onclick="_toggleQuickPrefsCapture('${key}')" style="padding:7px 12px;font-size:12.5px;font-weight:700;border-radius:20px;cursor:pointer;border:1px solid ${capture[key]?'var(--accent)':'var(--border)'};background:${capture[key]?'var(--accent)':'var(--surface-2)'};color:${capture[key]?'#fff':'var(--text-muted)'}">${label}</button>`
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'quick-prefs-modal'
+  // The runner is a fullscreen z-index:300 layer — opened from there this needs to sit above it,
+  // same convention _showExerciseSetsModal already uses from the runner's swap/add flow.
+  if (document.getElementById('workout-runner')) overlay.style.zIndex = '1000'
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:360px">
+      <div class="modal-header">
+        <h2 class="modal-title">Preferences</h2>
+        <button class="modal-close" onclick="closeModal('quick-prefs-modal')">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label">Weight</label>
+        <select class="field-input" id="qp-unit-weight">
+          <option value="kg"${window._unitPrefs.weight==='kg'?' selected':''}>Kilograms (kg)</option>
+          <option value="lb"${window._unitPrefs.weight==='lb'?' selected':''}>Pounds (lb)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">Jump height</label>
+        <select class="field-input" id="qp-unit-jump">
+          <option value="cm"${window._unitPrefs.jumpHeight==='cm'?' selected':''}>Centimetres (cm)</option>
+          <option value="in"${window._unitPrefs.jumpHeight==='in'?' selected':''}>Inches (in)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">Cardio distance</label>
+        <select class="field-input" id="qp-unit-distance">
+          <option value="km"${window._unitPrefs.cardioDistance==='km'?' selected':''}>Kilometres (km)</option>
+          <option value="mi"${window._unitPrefs.cardioDistance==='mi'?' selected':''}>Miles (mi)</option>
+        </select>
+      </div>
+      ${capture ? `
+      <div class="field">
+        <label class="field-label">Log during cardio/interval workouts</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${chip('HR', 'hr')}${chip('Watts', 'watts')}${chip('Pace', 'pace')}${chip('Stroke rate', 'strokeRate')}
+        </div>
+      </div>` : ''}
+      <p class="modal-error" id="qp-msg" style="color:var(--text-muted)"></p>
+      <button class="btn-primary" style="width:100%" onclick="_saveQuickPrefs()">Done</button>
+    </div>`
+  mountModal(overlay)
+}
+
+// The capture chips act immediately (localStorage, no save step, matches the runner card's own
+// behaviour) — only re-renders the popover to reflect the new toggle state.
+function _toggleQuickPrefsCapture(key) {
+  const t = _loadCardioCaptureToggles()
+  t[key] = !t[key]
+  _saveCardioCaptureToggles(t)
+  _openQuickPrefsPopover()
+}
+
+async function _saveQuickPrefs() {
+  const weight = document.getElementById('qp-unit-weight')?.value
+  const jumpHeight = document.getElementById('qp-unit-jump')?.value
+  const cardioDistance = document.getElementById('qp-unit-distance')?.value
+  const msg = document.getElementById('qp-msg')
+  const error = await _saveUnitPrefs(weight, jumpHeight, cardioDistance)
+  if (error) {
+    log.error('_saveQuickPrefs', 'update failed', error)
+    if (msg) msg.textContent = 'Save failed — try again.'
+    return
+  }
+  closeModal('quick-prefs-modal')
+}
+
 // ─── SHELL HELPERS ────────────────────────────────────────────────────────────
 function escapeHtml(str) {
   if (!str) return ''
