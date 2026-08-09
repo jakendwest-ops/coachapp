@@ -1791,6 +1791,34 @@ async function renderSettings(el) {
     currentLogoUrl = urlData?.signedUrl || null
   }
 
+  // Owner-only — same literal-email gate every other admin-only affordance in this app uses
+  // (js/app-dashboard.js's sudoAsClient, js/app-clients.js's "View as" button). Onboards a brand-new
+  // STANDALONE solo/personal account (2026-08-09) — never a coach_id-linked client, unlike Send invite
+  // on a client's own profile. See supabase/functions/invite-solo-user/index.ts; the real authorization
+  // check lives there server-side, this is a UI convenience only.
+  const soloInviteCard = currentUser?.email === 'jakendwest@gmail.com' ? `
+      <!-- Invite a personal user -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Invite a personal user</h2>
+        </div>
+        <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
+          <p style="font-size:13px;color:var(--text-muted);margin:0">Creates a brand-new, standalone solo account — never linked to you as a client. They get a real invite email and set their own name/password.</p>
+          <div class="field">
+            <label class="field-label">Name</label>
+            <input class="field-input" type="text" id="solo-invite-name" placeholder="Their name">
+          </div>
+          <div class="field">
+            <label class="field-label">Email</label>
+            <input class="field-input" type="email" id="solo-invite-email" placeholder="their@email.com">
+          </div>
+          <div>
+            <button class="btn-primary" style="font-size:14px" onclick="inviteSoloUser()">Send invite</button>
+            <span id="solo-invite-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+      </div>` : ''
+
   const brandingCard = isCoach ? `
       <!-- Branding -->
       <div class="card">
@@ -1857,6 +1885,8 @@ async function renderSettings(el) {
           </div>
         </div>
       </div>
+
+      ${soloInviteCard}
 
       ${brandingCard}
 
@@ -1970,6 +2000,64 @@ async function saveSettingsProfile() {
   if (currentProfile) currentProfile.full_name = name
   document.getElementById('user-name').textContent = name
   if (msg) { msg.style.color = '#22c55e'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
+}
+
+// Onboards a brand-new, standalone solo account via the invite-solo-user Edge Function — mirrors
+// sendClientInvite's shape as closely as this call's differences allow (no clientId, no follow-up
+// invited_at stamp, no navigate-away — there's no client profile to jump to for a solo invite).
+// The real authorization check is server-side in the Edge Function; the Settings-card gate that only
+// renders this for jakendwest@gmail.com is a UI convenience, not the security boundary.
+// Module-level so it survives across separate inviteSoloUser() calls — without this, sending a second
+// invite while the first one's 3s success/error revert is still pending lets the stale timeout stomp
+// the second invite's in-progress "Sending…" label back to "Send invite" (found by multi-agent-review;
+// not a double-submit, the disabled flag is untouched, but a misleading mid-flight visual state).
+let _soloInviteRevertTimer = null
+
+async function inviteSoloUser() {
+  const nameEl  = document.getElementById('solo-invite-name')
+  const emailEl = document.getElementById('solo-invite-email')
+  const msg     = document.getElementById('solo-invite-msg')
+  const name    = nameEl?.value.trim()
+  const email   = emailEl?.value.trim()
+  if (!name || !email) { if (msg) msg.textContent = 'Name and email are both required.'; return }
+  if (!confirm(`Send a personal-account invite to ${email}?`)) return
+  if (msg) msg.textContent = ''
+
+  log.info('inviteSoloUser', 'sending solo invite')
+  const btn = event.target
+  clearTimeout(_soloInviteRevertTimer)
+  btn.disabled = true
+  btn.textContent = 'Sending…'
+
+  const { data: { session } } = await db.auth.getSession()
+
+  const res = await fetch(`https://avilxuiacmtgeoxxhfhc.supabase.co/functions/v1/invite-solo-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`
+    },
+    body: JSON.stringify({ email, name })
+  })
+
+  const json = await res.json()
+
+  if (!res.ok) {
+    log.error('inviteSoloUser', 'edge function returned error', { status: res.status, error: json.error })
+    btn.disabled = false
+    btn.textContent = '✗ ' + (json.error || 'Failed to send')
+    btn.style.color = 'var(--danger)'
+    _soloInviteRevertTimer = setTimeout(() => { btn.textContent = 'Send invite'; btn.style.color = '' }, 3000)
+    return
+  }
+
+  log.ok('inviteSoloUser', 'solo invite sent via edge function', { userId: json.userId })
+  if (nameEl) nameEl.value = ''
+  if (emailEl) emailEl.value = ''
+  btn.textContent = '✓ Invite sent'
+  btn.style.color = 'var(--success, #16a34a)'
+  btn.disabled = false
+  _soloInviteRevertTimer = setTimeout(() => { btn.textContent = 'Send invite'; btn.style.color = '' }, 3000)
 }
 
 async function saveSettingsUnits() {
