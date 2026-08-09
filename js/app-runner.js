@@ -893,9 +893,9 @@ function renderRunner() {
           <div style="display:flex;gap:8px;margin-bottom:6px">
             ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
             ${(!distBased || _isIntervalExercise(ex)) ? `<button onclick="event.stopPropagation();startCardioTimer()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--surface-2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
-            ${!_isIntervalExercise(ex) ? `<button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>` : ''}
+            ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>` : ''}
           </div>
-          ${!_isIntervalExercise(ex) ? `<button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
+          ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
         })() : `
         <!-- Strength input -->
         ${(() => {
@@ -1143,8 +1143,13 @@ function logRunnerSet() {
   const restSecs = ex.restSecs || 90
   if (ex.type === 'cardio') {
     const nextTgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+    // Interval-shaped blocks (incl. a steady-effort block someone extended via +Add extra set) keep
+    // their work duration in workSecs, not duration — same distinction the pre-Start card's
+    // effDuration already makes (2026-08-08 stale-duration fix). Reading .duration unconditionally
+    // here would silently fall back to a hardcoded 300s for any interval-shaped next round.
+    const nextDur = _isIntervalExercise(ex) ? fmtRestCountdown(nextTgt.workSecs || 0) : nextTgt.duration
     if (!nextTgt.isDistanceBased) {
-      _runner._afterRest = () => startIntervalTimer(parseRest(nextTgt.duration) || 300)
+      _runner._afterRest = () => startIntervalTimer(parseRest(nextDur) || 300)
     }
   }
   startRestTimer(restSecs)
@@ -1368,6 +1373,18 @@ function _isIntervalExercise(ex) {
   return !!ex && _exMetricType(ex) === 'interval'
 }
 
+// A "steady effort" is an interval block with nothing to repeat — one round, one cycle (the same
+// degenerate case plain Cardio used to cover before the 2026-08-09 merge). Manual/no-timer logging
+// stays available for these; a genuine multi-round/multi-cycle interval still requires the live timer.
+// Delegates to _isSteadyIntervalBlock (app-workouts.js) — the SAME check drives the builder's own
+// "Steady effort" chip, so a block only ever shows that label where BOTH surfaces agree it's true
+// (multi-agent-review, 2026-08-09: a hand-typed sets:1/cycles:1 with leftover nonzero warmup/rest/
+// recovery/cooldown used to read "Steady" here while _expandIntervalBlock still built a multi-phase
+// sequence for it — checking the same lead-in/trailing fields closes that gap).
+function _isSteadyEffortBlock(ex) {
+  return _isIntervalExercise(ex) && _isSteadyIntervalBlock(ex?.sets_json?.[0])
+}
+
 function _initIntervalPhases(ex) {
   ex.phases = _expandIntervalBlock(ex.sets_json?.[0] || {})
   ex.targetSets = ex.phases.filter(p => p.phase === 'work').length
@@ -1479,8 +1496,12 @@ function startIntervalTimer(secs) {
         return
       } else {
         const nextTgt2 = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
+        // Same shape distinction as logRunnerSet's nextDur (2026-08-09) — an interval-shaped block
+        // keeps its work duration in workSecs, not duration. Found by multi-agent-review as a sibling
+        // occurrence of the same bug that fix already closed one call-depth up.
+        const nextDur2 = _isIntervalExercise(ex) ? fmtRestCountdown(nextTgt2.workSecs || 0) : nextTgt2.duration
         if (!nextTgt2.isDistanceBased) {
-          _runner._afterRest = () => startIntervalTimer(parseRest(nextTgt2.duration) || 300)
+          _runner._afterRest = () => startIntervalTimer(parseRest(nextDur2) || 300)
         }
         startRestTimer(restSecs)
       }
@@ -2128,8 +2149,19 @@ async function _confirmRunnerExerciseFromModal(mode) {
 
 function addExtraCardioSet() {
   const ex = _runner.exercises[_runner.exIdx]
-  ex.targetSets = (ex.targetSets || 0) + 1
-  if (ex.sets_json?.length) ex.sets_json.push({ ...ex.sets_json[ex.sets_json.length - 1] })
+  if (_isIntervalExercise(ex)) {
+    // Interval blocks describe the whole exercise as ONE entry (work × sets), not independent rows per
+    // round like plain cardio — pushing a duplicate array entry (the plain-cardio path below) would
+    // leave ex.phases (built once from sets_json[0] alone) unaware of the extra round, so a live timer
+    // used for it would silently end one round early (multi-agent-review, 2026-08-09: _finishIntervalExercise
+    // only consults phases, never targetSets/sets_json.length). Extend the block itself instead, then
+    // re-derive phases + targetSets together from it so the manual-LOG and Start-timer paths agree.
+    const b = ex.sets_json?.[0]
+    if (b) { b.sets = (b.sets || 1) + 1; _initIntervalPhases(ex) }
+  } else {
+    ex.targetSets = (ex.targetSets || 0) + 1
+    if (ex.sets_json?.length) ex.sets_json.push({ ...ex.sets_json[ex.sets_json.length - 1] })
+  }
   renderRunner()
 }
 

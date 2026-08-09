@@ -35,7 +35,11 @@ function fmtRestInput(raw) {
 function _cardioDistanceM(s) {
   if (!s) return 0
   if (s.distanceM != null && s.distanceM !== '') return parseFloat(s.distanceM) || 0
-  return s.distance ? (parseFloat(s.distance) || 0) * 1000 : 0
+  if (s.distance) return (parseFloat(s.distance) || 0) * 1000
+  // workDistanceM is the interval-block shape's own distance-target field (2026-07-25) — checked last
+  // so it never shadows the cardio-shape fields above for a legacy/unmigrated row that happens to also
+  // carry a stale workDistanceM key.
+  return s.workDistanceM != null && s.workDistanceM !== '' ? parseFloat(s.workDistanceM) || 0 : 0
 }
 
 const _METRES_PER_MILE = 1609.344
@@ -158,6 +162,19 @@ function _expandIntervalBlock(b) {
   }
   if (cooldown) phases.push({ phase: 'cooldown', secs: cooldown })
   return phases
+}
+
+// A block is a genuine "steady effort" (one round, nothing else) only when NONE of warmup/rest/
+// recovery/cooldown would add a phase of their own — _expandIntervalBlock above pushes each of those
+// unconditionally on a nonzero value, regardless of sets/cycles (rest fires after every set including
+// the only one when sets:1; recovery fires after every cycle including the only one when cycles:1).
+// countdownSecs is deliberately NOT checked — a "3,2,1,go" lead-in is harmless and wanted even for a
+// steady effort (it's the default on a fresh block, see renderTemplateSets's isInterval branch).
+// Shared by the builder's own "Steady effort" chip and the runner's _isSteadyEffortBlock so a block
+// never reads "Steady" on one surface and "Repeating" (structurally) on the other.
+function _isSteadyIntervalBlock(b) {
+  b = b || {}
+  return (b.sets ?? 1) === 1 && (b.cycles ?? 1) === 1 && !b.warmupSecs && !b.restSecs && !b.recoverySecs && !b.cooldownSecs
 }
 
 // Sum of a phase list. `hasUnknown` is true when any work round is distance-based, because its
@@ -1381,6 +1398,25 @@ function toggleTsSet(i, prop, containerId) {
   renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
 
+// Interval block only — flips between a single steady round and a genuine repeating pattern.
+// Steady/Repeating is derived (sets:1&cycles:1 = steady), not its own sets_json key, so flipping it
+// just sets sensible values for the fields the OTHER mode hides rather than toggling a flag — the
+// hidden fields stay real inputs in the DOM (same pattern as the "+ More targets" <details> disclosure)
+// so flushTemplateSets keeps reading them by id unchanged either way.
+function toggleTsSteady(containerId) {
+  flushTemplateSets(containerId)
+  const s = window._templateSets[0]
+  const isSteady = (s.sets ?? 1) === 1 && (s.cycles ?? 1) === 1
+  if (isSteady) {
+    // switching TO Repeating — restore a sensible non-trivial starting pattern
+    s.sets = 8; s.cycles = 1; s.restSecs = 30
+  } else {
+    // switching TO Steady — one round, no rest, no lead-in/wind-down beyond the countdown
+    s.sets = 1; s.cycles = 1; s.restSecs = 0; s.warmupSecs = 0; s.recoverySecs = 0; s.cooldownSecs = 0
+  }
+  renderTemplateSets(containerId, 'interval')
+}
+
 function setTsEffort(i, type, containerId) {
   flushTemplateSets(containerId)
   window._templateSets[i].effortType = type
@@ -1426,17 +1462,35 @@ function renderTemplateSets(containerId, type) {
   // from cardio, a clone) collapses to the first; anything empty seeds sensible defaults.
   if (isInterval) {
     const b = (window._templateSets || [])[0] || {}
+    // Steady effort is the default for a brand-new block (sets:1/cycles:1/restSecs:0 — same
+    // simplicity today's plain Cardio offered) rather than the old 8-round HIIT-style default;
+    // toggleTsSteady() flips to a genuine repeating pattern (sets:8/restSecs:30) on request.
     window._templateSets = [{ countdownSecs: b.countdownSecs ?? 5, warmupSecs: b.warmupSecs ?? 0,
       isDistanceBased: !!b.isDistanceBased, workSecs: b.workSecs ?? 30, workDistanceM: b.workDistanceM ?? null,
-      restSecs: b.restSecs ?? 30, sets: b.sets ?? 8, recoverySecs: b.recoverySecs ?? 0,
+      restSecs: b.restSecs ?? 0, sets: b.sets ?? 1, recoverySecs: b.recoverySecs ?? 0,
       cycles: b.cycles ?? 1, cooldownSecs: b.cooldownSecs ?? 0, ...b }]
     const s = window._templateSets[0]
     const i = 0   // the More-targets rows below are copied verbatim from the cardio branch, which
                   // keys its ids off `i` — a block is always index 0.
     const tog = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
+    // Derived, not stored — a block with a single round and no repeats IS a steady effort; no new
+    // sets_json key needed. toggleTsSteady() (below) sets sets/cycles/rest/warmup/recovery/cooldown to
+    // match on flip, so this stays accurate every render, including for an existing block migrated
+    // from plain Cardio OR hand-edited directly (_isSteadyIntervalBlock checks the same fields
+    // _expandIntervalBlock would actually turn into phases, not just sets/cycles).
+    const isSteady = _isSteadyIntervalBlock(s)
     container.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:8px">
-      ${row('Initial countdown', mini('ts-countdown-0', 'type="number" placeholder="0"'+(s.countdownSecs != null ? ` value="${escapeAttr(String(s.countdownSecs))}"` : '')))}
-      ${row('Warm-up', mini('ts-warmup-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.warmupSecs||0)}"`))}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:13px;font-weight:600;color:var(--text)">Effort</span>
+        <div style="display:flex;gap:4px">
+          ${tog('Steady effort', isSteady, `toggleTsSteady('${containerId}')`)}
+          ${tog('Repeating', !isSteady, `toggleTsSteady('${containerId}')`)}
+        </div>
+      </div>
+      <div style="display:${isSteady ? 'none' : 'block'}">
+        ${row('Initial countdown', mini('ts-countdown-0', 'type="number" placeholder="0"'+(s.countdownSecs != null ? ` value="${escapeAttr(String(s.countdownSecs))}"` : '')))}
+        ${row('Warm-up', mini('ts-warmup-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.warmupSecs||0)}"`))}
+      </div>
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
         <span style="font-size:13px;font-weight:600;color:var(--text)">Work measured by</span>
         <div style="display:flex;gap:4px">
@@ -1446,12 +1500,14 @@ function renderTemplateSets(containerId, type) {
       </div>
       ${!s.isDistanceBased ? row('Work', mini('ts-worksecs-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.workSecs||0)}"`)) : ''}
       ${s.isDistanceBased ? row(`Work (${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'})`, mini('ts-workdist-0', `type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="—"${s.workDistanceM ? ` value="${escapeAttr(String(distanceToPref(s.workDistanceM)))}"` : ''}`)) : ''}
-      ${row('Rest', mini('ts-restsecs-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.restSecs||0)}"`))}
-      ${row('Sets', mini('ts-sets-0', 'type="number" min="1" placeholder="8"'+(s.sets ? ` value="${escapeAttr(String(s.sets))}"` : '')))}
-      ${row('Recovery', mini('ts-recovery-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.recoverySecs||0)}"`))}
-      ${row('Cycles', mini('ts-cycles-0', 'type="number" min="1" placeholder="1"'+(s.cycles ? ` value="${escapeAttr(String(s.cycles))}"` : '')))}
-      ${row('Cool-down', mini('ts-cooldown-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.cooldownSecs||0)}"`))}
-      ${(() => {
+      <div style="display:${isSteady ? 'none' : 'block'}">
+        ${row('Rest', mini('ts-restsecs-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.restSecs||0)}"`))}
+        ${row('Sets', mini('ts-sets-0', 'type="number" min="1" placeholder="8"'+(s.sets ? ` value="${escapeAttr(String(s.sets))}"` : '')))}
+        ${row('Recovery', mini('ts-recovery-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.recoverySecs||0)}"`))}
+        ${row('Cycles', mini('ts-cycles-0', 'type="number" min="1" placeholder="1"'+(s.cycles ? ` value="${escapeAttr(String(s.cycles))}"` : '')))}
+        ${row('Cool-down', mini('ts-cooldown-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.cooldownSecs||0)}"`))}
+      </div>
+      ${isSteady ? '' : (() => {
         const { total, hasUnknown } = _intervalTotalSecs(_expandIntervalBlock(s))
         // Never present a confident total for a distance block — work-round duration is unknowable
         // without a sensor, so say so rather than show a number that is simply wrong.
@@ -1645,13 +1701,15 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
       <div class="field">
         <label class="field-label">Type</label>
         <select class="field-input" id="att-type" onchange="flushTemplateSets('att-sets-container');renderTemplateSets('att-sets-container',this.value)">
-          <option value="weight_reps"   ${existingType === 'weight_reps'   || (existingType !== 'cardio' && existingType !== 'unilateral' && existingType !== 'timed_hold' && existingType !== 'jump_height' && existingType !== 'jump_distance' && existingType !== 'interval') ? 'selected' : ''}>Weight &amp; reps</option>
+          <option value="weight_reps"   ${existingType === 'weight_reps'   || (existingType !== 'unilateral' && existingType !== 'timed_hold' && existingType !== 'jump_height' && existingType !== 'jump_distance' && existingType !== 'interval' && existingType !== 'cardio') ? 'selected' : ''}>Weight &amp; reps</option>
           <option value="unilateral"    ${existingType === 'unilateral'    ? 'selected' : ''}>Unilateral (per side)</option>
           <option value="timed_hold"    ${existingType === 'timed_hold'    ? 'selected' : ''}>Timed hold</option>
-          <option value="cardio"        ${existingType === 'cardio'        ? 'selected' : ''}>Cardio</option>
           <option value="jump_height"   ${existingType === 'jump_height'   ? 'selected' : ''}>Jump height</option>
           <option value="jump_distance" ${existingType === 'jump_distance' ? 'selected' : ''}>Jump distance</option>
-          <option value="interval"      ${existingType === 'interval'      ? 'selected' : ''}>Intervals</option>
+          <!-- 'cardio' is no longer newly-selectable (merged into Intervals, 2026-08-09) but a legacy
+               unmigrated row must still land here on Type-select, not silently fall through to
+               weight_reps and get reclassified on the next save. -->
+          <option value="interval"      ${(existingType === 'interval' || existingType === 'cardio') ? 'selected' : ''}>Intervals</option>
         </select>
       </div>
 
@@ -1676,7 +1734,10 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
   `
   mountModal(overlay)
   window._templateSets = existingSets && existingSets.length ? existingSets.map(s => ({...s})) : [{ effortType: 'rpe' }]
-  renderTemplateSets('att-sets-container', existingType)
+  // Same normalization as the Type <select>'s own 'interval' option above (:1697) — a legacy
+  // metric_type='cardio' row must render the interval block editor it's now labeled as, not the old
+  // per-set cardio editor the dropdown no longer offers.
+  renderTemplateSets('att-sets-container', existingType === 'cardio' ? 'interval' : existingType)
 }
 
 // "Change" link on the sets/reps screen — reopens the picker without losing whatever the user
