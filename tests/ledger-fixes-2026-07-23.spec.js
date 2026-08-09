@@ -130,12 +130,13 @@ test.describe('Ledger fixes 2026-07-23', () => {
       // source-level guard: these four sites must no longer hand-roll `/1000...+'km'`
       diaryClean: !/\(dist \/ 1000\)\.toFixed/.test(_diaryExMetrics.toString()),
       trendClean: !/v\s*\/\s*1000\)\.toFixed\(1\)\+'km'/.test(JSON.stringify(Object.values(_TREND_METRICS).flat())),
-      fmtSetClean: !/\(s\.distance_m\/1000\)\.toFixed/.test(fmtSet.toString()),
     }))
     expect(r.fmt400).toBe('400 m')          // RED before: would have been "0.40 km" at these 3 sites
     expect(r.fmt5000).toBe('5 km')
     expect(r.diaryClean, '_diaryExMetrics still hand-rolls km formatting').toBe(true)
-    expect(r.fmtSetClean, 'fmtSet still hand-rolls km formatting').toBe(true)
+    // fmtSet (the 4th of the original 4 hand-rolled-km sites) was deleted outright by the 2026-08-09
+    // weekly full-file review as dead code — confirmed zero live call sites anywhere in js/*.js, so
+    // this specific guard no longer applies to anything reachable and was removed along with it.
   })
 
   // ── 5. Discard had no confirmation ──────────────────────────────────────────────────────────────

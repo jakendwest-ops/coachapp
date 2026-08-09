@@ -375,15 +375,6 @@ function _cleanTemplateSets(sets, derived) {
   }))
 }
 
-function fmtSet(s, type) {
-  if (type === 'cardio') {
-    const parts = [s.duration_seconds ? fmtDuration(s.duration_seconds) : null, s.distance_m ? fmtDistanceM(s.distance_m) : null]
-    return parts.filter(Boolean).join(' · ') || '—'
-  }
-  const parts = [s.reps_achieved ? s.reps_achieved+' reps' : null, s.weight_kg ? fmtWeight(s.weight_kg) : null, s.effort_value ? 'RPE '+s.effort_value : null]
-  return parts.filter(Boolean).join(' · ') || '—'
-}
-
 // ─── SESSION DETAIL SLIDE-IN ──────────────────────────────────────────────────
 async function openSessionDetail(templateId, name, ctx = {}) {
   const existing = document.getElementById('session-detail-panel')
@@ -494,15 +485,6 @@ async function renderWorkoutLibrary(el) {
     <div id="workout-tab-content"></div>
   `
   await renderWorkoutTemplates(document.getElementById('workout-tab-content'))
-}
-
-function toggleClientTemplate(id) {
-  const panel = document.getElementById(`tmpl-detail-${id}`)
-  const chevron = document.getElementById(`chevron-${id}`)
-  if (!panel) return
-  const open = panel.style.display === 'none'
-  panel.style.display = open ? 'block' : 'none'
-  if (chevron) chevron.style.transform = open ? 'rotate(90deg)' : ''
 }
 
 // Hero card for the Workouts page (2026-07-08) — same phase/week math the dashboards' own
@@ -1317,12 +1299,6 @@ function parseRest(str) {
   if (n.length >= 3) return (parseInt(n.slice(0,-2))||0)*60 + (parseInt(n.slice(-2))||0)
   return parseInt(n)||0
 }
-function fmtRest(secs) {
-  if (!secs) return ''
-  const m = Math.floor(secs/60), s = String(secs%60).padStart(2,'0')
-  return `${m}:${s}`
-}
-
 function flushTemplateSets(containerId) {
   // An interval block is a single entry with its own ids (no -${i} fan-out) — read the block-specific
   // fields here, then FALL THROUGH (no return) into the general per-index loop below so its i=0 pass

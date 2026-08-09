@@ -2368,12 +2368,20 @@ function discardRunner() {
   clearInterval(_runner?._countInInterval)
   clearInterval(_runner?._intervalInterval)
   clearInterval(_runner?._restInterval)
+  // Found by the weekly full-file review, 2026-08-09: a timed-hold strength set's own countdown
+  // (started by startStrengthSetTimer, torn down by its sibling stopStrengthSetTimer) was never
+  // cleared here. Reachable via confirmEndRunner's bare-discardRunner branch (tapping End before any
+  // set anywhere is logged) while that countdown is running — left a stuck "SET IN PROGRESS" overlay
+  // and an orphaned interval that throws against the just-nulled _runner on its next tick, then
+  // silently resumes decrementing whatever the NEXT session's _runner._setTimerRemaining happens to be.
+  clearInterval(_runner?._setTimerInterval)
   _stopRunnerDraftSafetyNet()
   _clearRunnerDraft(_runner?.clientId)
   document.getElementById('workout-runner')?.remove()
   document.getElementById('wr-countin-overlay')?.remove()
   document.getElementById('wr-interval-overlay')?.remove()
   document.getElementById('rest-timer-overlay')?.remove()
+  document.getElementById('wr-set-timer-overlay')?.remove()
   _runner = null
 }
 

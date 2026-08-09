@@ -205,10 +205,6 @@ function _updateAdd1RMEpleyPreview() {
   }
 }
 
-function showEdit1RMModal(id, clientId, exerciseName, exerciseId, weight, date) {
-  _showOneRMDetailModal(clientId, { id: exerciseId || null, name: exerciseName }, { existingId: id, weight, date })
-}
-
 async function save1RM(clientId, existingId = null) {
   const picked     = window._oneRMDetailPicked
   const epleyMode  = document.getElementById('orm-epley-fields') && document.getElementById('orm-epley-fields').style.display === 'block'
@@ -2161,7 +2157,6 @@ async function removeBrandingLogo() {
 // test — the download itself is a Blob + anchor click, which proves nothing about the contents.
 async function _buildMyDataBundle() {
   {
-    const role = currentProfile?.role
     let bundle = { exportedAt: new Date().toISOString(), profile: null }
 
     const { data: profile } = await db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single()
