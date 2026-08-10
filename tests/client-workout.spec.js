@@ -170,7 +170,18 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       await loginAsPT(ptPage)
 
       const setup = await ptPage.evaluate(async () => {
-        const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        // Anchor on the client that can actually LOG IN, not "whatever is first".
+        // This PT owns 9 client rows and only ONE has a user_id (the E2E client account); a bare
+        // .limit(1) returned a different, login-less row, so the fixture was created against a client
+        // the read-back below could never see -- PostgREST then returned null/[] and the test read that
+        // as an RLS gap. Five tests in this file failed this way and were carried for weeks as a
+        // "documented baseline", while asserting something alarming (that a real client cannot see
+        // their assigned programme). They were broken fixtures, not a broken app. Verified 2026-08-10.
+        // The length check makes the assumption self-checking: add a second loginable client and this
+        // fails loudly instead of silently targeting the wrong one.
+        const { data: clients } = await db.from('clients').select('id')
+          .eq('coach_id', currentUser.id).not('user_id', 'is', null)
+        if ((clients || []).length !== 1) throw new Error('Expected exactly 1 loginable client, got ' + (clients || []).length)
         const clientId = clients[0].id
         const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Hero Card Program' }).select('id').single()
         const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 4, order_index: 0 }).select('id').single()
@@ -225,7 +236,18 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       await loginAsPT(ptPage)
 
       const setup = await ptPage.evaluate(async () => {
-        const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        // Anchor on the client that can actually LOG IN, not "whatever is first".
+        // This PT owns 9 client rows and only ONE has a user_id (the E2E client account); a bare
+        // .limit(1) returned a different, login-less row, so the fixture was created against a client
+        // the read-back below could never see -- PostgREST then returned null/[] and the test read that
+        // as an RLS gap. Five tests in this file failed this way and were carried for weeks as a
+        // "documented baseline", while asserting something alarming (that a real client cannot see
+        // their assigned programme). They were broken fixtures, not a broken app. Verified 2026-08-10.
+        // The length check makes the assumption self-checking: add a second loginable client and this
+        // fails loudly instead of silently targeting the wrong one.
+        const { data: clients } = await db.from('clients').select('id')
+          .eq('coach_id', currentUser.id).not('user_id', 'is', null)
+        if ((clients || []).length !== 1) throw new Error('Expected exactly 1 loginable client, got ' + (clients || []).length)
         const clientId = clients[0].id
         const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Empty Phase Program' }).select('id').single()
         // Phase 1: no sessions at all -- the exact crash condition
@@ -289,7 +311,18 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       await loginAsPT(ptPage)
 
       const setup = await ptPage.evaluate(async () => {
-        const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        // Anchor on the client that can actually LOG IN, not "whatever is first".
+        // This PT owns 9 client rows and only ONE has a user_id (the E2E client account); a bare
+        // .limit(1) returned a different, login-less row, so the fixture was created against a client
+        // the read-back below could never see -- PostgREST then returned null/[] and the test read that
+        // as an RLS gap. Five tests in this file failed this way and were carried for weeks as a
+        // "documented baseline", while asserting something alarming (that a real client cannot see
+        // their assigned programme). They were broken fixtures, not a broken app. Verified 2026-08-10.
+        // The length check makes the assumption self-checking: add a second loginable client and this
+        // fails loudly instead of silently targeting the wrong one.
+        const { data: clients } = await db.from('clients').select('id')
+          .eq('coach_id', currentUser.id).not('user_id', 'is', null)
+        if ((clients || []).length !== 1) throw new Error('Expected exactly 1 loginable client, got ' + (clients || []).length)
         const clientId = clients[0].id
         const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Embed Chain Program' }).select('id').single()
         const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 4, order_index: 0 }).select('id').single()
@@ -390,7 +423,18 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       await loginAsPT(ptPage)
 
       const setup = await ptPage.evaluate(async () => {
-        const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        // Anchor on the client that can actually LOG IN, not "whatever is first".
+        // This PT owns 9 client rows and only ONE has a user_id (the E2E client account); a bare
+        // .limit(1) returned a different, login-less row, so the fixture was created against a client
+        // the read-back below could never see -- PostgREST then returned null/[] and the test read that
+        // as an RLS gap. Five tests in this file failed this way and were carried for weeks as a
+        // "documented baseline", while asserting something alarming (that a real client cannot see
+        // their assigned programme). They were broken fixtures, not a broken app. Verified 2026-08-10.
+        // The length check makes the assumption self-checking: add a second loginable client and this
+        // fails loudly instead of silently targeting the wrong one.
+        const { data: clients } = await db.from('clients').select('id')
+          .eq('coach_id', currentUser.id).not('user_id', 'is', null)
+        if ((clients || []).length !== 1) throw new Error('Expected exactly 1 loginable client, got ' + (clients || []).length)
         const clientId = clients[0].id
         const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Exercises Chain Program' }).select('id').single()
         const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
@@ -549,7 +593,18 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       await loginAsPT(ptPage)
 
       const setup = await ptPage.evaluate(async () => {
-        const { data: clientRow } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+        // Anchor on the client that can actually LOG IN, not "whatever is first".
+        // This PT owns 9 client rows and only ONE has a user_id (the E2E client account); a bare
+        // .limit(1) returned a different, login-less row, so the fixture was created against a client
+        // the read-back below could never see -- PostgREST then returned null/[] and the test read that
+        // as an RLS gap. Five tests in this file failed this way and were carried for weeks as a
+        // "documented baseline", while asserting something alarming (that a real client cannot see
+        // their assigned programme). They were broken fixtures, not a broken app. Verified 2026-08-10.
+        // The length check makes the assumption self-checking: add a second loginable client and this
+        // fails loudly instead of silently targeting the wrong one.
+        const { data: clientRow } = await db.from('clients').select('id')
+          .eq('coach_id', currentUser.id).not('user_id', 'is', null)
+        if ((clientRow || []).length !== 1) throw new Error('Expected exactly 1 loginable client, got ' + (clientRow || []).length)
         const clientId = clientRow[0].id
         const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Master Embed Program' }).select('id').single()
         const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 4, order_index: 0 }).select('id').single()
