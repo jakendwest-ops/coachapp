@@ -347,7 +347,9 @@ async function _cloneTemplateForClient(tmpl, clientId) {
     // metric_type drives the runner's whole shape routing (fast table vs wizard, jump/timed/unilateral
     // columns). Omitted here until 2026-07-22, so every ASSIGNED copy silently fell back to
     // weight_reps. The source select is workout_template_exercises(*), so it was always available.
-    metric_type: ex.metric_type || null,
+    // 'weight_reps' not null -- the column is NOT NULL DEFAULT 'weight_reps' and an explicit NULL
+    // does not take that default. See the fuller note in generatePhasePeriodization below.
+    metric_type: ex.metric_type || 'weight_reps',
     order_index: ex.order_index,
     sets: ex.sets || null,
     sets_json: ex.sets_json || null,
@@ -1526,6 +1528,21 @@ async function generatePhasePeriodization(phaseId, programId) {
         })
         return {
           template_id: newTmpl.id, exercise_id: ex.exercise_id || null, exercise_name: ex.exercise_name,
+          // metric_type MUST be carried. Omitting it made every generated week 2+ fall back to the
+          // column default (weight_reps), so a SkiErg interval or a Box Jump ran as plain weight×reps
+          // from week 2 onward -- no duration, no distance, no HR/watts, no jump height -- while week 1
+          // stayed correct, which reads as "the later weeks were built wrong". This is the THIRD sibling
+          // of a bug fixed twice already: _cloneTemplateForClient (:350, fixed 2026-07-22, and its
+          // comment describes this exact failure) and _cloneSharedMasterTemplate (app-workouts.js) both
+          // carry it. Silent at every layer -- the source select is workout_template_exercises(*) so the
+          // value was always here, and a missing key errors in neither JS, the insert, nor Postgres.
+          //   The fallback is 'weight_reps', NOT null: the column is `not null default 'weight_reps'`
+          //   (scripts/add-metric-type-2026-07-18.sql:16), and an explicit NULL in an INSERT does NOT
+          //   take a column default -- it violates the NOT NULL. The `|| null` this replaced could never
+          //   actually fire (the source column is NOT NULL, so ex.metric_type is always a string), but it
+          //   was a landmine pointed at an insert with NO error check on the line below, so a violation
+          //   would have failed the whole week's generation silently. Caught by the pre-push review.
+          metric_type: ex.metric_type || 'weight_reps',
           exercise_type: ex.exercise_type, order_index: ex.order_index, sets: ex.sets || null,
           sets_json: sets, notes: ex.notes || null, superset_group: ex.superset_group || null
         }

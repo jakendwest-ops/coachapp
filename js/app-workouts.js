@@ -2336,7 +2336,9 @@ async function _cloneSharedMasterTemplate(tmpl, overrides = {}) {
     const { data: insertedExs, error: exErr } = await db.from('workout_template_exercises').insert(origExs.map(ex => ({
       template_id: newTmpl.id, exercise_id: ex.exercise_id || null, exercise_name: ex.exercise_name,
       // See _cloneTemplateForClient — metric_type must survive a fork-on-edit clone too.
-      exercise_type: ex.exercise_type, metric_type: ex.metric_type || null,
+      // 'weight_reps' not null -- the column is NOT NULL DEFAULT 'weight_reps' and an explicit NULL
+      // does not take that default. See the note in generatePhasePeriodization (app-programs.js).
+      exercise_type: ex.exercise_type, metric_type: ex.metric_type || 'weight_reps',
       order_index: ex.order_index, sets: ex.sets || null,
       sets_json: ex.sets_json || null, notes: ex.notes || null, superset_group: ex.superset_group || null
     }))).select('id, order_index')
