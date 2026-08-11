@@ -345,7 +345,12 @@ function _fmtSetsCollapsed(sets, { isCardio = false, isInterval = false } = {}) 
 function _cleanTemplateSets(sets, derived) {
   return (sets || []).map(s => ({
     amrap: !!s.amrap, unilateral: derived.unilateral, timed: derived.timed,
-    bodyweight: !!s.bodyweight, assisted: !!s.assisted, assistWeight: s.assistWeight || null,
+    // `assisted`/`assistWeight` removed 2026-08-11 (Jake's call). The feature was unreachable — its
+    // toggle only rendered when the flag was ALREADY true — and it silently corrupted training data:
+    // for an assisted set, setData.weight held the ASSIST load and was written to weight_kg, so a
+    // -20kg assisted pull-up stored as +20kg LIFTED and fed volume, e1RM and PB detection. A live
+    // count found ZERO sets carrying the flag, so nothing needed repairing; this is fix-forward.
+    bodyweight: !!s.bodyweight,
     repsMin: s.repsMin || null, repsMax: s.repsMax || null, weight: s.weight || null,
     intensityMin: s.intensityMin || null, intensityMax: s.intensityMax || null,
     restMin: s.restMin || null, restMax: s.restMax || null,
@@ -1199,7 +1204,6 @@ async function openTemplate(id, ctx = {}) {
                   ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
                   ${ex.superset_group ? `<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:4px;background:rgba(245,158,11,.15);color:#d97706">SS: ${escapeHtml(ex.superset_group)}</span>` : ''}
                   ${ex.sets_json?.[0]?.bodyweight ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(16,185,129,.12);color:#059669">BW</span>` : ''}
-                  ${ex.sets_json?.[0]?.assisted ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(139,92,246,.12);color:#7c3aed">Assisted</span>` : ''}
                 </div>
                 ${ex.sets_json?.length ? (() => {
                   const rows = ex.sets_json.map((s, si) => {
@@ -1363,7 +1367,6 @@ function flushTemplateSets(containerId) {
     s.strokeRateMax = document.getElementById(`ts-srmax-${i}`)?.value     ?? s.strokeRateMax
     { const jhEl = document.getElementById(`ts-jheight-${i}`); s.targetHeightCm = jhEl ? (jumpHeightFromPref(jhEl.value) ?? '') : s.targetHeightCm }
     s.targetDistanceM  = document.getElementById(`ts-jdist-${i}`)?.value   ?? s.targetDistanceM
-    { const awEl = document.getElementById(`ts-assist-${i}`); s.assistWeight = awEl ? (weightFromPref(awEl.value) ?? '') : s.assistWeight }
   })
 }
 
@@ -1518,7 +1521,6 @@ function renderTemplateSets(containerId, type) {
           ${showSetToggles ? `
             ${tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`)}
             ${s.bodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
-            ${s.assisted ? tog('Assist', s.assisted, `toggleTsSet(${i},'assisted','${containerId}')`) : ''}
           ` : ''}
           <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:15px;line-height:1">×</button>
         </div>
@@ -1568,7 +1570,6 @@ function renderTemplateSets(containerId, type) {
         <div class="ts-grid">
           ${cell('Reps', gmini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${escapeAttr(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${escapeAttr(String(s.repsMax))}"`:'')))}
           ${s.bodyweight ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
-          ${s.assisted ? cell(`Assist weight (${window._unitPrefs.weight})`, gmini(`ts-assist-${i}`,'type="number" placeholder="e.g. 20"'+(s.assistWeight?` value="${weightToPref(s.assistWeight)}"`:''))): ''}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
           <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeAttr(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeAttr(String(s.effortMax))}"`:''))}</div></div>
         </div>

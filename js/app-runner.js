@@ -37,7 +37,7 @@ async function _startFreshRunner(clientId) {
         const restSecs = ex.rest_seconds || parseRest(ex.sets_json?.[0]?.restMin || '') || 90
         const s0 = ex.sets_json?.[0] || {}
         const oneRM = (ex.exercise_id && oneRMById[ex.exercise_id] != null) ? oneRMById[ex.exercise_id] : (oneRMByName[ex.exercise_name.trim().toLowerCase()] || null)
-        return { name: ex.exercise_name, exerciseId: ex.exercise_id || null, type: ex.exercise_type || 'strength', metricType: ex.metric_type || 'weight_reps', targetSets: ex.sets_json?.length || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, assisted: !!s0.assisted, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
+        return { name: ex.exercise_name, exerciseId: ex.exercise_id || null, type: ex.exercise_type || 'strength', metricType: ex.metric_type || 'weight_reps', targetSets: ex.sets_json?.length || 3, targetReps: repsStr, targetWeight: ex.weight_kg || '', restSecs, loggedSets: [], bodyweight: !!s0.bodyweight, supersetGroup: ex.superset_group || null, sets_json: ex.sets_json || [], notes: ex.notes || null, oneRM }
       })
   }
   if (!exercises.length) exercises = [{ name: '', type: 'strength', targetSets: 0, targetReps: '', targetWeight: '', loggedSets: [] }]
@@ -998,7 +998,7 @@ function renderRunner() {
                   <div style="font-size:20px;font-weight:700;color:var(--text)">BW</div>
                  </div>`
               : `<div style="flex:1;display:flex;flex-direction:column">
-                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${ex.assisted?`Assist (${window._unitPrefs.weight})`:(window._unitPrefs.weight==='lb'?'Pounds':'Kilograms')}</div>
+                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${window._unitPrefs.weight==='lb'?'Pounds':'Kilograms'}</div>
                   <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
                     style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
                  </div>`}
@@ -1104,7 +1104,6 @@ function logRunnerSet() {
       const reps = document.getElementById('wr-reps-input')?.value?.trim() || ''
       if (!reps) { showToast('Enter reps first', 'warn'); return }
       setData = { weight, reps }
-      if (ex.assisted) setData.assistWeight = weight
     }
   }
   ex.loggedSets.push(setData)
@@ -2058,7 +2057,7 @@ async function _lookupClientOneRM(name, exerciseId) {
 // Reads the same fields/set-target builder the workout builder reads, but pushes the result
 // into _runner.exercises in-memory instead of inserting a workout_template_exercises row —
 // keeps swap/add session-only per the existing decision, while giving the same full set-target
-// expressiveness (reps/%1RM/RPE/rest/tempo/AMRAP/Uni/Timed/BW/Assist) the builder has.
+// expressiveness (reps/%1RM/RPE/rest/tempo/Uni/Timed/BW) the builder has.
 async function _confirmRunnerExerciseFromModal(mode) {
   flushTemplateSets('att-sets-container')
   const picked = window._exerciseDetailPicked
@@ -2112,7 +2111,6 @@ async function _confirmRunnerExerciseFromModal(mode) {
     ex.targetSets = cleanSets.length || ex.targetSets
     ex.restSecs = restSecs
     ex.bodyweight = !!cleanSets[0]?.bodyweight
-    ex.assisted = !!cleanSets[0]?.assisted
     ex.notes = notes
     ex.supersetGroup = supersetGroup
     ex.loggedSets = []
@@ -2129,7 +2127,7 @@ async function _confirmRunnerExerciseFromModal(mode) {
   } else {
     const ex = {
       name, exerciseId, type, metricType, targetSets: cleanSets.length || 3, targetReps: '', targetWeight: '',
-      restSecs, loggedSets: [], bodyweight: !!cleanSets[0]?.bodyweight, assisted: !!cleanSets[0]?.assisted,
+      restSecs, loggedSets: [], bodyweight: !!cleanSets[0]?.bodyweight,
       supersetGroup, sets_json: cleanSets, notes, oneRM
     }
     if (_isIntervalExercise(ex)) _initIntervalPhases(ex)
