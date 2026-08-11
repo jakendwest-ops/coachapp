@@ -1897,7 +1897,18 @@ function _toggleCardioCaptureMetric(key) {
 // rounds as if it were measured then too. Only reads inputs for toggled-on metrics; an inactive
 // metric's field doesn't exist in the DOM, so there's nothing stale to accidentally pick up.
 function _applyCardioCapture(ex) {
-  const last = ex.loggedSets[ex.loggedSets.length - 1]
+  // ...but "most recent" must mean most recent COUNTABLE round, not most recent row. An interval
+  // exercise with a cool-down logs the cool-down last, so the literal last row carries phase
+  // 'cooldown' — and every Progress aggregate filters through _countableSets (`!phase || phase ===
+  // 'work'`), by design, so warmups and cool-downs can't inflate volume. Stamping the capture there
+  // therefore wrote all five fields (avg HR, max HR, watts, pace, stroke rate) into a row that every
+  // reader then discards: the athlete typed their HR off the console and the chart still showed
+  // nothing. Silent at the input, silent at the save, silent at the chart.
+  //
+  // Fall back to the literal last row when there is no countable one (an exercise that was only ever
+  // warmup + cool-down), since keeping the number somewhere beats dropping it outright.
+  const countable = ex.loggedSets.filter(s => !s.phase || s.phase === 'work')
+  const last = countable[countable.length - 1] || ex.loggedSets[ex.loggedSets.length - 1]
   if (!last) return
   const g = id => document.getElementById(id)?.value?.trim() || null
   const t = _loadCardioCaptureToggles()
