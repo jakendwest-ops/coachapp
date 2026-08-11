@@ -1907,7 +1907,7 @@ function _applyCardioCapture(ex) {
   //
   // Fall back to the literal last row when there is no countable one (an exercise that was only ever
   // warmup + cool-down), since keeping the number somewhere beats dropping it outright.
-  const countable = ex.loggedSets.filter(s => !s.phase || s.phase === 'work')
+  const countable = _countableSets(ex.loggedSets)
   const last = countable[countable.length - 1] || ex.loggedSets[ex.loggedSets.length - 1]
   if (!last) return
   const g = id => document.getElementById(id)?.value?.trim() || null
@@ -2214,7 +2214,11 @@ async function showRunnerFinish() {
 
   const duration  = fmtRunnerTime(startTime)
   const doneExs   = _loggedExercises()   // same definition the save uses — they must not diverge
-  const totalSets = doneExs.reduce((s,e) => s + e.loggedSets.length, 0)
+  // Work rounds only, via _countableSets (app-progress) — the SAME filter My Progress applies, not a
+  // hand-copied predicate, so the two surfaces cannot drift apart again. Warm-ups and cool-downs are
+  // recorded but are not sets (Jake, 2026-07-25); counting them here meant an interval session read
+  // "6 sets" on the finish screen and "4 sets" in My Progress, for the very same session.
+  const totalSets = doneExs.reduce((s,e) => s + _countableSets(e.loggedSets).length, 0)
   const totalReps = doneExs.reduce((s,e) => s + e.loggedSets.reduce((sr,set) => sr + (parseInt(set.reps,10)||0), 0), 0)
   const totalVol  = doneExs.reduce((s,e) => s + e.loggedSets.reduce((sv,set) => {
     const w = parseFloat(set.weight), r = parseInt(set.reps,10)
@@ -2271,13 +2275,14 @@ async function showRunnerFinish() {
               return s + (isNaN(w)||isNaN(r) ? 0 : w*r)
             }, 0)
             const exDist = isCardio ? e.loggedSets.reduce((s,set)=>s+_cardioDistanceM(set),0) : 0
+            const exSets = _countableSets(e.loggedSets)   // same filter as the header total above
             return `
             <div style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
               <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
                 <span style="font-weight:600;font-size:14px">${escapeHtml(e.name)}</span>
                 <div style="display:flex;align-items:center;gap:6px">
                   ${isPR ? `<span style="font-size:10px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.12);padding:2px 7px;border-radius:10px">🏆 PR</span>` : ''}
-                  <span style="font-size:12px;color:var(--text-muted)">${e.loggedSets.length} set${e.loggedSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+Math.round(weightToPref(exVol)).toLocaleString()+window._unitPrefs.weight:''} ${isCardio&&exDist>0?'· '+fmtDistanceM(exDist):''}</span>
+                  <span style="font-size:12px;color:var(--text-muted)">${exSets.length} set${exSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+Math.round(weightToPref(exVol)).toLocaleString()+window._unitPrefs.weight:''} ${isCardio&&exDist>0?'· '+fmtDistanceM(exDist):''}</span>
                 </div>
               </div>
               ${e.loggedSets.map((s,i) => {
@@ -3147,7 +3152,11 @@ async function openWorkoutLog(logId, clientId) {
 
   // Compute summary stats
   const allSetsFlat = exercises.flatMap(ex => ex.workout_log_sets || [])
-  const totalSets   = allSetsFlat.length
+  // Work rounds only — see the finish-screen note. This is the surface where the disagreement was
+  // most damaging: the coach and the athlete were looking at the same session and reading different
+  // set counts off it. Volume deliberately still spans every row: `phase` is only ever written on
+  // the cardio branch, so warm-up/cool-down rows carry no weight_kg and contribute nothing anyway.
+  const totalSets   = _countableSets(allSetsFlat).length
   const totalVol    = allSetsFlat.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
   const prevSetsFlat = prevSession ? (prevSession.workout_log_exercises || []).flatMap(ex => ex.workout_log_sets || []) : []
   const prevVol      = prevSetsFlat.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
@@ -3213,13 +3222,22 @@ async function openWorkoutLog(logId, clientId) {
         // they disagree the column goes generic and every cell carries its own scale.
         const effortMixed = effortScales.length > 1
         const effortLabel = effortMixed ? 'Effort' : (effortScales[0] || 'RPE')
-        const prevSets = prevExMap[ex.exercise_name] || []
+        const prevSets = _countableSets(prevExMap[ex.exercise_name] || [])
         const prevVol  = prevSets.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
         const prevSummary = prevSets.length
           ? (isCardio
               ? `${prevSets.length} set${prevSets.length > 1 ? 's' : ''}`
               : prevVol > 0 ? `${Math.round(weightToPref(prevVol)).toLocaleString()} ${window._unitPrefs.weight} volume` : `${prevSets.length} set${prevSets.length > 1 ? 's' : ''}`)
           : null
+        // Every row is still SHOWN — a warm-up that happened is data, and hiding it would just move
+        // the confusion. But `set_number` counts every row, so a 4-round interval with a warm-up and
+        // a cool-down rendered "Set 1 … Set 6" directly under a header now reading "4 sets". Name the
+        // non-work rounds and number the work rounds 1..N, so the table agrees with its own summary.
+        let _workN = 0
+        const setLabels = sets.map(s =>
+          s.phase === 'warmup' ? 'Warm-up'
+          : s.phase === 'cooldown' ? 'Cool-down'
+          : 'Set ' + (++_workN))
         return `
           <div class="card" style="margin-bottom:12px">
             <div class="card-body">
@@ -3246,9 +3264,9 @@ async function openWorkoutLog(logId, clientId) {
                     </tr>
                   </thead>
                   <tbody>
-                    ${sets.map(s => `
+                    ${sets.map((s, si) => `
                       <tr style="border-bottom:1px solid var(--border)">
-                        <td style="padding:8px 12px 8px 0;font-size:13px;color:var(--text-muted);font-weight:600">Set ${s.set_number}</td>
+                        <td style="padding:8px 12px 8px 0;font-size:13px;color:var(--text-muted);font-weight:600">${setLabels[si]}</td>
                         ${isCardio
                           ? `<td style="padding:8px 12px 8px 0;font-size:13px">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:13px">${_hasNumVal(s.distance_m) ? fmtDistanceM(s.distance_m) : '—'}</td>`
                           : isJumpHeight
