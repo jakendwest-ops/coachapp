@@ -622,6 +622,27 @@ function navigate(page, _historyOp = 'push') {
   }
 }
 
+// Repaints whichever self-view dashboard the user is ACTUALLY on.
+//
+// Four separate post-write callbacks used to hardcode `renderClientDashboard(...)` — but the
+// controls that trigger them are rendered on BOTH self-view dashboards. A solo user hitting one
+// landed in renderClientDashboard, whose coached-record lookup finds nothing for a `coach_id IS
+// NULL` row, so the whole page became "Unable to load your profile. Please contact your coach."
+// Reproduced live 2026-08-11 by tapping a goal milestone in Personal view.
+//
+// Two of the four (saveClientPB / saveClientWeight, app-clients.js) already branched correctly, so
+// this had drifted rather than never been known — exactly the shape the standing rule is about:
+// put the branch in ONE shared helper so the copies cannot disagree again.
+//
+// NOT for coach-facing surfaces. A coach acting on a client renders that client's tab, not a
+// dashboard — those callers check for their own container first and only fall through to here.
+function _renderOwnDashboard() {
+  const main = document.getElementById('main-content')
+  if (!main) return
+  if (currentProfile?.role === 'solo') renderSoloDashboard(main)
+  else renderClientDashboard(main)
+}
+
 // Returns the client_id for the current view context
 // Solo view → personal record. Client view → coached record.
 async function _getCurrentClientId() {

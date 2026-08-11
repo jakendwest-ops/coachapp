@@ -29,8 +29,7 @@ async function saveClientPB(clientId) {
   // page (progress-tab-content) or the correct Dashboard (client vs solo).
   const progressEl = document.getElementById('progress-tab-content')
   if (progressEl) renderProgressPBs(progressEl)
-  else if (currentProfile?.role === 'solo') renderSoloDashboard(document.getElementById('main-content'))
-  else renderClientDashboard(document.getElementById('main-content'))
+  else _renderOwnDashboard()   // shared helper (app-core.js) — was correct but hand-rolled here
 }
 
 function showClientWeightForm(clientId) {
@@ -49,7 +48,7 @@ async function saveClientCheckIn(clientId) {
   if ([sleep,energy,stress,soreness].some(isNaN)) { if(errEl) errEl.textContent = 'Please fill in all ratings'; return }
   const { error } = await db.from('client_check_ins').insert({ client_id: clientId, sleep, energy, stress, soreness, notes })
   if (error) { log.error('saveClientCheckIn', 'insert failed', error); if(errEl) errEl.textContent = error.message; return }
-  renderClientDashboard(document.getElementById('main-content'))
+  _renderOwnDashboard()   // see app-core.js — hardcoding the client dashboard breaks solo
 }
 
 async function saveClientWeight(clientId) {
@@ -79,8 +78,7 @@ async function saveClientWeight(clientId) {
   // saveClientPB earlier this session, which had the identical wrong-dashboard bug.
   const progressEl = document.getElementById('progress-tab-content')
   if (progressEl) renderProgressWeight(progressEl)
-  else if (currentProfile?.role === 'solo') renderSoloDashboard(document.getElementById('main-content'))
-  else renderClientDashboard(document.getElementById('main-content'))
+  else _renderOwnDashboard()   // shared helper (app-core.js) — was correct but hand-rolled here
 }
 
 // ─── CLIENTS LIST ─────────────────────────────────────────────────────────────

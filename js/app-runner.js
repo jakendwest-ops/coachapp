@@ -3079,8 +3079,8 @@ async function saveWorkoutSession(clientId) {
   closeModal('log-session-modal')
   window._logBlocks = []
   const tabContent = document.getElementById('tab-content')
-  if (tabContent) renderClientWorkouts(clientId, tabContent)
-  else renderClientDashboard(document.getElementById('main-content'))
+  if (tabContent) renderClientWorkouts(clientId, tabContent)   // coach acting on a client's tab
+  else _renderOwnDashboard()                                   // see app-core.js — solo-safe fallback
 }
 
 async function openWorkoutLog(logId, clientId) {

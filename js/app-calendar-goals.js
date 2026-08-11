@@ -823,7 +823,12 @@ async function toggleClientMilestone(milestoneId) {
   const newVal = m.completed_at ? null : new Date().toISOString()
   const { error } = await db.from('goal_milestones').update({ completed_at: newVal }).eq('id', milestoneId)
   if (error) { log.error('toggleClientMilestone', 'update failed', error); return }
-  renderClientDashboard(document.getElementById('main-content'))
+  // Repaint the dashboard the user is ACTUALLY on. The milestone chips this powers are rendered on
+  // BOTH dashboards (app-dashboard.js:424 client, :753 solo), so hardcoding renderClientDashboard
+  // sent a solo user into the client dashboard, whose coached-record lookup finds nothing for a
+  // `coach_id IS NULL` row -- the page became "Unable to load your profile. Please contact your
+  // coach." on a plain milestone tap. Same pattern saveClientPB/saveClientWeight already use.
+  _renderOwnDashboard()
 }
 
 function showGoalProgressForm(goalId, currentVal) {
@@ -842,7 +847,7 @@ async function saveGoalProgress(goalId) {
   if (isNaN(val)) { if (errEl) errEl.textContent = 'Enter a valid number'; return }
   const { error } = await db.from('goals').update({ current_value: val }).eq('id', goalId)
   if (error) { log.error('saveGoalProgress', 'update failed', error); if (errEl) errEl.textContent = error.message; return }
-  renderClientDashboard(document.getElementById('main-content'))
+  _renderOwnDashboard()   // see app-core.js — hardcoding the client dashboard breaks solo
 }
 
 // ─── CHECK-IN MODAL ───────────────────────────────────────────────────────────
