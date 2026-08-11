@@ -356,7 +356,19 @@ async function _cloneTemplateForClient(tmpl, clientId) {
     notes: ex.notes || null,
     superset_group: ex.superset_group || null
   }))
-  if (exs.length) await db.from('workout_template_exercises').insert(exs)
+  // The template row already exists at this point. If its exercises fail to land we would return a
+  // perfectly valid id for a workout containing NOTHING — the client sees the session on their plan,
+  // opens it, and it is blank. Roll the shell back and return null, which is this function's existing
+  // failure contract (see the tErr guard above) and which every caller already handles.
+  if (exs.length) {
+    const { error: exErr } = await dbq('_cloneTemplateForClient:exercises',
+      db.from('workout_template_exercises').insert(exs), { showUserError: false })
+    if (exErr) {
+      await db.from('workout_templates').delete().eq('id', newTmpl.id)
+      showToast('Could not copy a workout to the client — that session was skipped', 'error')
+      return null
+    }
+  }
   return newTmpl.id
 }
 
@@ -1509,6 +1521,7 @@ async function generatePhasePeriodization(phaseId, programId) {
 
   const config = phase.periodization_config || {}
   const newInserts = []
+  let genFailures = 0
 
   for (let week = 2; week <= phase.duration_weeks; week++) {
     for (const bw of baseWorkouts) {
@@ -1547,7 +1560,19 @@ async function generatePhasePeriodization(phaseId, programId) {
           sets_json: sets, notes: ex.notes || null, superset_group: ex.superset_group || null
         }
       })
-      if (exs.length) await db.from('workout_template_exercises').insert(exs)
+      // Identical failure shape to _cloneTemplateForClient above: the template row is already in, so
+      // a failed exercise insert produces a generated week whose sessions are all empty. Skip the slot
+      // rather than schedule a blank workout, and bin the shell so it can't be picked up as a reusable
+      // template later.
+      if (exs.length) {
+        const { error: exErr } = await dbq('generatePhasePeriodization:exercises',
+          db.from('workout_template_exercises').insert(exs), { showUserError: false })
+        if (exErr) {
+          await db.from('workout_templates').delete().eq('id', newTmpl.id)
+          genFailures++
+          continue
+        }
+      }
 
       newInserts.push({
         phase_id: phaseId, day_of_week: bw.day_of_week, day_label: bw.day_label,
@@ -1588,6 +1613,7 @@ async function generatePhasePeriodization(phaseId, programId) {
   }
 
   log.ok('generatePhasePeriodization', 'generated', { phaseId, weeks: phase.duration_weeks - 1, sessions: newInserts.length, propagatedToClients: propagated })
+  if (genFailures) showToast(`${genFailures} session${genFailures === 1 ? '' : 's'} could not be generated and were skipped`, 'error')
   showToast(`Generated weeks 2–${phase.duration_weeks} (${newInserts.length} sessions)${propagated ? `, synced to ${propagated} assigned client${propagated!==1?'s':''}` : ''}`, 'success')
   openProgram(programId)
 }
@@ -1850,6 +1876,7 @@ function _editPhaseWorkout(templateId, phaseWorkoutId) {
 // Cheap by design: new rows point at the SAME template_id as the source week; they only become
 // independent workouts once someone actually edits one (see _resolveEditableTemplateId in app-workouts.js).
 async function duplicatePhaseWeek(phaseId, sourceWeek) {
+  let clientCopyFailures = 0
   const phase = (window._openProgramPhases || []).find(p => p.id === phaseId)
   const durationWeeks = phase?.duration_weeks || 1
 
@@ -1906,13 +1933,27 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
         if (!newTemplateId) continue
         cpwInserts.push({ client_program_id: a.id, program_phase_workout_id: newPw.id, workout_template_id: newTemplateId, week_number: targetWeek })
       }
-      if (cpwInserts.length) await db.from('client_program_workouts').insert(cpwInserts)
+      // The coach's master week is already saved by now. If the client's copies fail here the coach is
+      // told the week duplicated, sees it in their own view, and the client's plan simply doesn't have
+      // it — the failure is invisible from the only screen the coach looks at.
+      if (cpwInserts.length) {
+        const { error: cpwErr } = await dbq('duplicateWeek:clientCopies',
+          db.from('client_program_workouts').insert(cpwInserts), { showUserError: false })
+        if (cpwErr) clientCopyFailures++
+      }
     }
   }
 
-  showToast(extendedTo
-    ? `Week ${sourceWeek} duplicated to Week ${targetWeek} — phase extended to ${extendedTo} week${extendedTo === 1 ? '' : 's'}`
-    : `Week ${sourceWeek} duplicated to Week ${targetWeek}`, 'success')
+  // The coach's own master week DID save, so this is a partial success, not a failure — it reports as
+  // such and then falls through to exactly the same re-render below. Returning early here instead would
+  // skip the extended-phase redraw and leave the header showing the old week count.
+  if (clientCopyFailures) {
+    showToast(`Week ${sourceWeek} duplicated, but ${clientCopyFailures} client plan${clientCopyFailures === 1 ? '' : 's'} did not update — reassign the program`, 'error')
+  } else {
+    showToast(extendedTo
+      ? `Week ${sourceWeek} duplicated to Week ${targetWeek} — phase extended to ${extendedTo} week${extendedTo === 1 ? '' : 's'}`
+      : `Week ${sourceWeek} duplicated to Week ${targetWeek}`, 'success')
+  }
   // Full re-render (not just loadAllPhaseWorkouts) — when the phase was extended, its duration and
   // the program's "N weeks total" header both changed, and only openProgram redraws those.
   // Land on the week we just created (the tab render reads this on reload).
@@ -1932,6 +1973,18 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
 async function deletePhaseWeek(phaseId, weekNumber) {
   if (!confirm(`Delete Week ${weekNumber}? This removes every session in this week and cannot be undone. Later weeks will shift down.`)) return
 
+  // The browser has no transaction, so this whole function is a sequence of independent writes: delete
+  // the week, shift every later week down by one in program_phase_workouts, do the same for the client
+  // copies, then shorten the phase. Any one of them failing used to be silent, and the user was told
+  // "Week deleted" regardless — leaving a phase with a duplicated or missing week number and no hint
+  // that anything went wrong. Collect failures and refuse to claim success.
+  const weekFailures = []
+  const step = async (label, query) => {
+    const { error } = await dbq('deletePhaseWeek:' + label, query, { showUserError: false })
+    if (error) weekFailures.push(label)
+    return !error
+  }
+
   const programId = window._openProgramId
   const { data: staleRows } = await db.from('program_phase_workouts').select('id, template_id').eq('phase_id', phaseId).eq('week_number', weekNumber)
   const stalePwIds = (staleRows || []).map(r => r.id)
@@ -1939,7 +1992,7 @@ async function deletePhaseWeek(phaseId, weekNumber) {
 
   if (stalePwIds.length) {
     await _deleteClientCopiesForSlots(stalePwIds, programId)
-    await db.from('program_phase_workouts').delete().eq('phase_id', phaseId).eq('week_number', weekNumber)
+    await step('deleteWeek', db.from('program_phase_workouts').delete().eq('phase_id', phaseId).eq('week_number', weekNumber))
 
     // Shared with _cleanupPhaseWeeksBeyond — both must apply the ownership AND still-referenced
     // checks, and keeping them in one helper is what stops the two from silently diverging again
@@ -1953,22 +2006,28 @@ async function deletePhaseWeek(phaseId, weekNumber) {
   // since a client copy can be created at a different time than the master row it points at.
   const { data: laterMaster } = await db.from('program_phase_workouts').select('id, week_number').eq('phase_id', phaseId).gt('week_number', weekNumber)
   for (const row of laterMaster || []) {
-    await db.from('program_phase_workouts').update({ week_number: row.week_number - 1 }).eq('id', row.id)
+    await step('renumberMaster', db.from('program_phase_workouts').update({ week_number: row.week_number - 1 }).eq('id', row.id))
   }
   const laterPwIds = (laterMaster || []).map(r => r.id)
   if (laterPwIds.length) {
     const { data: laterCpws } = await db.from('client_program_workouts').select('id, week_number').in('program_phase_workout_id', laterPwIds)
     for (const cpw of laterCpws || []) {
-      await db.from('client_program_workouts').update({ week_number: cpw.week_number - 1 }).eq('id', cpw.id)
+      await step('renumberClientCopy', db.from('client_program_workouts').update({ week_number: cpw.week_number - 1 }).eq('id', cpw.id))
     }
   }
 
   const phase = (window._openProgramPhases || []).find(p => p.id === phaseId)
   const newDuration = Math.max(1, (phase?.duration_weeks || 1) - 1)
-  await db.from('program_phases').update({ duration_weeks: newDuration }).eq('id', phaseId)
-  if (phase) phase.duration_weeks = newDuration
+  const durationOk = await step('phaseDuration', db.from('program_phases').update({ duration_weeks: newDuration }).eq('id', phaseId))
+  // Only mirror into the in-memory phase if the write actually landed, or the UI starts disagreeing
+  // with the database on how long the phase is.
+  if (phase && durationOk) phase.duration_weeks = newDuration
 
-  showToast(`Week ${weekNumber} deleted`, 'success')
+  if (weekFailures.length) {
+    showToast(`Week ${weekNumber} was only partly deleted — reload and check the phase's week numbers`, 'error')
+  } else {
+    showToast(`Week ${weekNumber} deleted`, 'success')
+  }
   loadAllPhaseWorkouts([{ id: phaseId }])
 }
 

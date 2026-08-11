@@ -1270,10 +1270,18 @@ async function moveTemplateExercise(templateId, exId, dir) {
   const swapIdx = idx + dir
   if (idx < 0 || swapIdx < 0 || swapIdx >= all.length) return
 
-  await Promise.all([
-    db.from('workout_template_exercises').update({ order_index: all[swapIdx].order_index }).eq('id', all[idx].id),
-    db.from('workout_template_exercises').update({ order_index: all[idx].order_index }).eq('id', all[swapIdx].id)
+  // These two updates are a SWAP: they only make sense together. If one lands and the other doesn't,
+  // two exercises end up sharing an order_index and the list then renders in an arbitrary order that
+  // looks like a completely different bug. Repainting over that silently is the worst option.
+  const [swapA, swapB] = await Promise.all([
+    dbq('moveTemplateExercise:a',
+      db.from('workout_template_exercises').update({ order_index: all[swapIdx].order_index }).eq('id', all[idx].id),
+      { showUserError: false }),
+    dbq('moveTemplateExercise:b',
+      db.from('workout_template_exercises').update({ order_index: all[idx].order_index }).eq('id', all[swapIdx].id),
+      { showUserError: false })
   ])
+  if (swapA.error || swapB.error) showToast('Could not reorder — reload before editing this workout further', 'error')
   openTemplate(targetId, window._templateCtx)
 }
 
@@ -2053,22 +2061,36 @@ async function deleteTemplateExercise(texId, templateId) {
 //   add:    append it to the target only if the target doesn't already have an exercise by that name.
 async function _propagateExerciseChangeToTemplates(change, targetIds) {
   if (!change || !targetIds?.length) return
+  // One toast at the end, not one per target: this loop can span every assigned client copy, and a
+  // failure that repeats twenty times is a failure the user scrolls past rather than reads. Silent was
+  // worse though — the coach was told the edit propagated while some sessions kept the old exercise.
+  let propagationFailures = 0
+  const propagate = async (label, query) => {
+    const { error } = await dbq('_propagateExerciseChange:' + label, query, { showUserError: false })
+    if (error) propagationFailures++
+  }
   for (const tid of targetIds) {
     if (change.op === 'delete') {
-      await db.from('workout_template_exercises').delete().eq('template_id', tid).eq('exercise_name', change.matchName)
+      await propagate('delete', db.from('workout_template_exercises').delete().eq('template_id', tid).eq('exercise_name', change.matchName))
     } else if (change.op === 'update') {
       // Update every row in the target that matches the name (0 rows = a safe no-op when the target
       // doesn't have that exercise). Acts on ALL same-named rows, matching the delete branch — so a
       // session that happens to list an exercise name twice is treated consistently, never left
       // half-updated. A rename is fine: change.row carries the new name.
-      await db.from('workout_template_exercises').update(change.row).eq('template_id', tid).eq('exercise_name', change.matchName)
+      await propagate('update', db.from('workout_template_exercises').update(change.row).eq('template_id', tid).eq('exercise_name', change.matchName))
     } else if (change.op === 'add') {
       const { data: exists } = await db.from('workout_template_exercises').select('id').eq('template_id', tid).eq('exercise_name', change.row.exercise_name).limit(1)
       if (!exists?.length) {
         const { data: last } = await db.from('workout_template_exercises').select('order_index').eq('template_id', tid).order('order_index', { ascending: false }).limit(1)
-        await db.from('workout_template_exercises').insert({ template_id: tid, order_index: last?.length ? last[0].order_index + 1 : 0, ...change.row })
+        await propagate('add', db.from('workout_template_exercises').insert({ template_id: tid, order_index: last?.length ? last[0].order_index + 1 : 0, ...change.row }))
       }
     }
+  }
+  // Propagation is best-effort by design — a target that can't be updated shouldn't abort the rest —
+  // but the coach still has to be told, because the whole point of this function is "your edit reached
+  // the assigned copies too". Reporting nothing meant it quietly reached only some of them.
+  if (propagationFailures) {
+    showToast(`${propagationFailures} assigned session${propagationFailures === 1 ? '' : 's'} did not pick up this change`, 'error')
   }
 }
 
