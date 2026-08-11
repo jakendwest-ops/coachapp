@@ -323,80 +323,74 @@ test.describe('Builder set-editor decluttered: BW/Assist/Repeat/AMRAP removed', 
   })
 })
 
-// ─── Box Jump height not recorded, live (2026-08-02 finding) ──────────────────────────────────────
-// Jake, live: "on live after my session this morning. the box jump height was not recorded." Traced:
-// jump_height/jump_distance always route to renderStrengthTable in normal use (_isPlainStrengthExercise),
-// where height/distance capture already worked -- but the WIZARD path (logRunnerSet + its render branch)
-// predates the metric_type system entirely and had NO jump case at all: it dispatched on legacy
-// tgt.timed/tgt.unilateral flags + a name regex, so a jump exercise reaching the wizard fell into the
-// plain weight/reps branch with no height field anywhere. Root cause of exactly this shape, whether or
-// not it's confirmed as THIS morning's specific trigger -- fixed regardless, since it's a real hole.
-test.describe('Wizard-mode jump logging (box jump height was not recorded)', () => {
-  test('logRunnerSet reads the jump height/distance input, not just weight/reps', async ({ page }) => {
+// ─── Box Jump height not recorded (2026-08-02) — SUPERSEDED 2026-08-11 ───────────────────
+// Jake, live: "on live after my session this morning. the box jump height was not recorded."
+//
+// Three tests lived here covering the WIZARD path: logRunnerSet's jump branch, its blank-measurement
+// guard, and the wizard render branch's height/jumps inputs. The wizard was deleted on 2026-08-11, so
+// they went with it. That is not a loss of coverage — it is the removal of coverage for a path no
+// exercise could reach:
+//
+//   * The wizard rendered only when metric_type resolved outside the fast table's five types AND
+//     exercise_type wasn't 'cardio'. A live count found ZERO rows in that state (53 template
+//     exercises, 105 logged exercises).
+//   * Jump exercises always routed to renderStrengthTable in normal use, which is exactly why the
+//     wizard's missing jump branch was invisible until someone went looking.
+//   * The real protection for Jake's original report is on the TABLE path and is untouched:
+//     runner-fast-table-metrics.spec.js (routing + { height_cm, reps } sync),
+//     review-fixes-2026-07-23.spec.js (height AND reps both persisted), and
+//     ledger-fixes-2026-07-30.spec.js (a real 0cm survives instead of becoming null).
+//
+// What replaces them is a guard against the wizard coming back, plus a check that the branch which
+// used to fall through to it now fails LOUDLY rather than silently doing nothing — on a screen used
+// mid-set in a gym, a tap that quietly does nothing is the worst possible failure.
+test.describe('the runner wizard is gone (2026-08-11)', () => {
+  test('every non-cardio exercise routes to the fast table, including an unknown metric_type', async ({ page }) => {
     await loginAsPT(page)
-    const r = await page.evaluate(() => {
-      const mkEx = (mt) => ({ name: 'Box Jump', type: 'strength', metricType: mt, loggedSets: [], targetSets: 3, sets_json: [{ targetHeightCm: '40' }] })
-      const mk = (id) => { document.getElementById(id)?.remove(); const e = document.createElement('input'); e.id = id; document.body.appendChild(e); return e }
-
-      const exHeight = mkEx('jump_height')
-      _runner = { exercises: [exHeight], exIdx: 0, startTime: Date.now() }
-      mk('wr-jump-measure-input').value = '42'
-      mk('wr-jump-reps-input').value = '5'
-      logRunnerSet()
-      const heightLogged = { ...exHeight.loggedSets[0] }
-
-      const exDist = mkEx('jump_distance')
-      _runner = { exercises: [exDist], exIdx: 0, startTime: Date.now() }
-      mk('wr-jump-measure-input').value = '2.4'
-      mk('wr-jump-reps-input').value = '3'
-      logRunnerSet()
-      const distLogged = { ...exDist.loggedSets[0] }
-
-      document.getElementById('wr-jump-measure-input')?.remove()
-      document.getElementById('wr-jump-reps-input')?.remove()
-      _runner = null
-      return { heightLogged, distLogged }
-    })
-    expect(r.heightLogged.height_cm, 'jump_height must persist the typed height, not silently drop it').toBe(42)
-    expect(r.heightLogged.reps).toBe('5')
-    expect(r.distLogged.distance_m, 'jump_distance must persist the typed distance').toBe('2.4')
-    expect(r.distLogged.reps).toBe('3')
+    const r = await page.evaluate(() => ({
+      // The case that made the wizard reachable at all: _resolveMetricType returns metric_type
+      // VERBATIM for anything that isn't 'weight_reps', so a row whose metric_type and exercise_type
+      // had drifted apart landed on a branch with no case for it. It must now reach the table.
+      unknown: _isPlainStrengthExercise({ type: 'strength', metricType: 'something_new' }),
+      jump: _isPlainStrengthExercise({ type: 'strength', metricType: 'jump_height' }),
+      // Cardio and intervals must still take the cardio branch. An interval's metric_type is
+      // 'interval' but its exercise_type is 'cardio', which is why the test is on `type`.
+      cardio: _isPlainStrengthExercise({ type: 'cardio', metricType: 'cardio' }),
+      interval: _isPlainStrengthExercise({ type: 'cardio', metricType: 'interval' }),
+    }))
+    expect(r.unknown, 'an unrecognised metric_type must fall back to the table, not to a blank screen').toBe(true)
+    expect(r.jump).toBe(true)
+    expect(r.cardio).toBe(false)
+    expect(r.interval).toBe(false)
   })
 
-  test('logRunnerSet refuses to log a jump set with no height/distance entered, same as the table guard', async ({ page }) => {
+  test('a non-cardio exercise reaching logRunnerSet warns instead of silently logging nothing', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
+      const warns = []
+      const realWarn = log.warn
+      log.warn = (...a) => warns.push(a[1])
       const ex = { name: 'Box Jump', type: 'strength', metricType: 'jump_height', loggedSets: [], targetSets: 3, sets_json: [{}] }
+      // Bare assignment, not window._runner: `_runner` is a module-scoped `let`, so the window
+      // property is a DIFFERENT binding and the function under test would still see null.
       _runner = { exercises: [ex], exIdx: 0, startTime: Date.now() }
-      document.getElementById('wr-jump-measure-input')?.remove()
-      document.getElementById('wr-jump-reps-input')?.remove()
-      const measureEl = document.createElement('input'); measureEl.id = 'wr-jump-measure-input'; document.body.appendChild(measureEl)
-      const before = ex.loggedSets.length
-      logRunnerSet()
-      const after = ex.loggedSets.length
-      measureEl.remove()
-      _runner = null
-      return { before, after }
+      try { logRunnerSet() } finally { log.warn = realWarn; _runner = null }
+      return { logged: ex.loggedSets.length, warns }
     })
-    expect(r.after, 'a blank height must not silently log a set with no measurement').toBe(r.before)
+    expect(r.logged, 'it must not fabricate a set from inputs that no longer exist').toBe(0)
+    expect(r.warns.join(' '), 'the dead path must announce itself, not return quietly').toContain('non-cardio')
   })
 
-  test('the wizard render branch shows height + jumps inputs for a jump exercise, if that path is ever reached', async ({ page }) => {
+  test('the wizard render markup is gone from the shipped module', async ({ page }) => {
     await loginAsPT(page)
-    const html = await page.evaluate(() => {
-      const orig = _isPlainStrengthExercise
-      _isPlainStrengthExercise = () => false // force the wizard branch to render, matching the one condition under which this gap was reachable
-      const ex = { name: 'Box Jump', type: 'strength', metricType: 'jump_height', loggedSets: [], targetSets: 3, sets_json: [{ targetHeightCm: '40' }] }
-      _runner = { exercises: [ex], exIdx: 0, startTime: Date.now() }
-      renderRunner()
-      const out = document.getElementById('workout-runner')?.innerHTML || ''
-      document.getElementById('workout-runner')?.remove()
-      _runner = null
-      _isPlainStrengthExercise = orig
-      return out
+    const hits = await page.evaluate(async () => {
+      const txt = await (await fetch('js/app-runner.js?cachebust=' + Date.now())).text()
+      // Input ids that existed ONLY in the wizard. Any of them reappearing means it grew back.
+      return ['wr-weight-input', 'wr-reps-input', 'wr-dist-input', 'wr-jump-measure-input',
+        'wr-jump-reps-input', 'wr-left-weight', 'wr-left-reps', 'wr-right-weight', 'wr-right-reps']
+        .filter(id => txt.includes(id))
     })
-    expect(html, 'the wizard must render a height input for a jump_height exercise').toContain('wr-jump-measure-input')
-    expect(html, 'the wizard must render a jumps-count input for a jump_height exercise').toContain('wr-jump-reps-input')
+    expect(hits, 'wizard-only input ids must not reappear').toEqual([])
   })
 })
 

@@ -169,15 +169,32 @@ test.describe('Ledger fixes 2026-07-23', () => {
   // logRunnerSet had 6 bare `return`s on missing distance/duration/reps — no toast, no shake, nothing.
   // toggleTableSet (the fast-table equivalent) already toasts on every equivalent guard; logRunnerSet
   // (the wizard path — cardio, and any exercise still on it) did not.
+  // UPDATED 2026-08-11: four of those six guards belonged to the wizard's strength inputs (jump,
+  // timed, unilateral, reps) and went with it when the wizard was deleted. Only the two CARDIO guards
+  // remain — missing distance and missing duration — because cardio is now logRunnerSet's only
+  // caller. The count fell from 6 to 2 by deletion, not by regression, and asserting a bare number is
+  // exactly what made that indistinguishable. So this now checks the property the original was
+  // reaching for: every `return` that rejects what the user typed is preceded by a toast. The one
+  // silent return left is the non-cardio guard — developer-facing and unreachable, pinned separately
+  // in ledger-fixes-2026-08-02.spec.js.
   test('logRunnerSet toasts instead of silently no-opping on every required-field guard', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
       const src = logRunnerSet.toString()
+      const lines = src.split('\n')
+      // Guards that reject user input, as opposed to the structural early-returns.
+      const rejecting = lines
+        .map((l, i) => ({ l, i }))
+        .filter(({ l }) => /if \(!dist\)|if \(!dur \|\| dur === '0:00'\)/.test(l))
       return {
         toastCount: (src.match(/showToast\(/g) || []).length,
+        rejectingGuards: rejecting.length,
+        allToast: rejecting.every(({ i }) => /showToast\(/.test(lines[i]) || /showToast\(/.test(lines[i + 1] || '')),
       }
     })
-    expect(r.toastCount, 'logRunnerSet should toast on every missing-field guard').toBeGreaterThanOrEqual(6)
+    expect(r.rejectingGuards, 'the cardio distance and duration guards must both still be there').toBeGreaterThanOrEqual(2)
+    expect(r.allToast, 'every guard that rejects typed input must toast, not return silently').toBe(true)
+    expect(r.toastCount, 'both remaining cardio guards toast').toBeGreaterThanOrEqual(2)
   })
 })
 

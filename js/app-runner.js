@@ -291,7 +291,20 @@ function _exMetricType(ex) {
 
 function _isPlainStrengthExercise(ex) {
   if (!ex) return false
-  return _METRIC_TABLE_TYPES.has(_exMetricType(ex))
+  // Every non-cardio exercise logs through the fast table. This was an ALLOWLIST of five metric types
+  // with a ~170-line wizard as the fallback for "anything else" — and "anything else" was reachable,
+  // because _resolveMetricType returns metric_type VERBATIM for any value that isn't 'weight_reps'. So
+  // any row whose metric_type and exercise_type had drifted apart (exactly what the periodization bug
+  // fixed on 2026-08-11 did) landed on a branch that predated metric_type and had no case for it.
+  //
+  // A live count found ZERO such rows — 53 template exercises, 105 logged exercises, every one routing
+  // to the table or to cardio. Rather than keep an unreachable 170-line branch alive to catch a case
+  // that has never occurred, the table IS the fallback: it dispatches on metric_type internally and
+  // renders sane weight/reps columns for anything it doesn't recognise.
+  //
+  // `ex.type` (not the resolved metric type) is the right test: an interval's metric_type is 'interval'
+  // but its exercise_type is 'cardio', and it must keep taking the cardio branch.
+  return ex.type !== 'cardio'
 }
 
 // ── Workstream C — live "vs last session" totals for the current exercise ────────────────────────
@@ -896,140 +909,7 @@ function renderRunner() {
             ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>` : ''}
           </div>
           ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
-        })() : `
-        <!-- Strength input -->
-        ${(() => {
-          const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
-          // Was a verbatim copy of _buildTargetCols + _renderTargetBarHtml. The copy is why the
-          // "don't print RPE twice" fix (2026-07-11) only landed in the table and left the wizard
-          // still rendering "RPE 8–9" under a column already labelled RPE — the wizard was never
-          // actually sharing the helper the helper's own comment claimed it shared. Now it does.
-          const { cols, needsOneRM } = _buildTargetCols(tgt, ex)
-          const targetBar = _renderTargetBarHtml(cols)
-          const oneRMBanner = needsOneRM ? `
-          <div id="wr-onerm-banner" onclick="showRunnerOneRMSheet(${_runner.exIdx})" style="background:rgba(245,158,11,.1);border:1.5px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;cursor:pointer;margin-bottom:10px">
-            <div style="font-size:13px;font-weight:700;color:#b45309">⚠ Set your 1RM to see target weight</div>
-            <div style="font-size:11px;color:#b45309;margin-top:2px">Tap to add</div>
-          </div>` : ''
-          const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
-          // escapeHtml here, not at each of the 2 render sites below — sets_json/notes are
-          // coach-authored JSONB with no schema enforcement, same class the 2026-07-30 full-file
-          // review found unescaped throughout this render path (_buildTargetCols, cardio chips).
-          const distTarget = escapeHtml(ex.notes?.match(/(\d+)[–\-](\d+)\s*m/)?.[0] || tgt.distance || '')
-          const weightPlaceholder = tgt.weight ? weightToPref(tgt.weight) : '—'
-          // Same prescribed-rep string _buildTargetCols builds for its REPS column, but this one is
-          // the input's ghost text, so it stays local rather than being read off the shared helper.
-          const repsStr = !tgt.timed && tgt.repsMin ? (tgt.repsMin + (tgt.repsMax && tgt.repsMax !== tgt.repsMin ? '–' + tgt.repsMax : '')) : null
-          const repsPlaceholder = repsStr ? escapeHtml(repsStr.replace('–', '-')) : '—'
-          // 2026-08-02: this whole wizard branch predates the metric_type system and dispatched on
-          // legacy per-set flags (tgt.unilateral/tgt.timed) + a name regex, never on metric_type — so
-          // jump_height/jump_distance had NO branch here at all. In normal operation a jump exercise
-          // always renders via renderStrengthTable instead (_isPlainStrengthExercise), so this gap was
-          // unreachable through the ordinary launch/swap/add paths, but a jump exercise that DOES land
-          // here for any reason fell into the plain weight/reps branch below with nowhere to enter a
-          // height at all — matching Jake's live report of a Box Jump height going unrecorded.
-          const mt = _exMetricType(ex)
-          const isJump = mt === 'jump_height' || mt === 'jump_distance'
-          const jumpMeasurePlaceholder = mt === 'jump_height'
-            ? (tgt.targetHeightCm != null ? String(jumpHeightToPref(tgt.targetHeightCm)) : '—')
-            : (tgt.targetDistanceM != null ? String(tgt.targetDistanceM) : '—')
-          return `
-          ${oneRMBanner}
-          ${targetBar}
-          ${isJump ? `
-          <!-- Jump height/distance input -->
-          <div style="display:flex;align-items:stretch;gap:6px">
-            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
-              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
-              <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
-            </div>
-            <div style="flex:1;display:flex;flex-direction:column">
-              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${mt === 'jump_height' ? `Height (${window._unitPrefs.jumpHeight})` : 'Distance (m)'}</div>
-              <input id="wr-jump-measure-input" type="number" inputmode="decimal" step="${mt === 'jump_height' ? '1' : '0.01'}" placeholder="${escapeHtml(jumpMeasurePlaceholder)}"
-                style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-            </div>
-            <div style="flex:1;display:flex;flex-direction:column">
-              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Jumps</div>
-              <input id="wr-jump-reps-input" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
-                style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-            </div>
-            <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
-              <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
-              ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
-            </div>
-          </div>` : tgt.unilateral && !isDistance ? `
-          <!-- Unilateral L/R input -->
-          <div style="display:flex;gap:6px;margin-bottom:6px">
-            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
-              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
-              <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
-            </div>
-            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;text-align:center;color:var(--accent)">Left</div>
-              <input id="wr-left-weight" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
-                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-              <input id="wr-left-reps" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
-                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>${window._unitPrefs.weight}</span><span>reps</span></div>
-            </div>
-            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;text-align:center;color:var(--accent)">Right</div>
-              <input id="wr-right-weight" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
-                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-              <input id="wr-right-reps" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
-                style="width:100%;font-size:17px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:8px;padding:5px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-              <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 2px"><span>${window._unitPrefs.weight}</span><span>reps</span></div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
-              <button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>
-              ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
-            </div>
-          </div>` : `
-          <div style="display:flex;align-items:stretch;gap:6px">
-            <!-- Set number -->
-            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:36px">
-              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Set</div>
-              <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1">${setNum}</div>
-            </div>
-            <!-- Weight input (always shown, optional for timed) -->
-            ${ex.bodyweight
-              ? `<div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg)">
-                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Weight</div>
-                  <div style="font-size:20px;font-weight:700;color:var(--text)">BW</div>
-                 </div>`
-              : `<div style="flex:1;display:flex;flex-direction:column">
-                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${window._unitPrefs.weight==='lb'?'Pounds':'Kilograms'}</div>
-                  <input id="wr-weight-input" type="number" inputmode="decimal" step="0.5" placeholder="${weightPlaceholder}"
-                    style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--accent);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">
-                 </div>`}
-            <!-- Duration (timed) or Reps / Distance -->
-            ${tgt.timed
-              ? (_runner._setTimerDone
-                  ? `<div style="flex:1;display:flex;flex-direction:column">
-                      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">Duration</div>
-                      <input id="wr-duration-input" type="text" inputmode="numeric" placeholder="${escapeHtml(String(tgt.duration||'0:00'))}" oninput="this.value=fmtRestInput(this.value)"
-                        style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box">
-                     </div>`
-                  : '')
-              : `<div style="flex:1;display:flex;flex-direction:column">
-                  <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;text-align:center">${isDistance ? 'Metres' : 'Reps'}</div>
-                  ${isDistance
-                    ? `<input id="wr-dist-input" type="number" inputmode="decimal" step="1" placeholder="${distTarget||'m'}"
-                        style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
-                    : `<input id="wr-reps-input" type="number" inputmode="numeric" placeholder="${repsPlaceholder}"
-                        style="flex:1;width:100%;font-size:22px;font-weight:700;text-align:center;border:2px solid var(--border);border-radius:10px;padding:6px 4px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`}
-                 </div>`}
-            <!-- LOG / Start / Skip -->
-            <div style="display:flex;flex-direction:column;gap:4px;min-width:64px">
-              ${tgt.timed && !_runner._setTimerDone
-                ? `<button onclick="event.stopPropagation();startStrengthSetTimer()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:13px;font-weight:800;cursor:pointer">▶ Start</button>`
-                : `<button onclick="logRunnerSet()" style="flex:1;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:800;cursor:pointer">LOG</button>`}
-              ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:10px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish':'Next →'}</button>` : ''}
-            </div>
-          </div>`}
-          ${ex.loggedSets.length > 0 && ex.loggedSets.length >= ex.targetSets ? `<button onclick="addExtraStrengthSet()" style="width:100%;margin-top:6px;padding:7px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}
-          ${!tgt.timed && !isDistance ? _renderRepsTallyHtml(ex) : ''}`
-        })()}`}
+        })() : ''}
       </div>
     </div>
   `
@@ -1073,50 +953,15 @@ function logRunnerSet() {
     // stop any running interval timer
     stopIntervalTimer()
   } else {
-    const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
-    const isDistance = /carry|broad jump|sled|sandbag.*lunge|step.*carry/i.test(ex.name)
-    const weight = ex.bodyweight ? 'BW' : (weightFromPref(document.getElementById('wr-weight-input')?.value?.trim()) ?? '')
-    const mt = _exMetricType(ex)
-    if (mt === 'jump_height' || mt === 'jump_distance') {
-      const measure = document.getElementById('wr-jump-measure-input')?.value?.trim()
-      if (!_hasNumVal(measure)) { showToast(mt === 'jump_height' ? 'Enter a height first' : 'Enter a distance first', 'warn'); return }
-      const jreps = document.getElementById('wr-jump-reps-input')?.value?.trim() || ''
-      setData = mt === 'jump_height'
-        ? { height_cm: jumpHeightFromPref(measure), reps: jreps }
-        : { distance_m: measure, reps: jreps }
-    } else if (tgt.timed) {
-      const dur = document.getElementById('wr-duration-input')?.value?.trim()
-      if (!dur || dur === '0:00') { showToast('Enter a duration first', 'warn'); return }
-      setData = { weight: weight || null, duration: dur }
-      _runner._setTimerDone = false
-    } else if (tgt.unilateral && !isDistance) {
-      const leftWeight = weightFromPref(document.getElementById('wr-left-weight')?.value?.trim()) ?? ''
-      const leftReps   = document.getElementById('wr-left-reps')?.value?.trim()   || ''
-      const rightWeight = weightFromPref(document.getElementById('wr-right-weight')?.value?.trim()) ?? ''
-      const rightReps   = document.getElementById('wr-right-reps')?.value?.trim()   || ''
-      if (!leftReps && !rightReps) { showToast('Enter reps first', 'warn'); return }
-      setData = { leftWeight: leftWeight || null, leftReps: leftReps || null, rightWeight: rightWeight || null, rightReps: rightReps || null }
-    } else if (isDistance) {
-      const dist = document.getElementById('wr-dist-input')?.value?.trim() || ''
-      if (!dist) { showToast('Enter a distance first', 'warn'); return }
-      setData = { weight, distance_m: dist }
-    } else {
-      const reps = document.getElementById('wr-reps-input')?.value?.trim() || ''
-      if (!reps) { showToast('Enter reps first', 'warn'); return }
-      setData = { weight, reps }
-    }
+    // Unreachable since 2026-08-11: every non-cardio exercise logs through the fast table, which
+    // has its own toggleTableSet path and never calls this. Kept as a LOUD guard rather than
+    // deleted outright — silently returning here would look exactly like the tap not registering,
+    // which is the worst possible failure mode on a screen being used mid-set in a gym.
+    log.warn('logRunnerSet', 'called for a non-cardio exercise — the table logs those', { exIdx: _runner.exIdx })
+    return
   }
   ex.loggedSets.push(setData)
   // Superset: if next exercise shares a superset group, switch to it instead of resting
-  if (ex.supersetGroup) {
-    const nextIdx = _runner.exercises.findIndex((e, i) => i !== _runner.exIdx && e.supersetGroup === ex.supersetGroup)
-    if (nextIdx !== -1) {
-      _runner.exIdx = nextIdx
-      renderRunner()
-      return
-    }
-  }
-  // If all target sets for this exercise are done, advance or finish
   const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
   if (hitTarget) {
     const proceed = () => {

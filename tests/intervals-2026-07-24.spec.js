@@ -133,12 +133,17 @@ test.describe('Intervals 2026-07-24 — get-ready countdown + repeat-set builder
   test('logRunnerSet is blocked by count-in and an own-exercise rest, but not by another exercise\'s rest', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
-      const mkEx = () => ({ name: 'X', type: 'strength', metricType: 'weight_reps', loggedSets: [], sets_json: [{}] })
+      // Cardio, not strength: the wizard was deleted 2026-08-11, so logRunnerSet is now reached only
+      // by cardio — a strength fixture here would hit the non-cardio guard and never exercise the
+      // rest/count-in logic this test is actually about. The same ownership guard on the TABLE path
+      // (toggleTableSet, which is what strength uses now) is covered by
+      // ledger-fixes-2026-07-29.spec.js:313 — "exercise B, set 0 — should NOT be blocked by A's rest".
+      const mkEx = () => ({ name: 'X', type: 'cardio', metricType: 'cardio', loggedSets: [], sets_json: [{}] })
       const run = (setup) => {
         const ex = mkEx()
         _runner = { exercises: [ex, mkEx()], exIdx: 0, ...setup }
-        document.getElementById('wr-reps-input')?.remove()
-        const input = document.createElement('input'); input.id = 'wr-reps-input'; input.value = '5'
+        document.getElementById('wr-cardio-dur')?.remove()
+        const input = document.createElement('input'); input.id = 'wr-cardio-dur'; input.value = '5:00'
         document.body.appendChild(input)
         const before = ex.loggedSets.length
         logRunnerSet()

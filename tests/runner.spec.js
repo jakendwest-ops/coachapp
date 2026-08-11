@@ -200,7 +200,7 @@ test.describe('Timed set render regression', () => {
     expect(result).not.toContain('1:')
   })
 
-  test('every strength metric_type routes to the fast table; only cardio stays on the wizard (②c, 2026-07-18)', async ({ page }) => {
+  test('every strength metric_type routes to the fast table; only cardio takes the cardio branch (②c, 2026-07-18)', async ({ page }) => {
     // ②c: the fast table is now metric_type-driven. weight_reps/unilateral/timed_hold/jump_height/
     // jump_distance all log in the table; only cardio falls to the wizard. _exMetricType derives the
     // type from legacy flags for rows that predate ②a, so flag-only fixtures still route correctly.
@@ -224,7 +224,7 @@ test.describe('Timed set render regression', () => {
     expect(result.jumpD).toBe(true)
     expect(result.timedLegacy).toBe(true) // derived from sets_json flag
     expect(result.uniLegacy).toBe(true)
-    expect(result.cardio).toBe(false) // only cardio stays on the wizard
+    expect(result.cardio).toBe(false) // cardio takes its own branch; the wizard it used to fall to was deleted 2026-08-11
   })
 
   test('mobile log-session RPE field no longer repeats the header label (regression, 2026-07-05)', async ({ page }) => {
