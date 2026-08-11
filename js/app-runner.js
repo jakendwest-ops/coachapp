@@ -2521,6 +2521,12 @@ async function saveRunnerSession() {
         if (_hasNumVal(s.height_cm))  row.height_cm = parseFloat(s.height_cm)
         if (s.reps)       row.reps_achieved = parseInt(s.reps)
         if (s.weight !== 'BW' && _hasNumVal(s.weight)) row.weight_kg = parseFloat(s.weight)
+        // UNREACHABLE as of 2026-08-11, deliberately left in place: no runner logged-set shape
+        // carries `.rpe` (see _blankTableRow — there is no effort input in the strength table at all),
+        // so the in-gym runner currently captures NO effort. Effort only reaches the DB via the manual
+        // Log Session modal. Kept as the obvious hook if capture is added — but note it hardcodes 'rpe',
+        // so wiring an RIR-capable input to it without also setting effort_type would recreate exactly
+        // the inversion fixed above.
         if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
       }
       applyCardioMetrics(row)
@@ -3048,7 +3054,10 @@ async function saveWorkoutSession(clientId) {
         // sibling function was missed the first time since Jake's report came from the live runner,
         // not this manual Log Session modal, but a typed 0kg here was silently dropped the same way.
         if (_hasNumVal(s.weight)) row.weight_kg = parseFloat(s.weight)
-        if (s.effort) {
+        // _hasNumVal, not truthy: RIR 0 means "to failure" — a real, common prescription that a
+        // truthy check silently discarded. Same falsy-zero shape as the weight guards above (Jake,
+        // 2026-07-29), which was found at four sites in one bug; this was a fifth.
+        if (_hasNumVal(s.effort)) {
           row.effort_type = block.effortMode === 'RIR' ? 'rir' : 'rpe'
           row.effort_value = parseFloat(s.effort)
         }
@@ -3181,6 +3190,18 @@ async function openWorkoutLog(logId, clientId) {
         const isJumpHeight = mt === 'jump_height'
         const isJumpDistance = mt === 'jump_distance'
         const hasRpe   = !isCardio && !isJumpHeight && !isJumpDistance && sets.some(s => s.effort_value != null)
+        // Effort is stored WITH its scale (`effort_type`: 'rpe' | 'rir'), and the two run in OPPOSITE
+        // directions — RIR 2 means two reps left in the tank (near-maximal), RPE 2 is a warmup. So
+        // hardcoding "RPE" here didn't merely mislabel a logged RIR, it inverted its meaning. Derive it.
+        // Legacy rows predate effort_type and read back null; those were written by the RPE-only path,
+        // so null falls back to 'RPE' rather than to the ambiguous label.
+        const effortScales = [...new Set(sets.filter(s => s.effort_value != null)
+          .map(s => s.effort_type === 'rir' ? 'RIR' : 'RPE'))]
+        // One exercise can only mix scales if it was logged across two sessions with different modes.
+        // Rare, but silently showing one label over both would be the same inversion again — so when
+        // they disagree the column goes generic and every cell carries its own scale.
+        const effortMixed = effortScales.length > 1
+        const effortLabel = effortMixed ? 'Effort' : (effortScales[0] || 'RPE')
         const prevSets = prevExMap[ex.exercise_name] || []
         const prevVol  = prevSets.reduce((sum, s) => sum + ((parseFloat(s.weight_kg)||0) * (parseInt(s.reps_achieved)||0)), 0)
         const prevSummary = prevSets.length
@@ -3209,7 +3230,7 @@ async function openWorkoutLog(logId, clientId) {
                         ? `<th style="${thStyle}">Height (${window._unitPrefs.jumpHeight === 'in' ? 'in' : 'cm'})</th><th style="${thStyle}">Jumps</th>`
                         : isJumpDistance
                         ? `<th style="${thStyle}">Distance (m)</th><th style="${thStyle}">Jumps</th>`
-                        : `<th style="${thStyle}">Reps</th><th style="${thStyle}">Weight</th>${hasRpe ? `<th style="${thStyle}">RPE</th>` : ''}`
+                        : `<th style="${thStyle}">Reps</th><th style="${thStyle}">Weight</th>${hasRpe ? `<th style="${thStyle}">${effortLabel}</th>` : ''}`
                       }
                     </tr>
                   </thead>
@@ -3223,7 +3244,7 @@ async function openWorkoutLog(logId, clientId) {
                           ? `<td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.height_cm) ? fmtJumpHeight(s.height_cm, { spaced: true }) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.reps_achieved || '—'}</td>`
                           : isJumpDistance
                           ? `<td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.distance_m) ? fmtDistanceM(s.distance_m) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.reps_achieved || '—'}</td>`
-                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.weight_kg) ? fmtWeight(s.weight_kg, { spaced: true }) : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? 'RPE '+s.effort_value : '—'}</td>` : ''}`
+                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.weight_kg) ? fmtWeight(s.weight_kg, { spaced: true }) : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? (effortMixed ? (s.effort_type === 'rir' ? 'RIR ' : 'RPE ') + s.effort_value : s.effort_value) : '—'}</td>` : ''}`
                         }
                       </tr>
                     `).join('')}
