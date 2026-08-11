@@ -268,8 +268,18 @@ test.describe('Jump height/distance reps render as a range, matching every other
 // removing their toggle entirely would strand any set that already has the flag set with no way to see
 // or undo it (les-043 shape), so they render only when the set already carries the flag: a legacy
 // escape hatch, same pattern this file already uses for the "Pace / km (legacy)" row.
-test.describe('Builder set-editor decluttered: BW/Assist/Repeat removed', () => {
-  test('a NEW set (no bodyweight/assisted flags) shows AMRAP only -- no BW, Assist, or Repeat controls', async ({ page }) => {
+//
+// UPDATED 2026-08-11 — the decluttering finished. Jake called AMRAP too, so the set-editor toggle row
+// now holds NOTHING for a new set. Two different removals, deliberately not the same shape:
+//   * AMRAP is gone outright (flag, both render sites, toggle). It was display-only with zero live
+//     usage, so there is no legacy set to strand and no escape hatch to preserve.
+//   * `assisted` is also gone outright, but for the opposite reason -- it was never reachable AND it
+//     corrupted weight_kg. See assisted-lift-removed-2026-08-11.spec.js.
+//   * `bodyweight` KEEPS its conditional escape hatch. Unlike the other two it does real work in the
+//     runner (BW badge, no weight input, skips the "Enter weight first" guard), so a set carrying it
+//     must stay visible and undoable.
+test.describe('Builder set-editor decluttered: BW/Assist/Repeat/AMRAP removed', () => {
+  test('a NEW set shows NO toggles at all -- no AMRAP, BW, Assist, or Repeat controls', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
       window._templateSets = [{ effortType: 'rpe', repsMin: '8' }]
@@ -286,7 +296,7 @@ test.describe('Builder set-editor decluttered: BW/Assist/Repeat removed', () => 
         repeatFnGone: typeof repeatTemplateSet === 'undefined',
       }
     })
-    expect(r.hasAmrap, 'AMRAP was not part of this cleanup and must still render').toBe(true)
+    expect(r.hasAmrap, 'AMRAP was removed 2026-08-11 -- the toggle row is now empty for a new set').toBe(false)
     expect(r.hasBw, 'BW must not show for a set that was never bodyweight').toBe(false)
     expect(r.hasAssist, 'Assist must not show for a set that was never assisted').toBe(false)
     expect(r.hasRepeatBox, 'the blank round-count box next to the set number must be gone').toBe(false)
@@ -294,7 +304,11 @@ test.describe('Builder set-editor decluttered: BW/Assist/Repeat removed', () => 
     expect(r.repeatFnGone, 'repeatTemplateSet had only one caller (this button) -- removed as dead code').toBe(true)
   })
 
-  test('a set already carrying bodyweight/assisted keeps its toggle visible, as an edit/undo path for legacy data', async ({ page }) => {
+  // UPDATED 2026-08-11 — the escape hatch now applies to `bodyweight` ONLY. `assisted` was deleted
+  // outright rather than preserved, because the live count found ZERO sets carrying it: there is no
+  // legacy set to strand, so the les-043 argument for keeping an undo path simply does not apply.
+  // A legacy assisted set (none exist) would now render as an ordinary weighted set.
+  test('a set already carrying bodyweight keeps its toggle visible, as an edit/undo path for legacy data', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
       window._templateSets = [{ effortType: 'rpe', repsMin: '8', bodyweight: true }, { effortType: 'rpe', repsMin: '8', assisted: true, assistWeight: '20' }]
@@ -305,7 +319,7 @@ test.describe('Builder set-editor decluttered: BW/Assist/Repeat removed', () => 
       return { hasBw: />BW</.test(html), hasAssist: />Assist</.test(html) }
     })
     expect(r.hasBw, 'a legacy bodyweight set must still show BW so it can be un-toggled').toBe(true)
-    expect(r.hasAssist, 'a legacy assisted set must still show Assist so it can be un-toggled').toBe(true)
+    expect(r.hasAssist, 'Assist was removed 2026-08-11 and must not render even for a legacy set').toBe(false)
   })
 })
 

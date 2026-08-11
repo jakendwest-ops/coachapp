@@ -217,7 +217,7 @@ function _prescribedSetCount(sets, isInterval) {
 // rate, HR…). It is NOT html-safe — every caller must escapeHtml() it before innerHTML. On a client
 // PLAN CLONE the underlying row belongs to the client, so an unescaped sink here is the client→coach
 // stored-XSS shape that hit this codebase on 2026-07-18.
-function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = false, markAmrap = true } = {}) {
+function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = false } = {}) {
   if (!s) return '—'
   // INTERVAL BLOCKS (2026-07-25): one entry describes the whole workout (work/rest × sets, × cycles),
   // not a single set — so it gets its own branch, checked before isCardio (an interval's legacy
@@ -297,13 +297,12 @@ function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = 
     // checks.sh 9b greps for those two tokens on the SAME line precisely to catch an unguarded one.
     const repsRange = range(s.repsMin, s.repsMax) || s.reps || null
     const reps = repsRange ? repsRange + ' reps' : null
-    const repsPart = s.amrap && markAmrap ? (reps ? `${reps} (AMRAP)` : 'AMRAP') : reps
     const weight = s.weight ? fmtWeight(s.weight) : null
     const intensity = range(s.intensityMin, s.intensityMax, '% 1RM')
     const effort = s.effortMin
       ? (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + range(s.effortMin, s.effortMax)
       : (s.rpe ? 'RPE ' + s.rpe : null)
-    parts = [repsPart, weight, intensity, effort, s.tempo ? `@${s.tempo}` : null]
+    parts = [reps, weight, intensity, effort, s.tempo ? `@${s.tempo}` : null]
   }
   if (includeRest) parts.push(restStr)
   return parts.filter(Boolean).join(' · ') || '—'
@@ -344,7 +343,11 @@ function _fmtSetsCollapsed(sets, { isCardio = false, isInterval = false } = {}) 
 // One function, both callers. Do not re-inline it.
 function _cleanTemplateSets(sets, derived) {
   return (sets || []).map(s => ({
-    amrap: !!s.amrap, unilateral: derived.unilateral, timed: derived.timed,
+    // `amrap` removed 2026-08-11 (Jake's call). It was a display-only per-set flag — reachable, and
+    // harmless, but with ZERO live usage across 52 template exercises / 55 sets. Trimmed as unused
+    // surface rather than as a bug fix. Note it is NOT the same thing as a scored "AMRAP 8" window,
+    // which is a group-level mode and is scoped separately.
+    unilateral: derived.unilateral, timed: derived.timed,
     // `assisted`/`assistWeight` removed 2026-08-11 (Jake's call). The feature was unreachable — its
     // toggle only rendered when the flag was ALREADY true — and it silently corrupted training data:
     // for an assisted set, setData.weight held the ASSIST load and was written to weight_kg, so a
@@ -407,11 +410,10 @@ async function openSessionDetail(templateId, name, ctx = {}) {
         const isCardio = _mt === 'cardio'
         const isInterval = _mt === 'interval'
         const setsHtml = sets.map((s, si) => {
-          let label = `Set ${si + 1}`
-          if (s.amrap) label = 'AMRAP'
+          const label = `Set ${si + 1}`
 
           // Rest renders in its own right-aligned span here, so it is excluded from the detail string.
-          const detail = _fmtSetDetail(s, { isCardio, isInterval, includeRest: false, markAmrap: false })
+          const detail = _fmtSetDetail(s, { isCardio, isInterval, includeRest: false })
           const rest = _hasTimeTarget(s.restMin)
             ? (_hasTimeTarget(s.restMax) && s.restMax !== s.restMin ? `${s.restMin}–${s.restMax}` : s.restMin) + ' rest'
             : null
@@ -1519,7 +1521,6 @@ function renderTemplateSets(containerId, type) {
         </div>
         <div style="display:flex;gap:4px">
           ${showSetToggles ? `
-            ${tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`)}
             ${s.bodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
           ` : ''}
           <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:15px;line-height:1">×</button>

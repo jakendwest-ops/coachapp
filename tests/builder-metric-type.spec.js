@@ -47,7 +47,9 @@ test.describe('Builder metric_type picker — save persistence', () => {
     expect(uni.exercise_type).toBe('strength')      // derived
     expect(uni.sets_json[0].unilateral).toBe(true)  // derived onto the set
     expect(uni.sets_json[0].timed).toBe(false)
-    expect(uni.sets_json[0].amrap).toBe(true)       // per-set flag preserved
+    // `amrap` was removed 2026-08-11. The fixture still passes it in deliberately: _cleanTemplateSets
+    // is an ALLOWLIST, so a removed key must be dropped on the way to the DB rather than ride along.
+    expect(uni.sets_json[0].amrap).toBeUndefined()
 
     const hold = rows.find(r => r.exercise_name.endsWith('Hold'))
     expect(hold.metric_type).toBe('timed_hold')
