@@ -141,7 +141,7 @@
                 ${hasWorkouts ? dayWorkouts.map(pw => `
                   <div style="margin-top:2px">
                     ${dayWorkouts.length > 1 ? `<div style="font-size:7px;font-weight:700;color:${isToday?'rgba(255,255,255,.7)':'var(--accent)'};letter-spacing:.04em;line-height:1">${pw.session_order===2?'PM':'AM'}</div>` : ''}
-                    <div style="font-size:8px;font-weight:600;color:${isToday?'#fff':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2">${(pw.workout_templates?.name||'').replace(/ —.*/, '')}</div>
+                    <div style="font-size:8px;font-weight:600;color:${isToday?'#fff':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2">${escapeHtml((pw.workout_templates?.name||'').replace(/ —.*/, ''))}</div>
                   </div>`).join('') : ''}
                 <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:2px">
                   ${dayEvents.slice(0,3).map(e =>

@@ -621,7 +621,7 @@ async function renderClientWorkoutsPage(el) {
     ${hasProgram ? (() => {
       const prog = activeAssignment.programs
       const phases = [...(prog?.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
-      return `<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px">${prog?.name || 'My Program'}</div>
+      return `<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px">${escapeHtml(prog?.name || 'My Program')}</div>
         <div style="margin-bottom:28px">
           ${phases.map((phase, pi) => {
             const allSessions = [...(phase.program_phase_workouts || [])].sort((a, b) => a.week_number - b.week_number || a.day_of_week - b.day_of_week || a.session_order - b.session_order)

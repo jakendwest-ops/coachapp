@@ -54,7 +54,7 @@
           <div class="card-body">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
               <div>
-                <div style="font-size:16px;font-weight:700">${p?.name || 'Unknown program'}</div>
+                <div style="font-size:16px;font-weight:700">${escapeHtml(p?.name || 'Unknown program')}</div>
                 <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Started ${startLabel}</div>
               </div>
               <div style="display:flex;gap:6px;flex-shrink:0">
