@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CoachApp</title>
+  <!-- Inline SVG favicon: the same rounded "C" mark as .auth-logo / .sidebar-logo, in --accent.
+       Without one, every page load logged `favicon.ico 404` as a red console ERROR — harmless in
+       itself, but a console that is permanently red trains you to ignore console errors, so a real
+       one gets scrolled past. Same reasoning as the dashboard failure banner only showing on failure.
+       A data URI rather than a .ico file keeps this a no-build-step static site with no binary asset. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236366f1'/%3E%3Ctext x='16' y='22' font-family='Inter,system-ui,sans-serif' font-size='19' font-weight='700' fill='white' text-anchor='middle'%3EC%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/main.css?v=9">
