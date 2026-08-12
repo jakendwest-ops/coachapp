@@ -220,6 +220,14 @@ function showClientDayDetail(dateStr) {
   const clientId = window._calClientId || ''
   const dateLabel = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 
+  // Modals in this file mount via mountModal() (app-core.js), NOT a bare document.body.appendChild.
+  // mountModal removes any existing element with the same id first. Without it, opening the same modal
+  // twice — a double-tap, or an async handler that awaits a fetch BEFORE mounting — stacks two identical
+  // overlays: the user types into the top one and the handler reads the bottom one's inputs. That race
+  // was fixed on 2026-07-04 and mountModal was written for it, but this file (and app-clients.js) never
+  // adopted it, so the race was still live here. Found by the 2026-08-12 architecture audit.
+  // Note two DIFFERENT modals in this file both use id 'add-event-modal' — exactly the collision
+  // mountModal resolves.
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'client-day-modal'
@@ -267,7 +275,7 @@ function showClientDayDetail(dateStr) {
       </div>
     </div>`
 
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function deleteEvent(id) {
@@ -333,7 +341,7 @@ function showAddEventModal(prefillDate = '') {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 
   // Populate client dropdown
   db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).order('full_name').then(({ data }) => {
@@ -423,7 +431,7 @@ function showClientAddEventModal(prefillDate = '') {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function saveClientEvent() {
@@ -600,7 +608,7 @@ function showAddGoalModal(clientId) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   document.getElementById('ag-title').focus()
 }
 
@@ -782,7 +790,7 @@ function showAddMilestoneModal(goalId, clientId) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   document.getElementById('am-title').focus()
 }
 
@@ -882,7 +890,7 @@ function showAddCheckInModal(goalId, clientId) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function saveCheckIn(goalId, clientId) {
@@ -966,7 +974,7 @@ async function showEditGoalModal(goalId, clientId) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function saveEditGoal(goalId, clientId) {

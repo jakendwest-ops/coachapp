@@ -144,6 +144,14 @@ async function renderClients(el) {
 
 // ─── ADD CLIENT MODAL ─────────────────────────────────────────────────────────
 function showAddClientModal() {
+  // Modals in this file mount via mountModal() (app-core.js), NOT a bare document.body.appendChild.
+  // mountModal removes any existing element with the same id first. Without it, opening the same modal
+  // twice — a double-tap, or an async handler that awaits a fetch BEFORE mounting — stacks two identical
+  // overlays: the user types into the top one and the handler reads the bottom one's inputs. That race
+  // was fixed on 2026-07-04 and mountModal was written for it, but this file (and app-clients.js) never
+  // adopted it, so the race was still live here. Found by the 2026-08-12 architecture audit.
+  // Note two DIFFERENT modals in this file both use id 'add-event-modal' — exactly the collision
+  // mountModal resolves.
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'add-client-modal'
@@ -190,7 +198,7 @@ function showAddClientModal() {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
   document.getElementById('nc-name').focus()
 }
 
@@ -400,7 +408,7 @@ function showUpdateEmailModal(clientId, currentEmail) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function saveUpdateEmail(clientId) {
@@ -472,7 +480,7 @@ async function showEditClientModal(id) {
       </div>
     </div>
   `
-  document.body.appendChild(overlay)
+  mountModal(overlay)
 }
 
 async function saveEditClient(id) {
