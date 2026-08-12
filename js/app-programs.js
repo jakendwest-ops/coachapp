@@ -1535,12 +1535,26 @@ async function generatePhasePeriodization(phaseId, programId) {
   for (let week = 2; week <= phase.duration_weeks; week++) {
     for (const bw of baseWorkouts) {
       const tmpl = bw.workout_templates
+      // A slot that HAS a template_id but whose embed came back null means PostgREST silently NULLed
+      // that level (an RLS gap), not that the slot is empty — the same distinction guarded at the two
+      // propagation loops below. Missed here when those were fixed, so a Week-1 slot behind an RLS gap
+      // vanished from EVERY generated week under a green success toast. `bw.template_id` is available:
+      // the select above is `*, workout_templates(...)`.
+      if (bw.template_id && !tmpl) { genFailures++; continue }
       if (!tmpl) continue
 
       const { data: newTmpl, error: tErr } = await db.from('workout_templates')
         .insert({ coach_id: currentUser.id, program_id: null, client_id: null, generated_from_phase_id: phaseId, is_personal: tmpl.is_personal, name: `${tmpl.name} — W${week}`, description: tmpl.description || null })
         .select('id').single()
-      if (tErr || !newTmpl) { log.error('generatePhasePeriodization', 'template clone failed', tErr); continue }
+      // Counted, not just logged. This was log-only while the exercise insert 20 lines down was
+      // counted — so the master template failing produced a short `newInserts` and still painted the
+      // green "Generated weeks 2–N (M sessions)" toast. Same silent-partial-failure defect the counter
+      // was added to fix, in the same loop.
+      if (tErr || !newTmpl) {
+        log.error('generatePhasePeriodization', 'template clone failed', tErr, { phaseId })
+        genFailures++
+        continue
+      }
 
       const exs = (tmpl.workout_template_exercises || []).map(ex => {
         const sets = (ex.sets_json || []).map(s => {
@@ -1623,7 +1637,7 @@ async function generatePhasePeriodization(phaseId, programId) {
             db.from('client_program_workouts').insert(cpwInserts), { showUserError: false })
           // Was log-only: with both clients failing, `propagated` stayed 0 and the success toast simply
           // omitted its ", synced to N clients" clause — indistinguishable from "no clients assigned".
-          if (cpwErr) propFailures++
+          if (cpwErr) { log.error('generatePhasePeriodization', 'client propagation failed', cpwErr, { clientId: assignment.client_id }); propFailures++ }
           else propagated++
         }
       }

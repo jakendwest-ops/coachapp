@@ -612,7 +612,12 @@ function renderStrengthTable(ex) {
   // unconditionally, so that was a straight regression, and it also stranded showRunnerOneRMSheet,
   // whose only entry point in the runner is that banner. The comment above already argues the fix is
   // safe: _renderTargetBarHtml returns '' for an empty column list, so widening cannot make an empty bar.
-  const showTargets = mt !== 'cardio'
+  // `ex.type`, NOT `mt`. _isPlainStrengthExercise routes on exercise_type; gating this on metric_type
+  // instead recreated the same drift in mirror image — a row with metric_type 'cardio' but a
+  // strength/NULL exercise_type routes INTO this table and would still get no target bar. Not
+  // reachable from the builder (_deriveFromMetricType forces exercise_type='cardio' for the cardio
+  // family) but reachable from seeded or imported rows. Match the gate that decides who arrives here.
+  const showTargets = ex.type !== 'cardio'
   // `tableRows` always holds CANONICAL kg/cm — same as loggedSets and the eventual DB write. `unit`
   // ('weight'|'jumpHeight') is the only thing that makes a cell preference-aware: the DISPLAYED value
   // is converted for show (weightToPref/jumpHeightToPref), and the typed value is converted back to

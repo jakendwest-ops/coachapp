@@ -2331,7 +2331,11 @@ async function _applyToAllSessions(sourceTemplateId) {
   const change = window._lastExerciseChange
   if (!targetIds.length || !change) { openTemplate(sourceTemplateId, window._templateCtx); return }
 
-  await _propagateExerciseChangeToTemplates(change, targetIds)
+  // Accumulate across BOTH calls. showToast keeps a single node with no queue, so the second call's
+  // "N sessions did not pick up this change" erases the first's and the two counts never merge — the
+  // user is told about one batch of failures and never the other. Same fix-the-class shape as the
+  // finding that produced this return value in the first place.
+  let applyAllFailures = await _propagateExerciseChangeToTemplates(change, targetIds) || 0
 
   // Master-program siblings: keep the user's OWN (solo) copies of those sessions in sync too. Real
   // clients' copies are deliberately NOT touched here — writing to a real client's plan only ever
@@ -2339,8 +2343,9 @@ async function _applyToAllSessions(sourceTemplateId) {
   // so bulk "Update all same-named sessions" can never silently change a client's plan without consent.
   if (window._templateCtx?.programId) {
     const copies = await _assignedCopiesForSession(targetIds)
-    await _propagateExerciseChangeToTemplates(change, copies.soloSelfIds)
+    applyAllFailures += await _propagateExerciseChangeToTemplates(change, copies.soloSelfIds) || 0
   }
+  if (applyAllFailures) showToast(`${applyAllFailures} assigned session${applyAllFailures === 1 ? '' : 's'} did not pick up this change`, 'error', 6000)
 
   log.ok('_applyToAllSessions', `propagated one change to ${targetIds.length} sessions`)
   openTemplate(sourceTemplateId, window._templateCtx)
