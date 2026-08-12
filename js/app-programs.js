@@ -367,7 +367,12 @@ async function _cloneTemplateForClient(tmpl, clientId) {
       // Ownership anchor even though newTmpl.id came from our OWN insert two lines up and cannot be
       // attacker-controlled: an id-only delete on workout_templates is the exact shape the standing
       // ledger finding is about, and a filter that costs nothing should not be omitted on a delete.
-      await db.from('workout_templates').delete().eq('id', newTmpl.id).eq('coach_id', currentUser.id)
+      const { data: rolled } = await db.from('workout_templates').delete().eq('id', newTmpl.id).eq('coach_id', currentUser.id).select()
+      // A policy-blocked delete returns { data: [], error: null } — so the rollback needs a ROWCOUNT
+      // check, not an error check, or it is itself a silent write. Same shape as deleteTemplate. A
+      // surviving shell has client_id set and no cpw row pointing at it, so nothing ever reaps it, and
+      // downloadMyData exports it as a template the user never created.
+      if (!rolled?.length) log.error('_cloneTemplateForClient', 'rollback deleted no rows — empty template shell may survive', { templateId: newTmpl.id })
       showToast('Could not copy a workout to the client — that session was skipped', 'error')
       return null
     }
@@ -1525,6 +1530,7 @@ async function generatePhasePeriodization(phaseId, programId) {
   const config = phase.periodization_config || {}
   const newInserts = []
   let genFailures = 0
+  let propFailures = 0
 
   for (let week = 2; week <= phase.duration_weeks; week++) {
     for (const bw of baseWorkouts) {
@@ -1574,7 +1580,8 @@ async function generatePhasePeriodization(phaseId, programId) {
           // Ownership anchor even though newTmpl.id came from our OWN insert above and cannot be
           // attacker-controlled: an id-only delete on workout_templates is the exact shape the
           // standing ledger finding is about, and a free filter should not be omitted on a delete.
-          await db.from('workout_templates').delete().eq('id', newTmpl.id).eq('coach_id', currentUser.id)
+          const { data: rolled } = await db.from('workout_templates').delete().eq('id', newTmpl.id).eq('coach_id', currentUser.id).select()
+          if (!rolled?.length) log.error('generatePhasePeriodization', 'rollback deleted no rows — empty template shell may survive', { templateId: newTmpl.id })
           genFailures++
           continue
         }
@@ -1599,19 +1606,24 @@ async function generatePhasePeriodization(phaseId, programId) {
     const assignments = _propagationTargets(allAssignments)
     if (assignments?.length && insertedPws?.length) {
       const { data: fullPws } = await db.from('program_phase_workouts')
-        .select('id, week_number, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
+        .select('id, template_id, week_number, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
         .in('id', insertedPws.map(p => p.id))
 
       for (const assignment of assignments) {
         const cpwInserts = []
         for (const pw of (fullPws || [])) {
+          // Same guard as duplicatePhaseWeek above — this sibling was missed when that one was fixed.
+          if (pw.template_id && !pw.workout_templates) { propFailures++; continue }
           const newTemplateId = await _cloneTemplateForClient(pw.workout_templates, assignment.client_id)
-          if (!newTemplateId) continue
+          if (!newTemplateId) { propFailures++; continue }
           cpwInserts.push({ client_program_id: assignment.id, program_phase_workout_id: pw.id, workout_template_id: newTemplateId, week_number: pw.week_number })
         }
         if (cpwInserts.length) {
-          const { error: cpwErr } = await db.from('client_program_workouts').insert(cpwInserts)
-          if (cpwErr) log.error('generatePhasePeriodization', 'client propagation failed', cpwErr, { clientId: assignment.client_id })
+          const { error: cpwErr } = await dbq('generatePhasePeriodization:clientCopies',
+            db.from('client_program_workouts').insert(cpwInserts), { showUserError: false })
+          // Was log-only: with both clients failing, `propagated` stayed 0 and the success toast simply
+          // omitted its ", synced to N clients" clause — indistinguishable from "no clients assigned".
+          if (cpwErr) propFailures++
           else propagated++
         }
       }
@@ -1620,6 +1632,7 @@ async function generatePhasePeriodization(phaseId, programId) {
 
   log.ok('generatePhasePeriodization', 'generated', { phaseId, weeks: phase.duration_weeks - 1, sessions: newInserts.length, propagatedToClients: propagated })
   if (genFailures) showToast(`${genFailures} session${genFailures === 1 ? '' : 's'} could not be generated and were skipped`, 'error')
+  if (propFailures) showToast(`${propFailures} assigned client plan${propFailures === 1 ? '' : 's'} did not receive the generated weeks — reassign the program`, 'error', 8000)
   showToast(`Generated weeks 2–${phase.duration_weeks} (${newInserts.length} sessions)${propagated ? `, synced to ${propagated} assigned client${propagated!==1?'s':''}` : ''}`, 'success')
   openProgram(programId)
 }
@@ -1928,15 +1941,21 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
       // omitted column comes back `undefined`, supabase-js drops undefined keys from the insert
       // payload, and the clone silently falls back to the DB default instead of inheriting. Silent at
       // every layer (les-036). Both sibling embeds already list it.
-      .select('id, day_of_week, session_order, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
+      .select('id, template_id, day_of_week, session_order, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
       .in('id', sourceRows.map(r => r.id))
     for (const a of assignments) {
       const cpwInserts = []
       for (const srcRow of (fullSourceRows || [])) {
         const newPw = insertedPws.find(p => p.day_of_week === srcRow.day_of_week && p.session_order === srcRow.session_order)
+        // Mirrors _cloneProgramForClient's guard: a slot that HAS a template_id but whose embed came
+        // back null means PostgREST silently NULLed that level (an RLS gap), NOT that the slot is empty.
+        // Both of these were bare `continue`s, so a run where every row was skipped left cpwInserts empty,
+        // never entered the counting block below, and reported success. Solo makes that a 100% failure:
+        // _propagationTargets narrows to the single solo record, so one skip is the whole result.
+        if (srcRow.template_id && !srcRow.workout_templates) { clientCopyFailures++; continue }
         if (!newPw || !srcRow.workout_templates) continue
         const newTemplateId = await _cloneTemplateForClient(srcRow.workout_templates, a.client_id)
-        if (!newTemplateId) continue
+        if (!newTemplateId) { clientCopyFailures++; continue }
         cpwInserts.push({ client_program_id: a.id, program_phase_workout_id: newPw.id, workout_template_id: newTemplateId, week_number: targetWeek })
       }
       // The coach's master week is already saved by now. If the client's copies fail here the coach is

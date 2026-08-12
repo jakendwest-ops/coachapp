@@ -961,7 +961,12 @@ function logRunnerSet() {
     return
   }
   ex.loggedSets.push(setData)
-  // Superset: if next exercise shares a superset group, switch to it instead of resting
+  // NOTE: the superset auto-advance that used to sit here was deleted with the wizard (2026-08-11).
+  // It was reachable — cardio still reaches logRunnerSet — but had four bugs (scanned from index 0 so
+  // it jumped BACKWARDS, ping-ponged with 3+ members, no completion check, and its bare return skipped
+  // both the rest timer and the finish screen). `supersetGroup` is still WRITTEN (launchRunner and the
+  // builder) but now has no reader anywhere: supersets are inert in the runner until the grouped-work
+  // slice rebuilds them properly. That is a known, deliberate gap, not an accident.
   const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
   if (hitTarget) {
     const proceed = () => {
@@ -2121,6 +2126,15 @@ async function showRunnerFinish() {
             }, 0)
             const exDist = isCardio ? e.loggedSets.reduce((s,set)=>s+_cardioDistanceM(set),0) : 0
             const exSets = _countableSets(e.loggedSets)   // same filter as the header total above
+            // Same labelling as openWorkoutLog's table, and for the same reason: the header above now
+            // counts WORK rounds, so numbering every row "Set 1..Set 6" under a header reading "4 sets"
+            // makes this screen contradict itself. openWorkoutLog got this and its sibling here did not
+            // — caught by the pre-push review, and the exact fix-the-class-not-the-instance shape.
+            let _finWorkN = 0
+            const setLabels = e.loggedSets.map(s =>
+              s.phase === 'warmup' ? 'Warm-up'
+              : s.phase === 'cooldown' ? 'Cool-down'
+              : 'Set ' + (++_finWorkN))
             return `
             <div style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
               <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
@@ -2134,7 +2148,7 @@ async function showRunnerFinish() {
                 const w = parseFloat(s.weight), r = parseInt(s.reps,10)
                 const isSetPR = !isCardio && w > 0 && w === bestWeight && isPR
                 return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);font-size:13px${isSetPR?' background:rgba(245,158,11,.06)':''}">
-                  <span style="color:var(--text-muted)">Set ${i+1}</span>
+                  <span style="color:var(--text-muted)">${setLabels[i]}</span>
                   <span style="font-weight:600${isSetPR?';color:#d97706':''}">
                     ${isCardio
                       // _cardioDistanceM(s) > 0, not a bare call: it returns a literal 0 (never

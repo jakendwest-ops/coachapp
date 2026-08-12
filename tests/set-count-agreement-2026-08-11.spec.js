@@ -107,6 +107,45 @@ test.describe('set counts agree across surfaces (2026-08-11)', () => {
     expect(res.rowLabels).toEqual(['Warm-up', 'Set 1', 'Set 2', 'Set 3', 'Set 4', 'Cool-down'])
   })
 
+  // Found by the pre-push multi-agent review, 2026-08-11. The fix above landed on openWorkoutLog (the
+  // COACH's session detail) and its sibling 950 lines up in showRunnerFinish — the very first screen the
+  // ATHLETE sees — kept numbering every row. So the finish card read "4 sets" in its header directly
+  // above rows labelled "Set 1 … Set 6". Before the fix the two at least agreed (both said 6); the fix
+  // introduced the contradiction on the athlete's screen while removing it from the coach's.
+  //
+  // Textbook fix-the-class-not-the-instance: same bug, same file, one function patched, one missed.
+  test('the runner finish screen labels rounds the same way its own header counts them', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const ex = {
+        name: '[E2E] Row', type: 'cardio', metricType: 'interval', exerciseId: null,
+        targetSets: 4, sets_json: [{}], restSecs: 60,
+        loggedSets: [
+          { phase: 'warmup', duration: '5:00' },
+          { phase: 'work', duration: '4:00' }, { phase: 'work', duration: '4:00' },
+          { phase: 'work', duration: '4:00' }, { phase: 'work', duration: '4:00' },
+          { phase: 'cooldown', duration: '5:00' },
+        ],
+      }
+      let el = document.getElementById('workout-runner')
+      if (!el) { el = document.createElement('div'); el.id = 'workout-runner'; document.body.appendChild(el) }
+      _runner = { exercises: [ex], exIdx: 0, startTime: Date.now(), clientId: null, name: '[E2E] Finish' }
+      await showRunnerFinish()
+      const html = document.getElementById('workout-runner')?.innerHTML || ''
+      const labels = [...document.querySelectorAll('#workout-runner span')]
+        .map(s => s.textContent.trim())
+        .filter(x => /^(Set \d+|Warm-up|Cool-down)$/.test(x))
+      document.getElementById('workout-runner')?.remove()
+      _runner = null
+      return { labels, headerSaysFour: /4 sets/.test(html), headerSaysSix: /6 sets/.test(html) }
+    })
+    console.log('finish-screen labels:', r.labels.join(' | '))
+
+    expect(r.headerSaysFour, 'the header counts work rounds only').toBe(true)
+    expect(r.headerSaysSix).toBe(false)
+    // The regression: this was ['Set 1','Set 2','Set 3','Set 4','Set 5','Set 6'] under a "4 sets" header.
+    expect(r.labels).toEqual(['Warm-up', 'Set 1', 'Set 2', 'Set 3', 'Set 4', 'Cool-down'])
+  })
+
   test('an ordinary session with no phases is unaffected — every row is still a set', async ({ page }) => {
     const res = await page.evaluate(async ({ TAG }) => {
       const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
