@@ -188,7 +188,7 @@ function renderEventList(events, clientMap) {
                 <div style="font-size:13px;font-weight:600">${escapeHtml(e.title)}</div>
                 <div style="display:flex;gap:6px;margin-top:3px;align-items:center">
                   <span style="font-size:11px;padding:2px 7px;border-radius:4px;background:${col.bg};color:${col.text};font-weight:600">${e.type}</span>
-                  ${e.client_id ? `<span style="font-size:11.5px;color:var(--text-muted)">${clientMap[e.client_id] || ''}</span>` : ''}
+                  ${e.client_id ? `<span style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(clientMap[e.client_id] || '')}</span>` : ''}
                 </div>
               </div>
               <button onclick="deleteEvent('${e.id}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;font-size:14px" title="Delete">✕</button>

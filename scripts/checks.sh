@@ -143,6 +143,33 @@ if [ -n "$DUPES" ]; then
   fail "duplicate function definition(s) found: $DUPES"
 fi
 
+# -- 9d. Unescaped free-text interpolation (stored-XSS class) --
+# 5th+ recurrence of this class as of 2026-08-12 (2026-07-13, -18, -23, -28, then a full-codebase
+# audit found ~13 more). Catching them one at a time during unrelated feature work has demonstrably
+# not worked, so this makes the class mechanically detectable instead.
+#
+# Matches ${...} interpolations referencing a field that holds text a HUMAN TYPED, where the
+# expression contains no escaper. Deliberately narrow: only the field names that are actually free
+# text in this schema. Numeric fields, hardcoded label constants and single-character initials are
+# not sinks and are not matched.
+#
+# The exclusion list is deliberately tiny. A first version also excluded lines containing === / !== /
+# ?? to skip comparisons — but that drops the WHOLE LINE whenever a comparison appears anywhere in it,
+# which is exactly how app-programs.js:767 (an unescaped program.description) slipped past the rule on
+# the very run that was meant to prove it. An over-broad exclusion in a detector is indistinguishable
+# from not having the detector.
+#
+# escapeHtml for text content, escapeAttr for attribute values, jsArg (an escapeAttr alias) inside
+# an inline handler -- all three count as escaped.
+echo "Checking for unescaped free-text interpolation..."
+XSS_HITS=$(grep -nE '\$\{[^}]*(full_name|exercise_name|client_notes|clientNotes|day_label|clientMap\[|\.title|\.notes|\.description|\.email)[^}]*\}' $FILES \
+  | grep -vE 'escapeHtml|escapeAttr|jsArg|encodeURIComponent' \
+  | grep -vE '\.charAt\(0\)')
+if [ -n "$XSS_HITS" ]; then
+  echo "$XSS_HITS" | while IFS= read -r line; do echo "    $line"; done
+  fail "unescaped free-text interpolation(s) -- wrap in escapeHtml() for text, escapeAttr() for attributes"
+fi
+
 # -- 10. Playwright smoke tests --
 if [ "${CI}" = "true" ]; then
   echo "Playwright: skipped in CI (pre-push hook only)"

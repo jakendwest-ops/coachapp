@@ -1897,11 +1897,11 @@ async function renderSettings(el) {
         <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
           <div class="field">
             <label class="field-label">Full name</label>
-            <input class="field-input" type="text" id="settings-name" value="${profile?.full_name || ''}" placeholder="Your name">
+            <input class="field-input" type="text" id="settings-name" value="${escapeAttr(profile?.full_name || '')}" placeholder="Your name">
           </div>
           <div class="field">
             <label class="field-label">Email</label>
-            <input class="field-input" type="email" value="${currentUser.email || ''}" disabled style="opacity:.6;cursor:default">
+            <input class="field-input" type="email" value="${escapeAttr(currentUser.email || '')}" disabled style="opacity:.6;cursor:default">
           </div>
           <div>
             <button class="btn-primary" style="font-size:14px" onclick="saveSettingsProfile()">Save changes</button>

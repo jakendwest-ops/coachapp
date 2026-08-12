@@ -824,7 +824,7 @@ async function renderExerciseLibrary(el) {
             <div class="list-row">
               <div class="row-info">
                 <div class="row-name">${escapeHtml(e.name)}</div>
-                <div class="row-meta">${[e.category, e.default_sets ? `${e.default_sets} sets × ${e.default_reps} reps` : null].filter(Boolean).join(' · ')}</div>
+                <div class="row-meta">${escapeHtml([e.category, e.default_sets ? `${e.default_sets} sets × ${e.default_reps} reps` : null].filter(Boolean).join(' · '))}</div>
               </div>
               <button class="btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0" onclick="showEditExerciseModal('${e.id}');event.stopPropagation()">Edit</button>
             </div>

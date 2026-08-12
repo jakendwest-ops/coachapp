@@ -153,7 +153,7 @@ async function renderDashboard(el) {
                 <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-accent)" stroke-width="2" style="width:15px;height:15px"><path d="${f.type === 'weight' ? 'M3 6h18M3 12h18M3 18h18' : 'M6 5h12M6 12h12M6 19h12'}"/></svg>
               </div>
               <div>
-                <div style="font-size:13px;font-weight:600;cursor:pointer" onclick="openClient('${f.client_id}')">${clientMap[f.client_id] || 'Unknown'}</div>
+                <div style="font-size:13px;font-weight:600;cursor:pointer" onclick="openClient('${f.client_id}')">${escapeHtml(clientMap[f.client_id] || 'Unknown')}</div>
                 <div style="font-size:11.5px;color:var(--text-muted)">${f.type === 'weight' ? f.detail : 'Session logged'}</div>
               </div>
             </div>
@@ -493,7 +493,7 @@ async function renderClientDashboard(el) {
                   <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-accent)" stroke-width="2" style="width:15px;height:15px"><path d="M6 5h12M6 12h12M6 19h12"/></svg>
                 </div>
                 <div class="row-info">
-                  <div class="row-name">${s.name}</div>
+                  <div class="row-name">${escapeHtml(s.name)}</div>
                   <div class="row-meta">${dateStr} · ${exCount} exercise${exCount !== 1 ? 's' : ''}</div>
                 </div>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
@@ -579,8 +579,8 @@ async function renderClientDashboard(el) {
           </div>
           ${!pbs.length ? `<p style="color:var(--text-muted);font-size:13px">No records yet.</p>` : pbs.slice(0,4).map(pb => `
             <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
-              <span style="font-size:13px;color:var(--text-muted)">${pb.name}</span>
-              <span style="font-size:14px;font-weight:700">${pb.value} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${pb.unit}</span></span>
+              <span style="font-size:13px;color:var(--text-muted)">${escapeHtml(pb.name)}</span>
+              <span style="font-size:14px;font-weight:700">${pb.value} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
             </div>`).join('')}
           ${pbs.length > 4 ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more</p>` : ''}
           <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
@@ -776,7 +776,7 @@ async function renderSoloDashboard(el) {
                   <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-accent)" stroke-width="2" style="width:15px;height:15px"><path d="M6 5h12M6 12h12M6 19h12"/></svg>
                 </div>
                 <div class="row-info">
-                  <div class="row-name">${s.name}</div>
+                  <div class="row-name">${escapeHtml(s.name)}</div>
                   <div class="row-meta">${formatDate(s.date)} · ${exCount} exercise${exCount!==1?'s':''}</div>
                 </div>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
@@ -860,8 +860,8 @@ async function renderSoloDashboard(el) {
           </div>
           ${!pbs.length ? `<p style="color:var(--text-muted);font-size:13px">No records yet.</p>` : pbs.slice(0,4).map(pb => `
             <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
-              <span style="font-size:13px;color:var(--text-muted)">${pb.name}</span>
-              <span style="font-size:14px;font-weight:700">${pb.value} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${pb.unit}</span></span>
+              <span style="font-size:13px;color:var(--text-muted)">${escapeHtml(pb.name)}</span>
+              <span style="font-size:14px;font-weight:700">${pb.value} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
             </div>`).join('')}
           ${pbs.length > 4 ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more in Progress → Personal Bests</p>` : ''}
           <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">

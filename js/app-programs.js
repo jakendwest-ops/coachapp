@@ -131,7 +131,7 @@
                 <div style="margin-bottom:6px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
                   <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
                     <div>
-                      <span style="font-size:13px;font-weight:700;color:var(--text)">${phase.name}</span>
+                      <span style="font-size:13px;font-weight:700;color:var(--text)">${escapeHtml(phase.name)}</span>
                       <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${_builtWeekCount(allSessions)}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
                     </div>
                     <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
@@ -764,7 +764,7 @@ async function renderPrograms(el) {
             <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📋</div>
             <div class="row-info">
               <div class="row-name">${escapeHtml(p.name)}</div>
-              <div class="row-meta">${p.description || `${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}`}</div>
+              <div class="row-meta">${p.description ? escapeHtml(p.description) : `${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}`}</div>
             </div>
             <div class="row-right">
               <span style="font-size:12px;color:var(--text-muted)">${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}</span>
@@ -889,7 +889,7 @@ async function openProgram(programId) {
         <h1 class="page-title" style="margin-bottom:4px">${escapeHtml(program.name)}</h1>
         ${_quickPrefsIconHtml()}
       </div>
-      ${program.description ? `<p style="color:var(--text-muted);font-size:14px">${program.description}</p>` : ''}
+      ${program.description ? `<p style="color:var(--text-muted);font-size:14px">${escapeHtml(program.description)}</p>` : ''}
       <p style="font-size:12px;color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${escapeAttr(program.name)}','${escapeAttr((program.description||''))}')">Edit</button>
@@ -1383,7 +1383,7 @@ function showPeriodizationModal(phaseId, programId) {
   overlay.innerHTML = `
     <div class="modal" style="max-width:480px">
       <div class="modal-header">
-        <h2 class="modal-title">Periodization — ${phase.name}</h2>
+        <h2 class="modal-title">Periodization — ${escapeHtml(phase.name)}</h2>
         <button class="modal-close" onclick="closeModal('periodization-modal')">✕</button>
       </div>
       <div id="pz-body"></div>
@@ -1459,7 +1459,7 @@ async function loadDayTierAssignment(phaseId) {
   window._pzDaySlots = pws.map(pw => ({ id: pw.id, tier: pw.tier || 'moderate' }))
   el.innerHTML = pws.map(pw => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:12px">${pw.day_label} — ${pw.workout_templates?.name || 'Untitled'}</span>
+      <span style="font-size:12px">${escapeHtml(pw.day_label)} — ${escapeHtml(pw.workout_templates?.name || 'Untitled')}</span>
       <select class="field-input" style="width:120px;padding:4px 8px;font-size:16px" onchange="_pzTierChange('${pw.id}', this.value)">
         <option value="heavy" ${pw.tier === 'heavy' ? 'selected' : ''}>Heavy</option>
         <option value="moderate" ${(!pw.tier || pw.tier === 'moderate') ? 'selected' : ''}>Moderate</option>
