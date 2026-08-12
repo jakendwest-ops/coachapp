@@ -841,7 +841,7 @@ function renderRunner() {
           <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Your notes</label>
           <textarea id="wr-client-notes" placeholder="e.g. wide grip felt comfortable…" rows="2"
             oninput="_runner.exercises[${_runner.exIdx}].clientNotes=this.value"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);resize:none;box-sizing:border-box;font-family:inherit;line-height:1.5">${ex.clientNotes||''}</textarea>
+            style="width:100%;margin-top:6px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);resize:none;box-sizing:border-box;font-family:inherit;line-height:1.5">${escapeHtml(ex.clientNotes||'')}</textarea>
         </div>
       </div>
 
