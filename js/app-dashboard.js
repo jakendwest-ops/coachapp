@@ -1,4 +1,32 @@
-﻿async function renderDashboard(el) {
+﻿// ─── Fetch-failure visibility ─────────────────────────────────────────────────────────────────────
+// Until 2026-08-12 not ONE of this file's 19 `db.from()` calls destructured `error`. Every dashboard
+// fetches 6-8 things at once via Promise.all, and a failed fetch rendered as an EMPTY section — so
+// "no upcoming sessions" and "couldn't load your sessions" were indistinguishable, on the first screen
+// of every login, on a phone in a gym with patchy signal.
+//
+// Silence is the worst possible answer here specifically because the user's correct reaction to the two
+// cases is OPPOSITE: an empty account should be ignored, a failed fetch should be retried. Showing
+// nothing tells them to ignore it, every time.
+//
+// Found by the 2026-08-12 full-codebase architecture audit.
+function _failedFetches (map) {
+  return Object.entries(map).filter(([, err]) => err).map(([label]) => label)
+}
+
+// `page` is the router's own page id, so Retry re-enters through navigate() rather than
+// re-implementing role selection here — the master account's view-switching already makes "which
+// dashboard am I" a question with a non-obvious answer, and duplicating it is how it drifts.
+function _fetchFailureBanner (failed, page) {
+  if (!failed.length) return ''
+  log.error('dashboard', 'fetch(es) failed', { page, failed })
+  return `
+    <div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--text)">Couldn't load: ${escapeHtml(failed.join(', '))}. What you see below may be incomplete.</span>
+      <button onclick="navigate('${page}','replace')" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:5px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Retry</button>
+    </div>`
+}
+
+async function renderDashboard(el) {
   log.info('renderDashboard', 'fetching dashboard data')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
@@ -7,15 +35,15 @@
   const todayStr       = new Date().toISOString().split('T')[0]
 
   // Fetch coach's client IDs first so all queries are correctly scoped
-  const { data: coachClients } = await db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).order('full_name')
+  const { data: coachClients, error: coachClientsErr } = await db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).order('full_name')
   const coachClientIds = (coachClients || []).map(c => c.id)
 
   const [
-    { count: clientCount },
-    { count: goalCount },
-    { data: recentWeights },
-    { data: recentWorkouts },
-    { data: upcomingGoals }
+    { count: clientCount, error: clientCountErr },
+    { count: goalCount, error: goalCountErr },
+    { data: recentWeights, error: recentWeightsErr },
+    { data: recentWorkouts, error: recentWorkoutsErr },
+    { data: upcomingGoals, error: upcomingGoalsErr }
   ] = await Promise.all([
     db.from('clients').select('*', { count: 'exact', head: true }).eq('coach_id', currentUser.id),
     db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active').in('client_id', coachClientIds),
@@ -23,6 +51,14 @@
     coachClientIds.length ? db.from('workout_logs').select('client_id, date, created_at').in('client_id', coachClientIds).gte('date', todayStr.slice(0,7) + '-01').order('date', { ascending: false }).limit(100) : { data: [] },
     db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', fourteenDaysOn).order('target_date').limit(5)
   ])
+
+  const _failed = _failedFetches({
+    'your clients': coachClientsErr || clientCountErr,
+    'active goals': goalCountErr,
+    'recent weigh-ins': recentWeightsErr,
+    'recent sessions': recentWorkoutsErr,
+    'upcoming goals': upcomingGoalsErr,
+  })
 
   const activeClients = (coachClients || []).filter(c => c.status === 'active')
 
@@ -76,6 +112,7 @@
   }
 
   el.innerHTML = `
+    ${_fetchFailureBanner(_failed, 'dashboard')}
     <div class="page-header">
       <div>
         <h1 class="page-title">Welcome back, ${firstName}</h1>
@@ -247,13 +284,13 @@ async function renderClientDashboard(el) {
   }
 
   const [
-    { data: goals },
-    { data: events },
-    { data: weights },
-    { data: perfLogs },
-    { data: assignedPrograms },
-    { data: recentSessions },
-    { data: checkIns },
+    { data: goals, error: goalsErr },
+    { data: events, error: eventsErr },
+    { data: weights, error: weightsErr },
+    { data: perfLogs, error: perfLogsErr },
+    { data: assignedPrograms, error: assignedProgramsErr },
+    { data: recentSessions, error: recentSessionsErr },
+    { data: checkIns, error: checkInsErr },
   ] = await Promise.all([
     db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
@@ -335,7 +372,18 @@ async function renderClientDashboard(el) {
     cHeroAction = `navigate('workouts')`
   }
 
+  const _failed = _failedFetches({
+    'your goals': goalsErr,
+    'upcoming events': eventsErr,
+    'weight history': weightsErr,
+    'personal bests': perfLogsErr,
+    'your programme': assignedProgramsErr,
+    'recent sessions': recentSessionsErr,
+    'check-ins': checkInsErr,
+  })
+
   el.innerHTML = `
+    ${_fetchFailureBanner(_failed, 'client-dashboard')}
     ${isSudo ? `
     <div style="background:#f59e0b;color:#fff;border-radius:10px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
       <span style="font-size:13px;font-weight:700">👁 Viewing as ${escapeHtml(window._sudoClientName || 'Client')}</span>
@@ -607,12 +655,12 @@ async function renderSoloDashboard(el) {
   const weekAgoStr = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
   const [
-    { data: goals },
-    { data: events },
-    { data: weights },
-    { data: perfLogs },
-    { data: assignedPrograms },
-    { data: recentSessions },
+    { data: goals, error: goalsErr },
+    { data: events, error: eventsErr },
+    { data: weights, error: weightsErr },
+    { data: perfLogs, error: perfLogsErr },
+    { data: assignedPrograms, error: assignedProgramsErr },
+    { data: recentSessions, error: recentSessionsErr },
   ] = await Promise.all([
     db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
@@ -669,7 +717,17 @@ async function renderSoloDashboard(el) {
     heroAction = `navigate('workouts')`
   }
 
+  const _failed = _failedFetches({
+    'your goals': goalsErr,
+    'upcoming events': eventsErr,
+    'weight history': weightsErr,
+    'personal bests': perfLogsErr,
+    'your programme': assignedProgramsErr,
+    'recent sessions': recentSessionsErr,
+  })
+
   el.innerHTML = `
+    ${_fetchFailureBanner(_failed, 'solo-dashboard')}
     <div class="page-header" style="margin-bottom:16px">
       <div>
         <h1 class="page-title">My Training</h1>
