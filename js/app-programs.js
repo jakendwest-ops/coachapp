@@ -364,7 +364,10 @@ async function _cloneTemplateForClient(tmpl, clientId) {
     const { error: exErr } = await dbq('_cloneTemplateForClient:exercises',
       db.from('workout_template_exercises').insert(exs), { showUserError: false })
     if (exErr) {
-      await db.from('workout_templates').delete().eq('id', newTmpl.id)
+      // Ownership anchor even though newTmpl.id came from our OWN insert two lines up and cannot be
+      // attacker-controlled: an id-only delete on workout_templates is the exact shape the standing
+      // ledger finding is about, and a filter that costs nothing should not be omitted on a delete.
+      await db.from('workout_templates').delete().eq('id', newTmpl.id).eq('coach_id', currentUser.id)
       showToast('Could not copy a workout to the client — that session was skipped', 'error')
       return null
     }
@@ -1568,7 +1571,10 @@ async function generatePhasePeriodization(phaseId, programId) {
         const { error: exErr } = await dbq('generatePhasePeriodization:exercises',
           db.from('workout_template_exercises').insert(exs), { showUserError: false })
         if (exErr) {
-          await db.from('workout_templates').delete().eq('id', newTmpl.id)
+          // Ownership anchor even though newTmpl.id came from our OWN insert above and cannot be
+          // attacker-controlled: an id-only delete on workout_templates is the exact shape the
+          // standing ledger finding is about, and a free filter should not be omitted on a delete.
+          await db.from('workout_templates').delete().eq('id', newTmpl.id).eq('coach_id', currentUser.id)
           genFailures++
           continue
         }
