@@ -605,7 +605,14 @@ function renderStrengthTable(ex) {
   // jump exercise showed no target, no rest and no RPE (Jake: "missing the wizard entirely").
   // _renderTargetBarHtml returns '' for an empty column list, so widening this cannot produce an
   // empty bar for a type with nothing prescribed.
-  const showTargets = _METRIC_TABLE_TYPES.has(mt)
+  // Widened 2026-08-11 from `_METRIC_TABLE_TYPES.has(mt)`. Deleting the wizard routed every non-cardio
+  // exercise here, but this gate still used the OLD five-type allowlist — so an exercise outside it
+  // (a strength row whose metric_type drifted, the exact case the routing change exists to catch) got
+  // working inputs but NO prescription bar and no "set your 1RM" banner. The wizard rendered both
+  // unconditionally, so that was a straight regression, and it also stranded showRunnerOneRMSheet,
+  // whose only entry point in the runner is that banner. The comment above already argues the fix is
+  // safe: _renderTargetBarHtml returns '' for an empty column list, so widening cannot make an empty bar.
+  const showTargets = mt !== 'cardio'
   // `tableRows` always holds CANONICAL kg/cm — same as loggedSets and the eventual DB write. `unit`
   // ('weight'|'jumpHeight') is the only thing that makes a cell preference-aware: the DISPLAYED value
   // is converted for show (weightToPref/jumpHeightToPref), and the typed value is converted back to

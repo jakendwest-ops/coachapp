@@ -2092,6 +2092,9 @@ async function _propagateExerciseChangeToTemplates(change, targetIds) {
   if (propagationFailures) {
     showToast(`${propagationFailures} assigned session${propagationFailures === 1 ? '' : 's'} did not pick up this change`, 'error')
   }
+  // Returned so callers can avoid painting their own toast over this one — showToast keeps a single
+  // node with no queue, so a later info/success toast in the same tick erases this error entirely.
+  return propagationFailures
 }
 
 // For a set of MASTER program templates, finds every already-assigned client copy of those sessions
@@ -2201,11 +2204,14 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changeOverri
   // edit is already editing the client's own copy, so there's nothing downstream to sync).
   if (change && ctx?.programId && !ctx.isClientPlan) {
     const copies = await _assignedCopiesForSession([templateId])
-    if (copies.soloSelfIds.length) await _propagateExerciseChangeToTemplates(change, copies.soloSelfIds)
+    let soloPropFailures = 0
+    if (copies.soloSelfIds.length) soloPropFailures = await _propagateExerciseChangeToTemplates(change, copies.soloSelfIds) || 0
     // In Personal view, real clients are never a write target (_assignedCopiesForSession leaves
     // realClientIds empty). Say so rather than saying nothing: silently skipping the sync would let
     // the user assume their clients' plans had been updated, which is worse than the bug this fixes.
-    if (currentProfile?.role === 'solo' && copies.realClientCount) {
+    // `!soloPropFailures`: this info toast would otherwise erase the propagation ERROR toast fired
+    // moments earlier (single-node showToast, no queue). A failure outranks an FYI.
+    if (currentProfile?.role === 'solo' && copies.realClientCount && !soloPropFailures) {
       showToast(`Personal edit — ${copies.realClientCount} assigned client${copies.realClientCount === 1 ? "'s plan was" : "s' plans were"} not changed. Switch to PT view to update them.`, 'info', 6000)
     }
     if (copies.realClientIds.length) {

@@ -1631,9 +1631,19 @@ async function generatePhasePeriodization(phaseId, programId) {
   }
 
   log.ok('generatePhasePeriodization', 'generated', { phaseId, weeks: phase.duration_weeks - 1, sessions: newInserts.length, propagatedToClients: propagated })
-  if (genFailures) showToast(`${genFailures} session${genFailures === 1 ? '' : 's'} could not be generated and were skipped`, 'error')
-  if (propFailures) showToast(`${propFailures} assigned client plan${propFailures === 1 ? '' : 's'} did not receive the generated weeks — reassign the program`, 'error', 8000)
-  showToast(`Generated weeks 2–${phase.duration_weeks} (${newInserts.length} sessions)${propagated ? `, synced to ${propagated} assigned client${propagated!==1?'s':''}` : ''}`, 'success')
+  // ONE toast, not three. showToast keeps a single #app-toast node and removes any existing one before
+  // painting (app-core.js), so consecutive calls in the same tick leave only the LAST — an error line
+  // followed by the success line renders as pure green. That trap is documented 1200 lines up in this
+  // very file and was fixed once already on 2026-07-29 by a previous multi-agent review; writing the
+  // error toasts as separate statements reintroduced it verbatim. Merge, the way deletePhaseWeek and
+  // duplicatePhaseWeek already do. This also rescues _cloneTemplateForClient's own in-loop toast, which
+  // was being clobbered from here too: its failures are counted into propFailures, so they still speak.
+  const genSummary = `Generated weeks 2–${phase.duration_weeks} (${newInserts.length} sessions)${propagated ? `, synced to ${propagated} assigned client${propagated!==1?'s':''}` : ''}`
+  const genProblems = []
+  if (genFailures) genProblems.push(`${genFailures} session${genFailures === 1 ? '' : 's'} skipped`)
+  if (propFailures) genProblems.push(`${propFailures} client plan${propFailures === 1 ? '' : 's'} not updated`)
+  if (genProblems.length) showToast(`${genSummary} — but ${genProblems.join(', and ')}. Reassign the program.`, 'error', 8000)
+  else showToast(genSummary, 'success')
   openProgram(programId)
 }
 
@@ -1725,7 +1735,13 @@ async function _cleanupPhaseWeeksBeyond(phaseId, maxWeek, programId) {
 
   await _deleteClientCopiesForSlots(stalePwIds, programId)
 
-  await db.from('program_phase_workouts').delete().eq('phase_id', phaseId).gt('week_number', maxWeek)
+  // deletePhaseWeek's byte-identical delete was routed through dbq(); this one is explicitly named as
+  // its must-not-diverge pair (see deletePhaseWeek's own comment) and they HAVE diverged before — this
+  // sibling went a day without the ownership guard in 2026-07-11. Instrumented the same way so a failed
+  // cleanup is at least visible in the console: silence here means generation proceeds over stale weeks.
+  await dbq('_cleanupPhaseWeeksBeyond:deleteStaleWeeks',
+    db.from('program_phase_workouts').delete().eq('phase_id', phaseId).gt('week_number', maxWeek),
+    { showUserError: false })
   // Was an unguarded `delete().in('id', staleMasterTemplateIds)` — it deleted EVERY template a stale
   // week referenced, with no ownership or still-referenced check, unlike its sibling deletePhaseWeek.
   // That destroyed (a) a Week-1 workout whose template_id a duplicated Week 2 shared, and (b) any
