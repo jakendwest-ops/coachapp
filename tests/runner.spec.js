@@ -248,22 +248,26 @@ test.describe('Timed set render regression', () => {
 // ─── Client runner ────────────────────────────────────────────────────────────
 
 test.describe('Workout runner (client)', () => {
-  test.beforeEach(async ({ page }) => {
+  // Each test gets a workout it ALONE owns (see the `ownWorkout` fixture in tests/fixtures.js).
+  //
+  // This block used to navigate to Workouts and click `Start`.first() — "whatever workout is first on
+  // the page". That is shared state: other tests in the same run create, edit and delete templates and
+  // programmes for this same client, so which workout is first changes mid-run. It is why this file
+  // flaked 6-of-38 with a different set each run while every test passed in isolation, and why
+  // checks.sh blocked a good push on 2026-08-11.
+  //
+  // `wk.start()` goes through `startWorkoutRunner(clientId, templateId)` — the exact entry point the
+  // real Start button uses (js/app-workouts.js:2694) — so this removes the shared-state dependency
+  // without bypassing any of the code under test. The Workouts → Start navigation itself is still
+  // covered by the 'PT Workouts page' block above and by client-workout.spec.js.
+  let wk
+  test.beforeEach(async ({ page, ownWorkout }) => {
     await loginAsClient(page)
-    await clickVisible(page, '[data-page="workouts"]')
-    // Wait for page to settle — may show program accordion or flat template list
-    await page.waitForTimeout(1500)
-    // If phases are present (program accordion), expand the first one so Start buttons are visible
-    const firstPhaseBtn = page.locator('button').filter({ hasText: /session/ }).first()
-    if (await firstPhaseBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await firstPhaseBtn.click()
-    }
-    // Now wait for a visible Start button
-    await page.waitForSelector('button:has-text("Start"):visible, button:has-text("▶ Start"):visible', { timeout: 10000 })
+    wk = await ownWorkout()
   })
 
   test('runner loads with exercise name visible', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     // Runner shows End button + at least one exercise label
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
     // Exercise counter (e.g. "Exercise 1 of N") confirms runner is populated
@@ -271,7 +275,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('can log a strength set and see rest timer', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     // ②c: strength logs in the fast table (tick ✓), not the wizard.
@@ -283,7 +287,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('skip rest clears rest overlay and the table stays interactive', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     // ②c: log via the fast table. The core design difference from the old wizard is that the table
@@ -305,7 +309,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('finish screen renders with Save workout button', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     // Log one set via the fast table (②c), then trigger the finish screen.
@@ -320,7 +324,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('strength table renders SET/KG/REPS columns, and rows start EMPTY with last session as ghost text (2026-07-11)', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     // Jump to the first plain-strength exercise — cardio/timed/unilateral stay on the wizard,
@@ -355,7 +359,7 @@ test.describe('Workout runner (client)', () => {
   test('ticking a set with no reps entered warns instead of silently doing nothing (2026-07-11)', async ({ page }) => {
     // Rows no longer pre-fill, so an untouched row is empty and this guard is hit routinely rather
     // than never — a silent no-op would read as a broken button to someone mid-set.
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
     const found = await page.evaluate(() => {
       const idx = _runner.exercises.findIndex(e => typeof _isPlainStrengthExercise === 'function' && _isPlainStrengthExercise(e))
@@ -372,7 +376,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('checking a set in the strength table logs it and starts rest — without leaving the table', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     const found = await page.evaluate(() => {
@@ -398,7 +402,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('save session lands on workouts page — not PT view', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     // Log one set via the fast table (②c).
@@ -420,13 +424,27 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('button:has-text("Save workout")')).toBeVisible({ timeout: 10000 })
     await page.locator('button:has-text("Save workout")').click()
 
+    // The post-session 1RM modal GATES _afterRunnerSave — navigation only fires once it is dismissed
+    // (its close button calls _afterRunnerSave explicitly). Logging 80×8 on a brand-new exercise
+    // produces a 1RM candidate, so it reliably appears here.
+    //
+    // This surfaced when the block moved to an owned workout: previously the beforeEach had already
+    // navigated to Workouts, so the h1 read "Workouts" whether or not _afterRunnerSave ever ran — the
+    // assertion below passed VACUOUSLY. Starting from the dashboard makes it a real test of navigation.
+    // waitFor, not isVisible: the modal appears only after the save round-trips (clientLookup +
+    // insert + the 1RM candidate query), so an immediate visibility check races it and silently
+    // skips the dismissal — which is exactly what made this fail twice before it was diagnosed.
+    const oneRm = page.locator('#modal-post-session-1rm')
+    await oneRm.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {})
+    if (await oneRm.count()) await oneRm.locator('.modal-close').click()
+
     // Must land on client workouts page — not PT client profile
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 12000 })
     await expect(page.locator('text=Overview')).not.toBeVisible({ timeout: 3000 }).catch(() => {})
   })
 
   test('swap exercise opens the picker first, then the sets/reps screen with the exercise locked in, and swapping updates the current exercise name', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("Swap exercise")').click()
@@ -445,7 +463,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('add exercise opens the picker first, then the sets/reps screen, and adding appends a new exercise and jumps to it', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     const before = await page.evaluate(() => _runner.exercises.length)
@@ -463,7 +481,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('swap and add exercise land on the identical sets/reps screen component (not two different builders)', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("Swap exercise")').click()
@@ -480,7 +498,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('rapid swap-then-add tap does not open two overlapping pickers (regression, 2026-07-04 runner freeze)', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     // Fire both picker calls back-to-back, before the coach-id lookup resolves — reproduces
@@ -508,7 +526,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('logged set can be deleted from the edit sheet', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     // Force a CARDIO exercise so the wizard's editable logged-set list renders. Since ②c, cardio is the
@@ -533,7 +551,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('strength table set row can be deleted', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     // Force a plain-strength (table-mode) exercise with 2 rows so delete is available
@@ -553,7 +571,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('delete-set button has deliberate spacing from the complete-set button (regression, 2026-07-05)', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.evaluate(() => {
@@ -570,7 +588,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('swap exercise with a specified rest time overwrites the original rest, not hardcoded 90s (regression, 2026-07-05)', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("Swap exercise")').click()
@@ -587,7 +605,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('add exercise with a specified rest time is honored, not hardcoded 90s (regression, 2026-07-05)', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("+ Add exercise")').click()
@@ -604,7 +622,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('exercise picker: typing a name shows a "Create new exercise" option, and creating it reaches the sets/reps screen with that name locked in', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("+ Add exercise")').click()
@@ -621,7 +639,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('exercise picker: "Change" link on the sets/reps screen reopens the picker without losing entered notes', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.locator('button:has-text("+ Add exercise")').click()
@@ -645,7 +663,7 @@ test.describe('Workout runner (client)', () => {
     // own input would throw a pointer-interception error -- the same failure mode les-013 caught
     // for the exercise picker. A clean fill proves the fix actually renders, not just that the
     // JS sets the property.
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await page.evaluate(() => showRunnerOneRMSheet(_runner.exIdx))
@@ -666,7 +684,7 @@ test.describe('Workout runner (client)', () => {
   // draft, checkpointed on every render + a 10s safety net, offering resume on relaunch.
 
   test('logging a set checkpoints a resumable draft to localStorage', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await logTableSet(page, { weight: '80', reps: '8' })
@@ -792,7 +810,7 @@ test.describe('Workout runner (client)', () => {
   })
 
   test('discardRunner() clears the current client\'s draft (covers both abandon and post-save cleanup)', async ({ page }) => {
-    await page.locator('button:has-text("Start")').first().click()
+    await wk.start()
     await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
 
     await logTableSet(page, { weight: '80', reps: '8' })
