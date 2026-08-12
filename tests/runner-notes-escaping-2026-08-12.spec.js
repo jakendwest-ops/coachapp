@@ -30,6 +30,10 @@ test.describe('runner client-notes escaping (2026-08-12)', () => {
     const res = await page.evaluate(async (payload) => {
       _runner.exercises[_runner.exIdx].clientNotes = payload
       renderRunner()
+      // <img onerror> fires ASYNCHRONOUSLY, after the browser tries and fails to load src=x. Reading
+      // window.__xss in the same synchronous turn returns undefined even when fully vulnerable, which
+      // made that assertion unfalsifiable. Yield first so it means something.
+      await new Promise(r => setTimeout(r, 250))
       const ta = document.getElementById('wr-client-notes')
       return {
         // The payload must survive as the textarea's VALUE, not as markup.

@@ -35,12 +35,15 @@ test.describe('ownership-anchor findings — does RLS backstop them? (2026-08-12
     try {
       const ptPage = await ptCtx.newPage()
       await loginAsPT(ptPage)
-      victim = await ptPage.evaluate(async () => {
-        const { data } = await db.from('clients').select('id, user_id, coach_id').eq('coach_id', currentUser.id)
-        // any client row that is NOT the one belonging to the E2E client login
-        const rows = data || []
+      // Ordered, and the E2E client excluded BY user_id at selection time. Previously this took
+      // whatever PostgREST returned last (no .order(), so not stable between runs) and only checked
+      // "is it a different client?" AFTER all five writes had already been attempted.
+      victim = await ptPage.evaluate(async (clientEmail) => {
+        const { data } = await db.from('clients')
+          .select('id, user_id, coach_id, email').eq('coach_id', currentUser.id).order('id')
+        const rows = (data || []).filter(c => (c.email || '').toLowerCase() !== clientEmail)
         return rows.length ? rows[rows.length - 1].id : null
-      })
+      }, (process.env.CLIENT_EMAIL || '').toLowerCase())
       if (!victim) test.skip(true, 'PT has no client to use as a victim')
 
       victimBefore = await ptPage.evaluate(async (v) => ({
@@ -48,6 +51,7 @@ test.describe('ownership-anchor findings — does RLS backstop them? (2026-08-12
         oneRm: (await db.from('client_1rms').select('id').eq('client_id', v)).data?.length ?? -1,
         perf: (await db.from('performance_logs').select('id').eq('client_id', v)).data?.length ?? -1,
         checkins: (await db.from('client_check_ins').select('id').eq('client_id', v)).data?.length ?? -1,
+        goal: (await db.from('clients').select('goal_weight_kg').eq('id', v).maybeSingle()).data?.goal_weight_kg ?? null,
       }), victim)
     } finally { await ptCtx.close().catch(() => {}) }
 
@@ -57,7 +61,17 @@ test.describe('ownership-anchor findings — does RLS backstop them? (2026-08-12
       const me = (await db.from('clients').select('id').eq('user_id', currentUser.id)).data?.[0]?.id
       const t = async (label, q) => {
         const { data, error } = await q
-        return { label, rows: (data || []).length, refused: !!error, err: error ? error.message.slice(0, 70) : null }
+        const msg = error ? String(error.message || '') : ''
+        return {
+          label,
+          rows: (data || []).length,
+          refused: !!error,
+          // The ONLY refusal that proves anything here. A NOT NULL violation, a missing column or a
+          // CHECK failure all look like "refused" while proving nothing about the policy.
+          rlsRefused: error?.code === '42501' || /row-level security/i.test(msg),
+          code: error?.code || null,
+          err: error ? msg.slice(0, 80) : null,
+        }
       }
       return {
         myClientId: me,
@@ -66,9 +80,9 @@ test.describe('ownership-anchor findings — does RLS backstop them? (2026-08-12
           await t('weight_logs.insert', db.from('weight_logs')
             .insert({ client_id: victim, date: '2026-01-01', weight_kg: 999 }).select('id')),
           await t('client_1rms.insert', db.from('client_1rms')
-            .insert({ client_id: victim, exercise_name: TAG, one_rm_kg: 999 }).select('id')),
+            .insert({ client_id: victim, exercise_name: TAG, one_rm_kg: 999, recorded_at: new Date().toISOString() }).select('id')),
           await t('performance_logs.insert', db.from('performance_logs')
-            .insert({ client_id: victim, name: TAG, category: 'strength', value: 999, unit: 'kg', date: '2026-01-01' }).select('id')),
+            .insert({ client_id: victim, logged_by: currentUser.id, name: TAG, category: 'strength', value: 999, unit: 'kg', date: '2026-01-01' }).select('id')),
           await t('client_check_ins.insert', db.from('client_check_ins')
             .insert({ client_id: victim, sleep: 5, energy: 5, stress: 5, soreness: 5, notes: TAG }).select('id')),
           // saveWeightGoals writes the canonical clients row — the audit called this the worst of the seven.
@@ -89,8 +103,12 @@ test.describe('ownership-anchor findings — does RLS backstop them? (2026-08-12
     // page and timed out on login — and an unverifiable confirmation step is worse than none.
     let after = null
     const ptCtx2 = await browser.newContext()
+    // Hoisted so the finally block can REUSE the already-logged-in page. Creating a third page and
+    // logging in again just to clean up burned 10s and timed out — cleanup that is itself fragile is
+    // not cleanup.
+    let ptPage2 = null
     try {
-      const ptPage2 = await ptCtx2.newPage()
+      ptPage2 = await ptCtx2.newPage()
       await loginAsPT(ptPage2)
       after = await ptPage2.evaluate(async ({ v, TAG }) => ({
         weight: (await db.from('weight_logs').select('id').eq('client_id', v)).data?.length ?? -1,
@@ -99,21 +117,37 @@ test.describe('ownership-anchor findings — does RLS backstop them? (2026-08-12
         checkins: (await db.from('client_check_ins').select('id').eq('client_id', v)).data?.length ?? -1,
         plantedWeight: (await db.from('weight_logs').select('id').eq('client_id', v).eq('weight_kg', 999)).data?.length ?? -1,
         plantedTag: (await db.from('client_1rms').select('id').eq('exercise_name', TAG)).data?.length ?? -1,
+        goal: (await db.from('clients').select('goal_weight_kg').eq('id', v).maybeSingle()).data?.goal_weight_kg ?? null,
       }), { v: victim, TAG })
 
-      // Clean up anything that DID land, so a leak doesn't also leave debris.
-      await ptPage2.evaluate(async ({ v, TAG }) => {
-        await db.from('weight_logs').delete().eq('client_id', v).eq('weight_kg', 999)
-        await db.from('client_1rms').delete().eq('exercise_name', TAG)
-        await db.from('performance_logs').delete().eq('name', TAG)
-        await db.from('client_check_ins').delete().eq('client_id', v).eq('notes', TAG)
-      }, { v: victim, TAG })
-    } finally { await ptCtx2.close().catch(() => {}) }
+    } finally {
+      // Cleanup in FINALLY, not in the try body. It previously sat after the `after` read, so a
+      // timeout on this context's login — which this file has already seen once — would leave
+      // anything that DID land planted in real data.
+      try {
+        if (!ptPage2) { ptPage2 = await ptCtx2.newPage(); await loginAsPT(ptPage2) }
+        await ptPage2.evaluate(async ({ v, TAG, goal }) => {
+          await db.from('weight_logs').delete().eq('client_id', v).eq('weight_kg', 999)
+          await db.from('client_1rms').delete().eq('exercise_name', TAG)
+          await db.from('performance_logs').delete().eq('name', TAG)
+          await db.from('client_check_ins').delete().eq('client_id', v).eq('notes', TAG)
+          // The UPDATE has no row to delete — it has a value to put back.
+          await db.from('clients').update({ goal_weight_kg: goal }).eq('id', v)
+        }, { v: victim, TAG, goal: victimBefore?.goal ?? null })
+      } catch (e) { console.warn('cleanup failed:', e.message) }
+      await ptCtx2.close().catch(() => {})
+    }
 
     console.log('victim rows before:', JSON.stringify(victimBefore))
     console.log('victim rows after :', JSON.stringify(after))
 
     expect(attempts.victimIsDifferent, 'probe is meaningless if the victim IS the logged-in client').toBe(true)
+
+    // Every INSERT must be refused BY THE POLICY. Without this the probe cannot tell "RLS said no"
+    // from "Postgres said no because I built the row wrong" — and only the first proves anything.
+    for (const r of attempts.results.filter(x => x.label.endsWith('.insert'))) {
+      expect(r.rlsRefused, `${r.label} must be refused by RLS specifically, not by a schema/constraint error (got ${r.code}: ${r.err})`).toBe(true)
+    }
 
     // The verdict. Row counts are the authority, not the insert's own reported error.
     expect(after.weight, 'a client must not be able to add a weight log to another client').toBe(victimBefore.weight)
@@ -122,5 +156,8 @@ test.describe('ownership-anchor findings — does RLS backstop them? (2026-08-12
     expect(after.checkins, 'a client must not be able to add a check-in to another client').toBe(victimBefore.checkins)
     expect(after.plantedWeight, 'no planted weight row may survive').toBe(0)
     expect(after.plantedTag, 'no planted 1RM row may survive').toBe(0)
+    // The UPDATE case. This is the one the audit called "the worst of the seven", and it is the only
+    // write here that mutates an existing row rather than adding one.
+    expect(after.goal, "a client must not be able to change another client's goal weight").toBe(victimBefore.goal)
   })
 })

@@ -562,8 +562,20 @@ async function savePerformanceLog(clientId) {
 async function deletePerfLog(id, clientId) {
   if (!confirm('Delete this record?')) return
   log.info('deletePerfLog', 'deleting performance record', { id })
-  const { error } = await db.from('performance_logs').delete().eq('id', id)
-  if (error) { log.error('deletePerfLog', 'delete failed', error); return }
+  // .select() + rowcount, not just an error check: a policy-blocked delete returns
+  // { data: [], error: null }, so an error-only guard treats "refused" as "succeeded", re-renders,
+  // and the row is still sitting there with no explanation. Same shape as deleteTemplate's guard.
+  const { data: deleted, error } = await db.from('performance_logs').delete().eq('id', id).select()
+  if (error) {
+    log.error('deletePerfLog', 'delete failed', error)
+    showToast('Could not delete that record — try again', 'error')
+    return
+  }
+  if (!deleted?.length) {
+    log.error('deletePerfLog', 'delete removed no rows — permission denied or already gone', { id })
+    showToast('That record could not be deleted', 'error')
+    return
+  }
   log.ok('deletePerfLog', 'record deleted', { id })
   renderClientPerformance(clientId, document.getElementById('tab-content'))
 }
@@ -888,8 +900,17 @@ async function saveWeightGoals(clientId) {
 async function deleteWeightLog(id, clientId) {
   if (!confirm('Delete this entry?')) return
   log.info('deleteWeightLog', 'deleting weight entry', { id })
-  const { error } = await db.from('weight_logs').delete().eq('id', id)
-  if (error) { log.error('deleteWeightLog', 'delete failed', error); return }
+  const { data: deleted, error } = await db.from('weight_logs').delete().eq('id', id).select()
+  if (error) {
+    log.error('deleteWeightLog', 'delete failed', error)
+    showToast('Could not delete that entry — try again', 'error')
+    return
+  }
+  if (!deleted?.length) {
+    log.error('deleteWeightLog', 'delete removed no rows — permission denied or already gone', { id })
+    showToast('That entry could not be deleted', 'error')
+    return
+  }
   log.ok('deleteWeightLog', 'entry deleted', { id })
   renderClientWeight(clientId, document.getElementById('tab-content'))
 }
@@ -1336,6 +1357,12 @@ async function renderProgressWeight(el) {
   const yRange = (dispGoal != null || dispStarting != null)
     ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
     : {}
+  // Chart.js keeps a per-canvas registry; creating a second chart on the same canvas without
+  // destroying the first leaks the old instance along with its listeners and animation loop, and the
+  // two then fight over the same context. The weight-chart site above already guards this exact way
+  // (`Chart.getChart(id)` + destroy) — this pair was simply missed. Re-rendering My Progress is a
+  // normal thing to do repeatedly (switch tab, change units, log a weight), so the leak compounds.
+  Chart.getChart('pw-chart')?.destroy()
   new Chart(document.getElementById('pw-chart').getContext('2d'), {
     type: 'line',
     data: { labels: logs.map(l => new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
@@ -1348,6 +1375,7 @@ async function renderProgressWeight(el) {
   })
   const hrLogs = logs.filter(l => l.resting_hr != null)
   if (hrLogs.length >= 2 && document.getElementById('resting-hr-chart')) {
+    Chart.getChart('resting-hr-chart')?.destroy()
     new Chart(document.getElementById('resting-hr-chart').getContext('2d'), {
       type: 'line',
       data: { labels: hrLogs.map(l => new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),

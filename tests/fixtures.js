@@ -68,7 +68,7 @@ const DEFAULT_EXERCISES = [
 ]
 
 exports.test = exports.test.extend({
-  // Usage, AFTER logging in (the fixture needs a live session to read the client id from):
+  // Usage, AFTER logging in as a COACHED CLIENT (see the guard below — solo is not supported):
   //     const wk = await ownWorkout()                      // default 2-exercise strength workout
   //     const wk = await ownWorkout({ exercises: [...] })  // custom shape
   // then assert against wk.name / wk.exerciseNames rather than "whatever was first".
@@ -84,6 +84,15 @@ exports.test = exports.test.extend({
         return row ? { clientId: row.id, coachId: row.coach_id } : null
       })
       if (!target) throw new Error('ownWorkout: no clients row for the logged-in user — log in first')
+      // A pure SOLO account has only a coach_id-NULL row, so `find(c => c.coach_id)` returns undefined
+      // and rows[0] is the solo row — which would insert a template with coach_id: null. Fail loudly
+      // rather than create a malformed row. Also note coachId comes from the PAGE's session while the
+      // INSERT runs in the PT's, so this fixture assumes the logged-in user is a client OF the PT test
+      // account; anything else is a cross-tenant insert that RLS will refuse anyway.
+      if (!target.coachId) {
+        throw new Error('ownWorkout: this fixture supports a coached client only — a solo/uncoached '
+          + 'account has a NULL coach_id and would create a malformed template')
+      }
 
       const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       const name = `[E2E] own ${stamp}`
