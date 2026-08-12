@@ -15,3 +15,14 @@ tests/zz-*.spec.js
 tests/_debug-*.spec.js
 adhoc.png
 mobile.png
+
+# Local editor config (machine-specific, never shared)
+.vscode/
+
+# Ad-hoc debug/visual screenshots left behind by run-coachapp / mobile-check sessions.
+# Same class as adhoc.png / mobile.png above — these just never got added, and two pre-push
+# reviews flagged them as commit-risk because `git add -A` would sweep them into a real commit.
+# The FILES are deliberately left on disk; only the commit risk is removed.
+*-debug*.png
+visual-*.png
+mobile-input.png
