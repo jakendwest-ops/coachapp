@@ -33,8 +33,13 @@
     const _cpwMap = {}
     const cp0 = cpRes.data?.[0]
     if (cp0?.id) {
-      const cpwRes = await db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id').eq('client_program_id', cp0.id)
-      ;(cpwRes.data || []).forEach(r => { _cpwMap[r.program_phase_workout_id] = r.workout_template_id })
+      // Embed the CLIENT'S cloned template's exercises, not just its id. The day modal renders the
+      // full prescription as of 2026-08-14, and the clone is what ▶ Start actually runs — reading the
+      // master template's sets_json here would print numbers the runner never uses the moment a
+      // client's copy diverges. Same embed shape as renderClientWorkoutsPage (app-workouts.js:588),
+      // which is the screen Jake compared this one against.
+      const cpwRes = await db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id, workout_templates(workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json))').eq('client_program_id', cp0.id)
+      ;(cpwRes.data || []).forEach(r => { _cpwMap[r.program_phase_workout_id] = { templateId: r.workout_template_id, exercises: r.workout_templates?.workout_template_exercises || [] } })
     }
     window._calClientTemplateMap = _cpwMap
 
@@ -65,7 +70,8 @@
             d.setDate(weekStart.getDate() + offset)
             const ds = localDate(d)
             if (!programWorkoutsByDate[ds]) programWorkoutsByDate[ds] = []
-            programWorkoutsByDate[ds].push({ ...pw, _clientTemplateId: _cpwMap[pw.id] || null })
+            const _clone = _cpwMap[pw.id]
+            programWorkoutsByDate[ds].push({ ...pw, _clientTemplateId: _clone?.templateId || null, _clientExercises: _clone?.exercises || null })
           })
         }
         weekOffset += (phase.duration_weeks || 1)
@@ -241,7 +247,11 @@ function showClientDayDetail(dateStr) {
       </div>
       <div style="padding:16px 20px 20px">
         ${workouts.length ? workouts.map((pw, si) => {
-          const exs = (pw.workout_templates?.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
+          // Prefer the client's own cloned template — that is what ▶ Start runs, so it is the only
+          // copy whose numbers are guaranteed to match the session the user is about to do. Falls
+          // back to the master when no clone row exists. Copy before sorting: the embed array is
+          // shared with window._calProgramWorkouts and .sort() mutates in place.
+          const exs = [...(pw._clientExercises?.length ? pw._clientExercises : (pw.workout_templates?.workout_template_exercises || []))].sort((a,b) => a.order_index - b.order_index)
           const multi = workouts.length > 1
           return `
           <div style="padding:14px 0;border-bottom:1px solid var(--border)">
@@ -258,11 +268,22 @@ function showClientDayDetail(dateStr) {
                 // work-round count (sets × cycles) for a block instead of its raw sets_json.length
                 // of 1 — see that function's comment for why.
                 const _exIsInterval = (ex.metric_type || ex.exercise_type) === 'interval'
+                // Jake, 2026-08-14: "The calendar for personal only shows the exercise name and does
+                // not show the same data for the same workout that is present on the 'workouts' page."
+                // Mirrors app-workouts.js:669-679 exactly — same helper, same options, same markup.
+                // This was the ONLY prescription-rendering surface in the app that never called
+                // _fmtSetsCollapsed, which is what app-workouts.js:198-199 already listed as a gap.
+                // escapeHtml is load-bearing, not decoration: _fmtSetDetail concatenates raw sets_json
+                // values and is explicitly NOT html-safe (see its header comment, app-workouts.js:216).
+                const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval, isUnilateral: _resolveMetricType(ex.metric_type, ex.exercise_type, ex.sets_json?.[0]) === 'unilateral' })
                 const _setCount = _prescribedSetCount(ex.sets_json, _exIsInterval)
                 return `
-                <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-                  <span style="font-size:12px">${escapeHtml(ex.exercise_name)}</span>
-                  <span style="font-size:11px;color:var(--text-muted)">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
+                <div style="padding:5px 0;border-bottom:1px solid var(--border)">
+                  <div style="display:flex;justify-content:space-between;gap:8px">
+                    <span style="font-size:12px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
+                    <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
+                  </div>
+                  ${presc ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
                 </div>`}).join('')}
             </div>` : ''}
             <button onclick="startWorkoutRunner('${clientId}','${pw._clientTemplateId||pw.workout_templates?.id}');document.getElementById('client-day-modal').remove()" class="btn-primary" style="width:100%">▶ Start workout</button>

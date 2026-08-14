@@ -524,7 +524,16 @@ function _buildTargetCols(tgt, ex) {
   // rather than trusted because the builder's own inputs happen to be numeric today. Found by the
   // 2026-07-30 weekly full-file review: this whole function escaped tempo only, leaving reps/%1RM/
   // effort/rest raw into _renderTargetBarHtml's innerHTML sink.
-  if (repsStr) cols.push({ val: escapeHtml(repsStr), label: mt === 'jump_height' || mt === 'jump_distance' ? 'JUMPS' : 'REPS', accent: true })
+  // AMRAP (restored 2026-08-14, Jake). The flag is per-SET and `tgt` is this set's own entry (:569),
+  // so "3 × 8 then 1 × AMRAP" changes the bar as the athlete advances — which is the whole point of
+  // it being per-set. A rep target may still be prescribed alongside as a FLOOR, so that renders as
+  // "8–10+" under an AMRAP label; with no floor the value carries the word itself. Never both, or the
+  // bar reads "AMRAP / AMRAP". Excluded when tgt.timed, where repsMin holds SECONDS, not reps.
+  if (!tgt.timed && tgt.amrap) {
+    cols.push(repsStr
+      ? { val: escapeHtml(repsStr) + '+', label: 'AMRAP', accent: true }
+      : { val: 'AMRAP', label: mt === 'jump_height' || mt === 'jump_distance' ? 'JUMPS' : 'REPS', accent: true })
+  } else if (repsStr) cols.push({ val: escapeHtml(repsStr), label: mt === 'jump_height' || mt === 'jump_distance' ? 'JUMPS' : 'REPS', accent: true })
   // A stale `weight` survives a metric_type switch (flushTemplateSets preserves un-rendered
   // fields), so a jump set can still carry one — don't render two columns both labelled TARGET.
   const isJumpMt = mt === 'jump_height' || mt === 'jump_distance'
@@ -1952,7 +1961,7 @@ async function _confirmRunnerExerciseFromModal(mode) {
   // trigger. Found 2026-07-26 while wiring that trigger; same les-036/037 drift shape.
   const derived = _deriveFromMetricType(metricType)
   const type = derived.exercise_type
-  const cleanSets = _cleanTemplateSets(sets, derived)
+  const cleanSets = _cleanTemplateSets(sets, derived, metricType)
   const oneRM = await _lookupClientOneRM(name, exerciseId)
   closeModal('add-to-template-modal')
 

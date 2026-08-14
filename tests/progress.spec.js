@@ -127,15 +127,16 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('button:has-text("Body Weight")')).toBeVisible()
     await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()
     await expect(page.locator('button:has-text("Performance")')).toBeVisible()
+    await expect(page.locator('button:has-text("1RMs")')).toBeVisible()   // own tab since 2026-08-14
     // Exact-text match on any button, page-wide — "Cardio bests" is a heading div, not a button,
     // so this can't false-pass against Personal Bests' new sub-section label.
     await expect(page.locator('button', { hasText: /^Cardio$/ })).toHaveCount(0)
   })
 
-  test('Personal Bests still mounts the 1RMs section (Cardio-bests removed 2026-07-19 — cardio now has its own trend card)', async ({ page }) => {
+  test('Personal Bests mounts neither Cardio-bests (removed 2026-07-19) nor 1RMs (moved to its own tab 2026-08-14)', async ({ page }) => {
     await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(800)
-    await expect(page.locator('#pb-1rms-section')).toBeAttached()
+    await expect(page.locator('#pb-1rms-section')).toHaveCount(0)
     await expect(page.locator('#pb-cardio-section')).toHaveCount(0)
     await expect(page.locator('text=Cardio bests')).toHaveCount(0)
   })
@@ -145,7 +146,12 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await page.waitForTimeout(800)
     await expect(page.locator('button:has-text("Per exercise")')).toBeVisible()
     await expect(page.locator('button:has-text("Recent sessions")')).toBeVisible()
-    await expect(page.locator('button:has-text("1RMs")')).toHaveCount(0)
+    // Scoped to #progress-tab-content, where renderPerformance draws its SUB-tabs. It was a page-wide
+    // match until 2026-08-14, when 1RMs became a top-level Progress tab carrying the same label —
+    // which made this fail on a button the test was never about. The claim is "the Performance
+    // sub-tabs are no longer 1RMs/Progressions", so the assertion has to live inside that row.
+    await expect(page.locator('#progress-tab-content button:has-text("1RMs")')).toHaveCount(0)
+    await expect(page.locator('#progress-tab-content button:has-text("Progressions")')).toHaveCount(0)
   })
 
   test('Performance > Per exercise search filters the trend-card list without a DB re-fetch (live-filter logic)', async ({ page }) => {

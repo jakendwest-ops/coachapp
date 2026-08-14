@@ -270,21 +270,26 @@ test.describe('Jump height/distance reps render as a range, matching every other
 // escape hatch, same pattern this file already uses for the "Pace / km (legacy)" row.
 //
 // UPDATED 2026-08-11 — the decluttering finished. Jake called AMRAP too, so the set-editor toggle row
-// now holds NOTHING for a new set. Two different removals, deliberately not the same shape:
-//   * AMRAP is gone outright (flag, both render sites, toggle). It was display-only with zero live
-//     usage, so there is no legacy set to strand and no escape hatch to preserve.
+// held NOTHING for a new set. Two different removals, deliberately not the same shape:
+//   * AMRAP was gone outright (flag, both render sites, toggle). Display-only with zero live usage, so
+//     there was no legacy set to strand and no escape hatch to preserve.
 //   * `assisted` is also gone outright, but for the opposite reason -- it was never reachable AND it
 //     corrupted weight_kg. See assisted-lift-removed-2026-08-11.spec.js.
 //   * `bodyweight` KEEPS its conditional escape hatch. Unlike the other two it does real work in the
 //     runner (BW badge, no weight input, skips the "Enter weight first" guard), so a set carrying it
 //     must stay visible and undoable.
-test.describe('Builder set-editor decluttered: BW/Assist/Repeat/AMRAP removed', () => {
-  test('a NEW set shows NO toggles at all -- no AMRAP, BW, Assist, or Repeat controls', async ({ page }) => {
+//
+// UPDATED AGAIN 2026-08-14 — Jake reversed the AMRAP call after real gym use and asked for it back as
+// a visible per-set pill. `assisted` and `Repeat` stay gone; `bodyweight` keeps its escape hatch. The
+// distinction this file exists to defend is unchanged and is the reason the reversal is safe: AMRAP
+// was removed as UNUSED SURFACE, never as a bug. Nothing that made `assisted` dangerous applies to it.
+test.describe('Builder set-editor: Assist/Repeat stay removed, AMRAP restored as a pill', () => {
+  test('a NEW set shows AMRAP but still no BW, Assist, or Repeat controls', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
       window._templateSets = [{ effortType: 'rpe', repsMin: '8' }]
       const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) } return e }
-      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
       renderTemplateSets('att-sets-container', 'weight_reps')
       const html = document.getElementById('att-sets-container').innerHTML
       return {
@@ -296,12 +301,60 @@ test.describe('Builder set-editor decluttered: BW/Assist/Repeat/AMRAP removed', 
         repeatFnGone: typeof repeatTemplateSet === 'undefined',
       }
     })
-    expect(r.hasAmrap, 'AMRAP was removed 2026-08-11 -- the toggle row is now empty for a new set').toBe(false)
+    expect(r.hasAmrap, 'AMRAP restored 2026-08-14 as an always-offered per-set pill').toBe(true)
     expect(r.hasBw, 'BW must not show for a set that was never bodyweight').toBe(false)
     expect(r.hasAssist, 'Assist must not show for a set that was never assisted').toBe(false)
     expect(r.hasRepeatBox, 'the blank round-count box next to the set number must be gone').toBe(false)
     expect(r.hasRepeatBtn, 'the Repeat button must be gone').toBe(false)
     expect(r.repeatFnGone, 'repeatTemplateSet had only one caller (this button) -- removed as dead code').toBe(true)
+  })
+
+  // The pill is only half the feature. `_cleanTemplateSets` is an ALLOWLIST, so a key missing from it
+  // is dropped on save with no error at any layer -- exactly how every cardio target was lost (les-036)
+  // and exactly where AMRAP would die again if the restore were only skin-deep.
+  test('the amrap flag SURVIVES _cleanTemplateSets', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      // Third arg is metricType (added 2026-08-14): amrap is GATED on it, so a caller that forgets
+      // to pass it silently drops the flag. This test failing on a signature change is the allowlist
+      // trap working as intended — that is precisely the failure this file exists to catch.
+      const [on, off] = _cleanTemplateSets(
+        [{ amrap: true, repsMin: '8' }, { repsMin: '8' }],
+        _deriveFromMetricType('weight_reps'), 'weight_reps')
+      return { on: on.amrap, off: off.amrap, key: 'amrap' in on }
+    })
+    expect(r.key, 'amrap must be present on the cleaned object, not silently stripped').toBe(true)
+    expect(r.on).toBe(true)
+    expect(r.off).toBe(false)   // normalised to a real boolean, never undefined
+  })
+
+  // Unilateral was fully built end to end in the runner (L/R weight+reps, per-side rows, `side` column)
+  // but its ONLY on-switch was an option inside a <select> labelled "Type" -- so Jake read the whole
+  // feature as missing. The pill is a second face on that select, which stays the source of truth.
+  test('the Unilateral pill reflects and drives the type select', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      window._templateSets = [{ effortType: 'rpe', repsMin: '8' }]
+      const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) } return e }
+      const sel = mk('att-type', 'select'); mk('att-sets-container', 'div'); const host = mk('att-metric-pills', 'div')
+      sel.innerHTML = '<option value="weight_reps"></option><option value="unilateral"></option><option value="timed_hold"></option>'
+      sel.value = 'weight_reps'
+      renderTemplateSets('att-sets-container', 'weight_reps')
+      const offered = /Unilateral/.test(host.innerHTML)
+      toggleUnilateralType('att-sets-container')
+      const afterOn = { selValue: sel.value, pill: host.innerHTML }
+      toggleUnilateralType('att-sets-container')
+      const afterOff = { selValue: sel.value, pill: host.innerHTML }
+      // A type with no meaningful notion of "per side" must not offer it at all -- one tap there would
+      // silently discard the type the user actually picked.
+      renderTemplateSets('att-sets-container', 'timed_hold')
+      return { offered, afterOn, afterOff, onTimedHold: host.innerHTML }
+    })
+    expect(r.offered, 'the pill must be visible on weight_reps -- that is the discoverability fix').toBe(true)
+    expect(r.afterOn.selValue, 'the pill writes THROUGH the select, which stays authoritative').toBe('unilateral')
+    expect(r.afterOn.pill).toContain('var(--accent)')   // renders active
+    expect(r.afterOff.selValue, 'and toggles back off').toBe('weight_reps')
+    expect(r.onTimedHold, 'not offered where it has no meaning').toBe('')
   })
 
   // UPDATED 2026-08-11 — the escape hatch now applies to `bodyweight` ONLY. `assisted` was deleted

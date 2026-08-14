@@ -26,14 +26,31 @@ test('resting-HR trend chart shows on the Body tab with >=2 entries (B4)', async
 })
 
 // B5 — the standalone "Cardio bests" section is removed from Personal Bests (cardio now has its own
-// metric_type trend card in Per-exercise). The 1RMs section stays.
-test('Personal Bests no longer renders a Cardio-bests section (B5)', async ({ page }) => {
+// metric_type trend card in Per-exercise).
+// UPDATED 2026-08-14: 1RMs also left this page, for its own top-level tab. The two departures are
+// NOT the same thing and the distinction is what this test now pins: Cardio-bests was DELETED
+// (superseded by the per-exercise trend card), 1RMs was MOVED and must still exist somewhere. A
+// single "is it on this page" assertion cannot tell those apart, so each gets its own.
+test('Personal Bests renders neither Cardio-bests (deleted) nor 1RMs (moved) (B5)', async ({ page }) => {
   await loginAsClient(page)
   await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
   await page.waitForTimeout(1200)
-  expect(await page.locator('#pb-1rms-section').count()).toBe(1)      // 1RMs stays
-  expect(await page.locator('#pb-cardio-section').count()).toBe(0)    // cardio-bests gone
+  expect(await page.locator('#pb-1rms-section').count()).toBe(0)      // 1RMs moved to its own tab
+  expect(await page.locator('#pb-cardio-section').count()).toBe(0)    // cardio-bests gone for good
   expect(await page.getByText('Cardio bests', { exact: true }).count()).toBe(0)
+})
+
+// The other half of that move: 1RMs must actually BE on the new tab. Without this, deleting the
+// section outright would pass the test above just as happily as relocating it did.
+test('1RMs has its own Progress tab and renders the grid there (2026-08-14)', async ({ page }) => {
+  await loginAsClient(page)
+  await page.evaluate(() => { window._progressTab = '1RMs'; renderProgress(document.getElementById('main-content')) })
+  await page.waitForTimeout(1200)
+  expect(await page.locator('#pb-1rms-section').count()).toBe(1)
+  await expect(page.getByRole('button', { name: 'Save all' })).toBeVisible()
+  // Grid always, not only when empty — the whole point of Jake's 2026-08-14 report. The Big 5 are
+  // offered as rows whether or not anything is recorded yet.
+  await expect(page.getByText('Back Squat').first()).toBeVisible()
 })
 
 // Sub-project ③ — metric_type-aware progress trends. Pure helpers are unit-tested here (same

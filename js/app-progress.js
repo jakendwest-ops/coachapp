@@ -15,88 +15,173 @@
 
 const BIG_5_EXERCISES = ['Back Squat', 'Deadlift', 'Bench Press', 'Overhead Press', 'Barbell Row']
 
-let _saveBig5Pending = false
+let _saveOneRMGridPending = false
 
-async function saveBig5OneRMs(clientId) {
+// Refresh whichever container is actually showing the 1RMs list — the client/solo 1RMs tab
+// (pb-1rms-section) or the PT-facing client-profile 1RMs tab (tab-content). Was three byte-identical
+// copies of these three lines in saveBig5OneRMs, save1RM and delete1RM; a fourth was about to be
+// added for the grid save, so it is hoisted instead.
+function _refresh1RMs(clientId) {
+  const el = document.getElementById('pb-1rms-section') || document.getElementById('tab-content')
+  // Null-guarded because this runs AFTER the write has already succeeded. Without it, a caller on a
+  // surface that hosts neither container throws on el.innerHTML and the exception surfaces as a
+  // failed save — when the data is safely in Postgres and only the redraw had nowhere to go.
+  if (!el) return Promise.resolve()
+  return renderClient1RMs(clientId, el)
+}
+
+// Writes only the rows the user actually CHANGED. client_1rms is append-only — the newest row per
+// exercise wins, and "+ Update" has always inserted rather than updated — so saving every row every
+// time would stamp a fresh entry against today for lifts that were never touched, burying the real
+// history under a wall of duplicate values.
+async function saveOneRMGrid(clientId) {
   // Guards against a double-tap: _resolveExerciseIdForSave does a non-atomic select-then-insert,
   // so two concurrent calls for the same exercise name can both miss the not-yet-inserted row
   // and create duplicate library entries.
-  if (_saveBig5Pending) return
-  _saveBig5Pending = true
-  const errEl = document.getElementById('big5-error')
-  const today = new Date().toISOString().split('T')[0]
-  const named = BIG_5_EXERCISES
-    .map(name => ({ name, weight: weightFromPref(document.getElementById(`big5-${name.replace(/\s+/g,'-')}`)?.value) }))
-    .filter(r => r.weight && r.weight > 0)
-  if (!named.length) { errEl.textContent = 'Enter at least one value'; _saveBig5Pending = false; return }
-  const coachId = await _effectiveCoachIdForClient(clientId)
-  const rows = await Promise.all(named.map(async r => ({
-    client_id: clientId, exercise_id: await _resolveExerciseIdForSave(r.name, coachId),
-    exercise_name: r.name, one_rm_kg: r.weight, recorded_at: today
-  })))
-  const { error } = await dbq('saveBig5OneRMs', db.from('client_1rms').insert(rows))
-  _saveBig5Pending = false
-  if (error) { errEl.textContent = 'Save failed — try again'; return }
-  // Refresh whichever container is actually showing the 1RMs list — the client/solo Personal
-  // Bests page (pb-1rms-section, since the 2026-07-08 restructure moved 1RMs there from a
-  // dedicated Performance sub-tab) or the PT-facing client-profile 1RMs tab (tab-content).
-  const pbEl = document.getElementById('pb-1rms-section')
-  if (pbEl) renderClient1RMs(clientId, pbEl)
-  else renderClient1RMs(clientId, document.getElementById('tab-content'))
+  if (_saveOneRMGridPending) return
+  _saveOneRMGridPending = true
+  // try/finally, so an unexpected rejection anywhere below can't strand the flag `true` and silently
+  // kill Save-all for the rest of the session with no message.
+  try {
+    const errEl = document.getElementById('orm-grid-error')
+    if (errEl) errEl.textContent = ''
+    const today = new Date().toISOString().split('T')[0]
+
+    const changed = []
+    const invalid = []
+    ;(window._oneRMGridRows || []).forEach((d, i) => {
+      const inp = document.getElementById(`orm-${i}`)
+      if (!inp) return
+      const val = (inp.value || '').trim()
+      if (!val) return   // left blank — not an edit
+      // Compared NUMERICALLY, with both sides already in the display unit, so "100.0" and "100" are
+      // the same edit rather than a duplicate append. Comparing the CONVERTED kg would be wrong: a
+      // kg→lb→kg round trip drifts in the last decimal and would read as a change on every save.
+      const origNum = parseFloat(inp.dataset.orig || '')
+      const valNum = parseFloat(val)
+      if (!isNaN(origNum) && valNum === origNum) return
+      const kg = weightFromPref(val)
+      // A typed 0, a negative, or text is a REAL edit that cannot be stored. Surfacing it beats
+      // dropping it: silently skipping meant either "Nothing changed" (false — they did change it)
+      // or, in a mixed save, the other rows saving while this one re-rendered showing its old value,
+      // looking for all the world like it had saved too.
+      if (kg == null || !(kg > 0)) { invalid.push(d.name); return }
+      changed.push({ name: d.name, exerciseId: d.exerciseId, kg })
+    })
+
+    if (invalid.length) {
+      if (errEl) errEl.textContent = `Enter a weight above 0 for ${invalid.join(', ')}`
+      return
+    }
+    if (!changed.length) {
+      if (errEl) errEl.textContent = 'Nothing changed — edit a value first'
+      return
+    }
+
+    const coachId = await _effectiveCoachIdForClient(clientId)
+    const rows = await Promise.all(changed.map(async r => ({
+      client_id: clientId,
+      // Auto-create a library exercise ONLY for the Big 5 quick-start names — the contract
+      // _resolveExerciseIdForSave documents for itself ("kept only for the Big 5 quick-start 1RM
+      // form, which has no free text entry at all", app-workouts.js:1834). The grid now lists every
+      // exercise_name in this client's 1RM history, so an ungated call would silently insert a
+      // permanent `exercises` row named after any legacy or imported string the moment its value was
+      // edited — from a screen that shows no exercise picker. exercise_id is nullable; skipping is safe.
+      exercise_id: r.exerciseId || (BIG_5_EXERCISES.includes(r.name) ? await _resolveExerciseIdForSave(r.name, coachId) : null),
+      exercise_name: r.name, one_rm_kg: r.kg, recorded_at: today
+    })))
+    const { error } = await dbq('saveOneRMGrid', db.from('client_1rms').insert(rows))
+    if (error) { if (errEl) errEl.textContent = 'Save failed — try again'; return }
+    showToast(`${rows.length} 1RM${rows.length === 1 ? '' : 's'} saved`, 'success')
+    await _refresh1RMs(clientId)
+  } finally {
+    _saveOneRMGridPending = false
+  }
 }
 
+// ONE state, not two. This used to render a clean "Quick-start your 1RMs — The Big 5" grid when the
+// client had no rows, and a completely different card-per-exercise layout the moment they had one.
+// Jake compared his own account (populated) against a client's (empty) on 2026-08-14 and read it as a
+// PT-vs-Personal difference: "The 1RM grid on the PT > Client side is better UI and layout than the
+// grid used for personal." It was never two implementations — one function, two states, and he could
+// never see the grid again on his own account. He chose "grid always" (2026-08-14), so the card
+// layout is gone and the grid now carries real values inline.
 async function renderClient1RMs(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading 1RMs…</div>'
-  const { data: rows } = await db.from('client_1rms').select('*').eq('client_id', clientId).order('recorded_at', { ascending: false })
+  const { data: rows, error } = await db.from('client_1rms').select('*').eq('client_id', clientId).order('recorded_at', { ascending: false })
+  if (error) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-title">Couldn't load your 1RMs</div><div class="empty-text">Check your connection and try again.</div></div>`
+    return
+  }
 
   // Group by exercise name, newest first within each group
   const byEx = {}
   ;(rows || []).forEach(r => { if (!byEx[r.exercise_name]) byEx[r.exercise_name] = []; byEx[r.exercise_name].push(r) })
 
+  // Recorded lifts first, then any Big 5 still missing. That keeps the quick-start prompt working for
+  // a brand-new account AND keeps nudging an established one about a main lift it has never recorded,
+  // without either being a separate screen the other can never reach.
+  const gridRows = [
+    ...Object.keys(byEx).map(name => ({ name, entries: byEx[name] })),
+    ...BIG_5_EXERCISES.filter(n => !byEx[n]).map(name => ({ name, entries: [] }))
+  ]
+  // Indexed ids, not name-derived ones: an exercise name is free text and can carry spaces, quotes or
+  // markup, none of which belong in a DOM id. The parallel array is what saveOneRMGrid reads.
+  window._oneRMGridRows = gridRows.map(r => ({ name: r.name, exerciseId: r.entries[0]?.exercise_id || null }))
+
+  const unit = window._unitPrefs.weight
+  const fmtDate = d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
   el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <h3 style="margin:0;font-size:16px;font-weight:700">1 Rep Maxes</h3>
-      <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add 1RM</button>
+      <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add lift</button>
     </div>
-    ${!Object.keys(byEx).length ? `
-      <div style="border:1px solid var(--border);border-radius:12px;padding:18px;background:var(--surface)">
-        <div style="font-size:14px;font-weight:700;margin-bottom:2px">Quick-start your 1RMs</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">The Big 5 — fill in what you know, leave the rest blank</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          ${BIG_5_EXERCISES.map(name => `
-            <div style="display:flex;align-items:center;gap:8px">
-              <span style="flex:1;font-size:13px;font-weight:600">${name}</span>
-              <input class="field-input" id="big5-${name.replace(/\s+/g,'-')}" type="number" step="0.5" inputmode="decimal" placeholder="${window._unitPrefs.weight}" style="width:80px">
-            </div>`).join('')}
-        </div>
-        <p class="modal-error" id="big5-error" style="margin-top:10px"></p>
-        <button class="btn-primary" style="width:100%;margin-top:8px" onclick="saveBig5OneRMs('${clientId}')">Save all</button>
-        <div style="text-align:center;margin-top:8px"><button onclick="showAdd1RMModal('${clientId}')" style="background:none;border:none;font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">+ Add a different exercise</button></div>
-      </div>` : Object.entries(byEx).map(([exName, entries]) => {
-        const latest = entries[0]
-        const history = entries.slice(1)
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Edit any value and press Save all. Each save keeps your previous number as history.</div>
+    <div style="border:1px solid var(--border);border-radius:12px;padding:4px 16px 16px;background:var(--surface)">
+      ${gridRows.map((r, i) => {
+        const latest = r.entries[0]
+        const history = r.entries.slice(1)
+        // Rendered to the display unit here and compared numerically on save, so a kg↔lb round trip
+        // can't register as a phantom edit. decimals:1 matches what the old card layout showed.
+        //
+        // parseFloat BEFORE .toFixed, never after: weightToPref returns a NUMBER in kg but a STRING
+        // in lb (it exits through _stripTrailingZero, app-core.js:78). Written the other way round
+        // this threw "toFixed is not a function" for every lb user with a recorded 1RM, killing the
+        // whole Progress page — and no test caught it because the entire suite runs at the kg
+        // default. fmtWeight (app-core.js:110) is the correctly-ordered precedent.
+        const dispNum = latest ? parseFloat(weightToPref(parseFloat(latest.one_rm_kg))) : NaN
+        const orig = isNaN(dispNum) ? '' : String(parseFloat(dispNum.toFixed(1)))
         return `
-        <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;background:var(--surface)">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px">
-            <div>
-              <div style="font-size:15px;font-weight:700">${escapeHtml(exName)}</div>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Recorded ${new Date(latest.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px">
-              <span style="font-size:22px;font-weight:800;color:var(--accent)">${fmtWeight(parseFloat(latest.one_rm_kg), { spaced: true, decimals: 1 })}</span>
-              <button onclick="showAdd1RMModal('${clientId}','${escapeAttr(exName)}'${latest.exercise_id ? `,'${latest.exercise_id}'` : ''})" style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Update</button>
-              <button onclick="delete1RM('${latest.id}','${clientId}')" style="padding:5px 10px;border:1px solid #ef4444;border-radius:7px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:#ef4444">Delete</button>
-            </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:${i < gridRows.length - 1 ? '1px solid var(--border)' : 'none'}">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.name)}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:1px">${latest ? 'Recorded ' + fmtDate(latest.recorded_at) : 'Not recorded yet'}</div>
           </div>
-          ${history.length ? `
-          <div style="border-top:1px solid var(--border);padding:10px 16px;background:var(--surface-2)">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px">History</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px">
-              ${history.map(h => `<span style="font-size:12px;color:var(--text-muted)">${fmtWeight(parseFloat(h.one_rm_kg), { spaced: true, decimals: 1 })} <span style="font-size:10px">${new Date(h.recorded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span></span>`).join('<span style="color:var(--border)">·</span>')}
-            </div>
-          </div>` : ''}
-        </div>`
+          <!-- 16px: an inline font-size beats the global input rule, and below 16px iOS Safari
+               re-triggers auto-zoom-on-focus. Same reasoning as every other inline input here. -->
+          <input class="field-input" id="orm-${i}" type="number" step="0.5" inputmode="decimal"
+                 value="${escapeHtml(orig)}" data-orig="${escapeHtml(orig)}" placeholder="—"
+                 style="width:82px;text-align:center;font-size:16px;flex-shrink:0">
+          <span style="font-size:11px;color:var(--text-muted);width:20px;flex-shrink:0">${escapeHtml(unit)}</span>
+          <!-- Restores the two affordances the removed "+ Update" card button hosted and that inline
+               editing does NOT cover: backdating (the grid always stamps today) and "Estimate from a
+               set" (Epley), both of which live only in _showOneRMDetailModal. Without this the only
+               route back to them was "+ Add lift" → re-pick the same exercise from the picker.
+               escapeAttr is correct here and ONLY here: the name sits inside a JS string literal
+               within an attribute. A plain attribute would need escapeHtml. -->
+          ${latest ? `<button onclick="showAdd1RMModal('${clientId}','${escapeAttr(r.name)}'${latest.exercise_id ? `,'${latest.exercise_id}'` : ''})" title="Update with a date, or estimate from a set" style="width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:13px;line-height:1;cursor:pointer;color:var(--text-muted)">⋯</button>` : `<span style="width:26px;flex-shrink:0"></span>`}
+          ${latest ? `<button onclick="delete1RM('${latest.id}','${clientId}')" title="Delete" style="width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:14px;line-height:1;cursor:pointer;color:var(--text-muted)">×</button>` : `<span style="width:26px;flex-shrink:0"></span>`}
+        </div>
+        ${history.length ? `
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 0 9px 0;margin-top:-2px">
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Was</span>
+          ${history.map(h => `<span style="font-size:11px;color:var(--text-muted)">${fmtWeight(parseFloat(h.one_rm_kg), { spaced: true, decimals: 1 })} <span style="font-size:10px">${fmtDate(h.recorded_at)}</span></span>`).join('<span style="color:var(--border)">·</span>')}
+        </div>` : ''}`
       }).join('')}
+      <p class="modal-error" id="orm-grid-error" style="margin-top:12px"></p>
+      <button class="btn-primary" style="width:100%;margin-top:6px" onclick="saveOneRMGrid('${clientId}')">Save all</button>
+    </div>
   `
 }
 
@@ -229,23 +314,13 @@ async function save1RM(clientId, existingId = null) {
   }
   if (error) { errEl.textContent = 'Save failed — try again'; return }
   document.getElementById('modal-1rm').remove()
-  // Refresh whichever container is actually showing the 1RMs list — the client/solo Personal
-  // Bests page (pb-1rms-section, since the 2026-07-08 restructure moved 1RMs there from a
-  // dedicated Performance sub-tab) or the PT-facing client-profile 1RMs tab (tab-content).
-  const pbEl = document.getElementById('pb-1rms-section')
-  if (pbEl) renderClient1RMs(clientId, pbEl)
-  else renderClient1RMs(clientId, document.getElementById('tab-content'))
+  _refresh1RMs(clientId)
 }
 
 async function delete1RM(id, clientId) {
   if (!confirm('Delete this 1RM?')) return
   await dbq('delete1RM', db.from('client_1rms').delete().eq('id', id))
-  // Refresh whichever container is actually showing the 1RMs list — the client/solo Personal
-  // Bests page (pb-1rms-section, since the 2026-07-08 restructure moved 1RMs there from a
-  // dedicated Performance sub-tab) or the PT-facing client-profile 1RMs tab (tab-content).
-  const pbEl = document.getElementById('pb-1rms-section')
-  if (pbEl) renderClient1RMs(clientId, pbEl)
-  else renderClient1RMs(clientId, document.getElementById('tab-content'))
+  _refresh1RMs(clientId)
 }
 
 // ONE definition of "best" for a performance_logs record, shared by renderClientPerformance and
@@ -1011,7 +1086,13 @@ async function renderProgress(el) {
 
   // 2026-07-08 restructure: "Cardio" folded into Personal Bests (alongside 1RMs) instead of its
   // own top-level tab — see renderProgressPBs.
-  const tabs = ['Body Weight', 'Personal Bests', 'Performance']
+  //
+  // 2026-08-14: 1RMs pulled back OUT to its own tab, partially reversing the 1RMs half of that
+  // restructure (Cardio stays folded in). Jake compared Personal against the coach's client-profile
+  // view, where 1RMs is a full-width tab of its own, and rated the coach side better. On Personal it
+  // was appended BELOW renderProgressPBs' own header and PB cards, so it read as a footer rather
+  // than a section. Flagged as a reversal because 2026-07-08 moved it the other way deliberately.
+  const tabs = ['Body Weight', 'Personal Bests', 'Performance', '1RMs']
   const activeTab = window._progressTab || 'Body Weight'
 
   el.innerHTML = `
@@ -1031,6 +1112,16 @@ async function renderProgress(el) {
   if (activeTab === 'Body Weight')    await renderProgressWeight(document.getElementById('progress-tab-content'))
   if (activeTab === 'Personal Bests') await renderProgressPBs(document.getElementById('progress-tab-content'))
   if (activeTab === 'Performance')    await renderPerformance(document.getElementById('progress-tab-content'))
+  if (activeTab === '1RMs') {
+    const clientId = await _getCurrentClientId()
+    const host = document.getElementById('progress-tab-content')
+    if (!clientId) { host.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
+    // Keeps the id every 1RM writer already refreshes through (_refresh1RMs looks for it first), so
+    // saving or deleting from this tab re-renders in place rather than falling through to the coach's
+    // #tab-content and silently painting into the wrong container.
+    host.innerHTML = '<div id="pb-1rms-section"></div>'
+    await renderClient1RMs(clientId, document.getElementById('pb-1rms-section'))
+  }
 }
 
 async function renderPerformance(el) {
@@ -1786,12 +1877,15 @@ async function renderProgressPBs(el) {
       </div>`).join('')
   }
 
+  // 1RMs moved OUT of here to its own top-level Progress tab on 2026-08-14 (see renderProgress).
+  // It had been appended below this page's own header and PB cards since the 2026-07-08 restructure,
+  // which read as a footer rather than a section — the coach's client profile gives 1RMs a full-width
+  // tab, and Jake rated that side better. Nothing else mounted into #pb-1rms-section; every 1RM
+  // writer reaches it through _refresh1RMs, which now finds it on the new tab instead.
   el.innerHTML = `
     ${addPBBtn}
     ${pbListHtml}
-    <div id="pb-1rms-section" style="margin-top:28px"></div>
   `
-  await renderClient1RMs(clientId, document.getElementById('pb-1rms-section'))
 }
 
 async function renderSettings(el) {

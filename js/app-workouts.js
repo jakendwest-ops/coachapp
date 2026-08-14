@@ -217,7 +217,12 @@ function _prescribedSetCount(sets, isInterval) {
 // rate, HR…). It is NOT html-safe — every caller must escapeHtml() it before innerHTML. On a client
 // PLAN CLONE the underlying row belongs to the client, so an unescaped sink here is the client→coach
 // stored-XSS shape that hit this codebase on 2026-07-18.
-function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = false } = {}) {
+// markAmrap: restored 2026-08-14 (Jake). Off only where a caller renders its OWN "AMRAP" label for the
+// set and would otherwise print it twice — openSessionDetail is the one such caller.
+// isUnilateral: a unilateral prescription used to read identically to a bilateral one, so "8–10 reps"
+// gave no clue whether that was per side or in total. metric_type lives on the EXERCISE, not the set,
+// so callers pass it down; _fmtSetDetail can't derive it from `s` alone.
+function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = false, markAmrap = true, isUnilateral = false } = {}) {
   if (!s) return '—'
   // INTERVAL BLOCKS (2026-07-25): one entry describes the whole workout (work/rest × sets, × cycles),
   // not a single set — so it gets its own branch, checked before isCardio (an interval's legacy
@@ -297,13 +302,20 @@ function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = 
     // checks.sh 9b greps for those two tokens on the SAME line precisely to catch an unguarded one.
     const repsRange = range(s.repsMin, s.repsMax) || s.reps || null
     const reps = repsRange ? repsRange + ' reps' : null
+    // AMRAP is a per-SET flag (Jake, 2026-08-14) — "3 × 8, then 1 × AMRAP" is the real idiom, so it
+    // must be able to differ set to set. A rep target may still be prescribed alongside it as a floor
+    // ("8 (AMRAP)" = at least 8, then keep going); with no target it stands alone.
+    const repsPart = s.amrap && markAmrap ? (reps ? `${reps} (AMRAP)` : 'AMRAP') : reps
     const weight = s.weight ? fmtWeight(s.weight) : null
     const intensity = range(s.intensityMin, s.intensityMax, '% 1RM')
     const effort = s.effortMin
       ? (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + range(s.effortMin, s.effortMax)
       : (s.rpe ? 'RPE ' + s.rpe : null)
-    parts = [reps, weight, intensity, effort, s.tempo ? `@${s.tempo}` : null]
+    parts = [repsPart, weight, intensity, effort, s.tempo ? `@${s.tempo}` : null]
   }
+  // Appended rather than folded into the reps token: on a unilateral lift BOTH the reps and the load
+  // are per side, so "8–10 reps/side · 20kg" would still leave the weight ambiguous.
+  if (isUnilateral && !isCardio && !isInterval) parts.push('per side')
   if (includeRest) parts.push(restStr)
   return parts.filter(Boolean).join(' · ') || '—'
 }
@@ -311,14 +323,16 @@ function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = 
 // Sets → ONE scannable line. Identical consecutive sets collapse to "4 × 8–10 · 60kg"; genuinely
 // differing sets fall back to a per-set list so nothing is hidden. Returns null for no sets, so
 // callers render nothing rather than a meaningless "0 sets".
-function _fmtSetsCollapsed(sets, { isCardio = false, isInterval = false } = {}) {
+function _fmtSetsCollapsed(sets, { isCardio = false, isInterval = false, isUnilateral = false } = {}) {
   const list = Array.isArray(sets) ? sets : []
   if (!list.length) return null
   const groups = []
   list.forEach(s => {
     // An interval block is always exactly one entry — isInterval flows through to _fmtSetDetail, and
     // with only one entry the grouping below naturally emits it straight, with no "N ×" collapse.
-    const detail = _fmtSetDetail(s, { isCardio, isInterval, includeRest: true })
+    // Grouping is by rendered string, so an AMRAP set no longer collapses with its non-AMRAP
+    // neighbours — "3 × 8 reps | 8 reps (AMRAP)" — which is exactly the distinction worth showing.
+    const detail = _fmtSetDetail(s, { isCardio, isInterval, isUnilateral, includeRest: true })
     const last = groups[groups.length - 1]
     if (last && last.detail === detail) last.n++
     else groups.push({ detail, n: 1 })
@@ -341,12 +355,27 @@ function _fmtSetsCollapsed(sets, { isCardio = false, isInterval = false } = {}) 
 // Found by the pre-push multi-agent review, independently, by two agents.
 //
 // One function, both callers. Do not re-inline it.
-function _cleanTemplateSets(sets, derived) {
+// The only metric types on which AMRAP means anything — the same pair as `showSetToggles`, which
+// decides whether the pill is offered at all.
+const _AMRAP_TYPES = new Set(['weight_reps', 'unilateral'])
+
+function _cleanTemplateSets(sets, derived, metricType) {
   return (sets || []).map(s => ({
-    // `amrap` removed 2026-08-11 (Jake's call). It was a display-only per-set flag — reachable, and
-    // harmless, but with ZERO live usage across 52 template exercises / 55 sets. Trimmed as unused
-    // surface rather than as a bug fix. Note it is NOT the same thing as a scored "AMRAP 8" window,
-    // which is a group-level mode and is scoped separately.
+    // `amrap`: removed 2026-08-11, RESTORED 2026-08-14 — both on Jake's call. It was trimmed as unused
+    // surface (zero live usage across 52 template exercises), then asked back after real gym use, now
+    // as a visible per-set pill rather than a buried toggle. Still NOT the same thing as a scored
+    // "AMRAP 8" time window, which is a group-level mode and is scoped separately.
+    // This line is load-bearing: the object below is an ALLOWLIST, so without it the pill would appear
+    // to work, save without error, and lose the flag — which is precisely how the cardio targets died.
+    //
+    // Gated on metricType, not written raw. flushTemplateSets deliberately PRESERVES fields that the
+    // current type doesn't render, so toggling AMRAP on and then switching Type to Jump/Timed leaves a
+    // stale `amrap:true` behind. Ungated, that reached three surfaces that then disagreed with each
+    // other: the runner rendered "AMRAP jumps", openTemplate/openSessionDetail relabelled the set
+    // "AMRAP:", and the collapsed day row showed nothing (its jump/timed branches never read the flag).
+    // Same stale-field class as the `tgt.weight && !isJumpMt` guard in app-runner.js:_buildTargetCols.
+    // Fixed here rather than at the three render sites — one gate, not three (fix the class).
+    amrap: _AMRAP_TYPES.has(metricType) && !!s.amrap,
     unilateral: derived.unilateral, timed: derived.timed,
     // `assisted`/`assistWeight` removed 2026-08-11 (Jake's call). The feature was unreachable — its
     // toggle only rendered when the flag was ALREADY true — and it silently corrupted training data:
@@ -410,10 +439,15 @@ async function openSessionDetail(templateId, name, ctx = {}) {
         const isCardio = _mt === 'cardio'
         const isInterval = _mt === 'interval'
         const setsHtml = sets.map((s, si) => {
-          const label = `Set ${si + 1}`
+          // This view labels each set in its own left-hand column, so an AMRAP set replaces the
+          // "Set N" label outright rather than repeating "(AMRAP)" inside the detail string —
+          // hence markAmrap:false below. The two must stay in step: turning one on without the
+          // other either prints AMRAP twice or drops it entirely.
+          let label = `Set ${si + 1}`
+          if (s.amrap) label = 'AMRAP'
 
           // Rest renders in its own right-aligned span here, so it is excluded from the detail string.
-          const detail = _fmtSetDetail(s, { isCardio, isInterval, includeRest: false })
+          const detail = _fmtSetDetail(s, { isCardio, isInterval, includeRest: false, markAmrap: false, isUnilateral: _mt === 'unilateral' })
           const rest = _hasTimeTarget(s.restMin)
             ? (_hasTimeTarget(s.restMax) && s.restMax !== s.restMin ? `${s.restMin}–${s.restMax}` : s.restMin) + ' rest'
             : null
@@ -667,7 +701,7 @@ async function renderClientWorkoutsPage(el) {
                             // user who wants to look at their week ahead to see what the plan has in
                             // store for them". Show the actual prescription, sets collapsed.
                             const _exIsInterval = (ex.metric_type || ex.exercise_type) === 'interval'
-                            const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval })
+                            const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval, isUnilateral: _resolveMetricType(ex.metric_type, ex.exercise_type, ex.sets_json?.[0]) === 'unilateral' })
                             const _setCount = _prescribedSetCount(ex.sets_json, _exIsInterval)
                             return `
                             <div style="padding:5px 0;border-bottom:1px solid var(--border)">
@@ -1211,8 +1245,11 @@ async function openTemplate(id, ctx = {}) {
                   const rows = ex.sets_json.map((s, si) => {
                     // Shared with openSessionDetail + the day rows (_fmtSetDetail). Rest is folded
                     // INTO the string here, which is this surface's existing behaviour.
-                    const summary = _fmtSetDetail(s, { isCardio, isInterval, includeRest: true })
-                    return summary && summary !== '—' ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">Set ${si+1}:</span> ${escapeHtml(summary)}</div>` : null
+                    // Like openSessionDetail, this surface prints its own per-set label, so AMRAP
+                    // replaces "Set N" rather than being repeated inside the summary (markAmrap:false).
+                    const summary = _fmtSetDetail(s, { isCardio, isInterval, includeRest: true, markAmrap: false, isUnilateral: _mt === 'unilateral' })
+                    const setLabel = s.amrap ? 'AMRAP:' : `Set ${si+1}:`
+                    return summary && summary !== '—' ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">${setLabel}</span> ${escapeHtml(summary)}</div>` : null
                   }).filter(Boolean)
                   return rows.length ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:4px">${rows.join('')}</div>` : `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${meta}</div>`
                 })() : `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${meta}</div>`}
@@ -1413,6 +1450,28 @@ function setTsEffort(i, type, containerId) {
   renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
 
+// ONE renderer for every builder toggle pill (AMRAP, BW, Duration/Distance, Unilateral). It was
+// copy-pasted byte-for-byte into each branch of renderTemplateSets; the exercise-level Unilateral
+// pill added 2026-08-14 would have been a third copy, so it is hoisted instead. `label` is a literal
+// in every call site — never interpolate user text through it without escaping.
+const _togPill = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
+
+// Unilateral is a metric_type, i.e. per EXERCISE, so unlike AMRAP its pill cannot live in a per-set
+// card — _deriveFromMetricType stamps every set from it uniformly, and a per-set unilateral flag
+// would need a schema change. The pill is therefore a second face on the existing `att-type`
+// <select>, which stays the source of truth: the pill only ever writes through it.
+function toggleUnilateralType(containerId) {
+  const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
+  const sel = document.getElementById(tid)
+  if (!sel) return
+  // weight_reps and unilateral render the identical set-input shape (see showSetToggles below), so
+  // flipping between them never discards anything the user has already typed.
+  const next = sel.value === 'unilateral' ? 'weight_reps' : 'unilateral'
+  flushTemplateSets(containerId)
+  sel.value = next
+  renderTemplateSets(containerId, next)
+}
+
 function renderTemplateSets(containerId, type) {
   const container = document.getElementById(containerId)
   if (!container) return
@@ -1425,6 +1484,20 @@ function renderTemplateSets(containerId, type) {
   const isInterval = type === 'interval'
   const showSetToggles = type === 'weight_reps' || type === 'unilateral'
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
+  // Rendered from here, not from the modal's own markup, because this function is the single choke
+  // point EVERY type change already flows through: mount, the <select>'s onchange, toggleTsSet,
+  // setTsEffort, copyPrevTemplateSet and set add/delete. Hanging it off any one of those would leave
+  // the pill showing stale state after the others fired. Placed above the early returns for the
+  // interval/cardio branches so those clear it rather than leaving a stranded pill behind.
+  const pillHost = document.getElementById(containerId === 'att-sets-container' ? 'att-metric-pills' : 'ett-metric-pills')
+  if (pillHost) {
+    // Offered only for the two types sharing the weight+reps set shape. On a timed hold, a jump or an
+    // interval block "unilateral" has no defined meaning, and showing it there would let one tap
+    // silently discard the type the user actually picked.
+    pillHost.innerHTML = showSetToggles
+      ? _togPill('Unilateral (per side)', type === 'unilateral', `toggleUnilateralType('${containerId}')`)
+      : ''
+  }
   const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;font-weight:600;color:var(--text)">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
   // 16px, not smaller -- an inline font-size beats the global input{font-size:16px} rule (css/main.css),
   // and below 16px iOS Safari re-triggers the auto-zoom-on-focus the pinch-to-zoom fix was paired
@@ -1461,7 +1534,7 @@ function renderTemplateSets(containerId, type) {
     const s = window._templateSets[0]
     const i = 0   // the More-targets rows below are copied verbatim from the cardio branch, which
                   // keys its ids off `i` — a block is always index 0.
-    const tog = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
+    const tog = _togPill
     // Derived, not stored — a block with a single round and no repeats IS a steady effort; no new
     // sets_json key needed. toggleTsSteady() (below) sets sets/cycles/rest/warmup/recovery/cooldown to
     // match on flip, so this stays accurate every render, including for an existing block migrated
@@ -1519,7 +1592,7 @@ function renderTemplateSets(containerId, type) {
 
   container.innerHTML = (window._templateSets || []).map((s, i) => {
     const et = s.effortType || 'rpe'
-    const tog = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
+    const tog = _togPill
     const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'var(--border)'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'var(--text-muted)'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
     return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
@@ -1529,6 +1602,7 @@ function renderTemplateSets(containerId, type) {
         </div>
         <div style="display:flex;gap:4px">
           ${showSetToggles ? `
+            ${tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`)}
             ${s.bodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
           ` : ''}
           <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:15px;line-height:1">×</button>
@@ -1697,6 +1771,10 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
                weight_reps and get reclassified on the next save. -->
           <option value="interval"      ${(existingType === 'interval' || existingType === 'cardio') ? 'selected' : ''}>Intervals</option>
         </select>
+        <!-- Filled by renderTemplateSets, which every type change flows through. Jake, 2026-08-14:
+             unilateral was fully built end-to-end in the runner but had no visible on-switch, so it
+             read as missing. The <select> above remains the source of truth. -->
+        <div id="att-metric-pills" style="display:flex;gap:6px;margin-top:8px"></div>
       </div>
 
       <div style="margin:16px 0 10px;font-size:13px;font-weight:600;color:var(--text)">Set targets</div>
@@ -1943,7 +2021,7 @@ async function saveExerciseToTemplate(templateId) {
   const nextOrder = existing?.length ? (existing[0].order_index + 1) : 0
   const sets = window._templateSets || []
 
-  const cleanSets = _cleanTemplateSets(sets, derived)
+  const cleanSets = _cleanTemplateSets(sets, derived, metricType)
   const { error } = await db.from('workout_template_exercises').insert({
     template_id:   targetId,
     exercise_id:   exerciseId || null,

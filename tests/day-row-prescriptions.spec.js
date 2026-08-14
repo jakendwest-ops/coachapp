@@ -50,10 +50,28 @@ test.describe('Set prescription formatting', () => {
         // C1: weight and %1RM are SEPARATE prescriptions and are editable on the same set. The merge
         // had taken openSessionDetail's lossy `weight || intensity`, hiding a %1RM typed alongside a weight.
         weightAndPct: _fmtSetsCollapsed([set({ repsMin: '5', weight: '100', intensityMin: '80', intensityMax: '85' })]),
-        // C2 (rewritten 2026-08-11): AMRAP was removed. Zero of Jake's sets carried it, but another
-        // coach's row still could, so the surviving risk is a LEGACY set: it must render its rep floor
-        // normally and simply stop printing "AMRAP" -- never swallow the reps along with the flag.
+        // C2 (rewritten again 2026-08-14): AMRAP was removed 2026-08-11 and RESTORED 2026-08-14, both
+        // on Jake's call. The invariant that survived both reversals is the one worth pinning: the flag
+        // must never SWALLOW the rest of the set. A rep target alongside AMRAP is a FLOOR, not a
+        // contradiction -- "at least 8-10, then keep going" -- so reps, weight and everything else must
+        // still render. That is what actually broke historically, not the word itself.
         amrapKeepsReps: _fmtSetsCollapsed([set({ amrap: true, repsMin: '8', repsMax: '10', weight: '60' })]),
+        // AMRAP with NO rep floor: the word has to stand on its own, or the set renders as though
+        // nothing was prescribed at all.
+        amrapNoFloor: _fmtSetsCollapsed([set({ amrap: true, weight: '60' })]),
+        // Per-SET, not per-exercise (Jake's explicit choice, 2026-08-14) -- "3 x 8, then 1 x AMRAP" is
+        // the real programming idiom. Collapsing groups by rendered string, so the AMRAP set MUST break
+        // out of the "3 x" group rather than being flattened in with its neighbours.
+        amrapLastSetOnly: _fmtSetsCollapsed([
+          set({ repsMin: '8', weight: '60' }),
+          set({ repsMin: '8', weight: '60' }),
+          set({ repsMin: '8', weight: '60', amrap: true }),
+        ]),
+        // metric_type lives on the EXERCISE, so _fmtSetDetail cannot derive it from the set -- it is
+        // passed down. Without it a unilateral prescription reads identically to a bilateral one and
+        // "8-10 reps" gives no clue whether that is per side or in total.
+        unilateral: _fmtSetsCollapsed([set({ repsMin: '8', repsMax: '10', weight: '20' })], { isUnilateral: true }),
+        bilateralUnchanged: _fmtSetsCollapsed([set({ repsMin: '8', repsMax: '10', weight: '20' })]),
         // C3: RPE/RIR is editable for jumps and was being dropped.
         jumpEffort: _fmtSetsCollapsed([set({ targetHeightCm: '40', repsMin: '3', effortMin: '8' })]),
         // Rest may be stored as a bare seconds NUMBER, not just mm:ss.
@@ -85,7 +103,15 @@ test.describe('Set prescription formatting', () => {
     expect(r.weightAndPct).toContain('80–85% 1RM')   // both, not weight-wins
     expect(r.amrapKeepsReps).toContain('8–10 reps')     // the floor survives
     expect(r.amrapKeepsReps).toContain('60kg')          // and so does everything else on the set
-    expect(r.amrapKeepsReps).not.toContain('AMRAP')     // removed 2026-08-11
+    expect(r.amrapKeepsReps).toContain('AMRAP')         // restored 2026-08-14
+    expect(r.amrapNoFloor).toContain('AMRAP')           // stands alone when nothing else is prescribed
+    // Per-set, so the flagged set must NOT collapse into the group above it.
+    expect(r.amrapLastSetOnly).toMatch(/^2 × /)         // the two plain sets still collapse
+    expect(r.amrapLastSetOnly).toContain('AMRAP')
+    expect(r.amrapLastSetOnly.match(/AMRAP/g)).toHaveLength(1)  // exactly one set carries it
+    expect(r.unilateral).toContain('per side')
+    expect(r.unilateral).toContain('8–10 reps')         // the annotation adds, never replaces
+    expect(r.bilateralUnchanged).not.toContain('per side')  // opt-in only — no change to every other row
     expect(r.jumpEffort).toContain('RPE 8')
     expect(r.numericRest).toContain('1:30 rest')     // 90s formatted, not "90 rest"
     expect(r.allEmpty).toBeNull()                    // not "3 × —"
@@ -103,10 +129,13 @@ test.describe('Set prescription formatting', () => {
         withoutRest: _fmtSetDetail(s, { includeRest: false }), // openSessionDetail's (own span)
         noArgs: _fmtSetDetail(s),
         nullSet: _fmtSetDetail(null),
-        // AMRAP was removed 2026-08-11, and with it the `markAmrap` option that existed only to stop
-        // openSessionDetail printing the word twice (its own label column plus the detail string).
-        // A legacy set still carrying the flag must now render as an ordinary set — reps intact.
-        amrapLegacy: _fmtSetDetail({ effortType: 'rpe', amrap: true, repsMin: '8' }),
+        // `markAmrap` came back with AMRAP on 2026-08-14. It exists for the surfaces that print their
+        // OWN per-set label (openSessionDetail, openTemplate) — they swap "Set 3" for "AMRAP", so the
+        // detail string must not say it a second time. The two halves have to stay in step: turning
+        // one on without the other either double-prints the word or drops it entirely.
+        amrapDefault: _fmtSetDetail({ effortType: 'rpe', amrap: true, repsMin: '8' }),
+        amrapMarked: _fmtSetDetail({ effortType: 'rpe', amrap: true, repsMin: '8' }, { markAmrap: true }),
+        amrapUnmarked: _fmtSetDetail({ effortType: 'rpe', amrap: true, repsMin: '8' }, { markAmrap: false }),
       }
     })
     expect(r.withRest).toContain('2:00 rest')
@@ -115,8 +144,10 @@ test.describe('Set prescription formatting', () => {
     expect(r.withoutRest).toContain('8 reps')
     expect(r.noArgs).not.toContain('rest')  // defaults must not change a caller's output
     expect(r.nullSet).toBe('—')
-    expect(r.amrapLegacy).not.toContain('AMRAP')
-    expect(r.amrapLegacy).toContain('8 reps')
+    expect(r.amrapDefault).toContain('AMRAP')       // default is ON — the day rows rely on it
+    expect(r.amrapMarked).toContain('AMRAP')
+    expect(r.amrapUnmarked).not.toContain('AMRAP')  // caller prints its own label instead
+    expect(r.amrapUnmarked).toContain('8 reps')     // suppressing the word must not drop the reps
   })
 
   // Found by the pre-push multi-agent review (Agent B), 2026-07-23. `day_of_week` is 1-BASED

@@ -108,7 +108,7 @@
                                   // builder slot — a coach reviewing a client's plan must see the
                                   // prescription they wrote, not just a set count.
                                   const _exIsInterval = (ex.metric_type || ex.exercise_type) === 'interval'
-                                  const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval })
+                                  const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval, isUnilateral: _resolveMetricType(ex.metric_type, ex.exercise_type, ex.sets_json?.[0]) === 'unilateral' })
                                   const _setCount = _prescribedSetCount(ex.sets_json, _exIsInterval)
                                   return `
                                   <div style="padding:5px 0;border-bottom:1px solid var(--border)">
@@ -1859,7 +1859,7 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
       // app-workouts.js — a coach building the week sees exactly what the client will read.
       ? exs.map(ex => {
           const _exIsInterval = (ex.metric_type || ex.exercise_type) === 'interval'
-          const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval })
+          const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval, isUnilateral: _resolveMetricType(ex.metric_type, ex.exercise_type, ex.sets_json?.[0]) === 'unilateral' })
           const _setCount = _prescribedSetCount(ex.sets_json, _exIsInterval)
           return `<div class="pwk-ex"><div style="flex:1;min-width:0"><span>${escapeHtml(ex.exercise_name)}</span>${presc ? `<div class="pwk-presc">${escapeHtml(presc)}</div>` : ''}</div><span class="s">${_setCount} set${_setCount !== 1 ? 's' : ''}</span></div>`
         }).join('')

@@ -47,9 +47,11 @@ test.describe('Builder metric_type picker — save persistence', () => {
     expect(uni.exercise_type).toBe('strength')      // derived
     expect(uni.sets_json[0].unilateral).toBe(true)  // derived onto the set
     expect(uni.sets_json[0].timed).toBe(false)
-    // `amrap` was removed 2026-08-11. The fixture still passes it in deliberately: _cleanTemplateSets
-    // is an ALLOWLIST, so a removed key must be dropped on the way to the DB rather than ride along.
-    expect(uni.sets_json[0].amrap).toBeUndefined()
+    // `amrap` was removed 2026-08-11 and RESTORED 2026-08-14, both on Jake's call. This is the only
+    // assertion in the suite that proves the restore end to end -- through saveExerciseToTemplate,
+    // through _cleanTemplateSets' allowlist, into Postgres and back out. The pill can look perfect and
+    // the flag still be dropped here, silently, with no error at any layer (les-036).
+    expect(uni.sets_json[0].amrap).toBe(true)
 
     const hold = rows.find(r => r.exercise_name.endsWith('Hold'))
     expect(hold.metric_type).toBe('timed_hold')
