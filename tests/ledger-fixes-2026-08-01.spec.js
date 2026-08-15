@@ -117,7 +117,7 @@ test.describe('week-tab labels are sequential, not raw week_number (2026-07-19 f
 
 // ─── #8 — Chart.js instances leak when switching Progress top-level tabs / Performance sub-tabs ──
 test.describe('Chart.js instances are destroyed on tab switch, not just on same-view re-render (2026-07-23 finding)', () => {
-  test('renderProgress destroys both _perfExerciseCharts and _perfSessionCharts before the top-level tab switch', async ({ page }) => {
+  test('renderProgress destroys every live Chart instance before a top-level tab switch', async ({ page }) => {
     // 'progress' ("My Progress") is a client/solo-only page -- a bare coach role has no nav entry for
     // it at all (not in coachPages, js/app-core.js), so this must log in as the client role.
     await loginAsClient(page)
@@ -129,20 +129,27 @@ test.describe('Chart.js instances are destroyed on tab switch, not just on same-
     // guard, the active date range) just to get a chart to exist -- this isolates exactly what the
     // finding is about: does a container-level tab switch call .destroy() on whatever was active,
     // not whether a particular exercise's data happens to be chartable today.
+    // REWRITTEN 2026-08-15. This asserted on `_perfExerciseCharts` / `_perfSessionCharts`, two of the
+    // THREE chart registries that existed before the charts were unified behind _renderMetricChart.
+    // Those arrays are gone, so the old version threw ReferenceError — it was testing the BOOKKEEPING
+    // rather than the invariant. The invariant is unchanged and is what this now asserts: switching
+    // top-level Progress tab must DESTROY whatever charts were live, because renderProgress replaces
+    // the container with innerHTML and a detached canvas whose Chart was never destroyed keeps its
+    // listeners and animation loop. Asserting via Chart.getChart(canvas) is registry-agnostic, so the
+    // next refactor of the teardown mechanism cannot make this test lie.
     const before = await page.evaluate(() => {
-      const mk = () => {
+      const mk = id => {
         const canvas = document.createElement('canvas')
+        canvas.id = id
         document.body.appendChild(canvas)
-        return new Chart(canvas.getContext('2d'), { type: 'line', data: { labels: ['a', 'b'], datasets: [{ data: [1, 2] }] } })
+        // Through the real helper, so this exercises whatever tracking the app actually uses.
+        _renderMetricChart(canvas, { labels: ['a', 'b'], series: [{ data: [1, 2] }] })
+        return id
       }
-      // Bare identifiers, not window.* -- `let`-declared globals in a classic script are not
-      // mirrored onto window (les-024).
-      _perfExerciseCharts.push(mk())
-      _perfSessionCharts.push(mk())
-      return { ex: _perfExerciseCharts.length, sess: _perfSessionCharts.length }
+      const ids = [mk('zz-teardown-a'), mk('zz-teardown-b')]
+      return { ids, alive: ids.filter(i => !!Chart.getChart(document.getElementById(i))).length }
     })
-    expect(before.ex).toBeGreaterThan(0)
-    expect(before.sess).toBeGreaterThan(0)
+    expect(before.alive, 'both fixtures must actually be live before the switch').toBe(2)
 
     // Switch to a different top-level Progress tab -- this used to blow #main-content away with
     // innerHTML without ever calling .destroy() on whichever chart array was active for the
@@ -150,9 +157,12 @@ test.describe('Chart.js instances are destroyed on tab switch, not just on same-
     await page.evaluate(() => { window._progressTab = 'Body Weight'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(500)
 
-    const after = await page.evaluate(() => ({ ex: _perfExerciseCharts.length, sess: _perfSessionCharts.length }))
-    expect(after.ex).toBe(0)
-    expect(after.sess).toBe(0)
+    const after = await page.evaluate(ids => {
+      const alive = ids.filter(i => !!Chart.getChart(document.getElementById(i))).length
+      ids.forEach(i => document.getElementById(i)?.remove())
+      return { alive }
+    }, before.ids)
+    expect(after.alive, 'a tab switch must destroy every chart that was live, not just empty a list').toBe(0)
   })
 })
 

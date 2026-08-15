@@ -522,7 +522,11 @@ async function renderClientPerformance(clientId, el) {
   `
 
   // Store chart data after HTML is rendered (script tags in innerHTML don't execute)
-  window.__perfCharts    = {}
+  // _destroyManagedCharts FIRST. This function re-runs on every savePerformanceLog and every
+  // deletePerfLog, and the old code reset `window.__perfCharts = {}` WITHOUT destroying the instances
+  // it was dropping — orphaning every expanded chart, with its listeners and animation loop, on each
+  // save. Same class as the pw-chart leak fixed on 2026-08-12; this sibling was missed then.
+  _destroyManagedCharts()
   window.__perfChartData = {}
   PERF_CATEGORIES.forEach(cat => {
     const catLogs = byCategory[cat.id]
@@ -557,29 +561,12 @@ function togglePerfHistory(slug) {
     const d = window.__perfChartData?.[slug]
     const canvas = document.getElementById(`perf-chart-${slug}`)
     if (!d || !canvas || d.values.length < 2) return
-    if (window.__perfCharts[slug]) window.__perfCharts[slug].destroy()
-    window.__perfCharts[slug] = new Chart(canvas, {
-      type: 'line',
-      data: {
-        labels: d.labels,
-        datasets: [{
-          data: d.values,
-          borderColor: d.colour,
-          backgroundColor: d.colour + '22',
-          borderWidth: 2,
-          pointRadius: 3,
-          tension: 0.3,
-          fill: true
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { font: { size: 10 } }, grid: { display: false } },
-          y: { ticks: { font: { size: 10 } } }
-        }
-      }
+    // The helper destroys any existing chart on this canvas and tracks the new one, so the per-slug
+    // `window.__perfCharts` registry is gone — one teardown path instead of three.
+    _renderMetricChart(`perf-chart-${slug}`, {
+      labels: d.labels,
+      series: [{ data: d.values, colour: d.colour, fill: true }],
+      legend: false,
     })
   }
 }
@@ -795,11 +782,6 @@ async function renderClientWeight(clientId, el) {
       return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     }
 
-    const rollingAvg = (arr, window = 7) => arr.map((_, i) => {
-      const slice = arr.slice(Math.max(0, i - window + 1), i + 1).filter(v => v != null)
-      return slice.length ? parseFloat((slice.reduce((a, b) => a + b, 0) / slice.length).toFixed(2)) : null
-    })
-
     window._weightAllLogs = chronological
 
     const buildChart = (range) => {
@@ -812,35 +794,21 @@ async function renderClientWeight(clientId, el) {
       // linear, so avg-of-converted equals converted-avg, and keeps the whole chart in one unit.
       const weights = filtered.map(l => weightToPref(parseFloat(l.weight_kg)))
       const hasBf = filtered.some(l => l.body_fat_pct != null)
-      const avg = rollingAvg(weights)
+      const avg = _rollingAvg(weights)
 
-      const datasets = [
-        {
-          label: `Weight (${window._unitPrefs.weight})`,
-          data: weights,
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.07)',
-          fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 5, yAxisID: 'y'
-        },
-        {
-          label: '7-day avg',
-          data: avg,
-          borderColor: '#6366f1',
-          borderWidth: 2,
-          borderDash: [4, 3],
-          backgroundColor: 'transparent',
-          fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 4, yAxisID: 'y'
-        }
+      // This chart WAS the reference for the house style; it now goes through the shared helper like
+      // every other one, so "one style everywhere" is structural rather than a convention that drifts.
+      // Colours come from _METRIC_COLORS rather than hardcoded hexes — the helper reads the rest of its
+      // palette from CSS variables so the chart works on both themes.
+      const series = [
+        { label: `Weight (${window._unitPrefs.weight})`, data: weights, colour: _METRIC_COLORS.topWeight, fill: true },
+        { label: '7-day avg', data: avg, colour: _METRIC_COLORS.topWeight, dashed: true, pointRadius: 0 },
       ]
-      if (hasBf) datasets.push({
+      if (hasBf) series.push({
         label: 'Body fat %',
         data: filtered.map(l => l.body_fat_pct != null ? parseFloat(l.body_fat_pct) : null),
-        borderColor: '#f59e0b', backgroundColor: 'transparent',
-        fill: false, tension: 0.3, pointRadius: 3, pointHoverRadius: 5, spanGaps: true, yAxisID: 'y2'
+        colour: _METRIC_COLORS.intensity, axis: 'y2', spanGaps: true,
       })
-
-      const existing = Chart.getChart('weight-chart')
-      if (existing) existing.destroy()
 
       // Y-axis range blends whichever of goal/starting weight are set with the actual logged data —
       // previously this only activated when BOTH fields were set, so entering just one (the common
@@ -853,22 +821,15 @@ async function renderClientWeight(clientId, el) {
         ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
         : {}
 
-      new Chart(document.getElementById('weight-chart'), {
-        type: 'line',
-        data: { labels: filtered.map(l => fmtLabel(l.date)), datasets },
-        options: {
-          responsive: true,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: { display: true, labels: { font: { size: 11 }, color: '#6b7280', boxWidth: 20 } },
-            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + (ctx.dataset.yAxisID === 'y2' ? '%' : ' ' + window._unitPrefs.weight) } }
-          },
-          scales: {
-            x: { ticks: { color: '#9ca3af', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
-            y: { position: 'left', ...yRange, ticks: { color: '#6366f1', font: { size: 11 }, stepSize: window._unitPrefs.weight === 'lb' ? 1 : 0.5, callback: v => v + ' ' + window._unitPrefs.weight }, grid: { color: 'rgba(0,0,0,0.05)' } },
-            ...(hasBf ? { y2: { position: 'right', ticks: { color: '#f59e0b', font: { size: 11 }, callback: v => v + '%' }, grid: { drawOnChartArea: false } } } : {})
-          }
-        }
+      _renderMetricChart('weight-chart', {
+        labels: filtered.map(l => fmtLabel(l.date)),
+        series,
+        yRange,
+        legend: true,
+        stepSize: window._unitPrefs.weight === 'lb' ? 1 : 0.5,
+        // `_tickNum` rounds before the unit is appended. The old callback printed the raw value, which
+        // is what produced "20.800000000000004%" on the body-fat axis in Jake's screenshot.
+        yFormat: v => `${_tickNum(v)} ${window._unitPrefs.weight}`,
       })
     }
 
@@ -1080,8 +1041,7 @@ async function renderProgress(el) {
   // change); they never ran when the container itself was torn down by switching to a different
   // top-level Progress tab, leaking every chart instance bound to the canvases this innerHTML
   // rebuild is about to detach. Found by the 2026-07-23 full-file review.
-  _perfExerciseCharts.forEach(c => c.destroy()); _perfExerciseCharts = []
-  _perfSessionCharts.forEach(c => c.destroy()); _perfSessionCharts = []
+  _destroyManagedCharts()
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   // 2026-07-08 restructure: "Cardio" folded into Personal Bests (alongside 1RMs) instead of its
@@ -1129,8 +1089,7 @@ async function renderPerformance(el) {
   // sub-tabs ('Per exercise' <-> 'Recent sessions') re-enters renderPerformance directly, tearing
   // down #progress-tab-content without ever going through renderProgress -- guard here too so
   // neither direction leaks whichever chart array the sub-tab being left behind was using.
-  _perfExerciseCharts.forEach(c => c.destroy()); _perfExerciseCharts = []
-  _perfSessionCharts.forEach(c => c.destroy()); _perfSessionCharts = []
+  _destroyManagedCharts()
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
 
@@ -1241,8 +1200,7 @@ async function renderProgressPerSession(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading sessions…</div>'
   const myToken = ++_perfSessionToken
   // Any chart expanded on the previous render is about to be detached — destroy it first so it doesn't leak.
-  _perfSessionCharts.forEach(c => c.destroy())
-  _perfSessionCharts = []
+  _destroyManagedCharts()
   const { data: sessions } = await db.from('workout_logs')
     .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr, avg_watts, phase))')
     .eq('client_id', clientId).order('date', { ascending: false }).limit(10)
@@ -1323,7 +1281,6 @@ function _renderPerfSessionDetail(i) {
   }).join('')
 }
 
-let _perfSessionCharts = []
 function _expandPerfSessionExercise(i, ei) {
   const container = document.getElementById(`perf-sess-${i}-ex-${ei}-chart`)
   if (!container) return
@@ -1338,20 +1295,20 @@ function _expandPerfSessionExercise(i, ei) {
   if (hist.length < 2) { container.innerHTML = '<p style="font-size:11px;color:var(--text-muted);margin:0">Not enough history yet for a graph.</p>'; return }
   container.innerHTML = '<canvas></canvas>'
   const canvas = container.querySelector('canvas')
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
-  const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
-  _perfSessionCharts.push(new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data: { labels: hist.map(h => new Date(h.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
-            datasets: [{ data: hist.map(h => h.m.main.raw), borderColor: accent, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
-    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
-      plugins: { legend: { display: false } },
-      scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
-                y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 } } } } }
-  }))
+  _renderMetricChart(canvas, {
+    labels: hist.map(h => new Date(h.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+    series: [{ data: hist.map(h => h.m.main.raw), colour: _METRIC_COLORS.topWeight, fill: true }],
+    height: true,
+    legend: false,
+  })
 }
 
 async function renderProgressWeight(el) {
+  // Same reason as renderProgressPBs: entered DIRECTLY from saveClientWeight (js/app-clients.js:80),
+  // so its own teardown never ran and every "+ Log weight" orphaned pw-chart and resting-hr-chart.
+  // Pre-existing (the old `Chart.getChart('pw-chart')` also resolved the id only AFTER innerHTML had
+  // replaced the canvas), but fixed here rather than carried forward into the shared path.
+  _destroyManagedCharts()
   el.innerHTML = '<div class="loading-state">Loading weight data…</div>'
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
@@ -1432,8 +1389,6 @@ async function renderProgressWeight(el) {
       return `<div style="margin-top:20px;margin-bottom:8px;font-size:13px;font-weight:600;color:var(--text)">Resting heart rate</div>
         <div style="position:relative;height:160px"><canvas id="resting-hr-chart" style="width:100%;height:100%"></canvas></div>` })()}
   `
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
-  const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
   // Y-axis range blends whichever of goal/starting weight are set with the actual logged data —
   // previously this only activated when BOTH fields were set, so entering just one (the common
   // case) silently had zero visible effect. Math.min/max (not "goal is always below starting") so
@@ -1453,28 +1408,35 @@ async function renderProgressWeight(el) {
   // two then fight over the same context. The weight-chart site above already guards this exact way
   // (`Chart.getChart(id)` + destroy) — this pair was simply missed. Re-rendering My Progress is a
   // normal thing to do repeatedly (switch tab, change units, log a weight), so the leak compounds.
-  Chart.getChart('pw-chart')?.destroy()
-  new Chart(document.getElementById('pw-chart').getContext('2d'), {
-    type: 'line',
-    data: { labels: logs.map(l => new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})),
-            datasets: [{ data: dispWeights, borderColor: accent, borderWidth: 2,
-              pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
-    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
-      plugins: { legend: { display: false } },
-      scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 9 }, maxRotation: 0 } },
-                y: { ...yRange, grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 9 }, stepSize: weightUnit === 'lb' ? 1 : 0.5, callback: v => v + weightUnit } } } }
+  // Jake, 2026-08-14: "the entire UI for weight/performance/programs/1RM is better on ALEX TURNER
+  // profile than it is on my personal account." This chart is the specific comparison he made. It had
+  // ONE flat line; the coach's had three datasets, a smoothing average and a body-fat axis — all from
+  // data this page was ALREADY loading and simply not plotting. Same helper, same style, both surfaces.
+  const dispBf = logs.map(l => (l.body_fat_pct != null ? parseFloat(l.body_fat_pct) : null))
+  const pwSeries = [
+    { label: `Weight (${weightUnit})`, data: dispWeights, colour: _METRIC_COLORS.topWeight, fill: true },
+    { label: '7-day avg', data: _rollingAvg(dispWeights), colour: _METRIC_COLORS.topWeight, dashed: true, pointRadius: 0 },
+  ]
+  if (dispBf.some(v => v != null)) pwSeries.push({
+    label: 'Body fat %', data: dispBf, colour: _METRIC_COLORS.intensity, axis: 'y2', spanGaps: true,
   })
+  _renderMetricChart('pw-chart', {
+    labels: logs.map(l => new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+    series: pwSeries,
+    yRange,
+    height: true,   // the canvas sits in a fixed-height box, so aspect ratio must not drive it
+    stepSize: weightUnit === 'lb' ? 1 : 0.5,
+    yFormat: v => `${_tickNum(v)} ${weightUnit}`,
+  })
+
   const hrLogs = logs.filter(l => l.resting_hr != null)
   if (hrLogs.length >= 2 && document.getElementById('resting-hr-chart')) {
-    Chart.getChart('resting-hr-chart')?.destroy()
-    new Chart(document.getElementById('resting-hr-chart').getContext('2d'), {
-      type: 'line',
-      data: { labels: hrLogs.map(l => new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
-              datasets: [{ data: hrLogs.map(l => l.resting_hr), borderColor: accent, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 }] },
-      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
-        plugins: { legend: { display: false } },
-        scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 9 }, maxRotation: 0 } },
-                  y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 9 }, callback: v => v + ' bpm' } } } }
+    _renderMetricChart('resting-hr-chart', {
+      labels: hrLogs.map(l => new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+      series: [{ label: 'Resting HR', data: hrLogs.map(l => l.resting_hr), colour: _METRIC_COLORS.avgHr, fill: true }],
+      height: true,
+      legend: false,
+      yFormat: v => `${_tickNum(v)} bpm`,
     })
   }
 }
@@ -1639,6 +1601,147 @@ const _METRIC_COLORS = {
   sets:'#f59e0b', reps:'#22c55e', vol:'#0ea5e9', exercises:'#8b5cf6' // diary summary tiles
 }
 
+// ─── THE house chart (2026-08-14) ───────────────────────────────────────────
+// Jake, from live use: "The grid style and data/plot points within this weight section is the style
+// that I would like within the performance section … Please include this graph type for all sections
+// that require a graph."
+//
+// Before this there were SEVEN `new Chart(` calls in this file and ZERO shared config — `tension:0.3`
+// and `legend:{display:false}` were copy-pasted five times each, across THREE different teardown
+// idioms. "One style" enforced by convention drifts back apart; enforced by one function it cannot.
+//
+// The coach weight chart was the reference (dual axis, rolling average, range pills, index tooltip),
+// with two corrections applied here rather than propagated:
+//   • It printed raw tick values, so a body-fat axis rendered "20.800000000000004%" — visible in
+//     Jake's own screenshot. Rounded centrally so it cannot spread to the other six.
+//   • It hardcoded #6366f1 / #6b7280 / rgba(0,0,0,0.05) — light-theme only — while the solo charts
+//     correctly read CSS variables. Adopting its structure verbatim would have pushed light-only
+//     colours across the whole app. Structure from the coach chart, theming from the solo ones.
+let _activeCharts = []
+
+// ONE teardown path, replacing `Chart.getChart(id)?.destroy()`, a `window.__perfCharts` object and two
+// module-level arrays. Called when a container is about to be torn down — a detached canvas whose Chart
+// was never destroyed keeps its listeners and animation loop alive.
+function _destroyManagedCharts() {
+  _activeCharts.forEach(c => { try { c.destroy() } catch (e) { /* already gone */ } })
+  _activeCharts = []
+}
+
+// Ticks are rounded, not printed raw. Chart.js picks fractional tick values and binary floating point
+// then renders "20.800000000000004". One decimal is finer than any axis here needs.
+const _tickNum = v => Math.round(Number(v) * 10) / 10
+
+// Trailing-window mean, nulls skipped. Was defined inside renderClientWeight only, which is part of why
+// the Personal weight chart never had the smoothing line Jake preferred on the coach one.
+// Callers convert to the display unit BEFORE averaging — averaging is linear, so avg-of-converted
+// equals converted-avg, and it keeps the whole chart in one unit.
+// 🔴 Number() on every element is LOAD-BEARING, not defensive. Callers pass the output of
+// `weightToPref`, which returns a NUMBER in kg but a STRING in lb (it exits via _stripTrailingZero).
+// `reduce((a, b) => a + b, 0)` then CONCATENATES: "0" + "197.3" + "196.4" → NaN for every window past
+// the first. In lb the whole averaged series became NaN, `spanGaps` is false and pointRadius is 0, so
+// nothing drew at all — while the legend still advertised "7-day avg". Silent, and it removed the one
+// feature this change existed to give the Personal chart, for exactly the users being compared.
+// This is the SECOND time in two days this exact number-vs-string shape has bitten
+// (see the 1RM grid crash, 2026-08-14). Coerce at the boundary; never trust a *ToPref return to be
+// arithmetic-safe. Filtering non-finite values also drops '' and NaN rather than poisoning the mean.
+const _rollingAvg = (arr, window = 7) => arr.map((_, i) => {
+  const slice = arr.slice(Math.max(0, i - window + 1), i + 1)
+    .map(v => (v == null ? null : Number(v)))
+    .filter(v => v != null && Number.isFinite(v))
+  return slice.length ? parseFloat((slice.reduce((a, b) => a + b, 0) / slice.length).toFixed(2)) : null
+})
+
+function _chartTheme() {
+  const css = getComputedStyle(document.documentElement)
+  const pick = (name, fallback) => (css.getPropertyValue(name) || '').trim() || fallback
+  return {
+    muted: pick('--text-muted', '#9ca3af'),
+    accent: pick('--accent', '#6366f1'),
+    // Neutral grey at low alpha reads on both themes; the coach chart's rgba(0,0,0,.05) vanished on dark.
+    grid: 'rgba(150,150,150,0.14)',
+  }
+}
+
+// series: [{ label, data, colour, dashed, fill, axis:'y'|'y2', spanGaps, pointRadius }]
+// `target` is a canvas id OR the canvas element itself — the per-session and per-exercise trend charts
+// render into anonymous canvases inside a freshly-built container, and giving them synthetic ids just to
+// satisfy this signature would be ceremony.
+function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange, legend, height, tooltipUnit, stepSize } = {}) {
+  const el = typeof target === 'string' ? document.getElementById(target) : target
+  if (!el || !Array.isArray(series) || !series.length) return null
+  // Resolve by CANVAS, so an instance created by any path — including one this registry lost track of
+  // — is still destroyed. This is what the old `window.__perfCharts = {}` reset failed to do.
+  Chart.getChart(el)?.destroy()
+  _activeCharts = _activeCharts.filter(c => c.canvas !== el)
+
+  const t = _chartTheme()
+  const hasRight = series.some(s => s.axis === 'y2')
+  const showLegend = legend != null ? legend : series.filter(s => s.label).length > 1
+  const fmtY = yFormat || (v => String(_tickNum(v)))
+  const fmtY2 = y2Format || (v => _tickNum(v) + '%')
+
+  const chart = new Chart(el.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: labels || [],
+      datasets: series.map(s => {
+        const colour = s.colour || t.accent
+        return {
+          label: s.label || '',
+          data: s.data,
+          borderColor: colour,
+          // Alpha suffix on a hex, matching the palette's existing convention.
+          backgroundColor: s.fill ? (colour.length === 7 ? colour + '18' : colour) : 'transparent',
+          borderWidth: 2,
+          borderDash: s.dashed ? [4, 3] : undefined,
+          fill: !!s.fill,
+          tension: 0.3,
+          pointRadius: s.pointRadius != null ? s.pointRadius : 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: colour,
+          spanGaps: !!s.spanGaps,
+          yAxisID: s.axis === 'y2' ? 'y2' : 'y',
+        }
+      }),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: height ? false : true,
+      animation: { duration: 250 },
+      // Crosshair-style shared tooltip — the single biggest readability win from the coach chart.
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: showLegend, labels: { font: { size: 11 }, color: t.muted, boxWidth: 20, usePointStyle: true } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed.y
+              if (v == null) return null
+              const body = ctx.dataset.yAxisID === 'y2' ? fmtY2(v) : fmtY(v)
+              return (ctx.dataset.label ? ctx.dataset.label + ': ' : '') + body + (tooltipUnit && ctx.dataset.yAxisID !== 'y2' ? ` ${tooltipUnit}` : '')
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: t.muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
+        // On a DUAL-axis chart each axis is tinted to match its own series, so the reader can tell
+        // which scale belongs to which line. The coach weight chart did this (indigo left / amber
+        // right) and the first cut of this helper flattened both to muted — which is unreadable
+        // precisely on the chart that just gained a second axis. Single-axis charts stay muted:
+        // there is nothing to disambiguate, and a coloured axis there is just noise.
+        // stepSize is opt-in. Both weight charts set it (0.5 kg / 1 lb) because without it a tight
+        // auto-range over two close readings makes Chart.js pick sub-0.1 steps, and _tickNum's 1-dp
+        // rounding then collapses adjacent ticks into duplicate labels — "88.2, 88.3, 88.3".
+        y: { position: 'left', ...(yRange || {}), ticks: { color: hasRight ? (series.find(s => s.axis !== 'y2')?.colour || t.muted) : t.muted, font: { size: 11 }, callback: fmtY, ...(stepSize ? { stepSize } : {}) }, grid: { color: t.grid } },
+        ...(hasRight ? { y2: { position: 'right', ticks: { color: series.find(s => s.axis === 'y2')?.colour || t.muted, font: { size: 11 }, callback: fmtY2 }, grid: { drawOnChartArea: false } } } : {}),
+      },
+    },
+  })
+  _activeCharts.push(chart)
+  return chart
+}
+
 // Personal records per exercise — ALL-TIME (not range-filtered; a PR is a lifetime best, Hevy-style).
 // Returns [[label, value], …] appropriate to the metric_type. Non-weight types get their records in
 // ③ Tasks 2–3; weight_reps/unilateral compute weight/reps records now.
@@ -1721,17 +1824,14 @@ function _trendCardEmpty(ex) {
 // Destroys the previous render's Chart.js instances before rebuilding — fires on every keystroke,
 // range change and metric-chip tap, so without this each would leak a full set of chart instances
 // bound to canvases the innerHTML rebuild below just detached.
-let _perfExerciseCharts = []
 function _renderPerfExerciseList(query) {
   const listEl = document.getElementById('perf-ex-list'); if (!listEl) return
-  _perfExerciseCharts.forEach(c => c.destroy()); _perfExerciseCharts = []
+  _destroyManagedCharts()
   const q = (query || '').trim().toLowerCase()
   const cutoffDays = _TREND_RANGES[window._trendState.range]
   const cutoff = cutoffDays === Infinity ? 0 : Date.now() - cutoffDays * 86400000
   const list = (window._trendCache || []).filter(ex => !q || ex.name.toLowerCase().includes(q))
   if (!list.length) { listEl.innerHTML = '<div class="empty-state"><p>No matching exercises.</p></div>'; return }
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
-  const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
 
   // Pass 1 — compute what each card shows (range-filtered points, visible metric chips, active chip).
   const rendered = list.map((ex, i) => {
@@ -1775,32 +1875,49 @@ function _renderPerfExerciseList(query) {
       const left  = _aggregateSeries(r.pts, 'leftTop', 'max')
       const right = _aggregateSeries(r.pts, 'rightTop', 'max')
       if (Math.max(left.length, right.length) < 2) return
-      const labels = (left.length >= right.length ? left : right).map(a => a.label)
-      _perfExerciseCharts.push(new Chart(canvas.getContext('2d'), {
-        type: 'line',
-        data: { labels, datasets: [
-          { label: 'Left',  data: left.map(a => a.value),  borderColor: accent, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 3, fill: false, tension: 0.3 },
-          { label: 'Right', data: right.map(a => a.value), borderColor: muted,  borderWidth: 2, pointBackgroundColor: muted,  pointRadius: 3, fill: false, tension: 0.3, borderDash: [4, 3] }
-        ] },
-        options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
-          plugins: { legend: { display: true, labels: { color: muted, font: { size: 9 }, boxWidth: 10 } } },
-          scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
-                    y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 }, callback: v => fmtWeight(v) } } } }
-      }))
+      // MERGED ON THE DATE LABEL, not zipped positionally. _aggregateSeries drops its own null rows,
+      // so left and right can have different lengths AND different date sets — a session where only
+      // one side was logged shifts every later point of that series by one. Taking labels from the
+      // longer array and pairing by index then prints two readings from DIFFERENT sessions under one
+      // date. That mis-pairing predates this change but was invisible: the old config had no tooltip.
+      // The shared helper adds an index-mode tooltip, which would have started stating it confidently
+      // — on the one chart whose entire purpose is comparing the two numbers. Found by pre-push review.
+      const byLabel = new Map()
+      left.forEach(a => byLabel.set(a.label, { l: a.value, r: null }))
+      right.forEach(a => { const e = byLabel.get(a.label); if (e) e.r = a.value; else byLabel.set(a.label, { l: null, r: a.value }) })
+      // Chronological order comes from _aggregateSeries; re-establish it across the union.
+      const order = [...left.map(a => a.label), ...right.map(a => a.label)]
+      const labels = [...new Set(order)].sort((x, y) => order.indexOf(x) - order.indexOf(y))
+      // Right stays DASHED and in a second colour — the whole point of this chart is spotting an
+      // imbalance at a glance, so the two sides must not read as one thickened line.
+      _renderMetricChart(canvas, {
+        labels,
+        series: [
+          { label: 'Left',  data: labels.map(k => byLabel.get(k).l), colour: _METRIC_COLORS.topWeight, spanGaps: true },
+          { label: 'Right', data: labels.map(k => byLabel.get(k).r), colour: _METRIC_COLORS.bestHeight, dashed: true, spanGaps: true },
+        ],
+        height: true,
+        legend: true,
+        yFormat: v => fmtWeight(_tickNum(v)),
+      })
       return
     }
     const agg = _aggregateSeries(r.pts, r.activeKey, r.active[2])
     if (agg.length < 2) return
-    const line = _METRIC_COLORS[r.activeKey] || accent
-    _perfExerciseCharts.push(new Chart(canvas.getContext('2d'), {
-      type: 'line',
-      data: { labels: agg.map(a => a.label), datasets: [{ data: agg.map(a => a.value), borderColor: line, borderWidth: 2,
-              pointBackgroundColor: line, pointRadius: 3, fill: false, tension: 0.3 }] },
-      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
-        plugins: { legend: { display: false } },
-        scales: { x: { grid: { display: false }, ticks: { color: muted, font: { size: 8 }, maxRotation: 0 } },
-                  y: { grid: { color: 'rgba(150,150,150,0.08)' }, ticks: { color: muted, font: { size: 8 }, callback: v => r.active[3](v) } } } }
-    }))
+    // The metric's OWN formatter is preserved and _tickNum is deliberately NOT applied here — a pace
+    // axis must render "1:45", and rounding either its input or its output would corrupt that. Each
+    // formatter in _TREND_METRICS already produces display-ready text.
+    _renderMetricChart(canvas, {
+      labels: agg.map(a => a.label),
+      series: [{ data: agg.map(a => a.value), colour: _METRIC_COLORS[r.activeKey] || undefined, fill: true }],
+      height: true,
+      legend: false,
+      // _tickNum on the INPUT, not the output: each _TREND_METRICS formatter returns display-ready
+      // text ("1:45/km", "87.3kg"), so wrapping the output would corrupt it — but fmtWeight in kg is
+      // a bare parseFloat with no rounding, so without this a tick of 87.30000000000001 still rendered
+      // raw. Rounding to 1dp is safe for every formatter here, including the seconds-based pace ones.
+      yFormat: v => r.active[3](_tickNum(v)),
+    })
   })
 }
 
@@ -1812,6 +1929,15 @@ function _renderPerfExerciseList(query) {
 // one combined "bests" surface instead of 3. Each section keeps its own existing render function,
 // just mounted into a sub-container here instead of being reached independently.
 async function renderProgressPBs(el) {
+  // MUST destroy before the innerHTML below. This function is entered DIRECTLY from saveClientPB
+  // (js/app-clients.js:31), bypassing renderProgress — so its own teardown never ran. Replacing
+  // innerHTML detaches the old `pb-chart-N` canvases, and _renderMetricChart's guards then both miss:
+  // `Chart.getChart(el)` resolves the NEW canvas (undefined), and the registry filter compares against
+  // that new element, so the old entry is kept. Result: every "+ Log PB" leaves N live Chart instances
+  // bound to detached canvases, with their listeners and animation loops, and _activeCharts grows
+  // without bound. Exactly the leak class this whole change set exists to remove — introduced at the
+  // one chart site that did not exist before it. Caught by pre-push review.
+  _destroyManagedCharts()
   el.innerHTML = '<div class="loading-state">Loading personal bests…</div>'
   const clientId = await _getCurrentClientId()
   const addPBBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Personal bests</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log PB</button></div>
@@ -1846,6 +1972,7 @@ async function renderProgressPBs(el) {
   if (pbErr) log.error('renderProgressPBs', 'personal bests fetch failed', pbErr)
 
   let pbListHtml
+  let pbChartPlan = []
   if (!logs?.length) {
     pbListHtml = '<div class="empty-state"><p>No personal bests logged yet. Tap + Log PB to add your first record.</p></div>'
   } else {
@@ -1861,7 +1988,28 @@ async function renderProgressPBs(el) {
     // unit of a pair (kg/lbs, cm/in...), so a cached group unit can silently mismatch which record
     // `best` actually resolved to. Multi-agent review, 2026-07-24.
     Object.values(byExercise).forEach(ex => { ex.best = _bestPerfLog(ex.all) })
-    pbListHtml = Object.entries(byExercise).map(([name, { best, all, category }]) => `
+    // Personal Bests had NO chart at all — the single biggest gap against Jake's "include this graph
+    // type for all sections that require a graph" (2026-08-14). The coach's Performance tab has had a
+    // per-exercise chart since 2026-07-08; this is the same thing, through the same helper.
+    //
+    // Series is filtered to the BEST record's UNIT. PERF_CATEGORIES lets one exercise be logged in
+    // either unit of a pair (kg/lbs, cm/in), and plotting both on one axis would draw a cliff between
+    // 100kg and 220lbs that looks like a collapse in performance. Same reasoning as the _bestPerfLog
+    // comment above, applied to the plot rather than the headline number.
+    pbChartPlan = Object.entries(byExercise).map(([name, { best, all }], i) => {
+      const sameUnit = all.filter(l => (l.unit || '') === (best.unit || '') && l.value != null)
+      if (sameUnit.length < 2) return null
+      const chrono = [...sameUnit].sort((a, b) => new Date(a.date) - new Date(b.date))
+      return {
+        canvasId: `pb-chart-${i}`,
+        unit: best.unit || '',
+        labels: chrono.map(l => new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+        values: chrono.map(l => parseFloat(l.value)),
+      }
+    }).filter(Boolean)
+    const chartByIndex = new Set(pbChartPlan.map(c => c.canvasId))
+
+    pbListHtml = Object.entries(byExercise).map(([name, { best, all, category }], i) => `
       <div style="margin-bottom:12px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
@@ -1874,6 +2022,7 @@ async function renderProgressPBs(el) {
           </div>
         </div>
         ${all.length > 1 ? `<div style="margin-top:8px;font-size:11px;color:var(--text-muted)">${all.length} entries</div>` : ''}
+        ${chartByIndex.has(`pb-chart-${i}`) ? `<div style="position:relative;height:90px;margin-top:10px"><canvas id="pb-chart-${i}"></canvas></div>` : ''}
       </div>`).join('')
   }
 
@@ -1886,6 +2035,17 @@ async function renderProgressPBs(el) {
     ${addPBBtn}
     ${pbListHtml}
   `
+
+  // Drawn AFTER innerHTML — the canvases do not exist until the string is mounted.
+  pbChartPlan.forEach(c => {
+    _renderMetricChart(c.canvasId, {
+      labels: c.labels,
+      series: [{ data: c.values, colour: _METRIC_COLORS.e1rm, fill: true }],
+      height: true,
+      legend: false,
+      yFormat: v => `${_tickNum(v)}${c.unit ? ' ' + c.unit : ''}`,
+    })
+  })
 }
 
 async function renderSettings(el) {
