@@ -335,7 +335,10 @@ async function _cloneTemplateForClient(tmpl, clientId) {
   if (!tmpl) return null
   const { data: newTmpl, error: tErr } = await db
     .from('workout_templates')
-    .insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, is_personal: tmpl.is_personal, name: tmpl.name, description: tmpl.description || null })
+    // family_id inherited (2026-08-14) so an assigned copy stays linked to the session it came from.
+    // Null is survivable — the BEFORE INSERT trigger falls back to the row's own id — but then the
+    // clone is orphaned from its family and propagation can never see it.
+    .insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, is_personal: tmpl.is_personal, name: tmpl.name, description: tmpl.description || null, family_id: tmpl.family_id ?? null })
     .select('id').single()
   if (tErr || !newTmpl) { log.error('_cloneTemplateForClient', 'template clone failed', tErr); return null }
 
@@ -383,7 +386,7 @@ async function _cloneTemplateForClient(tmpl, clientId) {
 async function _cloneProgramForClient(clientProgramId, programId, clientId) {
   const { data: phases, error: phErr } = await db
     .from('program_phases')
-    .select('id, program_phase_workouts(id, template_id, week_number, workout_templates(id, name, description, is_personal, workout_template_exercises(*)))')
+    .select('id, program_phase_workouts(id, template_id, week_number, workout_templates(id, name, description, is_personal, family_id, workout_template_exercises(*)))')
     .eq('program_id', programId)
     .order('order_index')
 
@@ -821,7 +824,12 @@ async function _buildProgramTemplatePool(templates) {
     const exs = [...(t.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
     const names = exs.map(e => e.exercise_name)
     const preview = names.length ? names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3} more` : '') : ''
-    return { id: t.id, name: t.name, description: t.description || '', _exPreview: preview, _exCount: names.length, _usage: null }
+    // `_inThisProgram` marks a workout built via "+ Create new workout (this day only)". It is now
+    // offerable (see _refreshProgramTemplates) but the row must SAY so — picking it wires a second slot
+    // to the same template, and the next edit will fork it with the "applies only to this one" toast.
+    return { id: t.id, name: t.name, description: t.description || '', _exPreview: preview,
+             _exCount: names.length, _usage: null, _usageFailed: false, _inThisProgram: !!t.program_id,
+             _familyId: t.family_id || t.id, _copies: 1 }
   })
   if (!pool.length) return pool
 
@@ -829,12 +837,25 @@ async function _buildProgramTemplatePool(templates) {
   // failure mode is worse than useless — every row would read "Not used yet", inverting the answer.
   const ids = pool.map(t => t.id)
   const uses = []
+  // Deliberately queries program_phase_workouts ONLY, and that is correct — checked 2026-08-14 rather
+  // than assumed. It looks like client_program_workouts belongs here too (a template used only in an
+  // assigned plan would read "Not used yet"), but that state cannot exist: _cloneProgramForClient
+  // (:418-420) inserts a cpw row ONLY with the id returned by _cloneTemplateForClient, which always
+  // stamps `client_id` (:338) — and on clone failure it skips the row entirely rather than falling back
+  // to the master. So every cpw row points at a client-owned clone, and this pool already excludes those
+  // via `.is('client_id', null)`. Adding that query would match nothing. Do not "fix" this again.
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await db.from('program_phase_workouts')
       .select('template_id, week_number, day_of_week, program_phases(name)')
       .in('template_id', ids.slice(i, i + 100))
-    // Degrade to no usage labels rather than breaking the picker — it is an enrichment, not the data.
-    if (error) { log.error('_buildProgramTemplatePool', 'usage lookup failed', error); return pool }
+    // FAIL LOUD, not open. Returning the pool with every `_usage` still null renders "Not used yet" on
+    // EVERY row — the exact inversion this label exists to prevent, and indistinguishable from a genuinely
+    // unused library. Flag it so the picker can say the labels are unavailable rather than assert a lie.
+    if (error) {
+      log.error('_buildProgramTemplatePool', 'usage lookup failed', error)
+      pool.forEach(t => { t._usageFailed = true })
+      return pool
+    }
     uses.push(...(data || []))
   }
 
@@ -847,9 +868,44 @@ async function _buildProgramTemplatePool(templates) {
     // "used vs not used" is driven by rows.length, so a nulled embed can never read as "not used".
     const label = u => [u.program_phases?.name, u.week_number ? 'Wk ' + u.week_number : null,
                         _DAY_LABELS[u.day_of_week - 1] || null].filter(Boolean).join(' · ')
-    t._usage = rows.slice(0, 2).map(label).join('   ') + (rows.length > 2 ? `   +${rows.length - 2} more` : '')
+    // De-duplicated: the same template slotted into several weeks of one phase produced N identical
+    // labels, so the row read "Phase 1 · Wk 1 · TUE   Phase 1 · Wk 1 · TUE   +2 more".
+    const labels = [...new Set(rows.map(label).filter(Boolean))]
+    t._usage = labels.slice(0, 2).join('   ') + (labels.length > 2 ? `   +${labels.length - 2} more` : '')
   })
-  return pool
+
+  // ONE ROW PER SESSION, not per copy — the fix for what Jake actually saw (2026-08-14): four
+  // indistinguishable "SkiErg - Threshold Intervals" rows. His real library holds TWENTY-THREE copies
+  // of that session, ten of them standalone library rows, all manufactured by fork-on-edit. Collapsed
+  // by family_id, which is why the migration existed. Done AFTER the usage lookup so the representative
+  // can prefer a copy that is already in use, and so the family's usage is the UNION of its members'.
+  const byFamily = {}
+  pool.forEach(t => { (byFamily[t._familyId] = byFamily[t._familyId] || []).push(t) })
+  return Object.values(byFamily).map(members => {
+    if (members.length === 1) return members[0]
+    const usages = [...new Set(members.map(m => m._usage).filter(Boolean))]
+    // Representative: a copy that is slotted SOMEWHERE first (its usage line is the discriminator the
+    // 2026-07-22 fix added), else the most complete one. Note `_usage` means "used in any programme" —
+    // the usage lookup at :848 is not programme-filtered — though in practice the pool query already
+    // excludes other programmes' program_id rows, so the rep is always a library row or one of this
+    // programme's. Members were identical at migration time, but an edit forks and the fork inherits the
+    // family, so they CAN diverge; the fullest is the least surprising default.
+    const rep = members.find(m => m._usage) ||
+                members.slice().sort((a, b) => b._exCount - a._exCount)[0]
+    return {
+      ...rep,
+      _copies: members.length,
+      _usageFailed: members.some(m => m._usageFailed),
+      // Every member's searchable text, kept on the collapsed row. Without this the picker's filter
+      // only ever saw the REPRESENTATIVE's name, so a diverged member ("SkiErg Threshold — bike swap")
+      // became unfindable AND unselectable — a fresh instance of the very "I cannot select it"
+      // complaint this whole change set exists to fix. Never rendered; search only.
+      _searchText: members.map(m => `${m.name} ${m.description || ''} ${m._exPreview || ''}`).join(' '),
+      _usage: usages.length
+        ? usages.slice(0, 2).join('   ') + (usages.length > 2 ? `   +${usages.length - 2} more` : '')
+        : null,
+    }
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 }
 
 async function openProgram(programId) {
@@ -1517,7 +1573,7 @@ async function generatePhasePeriodization(phaseId, programId) {
   if (phase.duration_weeks < 2) { showToast('Phase must be at least 2 weeks to generate', 'error'); return }
 
   const { data: baseWorkouts, error: bwErr } = await db.from('program_phase_workouts')
-    .select('*, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
+    .select('*, workout_templates(id, name, description, is_personal, family_id, workout_template_exercises(*))')
     .eq('phase_id', phaseId).eq('week_number', 1)
   if (bwErr || !baseWorkouts?.length) { showToast('Add Week 1 sessions before generating', 'error'); return }
 
@@ -1544,7 +1600,11 @@ async function generatePhasePeriodization(phaseId, programId) {
       if (!tmpl) continue
 
       const { data: newTmpl, error: tErr } = await db.from('workout_templates')
-        .insert({ coach_id: currentUser.id, program_id: null, client_id: null, generated_from_phase_id: phaseId, is_personal: tmpl.is_personal, name: `${tmpl.name} — W${week}`, description: tmpl.description || null })
+        // family_id inherited (2026-08-14) — THE case Jake reported. Week clones are named
+        // `${name} — W2`, and propagation used to match on exact name equality, so "X" never equalled
+        // "X — W2" and the "update all duplicated sessions?" prompt was STRUCTURALLY impossible for any
+        // periodized phase. Identity now travels with the clone, so the name is free to differ.
+        .insert({ coach_id: currentUser.id, program_id: null, client_id: null, generated_from_phase_id: phaseId, is_personal: tmpl.is_personal, name: `${tmpl.name} — W${week}`, description: tmpl.description || null, family_id: tmpl.family_id ?? null })
         .select('id').single()
       // Counted, not just logged. This was log-only while the exercise insert 20 lines down was
       // counted — so the master template failing produced a short `newInserts` and still painted the
@@ -1620,7 +1680,7 @@ async function generatePhasePeriodization(phaseId, programId) {
     const assignments = _propagationTargets(allAssignments)
     if (assignments?.length && insertedPws?.length) {
       const { data: fullPws } = await db.from('program_phase_workouts')
-        .select('id, template_id, week_number, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
+        .select('id, template_id, week_number, workout_templates(id, name, description, is_personal, family_id, workout_template_exercises(*))')
         .in('id', insertedPws.map(p => p.id))
 
       for (const assignment of assignments) {
@@ -1971,7 +2031,7 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
       // omitted column comes back `undefined`, supabase-js drops undefined keys from the insert
       // payload, and the clone silently falls back to the DB default instead of inheriting. Silent at
       // every layer (les-036). Both sibling embeds already list it.
-      .select('id, template_id, day_of_week, session_order, workout_templates(id, name, description, is_personal, workout_template_exercises(*))')
+      .select('id, template_id, day_of_week, session_order, workout_templates(id, name, description, is_personal, family_id, workout_template_exercises(*))')
       .in('id', sourceRows.map(r => r.id))
     for (const a of assignments) {
       const cpwInserts = []
@@ -2117,10 +2177,18 @@ let _workoutPickerState = null
 //   cap. Caught by all three review agents, 2026-08-07.
 async function _refreshProgramTemplates() {
   if (!window._openProgramId) return
+  // `program_id` is NOT excluded outright any more (Jake, 2026-08-14). A workout built via "+ Create new
+  // workout (this day only)" gets stamped with `program_id` (app-workouts.js:1131) and used to be
+  // permanently invisible here — so the session he could plainly see on Tuesday could not be added to
+  // Thursday: *"it does not appear to be in use, and therefore I cannot select it."* Now a workout built
+  // inside THIS programme is offerable inside THIS programme; workouts owned by a DIFFERENT programme
+  // stay hidden, which is what the original exclusion was actually protecting against.
+  // `generated_from_phase_id` stays excluded — those are per-week auto-clones ("X — W2"), noise in a picker.
   const { data: templates, error } = await db.from('workout_templates')
-    .select('id, name, description, workout_template_exercises(exercise_name, order_index)')
+    .select('id, name, description, program_id, family_id, workout_template_exercises(exercise_name, order_index)')
     .eq('coach_id', currentUser.id)
-    .is('client_id', null).is('program_id', null).is('generated_from_phase_id', null)
+    .is('client_id', null).is('generated_from_phase_id', null)
+    .or(`program_id.is.null,program_id.eq.${window._openProgramId}`)
     .eq('is_personal', currentProfile?.role === 'solo')
     .order('name')
     .limit(2000)
@@ -2211,8 +2279,10 @@ function _renderWorkoutPickerResults(query) {
   if (!resultsEl || !_workoutPickerState) return
   const q = (query || '').trim().toLowerCase()
   const all = window._programTemplates || []
+  // `_searchText` covers every member of a collapsed family; it falls back to the row's own fields for
+  // an uncollapsed single. Searching only the representative made diverged members unreachable.
   const matches = q
-    ? all.filter(t => (t.name + ' ' + (t.description || '') + ' ' + (t._exPreview || '')).toLowerCase().includes(q))
+    ? all.filter(t => (t._searchText || (t.name + ' ' + (t.description || '') + ' ' + (t._exPreview || ''))).toLowerCase().includes(q))
     : all
 
   const createRow = _workoutPickerCreateRowHtml()
@@ -2225,9 +2295,14 @@ function _renderWorkoutPickerResults(query) {
       <div style="font-size:14px;font-weight:600">${escapeHtml(t.name)}</div>
       ${t.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${escapeHtml(t.description)}</div>` : ''}
       ${t._exPreview ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px">${escapeHtml(t._exPreview)}</div>` : '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">No exercises yet</div>'}
+      ${t._inThisProgram ? `<div style="font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--accent);margin-top:3px">BUILT IN THIS PROGRAMME</div>` : ''}
       <div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px;font-size:11px">
-        <span style="color:${t._usage ? 'var(--accent)' : 'var(--text-muted)'};font-weight:${t._usage ? '600' : '400'}">${t._usage ? '↳ Used in ' + escapeHtml(t._usage) : 'Not used yet'}</span>
-        <span style="color:var(--text-muted);flex-shrink:0">${t._exCount} exercise${t._exCount !== 1 ? 's' : ''}</span>
+        <!-- Three states, not two. "Not used yet" is a CLAIM, and asserting it when the lookup failed
+             is how every row silently read "unused" on a single query error (Jake, 2026-08-14). -->
+        <span style="color:${t._usageFailed ? 'var(--text-muted)' : t._usage ? 'var(--accent)' : 'var(--text-muted)'};font-weight:${t._usage && !t._usageFailed ? '600' : '400'};font-style:${t._usageFailed ? 'italic' : 'normal'}">${
+          t._usageFailed ? '⚠ Usage unavailable' : t._usage ? '↳ Used in ' + escapeHtml(t._usage) : 'Not used yet'
+        }</span>
+        <span style="color:var(--text-muted);flex-shrink:0">${t._copies > 1 ? `${t._copies} copies · ` : ''}${t._exCount} exercise${t._exCount !== 1 ? 's' : ''}</span>
       </div>
     </div>`
 

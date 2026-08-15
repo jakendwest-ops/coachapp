@@ -2280,10 +2280,16 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changeOverri
 
   // (#2) Sync assigned copies of the edited session — master program edits only (a direct client-plan
   // edit is already editing the client's own copy, so there's nothing downstream to sync).
+  // Renames go through here exactly like every other change shape. An earlier cut of this feature
+  // added a `change.op !== 'rename'` guard here, reasoning that a client should not be silently
+  // renamed — but this block is precisely what PREVENTS that: _assignedCopiesForSession splits the
+  // user's OWN copies (soloSelfIds, synced silently) from real clients' (realClientIds, gated behind
+  // the explicit prompt below). Skipping the block removed the prompt AND stopped syncing solo's own
+  // self-assigned plan — the only copy a solo user actually trains from. Caught by pre-push review.
   if (change && ctx?.programId && !ctx.isClientPlan) {
     const copies = await _assignedCopiesForSession([templateId])
     let soloPropFailures = 0
-    if (copies.soloSelfIds.length) soloPropFailures = await _propagateExerciseChangeToTemplates(change, copies.soloSelfIds) || 0
+    if (copies.soloSelfIds.length) soloPropFailures = await _applyChangeToTemplates(change, copies.soloSelfIds) || 0
     // In Personal view, real clients are never a write target (_assignedCopiesForSession leaves
     // realClientIds empty). Say so rather than saying nothing: silently skipping the sync would let
     // the user assume their clients' plans had been updated, which is worse than the bug this fixes.
@@ -2299,7 +2305,7 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changeOverri
     }
   }
 
-  return _checkSiblingPropagation(templateId, ctx)
+  return _checkSiblingPropagation(templateId, ctx, change)
 }
 
 // (#2) prompt shown when real clients have the edited session assigned.
@@ -2328,7 +2334,7 @@ function _showClientCopyPropagateModal(clientNames, templateId) {
 async function _continueAfterClientCopy(templateId, doIt) {
   closeModal('client-copy-modal')
   const p = window._pendingClientCopyProp
-  if (doIt && p) await _propagateExerciseChangeToTemplates(p.change, p.ids)
+  if (doIt && p) await _applyChangeToTemplates(p.change, p.ids)
   window._pendingClientCopyProp = null
   _checkSiblingPropagation(templateId)
 }
@@ -2337,9 +2343,27 @@ async function _continueAfterClientCopy(templateId, doIt) {
 // _checkClientPlanPropagation forward its own (possibly pre-await-snapshotted) ctx through rather than
 // this function re-reading window._templateCtx fresh; the other caller (_continueAfterClientCopy)
 // omits it and correctly falls back to whatever is live.
-async function _checkSiblingPropagation(templateId, ctxOverride) {
+async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride) {
   const ctx = ctxOverride || window._templateCtx
 
+  // op-aware wording. The body used to hardcode "Only the exercise you changed will be applied", which
+  // became a lie the moment renames started flowing through here — in the one dialogue that has to be
+  // trustworthy, because the user is authorising a write to sessions they cannot see.
+  // changeOverride is snapshotted for the same reason ctxOverride is: openTemplate awaits a network
+  // round-trip, and a fast navigation in that gap overwrites the single global slot.
+  const change = changeOverride !== undefined ? changeOverride : window._lastExerciseChange
+  const isRename = change?.op === 'rename'
+  // Wording note (kept OUT of the emitted string — see below): this says "copies of", not "named",
+  // because matching is by family_id now and a copy may legitimately carry a different name (a
+  // periodization week is "<base> — W2"). Promising "named X" while updating "X — W2" would be a lie
+  // in the one dialogue that has to be trustworthy.
+  //
+  // 🔴 This prose lived in an HTML COMMENT inside the template literal below until the pre-push review
+  // caught it (2026-08-14). A template literal does not know it is inside `<!-- -->`, so the `${name}`
+  // it contained was interpolated RAW: a session named `X --><img src=x onerror=…>` terminated the
+  // comment and the img executed on innerHTML — with the Supabase session token sitting in
+  // localStorage. One line below, the same value was correctly escaped. NEVER interpolate into an HTML
+  // comment; and prefer `//` comments outside the string, since an HTML comment ships to the DOM anyway.
   const _showPropagateModal = (name, count, label) => {
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
@@ -2350,14 +2374,39 @@ async function _checkSiblingPropagation(templateId, ctxOverride) {
           <h2 class="modal-title">Apply to other sessions?</h2>
           <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
         </div>
-        <p style="font-size:14px;line-height:1.6;margin:0 0 20px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other session${count === 1 ? '' : 's'} named "<strong>${name}</strong>" in ${label}. Only the exercise you changed will be applied.</p>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 20px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}. ${
+          isRename
+            ? 'Only the name and description will be applied — a week marker like "— W2" is kept.'
+            : 'Only the exercise you changed will be applied.'
+        }</p>
         <div class="modal-footer">
           <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
-          <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">Update all "${name}"</button>
+          <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">${isRename ? `Rename all ${count + 1}` : `Update all ${count + 1} copies`}</button>
         </div>
       </div>
     `
     mountModal(overlay)
+  }
+
+  // Matched on family_id since 2026-08-14, NOT on exact name equality. The old `name === name` test
+  // failed in both directions and Jake hit both: a periodization clone is named `${name} — W2`, so "X"
+  // never equalled "X — W2" and the prompt was STRUCTURALLY IMPOSSIBLE for any generated phase; and
+  // conversely two genuinely different sessions sharing a name (his 6- and 9-exercise "Upper Body STR")
+  // would have been offered as one. family_id says nothing about the name, which is the point — a
+  // session can be renamed and its copies stay linked.
+  //
+  // A missing family_id is not a silent no-op: it falls back to the row's own id via the DB trigger, so
+  // the template simply matches nothing and the user gets no prompt, exactly as before this feature.
+  const _targets = (rows, idOf) => {
+    const self = rows.find(r => idOf(r) === templateId)
+    const fam = self?.workout_templates?.family_id
+    if (!fam) return []
+    // De-duplicated by template id. `_propagateTargets` previously carried one entry per SLOT, so a
+    // template sitting in 3 week-slots reported "3 other sessions" (it is one) and made
+    // _propagateExerciseChangeToTemplates write the same row three times.
+    return [...new Set(rows
+      .filter(r => idOf(r) !== templateId && r.workout_templates?.family_id === fam)
+      .map(idOf))]
   }
 
   // Client plan propagation
@@ -2365,18 +2414,19 @@ async function _checkSiblingPropagation(templateId, ctxOverride) {
     const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
     if (!tmpl) return openTemplate(templateId, ctx)
     const { data: siblings } = await db.from('client_program_workouts')
-      .select('workout_template_id, workout_templates(id, name)')
+      .select('workout_template_id, workout_templates(id, name, family_id)')
       .eq('client_program_id', ctx.clientProgramId)
-    const matching = (siblings || []).filter(r =>
-      r.workout_template_id !== templateId && r.workout_templates?.name === tmpl.name
-    )
-    if (!matching.length) return openTemplate(templateId, ctx)
-    window._propagateTargets = matching.map(r => r.workout_template_id)
-    _showPropagateModal(tmpl.name, matching.length, `${ctx.clientName || 'this client'}'s plan`)
+    const targets = _targets(siblings || [], r => r.workout_template_id)
+    if (!targets.length) return openTemplate(templateId, ctx)
+    window._propagateTargets = targets
+    window._propagateChange = change
+    _showPropagateModal(tmpl.name, targets.length, `${ctx.clientName || 'this client'}'s plan`)
     return
   }
 
-  // Master program propagation (Programs builder — solo and PT)
+  // Master program propagation (Programs builder — solo and PT). Scoped to THIS programme's phases only
+  // — Jake's explicit choice, 2026-08-14: a client's live assigned plan is never swept in here, it keeps
+  // its own separate prompt (#2) which names the clients affected before touching anything.
   if (ctx?.programId) {
     const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
     if (!tmpl) return openTemplate(templateId, ctx)
@@ -2384,48 +2434,101 @@ async function _checkSiblingPropagation(templateId, ctxOverride) {
     const phaseIds = (phases || []).map(p => p.id)
     if (!phaseIds.length) return openTemplate(templateId, ctx)
     const { data: pws } = await db.from('program_phase_workouts')
-      .select('template_id, workout_templates(id, name)')
+      .select('template_id, workout_templates(id, name, family_id)')
       .in('phase_id', phaseIds)
-    const matching = (pws || []).filter(r =>
-      r.template_id !== templateId && r.workout_templates?.name === tmpl.name
-    )
     // Note: a template still shared across multiple phase slots at this point would mean
     // _resolveEditableTemplateId's fork didn't run (e.g. edited with no phaseWorkoutId context) —
     // that's a pre-existing edge case, not one this check needs to warn about separately.
-    if (!matching.length) return openTemplate(templateId, ctx)
-    window._propagateTargets = matching.map(r => r.template_id)
-    _showPropagateModal(tmpl.name, matching.length, 'this program')
+    const targets = _targets(pws || [], r => r.template_id)
+    if (!targets.length) return openTemplate(templateId, ctx)
+    window._propagateTargets = targets
+    window._propagateChange = change
+    _showPropagateModal(tmpl.name, targets.length, 'this program')
     return
   }
 
   openTemplate(templateId, ctx)
 }
 
-// Applies the single captured change to the other same-named sessions (surgically, by name) and to
-// THEIR assigned client copies — never a wholesale workout overwrite.
+// A periodization clone is named `${base} — W2`. When the base session is renamed, the clone must keep
+// its own week marker — otherwise renaming "Full Body" to "Full Body A" leaves eight sessions all
+// called "Full Body A" and the week they belong to is lost from the UI entirely. Matches Jake's real
+// data, which uses "- week 1" as well as the code's own "— W1".
+const _WEEK_SUFFIX_RE = /\s*[-—–]\s*(week\s*\d+|w\d+)\s*$/i
+
+// Propagates a session RENAME to its sibling copies. Separate from the exercise-change path because
+// they touch different tables entirely: this writes workout_templates.name, that writes
+// workout_template_exercises. Added 2026-08-14 — renaming had NEVER been wired to propagation, which is
+// half of what Jake reported ("this includes ... chaning the session name").
+async function _propagateRenameToTemplates(change, targetIds) {
+  if (!targetIds?.length) return 0
+  const coachId = await _resolveTemplateOwnerCoachId()
+  const { data: rows, error } = await db.from('workout_templates').select('id, name').eq('coach_id', coachId).in('id', targetIds)
+  if (error) { log.error('_propagateRenameToTemplates', 'target fetch failed', error); return targetIds.length }
+  // Ids the SELECT did not return were refused by RLS (which yields { data: [], error: null }, not an
+  // error) — they must count as failures. Iterating only `rows` reported "Renamed N copies" for rows
+  // that were never touched: the same policy-blocked-counted-as-success shape, moved one query upstream.
+  let failures = Math.max(0, targetIds.length - (rows || []).length)
+  // The edit box is PREFILLED with the source's current name, so what the user typed usually still
+  // carries its own week marker. Appending the target's marker to that produced
+  // "Lower Strength - week 1 - week 2" — wrong names written to real rows, while the modal promised the
+  // marker would be kept. Strip first, then re-apply each target's own.
+  const base = (change.name || '').replace(_WEEK_SUFFIX_RE, '')
+  for (const r of (rows || [])) {
+    const suffix = (r.name.match(_WEEK_SUFFIX_RE) || [''])[0]
+    // coach_id anchor + rowcount check: a policy-blocked update returns { data: [], error: null }, so an
+    // error-only guard would count a silent refusal as a success.
+    const { data, error: uErr } = await db.from('workout_templates')
+      .update({ name: base + suffix, description: change.description ?? null })
+      .eq('id', r.id).eq('coach_id', coachId).select('id')
+    if (uErr || !data?.length) { failures++; log.error('_propagateRenameToTemplates', 'rename target not updated', { targetId: r.id }) }
+  }
+  return failures
+}
+
+// ONE dispatcher, so every propagation site handles both change shapes. The rename path was first
+// bolted on as an early return inside _applyToAllSessions plus a guard in _checkClientPlanPropagation,
+// and that combination silently skipped the user's OWN assigned copies at BOTH sites — for solo, whose
+// self-assigned plan is the only copy they actually train from. Every other op syncs those silently, so
+// a rename must too. Real clients are unaffected here: they are gated by the explicit
+// "Update assigned clients?" prompt, which is the only route that ever writes to a real client's plan.
+async function _applyChangeToTemplates(change, ids) {
+  if (!change || !ids?.length) return 0
+  return change.op === 'rename'
+    ? await _propagateRenameToTemplates(change, ids)
+    : await _propagateExerciseChangeToTemplates(change, ids)
+}
+
+// Applies the single captured change to the other copies of this session and to THEIR assigned client
+// copies — never a wholesale workout overwrite.
 async function _applyToAllSessions(sourceTemplateId) {
   closeModal('propagate-modal')
   const targetIds = window._propagateTargets || []
-  const change = window._lastExerciseChange
+  // The op is stashed WITH the targets when the modal mounts, not re-read live. `op` now selects which
+  // write happens, so a concurrent save during the awaited round-trip could hand a rename to the
+  // exercise path — which matches none of its branches, writes nothing, and logs success. The wording
+  // shown in the modal was already snapshotted for exactly this reason; the branch must match it.
+  const change = window._propagateChange || window._lastExerciseChange
   if (!targetIds.length || !change) { openTemplate(sourceTemplateId, window._templateCtx); return }
 
   // Accumulate across BOTH calls. showToast keeps a single node with no queue, so the second call's
   // "N sessions did not pick up this change" erases the first's and the two counts never merge — the
   // user is told about one batch of failures and never the other. Same fix-the-class shape as the
   // finding that produced this return value in the first place.
-  let applyAllFailures = await _propagateExerciseChangeToTemplates(change, targetIds) || 0
+  let applyAllFailures = await _applyChangeToTemplates(change, targetIds) || 0
 
   // Master-program siblings: keep the user's OWN (solo) copies of those sessions in sync too. Real
   // clients' copies are deliberately NOT touched here — writing to a real client's plan only ever
   // happens through the per-session "Update assigned clients?" confirm in _checkClientPlanPropagation,
-  // so bulk "Update all same-named sessions" can never silently change a client's plan without consent.
+  // so bulk "Update all copies" can never silently change a client's plan without consent.
   if (window._templateCtx?.programId) {
     const copies = await _assignedCopiesForSession(targetIds)
-    applyAllFailures += await _propagateExerciseChangeToTemplates(change, copies.soloSelfIds) || 0
+    applyAllFailures += await _applyChangeToTemplates(change, copies.soloSelfIds) || 0
   }
   if (applyAllFailures) showToast(`${applyAllFailures} assigned session${applyAllFailures === 1 ? '' : 's'} did not pick up this change`, 'error', 6000)
+  else if (change.op === 'rename') showToast(`Renamed ${targetIds.length + 1} copies`, 'success')
 
-  log.ok('_applyToAllSessions', `propagated one change to ${targetIds.length} sessions`)
+  log.ok('_applyToAllSessions', `propagated one ${change.op || 'exercise'} change to ${targetIds.length} sessions`)
   openTemplate(sourceTemplateId, window._templateCtx)
 }
 
@@ -2439,6 +2542,13 @@ async function _cloneSharedMasterTemplate(tmpl, overrides = {}) {
   const { data: newTmpl, error } = await db.from('workout_templates').insert({
     coach_id: tmpl.coach_id, client_id: null, program_id: tmpl.program_id || null,
     is_personal: tmpl.is_personal, name: tmpl.name, description: tmpl.description || null,
+    // Inherit the source's identity (2026-08-14). THIS is the function that manufactured Jake's
+    // duplicates: every fork-on-edit produced a same-named library row with no link back, so the
+    // picker showed N indistinguishable copies and propagation could only guess from the name.
+    // A null here is not fatal — the BEFORE INSERT trigger falls back to the row's own id, making the
+    // clone its own family: unhelpful, never wrong. `?? null` not `|| null` so a legitimate value
+    // survives; and it sits BEFORE ...overrides so a caller can still redirect it deliberately.
+    family_id: tmpl.family_id ?? null,
     ...overrides
   }).select('id').single()
   if (error || !newTmpl) { log.error('_cloneSharedMasterTemplate', 'clone failed', error); return null }
@@ -2644,18 +2754,23 @@ async function saveEditTemplate(id) {
   const errorEl = document.getElementById('et-error')
   const name = document.getElementById('et-name').value.trim()
   if (!name) { errorEl.textContent = 'Name is required'; return }
+  const description = document.getElementById('et-desc').value.trim() || null
   const { templateId: targetId } = await _resolveEditableTemplateId(id)
   const coachId = await _resolveTemplateOwnerCoachId()
   log.info('saveEditTemplate', 'updating template', { id: targetId })
   const { data, error } = await db.from('workout_templates').update({
-    name,
-    description: document.getElementById('et-desc').value.trim() || null
+    name, description
   }).eq('id', targetId).eq('coach_id', coachId).select()
   if (error) { log.error('saveEditTemplate', 'update failed', error); errorEl.textContent = error.message; return }
   if (!data?.length) { log.error('saveEditTemplate', 'no rows updated — permission denied?', { id: targetId }); errorEl.textContent = 'Save failed — template not found or permission denied.'; return }
   log.ok('saveEditTemplate', 'template updated', { id: targetId })
   closeModal('edit-template-modal')
-  openTemplate(targetId, window._templateCtx)
+  // Renaming was NEVER connected to propagation — it ended at a bare openTemplate, so a name change
+  // had to be repeated by hand in every week. Jake, 2026-08-14: "this includes changing an exercise or
+  // chaning the session name ... I have to go and make these edits 1 by 1." Now routed through the same
+  // path an exercise edit takes, carrying its own op so _applyToAllSessions can tell them apart.
+  window._lastExerciseChange = { op: 'rename', name, description }
+  await _afterTemplateExerciseSave(targetId)
 }
 
 async function deleteTemplate(id) {

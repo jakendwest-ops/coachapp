@@ -233,12 +233,27 @@ test.describe('Inline assign grid', () => {
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
-  test('a template created inline for one day slot does not clutter the picker for other slots or programs (2026-07-10)', async ({ page }) => {
+  test('a template created inline for one day slot stays out of OTHER programs\' pickers (2026-07-10, narrowed 2026-08-14)', async ({ page }) => {
     // Regression: openProgram's template query had no .is('program_id', null) filter, so every
     // one-off "+ Create new workout" template stayed in the reuse pool forever -- found live when
     // a 12-phase program's picker showed the same name 4+ times with no way to tell which day
     // each already belonged to. The inline "__new__" option is also relabeled "(this day only)"
     // to make the distinction clear at the point of choice.
+    //
+    // NARROWED 2026-08-14 after Jake hit the other side of it live: *"threshold intervals is being
+    // used ... however when I try to add this session into the Thursday workout slot it does not
+    // appear to be in use, and therefore I cannot select it."* A session built inline was invisible
+    // to its OWN programme forever, so it could never be reused on a second day.
+    //
+    // The two reports are reconcilable because the original complaint was INDISTINGUISHABILITY
+    // ("no way to tell which day each already belonged to"), not presence -- and that was fixed
+    // properly on 2026-07-22 by the usage labels ("Used in Phase 1 - Wk 3 - TUE"), plus a
+    // "BUILT IN THIS PROGRAMME" badge added 2026-08-14. The blunt exclusion outlived its reason.
+    //
+    // What this test now guards is the half that still matters and that no other test covers: an
+    // inline template must never leak into a DIFFERENT programme's picker. The positive half (it IS
+    // offered inside its own programme) is covered surgically in
+    // tests/workout-picker-2026-08-14.spec.js -- keep both, they fail for different reasons.
     await page.click('button:has-text("New program")')
     await page.fill('#pm-name', '[E2E] Picker Scope Test')
     await page.click('#pm-save-btn')
@@ -269,13 +284,46 @@ test.describe('Inline assign grid', () => {
       // this test exists to guard could be deleted entirely and it would still go green.
       await page.evaluate(async (programId) => { await openProgram(programId); await _refreshProgramTemplates() }, programId)
       await page.waitForTimeout(300)
-      const pool = await page.evaluate(() => (window._programTemplates || []).map(t => t.name))
-      expect(pool.length).toBeGreaterThan(0)   // guards against the vacuous-pass shape above
-      expect(pool).not.toContain('[E2E] Day-Only Template')
+      const own = await page.evaluate(() => (window._programTemplates || []).map(t => t.name))
+      expect(own.length).toBeGreaterThan(0)   // guards against the vacuous-pass shape above
+      expect(own, 'its OWN programme must offer it — otherwise it can never be reused on a second day')
+        .toContain('[E2E] Day-Only Template')
+
+      // The guarantee that survived: a SECOND programme must not see it. Built as a bare row rather
+      // than through the UI — this test already proves the UI path, and the pool query is what is
+      // actually under test here.
+      const otherPool = await page.evaluate(async () => {
+        const { data: p2 } = await db.from('programs')
+          .insert({ coach_id: currentUser.id, name: '[E2E] Picker Scope Other' }).select('id').single()
+        await openProgram(p2.id)
+        await _refreshProgramTemplates()
+        const names = (window._programTemplates || []).map(t => t.name)
+        await db.from('programs').delete().eq('id', p2.id)
+        return names
+      })
+      expect(otherPool, 'a different programme must never see another programme\'s inline workout')
+        .not.toContain('[E2E] Day-Only Template')
     } finally {
-      await page.evaluate(async (templateId) => { await db.from('workout_templates').delete().eq('id', templateId) }, templateId)
-      page.once('dialog', d => d.accept())
-      await page.click('button:has-text("Delete")')
+      // Swept by QUERY, not through the UI Delete button. The button needs the page to still be sitting
+      // on this programme, and the assertions above deliberately navigate away (openProgram on a second
+      // programme). When that cleanup silently no-op'd, three orphaned "[E2E] Picker Scope Test" rows
+      // accumulated — and because the fixture lookup uses .single(), which ERRORS on multiple matches,
+      // the debris broke the test on its next run rather than the run that created it.
+      await page.evaluate(async (templateId) => {
+        await db.from('workout_templates').delete().eq('id', templateId)
+        const { data: progs } = await db.from('programs').select('id')
+          .eq('coach_id', currentUser.id).like('name', '[E2E] Picker Scope%')
+        const ids = (progs || []).map(p => p.id)
+        if (!ids.length) return
+        const { data: phs } = await db.from('program_phases').select('id').in('program_id', ids)
+        const phIds = (phs || []).map(p => p.id)
+        if (phIds.length) {
+          await db.from('program_phase_workouts').delete().in('phase_id', phIds)
+          await db.from('program_phases').delete().in('id', phIds)
+        }
+        await db.from('programs').delete().in('id', ids)
+      }, templateId)
+      await page.evaluate(() => navigate('programs'))
       await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
     }
   })

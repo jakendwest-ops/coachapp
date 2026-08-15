@@ -121,12 +121,27 @@ test.describe('Programs builder — picker pool is off the page-load path', () =
       const res = await page.evaluate(async (f) => {
         await openProgram(f.progId)
         const realFrom = db.from.bind(db)
-        db.from = (t) => t === 'workout_templates'
-          ? { select: () => ({ eq: () => ({ is: () => ({ is: () => ({ is: () => ({ eq: () => ({ order: () => ({ limit: async () => ({ data: null, error: { message: 'simulated network failure' } }) }) }) }) }) }) }) }) }
-          : realFrom(t)
-        await _refreshProgramTemplates()
-        const afterFailure = window._programTemplates
-        db.from = realFrom
+        // Self-returning thenable stub, NOT a hand-built chain. The original mirrored the query's exact
+        // shape — select→eq→is→is→is→eq→order→limit — so changing a single filter in the real query
+        // (2026-08-14 swapped one `.is()` for an `.or()`) made the mock throw mid-chain. Worse, the
+        // throw escaped before `db.from = realFrom` ran, leaving the client monkey-patched for the rest
+        // of the file, so the NEXT test failed on an unrelated `.like is not a function`. This version
+        // answers any method with itself and resolves to the error whenever it is awaited, so it stays
+        // valid however the query is reshaped.
+        const failing = new Proxy({}, {
+          get: (_t, prop) => prop === 'then'
+            ? (resolve) => resolve({ data: null, error: { message: 'simulated network failure' } })
+            : () => failing
+        })
+        db.from = (t) => t === 'workout_templates' ? failing : realFrom(t)
+        let afterFailure
+        try {
+          await _refreshProgramTemplates()
+          afterFailure = window._programTemplates
+        } finally {
+          // finally, so a future change that throws here can never again leak the patched client.
+          db.from = realFrom
+        }
         await _refreshProgramTemplates()
         return { afterFailure, recovered: Array.isArray(window._programTemplates) }
       }, fx)
