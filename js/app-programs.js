@@ -253,7 +253,51 @@ async function _existingAssignment(clientId, programId) {
 // Deliberately does NOT delete a clone that a workout_log points at: workout_logs.template_id is
 // SET NULL on delete, so history survives either way, but keeping the link means a logged session
 // can still say which workout it came from.
-async function _removeAssignmentAndClones(clientProgramId) {
+// Snapshots the assignment into client_program_blocks before it is destroyed. This is the LAST instant
+// the block's date window still exists: the row is about to be hard-deleted, and there is a unique
+// index on (client_id, program_id) so a restart cannot keep it.
+//
+// Written here, in the one function all four destructive callers funnel through (:306 restart, :590
+// remove, :704 solo restart, :1319 programme delete), rather than at each caller — this codebase's
+// most-repeated failure is a rule landing in one function while its siblings drift.
+//
+// Returns false to ABORT the delete if the snapshot cannot be written. History loss must never be
+// traded for a silent removal, and all four callers already treat false as abort.
+async function _archiveAssignmentBlock(clientProgramId, reason) {
+  const { data: cp, error } = await db.from('client_programs')
+    .select('id, client_id, program_id, start_date, created_at, programs(name, program_phases(duration_weeks))')
+    .eq('id', clientProgramId).maybeSingle()
+  if (error) { log.error('_archiveAssignmentBlock', 'assignment fetch failed', error); return false }
+  if (!cp) { log.error('_archiveAssignmentBlock', 'assignment not found — refusing to delete blind', { clientProgramId }); return false }
+
+  // A nulled embed (an unreadable nested level) must NOT cost the history row — a block labelled
+  // "Programme" is vastly better than no block. Same reasoning as the embed guards elsewhere in this
+  // file, but the failure mode here is unrecoverable rather than merely visible.
+  const phases = cp.programs?.program_phases || []
+  const plannedWeeks = phases.length
+    ? phases.reduce((s, p) => s + (p.duration_weeks || 1), 0)
+    : null
+
+  const { error: insErr } = await db.from('client_program_blocks').insert({
+    client_id: cp.client_id,
+    program_id: cp.program_id || null,
+    program_name: cp.programs?.name || 'Programme',
+    start_date: cp.start_date || null,
+    assigned_at: cp.created_at,
+    ended_at: new Date().toISOString().split('T')[0],
+    planned_weeks: plannedWeeks,
+    ended_reason: reason || null,
+    source_client_program_id: cp.id,
+  })
+  if (insErr) { log.error('_archiveAssignmentBlock', 'block insert failed — aborting removal', insErr); return false }
+  log.ok('_archiveAssignmentBlock', 'block archived', { clientProgramId, reason })
+  return true
+}
+
+async function _removeAssignmentAndClones(clientProgramId, reason) {
+  // Archive FIRST. Everything below is destructive and irreversible.
+  if (!await _archiveAssignmentBlock(clientProgramId, reason)) return false
+
   const { data: cpws } = await db.from('client_program_workouts')
     .select('workout_template_id').eq('client_program_id', clientProgramId)
   const cloneIds = [...new Set((cpws || []).map(r => r.workout_template_id).filter(Boolean))]
@@ -303,7 +347,7 @@ async function saveAssignProgram(clientId) {
   if (existing) {
     const started = existing.start_date ? ` (started ${existing.start_date})` : ''
     if (!confirm(`That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`)) { _release(); return }
-    if (!await _removeAssignmentAndClones(existing.id)) { errorEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
+    if (!await _removeAssignmentAndClones(existing.id, 'restarted')) { errorEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
   }
 
   const { data: cp, error } = await db.from('client_programs').insert({
@@ -587,7 +631,7 @@ async function unassignProgram(clientId, assignmentId) {
   // client-owned template clones they pointed at do NOT (the FK runs the other way), so every
   // removal stranded ~30 orphan templates forever — for real clients as well as the owner. Now goes
   // through the shared helper, which removes the assignment AND its dead clones. 2026-07-13.
-  if (!await _removeAssignmentAndClones(assignmentId)) { showToast('Could not remove the program', 'error'); return }
+  if (!await _removeAssignmentAndClones(assignmentId, 'removed')) { showToast('Could not remove the program', 'error'); return }
   renderClientPrograms(clientId, document.getElementById('tab-content'))
 }
 
@@ -701,7 +745,7 @@ async function saveAssignProgramToClient(programId, soloClientId) {
       ? `This program is already in your plan${started}.\n\nRestart it from the new start date? Your logged sessions are kept — only the plan itself is rebuilt.`
       : `That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`)
     if (!ok) { _release(); return }
-    if (!await _removeAssignmentAndClones(existing.id)) { errEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
+    if (!await _removeAssignmentAndClones(existing.id, 'restarted')) { errEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
   }
 
   const { data: cp, error } = await db.from('client_programs').insert({ client_id: clientId, program_id: programId, start_date: startDate || null }).select('id').single()
@@ -1316,7 +1360,7 @@ async function deleteProgram(programId) {
   // on would delete the program anyway — permanently orphaning the very clones this call exists to
   // remove, with the program row gone so nothing can ever find them again. Fail closed.
   for (const cpId of soloOwnIds) {
-    if (!await _removeAssignmentAndClones(cpId)) {
+    if (!await _removeAssignmentAndClones(cpId, 'program_deleted')) {
       showToast('Could not clean up this program’s workout copies — nothing was deleted. Try again.', 'error')
       return
     }

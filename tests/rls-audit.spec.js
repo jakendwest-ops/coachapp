@@ -35,7 +35,7 @@ const ALL_TABLES = [
   'clients', 'profiles', 'exercises',
   'workout_templates', 'workout_template_exercises',
   'programs', 'program_phases', 'program_phase_workouts',
-  'client_programs', 'client_program_workouts',
+  'client_programs', 'client_program_workouts', 'client_program_blocks',
   'workout_logs', 'workout_log_exercises', 'workout_log_sets',
   'weight_logs', 'performance_logs',
   'goals', 'goal_milestones', 'goal_check_ins',
@@ -107,6 +107,14 @@ test.describe('RLS audit — cross-tenant isolation', () => {
   const CLIENT_OWNED = [
     'weight_logs', 'workout_logs', 'client_1rms', 'client_check_ins',
     'client_programs', 'performance_logs', 'goals', 'workout_templates',
+    // DELIBERATELY NOT 'client_program_blocks' (added to ALL_TABLES 2026-08-15). This list demands a
+    // NON-ZERO count per the comment below, and the E2E client owns no blocks — a block only exists
+    // once a programme has been restarted or removed. Seeding one permanently just to satisfy this
+    // probe would be exactly the fixture debris this suite keeps having to sweep.
+    // Its policies ARE proven behaviourally, and more strongly than Probe B manages: the plant/
+    // read-back/update-refused/delete-refused/cascade sequence in
+    // tests/program-blocks-2026-08-15.spec.js. That is also what caught the missing GRANT, which a
+    // count-based probe cannot see — `permission denied` and `0 rows` look the same from here.
   ]
 
   // Tables the E2E client is SEEDED to own rows in. Probe B must see a non-zero count from each of

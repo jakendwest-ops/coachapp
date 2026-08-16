@@ -76,7 +76,21 @@ create table if not exists public.client_program_blocks (
 create index if not exists client_program_blocks_client_idx
   on public.client_program_blocks (client_id, ended_at desc);
 
--- 2. RLS ----------------------------------------------------------------------
+-- 2. GRANTS -- REQUIRED, and easy to miss ---------------------------------------
+-- RLS policies filter WITHIN privileges a role already holds; they do not confer any. Without these
+-- grants, `authenticated` gets "permission denied for table client_program_blocks" on every
+-- statement and no policy is ever consulted.
+--
+-- This bit nearly shipped missing. Every other table in this project was created through Supabase's
+-- table editor, which grants automatically, so no earlier script in scripts/ contains a GRANT and
+-- there was no local precedent to copy. Caught by planting a real row and reading it back — a plain
+-- `select count(*)` returns 0 whether the policy works or the grant is absent, so it proves nothing.
+--
+-- SELECT + INSERT only. No UPDATE, no DELETE: this table is append-only by design, and withholding
+-- the grant is a second, independent lock alongside the absent policies below.
+grant select, insert on public.client_program_blocks to authenticated;
+
+-- 3. RLS ----------------------------------------------------------------------
 -- A new table with RLS off is a leak; with RLS on and no policy it is a
 -- silently broken feature. Both classes have shipped here before, so both
 -- halves land in this one script.
@@ -117,10 +131,22 @@ with check (
 -- USING-reused-as-WITH-CHECK loophole; and the coach_id OR user_id bridge is
 -- the solo-safe form CLAUDE.md mandates.
 
--- 3. Verify -------------------------------------------------------------------
+-- 4. Verify -------------------------------------------------------------------
 -- select policyname, cmd from pg_policies where tablename = 'client_program_blocks';
 --   -- expect exactly 2 rows: SELECT and INSERT
+-- select grantee, privilege_type from information_schema.role_table_grants
+--   where table_name = 'client_program_blocks' and grantee = 'authenticated';
+--   -- expect exactly SELECT and INSERT. If this is EMPTY, section 2 did not run and
+--   -- the app gets "permission denied" on every statement.
 -- select count(*) from public.client_program_blocks;
 --   -- expect 0. There is NO backfill and there cannot be: past assignments were
 --   -- hard-deleted and their start dates do not exist anywhere. History starts
 --   -- accruing from the first restart AFTER this ships.
+--
+-- NONE OF THE ABOVE IS SUFFICIENT ON ITS OWN. `count(*)` returns 0 for a healthy empty
+-- table, for a missing SELECT policy, AND for a missing grant — the three are
+-- indistinguishable from the outside. The only real check is BEHAVIOURAL: insert a row as
+-- an ordinary authenticated user, read it back, and confirm an UPDATE and a DELETE both
+-- affect zero rows. That is what caught the missing grant here, after `count(*) = 0` had
+-- already suggested everything was fine. See tests/rls-audit.spec.js, which makes the same
+-- point about its own probes.
