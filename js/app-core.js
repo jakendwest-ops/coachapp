@@ -74,6 +74,32 @@ window._unitPrefs = { weight: 'kg', jumpHeight: 'cm', cardioDistance: 'km' }
 const _WEIGHT_KG_TO_LB = 2.2046226218
 const _JUMP_CM_TO_IN   = 0.3937007874
 
+// A programme's week grid starts on the MONDAY of its start week, not on start_date itself — a block
+// beginning on a Wednesday still places its Day-1 session on that week's Monday. Hoisted here 2026-08-15
+// so the calendar (which has done this since it was written) and the per-programme progress window
+// cannot disagree about where a block begins. Two private copies of one date rule is the shape that has
+// bitten this codebase five times.
+// Takes a 'YYYY-MM-DD' string; returns a Date at local midnight. The 'T00:00:00' suffix is load-bearing:
+// `new Date('2026-04-01')` parses as UTC and lands on the previous day west of Greenwich.
+// Local-calendar YYYY-MM-DD. NEVER use toISOString() for a calendar date: it converts to UTC, so a
+// local-midnight Date in any UTC+ zone (Europe/London under BST — i.e. most of the year here) reports
+// the PREVIOUS day. That silently turned _mondayOfWeek's Monday back into a Sunday. This formatter
+// was already inlined in renderCalendar, which is why the calendar never had the bug; it lives here
+// now so the progress window derives dates by the identical rule.
+function _ymdLocal(d) {
+  if (!d || isNaN(d.getTime?.())) return null
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function _mondayOfWeek(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr + 'T00:00:00')
+  if (isNaN(d.getTime())) return null
+  const daysFromMon = (d.getDay() + 6) % 7   // getDay(): 0 = Sunday
+  d.setDate(d.getDate() - daysFromMon)
+  return d
+}
+
 // Strips a trailing .0 the same way fmtDistanceM already does, so a converted "100.0" reads "100".
 function _stripTrailingZero(v) { return String(v).replace(/\.0$/, '') }
 

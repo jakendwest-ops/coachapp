@@ -123,7 +123,10 @@ test.describe('"Per session" rename', () => {
     })
     expect(r.afterMigration, 'a stored pre-rename value must migrate forward').toBe('Per session')
     expect(r.afterSelect, 'selecting the tab must STICK — the old migration bounced it back').toBe('Per session')
-    expect(r.buttons).toEqual(['Per exercise', 'Per session'])
+    // 'Per program' joined the inventory on 2026-08-16. Kept as an exact-equality assertion rather
+    // than a `toContain`: this is the guard that would catch the rename accidentally re-adding a
+    // fourth tab or resurrecting 'Recent sessions' alongside its replacement.
+    expect(r.buttons).toEqual(['Per exercise', 'Per session', 'Per program'])
   })
 })
 

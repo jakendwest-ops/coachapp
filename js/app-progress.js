@@ -1180,7 +1180,7 @@ async function renderPerformance(el) {
 
   el.innerHTML = `
     <div style="display:flex;gap:6px;margin-bottom:16px">
-      ${['Per exercise', 'Per session'].map(t => `
+      ${['Per exercise', 'Per session', 'Per program'].map(t => `
         <button onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))"
           style="padding:6px 16px;border:none;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;
                  background:${t===subTab?'var(--accent)':'var(--surface-2)'};
@@ -1194,6 +1194,8 @@ async function renderPerformance(el) {
   const subEl = document.getElementById('perf-sub-content')
   if (subTab === 'Per session') {
     await renderProgressPerSession(clientId, subEl)
+  } else if (subTab === 'Per program') {
+    await renderProgressPerProgram(clientId, subEl)
   } else {
     await renderProgressStrength(subEl)
   }
@@ -1638,6 +1640,246 @@ function _aggregateSeries(points, metricKey, mode) {
 // Token-guarded (like _oneRMRefreshToken): a mid-fetch Client/Personal switch can't paint the
 // wrong client's data. metric_type drives which chips/chart each card shows.
 let _perfExerciseToken = 0
+// ─── Per program (2026-08-15) ────────────────────────────────────────────────
+// Jake: "there will be scenarios where I want to see my exercise progress over the duration of a
+// program length." All-time stays in Per exercise; this scopes the same data to one block's window.
+//
+// 🔴 A WINDOW, NOT A JOIN — and the UI must never imply otherwise. workout_logs carries no programme
+// reference (saveRunnerSession writes coach_id, client_id, name, date, notes and nothing else), so a
+// block IS a date range. Two different programmes can be assigned at once, so windows can overlap and
+// one session can legitimately fall in both. Every label therefore says "sessions logged between X
+// and Y", never "sessions from this programme".
+let _perfProgramToken = 0
+
+// Open blocks come from client_programs; closed ones from client_program_blocks, which is written at
+// the moment an assignment is destroyed (see _archiveAssignmentBlock). Assignments with no start_date
+// are excluded — they have no window at all.
+async function _loadProgramBlocks(clientId) {
+  const [live, archived] = await Promise.all([
+    db.from('client_programs')
+      .select('id, start_date, created_at, programs(name, program_phases(duration_weeks))')
+      .eq('client_id', clientId),
+    db.from('client_program_blocks')
+      .select('id, program_name, start_date, assigned_at, ended_at, planned_weeks')
+      .eq('client_id', clientId),
+  ])
+  if (live.error || archived.error) {
+    log.error('_loadProgramBlocks', 'block fetch failed', live.error || archived.error)
+    return null   // null, not [] — [] is truthy-empty and would render "no blocks" on a failed fetch
+  }
+  const today = _ymdLocal(new Date())   // NOT toISOString: between 00:00–01:00 BST that returns yesterday
+  const blocks = [
+    ...(live.data || []).map(cp => {
+      const phases = cp.programs?.program_phases || []
+      return {
+        key: `live:${cp.id}`,
+        name: cp.programs?.name || 'Programme',
+        startRaw: cp.start_date || (cp.created_at || '').split('T')[0],
+        end: today,
+        weeks: phases.length ? phases.reduce((s, p) => s + (p.duration_weeks || 1), 0) : null,
+        open: true,
+      }
+    }),
+    ...(archived.data || []).map(b => ({
+      key: `past:${b.id}`,
+      name: b.program_name || 'Programme',
+      startRaw: b.start_date || (b.assigned_at || '').split('T')[0],
+      end: b.ended_at,
+      weeks: b.planned_weeks,
+      open: false,
+    })),
+  ].filter(b => b.startRaw)
+  // Monday of the start week, via the shared helper the calendar uses — see _mondayOfWeek.
+  blocks.forEach(b => {
+    const mon = _mondayOfWeek(b.startRaw)
+    b.start = _ymdLocal(mon) || b.startRaw   // _ymdLocal, NOT toISOString — see its comment in app-core
+  })
+  return blocks.sort((a, b) => (b.start || '').localeCompare(a.start || ''))
+}
+
+// These three are top-level and named so the spec can call the REAL code. Written inline first, they
+// could only be tested by re-typing the expression in the test — which stays green when the source
+// breaks. The window rule especially: a block IS a date range, so this comparison is the feature.
+const _ptsInBlock = (pts, block) => (pts || []).filter(p => p.date >= block.start && p.date <= block.end)
+// Anchored at NOON, not midnight. Millisecond division over midnights is wrong across a DST change:
+// local midnight to local midnight over a spring-forward week is 7 days MINUS an hour, which floors to
+// week 0 and shifts every later week down by one — merging two real training weeks into one plotted
+// point, and giving a block that crosses the change a different week axis from one that doesn't. That
+// shared axis is the entire reason two blocks can sit on this chart. Noon puts 12h of slack either side.
+const _blockWeekIndex = (block, dateStr) => {
+  const days = Math.round((new Date(dateStr + 'T12:00:00') - new Date(block.start + 'T12:00:00')) / 86400000)
+  return Math.floor(days / 7) + 1
+}
+// Kept exactly as _aggregateSeries keeps values (`!= null && !isNaN`), NOT `> 0`. A 0 is a real
+// reading here — a bodyweight set logs topWeight 0 — and a truthy filter would make the summary
+// disagree with the line drawn directly above it.
+const _usableMetricValue = v => v != null && !isNaN(v)
+
+// Option markup lives in named functions so the spec can assert on the REAL string. Written inline,
+// the only way to test it was to re-type the markup in the test — which stays green when the source
+// breaks, and did.
+//
+// escapeHtml, NOT escapeAttr. escapeAttr is for a JS string literal inside a handler
+// (onclick="fn('${escapeAttr(x)}')"); it backslash-escapes quotes, and in a plain value="" the
+// browser KEEPS the backslash — so this.value stops matching the name it came from and the lookup
+// silently misses. Same class as commit 9d0003b.
+const _exerciseOptionsHtml = (names, selected) => (names || [])
+  .map(n => `<option value="${escapeHtml(n)}"${n === selected ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('')
+const _blockOptionHtml = (b, selected) =>
+  `<option value="${escapeHtml(b.key)}"${b.key === selected ? ' selected' : ''}>${escapeHtml(b.name)} · ${escapeHtml(_fmtBlockRange(b))}${b.open ? ' (current)' : ''}</option>`
+
+const _fmtBlockRange = b => {
+  const d = s => new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
+  return `${d(b.start)} – ${b.open ? 'now' : d(b.end)}`
+}
+
+async function renderProgressPerProgram(clientId, el) {
+  el.innerHTML = '<div class="loading-state">Loading programmes…</div>'
+  // Own token, mirroring _perfExerciseToken — a master account switching Client/Personal mid-fetch
+  // must not paint the wrong person's blocks.
+  const myToken = ++_perfProgramToken
+  const [blocks, exercises] = await Promise.all([_loadProgramBlocks(clientId), _buildExerciseSeries(clientId)])
+  if (myToken !== _perfProgramToken) return
+
+  if (blocks === null) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-title">Couldn\'t load your programmes</div><div class="empty-text">Check your connection and try again.</div></div>'
+    return
+  }
+  if (!blocks.length) {
+    el.innerHTML = '<div class="empty-state"><p>No programme with a start date yet — assign one and set its start date to compare blocks.</p></div>'
+    return
+  }
+  // Deliberately NOT window._trendCache. That global is owned by renderProgressStrength behind a
+  // DIFFERENT token (_perfExerciseToken), so neither render can cancel the other: a master account
+  // that opens Per program in Client view, switches to Personal, then types in the Per-exercise
+  // search box would see the COACHED CLIENT's exercises under "Personal". Same auth.uid(), so RLS
+  // never sees it — it is a UI leak between two people. A private cache removes the collision.
+  window._blockExCache = exercises
+  // Honest about the day-one state: history only accrues from a restart, so a brand-new setup has one
+  // block and nothing to compare. Saying so beats an empty second dropdown the user has to interpret.
+  const singleBlockNote = blocks.length < 2
+    ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-bottom:12px">Only one block so far. Restarting or changing a programme files the current one away, and it becomes available here to compare against.</div>`
+    : ''
+
+  window._blockState = window._blockState || {}
+  const st = window._blockState
+  if (!blocks.some(b => b.key === st.a)) st.a = blocks[0].key
+  // `''` is what the "Compare with…" option sets when the user deliberately turns comparison OFF.
+  // No block key equals '', so a bare `.some()` check would undo that choice on every re-render.
+  if (st.b !== '' && !blocks.some(b => b.key === st.b)) st.b = blocks[1]?.key || ''
+  const names = [...new Set(exercises.map(e => e.name))].sort((x, y) => x.localeCompare(y))
+  if (!names.includes(st.ex)) st.ex = names[0] || ''
+
+  const opt = (b, sel) => _blockOptionHtml(b, sel)
+  el.innerHTML = `
+    ${singleBlockNote}
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <select class="field-input" id="blk-ex" onchange="_setBlockState('ex', this.value)" style="font-size:16px">
+        ${_exerciseOptionsHtml(names, st.ex)}
+      </select>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select class="field-input" id="blk-a" onchange="_setBlockState('a', this.value)" style="flex:1;min-width:150px;font-size:16px">
+          ${blocks.map(b => opt(b, st.a)).join('')}
+        </select>
+        <select class="field-input" id="blk-b" onchange="_setBlockState('b', this.value)" style="flex:1;min-width:150px;font-size:16px">
+          <option value="">Compare with…</option>
+          ${blocks.map(b => opt(b, st.b)).join('')}
+        </select>
+      </div>
+    </div>
+    <div id="blk-result"></div>`
+  window._blockCache = blocks
+  _renderBlockComparison()
+}
+
+function _setBlockState(key, value) {
+  window._blockState = window._blockState || {}
+  window._blockState[key] = value
+  _renderBlockComparison()
+}
+
+function _renderBlockComparison() {
+  const host = document.getElementById('blk-result')
+  if (!host) return
+  _destroyManagedCharts()
+  const st = window._blockState || {}
+  const blocks = window._blockCache || []
+  const ex = (window._blockExCache || []).find(e => e.name === st.ex)
+  if (!ex) { host.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>'; return }
+
+  const metrics = _TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps
+  const active = metrics[0]
+  const allPts = _metricPointsFor(ex).points
+
+  // A block's points are simply the sessions inside its window — see the header note: this is a date
+  // filter, not an attribution.
+  const forBlock = key => {
+    const b = blocks.find(x => x.key === key)
+    if (!b) return null
+    const pts = _ptsInBlock(allPts, b)
+    return { b, pts, agg: _aggregateSeries(pts, active[0], active[2]) }
+  }
+  const A = forBlock(st.a)
+  const B = st.b ? forBlock(st.b) : null
+
+  const usable = _usableMetricValue
+  const lowerIsBetter = !!active[4]   // pace only: 4:30/km beats 5:00/km
+
+  const summary = s => {
+    if (!s) return ''
+    const vals = s.pts.map(p => p[active[0]]).filter(usable)
+    if (!vals.length) return `<div style="font-size:12px;color:var(--text-muted);padding:3px 0">${escapeHtml(s.b.name)} · <em>no sessions logged in this window</em></div>`
+    const first = vals[0], last = vals[vals.length - 1]   // sessions are sorted by date in _buildExerciseSeries
+    const delta = first ? Math.round(((last - first) / first) * 100) : 0
+    const better = lowerIsBetter ? last <= first : last >= first
+    return `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:12px">
+      <span style="color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.b.name)} · ${escapeHtml(_fmtBlockRange(s.b))}</span>
+      <span style="flex-shrink:0"><strong>${escapeHtml(active[3](first))} → ${escapeHtml(active[3](last))}</strong>
+        <span style="color:${better ? '#059669' : '#dc2626'};font-weight:700"> ${last >= first ? '▲' : '▼'} ${Math.abs(delta)}%</span>
+        <span style="color:var(--text-muted)"> · ${s.pts.length} session${s.pts.length === 1 ? '' : 's'}</span></span>
+    </div>`
+  }
+
+  const chartable = (A?.agg.length >= 2) || (B?.agg.length >= 2)
+  host.innerHTML = `
+    <div style="padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:700;margin-bottom:2px">${escapeHtml(ex.name)}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">${escapeHtml(active[1])} · sessions logged between each block's dates</div>
+      ${chartable ? `<div style="position:relative;height:120px"><canvas id="blk-chart"></canvas></div>`
+                  : `<div style="font-size:11px;color:var(--text-muted);font-style:italic;padding:2px 0 8px">Not enough sessions in these windows to plot a line yet.</div>`}
+      <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
+        ${summary(A)}${summary(B)}
+      </div>
+    </div>`
+
+  if (!chartable) return
+  // Plotted against WEEK NUMBER within each block, not calendar date — that is what makes two blocks
+  // months apart comparable on one axis.
+  const weekIdx = (s, p) => _blockWeekIndex(s.b, p.date)
+  const maxWk = Math.max(1, ...[A, B].filter(Boolean).flatMap(s => s.pts.map(p => weekIdx(s, p))))
+  const labels = Array.from({ length: maxWk }, (_, i) => `wk ${i + 1}`)
+  const seriesFor = (s, colour) => {
+    if (!s) return null
+    // Several sessions can land in one week, so they must be rolled up — using the METRIC'S OWN mode
+    // (active[2]), not a hardcoded max. 'mean' metrics (intensity, pace, avg HR, watts) are averages
+    // by definition; taking their max would silently plot a different statistic from the one named
+    // in the label directly above the chart.
+    const byWk = {}
+    s.pts.forEach(p => { const v = p[active[0]]; if (usable(v)) (byWk[weekIdx(s, p)] ||= []).push(v) })
+    const roll = arr => active[2] === 'mean' ? arr.reduce((a, b) => a + b, 0) / arr.length : Math.max(...arr)
+    return { label: s.b.name, data: labels.map((_, i) => byWk[i + 1] ? Math.round(roll(byWk[i + 1]) * 10) / 10 : null), colour, spanGaps: true }
+  }
+  // Block colours are deliberately NOT from _METRIC_COLORS: that palette is keyed by METRIC, and both
+  // lines here are the same metric. Reusing e.g. bestHeight's green to mean "block B" would read as a
+  // metric change to anyone who knows the palette.
+  const series = [seriesFor(A, '#6366f1'), B ? seriesFor(B, '#94a3b8') : null].filter(Boolean)
+  if (B) series[1].dashed = true   // the comparison block is the reference line
+  _renderMetricChart('blk-chart', {
+    labels, series, height: true, legend: series.length > 1,
+    yFormat: v => active[3](_tickNum(v)),
+  })
+}
+
 async function renderProgressStrength(el) {
   el.innerHTML = '<div class="loading-state">Loading exercise data…</div>'
   const myToken = ++_perfExerciseToken

@@ -7,7 +7,7 @@
   // Fetch events for this month + overflow days
   const firstDay = new Date(calendarYear, calendarMonth, 1)
   const lastDay  = new Date(calendarYear, calendarMonth + 1, 0)
-  const localDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  const localDate = _ymdLocal   // hoisted to app-core 2026-08-16; shared with the progress block window
   const from = localDate(firstDay)
   const to   = localDate(lastDay)
 
@@ -44,13 +44,14 @@
     window._calClientTemplateMap = _cpwMap
 
     // Map phase workouts to actual calendar dates
-    if (cp0?.start_date) {
-      const programStart = new Date(cp0.start_date + 'T00:00:00')
-      // Normalise to Monday of that week
-      const dayOfWeekJS = programStart.getDay() // 0=Sun
-      const daysFromMon = (dayOfWeekJS + 6) % 7
-      const weekStart = new Date(programStart)
-      weekStart.setDate(programStart.getDate() - daysFromMon)
+    // _mondayOfWeek returns null for an unparseable date, where the old inline code returned an
+    // Invalid Date and degraded to unusable day keys. Null would throw at weekStart.getDate() below
+    // and kill the WHOLE calendar render — a strictly worse failure than the one it replaced.
+    if (cp0?.start_date && _mondayOfWeek(cp0.start_date)) {
+      // Monday of the start week. Hoisted to _mondayOfWeek (app-core.js) 2026-08-15 so the
+      // per-programme progress window derives a block's start from the SAME rule this grid uses —
+      // otherwise the two would disagree about which week a block begins in.
+      const weekStart = _mondayOfWeek(cp0.start_date)
 
       const phases = [...(cp0.programs?.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
       let weekOffset = 0
