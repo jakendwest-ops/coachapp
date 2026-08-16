@@ -1716,7 +1716,7 @@ function renderCardioCaptureCard(ex, onContinue, prefill = {}) {
   const field = (label, id, val, opts, wrapStyle) => `
     <div style="${wrapStyle || 'margin-bottom:10px'}">
       <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${label}</div>
-      <input id="${id}" value="${escapeAttr(val || '')}" ${opts}
+      <input id="${id}" value="${escapeHtml(val || '')}" ${opts}
         style="width:100%;padding:12px;font-size:20px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
     </div>`
 
@@ -1732,8 +1732,8 @@ function renderCardioCaptureCard(ex, onContinue, prefill = {}) {
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
           ${chip('HR', 'hr')}${chip('Watts', 'watts')}${chip('Pace', 'pace')}${chip('Stroke rate', 'strokeRate')}
         </div>
-        ${t.hr ? `<div style="display:flex;gap:8px;margin-bottom:10px">${field('Avg HR (bpm)', 'wr-capture-avg-hr', prefill.avgHr, `type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${escapeAttr(String(tgt.hrZoneMin||''))}"`, 'flex:1')}${field('Max HR (bpm)', 'wr-capture-max-hr', prefill.maxHr, `type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${escapeAttr(String(tgt.hrZoneMax||''))}"`, 'flex:1')}</div>` : ''}
-        ${t.watts ? field('Avg watts', 'wr-capture-watts', prefill.watts, `type="number" inputmode="numeric" step="1" min="0" max="2000" placeholder="${escapeAttr(String(tgt.wattsMin||''))}"`) : ''}
+        ${t.hr ? `<div style="display:flex;gap:8px;margin-bottom:10px">${field('Avg HR (bpm)', 'wr-capture-avg-hr', prefill.avgHr, `type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${escapeHtml(String(tgt.hrZoneMin||''))}"`, 'flex:1')}${field('Max HR (bpm)', 'wr-capture-max-hr', prefill.maxHr, `type="number" inputmode="numeric" step="1" min="20" max="250" placeholder="${escapeHtml(String(tgt.hrZoneMax||''))}"`, 'flex:1')}</div>` : ''}
+        ${t.watts ? field('Avg watts', 'wr-capture-watts', prefill.watts, `type="number" inputmode="numeric" step="1" min="0" max="2000" placeholder="${escapeHtml(String(tgt.wattsMin||''))}"`) : ''}
         ${t.pace ? field('Pace /500m', 'wr-capture-pace', prefill.pace, 'type="text" inputmode="numeric" placeholder="e.g. 2:07" oninput="this.value=fmtRestInput(this.value)"') : ''}
         ${t.strokeRate ? field('Stroke rate (spm)', 'wr-capture-stroke-rate', prefill.strokeRate, 'type="number" inputmode="numeric" step="1" min="0" max="100"') : ''}
         ${!t.hr && !t.watts && !t.pace && !t.strokeRate ? `<p style="color:var(--text-muted);font-size:13px;text-align:center;padding:24px 0">Nothing toggled on — tap a chip above, or just continue.</p>` : ''}
@@ -2189,7 +2189,7 @@ async function showRunnerFinish() {
 
           <div class="field" style="margin-top:4px">
             <label class="field-label">Session name</label>
-            <input class="field-input" id="rf-name" value="${escapeAttr(runnerName || '')}">
+            <input class="field-input" id="rf-name" value="${escapeHtml(runnerName || '')}">
           </div>
           <div class="field">
             <label class="field-label">Notes</label>
@@ -2711,25 +2711,25 @@ function renderLogExercises() {
         <div style="display:grid;grid-template-columns:${GRID};gap:${isMobile?'5px':'3px'};align-items:center;margin-bottom:${isMobile?'6px':'3px'}">
           <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">${si + 1}</span>
           ${isCardio ? `
-            <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${escapeAttr(String(s.duration || '0:00'))}" oninput="this.value=fmtRestInput(this.value)">
+            <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${escapeHtml(String(s.duration || '0:00'))}" oninput="this.value=fmtRestInput(this.value)">
             <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'}" value="${_cardioDistanceM(s) ? distanceToPref(_cardioDistanceM(s)) : ''}">
           ` : isMobile ? `
-            <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${escapeAttr(String(s.repsMin || ''))}">
+            <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${escapeHtml(String(s.repsMin || ''))}">
             <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="${window._unitPrefs.weight}" value="${_hasNumVal(s.weight) ? weightToPref(s.weight) : ''}">
-            <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${escapeAttr(String(s.effort || ''))}">
+            <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${escapeHtml(String(s.effort || ''))}">
           ` : `
-            <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${escapeAttr(String(s.repsMin || ''))}">
-            <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${escapeAttr(String(s.repsMax || ''))}">
+            <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${escapeHtml(String(s.repsMin || ''))}">
+            <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${escapeHtml(String(s.repsMax || ''))}">
             <div>
               <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="${window._unitPrefs.weight}" value="${weightToPref(orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||(_hasNumVal(s.weight)?s.weight:'')) : (_hasNumVal(s.weight)?s.weight:''))}">
             </div>
-            <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${escapeAttr(String(s.pctMin || ''))}" oninput="flushLogState()" onchange="renderLogExercises()">
+            <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${escapeHtml(String(s.pctMin || ''))}" oninput="flushLogState()" onchange="renderLogExercises()">
             <div>
-              <input id="ls-pmax-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${escapeAttr(String(s.pctMax || ''))}" oninput="flushLogState()" onchange="renderLogExercises()">
+              <input id="ls-pmax-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${escapeHtml(String(s.pctMax || ''))}" oninput="flushLogState()" onchange="renderLogExercises()">
               ${wFromPct}
             </div>
-            <input id="ls-effort-${bi}-${si}" ${si_style} type="number" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${escapeAttr(String(s.effort || ''))}">
-            <input id="ls-rest-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${escapeAttr(String(s.rest || '0:00'))}" oninput="this.value=fmtRestInput(this.value)">
+            <input id="ls-effort-${bi}-${si}" ${si_style} type="number" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${escapeHtml(String(s.effort || ''))}">
+            <input id="ls-rest-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${escapeHtml(String(s.rest || '0:00'))}" oninput="this.value=fmtRestInput(this.value)">
           `}
           ${delBtn}
         </div>
@@ -2740,7 +2740,7 @@ function renderLogExercises() {
       <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(99,102,241,.06);border-bottom:1px solid var(--border)">
           <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">${String.fromCharCode(65+bi)}</div>
-          <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:16px;font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${escapeAttr(String(block.name || ''))}" oninput="window._logBlocks[${bi}].name=this.value">
+          <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:16px;font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${escapeHtml(String(block.name || ''))}" oninput="window._logBlocks[${bi}].name=this.value">
           <select id="ls-extype-${bi}" class="field-input" style="padding:5px 8px;font-size:16px;width:100px;flex-shrink:0" onchange="flushLogState();window._logBlocks[${bi}].type=this.value;renderLogExercises()">
             <option value="strength" ${!isCardio?'selected':''}>Strength</option>
             <option value="cardio" ${isCardio?'selected':''}>Cardio</option>

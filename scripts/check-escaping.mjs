@@ -39,15 +39,46 @@ const NOT_A_SINK = /\.charAt\(0\)|\.length\b|[=!]==/
 const BUILDS_HTML = /</
 
 const findings = []
+const wrongEscaper = []
 
 for (const file of FILES) {
   let src
   try { src = readFileSync(file, 'utf8') } catch { continue }
   src.split('\n').forEach((line, i) => {
+    // Point 3 of the docstring, finally implemented. It was stated as a design goal from the start
+    // but never written, and ESCAPED below whitelists escapeAttr unconditionally — so every misuse
+    // passed. That gap shipped this bug TWICE: commit 9d0003b (2026-08-12), and again in the Per
+    // program picker (2026-08-16), where a backslashed "Farmer's Walk" stopped matching its own
+    // exercise name and the tab silently claimed the exercise had no sessions.
+    //
+    //   Correct:  onclick="fn('<interp>escapeAttr(x)}')"   the interpolation opens inside a JS string
+    //   Wrong:    value="<interp>escapeAttr(x)}"           it opens directly in an attribute
+    //   (written as <interp> above so this comment does not match its own rule)
+    //
+    // Matched on the RAW LINE, deliberately NOT inside the ${...} walk below. That walk only sees
+    // OUTERMOST interpolations, so a value attribute nested inside a bigger interpolation — which is
+    // how most of this codebase's inputs are built — was invisible to it. Scanning the raw text
+    // found 55 sites where the nesting-aware version found 13.
+    // Runs BEFORE the BUILDS_HTML gate below, deliberately. Half this codebase builds attribute
+    // fragments in helpers (mini(), row()) on lines with no literal `<` at all, so gating on `<`
+    // hid them — that gate is right for the unescaped-text rule and wrong for this one. `="${` is
+    // an attribute by construction; it needs no corroborating tag.
+    for (const w of line.matchAll(/=\s*"\$\{\s*escapeAttr\(/g)) {
+      wrongEscaper.push({ file, line: i + 1, expr: line.slice(w.index, w.index + 60).trim() })
+    }
+
     if (!BUILDS_HTML.test(line)) return
+
     // Extract each ${...} separately so an escaped neighbour cannot mask an unescaped one.
     for (const m of line.matchAll(/\$\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g)) {
       const expr = m[1]
+
+      // Point 3 of the docstring, finally implemented. It was described as a design goal from the
+      // start but never written, and ESCAPED below whitelists escapeAttr unconditionally — so every
+      // misuse passed. That gap shipped this bug TWICE: commit 9d0003b (2026-08-12) and again in the
+      // Per program picker (2026-08-16), where a backslashed "Farmer's Walk" stopped matching its own
+      // exercise name and the tab silently claimed the exercise had no sessions.
+      //
       if (!FREE_TEXT.test(expr)) continue
       if (ESCAPED.test(expr)) continue
       if (NOT_A_SINK.test(expr)) continue
@@ -56,8 +87,9 @@ for (const file of FILES) {
   })
 }
 
-if (findings.length) {
-  for (const f of findings) console.log(`    ${f.file}:${f.line}  \${${f.expr}}`)
+if (findings.length || wrongEscaper.length) {
+  for (const f of findings) console.log(`    ${f.file}:${f.line}  \${${f.expr}}   (unescaped)`)
+  for (const f of wrongEscaper) console.log(`    ${f.file}:${f.line}  \${${f.expr}}   (WRONG ESCAPER: escapeAttr in a plain attribute)`)
   console.log('')
   console.log('    escapeHtml() for text content AND for plain attributes (value="", title="").')
   console.log('    escapeAttr() ONLY for a JS string inside an attribute: onclick="fn(\'${escapeAttr(x)}\')".')
