@@ -200,12 +200,15 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     })
     expect(r.uniPt.leftTop).toBe(20)
     expect(r.uniPt.rightTop).toBe(18)
+    // Total reps across BOTH sides (2026-08-16). A bodyweight unilateral lift leaves weight_kg NULL,
+    // which made every unilateral metric 0 and drew a flat line — reps is the only real signal there.
+    expect(r.uniPt.reps, 'reps summed across sides').toBe(20)
     expect(r.uniRec['Best left']).toBe('20 kg')
     expect(r.uniRec['Best right']).toBe('18 kg')
     expect(r.uniRec['L/R balance']).toBe('90%')
     expect(r.timedRec['Best hold']).toContain(':')
     expect(r.jhRec['Best height']).toBe('65 cm')
-    expect(r.uniChips).toEqual(['Top weight'])
+    expect(r.uniChips).toEqual(['Top weight', 'Total reps'])   // reps added 2026-08-16, see above
     expect(r.timedChips).toEqual(['Hold time'])
     expect(r.jhChips).toEqual(['Height'])
   })

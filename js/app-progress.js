@@ -1583,6 +1583,10 @@ function _metricPointsFor(ex) {
         p.leftTop  = Math.max(0, ...side('left').map(x => num(x.weight_kg)))
         p.rightTop = Math.max(0, ...side('right').map(x => num(x.weight_kg)))
         p.topWeight = Math.max(p.leftTop, p.rightTop)
+        // Same reason as the weight_reps branch: a bodyweight set leaves weight_kg NULL, so a pistol
+        // squat or single-leg calf raise had every metric at 0 and charted a flat line. Fixing the
+        // one branch and not its sibling is how this codebase has shipped the same bug twice before.
+        p.reps = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
         break
       }
       case 'timed_hold':
@@ -1600,6 +1604,12 @@ function _metricPointsFor(ex) {
         p.volume    = sets.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0)
         const totalReps = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
         p.intensity = totalReps > 0 ? p.volume / totalReps : 0 // weighted avg weight per rep
+        // Reps as a metric in its own right (2026-08-16). A bodyweight set never writes weight_kg
+        // (app-runner.js:2419), and num() maps that NULL to 0 rather than "missing" — so topWeight,
+        // e1rm, volume AND intensity are all 0 for every pull-up or dip session ever logged. Reps is
+        // the only number those lifts actually produce, and it was computed here already for
+        // intensity and then thrown away.
+        p.reps = totalReps
       }
     }
     return p
@@ -1657,10 +1667,10 @@ let _perfProgramToken = 0
 async function _loadProgramBlocks(clientId) {
   const [live, archived] = await Promise.all([
     db.from('client_programs')
-      .select('id, start_date, created_at, programs(name, program_phases(duration_weeks))')
+      .select('id, program_id, start_date, created_at, programs(name, program_phases(duration_weeks))')
       .eq('client_id', clientId),
     db.from('client_program_blocks')
-      .select('id, program_name, start_date, assigned_at, ended_at, planned_weeks')
+      .select('id, program_id, program_name, start_date, assigned_at, ended_at, planned_weeks')
       .eq('client_id', clientId),
   ])
   if (live.error || archived.error) {
@@ -1673,6 +1683,7 @@ async function _loadProgramBlocks(clientId) {
       const phases = cp.programs?.program_phases || []
       return {
         key: `live:${cp.id}`,
+        progKey: cp.program_id || cp.programs?.name || 'Programme',
         name: cp.programs?.name || 'Programme',
         startRaw: cp.start_date || (cp.created_at || '').split('T')[0],
         end: today,
@@ -1682,6 +1693,7 @@ async function _loadProgramBlocks(clientId) {
     }),
     ...(archived.data || []).map(b => ({
       key: `past:${b.id}`,
+      progKey: b.program_id || b.program_name || 'Programme',
       name: b.program_name || 'Programme',
       startRaw: b.start_date || (b.assigned_at || '').split('T')[0],
       end: b.ended_at,
@@ -1694,13 +1706,50 @@ async function _loadProgramBlocks(clientId) {
     const mon = _mondayOfWeek(b.startRaw)
     b.start = _ymdLocal(mon) || b.startRaw   // _ymdLocal, NOT toISOString — see its comment in app-core
   })
-  return blocks.sort((a, b) => (b.start || '').localeCompare(a.start || ''))
+  return _clampBlockChain(blocks.sort((a, b) => (b.start || '').localeCompare(a.start || '')))
+}
+
+// A block ends where the SAME programme's next run begins.
+//
+// `ended_at` is the day RESTART WAS PRESSED (app-programs.js:287), which is not the day the block's
+// training finished and bears no fixed relation to the next block's start — that one is snapped back
+// to its own Monday. The two can therefore overlap by up to six days, or leave a gap. Neither an
+// inclusive nor an exclusive end fixes that; the end has to be derived from the next run:
+//
+//   restart Wed 1 Jul, next start_date Mon 6 Jul  -> windows GAP, losing 1 Jul from both blocks
+//   restart Wed 1 Jul, next start_date 1 Jul      -> snaps to Mon 29 Jun, so 29+30 Jun fall in
+//                                                    BOTH, and show as week 5 of a 4-week block
+//
+// Clamping is scoped to the same programme on purpose. Two DIFFERENT programmes can be assigned at
+// once and their windows legitimately overlap — see the header note — so clamping across programmes
+// would silently discard real sessions. A restart chain cannot overlap itself.
+//
+// Top-level and named so the spec can drive the REAL rule over synthetic blocks: client_program_blocks
+// is append-only, so a test cannot create and then clean up a genuine restart chain.
+function _clampBlockChain(blocks) {
+  const dayBefore = (ymd) => {
+    const d = new Date(ymd + 'T12:00:00')
+    d.setDate(d.getDate() - 1)
+    return _ymdLocal(d)
+  }
+  blocks.forEach(b => {
+    const nextStart = blocks
+      .filter(o => o !== b && o.progKey === b.progKey && o.start > b.start)
+      .reduce((min, o) => (min === null || o.start < min ? o.start : min), null)
+    if (nextStart && b.end >= nextStart) b.end = dayBefore(nextStart)
+  })
+  return blocks
 }
 
 // These three are top-level and named so the spec can call the REAL code. Written inline first, they
 // could only be tested by re-typing the expression in the test — which stays green when the source
 // breaks. The window rule especially: a block IS a date range, so this comparison is the feature.
-const _ptsInBlock = (pts, block) => (pts || []).filter(p => p.date >= block.start && p.date <= block.end)
+// Plainly INCLUSIVE at both ends. It was briefly half-open for closed blocks, which fixed only the
+// case where the restart landed on the next run's Monday and LOST a session entirely when it didn't.
+// The overlap is a property of the window, so it is resolved once in _loadProgramBlocks — see the
+// clamp there — leaving this a dumb, honest filter over a range that is already correct.
+const _ptsInBlock = (pts, block) => (pts || [])
+  .filter(p => p.date >= block.start && p.date <= block.end)
 // Anchored at NOON, not midnight. Millisecond division over midnights is wrong across a DST change:
 // local midnight to local midnight over a spring-forward week is 7 days MINUS an hour, which floors to
 // week 0 and shifts every later week down by one — merging two real training weeks into one plotted
@@ -1714,6 +1763,36 @@ const _blockWeekIndex = (block, dateStr) => {
 // reading here — a bodyweight set logs topWeight 0 — and a truthy filter would make the summary
 // disagree with the line drawn directly above it.
 const _usableMetricValue = v => v != null && !isNaN(v)
+
+// Which metrics are worth offering for these points. ONE definition, used by both the Per exercise
+// cards and the Per program comparison — they had drifted into two hand-copies, and a comment on the
+// second claimed it was reusing the first.
+//
+// `> 0` rather than _usableMetricValue on purpose: here a 0 means "this metric cannot describe this
+// exercise" (a bodyweight lift has no weight), which is exactly what should hide the chip. Inside a
+// chosen metric, 0 is still a real reading — see _usableMetricValue.
+const _metricsWithData = (metrics, pts) => (metrics || []).filter(([key]) => (pts || []).some(p => (p[key] || 0) > 0))
+
+// Direction badge for a block summary. Named and top-level so the spec can call the REAL decision —
+// written inline, the only way to test it was to re-type it in the test, which stays green when the
+// source breaks (it did, twice).
+//
+// `flat` is its own case on purpose. `last >= first` painted a green ▲ 0% whenever the two ends
+// matched — including the all-bodyweight case where every metric is 0, asserting progress on a lift
+// the chart could not measure at all. `lowerIsBetter` is pace: 4:30/km beats 5:00/km.
+function _deltaBadge(first, last, lowerIsBetter) {
+  const flat = last === first
+  const better = lowerIsBetter ? last < first : last > first
+  // A percentage against a zero baseline is meaningless — "0 reps → 45 reps ▲ 0%" reads as no
+  // progress when it is the opposite. Reachable whenever the first in-window session logged nothing
+  // for this metric (a bench set saved with no reps, a bodyweight week before a loaded one).
+  return {
+    delta: first ? Math.round(((last - first) / first) * 100) : null,
+    arrow: flat ? '–' : (last > first ? '▲' : '▼'),
+    colour: flat ? 'var(--text-muted)' : (better ? '#059669' : '#dc2626'),
+    green: !flat && better,
+  }
+}
 
 // Option markup lives in named functions so the spec can assert on the REAL string. Written inline,
 // the only way to test it was to re-type the markup in the test — which stays green when the source
@@ -1807,20 +1886,32 @@ function _renderBlockComparison() {
   const ex = (window._blockExCache || []).find(e => e.name === st.ex)
   if (!ex) { host.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>'; return }
 
-  const metrics = _TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps
-  const active = metrics[0]
+  const allMetrics = _TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps
   const allPts = _metricPointsFor(ex).points
 
   // A block's points are simply the sessions inside its window — see the header note: this is a date
-  // filter, not an attribution.
-  const forBlock = key => {
+  // filter, not an attribution. Windows are resolved BEFORE the metric is chosen, because the choice
+  // depends on which metrics actually have data inside these two blocks.
+  const windowFor = key => {
     const b = blocks.find(x => x.key === key)
-    if (!b) return null
-    const pts = _ptsInBlock(allPts, b)
-    return { b, pts, agg: _aggregateSeries(pts, active[0], active[2]) }
+    return b ? { b, pts: _ptsInBlock(allPts, b) } : null
   }
-  const A = forBlock(st.a)
-  const B = st.b ? forBlock(st.b) : null
+  const wA = windowFor(st.a)
+  const wB = st.b ? windowFor(st.b) : null
+
+  // Show a metric only if it has a non-zero reading in one of the two blocks. Previously this took
+  // metrics[0] unconditionally, which for a bodyweight pull-up meant Top weight — flat zero for every
+  // session, reported as a green ▲ 0%. Falls back to the full list so an exercise with genuinely no
+  // data still renders its empty state rather than crashing.
+  const inWindows = [...(wA?.pts || []), ...(wB?.pts || [])]
+  const metrics = _metricsWithData(allMetrics, inWindows)
+  const usableMetrics = metrics.length ? metrics : allMetrics
+  const stored = st.metric && usableMetrics.some(m => m[0] === st.metric) ? st.metric : usableMetrics[0][0]
+  const active = usableMetrics.find(m => m[0] === stored)
+
+  const withAgg = w => w && { ...w, agg: _aggregateSeries(w.pts, active[0], active[2]) }
+  const A = withAgg(wA)
+  const B = withAgg(wB)
 
   const usable = _usableMetricValue
   const lowerIsBetter = !!active[4]   // pace only: 4:30/km beats 5:00/km
@@ -1830,21 +1921,29 @@ function _renderBlockComparison() {
     const vals = s.pts.map(p => p[active[0]]).filter(usable)
     if (!vals.length) return `<div style="font-size:12px;color:var(--text-muted);padding:3px 0">${escapeHtml(s.b.name)} · <em>no sessions logged in this window</em></div>`
     const first = vals[0], last = vals[vals.length - 1]   // sessions are sorted by date in _buildExerciseSeries
-    const delta = first ? Math.round(((last - first) / first) * 100) : 0
-    const better = lowerIsBetter ? last <= first : last >= first
+    const { delta, arrow, colour } = _deltaBadge(first, last, lowerIsBetter)
     return `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:12px">
       <span style="color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.b.name)} · ${escapeHtml(_fmtBlockRange(s.b))}</span>
       <span style="flex-shrink:0"><strong>${escapeHtml(active[3](first))} → ${escapeHtml(active[3](last))}</strong>
-        <span style="color:${better ? '#059669' : '#dc2626'};font-weight:700"> ${last >= first ? '▲' : '▼'} ${Math.abs(delta)}%</span>
+        <span style="color:${colour};font-weight:700"> ${arrow}${delta == null ? '' : ` ${Math.abs(delta)}%`}</span>
         <span style="color:var(--text-muted)"> · ${s.pts.length} session${s.pts.length === 1 ? '' : 's'}</span></span>
     </div>`
   }
+
+  // Metric chips, matching the Per exercise cards. Without them this tab was locked to whichever
+  // metric it picked, so the two blocks could never be compared on Volume or Est 1RM at all.
+  const chips = usableMetrics.length < 2 ? '' : `
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px">
+        ${usableMetrics.map(([key, label]) => `<button onclick="_setBlockState('metric','${escapeAttr(key)}')"
+          style="padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid ${key === active[0] ? (_METRIC_COLORS[key] || 'var(--accent)') : 'var(--border)'};background:${key === active[0] ? (_METRIC_COLORS[key] || 'var(--accent)') : 'transparent'};color:${key === active[0] ? '#fff' : 'var(--text-muted)'}">${escapeHtml(label)}</button>`).join('')}
+      </div>`
 
   const chartable = (A?.agg.length >= 2) || (B?.agg.length >= 2)
   host.innerHTML = `
     <div style="padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
       <div style="font-size:14px;font-weight:700;margin-bottom:2px">${escapeHtml(ex.name)}</div>
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">${escapeHtml(active[1])} · sessions logged between each block's dates</div>
+      ${chips}
       ${chartable ? `<div style="position:relative;height:120px"><canvas id="blk-chart"></canvas></div>`
                   : `<div style="font-size:11px;color:var(--text-muted);font-style:italic;padding:2px 0 8px">Not enough sessions in these windows to plot a line yet.</div>`}
       <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
@@ -1927,7 +2026,9 @@ function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = 
 // Per-type chip config: [metricKey, label, aggMode, formatter, lowerBetter?]. Chips with all-zero
 // data are dropped. lowerBetter=true (pace) makes the headline "best" a min, not a max.
 const _TREND_METRICS = {
-  weight_reps: [['topWeight','Top weight','max',v=>fmtWeight(v)], ['e1rm','Est 1RM','max',v=>fmtWeight(Math.round(v))], ['volume','Volume','max',v=>fmtWeight(Math.round(v))], ['intensity','Intensity','mean',v=>`${Math.round(weightToPref(v)*10)/10} ${window._unitPrefs.weight}/rep`]],
+  // Order matters: consumers take the FIRST metric that has data, so 'reps' sits last and is reached
+  // only when every weight-derived metric is zero — i.e. a bodyweight-only exercise.
+  weight_reps: [['topWeight','Top weight','max',v=>fmtWeight(v)], ['e1rm','Est 1RM','max',v=>fmtWeight(Math.round(v))], ['volume','Volume','max',v=>fmtWeight(Math.round(v))], ['intensity','Intensity','mean',v=>`${Math.round(weightToPref(v)*10)/10} ${window._unitPrefs.weight}/rep`], ['reps','Total reps','max',v=>`${Math.round(v)} reps`]],
   cardio: [
     ['totalDistance','Distance','max', v => fmtDistanceM(v)],
     ['totalDuration','Duration','max', v => fmtRestCountdown(v)],
@@ -1935,7 +2036,7 @@ const _TREND_METRICS = {
     ['avgHr','Avg HR','mean', v => Math.round(v)+' bpm'],
     ['avgWatts','Watts','mean', v => Math.round(v)+' W'],
   ],
-  unilateral:    [['topWeight','Top weight','max', v => fmtWeight(v)]], // chart draws L/R as two lines
+  unilateral:    [['topWeight','Top weight','max', v => fmtWeight(v)], ['reps','Total reps','max', v => `${Math.round(v)} reps`]], // chart draws L/R as two lines
   timed_hold:    [['maxDuration','Hold time','max', v => fmtRestCountdown(v)]],
   jump_height:   [['bestHeight','Height','max', v => fmtJumpHeight(v, { spaced: true })]],
   jump_distance: [['bestDistance','Distance','max', v => v.toFixed(2)+' m']],
@@ -2216,8 +2317,7 @@ function _renderPerfExerciseList(query) {
   // Pass 1 — compute what each card shows (range-filtered points, visible metric chips, active chip).
   const rendered = list.map((ex, i) => {
     const pts = _metricPointsFor(ex).points.filter(p => new Date(p.date).getTime() >= cutoff)
-    const metrics = (_TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps)
-      .filter(([key]) => pts.some(p => (p[key] || 0) > 0))
+    const metrics = _metricsWithData(_TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps, pts)
     if (!metrics.length) return { ex, i, empty: true }
     const stored = window._trendState.metricByEx[ex.name]
     const activeKey = stored && metrics.some(m => m[0] === stored) ? stored : metrics[0][0]

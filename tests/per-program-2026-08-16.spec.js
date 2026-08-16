@@ -21,19 +21,24 @@ test.describe('Per program', () => {
   })
 
   // ─── The window boundary: the whole feature in one test ───────────────────
-  test('window INCLUDES the first and last day and EXCLUDES the day either side', async ({ page }) => {
+  test('the window INCLUDES the first and last day and EXCLUDES the day either side', async ({ page }) => {
     await loginAsClient(page)
     const r = await page.evaluate(() => {
-      const block = { start: '2026-03-02', end: '2026-03-29' }
+      const block = { start: '2026-03-02', end: '2026-03-29', open: false }
       const pts = [
-        { date: '2026-03-01' },  // day before  → out
-        { date: '2026-03-02' },  // first day   → IN
-        { date: '2026-03-15' },  // middle      → IN
-        { date: '2026-03-29' },  // last day    → IN
-        { date: '2026-03-30' },  // day after   → out
+        { date: '2026-03-01' },  // day before  -> out
+        { date: '2026-03-02' },  // first day   -> IN
+        { date: '2026-03-15' },  // middle      -> IN
+        { date: '2026-03-29' },  // last day    -> IN
+        { date: '2026-03-30' },  // day after   -> out
       ]
       return _ptsInBlock(pts, block).map(p => p.date)   // the shipped function, not a copy of it
     })
+    // Inclusive at BOTH ends. This was briefly half-open for closed blocks to stop the restart-day
+    // double-count; that fixed only the case where the next run began on that exact day, and LOST
+    // the session outright when it did not. Overlap is a property of the WINDOW, so it is resolved
+    // once in _clampBlockChain — see tests/two-block-journey-2026-08-16.spec.js — leaving this an
+    // honest filter over a range that is already correct.
     expect(r).toEqual(['2026-03-02', '2026-03-15', '2026-03-29'])
   })
 
