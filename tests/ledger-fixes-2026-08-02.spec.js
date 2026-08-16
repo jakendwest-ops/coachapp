@@ -4,7 +4,7 @@ const { loginAsPT, loginAsPT2, loginAsClient, clickVisible } = require('./helper
 // ─── Diary shows 0/0/0 tiles for real sessions with no logged sets (2026-07-19 finding) ───────────
 test.describe('diary shows a "No sets logged" note instead of 0/0/0 tiles', () => {
   test('a session with an exercise but zero logged sets renders the note, not the tile row', async ({ page }) => {
-    // renderProgressPerSession (the "Recent sessions" diary this fix touches) is the client/solo
+    // renderProgressPerSession (the "Per session" diary this fix touches) is the client/solo
     // SELF-view -- "your" own My Progress page, not the coach's client-profile screen (a different
     // function, renderClientPerformance). Must reach it via the client role.
     await loginAsClient(page)
@@ -27,7 +27,7 @@ test.describe('diary shows a "No sets logged" note instead of 0/0/0 tiles', () =
       await page.waitForTimeout(1500)
       await page.click('button:has-text("Performance")')
       await page.waitForTimeout(1500)
-      await page.click('button:has-text("Recent sessions")')
+      await page.click('button:has-text("Per session")')
       await page.waitForTimeout(1000)
 
       const html = await page.evaluate(() => document.getElementById('progress-tab-content')?.innerHTML || '')

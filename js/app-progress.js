@@ -54,19 +54,36 @@ async function saveOneRMGrid(clientId) {
       if (!inp) return
       const val = (inp.value || '').trim()
       if (!val) return   // left blank — not an edit
+      // Per-row date, read BEFORE the equality guard below. Replaces the backdating that used to live
+      // behind the row's ⋯ (removed 2026-08-15). A cleared or malformed value is a real edit that
+      // cannot be stored, so it is rejected by name rather than silently stamped with today — the same
+      // treatment an unusable weight gets. (A browser with native date support only ever yields '' or
+      // a valid yyyy-mm-dd; the regex is the guard for one that degrades to a text field.)
+      const dateVal = (document.getElementById(`orm-date-${i}`)?.value || '').trim()
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) { invalid.push(`${d.name} (date)`); return }
+      const recordedAt = dateVal
+
       // Compared NUMERICALLY, with both sides already in the display unit, so "100.0" and "100" are
       // the same edit rather than a duplicate append. Comparing the CONVERTED kg would be wrong: a
       // kg→lb→kg round trip drifts in the last decimal and would read as a change on every save.
+      //
+      // `recordedAt === today` is the second half of the test, and it is load-bearing. Without it a
+      // DATE-ONLY change was skipped here and the user got "Nothing changed — edit a value first"
+      // while looking at the date control they had just changed. Worse, it silently removed the very
+      // capability the ⋯ was deleted in favour of: the old modal inserted unconditionally, so
+      // "I hit 100kg again on the 20th" recorded fine. client_1rms is append-only precisely so a
+      // repeat at the same weight on a new date is a real entry. Caught by pre-push review.
       const origNum = parseFloat(inp.dataset.orig || '')
       const valNum = parseFloat(val)
-      if (!isNaN(origNum) && valNum === origNum) return
+      if (!isNaN(origNum) && valNum === origNum && recordedAt === today) return
+
       const kg = weightFromPref(val)
       // A typed 0, a negative, or text is a REAL edit that cannot be stored. Surfacing it beats
       // dropping it: silently skipping meant either "Nothing changed" (false — they did change it)
       // or, in a mixed save, the other rows saving while this one re-rendered showing its old value,
       // looking for all the world like it had saved too.
       if (kg == null || !(kg > 0)) { invalid.push(d.name); return }
-      changed.push({ name: d.name, exerciseId: d.exerciseId, kg })
+      changed.push({ name: d.name, exerciseId: d.exerciseId, kg, recordedAt })
     })
 
     if (invalid.length) {
@@ -88,7 +105,7 @@ async function saveOneRMGrid(clientId) {
       // permanent `exercises` row named after any legacy or imported string the moment its value was
       // edited — from a screen that shows no exercise picker. exercise_id is nullable; skipping is safe.
       exercise_id: r.exerciseId || (BIG_5_EXERCISES.includes(r.name) ? await _resolveExerciseIdForSave(r.name, coachId) : null),
-      exercise_name: r.name, one_rm_kg: r.kg, recorded_at: today
+      exercise_name: r.name, one_rm_kg: r.kg, recorded_at: r.recordedAt || today
     })))
     const { error } = await dbq('saveOneRMGrid', db.from('client_1rms').insert(rows))
     if (error) { if (errEl) errEl.textContent = 'Save failed — try again'; return }
@@ -97,6 +114,48 @@ async function saveOneRMGrid(clientId) {
   } finally {
     _saveOneRMGridPending = false
   }
+}
+
+// The two affordances that used to live behind the row's ⋯ (removed 2026-08-15 on Jake's challenge:
+// "I can update the maxes on the landing page, so please can you explain the need to click the 3
+// dots"). He was right that it was redundant for the common case — it existed only because it was the
+// ONLY route to the two things inline editing could not do: a per-row DATE (the grid otherwise always
+// stamps today) and ESTIMATE FROM A SET (Epley). Both now sit in the row, collapsed until used, so the
+// default row is no busier than before and nothing needs a second screen.
+//
+// This note lives OUTSIDE the template literal deliberately. An HTML comment inside one still ships to
+// the DOM, and it is the exact shape that produced a stored XSS on 2026-08-14 when an interpolation
+// sat inside `<!-- -->` — a template literal does not know it is in a comment. Keep prose in `//`.
+function _toggleOneRMEstimate(i) {
+  const box = document.getElementById(`orm-est-${i}`)
+  if (!box) return
+  const open = box.style.display !== 'none'
+  box.style.display = open ? 'none' : 'flex'
+  if (!open) document.getElementById(`orm-estw-${i}`)?.focus()
+}
+
+// Writes the estimate straight into the row's own value input, so there is exactly ONE number the
+// Save-all path reads — the estimate is an input aid, never a second source of truth.
+function _applyOneRMEstimate(i) {
+  const out = document.getElementById(`orm-estout-${i}`)
+  const target = document.getElementById(`orm-${i}`)
+  if (!out || !target) return
+  // weightFromPref converts the typed display unit to canonical kg; _estimate1RM (app-workouts.js:97,
+  // shared with the programme-assignment quick entry) returns kg and refuses implausible rep counts.
+  const w = weightFromPref(document.getElementById(`orm-estw-${i}`)?.value)
+  const r = parseInt(document.getElementById(`orm-estr-${i}`)?.value)
+  const estKg = _estimate1RM(w, r)
+  if (estKg == null) {
+    out.textContent = (w && r > _ESTIMATE_1RM_MAX_REPS) ? `max ${_ESTIMATE_1RM_MAX_REPS} reps` : ''
+    return
+  }
+  // Back to the display unit for the row input, matching how every other value in this grid is held.
+  // parseFloat BEFORE toFixed — weightToPref returns a STRING in lb (app-core.js:78) and calling a
+  // number method on it is the crash that took down this whole page on 2026-08-14.
+  const disp = parseFloat(weightToPref(estKg))
+  if (isNaN(disp)) { out.textContent = ''; return }
+  target.value = String(parseFloat(disp.toFixed(1)))
+  out.textContent = `≈ ${fmtWeight(estKg, { spaced: true, decimals: 1 })}`
 }
 
 // ONE state, not two. This used to render a clean "Quick-start your 1RMs — The Big 5" grid when the
@@ -131,6 +190,11 @@ async function renderClient1RMs(clientId, el) {
 
   const unit = window._unitPrefs.weight
   const fmtDate = d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  // Each row's date input defaults to TODAY, not to the row's existing recorded_at: the common action
+  // is "I hit a new max today", and client_1rms is append-only so a save always creates a new dated
+  // entry rather than editing the old one. Backdating is the exception, which is why it is a control
+  // rather than a default. ISO, because that is what a native <input type="date"> requires.
+  const today = new Date().toISOString().split('T')[0]
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -164,14 +228,22 @@ async function renderClient1RMs(clientId, el) {
                  value="${escapeHtml(orig)}" data-orig="${escapeHtml(orig)}" placeholder="—"
                  style="width:82px;text-align:center;font-size:16px;flex-shrink:0">
           <span style="font-size:11px;color:var(--text-muted);width:20px;flex-shrink:0">${escapeHtml(unit)}</span>
-          <!-- Restores the two affordances the removed "+ Update" card button hosted and that inline
-               editing does NOT cover: backdating (the grid always stamps today) and "Estimate from a
-               set" (Epley), both of which live only in _showOneRMDetailModal. Without this the only
-               route back to them was "+ Add lift" → re-pick the same exercise from the picker.
-               escapeAttr is correct here and ONLY here: the name sits inside a JS string literal
-               within an attribute. A plain attribute would need escapeHtml. -->
-          ${latest ? `<button onclick="showAdd1RMModal('${clientId}','${escapeAttr(r.name)}'${latest.exercise_id ? `,'${latest.exercise_id}'` : ''})" title="Update with a date, or estimate from a set" style="width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:13px;line-height:1;cursor:pointer;color:var(--text-muted)">⋯</button>` : `<span style="width:26px;flex-shrink:0"></span>`}
           ${latest ? `<button onclick="delete1RM('${latest.id}','${clientId}')" title="Delete" style="width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:14px;line-height:1;cursor:pointer;color:var(--text-muted)">×</button>` : `<span style="width:26px;flex-shrink:0"></span>`}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:0 0 9px 0;margin-top:-4px;font-size:11px;flex-wrap:wrap">
+          <span style="color:var(--text-muted)">Dated</span>
+          <input class="field-input" id="orm-date-${i}" type="date" value="${escapeHtml(today)}"
+                 style="width:140px;padding:3px 6px;font-size:16px">
+          <button type="button" onclick="_toggleOneRMEstimate(${i})"
+                  style="padding:3px 9px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:11px;font-weight:600;cursor:pointer;color:var(--text-muted)">Estimate from a set</button>
+        </div>
+        <div id="orm-est-${i}" style="display:none;align-items:center;gap:6px;padding:0 0 10px 0;margin-top:-4px;font-size:11px;flex-wrap:wrap">
+          <input class="field-input" id="orm-estw-${i}" type="number" step="0.5" inputmode="decimal" placeholder="${escapeHtml(unit)}"
+                 oninput="_applyOneRMEstimate(${i})" style="width:74px;text-align:center;font-size:16px;padding:3px 6px">
+          <span style="color:var(--text-muted)">×</span>
+          <input class="field-input" id="orm-estr-${i}" type="number" inputmode="numeric" placeholder="reps"
+                 oninput="_applyOneRMEstimate(${i})" style="width:64px;text-align:center;font-size:16px;padding:3px 6px">
+          <span id="orm-estout-${i}" style="color:var(--text-muted);font-weight:600"></span>
         </div>
         ${history.length ? `
         <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 0 9px 0;margin-top:-2px">
@@ -1086,7 +1158,7 @@ async function renderProgress(el) {
 
 async function renderPerformance(el) {
   // Same reasoning as renderProgress's own destroy call: switching between THIS view's own two
-  // sub-tabs ('Per exercise' <-> 'Recent sessions') re-enters renderPerformance directly, tearing
+  // sub-tabs ('Per exercise' <-> 'Per session') re-enters renderPerformance directly, tearing
   // down #progress-tab-content without ever going through renderProgress -- guard here too so
   // neither direction leaks whichever chart array the sub-tab being left behind was using.
   _destroyManagedCharts()
@@ -1096,14 +1168,19 @@ async function renderPerformance(el) {
   // 2026-07-08 restructure: was ['1RMs', 'Progressions'] — 1RMs moved into Personal Bests
   // (renderProgressPBs), and "Progressions" (endless flat list) split into a searchable
   // per-exercise view and a new per-session comparison view.
-  // Per exercise is the progression tool and now the default; "Recent sessions" is the diary.
-  // Migrate any stored legacy tab value to the current pair.
+  // Per exercise is the progression tool and now the default; "Per session" is the diary.
+  //
+  // RENAMED BACK to "Per session" on 2026-08-15 (Jake). The migration below had to be REVERSED, not
+  // extended: it previously mapped a stored 'Per session' ONTO 'Recent sessions', so renaming the tab
+  // without touching this line would have redirected the new tab to the old one on every render — a
+  // tab that silently refuses to open. The label IS the stored state (window._perfTab), which is what
+  // makes a rename a state migration rather than a cosmetic change.
   let subTab = window._perfTab || 'Per exercise'
-  if (['1RMs', 'Progressions', 'Per session'].includes(subTab)) window._perfTab = subTab = subTab === 'Per session' ? 'Recent sessions' : 'Per exercise'
+  if (['1RMs', 'Progressions', 'Recent sessions'].includes(subTab)) window._perfTab = subTab = subTab === 'Recent sessions' ? 'Per session' : 'Per exercise'
 
   el.innerHTML = `
     <div style="display:flex;gap:6px;margin-bottom:16px">
-      ${['Per exercise', 'Recent sessions'].map(t => `
+      ${['Per exercise', 'Per session'].map(t => `
         <button onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))"
           style="padding:6px 16px;border:none;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;
                  background:${t===subTab?'var(--accent)':'var(--surface-2)'};
@@ -1115,7 +1192,7 @@ async function renderPerformance(el) {
   `
 
   const subEl = document.getElementById('perf-sub-content')
-  if (subTab === 'Recent sessions') {
+  if (subTab === 'Per session') {
     await renderProgressPerSession(clientId, subEl)
   } else {
     await renderProgressStrength(subEl)
@@ -1137,7 +1214,10 @@ async function renderPerformance(el) {
 function _setDetailsLine(sets) {
   const num = v => parseFloat(v) || 0
   return (sets || []).map(x => {
-    if (x.side) return `${x.side[0].toUpperCase()} ${weightToPref(x.weight_kg) || 'BW'}×${x.reps_achieved || 0}`
+    // `!= null`, not `||`. weightToPref returns the NUMBER 0 in kg (falsy → "BW") but the STRING "0"
+    // in lb (truthy → "0×10"), so the same bodyweight set read differently depending on the unit
+    // preference. Matches the != null discipline this function already uses two lines down.
+    if (x.side) return `${x.side[0].toUpperCase()} ${x.weight_kg != null ? weightToPref(x.weight_kg) : 'BW'}×${x.reps_achieved || 0}`
     // != null, not truthy — a real 0cm/0m jump attempt must still show, same falsy-zero shape as
     // the runner's weight guard (Jake, 2026-07-29/30).
     if (x.height_cm != null) return fmtJumpHeight(x.height_cm)
@@ -1147,6 +1227,30 @@ function _setDetailsLine(sets) {
     if (x.distance_m != null) return fmtDistanceM(x.distance_m)
     return ''
   }).filter(Boolean).join(', ')
+}
+
+// Same per-set rendering as _setDetailsLine, but CONSECUTIVE IDENTICAL sets collapse: "95×8, 95×8,
+// 95×8" becomes "3 × 95×8". Added 2026-08-15 for the Per-exercise session list, where the uncollapsed
+// form is unreadable for a typical 5×5.
+//
+// Deliberately NOT _fmtSetsCollapsed from app-workouts.js, despite the identical idea. That one
+// consumes PRESCRIBED sets_json (repsMin/repsMax/weight/tempo) and returns '—' for every field of a
+// LOGGED set — feed it workout_log_sets and the whole line comes back null. Only the grouping
+// algorithm is borrowed; the per-set rendering has to be the achieved-set one.
+//
+// Consecutive, not global: "95×8, 95×8, 100×5, 95×8" must stay in the order it was lifted, so it reads
+// "2 × 95×8 · 100×5 · 95×8" rather than silently reordering a ramp into "3 × 95×8".
+function _collapsedSetLine(sets) {
+  const groups = []
+  ;(sets || []).forEach(x => {
+    const detail = _setDetailsLine([x])
+    if (!detail) return
+    const last = groups[groups.length - 1]
+    if (last && last.detail === detail) last.n++
+    else groups.push({ detail, n: 1 })
+  })
+  if (!groups.length) return ''
+  return groups.map(g => (g.n > 1 ? `${g.n} × ${g.detail}` : g.detail)).join(' · ')
 }
 
 // Warmup and cooldown are recorded (Jake, 2026-07-25) but are not training volume. Every aggregate
@@ -1452,7 +1556,14 @@ function _metricPointsFor(ex) {
   const points = (ex.sessions || []).map(sess => {
     const sets = _countableSets(sess.sets)
     const num = (v) => parseFloat(v) || 0
-    const p = { date: sess.date }
+    // `sets` carried onto the point (2026-08-15). Jake: "The plot points only show the weight that was
+    // used ... none of the tabs show how many sets or reps i did with this weight." The raw sets were
+    // already fetched and already in scope here — they were simply dropped when this callback returned
+    // only its scalar aggregates. Costs no extra query.
+    // Sorted by set_number: the embed has no inherent order (see the select in _buildExerciseSeries).
+    // Safe to add — the chip filter downstream reads named metric keys only, and _aggregateSeries
+    // reads exactly one key, so a new key collides with nothing.
+    const p = { date: sess.date, sets: [...sets].sort((a, b) => (a.set_number || 0) - (b.set_number || 0)) }
     switch (ex.metricType) {
       case 'cardio':
       case 'interval': {
@@ -1552,7 +1663,10 @@ async function renderProgressStrength(el) {
 
 async function _buildExerciseSeries(clientId) {
   const { data: exRows } = await db.from('workout_log_exercises')
-    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side, avg_watts, phase)')
+    // `set_number` added 2026-08-15. A nested column list is an ALLOWLIST, and without it PostgREST
+    // returns the sets in NO guaranteed order — fine while only aggregates were computed, wrong now
+    // that each session renders its sets in sequence under the chart.
+    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(set_number, weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side, avg_watts, phase)')
     .eq('workout_logs.client_id', clientId).order('exercise_name')
   const byName = {}
   for (const row of (exRows || [])) {
@@ -1805,6 +1919,30 @@ function _exerciseRecords(ex) {
   return rows
 }
 
+// The per-session breakdown under each trend chart. Jake, 2026-08-15: "Bench press shows 95kg on 6th
+// July, however none of the tabs show how many sets or reps i did with this weight."
+//
+// Chronological, matching the chart left-to-right, so a plotted point can be read off against the work
+// that produced it — which is the whole request. Capped at the most recent 10: the range pills already
+// bound this, but "All" on a staple lift is otherwise an unreadable wall.
+//
+// escapeHtml is not decoration: _collapsedSetLine concatenates raw DB values (side, reps, converted
+// weights) exactly as _fmtSetDetail does, and that formatter's own header calls out this sink shape.
+function _sessionSetsBlockHtml(pts) {
+  const withSets = (pts || []).filter(p => (p.sets || []).length)
+  if (!withSets.length) return ''
+  const MAX = 10
+  const shown = withSets.slice(-MAX)
+  const hidden = withSets.length - shown.length
+  return `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">Per session</div>
+    ${hidden ? `<div style="font-size:10px;color:var(--text-muted);font-style:italic;margin-bottom:4px">${hidden} earlier session${hidden === 1 ? '' : 's'} not shown</div>` : ''}
+    ${shown.map(p => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px">
+      <span style="color:var(--text-muted);flex-shrink:0">${new Date(p.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+      <span style="text-align:right;font-weight:600">${escapeHtml(_collapsedSetLine(p.sets))}</span></div>`).join('')}
+  </div>`
+}
+
 function _recordsBlockHtml(rows) {
   if (!rows.length) return ''
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
@@ -1841,7 +1979,15 @@ function _renderPerfExerciseList(query) {
     if (!metrics.length) return { ex, i, empty: true }
     const stored = window._trendState.metricByEx[ex.name]
     const activeKey = stored && metrics.some(m => m[0] === stored) ? stored : metrics[0][0]
-    return { ex, i, pts, metrics, activeKey, active: metrics.find(m => m[0] === activeKey) }
+    const active = metrics.find(m => m[0] === activeKey)
+    // Whether a LINE can be drawn is decided HERE, in pass 1, not in pass 3. Pass 2 emitted the 90px
+    // canvas container unconditionally and pass 3 bailed on `< 2 points` — so a one-session exercise
+    // rendered an empty white box with no explanation (Jake's "Barbell Deadlift · 1 session"
+    // screenshot). _trendCardEmpty only ever covered the ZERO-session case.
+    const chartable = ex.metricType === 'unilateral'
+      ? Math.max(_aggregateSeries(pts, 'leftTop', 'max').length, _aggregateSeries(pts, 'rightTop', 'max').length) >= 2
+      : _aggregateSeries(pts, activeKey, active[2]).length >= 2
+    return { ex, i, pts, metrics, activeKey, active, chartable }
   })
 
   // Pass 2 — build the HTML (canvases must exist before Chart.js can bind to them).
@@ -1861,14 +2007,20 @@ function _renderPerfExerciseList(query) {
             style="padding:4px 10px;border:none;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
                    background:${key===r.activeKey?(_METRIC_COLORS[key]||'var(--accent)'):'var(--surface-2)'};color:${key===r.activeKey?'#fff':'var(--text-muted)'}">${label}</button>`).join('')}
         </div>
-        <div style="position:relative;height:90px"><canvas id="ps-chart-${r.i}"></canvas></div>
+        ${r.chartable
+          ? `<div style="position:relative;height:90px"><canvas id="ps-chart-${r.i}"></canvas></div>`
+          : `<div style="font-size:11px;color:var(--text-muted);font-style:italic;padding:2px 0 6px">One session so far — the graph appears from the second.</div>`}
+        ${_sessionSetsBlockHtml(r.pts)}
         ${_recordsBlockHtml(_exerciseRecords(r.ex))}
       </div>`
   }).join('')
 
   // Pass 3 — draw the charts.
   rendered.forEach(r => {
-    if (r.empty) return
+    // !chartable means pass 2 deliberately rendered no canvas — the session list below carries the
+    // detail instead. Skipping here keeps the two passes' decision in ONE place (pass 1's r.chartable)
+    // rather than duplicating the >=2 rule in both, which is how they drifted apart originally.
+    if (r.empty || !r.chartable) return
     const canvas = document.getElementById(`ps-chart-${r.i}`); if (!canvas) return
     // Unilateral: two lines (left + right) so a strength imbalance is visible.
     if (r.ex.metricType === 'unilateral') {

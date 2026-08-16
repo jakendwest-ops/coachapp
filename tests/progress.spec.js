@@ -141,11 +141,11 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('text=Cardio bests')).toHaveCount(0)
   })
 
-  test('Performance tab shows "Per exercise" / "Recent sessions" sub-tabs (Per exercise default), not the old "1RMs" / "Progressions"', async ({ page }) => {
+  test('Performance tab shows "Per exercise" / "Per session" sub-tabs (Per exercise default), not the old "1RMs" / "Progressions"', async ({ page }) => {
     await page.evaluate(() => { window._perfTab = undefined; window._progressTab = 'Performance'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(800)
     await expect(page.locator('button:has-text("Per exercise")')).toBeVisible()
-    await expect(page.locator('button:has-text("Recent sessions")')).toBeVisible()
+    await expect(page.locator('button:has-text("Per session")')).toBeVisible()
     // Scoped to #progress-tab-content, where renderPerformance draws its SUB-tabs. It was a page-wide
     // match until 2026-08-14, when 1RMs became a top-level Progress tab carrying the same label —
     // which made this fail on a button the test was never about. The claim is "the Performance
