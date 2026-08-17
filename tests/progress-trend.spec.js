@@ -31,9 +31,10 @@ test('resting-HR trend chart shows on the Body tab with >=2 entries (B4)', async
 // NOT the same thing and the distinction is what this test now pins: Cardio-bests was DELETED
 // (superseded by the per-exercise trend card), 1RMs was MOVED and must still exist somewhere. A
 // single "is it on this page" assertion cannot tell those apart, so each gets its own.
-test('Personal Bests renders neither Cardio-bests (deleted) nor 1RMs (moved) (B5)', async ({ page }) => {
+test('Benchmarks renders neither Cardio-bests (deleted) nor 1RMs (its own tab) (B5)', async ({ page }) => {
   await loginAsClient(page)
-  await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
+  // 2026-08-17: the perf-logs page is now the 'Benchmarks' tab; 'Personal Bests' is the 1RM grid.
+  await page.evaluate(() => { window._progressTab = 'Benchmarks'; renderProgress(document.getElementById('main-content')) })
   await page.waitForTimeout(1200)
   expect(await page.locator('#pb-1rms-section').count()).toBe(0)      // 1RMs moved to its own tab
   expect(await page.locator('#pb-cardio-section').count()).toBe(0)    // cardio-bests gone for good

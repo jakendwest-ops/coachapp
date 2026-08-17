@@ -235,7 +235,8 @@ test.describe('Ledger fixes 2026-07-23 — Personal Bests unit pairing', () => {
     try {
       await clickVisible(page, '[data-page="progress"]')
       await page.waitForTimeout(1000)
-      await page.click('button:has-text("Personal Bests")')
+      // performance_logs rows live on Benchmarks since the 2026-08-17 rename.
+      await page.click('button:has-text("Benchmarks")')
       await page.waitForTimeout(1500)
 
       const card = page.locator('div', { hasText: '[E2E] PB Mixed Units' }).last()

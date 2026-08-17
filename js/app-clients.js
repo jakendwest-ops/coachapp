@@ -5,15 +5,32 @@
 }
 
 async function saveClientPB(clientId) {
-  const name     = document.getElementById('cpb-name').value.trim()
-  const category = document.getElementById('cpb-category').value
-  const value    = parseFloat(document.getElementById('cpb-value').value)
-  const unit     = document.getElementById('cpb-unit').value.trim()
-  const date     = document.getElementById('cpb-date').value
-  const notes    = document.getElementById('cpb-notes').value.trim()
   const errorEl  = document.getElementById('cpb-error')
+  // Every field read through the optional chain. This function is called from THREE forms and used to
+  // read #cpb-notes unconditionally — the SOLO dashboard's copy never rendered it, so saving a PB from
+  // your own dashboard threw a TypeError before the insert and reported nothing at all. All three now
+  // come from _pbFormHtml (app-core.js), but a missing element must degrade, not explode: this
+  // function cannot see which form invoked it.
+  const val = (id) => document.getElementById(id)?.value ?? ''
+  const name     = val('cpb-name').trim()
+  const category = val('cpb-category')
+  const value    = parseFloat(val('cpb-value'))
+  const unit     = val('cpb-unit').trim()
+  const date     = val('cpb-date')
+  const notes    = val('cpb-notes').trim()
 
+  if (!errorEl) { log.error('saveClientPB', 'no error element — form not mounted'); return }
   if (!name || isNaN(value) || !unit || !date) { errorEl.textContent = 'Name, value, unit and date are required.'; return }
+
+  // The unit must belong to the chosen category. It was a free-text box, which is how one real
+  // account ended up with `Kg` (matching nothing in _PERF_UNIT_BASE, so it falls through unconverted)
+  // and a cardio row whose unit was `5km` — a distance, with the value holding seconds. The form now
+  // offers a category-driven dropdown; this is the backstop for anything that bypasses it.
+  const allowed = (typeof PERF_CATEGORIES !== 'undefined' ? PERF_CATEGORIES : []).find(c => c.id === category)?.units
+  if (allowed?.length && !allowed.includes(unit)) {
+    errorEl.textContent = `Unit must be one of: ${allowed.join(', ')}`
+    return
+  }
   errorEl.textContent = ''
 
   const row = { client_id: clientId, logged_by: currentUser.id, category, name, value, unit, date }

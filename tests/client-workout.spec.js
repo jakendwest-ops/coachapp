@@ -678,7 +678,9 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     try {
       await clickVisible(page, '[data-page="progress"]')
       await page.waitForTimeout(1000)
-      await page.click('button:has-text("Personal Bests")')
+      // performance_logs rows live on Benchmarks since the 2026-08-17 rename; 'Personal Bests' is
+      // now the 1RM grid, which reads a different table entirely.
+      await page.click('button:has-text("Benchmarks")')
       await page.waitForTimeout(1500)
 
       await expect(page.locator('text=[E2E] PB Deadlift')).toBeVisible({ timeout: 5000 })

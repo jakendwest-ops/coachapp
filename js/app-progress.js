@@ -1124,7 +1124,22 @@ async function renderProgress(el) {
   // view, where 1RMs is a full-width tab of its own, and rated the coach side better. On Personal it
   // was appended BELOW renderProgressPBs' own header and PB cards, so it read as a footer rather
   // than a section. Flagged as a reversal because 2026-07-08 moved it the other way deliberately.
-  const tabs = ['Body Weight', 'Personal Bests', 'Performance', '1RMs']
+  //
+  // 2026-08-17: Jake — "'Personal Bests' page is redundant now that the 1RM page has the data I need.
+  // Please delete the current 'personal best' page, and rename the 1RM page to 'personal bests'."
+  // His data says the first half is right and the second is not safe as stated. The old page's
+  // STRENGTH section is genuinely superseded — 4 exercises, unused since 25 June, against the 1RM
+  // tab's 12 from 1 July onward. But that page is also the ONLY home cardio bests have had since the
+  // 2026-07-08 fold-in, and deleting it would take 6 months of 5K times, a Skierg PB and 11 entries
+  // with notes down with it. So the 1RM tab takes the Personal Bests name, and the old page keeps
+  // everything it holds under a name that describes what it is now.
+  const tabs = ['Body Weight', 'Personal Bests', 'Benchmarks', 'Performance']
+  // '1RMs' no longer exists as a tab, so a stored value would fall through to the default and drop
+  // the user on Body Weight. NOTE: _progressTab is a plain global with no localStorage behind it, so
+  // it resets on every reload and this cannot currently fire in production — it is here so the
+  // rename stays correct if tab state is ever persisted, and because within a single session the
+  // old code path could still hold '1RMs'. Do not read it as evidence that tabs are remembered.
+  if (window._progressTab === '1RMs') window._progressTab = 'Personal Bests'
   const activeTab = window._progressTab || 'Body Weight'
 
   el.innerHTML = `
@@ -1142,9 +1157,9 @@ async function renderProgress(el) {
   `
 
   if (activeTab === 'Body Weight')    await renderProgressWeight(document.getElementById('progress-tab-content'))
-  if (activeTab === 'Personal Bests') await renderProgressPBs(document.getElementById('progress-tab-content'))
+  if (activeTab === 'Benchmarks')     await renderProgressPBs(document.getElementById('progress-tab-content'))
   if (activeTab === 'Performance')    await renderPerformance(document.getElementById('progress-tab-content'))
-  if (activeTab === '1RMs') {
+  if (activeTab === 'Personal Bests') {
     const clientId = await _getCurrentClientId()
     const host = document.getElementById('progress-tab-content')
     if (!clientId) { host.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
@@ -2434,23 +2449,9 @@ async function renderProgressPBs(el) {
   _destroyManagedCharts()
   el.innerHTML = '<div class="loading-state">Loading personal bests…</div>'
   const clientId = await _getCurrentClientId()
-  const addPBBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Personal bests</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log PB</button></div>
+  const addPBBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Cardio &amp; benchmarks</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button></div>
     <div id="client-pb-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div><label class="form-label">Exercise name</label><input type="text" id="cpb-name" class="form-input" placeholder="e.g. Deadlift"></div>
-        <div><label class="form-label">Category</label><select id="cpb-category" class="form-input"><option value="strength">Strength</option><option value="cardio">Cardio</option><option value="body_metric">Body metric</option><option value="benchmark">Benchmark</option></select></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
-        <div><label class="form-label">Value</label><input type="number" id="cpb-value" class="form-input" step="0.1"></div>
-        <div><label class="form-label">Unit</label><input type="text" id="cpb-unit" class="form-input" placeholder="kg / min / reps"></div>
-        <div><label class="form-label">Date</label><input type="date" id="cpb-date" class="form-input" value="${new Date().toISOString().split('T')[0]}"></div>
-      </div>
-      <div style="margin-bottom:8px"><label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label><input type="text" id="cpb-notes" class="form-input" placeholder="Any notes…"></div>
-      <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${clientId}')">Save</button>
-        <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
-      </div>
+      ${_pbFormHtml(clientId)}
     </div>`
   // `name`, `category` and `unit` are PLAIN COLUMNS on performance_logs — that is exactly what
   // saveClientPB() writes (app-clients.js). This query used to embed `performance_exercises(...)`,
@@ -2467,8 +2468,12 @@ async function renderProgressPBs(el) {
 
   let pbListHtml
   let pbChartPlan = []
+  // Strength rows are read-only history now (the form no longer offers the category). They stay
+  // VISIBLE deliberately — 22 of Jake's 30 entries are strength and 11 carry notes, and hiding them
+  // would be deleting the page by another route. Only new entries are redirected.
+  const hasHistoricalStrength = (logs || []).some(l => l.category === 'strength')
   if (!logs?.length) {
-    pbListHtml = '<div class="empty-state"><p>No personal bests logged yet. Tap + Log PB to add your first record.</p></div>'
+    pbListHtml = '<div class="empty-state"><p>No records logged yet. Tap + Log record for a 5k time, a benchmark workout or a body metric.<br><span style="font-size:12px;color:var(--text-muted)">Barbell lifts live on the Personal Bests tab.</span></p></div>'
   } else {
     const byExercise = {}
     for (const l of logs) {
@@ -2508,7 +2513,7 @@ async function renderProgressPBs(el) {
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
             <div style="font-size:14px;font-weight:700">${escapeHtml(name)}</div>
-            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${escapeHtml(category || '')}</div>
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${escapeHtml(category || '')}${category === 'strength' ? ' · historical' : ''}</div>
           </div>
           <div style="text-align:right">
             <div style="font-size:20px;font-weight:800;color:var(--accent)">${escapeHtml(String(best.value))} <span style="font-size:12px">${escapeHtml(best.unit || '')}</span></div>
@@ -2527,6 +2532,7 @@ async function renderProgressPBs(el) {
   // writer reaches it through _refresh1RMs, which now finds it on the new tab instead.
   el.innerHTML = `
     ${addPBBtn}
+    ${hasHistoricalStrength ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-bottom:10px;padding:8px 10px;border-radius:8px;background:var(--surface-2)">Your older lift records are kept here. New lifts go on the <strong>Personal Bests</strong> tab.</div>` : ''}
     ${pbListHtml}
   `
 

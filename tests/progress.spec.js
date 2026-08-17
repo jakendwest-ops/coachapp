@@ -52,15 +52,18 @@ test.describe('Progress page bug fixes (2026-07-08)', () => {
     await loginAsClient(page)
   })
 
-  test('"Log PB" button on Personal Bests actually opens the form (regression — was wired to a Dashboard-only DOM node)', async ({ page }) => {
+  // 2026-08-17: this page is now the "Benchmarks" tab (cardio / benchmarks / body metrics), and the
+  // button reads "+ Log record". The 1RM tab took the "Personal Bests" name — see
+  // tests/pb-consolidation-2026-08-17.spec.js.
+  test('"Log record" button on Benchmarks actually opens the form (regression — was wired to a Dashboard-only DOM node)', async ({ page }) => {
     await clickVisible(page, '[data-page="progress"]')
     await page.waitForTimeout(500)
-    await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
+    await page.evaluate(() => { window._progressTab = 'Benchmarks'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(500)
     const form = page.locator('#client-pb-form')
     await expect(form).toBeAttached()
     await expect(form).toBeHidden()
-    await page.click('button:has-text("+ Log PB")')
+    await page.click('button:has-text("+ Log record")')
     await expect(form).toBeVisible({ timeout: 3000 })
     // Form must have somewhere to actually write the entry — these inputs used to only exist
     // on the Dashboard page, never on Progress, so the button previously did nothing at all.
@@ -120,21 +123,22 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await loginAsClient(page)
   })
 
-  test('Progress page top-level tabs are Body Weight / Personal Bests / Performance — Cardio is no longer its own tab', async ({ page }) => {
+  test('Progress tabs are Body Weight / Personal Bests / Benchmarks / Performance — Cardio is not its own tab', async ({ page }) => {
     await clickVisible(page, '[data-page="progress"]')
     await page.waitForTimeout(500)
     await expect(page.locator('h1')).toContainText('My Progress')
     await expect(page.locator('button:has-text("Body Weight")')).toBeVisible()
-    await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()
+    await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()   // the 1RM tab, renamed 2026-08-17
+    await expect(page.locator('button:has-text("Benchmarks")')).toBeVisible()       // the old PB page, renamed
     await expect(page.locator('button:has-text("Performance")')).toBeVisible()
-    await expect(page.locator('button:has-text("1RMs")')).toBeVisible()   // own tab since 2026-08-14
+    await expect(page.locator('button', { hasText: /^1RMs$/ })).toHaveCount(0)      // gone 2026-08-17
     // Exact-text match on any button, page-wide — "Cardio bests" is a heading div, not a button,
     // so this can't false-pass against Personal Bests' new sub-section label.
     await expect(page.locator('button', { hasText: /^Cardio$/ })).toHaveCount(0)
   })
 
-  test('Personal Bests mounts neither Cardio-bests (removed 2026-07-19) nor 1RMs (moved to its own tab 2026-08-14)', async ({ page }) => {
-    await page.evaluate(() => { window._progressTab = 'Personal Bests'; renderProgress(document.getElementById('main-content')) })
+  test('Benchmarks mounts neither Cardio-bests (removed 2026-07-19) nor 1RMs (its own tab since 2026-08-14)', async ({ page }) => {
+    await page.evaluate(() => { window._progressTab = 'Benchmarks'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(800)
     await expect(page.locator('#pb-1rms-section')).toHaveCount(0)
     await expect(page.locator('#pb-cardio-section')).toHaveCount(0)

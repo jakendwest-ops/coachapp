@@ -91,6 +91,67 @@ function _ymdLocal(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// ─── The PB entry form (2026-08-17) ──────────────────────────────────────────
+// ONE definition. It was hand-copied into three places — renderProgressPBs, and both the coach and
+// solo dashboard cards — and they had already drifted: the SOLO copy never rendered #cpb-notes, but
+// saveClientPB read `document.getElementById('cpb-notes').value` unconditionally, so saving a PB
+// from your own dashboard threw before the insert and showed nothing. The page Jake wanted deleted
+// was, because of that, the only working PB capture path on his own account.
+//
+// The unit is a SELECT driven by the category, not a free-text box. PERF_CATEGORIES has carried the
+// correct per-category unit lists all along (app-runner.js) and this form simply ignored them, with
+// a `kg / min / reps` placeholder instead. On Jake's own 30 entries that produced `Kg` (capital K,
+// which matches nothing in _PERF_UNIT_BASE and falls through unconverted) and a Skierg row whose
+// unit is `5km` — a distance in the unit field, with the value holding seconds.
+//
+// STRENGTH IS DELIBERATELY ABSENT from the category list. Barbell lifts belong on the Personal Bests
+// (1RM) tab, which superseded this form for strength: 4 exercises here, last used 25 June, against
+// 12 exercises there from 1 July onward. Historical strength rows are still DISPLAYED — nothing is
+// deleted — they just cannot be added here any more, so the two stop diverging.
+const _PB_FORM_CATEGORIES = ['cardio', 'benchmark', 'body_metric']
+
+function _pbUnitOptions(categoryId) {
+  const cat = (typeof PERF_CATEGORIES !== 'undefined' ? PERF_CATEGORIES : []).find(c => c.id === categoryId)
+  return (cat?.units || []).map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('')
+}
+
+// Repopulates the unit list when the category changes, so the two can never disagree.
+function _pbSyncUnits() {
+  const cat = document.getElementById('cpb-category')?.value
+  const unitEl = document.getElementById('cpb-unit')
+  if (!cat || !unitEl) return
+  unitEl.innerHTML = _pbUnitOptions(cat)
+  const ph = (typeof PERF_CATEGORIES !== 'undefined' ? PERF_CATEGORIES : []).find(c => c.id === cat)?.placeholder
+  const nameEl = document.getElementById('cpb-name')
+  if (nameEl && ph) nameEl.placeholder = ph
+}
+
+function _pbFormHtml(clientId, { todayStr } = {}) {
+  const cats = (typeof PERF_CATEGORIES !== 'undefined' ? PERF_CATEGORIES : [])
+    .filter(c => _PB_FORM_CATEGORIES.includes(c.id))
+  const first = cats[0]
+  const today = todayStr || _ymdLocal(new Date())
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div><label class="form-label">Exercise</label><input type="text" id="cpb-name" class="form-input" placeholder="${escapeHtml(first?.placeholder || 'e.g. 5k Run')}"></div>
+      <div><label class="form-label">Category</label><select id="cpb-category" class="form-input" onchange="_pbSyncUnits()">
+        ${cats.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`).join('')}
+      </select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+      <div><label class="form-label">Value</label><input type="number" id="cpb-value" class="form-input" step="0.01"></div>
+      <div><label class="form-label">Unit</label><select id="cpb-unit" class="form-input">${_pbUnitOptions(first?.id)}</select></div>
+      <div><label class="form-label">Date</label><input type="date" id="cpb-date" class="form-input" value="${escapeHtml(today)}"></div>
+    </div>
+    <div style="margin-bottom:8px"><label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label><input type="text" id="cpb-notes" class="form-input" placeholder="Any notes…"></div>
+    <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px">Logging a lift? Records go on the <strong>Personal Bests</strong> tab.</p>
+    <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${escapeAttr(clientId)}')">Save</button>
+      <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
+    </div>`
+}
+
 function _mondayOfWeek(dateStr) {
   if (!dateStr) return null
   const d = new Date(dateStr + 'T00:00:00')

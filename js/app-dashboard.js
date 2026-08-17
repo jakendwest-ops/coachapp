@@ -574,8 +574,8 @@ async function renderClientDashboard(el) {
 
         <div class="dashboard-card">
           <div class="card-header">
-            <h2 class="card-title">Personal bests</h2>
-            <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log PB</button>
+            <h2 class="card-title">Benchmarks</h2>
+            <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button>
           </div>
           ${!pbs.length ? `<p style="color:var(--text-muted);font-size:13px">No records yet.</p>` : pbs.slice(0,4).map(pb => `
             <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
@@ -584,21 +584,7 @@ async function renderClientDashboard(el) {
             </div>`).join('')}
           ${pbs.length > 4 ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more</p>` : ''}
           <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-              <div><label class="form-label">Exercise name</label><input type="text" id="cpb-name" class="form-input" placeholder="e.g. Deadlift"></div>
-              <div><label class="form-label">Category</label><select id="cpb-category" class="form-input"><option value="strength">Strength</option><option value="cardio">Cardio</option><option value="body_metric">Body metric</option><option value="benchmark">Benchmark</option></select></div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
-              <div><label class="form-label">Value</label><input type="number" id="cpb-value" class="form-input" step="0.1"></div>
-              <div><label class="form-label">Unit</label><input type="text" id="cpb-unit" class="form-input" placeholder="kg / min / reps"></div>
-              <div><label class="form-label">Date</label><input type="date" id="cpb-date" class="form-input" value="${new Date().toISOString().split('T')[0]}"></div>
-            </div>
-            <div style="margin-bottom:8px"><label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label><input type="text" id="cpb-notes" class="form-input" placeholder="Any notes…"></div>
-            <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${clientId}')">Save</button>
-              <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
-            </div>
+            ${_pbFormHtml(clientId)}
           </div>
         </div>
 
@@ -855,30 +841,17 @@ async function renderSoloDashboard(el) {
 
         <div class="dashboard-card">
           <div class="card-header">
-            <h2 class="card-title">Personal bests</h2>
-            <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log PB</button>
+            <h2 class="card-title">Benchmarks</h2>
+            <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button>
           </div>
           ${!pbs.length ? `<p style="color:var(--text-muted);font-size:13px">No records yet.</p>` : pbs.slice(0,4).map(pb => `
             <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
               <span style="font-size:13px;color:var(--text-muted)">${escapeHtml(pb.name)}</span>
               <span style="font-size:14px;font-weight:700">${pb.value} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
             </div>`).join('')}
-          ${pbs.length > 4 ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more in Progress → Personal Bests</p>` : ''}
+          ${pbs.length > 4 ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more in Progress → Benchmarks</p>` : ''}
           <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-              <div><label class="form-label">Exercise</label><input type="text" id="cpb-name" class="form-input" placeholder="e.g. Deadlift"></div>
-              <div><label class="form-label">Category</label><select id="cpb-category" class="form-input"><option value="strength">Strength</option><option value="cardio">Cardio</option><option value="body_metric">Body metric</option><option value="benchmark">Benchmark</option></select></div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
-              <div><label class="form-label">Value</label><input type="number" id="cpb-value" class="form-input" step="0.1"></div>
-              <div><label class="form-label">Unit</label><input type="text" id="cpb-unit" class="form-input" placeholder="kg / min / reps"></div>
-              <div><label class="form-label">Date</label><input type="date" id="cpb-date" class="form-input" value="${todayStr}"></div>
-            </div>
-            <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${clientId}')">Save</button>
-              <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
-            </div>
+            ${_pbFormHtml(clientId)}
           </div>
         </div>
 
