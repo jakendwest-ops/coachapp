@@ -358,6 +358,11 @@ function _fmtSetsCollapsed(sets, { isCardio = false, isInterval = false, isUnila
 // The only metric types on which AMRAP means anything — the same pair as `showSetToggles`, which
 // decides whether the pill is offered at all.
 const _AMRAP_TYPES = new Set(['weight_reps', 'unilateral'])
+// The metric types on which "bodyweight" means anything. Wider than _AMRAP_TYPES because the runner
+// has always rendered a BW cell for a timed hold too (app-runner.js:387) — a plank is bodyweight by
+// definition. Kept separate from `showSetToggles`, which additionally gates the Unilateral pill and
+// must stay limited to the two types sharing the weight+reps set shape.
+const _BW_TYPES = new Set(['weight_reps', 'unilateral', 'timed_hold'])
 
 function _cleanTemplateSets(sets, derived, metricType) {
   return (sets || []).map(s => ({
@@ -382,7 +387,9 @@ function _cleanTemplateSets(sets, derived, metricType) {
     // for an assisted set, setData.weight held the ASSIST load and was written to weight_kg, so a
     // -20kg assisted pull-up stored as +20kg LIFTED and fed volume, e1RM and PB detection. A live
     // count found ZERO sets carrying the flag, so nothing needed repairing; this is fix-forward.
-    bodyweight: !!s.bodyweight,
+    // Gated on metricType like `amrap` above: switching an exercise's type must not leave a stale
+    // bodyweight flag on, e.g. a jump that still claims to be bodyweight.
+    bodyweight: _BW_TYPES.has(metricType) && !!s.bodyweight,
     repsMin: s.repsMin || null, repsMax: s.repsMax || null, weight: s.weight || null,
     intensityMin: s.intensityMin || null, intensityMax: s.intensityMax || null,
     restMin: s.restMin || null, restMax: s.restMax || null,
@@ -1483,6 +1490,18 @@ function renderTemplateSets(containerId, type) {
   const isJump = type === 'jump_height' || type === 'jump_distance'
   const isInterval = type === 'interval'
   const showSetToggles = type === 'weight_reps' || type === 'unilateral'
+  // BW rendered UNCONDITIONALLY, like AMRAP beside it. It used to render only `${s.bodyweight ? …}` —
+  // and that toggle is the only thing in the entire codebase that can set the flag, so no exercise
+  // created after that gate appeared could ever be marked bodyweight. Every pull-up and dip added to
+  // a template was silently a weight-and-reps lift, which also made the reps-charting built for
+  // bodyweight lifts on 2026-08-16 unreachable for new data.
+  //
+  // This is verbatim the defect that got `assisted`/`assistWeight` deleted on 2026-08-11 — "its
+  // toggle only rendered when the flag was ALREADY true" — recorded in _cleanTemplateSets 220 lines
+  // above the surviving twin. Found by the weekly full-file review, 2026-08-17.
+  const showAmrap = _AMRAP_TYPES.has(type)
+  const showBodyweight = _BW_TYPES.has(type)
+  const showToggleRow = showAmrap || showBodyweight
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
   // Rendered from here, not from the modal's own markup, because this function is the single choke
   // point EVERY type change already flows through: mount, the <select>'s onchange, toggleTsSet,
@@ -1601,9 +1620,9 @@ function renderTemplateSets(containerId, type) {
           ${i > 0 ? `<button type="button" onclick="copyPrevTemplateSet(${i},'${containerId}','${tid}')" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">Copy set ${i} ↑</button>` : ''}
         </div>
         <div style="display:flex;gap:4px">
-          ${showSetToggles ? `
-            ${tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`)}
-            ${s.bodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
+          ${showToggleRow ? `
+            ${showAmrap ? tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`) : ''}
+            ${showBodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
           ` : ''}
           <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:15px;line-height:1">×</button>
         </div>
