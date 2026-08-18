@@ -25,7 +25,7 @@ test.describe('runner client-notes escaping (2026-08-12)', () => {
     await loginAsClient(page)
     const wk = await ownWorkout()
     await wk.start()
-    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+    await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
 
     const res = await page.evaluate(async (payload) => {
       _runner.exercises[_runner.exIdx].clientNotes = payload

@@ -114,7 +114,7 @@ test.describe('Client workout flow', () => {
     // Click first visible Start button — launches runner
     await page.locator('button:has-text("Start")').first().click()
     // Runner renders with a red End button
-    const endBtn = page.locator('button:has-text("End")')
+    const endBtn = page.locator('button:text-is("End")')
     await expect(endBtn).toBeVisible({ timeout: 8000 })
     // End the runner
     await endBtn.click()

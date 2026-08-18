@@ -1025,12 +1025,23 @@ async function deleteWeightLog(id, clientId) {
 
 // ─── INVITE ACCEPTANCE ────────────────────────────────────────────────────────
 
-function showInviteForm() {
+// One switcher for every auth-screen form. Previously showInviteForm hid #login-form by name and
+// showed its own — fine with two forms, but with four that shape means each new form has to remember
+// to hide the other three, and the one that forgets shows two stacked forms.
+const _AUTH_FORMS = ['login-form', 'invite-form', 'reset-request-form', 'new-password-form']
+function _showAuthForm(id) {
   document.getElementById('auth-screen').style.display = 'flex'
   document.getElementById('app-shell').style.display   = 'none'
-  document.getElementById('login-form').style.display  = 'none'
-  document.getElementById('invite-form').style.display = 'block'
+  _AUTH_FORMS.forEach(f => {
+    const el = document.getElementById(f)
+    if (el) el.style.display = f === id ? 'block' : 'none'
+  })
 }
+
+function showInviteForm()       { _showAuthForm('invite-form') }
+function showResetRequestForm() { _showAuthForm('reset-request-form') }
+function showNewPasswordForm()  { _showAuthForm('new-password-form') }
+function showLoginForm()        { _showAuthForm('login-form') }
 
 document.getElementById('invite-form').addEventListener('submit', async e => {
   e.preventDefault()
@@ -1065,11 +1076,107 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
   showApp()
 })
 
+// ─── PASSWORD RESET (2026-08-18) ──────────────────────────────────────────────
+// Added after a real beta user (invited 2026-08-09) let his invite link expire and had NO route back
+// into the app: there was no reset flow at all, and the invite Edge Function is deliberately
+// idempotent, so re-inviting an existing address silently sends nothing. Recovering him took manual
+// SQL to delete the dead auth row. That is not an onboarding process.
+
+document.getElementById('forgot-link')?.addEventListener('click', e => {
+  e.preventDefault()
+  // Carry whatever they already typed, so they don't retype it.
+  const typed = document.getElementById('login-email')?.value?.trim()
+  if (typed) document.getElementById('reset-email').value = typed
+  document.getElementById('reset-error').textContent = ''
+  document.getElementById('reset-sent').style.display = 'none'
+  showResetRequestForm()
+})
+
+document.getElementById('reset-back-link')?.addEventListener('click', e => {
+  e.preventDefault()
+  showLoginForm()
+})
+
+document.getElementById('reset-request-form')?.addEventListener('submit', async e => {
+  e.preventDefault()
+  const btn     = document.getElementById('reset-submit')
+  const errorEl = document.getElementById('reset-error')
+  const sentEl  = document.getElementById('reset-sent')
+  const email   = document.getElementById('reset-email').value.trim()
+  if (!email) { errorEl.textContent = 'Enter your email address.'; return }
+
+  btn.disabled = true
+  btn.textContent = 'Sending…'
+  errorEl.textContent = ''
+  log.info('resetRequest', 'sending reset link')
+
+  // redirectTo MUST be the deployed app: supabase appends the recovery hash to it, and the boot code
+  // below is what turns that hash into the set-password form.
+  const { error } = await db.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://jakendwest-ops.github.io/coachapp/',
+  })
+
+  btn.disabled = false
+  btn.textContent = 'Send reset link'
+
+  if (error) {
+    log.error('resetRequest', 'reset email failed', error)
+    errorEl.textContent = error.message
+    return
+  }
+  // Deliberately does NOT say whether the address exists — that would let anyone enumerate which
+  // emails have accounts. Supabase returns success either way; the copy matches that.
+  log.ok('resetRequest', 'reset email requested')
+  sentEl.textContent = 'If that email has an account, a reset link is on its way. It expires — use it today.'
+  sentEl.style.display = 'block'
+})
+
+document.getElementById('new-password-form')?.addEventListener('submit', async e => {
+  e.preventDefault()
+  const btn      = document.getElementById('np-submit')
+  const errorEl  = document.getElementById('np-error')
+  const password = document.getElementById('np-password').value
+  const confirm  = document.getElementById('np-confirm').value
+  errorEl.textContent = ''
+
+  if (password !== confirm) { errorEl.textContent = 'Those two passwords do not match.'; return }
+  if (password.length < 6)  { errorEl.textContent = 'Password must be at least 6 characters.'; return }
+
+  btn.disabled = true
+  btn.textContent = 'Saving…'
+  log.info('newPassword', 'setting password from recovery link')
+
+  // supabase-js has already exchanged the recovery hash for a session, exactly as it does for an
+  // invite — so this is a plain updateUser, not a token exchange.
+  const { error } = await db.auth.updateUser({ password })
+
+  if (error) {
+    log.error('newPassword', 'updateUser failed', error)
+    // The commonest cause by far is an expired or already-used link, and the raw message
+    // ("Auth session missing!") does not tell anyone that.
+    errorEl.textContent = /session|token|expired|missing/i.test(error.message || '')
+      ? 'That reset link has expired or was already used. Request a new one from the sign-in page.'
+      : error.message
+    btn.disabled = false
+    btn.textContent = 'Set password'
+    return
+  }
+
+  log.ok('newPassword', 'password set from recovery link')
+  // Clear the hash so the recovery token cannot be reused from history.
+  history.replaceState(null, '', window.location.pathname)
+  showApp()
+})
+
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 
-// Handle invite links immediately — don't wait for auth event
+// Handle invite AND recovery links immediately — don't wait for auth event.
+// _initialHash is captured at the top of app-core.js, BEFORE the supabase client is constructed,
+// because supabase-js consumes and clears the hash while establishing the session.
 if (_initialHash.includes('type=invite')) {
   try { showInviteForm() } catch(e) { log.error('boot', 'showInviteForm failed', e) }
+} else if (_initialHash.includes('type=recovery')) {
+  try { showNewPasswordForm() } catch(e) { log.error('boot', 'showNewPasswordForm failed', e) }
 }
 
 let _appLoaded = false
@@ -1077,7 +1184,12 @@ db.auth.onAuthStateChange((event, session) => {
   log.info('auth', `state change: ${event}`, { userId: session?.user?.id ?? null })
   currentUser = session?.user ?? null
 
-  if (event === 'PASSWORD_RECOVERY') return
+  // A recovery link ESTABLISHES A SESSION, so without these two guards `currentUser` is set and the
+  // app boots straight past the password form into the dashboard — the user never gets to set one.
+  // This used to be a bare `return`, which is why a dashboard-sent recovery link did nothing at all:
+  // the event was swallowed and no form was ever shown.
+  if (event === 'PASSWORD_RECOVERY') { showNewPasswordForm(); return }
+  if (_initialHash.includes('type=recovery') && event !== 'USER_UPDATED') { showNewPasswordForm(); return }
   if (_initialHash.includes('type=invite') && event !== 'USER_UPDATED') return
 
   if (currentUser) {

@@ -18,7 +18,7 @@ test.describe('ownWorkout fixture (2026-08-11)', () => {
     await wk.start()
 
     // The runner must be showing OUR workout, not whatever happened to be first on the page.
-    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+    await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
     const loaded = await page.evaluate(() => ({
       name: _runner?.name || null,
       exercises: (_runner?.exercises || []).map(e => e.name),
@@ -49,7 +49,7 @@ test.describe('ownWorkout fixture (2026-08-11)', () => {
       }],
     })
     await wk.start()
-    await expect(page.locator('button:has-text("End")')).toBeVisible({ timeout: 12000 })
+    await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
     const mt = await page.evaluate(() => _runner.exercises[0].metricType)
     expect(mt).toBe('timed_hold')
   })

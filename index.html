@@ -36,8 +36,45 @@
           <label class="field-label">Password</label>
           <input class="field-input" type="password" id="login-password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" required>
         </div>
+        <p style="text-align:right;margin:-6px 0 10px">
+          <a href="#" id="forgot-link" style="font-size:13px;color:var(--accent);text-decoration:none">Forgot password?</a>
+        </p>
         <p class="auth-error" id="login-error"></p>
         <button class="btn-primary btn-full" type="submit" id="login-submit">Sign in</button>
+      </form>
+
+      <!-- Request a reset link. Separate from #new-password-form: this one is reached while signed
+           OUT with no session, that one only from a recovery link that has already established one. -->
+      <form id="reset-request-form" class="auth-form" style="display:none">
+        <h2 class="auth-title">Reset your password</h2>
+        <p class="auth-subtitle">We'll email you a link to set a new one.</p>
+        <div class="field">
+          <label class="field-label">Email</label>
+          <input class="field-input" type="email" id="reset-email" placeholder="you@example.com" required>
+        </div>
+        <p class="auth-error" id="reset-error"></p>
+        <p id="reset-sent" style="display:none;font-size:13px;color:var(--success,#16a34a);margin:0 0 10px"></p>
+        <button class="btn-primary btn-full" type="submit" id="reset-submit">Send reset link</button>
+        <p style="text-align:center;margin:12px 0 0">
+          <a href="#" id="reset-back-link" style="font-size:13px;color:var(--text-muted);text-decoration:none">Back to sign in</a>
+        </p>
+      </form>
+
+      <!-- Set a new password. Reached from a recovery link, which supabase-js has already turned into
+           a live session — so this is updateUser(), not a token exchange. -->
+      <form id="new-password-form" class="auth-form" style="display:none">
+        <h2 class="auth-title">Choose a new password</h2>
+        <p class="auth-subtitle">Enter it twice so a typo can't lock you out.</p>
+        <div class="field">
+          <label class="field-label">New password</label>
+          <input class="field-input" type="password" id="np-password" placeholder="Min. 6 characters" required minlength="6">
+        </div>
+        <div class="field">
+          <label class="field-label">Confirm password</label>
+          <input class="field-input" type="password" id="np-confirm" placeholder="Type it again" required minlength="6">
+        </div>
+        <p class="auth-error" id="np-error"></p>
+        <button class="btn-primary btn-full" type="submit" id="np-submit">Set password</button>
       </form>
 
       <!-- Invite acceptance (set password) -->
@@ -112,7 +149,7 @@
   <script src="js/app-calendar-goals.js?v=14"></script>
   <script src="js/app-workouts.js?v=68"></script>
   <script src="js/app-runner.js?v=70"></script>
-  <script src="js/app-progress.js?v=46"></script>
+  <script src="js/app-progress.js?v=47"></script>
 </body>
 </html>
 
