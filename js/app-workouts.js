@@ -407,8 +407,16 @@ function _cleanTemplateSets(sets, derived, metricType) {
     hrZoneMin: s.hrZoneMin || null, hrZoneMax: s.hrZoneMax || null,
     restHrMax: s.restHrMax || null,
     strokeRateMin: s.strokeRateMin || null, strokeRateMax: s.strokeRateMax || null,
-    // Jump targets.
-    targetHeightCm: s.targetHeightCm || null, targetDistanceM: s.targetDistanceM || null,
+    // Jump targets, gated PER KEY rather than per jump-family. The editor renders exactly one of these
+    // inputs per type, so a set can only ever legitimately hold one — but flushTemplateSets preserves
+    // the un-rendered one, so switching Jump distance -> Jump height leaves BOTH set. _fmtSetDetail
+    // then prefers height unconditionally, so a jump_DISTANCE exercise rendered "40cm" on the preview
+    // surfaces while the runner correctly showed "2.4 m": wrong number and wrong unit, coach screen
+    // versus athlete screen. A family-wide gate would not have caught that.
+    // Same reasoning as `amrap` and `bodyweight` above; ungated, a height also survived a switch all
+    // the way to weight_reps and made a barbell lift render as a jump.
+    targetHeightCm:  metricType === 'jump_height'   ? (s.targetHeightCm  || null) : null,
+    targetDistanceM: metricType === 'jump_distance' ? (s.targetDistanceM || null) : null,
     // Interval block (2026-07-25). This allowlist is an allowlist — a key absent here is silently
     // dropped on save, which is exactly how every cardio target was lost before les-036.
     countdownSecs: s.countdownSecs ?? null, warmupSecs: s.warmupSecs ?? null,
@@ -2112,13 +2120,19 @@ async function saveEditTemplateExercise(texId, templateId) {
   // Capture the ORIGINAL name before the update — propagation matches the changed exercise by name
   // across other sessions (Jake's choice, 2026-07-12), and a rename must still find the old row.
   const { data: origRow } = await db.from('workout_template_exercises').select('exercise_name').eq('id', targetExId).single()
+  // CLEAN before writing. This path used to save the raw window._templateSets while its two siblings
+  // — saveExerciseToTemplate and _confirmRunnerExerciseFromModal — both cleaned, so every metric-type
+  // gate in _cleanTemplateSets was simply skipped when editing. flushTemplateSets deliberately
+  // PRESERVES fields the current type does not render, so anything set under a previous type rode
+  // straight through: an AMRAP flag onto a jump, a target height onto a barbell lift.
+  const cleanSets = _cleanTemplateSets(sets, derived, metricType)
   const newRow = {
     exercise_id:    picked.id || null,
     exercise_name: picked.name,
     exercise_type: derived.exercise_type,
     metric_type:   metricType,
-    sets:           sets.length || null,
-    sets_json:      sets.length ? sets : null,
+    sets:           cleanSets.length || null,
+    sets_json:      cleanSets.length ? cleanSets : null,
     notes:          document.getElementById('att-notes').value.trim() || null,
     superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   }
