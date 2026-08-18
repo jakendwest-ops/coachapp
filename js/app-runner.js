@@ -3195,8 +3195,18 @@ async function saveCoachNotes(logId) {
   // coach's, not the client's.
   if (currentProfile?.role === 'client') { log.warn('saveCoachNotes', 'blocked: coach notes are not client-writable'); return }
   const notes = document.getElementById('wl-coach-notes')?.value.trim() || null
-  const { error } = await db.from('workout_logs').update({ notes }).eq('id', logId).eq('coach_id', currentUser.id)
-  if (error) { log.error('saveCoachNotes', 'update failed', error); return }
+  // .select() + rowcount: the `.eq('coach_id', …)` anchor duplicates the RLS policy exactly, so the
+  // ONLY case where it bites is the case the policy already refuses — and that returns
+  // { data: [], error: null }. Concretely: a client transferred between coaches keeps coach_id = the
+  // OLD coach on every pre-transfer row, so the new coach typed feedback, saw a green "Saved ✓", and
+  // wrote nothing. Discoverable only by reloading.
+  const { data: updated, error } = await db.from('workout_logs').update({ notes }).eq('id', logId).eq('coach_id', currentUser.id).select('id')
+  if (error) { log.error('saveCoachNotes', 'update failed', error); showToast('Could not save your notes — try again', 'error'); return }
+  if (!updated?.length) {
+    log.error('saveCoachNotes', 'update touched no rows — permission denied or session gone', { logId })
+    showToast('Those notes could not be saved — you may not own this session', 'error')
+    return
+  }
   const saved = document.getElementById('wl-notes-saved')
   if (saved) { saved.style.display = 'inline'; setTimeout(() => saved.style.display = 'none', 2000) }
 }
@@ -3207,8 +3217,15 @@ async function deleteWorkoutLog(logId, clientId) {
   if (currentProfile?.role === 'client') { log.warn('deleteWorkoutLog', 'blocked: clients cannot delete sessions'); return }
   if (!confirm('Delete this session? This cannot be undone.')) return
   log.info('deleteWorkoutLog', 'deleting session', { logId })
-  const { error } = await db.from('workout_logs').delete().eq('id', logId).eq('coach_id', currentUser.id)
-  if (error) { log.error('deleteWorkoutLog', 'delete failed', error); return }
+  // Worse than the notes case: without the rowcount check this navigated AWAY as though the session
+  // were gone, so the row reappearing on the next render read as a separate bug entirely.
+  const { data: removed, error } = await db.from('workout_logs').delete().eq('id', logId).eq('coach_id', currentUser.id).select('id')
+  if (error) { log.error('deleteWorkoutLog', 'delete failed', error); showToast('Could not delete that session — try again', 'error'); return }
+  if (!removed?.length) {
+    log.error('deleteWorkoutLog', 'delete removed no rows — permission denied or already gone', { logId })
+    showToast('That session could not be deleted — you may not own it', 'error')
+    return
+  }
   log.ok('deleteWorkoutLog', 'session deleted', { logId })
   backToClientWorkouts(clientId)
 }

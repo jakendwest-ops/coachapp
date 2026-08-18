@@ -391,7 +391,15 @@ async function save1RM(clientId, existingId = null) {
 
 async function delete1RM(id, clientId) {
   if (!confirm('Delete this 1RM?')) return
-  await dbq('delete1RM', db.from('client_1rms').delete().eq('id', id))
+  // Rowcount check, matching its two siblings deletePerfLog and deleteWeightLog. Without it a refused
+  // delete simply re-rendered with the row still sitting there, which reads as "the button is broken".
+  const { data: removed, error } = await dbq('delete1RM', db.from('client_1rms').delete().eq('id', id).select('id'))
+  if (error) return
+  if (!removed?.length) {
+    log.error('delete1RM', 'delete removed no rows — permission denied or already gone', { id })
+    showToast('That 1RM could not be deleted', 'error')
+    return
+  }
   _refresh1RMs(clientId)
 }
 

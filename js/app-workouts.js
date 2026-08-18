@@ -1317,15 +1317,24 @@ async function moveTemplateExercise(templateId, exId, dir) {
   // These two updates are a SWAP: they only make sense together. If one lands and the other doesn't,
   // two exercises end up sharing an order_index and the list then renders in an arbitrary order that
   // looks like a completely different bug. Repainting over that silently is the worst option.
+  // Both halves anchored on template_id as well as id — the siblings in this write family already do
+  // (see saveEditTemplateExercise / deleteTemplateExercise), and an unanchored update-by-id is the
+  // shape the architecture audit flagged across this file.
   const [swapA, swapB] = await Promise.all([
     dbq('moveTemplateExercise:a',
-      db.from('workout_template_exercises').update({ order_index: all[swapIdx].order_index }).eq('id', all[idx].id),
+      db.from('workout_template_exercises').update({ order_index: all[swapIdx].order_index }).eq('id', all[idx].id).eq('template_id', targetId).select('id'),
       { showUserError: false }),
     dbq('moveTemplateExercise:b',
-      db.from('workout_template_exercises').update({ order_index: all[idx].order_index }).eq('id', all[swapIdx].id),
+      db.from('workout_template_exercises').update({ order_index: all[idx].order_index }).eq('id', all[swapIdx].id).eq('template_id', targetId).select('id'),
       { showUserError: false })
   ])
-  if (swapA.error || swapB.error) showToast('Could not reorder — reload before editing this workout further', 'error')
+  // EITHER half failing must warn. A refusal returns { data: [], error: null }, so the error-only check
+  // missed exactly the case this toast exists for — and a half-applied swap leaves two exercises
+  // sharing an order_index, which then renders in an arbitrary order that looks like a different bug.
+  if (swapA.error || swapB.error || !swapA.data?.length || !swapB.data?.length) {
+    log.error('moveTemplateExercise', 'swap did not fully apply', { a: swapA.data?.length ?? 0, b: swapB.data?.length ?? 0 })
+    showToast('Could not reorder — reload before editing this workout further', 'error')
+  }
   openTemplate(targetId, window._templateCtx)
 }
 
@@ -2162,9 +2171,21 @@ async function _propagateExerciseChangeToTemplates(change, targetIds) {
   // failure that repeats twenty times is a failure the user scrolls past rather than reads. Silent was
   // worse though — the coach was told the edit propagated while some sessions kept the old exercise.
   let propagationFailures = 0
-  const propagate = async (label, query) => {
-    const { error } = await dbq('_propagateExerciseChange:' + label, query, { showUserError: false })
-    if (error) propagationFailures++
+  // `expectRows` is opt-in, and deliberately ONLY set on the add branch. A policy-refused write returns
+  // { data: [], error: null }, so error-only counting misses it entirely — but for update/delete a zero
+  // rowcount is genuinely ambiguous with the documented "this target doesn't have that exercise" no-op,
+  // and counting those as failures would invent alarms on the common case. An INSERT returning zero
+  // rows has no benign reading. Same conclusion the rename sibling reached (_propagateRenameToTemplates).
+  // Options object rather than positional flags: `tid` is NOT in this closure's scope (the helper is
+  // defined outside the `for (const tid of targetIds)` loop below), and referencing it here throws a
+  // ReferenceError on exactly the path it exists to report — a real refused insert.
+  const propagate = async (label, query, { expectRows = false, tid = null } = {}) => {
+    const { data, error } = await dbq('_propagateExerciseChange:' + label, query, { showUserError: false })
+    if (error) { propagationFailures++; return }
+    if (expectRows && !data?.length) {
+      log.error('_propagateExerciseChange', label + ' wrote no rows — permission denied', { templateId: tid })
+      propagationFailures++
+    }
   }
   for (const tid of targetIds) {
     if (change.op === 'delete') {
@@ -2179,7 +2200,7 @@ async function _propagateExerciseChangeToTemplates(change, targetIds) {
       const { data: exists } = await db.from('workout_template_exercises').select('id').eq('template_id', tid).eq('exercise_name', change.row.exercise_name).limit(1)
       if (!exists?.length) {
         const { data: last } = await db.from('workout_template_exercises').select('order_index').eq('template_id', tid).order('order_index', { ascending: false }).limit(1)
-        await propagate('add', db.from('workout_template_exercises').insert({ template_id: tid, order_index: last?.length ? last[0].order_index + 1 : 0, ...change.row }))
+        await propagate('add', db.from('workout_template_exercises').insert({ template_id: tid, order_index: last?.length ? last[0].order_index + 1 : 0, ...change.row }).select('id'), { expectRows: true, tid })
       }
     }
   }
@@ -2711,7 +2732,32 @@ async function _resolveEditableTemplateId(templateId, exerciseId = null) {
   const cloned = await _cloneSharedMasterTemplate(tmpl)
   if (!cloned) return { templateId, exerciseId }
 
-  await db.from('program_phase_workouts').update({ template_id: cloned.id }).eq('id', ctx.phaseWorkoutId)
+  // If the repoint is refused, the slot still points at the SHARED template while we would have
+  // returned the clone — so every subsequent edit would be written to a template that is in no slot at
+  // all, silently discarded, under a green toast saying the opposite. Fall back to the original id and
+  // say so. The clone is reaped rather than left behind: orphaned templates are what grew one real
+  // account to 2013 rows, 1223 of them dead.
+  const { data: repointed, error: repointErr } = await db.from('program_phase_workouts')
+    .update({ template_id: cloned.id }).eq('id', ctx.phaseWorkoutId).select('id')
+  if (repointErr || !repointed?.length) {
+    log.error('_resolveEditableTemplateId', 'slot repoint failed — falling back to the shared template', { phaseWorkoutId: ctx.phaseWorkoutId, error: repointErr })
+    // The reap needs the SAME treatment as everything else in this commit, or it is a silent write
+    // dressed as a cleanup. Ownership anchor even though cloned.id came from our own insert — an
+    // id-only delete on workout_templates is the exact shape the standing ledger finding is about,
+    // and coach_id costs nothing (the clone is inserted with tmpl.coach_id, see
+    // _cloneSharedMasterTemplate). Rowcount, not error, because a refused delete is the very
+    // { data: [], error: null } this function now guards against one line above. Copied from the
+    // rollback at app-programs.js:417, which reached this conclusion first.
+    await db.from('workout_template_exercises').delete().eq('template_id', cloned.id).select('id')
+    const { data: reaped } = await db.from('workout_templates').delete().eq('id', cloned.id).eq('coach_id', tmpl.coach_id).select('id')
+    if (!reaped?.length) {
+      // Loud, because this is how an account grows dead templates. _resolveEditableTemplateId runs on
+      // EVERY edit action, so an unreported reap failure compounds once per click.
+      log.error('_resolveEditableTemplateId', 'ORPHAN: clone could not be reaped after a failed repoint', { cloneId: cloned.id })
+    }
+    showToast('Could not isolate this slot — your edit will apply to every slot using this workout', 'error', 5000)
+    return { templateId, exerciseId }
+  }
   showToast('This workout is used in other slots — your changes now apply only to this one', 'success', 4000)
   return { templateId: cloned.id, exerciseId: exerciseId ? (cloned.exerciseIdMap[exerciseId] || exerciseId) : exerciseId }
 }
