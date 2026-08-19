@@ -529,14 +529,28 @@ function _buildTargetCols(tgt, ex) {
   // it being per-set. A rep target may still be prescribed alongside as a FLOOR, so that renders as
   // "8–10+" under an AMRAP label; with no floor the value carries the word itself. Never both, or the
   // bar reads "AMRAP / AMRAP". Excluded when tgt.timed, where repsMin holds SECONDS, not reps.
+  // Hoisted from below so the reps label can use it too — one declaration, not two.
+  const isJumpMt = mt === 'jump_height' || mt === 'jump_distance'
+  // PER SIDE (2026-08-19, Jake: "the unilateral pill does not exist ... it didnt appear in the runner").
+  // `per side` was added to the PRESCRIPTION formatter on 2026-08-14 (app-workouts.js:318) and never to
+  // the runner, so the athlete typing into the L and R columns had nothing on screen saying the target
+  // was per side rather than combined — the exact ambiguity that annotation exists to remove. AMRAP got
+  // its runner badge in the same 2026-08-14 change; unilateral did not, and that asymmetry is the bug.
+  //
+  // Carried on the LABEL rather than as its own column: the target bar is horizontal on a 390px screen
+  // and a fifth column pushes the rest off. Reads "8-10 REPS/SIDE".
+  const perSide = mt === 'unilateral' ? '/SIDE' : ''
+  const repsLabel = (isJumpMt ? 'JUMPS' : 'REPS') + perSide
   if (!tgt.timed && tgt.amrap) {
     cols.push(repsStr
-      ? { val: escapeHtml(repsStr) + '+', label: 'AMRAP', accent: true }
-      : { val: 'AMRAP', label: mt === 'jump_height' || mt === 'jump_distance' ? 'JUMPS' : 'REPS', accent: true })
-  } else if (repsStr) cols.push({ val: escapeHtml(repsStr), label: mt === 'jump_height' || mt === 'jump_distance' ? 'JUMPS' : 'REPS', accent: true })
+      ? { val: escapeHtml(repsStr) + '+', label: 'AMRAP' + perSide, accent: true }
+      : { val: 'AMRAP', label: repsLabel, accent: true })
+  } else if (repsStr) cols.push({ val: escapeHtml(repsStr), label: repsLabel, accent: true })
+  // A unilateral set with a weight but NO rep target would otherwise carry no per-side marker at all,
+  // because the only place it lives is the reps label above.
+  else if (mt === 'unilateral') cols.push({ val: 'L / R', label: 'PER SIDE', accent: true })
   // A stale `weight` survives a metric_type switch (flushTemplateSets preserves un-rendered
   // fields), so a jump set can still carry one — don't render two columns both labelled TARGET.
-  const isJumpMt = mt === 'jump_height' || mt === 'jump_distance'
   if (tgt.weight && !isJumpMt) cols.push({ val: fmtWeight(tgt.weight, { spaced: true }), label: 'TARGET', accent: true })
   let needsOneRM = false
   // %1RM only means something on a type that HAS a weight to derive — weight_reps and unilateral.
