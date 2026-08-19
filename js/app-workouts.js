@@ -1579,10 +1579,17 @@ function renderTemplateSets(containerId, type) {
     // Steady effort is the default for a brand-new block (sets:1/cycles:1/restSecs:0 — same
     // simplicity today's plain Cardio offered) rather than the old 8-round HIIT-style default;
     // toggleTsSteady() flips to a genuine repeating pattern (sets:8/restSecs:30) on request.
-    window._templateSets = [{ countdownSecs: b.countdownSecs ?? 5, warmupSecs: b.warmupSecs ?? 0,
+    // `...b` FIRST, defaults second. It used to be spread LAST, which meant any key that was
+    // present-but-null overrode its own default instead of falling back to it — and that is the normal
+    // case, not an edge case: _cleanTemplateSets writes every interval key as `s.workSecs ?? null` on
+    // EVERY save, including plain weight_reps sets. So editing any previously-saved exercise into
+    // Intervals seeded workSecs: 0, saved workSecs: 0, and "Start timer" then finished the whole
+    // workout on its first tick. (2026-08-19)
+    window._templateSets = [{ ...b,
+      countdownSecs: b.countdownSecs ?? 5, warmupSecs: b.warmupSecs ?? 0,
       isDistanceBased: !!b.isDistanceBased, workSecs: b.workSecs ?? 30, workDistanceM: b.workDistanceM ?? null,
       restSecs: b.restSecs ?? 0, sets: b.sets ?? 1, recoverySecs: b.recoverySecs ?? 0,
-      cycles: b.cycles ?? 1, cooldownSecs: b.cooldownSecs ?? 0, ...b }]
+      cycles: b.cycles ?? 1, cooldownSecs: b.cooldownSecs ?? 0 }]
     const s = window._templateSets[0]
     const i = 0   // the More-targets rows below are copied verbatim from the cardio branch, which
                   // keys its ids off `i` — a block is always index 0.

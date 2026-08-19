@@ -1414,6 +1414,20 @@ function startIntervalTimer(secs) {
 // clears it correctly without any changes there. Do not repurpose startIntervalTimer for this — steady-
 // state cardio still owns it and is out of scope for the interval redesign.
 function startIntervalPhaseTimer(secs) {
+  // Guard FIRST, before stopIntervalTimer(). A zero-length phase completes on the first tick, which
+  // cascades: the block finishes, the exercise finishes, and pressing "Start timer" ends the workout
+  // instantly. Good defaults (see the interval seed in app-workouts.js) stop the common cause, but
+  // nothing stops a coach typing 0, so refuse it here too — belt and braces on the path where the
+  // damage actually happens.
+  //
+  // Placed above stopIntervalTimer() deliberately: there is no reason to tear down a timer we are
+  // about to refuse to start, and stopIntervalTimer dereferences _runner, so refusing first also means
+  // this returns cleanly rather than throwing when there is no live runner. (2026-08-19)
+  if (!(Number(secs) > 0)) {
+    log.warn('startIntervalPhaseTimer', 'refusing a zero-length phase', { secs })
+    showToast('That interval has no work time set — edit the exercise before starting', 'warn')
+    return
+  }
   stopIntervalTimer()
   _runner._intervalSecs = secs
   _runner._intervalRemaining = secs
