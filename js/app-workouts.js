@@ -1314,7 +1314,10 @@ async function moveTemplateExercise(templateId, exId, dir) {
   const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, exId)
   const { data: all } = await db
     .from('workout_template_exercises')
-    .select('id, order_index')
+    // exercise_name is selected for propagation: a sibling copy has its own row ids, so the resulting
+    // ORDER OF NAMES is the only thing that transfers. A nested explicit column list is an ALLOWLIST —
+    // omitting it here would make change.names an array of undefined, silently.
+    .select('id, order_index, exercise_name')
     .eq('template_id', targetId)
     .order('order_index')
 
@@ -1342,8 +1345,21 @@ async function moveTemplateExercise(templateId, exId, dir) {
   if (swapA.error || swapB.error || !swapA.data?.length || !swapB.data?.length) {
     log.error('moveTemplateExercise', 'swap did not fully apply', { a: swapA.data?.length ?? 0, b: swapB.data?.length ?? 0 })
     showToast('Could not reorder — reload before editing this workout further', 'error')
+    return openTemplate(targetId, window._templateCtx)
   }
-  openTemplate(targetId, window._templateCtx)
+
+  // Reordering is now wired to propagation (2026-08-19). It was cause 2 of Jake's 2026-08-14 report —
+  // "when adding amending/updating a session within a program ... I should be asked whether I want to
+  // update all duplicated sessions" — and the only one of the four causes still open after the rename
+  // half was fixed. Same shape as its siblings: capture the change, hand off to
+  // _afterTemplateExerciseSave, which re-renders AND runs the propagation check.
+  //
+  // The change carries the resulting ORDER OF NAMES rather than the two swapped ids, because a target
+  // copy has its own row ids — only the names are common ground. See _propagateReorderToTemplates.
+  const reordered = [...all]
+  ;[reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]]
+  window._lastExerciseChange = { op: 'reorder', names: reordered.map(r => r.exercise_name) }
+  await _afterTemplateExerciseSave(targetId)
 }
 
 // ─── TEMPLATE SET HELPERS ─────────────────────────────────────────────────────
@@ -2431,11 +2447,13 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride)
         <p style="font-size:14px;line-height:1.6;margin:0 0 20px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}. ${
           isRename
             ? 'Only the name and description will be applied — a week marker like "— W2" is kept.'
-            : 'Only the exercise you changed will be applied.'
+            : change?.op === 'reorder'
+              ? 'Only the ORDER changes. Exercises a copy has that this one does not stay exactly where they are.'
+              : 'Only the exercise you changed will be applied.'
         }</p>
         <div class="modal-footer">
           <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
-          <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">${isRename ? `Rename all ${count + 1}` : `Update all ${count + 1} copies`}</button>
+          <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">${isRename ? `Rename all ${count + 1}` : change?.op === 'reorder' ? `Reorder all ${count + 1}` : `Update all ${count + 1} copies`}</button>
         </div>
       </div>
     `
@@ -2548,9 +2566,60 @@ async function _propagateRenameToTemplates(change, targetIds) {
 // "Update assigned clients?" prompt, which is the only route that ever writes to a real client's plan.
 async function _applyChangeToTemplates(change, ids) {
   if (!change || !ids?.length) return 0
-  return change.op === 'rename'
-    ? await _propagateRenameToTemplates(change, ids)
-    : await _propagateExerciseChangeToTemplates(change, ids)
+  if (change.op === 'rename') return await _propagateRenameToTemplates(change, ids)
+  if (change.op === 'reorder') return await _propagateReorderToTemplates(change, ids)
+  return await _propagateExerciseChangeToTemplates(change, ids)
+}
+
+// Applies a REORDER to sibling copies (2026-08-19).
+//
+// Reorder cannot use the by-name update path the add/update/delete ops share, because it is not a
+// property of one exercise — it is the relationship between all of them. And a target copy legitimately
+// holds a DIFFERENT SET of exercises (that is the whole reason propagation is opt-in per change rather
+// than a wholesale overwrite), so "copy the source's order_index values across" would collide with, or
+// silently displace, exercises the target has and the source does not.
+//
+// So: permute only the SHARED names, into the source's relative order, reusing THE SLOTS THEY ALREADY
+// OCCUPY. Exercises unique to the target never move and never collide, because the set of order_index
+// values in play is unchanged — only which row sits in each one.
+//
+//   source order:  A B C
+//   target has:    B  (0)   X  (1)   A  (2)        <- X is not in the source
+//   shared slots:  [0, 2]                          <- the positions B and A occupy
+//   desired:       A then B                        <- source's relative order
+//   result:        A  (0)   X  (1)   B  (2)        <- X untouched, no collision
+async function _propagateReorderToTemplates(change, targetIds) {
+  if (!targetIds?.length || !change?.names?.length) return 0
+  const rank = new Map()
+  change.names.forEach((n, i) => { if (!rank.has(n)) rank.set(n, i) })
+
+  let failures = 0
+  for (const tid of targetIds) {
+    const { data: rows, error } = await db.from('workout_template_exercises')
+      .select('id, order_index, exercise_name').eq('template_id', tid).order('order_index')
+    // A refused SELECT returns { data: [], error: null }, indistinguishable from an empty template —
+    // so an error is a failure, and an empty result is simply nothing to do.
+    if (error) { log.error('_propagateReorderToTemplates', 'target fetch failed', { templateId: tid }); failures++; continue }
+    if (!rows?.length) continue
+
+    const shared = rows.filter(r => rank.has(r.exercise_name))
+    if (shared.length < 2) continue                       // nothing to permute
+    const slots = shared.map(r => r.order_index)          // ascending: rows came back ordered
+    const desired = [...shared].sort((a, b) => rank.get(a.exercise_name) - rank.get(b.exercise_name))
+
+    for (let i = 0; i < desired.length; i++) {
+      if (desired[i].order_index === slots[i]) continue   // already in place, skip the write
+      const { data, error: uErr } = await db.from('workout_template_exercises')
+        .update({ order_index: slots[i] }).eq('id', desired[i].id).eq('template_id', tid).select('id')
+      if (uErr || !data?.length) {
+        log.error('_propagateReorderToTemplates', 'row update wrote nothing', { templateId: tid })
+        failures++
+        break                                             // a partial permutation is worse than none
+      }
+    }
+  }
+  if (failures) showToast(`${failures} session${failures === 1 ? '' : 's'} did not pick up the new order`, 'error')
+  return failures
 }
 
 // Applies the single captured change to the other copies of this session and to THEIR assigned client
@@ -2581,6 +2650,7 @@ async function _applyToAllSessions(sourceTemplateId) {
   }
   if (applyAllFailures) showToast(`${applyAllFailures} assigned session${applyAllFailures === 1 ? '' : 's'} did not pick up this change`, 'error', 6000)
   else if (change.op === 'rename') showToast(`Renamed ${targetIds.length + 1} copies`, 'success')
+  else if (change.op === 'reorder') showToast(`Reordered ${targetIds.length + 1} copies`, 'success')
 
   log.ok('_applyToAllSessions', `propagated one ${change.op || 'exercise'} change to ${targetIds.length} sessions`)
   openTemplate(sourceTemplateId, window._templateCtx)
