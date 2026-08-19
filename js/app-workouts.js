@@ -1202,9 +1202,13 @@ async function openTemplate(id, ctx = {}) {
   el.innerHTML = `
     <a class="back-btn" href="#" onclick="_templateGoBack();return false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-      ${_ctx.backLabel}
+      ${/* escapeHtml, NOT raw. These ctx values arrive through an onclick JS-string literal escaped with
+         escapeAttr at the source (app-programs.js:41/:102, :2983) — and that round-trips CLEANLY, so the
+         runtime value here is the ORIGINAL client name, verified empirically 2026-08-19. Rendering it
+         raw was therefore a live stored-XSS sink: a client named `<img src=x onerror=…>` executed with
+         the coach's own Supabase session. 5th instance of the client→coach pattern CRITICAL.md tracks. */''}${escapeHtml(_ctx.backLabel)}
     </a>
-    ${_ctx.isClientPlan ? `<div style="font-size:11px;font-weight:600;color:var(--accent);background:rgba(99,102,241,.08);border-radius:6px;padding:6px 10px;margin-bottom:12px">Editing ${_ctx.clientName || 'client'}’s plan — changes affect only this client</div>` : ''}
+    ${_ctx.isClientPlan ? `<div style="font-size:11px;font-weight:600;color:var(--accent);background:rgba(99,102,241,.08);border-radius:6px;padding:6px 10px;margin-bottom:12px">Editing ${escapeHtml(_ctx.clientName || 'client')}’s plan — changes affect only this client</div>` : ''}
 
     <div class="page-header">
       <div>
@@ -1675,9 +1679,9 @@ function renderTemplateSets(containerId, type) {
             ${tog('Distance', s.isDistanceBased, `toggleTsSet(${i},'isDistanceBased','${containerId}')`)}
           </div>
         </div>
-        ${!s.isDistanceBased ? row('Duration', mini(`ts-duration-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.duration||'0:00'))+'"')) : ''}
+        ${!s.isDistanceBased ? row('Duration', mini(`ts-duration-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.duration||'0:00'))+'"')) : ''}
         ${s.isDistanceBased ? row(`Distance (${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'})`, mini(`ts-distm-${i}`, `type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="—"${_cardioDistanceM(s) ? ` value="${distanceToPref(_cardioDistanceM(s))}"` : ''}`)) : ''}
-        ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+        ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
         ${more('+ More targets', !!(_hasTimeTarget(s.pace500Min) || _hasTimeTarget(s.pace500Max) || s.wattsMin || s.wattsMax || s.hrZoneMin || s.hrZoneMax || s.restHrMax || s.strokeRateMin || s.strokeRateMax || _hasTimeTarget(s.paceKmMin) || _hasTimeTarget(s.paceKmMax)), `
           ${row('Pace / 500m', mini(`ts-p500min-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${escapeHtml(s.pace500Min||'')}"`) + dash + mini(`ts-p500max-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${escapeHtml(s.pace500Max||'')}"`))}
           ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:13px;font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
@@ -1696,7 +1700,7 @@ function renderTemplateSets(containerId, type) {
         <div class="ts-grid">
           ${cell('Duration (mm:ss)', gmini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${escapeHtml(String(s.duration||'0:00'))}"`))}
           ${cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
-          ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+          ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
           <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
       ` : isJump ? `
@@ -1705,14 +1709,14 @@ function renderTemplateSets(containerId, type) {
             ? cell(`Target height (${window._unitPrefs.jumpHeight})`, gmini(`ts-jheight-${i}`, 'type="number" step="1" inputmode="numeric" placeholder="—"'+(s.targetHeightCm?` value="${jumpHeightToPref(s.targetHeightCm)}"`:'')))
             : cell('Target distance (m)', gmini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${escapeHtml(String(s.targetDistanceM))}"`:'')))}
           ${cell('Jumps per set', gmini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${escapeHtml(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMax?` value="${escapeHtml(String(s.repsMax))}"`:'')))}
-          ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+          ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
           <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
       ` : `
         <div class="ts-grid">
           ${cell('Reps', gmini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${escapeHtml(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${escapeHtml(String(s.repsMax))}"`:'')))}
           ${s.bodyweight ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
-          ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeAttr(String(s.restMax||'0:00'))+'"'))}
+          ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
           <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
         ${more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `

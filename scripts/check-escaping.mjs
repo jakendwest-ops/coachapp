@@ -63,9 +63,39 @@ for (const file of FILES) {
     // fragments in helpers (mini(), row()) on lines with no literal `<` at all, so gating on `<`
     // hid them — that gate is right for the unescaped-text rule and wrong for this one. `="${` is
     // an attribute by construction; it needs no corroborating tag.
-    for (const w of line.matchAll(/=\s*"\$\{\s*escapeAttr\(/g)) {
-      wrongEscaper.push({ file, line: i + 1, expr: line.slice(w.index, w.index + 60).trim() })
+    //
+    // TWO SHAPES, because there are exactly two ways this codebase writes it — established by grepping
+    // the 14 characters before every escapeAttr( call, not by guessing:
+    //
+    //   interpolated:  value="<interp>escapeAttr(x)}"     WRONG  (the ${ opens in the attribute)
+    //   concatenated:  value="' + escapeAttr(x) + '"      WRONG  (9 live sites, in mini()/gmini())
+    //   handler arg:   onclick="fn('<interp>escapeAttr(x)}')"   CORRECT — must NOT match
+    //
+    // The concatenated form is why "the class is closed" was WRONG on 2026-08-16: the rule shipped
+    // that day matched only the interpolated shape, exited 0, and nine sites stayed live. The lesson
+    // banked from it is the reason both shapes are enumerated here rather than one being assumed:
+    // verify a class guard against EVERY syntactic form the codebase actually uses.
+    for (const re of [/=\s*"\$\{\s*escapeAttr\(/g, /=\s*"\s*'\s*\+\s*escapeAttr\(/g]) {
+      for (const w of line.matchAll(re)) {
+        wrongEscaper.push({ file, line: i + 1, expr: line.slice(w.index, w.index + 60).trim() })
+      }
     }
+
+    // INDIRECTION IS NOT CHECKED, deliberately — and this note exists so nobody "fixes" that.
+    //
+    // `const x = escapeAttr(v)` hides where the value lands, so a rule for it was written on
+    // 2026-08-19 and then REMOVED the same hour: the only live instance (app-programs.js:41) turned out
+    // to be CORRECT. escapeAttr round-trips cleanly through an onclick JS-string literal — verified
+    // empirically, the runtime value is the original string, no backslash — so flagging the pattern
+    // means blocking every push on correct code. A rule that cries wolf gets disabled, which is the
+    // alarm-fatigue failure this file's own docstring warns about, so it is better to have no rule and
+    // say so than a rule nobody trusts.
+    //
+    // The audit that rule triggered was still worth it: following that variable found `_ctx.backLabel`
+    // and `_ctx.clientName` rendered RAW as text in app-workouts.js — a live stored-XSS sink, the 5th
+    // instance of the client→coach pattern CRITICAL.md tracks. Fixed 2026-08-19. The lesson is that
+    // indirection needs a human reading the dataflow, periodically — it is a full-file-review job, not
+    // a regex one.
 
     if (!BUILDS_HTML.test(line)) return
 
