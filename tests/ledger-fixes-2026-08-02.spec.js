@@ -284,7 +284,18 @@ test.describe('Jump height/distance reps render as a range, matching every other
 // distinction this file exists to defend is unchanged and is the reason the reversal is safe: AMRAP
 // was removed as UNUSED SURFACE, never as a bug. Nothing that made `assisted` dangerous applies to it.
 test.describe('Builder set-editor: Assist/Repeat stay removed, AMRAP restored as a pill', () => {
-  test('a NEW set shows AMRAP but still no BW, Assist, or Repeat controls', async ({ page }) => {
+  // 2026-08-20: the BW half of this test's original claim is retired. It asserted `hasBw === false`
+  // on a fresh set, pinning the 2026-08-02 declutter. The 2026-08-17 fix (6fc7c50) had to reverse that
+  // for BW specifically: the pill is the ONLY control that can set `bodyweight`, so gating its render
+  // on the flag it sets was a bootstrap deadlock -- nothing created since could ever be marked
+  // bodyweight, which left the 2026-08-16 bodyweight reps-charting unreachable for all new data.
+  // Jake's call, 2026-08-20: the fix stands, this assertion was obsolete.
+  //
+  // Deliberately NOT re-tested here: which TYPES offer BW. tests/bodyweight-toggle-2026-08-17.spec.js
+  // is the canonical pin for that -- it covers all five metric types and reads real button.textContent
+  // rather than regexing innerHTML. Duplicating a weaker copy here would just be a second place to
+  // update. Assist/Repeat, which this file genuinely owns, are unchanged below.
+  test('a NEW set shows AMRAP and BW, but still no Assist or Repeat controls', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
       window._templateSets = [{ effortType: 'rpe', repsMin: '8' }]
@@ -302,7 +313,7 @@ test.describe('Builder set-editor: Assist/Repeat stay removed, AMRAP restored as
       }
     })
     expect(r.hasAmrap, 'AMRAP restored 2026-08-14 as an always-offered per-set pill').toBe(true)
-    expect(r.hasBw, 'BW must not show for a set that was never bodyweight').toBe(false)
+    expect(r.hasBw, 'BW must render on a FRESH set -- it is the only control that can set the flag (6fc7c50)').toBe(true)
     expect(r.hasAssist, 'Assist must not show for a set that was never assisted').toBe(false)
     expect(r.hasRepeatBox, 'the blank round-count box next to the set number must be gone').toBe(false)
     expect(r.hasRepeatBtn, 'the Repeat button must be gone').toBe(false)
@@ -369,10 +380,28 @@ test.describe('Builder set-editor: Assist/Repeat stay removed, AMRAP restored as
       mk('att-type', 'select'); mk('att-sets-container', 'div')
       renderTemplateSets('att-sets-container', 'weight_reps')
       const html = document.getElementById('att-sets-container').innerHTML
-      return { hasBw: />BW</.test(html), hasAssist: />Assist</.test(html) }
+      // Set 0 carries bodyweight:true, set 1 does not -- so the two BW pills must render DIFFERENTLY.
+      // Presence alone stopped proving anything on 2026-08-17, when BW became unconditional for
+      // weight_reps: `hasBw` below cannot fail for its stated reason any more. The active/inactive
+      // split is now the only thing pinning that renderTemplateSets still READS `s.bodyweight` at all
+      // (js/app-workouts.js:1669, the `active` argument to _togPill). Regress that to a literal
+      // `false` and every set looks identical -- the coach loses all sight of which sets are
+      // bodyweight, silently. Checked via the pill's own background rather than a substring search
+      // for 'var(--accent)': the "Copy set N" button uses that same colour, so a naive
+      // html.toContain() would pass even with both pills inactive.
+      const bwBg = [...document.querySelectorAll('#att-sets-container button')]
+        .filter(b => b.textContent.trim() === 'BW')
+        .map(b => b.style.background)
+      return { hasBw: />BW</.test(html), hasAssist: />Assist</.test(html), bwBg }
     })
-    expect(r.hasBw, 'a legacy bodyweight set must still show BW so it can be un-toggled').toBe(true)
+    // Kept as a cheap precondition for the bwBg pair below, NOT as the legacy-undo proof it once was —
+    // BW renders unconditionally for weight_reps since 6fc7c50, so this can no longer fail for that
+    // reason. The active/inactive split is what actually pins the behaviour now.
+    expect(r.hasBw, 'precondition: both sets render a BW pill at all').toBe(true)
     expect(r.hasAssist, 'Assist was removed 2026-08-11 and must not render even for a legacy set').toBe(false)
+    expect(r.bwBg, 'both sets must render a BW pill (one legacy-on, one off)').toHaveLength(2)
+    expect(r.bwBg[0], 'the bodyweight:true set must render its BW pill ACTIVE').not.toBe('transparent')
+    expect(r.bwBg[1], 'the set without the flag must render its BW pill INACTIVE').toBe('transparent')
   })
 })
 

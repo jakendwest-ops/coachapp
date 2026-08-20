@@ -46,6 +46,11 @@ module you change**, in the same commit.
 - **Multi-tenancy = `coach_id` + `client_id`.** Never trust a client-supplied id for ownership.
 - **Never push without running `multi-agent-review`** (pre-push). `checks.sh` (pre-push hook) enforces
   column names, query scoping, cache-bust, PII-in-logs, and duplicate functions on every push.
+- **The pre-push Playwright gate is a SMOKE gate, not the suite** — `runner.spec.js` +
+  `solo-account.spec.js` only, **57 of 523 tests**. Run `npm test` yourself before any push touching a
+  module you have not hand-tested; the gate will not catch it. A spec outside the gate sat RED for 3
+  days across ~4 deploys and nothing noticed. Widening it was tried and reverted on 2026-08-20 (the
+  glob silently no-ops, and the cross-tenant probes aren't cleanup-safe at push frequency) — see LOG.
 - **No PII in `log.*` calls** — ids and dates only; never names, emails, weights, or health values.
 
 ## Where the real docs live

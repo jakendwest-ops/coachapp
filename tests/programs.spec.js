@@ -35,12 +35,40 @@ async function assignWorkoutToDay(page, day, templateId) {
   await page.waitForSelector('#workout-picker-modal', { state: 'detached', timeout: 5000 })
 }
 
+// ONE shared sweep for every UI-created program fixture in this file (2026-08-20).
+//
+// These tests build a program through the UI and tidy up with a trailing `Delete` click at the end of
+// the body. That click never runs if the test skips or an assertion fails -- and the header comment
+// above records that after 2026-08-07 the four `test.skip(templateIds.length === 0, …)` gates fired
+// UNCONDITIONALLY for a window, so four tests went green-as-skipped and every run leaked a program +
+// phase. Deliberately an afterEach rather than four try/finally blocks: an earlier pass at this class
+// fixed the two instances a grep turned up and left five more in this same file, which is the exact
+// fix-the-instance-not-the-class failure the project has a standing rule against.
+//
+// Idempotent and name-scoped, so it is safe to run after every test in the describe, including ones
+// that create none of these. Programs cascade their phases and phase-workouts, so one delete is enough.
+// coach_id is anchored on top of the id: a filter that costs nothing should not be omitted on a delete.
+const E2E_PROGRAM_FIXTURES = [
+  '[E2E] Periodization Test',
+  '[E2E] Inline Grid Test',
+  '[E2E] Grid Race Test',
+  '[E2E] Duplicate Week Test',
+]
+
+const sweepProgramFixtures = page => page.evaluate(async (names) => {
+  const { data } = await db.from('programs').select('id').eq('coach_id', currentUser.id).in('name', names)
+  for (const p of data || []) {
+    await db.from('programs').delete().eq('id', p.id).eq('coach_id', currentUser.id)
+  }
+}, E2E_PROGRAM_FIXTURES).catch(() => {})
+
 test.describe('Program periodization', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, '[data-page="programs"]')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
+  test.afterEach(async ({ page }) => { await sweepProgramFixtures(page) })
 
   test('configure Linear periodization on a multi-week phase and generate weeks', async ({ page }) => {
     // Create a throwaway test program
@@ -122,6 +150,7 @@ test.describe('Inline assign grid', () => {
     await clickVisible(page, '[data-page="programs"]')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
+  test.afterEach(async ({ page }) => { await sweepProgramFixtures(page) })
 
   test('7-day grid renders, and the picker live-filters its rows', async ({ page }) => {
     await page.click('button:has-text("New program")')
@@ -338,17 +367,32 @@ test.describe('Assignment-time 1RM check', () => {
 
   test('assigning a program with a %1RM exercise shows the missing-1RM checklist and saves an entered value', async ({ page }) => {
     // Arrange directly via Supabase — template creation UI is covered elsewhere; this test is about the assign-flow check itself
-    const setup = await page.evaluate(async () => {
+    // Resolve the client BEFORE creating anything. This lookup used to sit at the END of the fixture
+    // evaluate below, with test.skip() reading its result only after five rows had already been
+    // written -- and a fired skip aborts the test before the try/finally is ever ENTERED, so the
+    // cleanup never ran. Latent, not observed: the comment further down records fixing this same
+    // class on the ASSERTION path, and the skip path was left behind. Instance fixed, class not.
+    //
+    // NOT the cause of the 12 orphaned '[E2E] 1RM Check Squat' CLONES cleaned out of the live DB on
+    // 2026-08-20 -- that was checked and disproved. A fired skip returns before assignment, so no
+    // clone can exist; every one of those 12 had client_id set, which proves the test ran to
+    // completion and its finally block failed to remove them. Separate, still-open bug: see
+    // bugs/2026-08-20-client-plan-clone-cleanup-silently-leaks.md.
+    const clientId = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      return data?.[0]?.id || null
+    })
+    test.skip(!clientId, 'E2E PT account has no clients to assign to')
+
+    const setup = await page.evaluate(async (cid) => {
       const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] 1RM Check Program' }).select('id').single()
       const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
       const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] 1RM Check Squat' }).select('id').single()
       await db.from('workout_template_exercises').insert({ template_id: tmpl.id, exercise_name: '[E2E] Test Squat', exercise_type: 'strength', order_index: 0, sets_json: [{ effortType: 'rpe', repsMin: '5', repsMax: '5', intensityMin: '70', intensityMax: '70' }] })
       await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 })
-      const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
-      if (clients?.[0]) await db.from('client_1rms').delete().eq('client_id', clients[0].id).eq('exercise_name', '[E2E] Test Squat')
-      return { programId: prog.id, templateId: tmpl.id, clientId: clients?.[0]?.id || null }
-    })
-    test.skip(!setup.clientId, 'E2E PT account has no clients to assign to')
+      await db.from('client_1rms').delete().eq('client_id', cid).eq('exercise_name', '[E2E] Test Squat')
+      return { programId: prog.id, templateId: tmpl.id, clientId: cid }
+    }, clientId)
 
     // Cleanup must run even if an assertion below fails — an earlier version of this test had the
     // cleanup AFTER the assertions with no try/finally, so any failed assertion (e.g. the 2026-07-25
@@ -371,6 +415,20 @@ test.describe('Assignment-time 1RM check', () => {
       await page.click('#apc-modal .modal-footer button:has-text("Assign")')
       await page.waitForSelector('#apc-modal', { state: 'detached', timeout: 8000 })
 
+      // Modal-detach is NOT a barrier on the clone. js/app-programs.js:758 removes the modal, and
+      // only THEN does :763 await _cloneProgramForClient -- which clones each template inside its
+      // loop but inserts the client_program_workouts rows in ONE batch at the very end (:473).
+      // The finally below discovers clones solely via those cpw rows, so racing ahead of that batch
+      // made it read an empty list, delete nothing, and then delete the parent client_programs row --
+      // killing the in-flight cpw insert on an FK violation and orphaning the clone permanently.
+      // Confirmed mechanism behind 12 stranded '[E2E] 1RM Check Squat' clones cleaned out of the live
+      // DB on 2026-08-20 (one per lost race). Wait for the clone to actually exist.
+      await page.waitForFunction(async (cid) => {
+        const { data } = await db.from('client_program_workouts')
+          .select('id, client_programs!inner(client_id)').eq('client_programs.client_id', cid)
+        return (data || []).length > 0
+      }, setup.clientId, { timeout: 10000 }).catch(() => {})
+
       const saved = await page.evaluate(async (clientId) => {
         const { data } = await db.from('client_1rms').select('one_rm_kg').eq('client_id', clientId).eq('exercise_name', '[E2E] Test Squat')
         return data
@@ -389,26 +447,36 @@ test.describe('Assignment-time 1RM check', () => {
         await db.from('client_1rms').delete().eq('client_id', clientId).eq('exercise_name', '[E2E] Test Squat')
         await db.from('programs').delete().eq('id', programId)
         await db.from('workout_templates').delete().eq('id', templateId)
+        // Backstop that does NOT depend on client_program_workouts. The cpw-driven discovery above is
+        // what lost the race; the barrier now makes that unlikely, but a name+client anchored delete
+        // cannot be raced at all, and it also reaps anything a PREVIOUS run stranded. Note the app's
+        // own _removeAssignmentAndClones (js/app-programs.js:299) discovers clones the same cpw way,
+        // so it shares the blind spot -- this is the only thing that closes it here.
+        await db.from('workout_templates').delete()
+          .eq('coach_id', currentUser.id).eq('client_id', clientId).eq('name', '[E2E] 1RM Check Squat')
       }, { programId: setup.programId, templateId: setup.templateId, clientId: setup.clientId })
     }
   })
 
   test('missing-1RM checklist shows read-only "on file" entries alongside the quick-entry ones', async ({ page }) => {
-    const setup = await page.evaluate(async () => {
+    // Same skip-before-try leak as the sibling test above — resolve the client BEFORE creating any
+    // fixture, so a fired test.skip() cannot strand rows the try/finally was meant to remove.
+    const clientId = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      return data?.[0]?.id || null
+    })
+    test.skip(!clientId, 'E2E PT account has no clients to assign to')
+
+    const setup = await page.evaluate(async (cid) => {
       const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] 1RM Have Program' }).select('id').single()
       const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
       const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] 1RM Have Squat' }).select('id').single()
       await db.from('workout_template_exercises').insert({ template_id: tmpl.id, exercise_name: '[E2E] Have Squat', exercise_type: 'strength', order_index: 0, sets_json: [{ effortType: 'rpe', repsMin: '5', repsMax: '5', intensityMin: '70', intensityMax: '70' }] })
       await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 })
-      const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
-      const clientId = clients?.[0]?.id || null
-      if (clientId) {
-        await db.from('client_1rms').delete().eq('client_id', clientId).eq('exercise_name', '[E2E] Have Squat')
-        await db.from('client_1rms').insert({ client_id: clientId, exercise_name: '[E2E] Have Squat', one_rm_kg: 123, recorded_at: new Date().toISOString().split('T')[0] })
-      }
-      return { programId: prog.id, templateId: tmpl.id, clientId }
-    })
-    test.skip(!setup.clientId, 'E2E PT account has no clients to assign to')
+      await db.from('client_1rms').delete().eq('client_id', cid).eq('exercise_name', '[E2E] Have Squat')
+      await db.from('client_1rms').insert({ client_id: cid, exercise_name: '[E2E] Have Squat', one_rm_kg: 123, recorded_at: new Date().toISOString().split('T')[0] })
+      return { programId: prog.id, templateId: tmpl.id, clientId: cid }
+    }, clientId)
 
     // See the sibling test above for why this is try/finally — a failed assertion here left
     // "[E2E] 1RM Have Program"/"[E2E] 1RM Have Squat" debris behind the same way.
@@ -441,6 +509,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     await clickVisible(page, '[data-page="programs"]')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
+  test.afterEach(async ({ page }) => { await sweepProgramFixtures(page) })
 
   test('duplicating a week copies its day/workout assignments into the next empty week', async ({ page }) => {
     await page.click('button:has-text("New program")')
@@ -660,27 +729,36 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
   })
 
   test('deleting a program with an assigned client names them in the block toast', async ({ page }) => {
-    const setup = await page.evaluate(async () => {
-      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Delete Block Test' }).select('id').single()
-      const { data: clients } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).limit(1)
-      const client = clients?.[0]
-      if (client) await db.from('client_programs').insert({ client_id: client.id, program_id: prog.id })
-      return { programId: prog.id, clientId: client?.id || null, clientName: client?.full_name || null }
+    // Same class as the two tests above, and it had BOTH leak paths: the client lookup sat after the
+    // programs/client_programs inserts so a fired test.skip() stranded them, AND the cleanup was a
+    // trailing evaluate with no try/finally, so a failed assertion stranded them too. Lookup hoisted
+    // above the writes; cleanup moved into a finally. Found by multi-agent-review 2026-08-20 after the
+    // first pass fixed only the two instances it happened to grep up — the class, not the instance.
+    const client = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).limit(1)
+      return data?.[0] ? { id: data[0].id, name: data[0].full_name } : null
     })
-    test.skip(!setup.clientId, 'E2E PT account has no clients to assign to')
+    test.skip(!client, 'E2E PT account has no clients to assign to')
 
-    await page.reload()
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
-    await page.click('text=[E2E] Delete Block Test')
-    await page.waitForSelector('button:has-text("Delete")', { timeout: 8000 })
-    await page.click('button:has-text("Delete")')
-    await expect(page.locator('#app-toast')).toContainText(setup.clientName, { timeout: 4000 })
+    const setup = await page.evaluate(async (cid) => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Delete Block Test' }).select('id').single()
+      await db.from('client_programs').insert({ client_id: cid, program_id: prog.id })
+      return { programId: prog.id }
+    }, client.id)
 
-    // Cleanup
-    await page.evaluate(async ({ programId, clientId }) => {
-      await db.from('client_programs').delete().eq('client_id', clientId).eq('program_id', programId)
-      await db.from('programs').delete().eq('id', programId)
-    }, { programId: setup.programId, clientId: setup.clientId })
+    try {
+      await page.reload()
+      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.click('text=[E2E] Delete Block Test')
+      await page.waitForSelector('button:has-text("Delete")', { timeout: 8000 })
+      await page.click('button:has-text("Delete")')
+      await expect(page.locator('#app-toast')).toContainText(client.name, { timeout: 4000 })
+    } finally {
+      await page.evaluate(async ({ programId, clientId }) => {
+        await db.from('client_programs').delete().eq('client_id', clientId).eq('program_id', programId)
+        await db.from('programs').delete().eq('id', programId)
+      }, { programId: setup.programId, clientId: client.id }).catch(() => {})
+    }
   })
 
   test('deleting a week removes its sessions and renumbers later weeks down by 1 (2026-07-10)', async ({ page }) => {
