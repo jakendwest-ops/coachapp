@@ -836,8 +836,47 @@ async function saveNewMilestone(goalId, clientId) {
   openGoal(goalId, clientId)
 }
 
+// ONE ownership check for every goal/milestone write in this file (2026-08-12 audit + a 2026-08-02
+// note that was never actually filed until 2026-08-12).
+//
+// Goal ownership means DIFFERENT THINGS PER ROLE, which is why a single `.eq('created_by', …)` anchor
+// is the wrong fix here even though that is exactly what saveEditGoal correctly uses:
+//   - a COACH owns a goal via `created_by` (they wrote it)
+//   - a CLIENT or SOLO user owns it via `client_id` — their coach created it, so `created_by` is
+//     someone else entirely
+// saveGoalProgress and toggleClientMilestone are self-service paths (both end in _renderOwnDashboard),
+// so anchoring them on created_by would refuse every client their own progress save. That is the
+// coach_id-excludes-solo trap in a different coat, and this project has shipped four of those.
+//
+// `goal_milestones` has no owner column at all, so it resolves through its parent goal. The parent id
+// is re-read FROM THE MILESTONE rather than trusted from the caller's argument — toggleMilestone
+// receives goalId as a parameter, and a parameter is exactly what an attacker controls.
+//
+// NOT independently verified against live RLS. The already-closed siblings in this audit family
+// (workout_template_exercises, the app-clients writes) were both proven RLS-backstopped before being
+// downgraded; no equivalent probe exists for `goals`/`goal_milestones`, and `events` — the same file,
+// same table family — is where a REAL exploitable write-policy gap was found live on 2026-08-02. So
+// treat this as app-level defence whose database half is unconfirmed, not as belt-and-braces.
+async function _verifyGoalAccess(fnName, goalId) {
+  if (!goalId) { log.error(fnName, 'ownership check failed — no goalId'); return false }
+  const { data: g } = await db.from('goals').select('id, client_id, created_by').eq('id', goalId).maybeSingle()
+  if (!g) { log.error(fnName, 'ownership check failed — goal not visible', { goalId }); return false }
+  if (g.created_by === currentUser.id) return true
+  const mine = await _getCurrentClientId()
+  if (mine && g.client_id === mine) return true
+  log.error(fnName, 'ownership check failed — goal is neither mine nor my own client record\'s', { goalId })
+  return false
+}
+
+async function _verifyMilestoneAccess(fnName, milestoneId) {
+  const { data: m } = await db.from('goal_milestones').select('goal_id').eq('id', milestoneId).maybeSingle()
+  if (!m?.goal_id) { log.error(fnName, 'ownership check failed — milestone not visible', { milestoneId }); return false }
+  return await _verifyGoalAccess(fnName, m.goal_id)
+}
+
 async function toggleMilestone(milestoneId, goalId, clientId) {
   log.info('toggleMilestone', 'toggling milestone', { milestoneId })
+  if (!(await _verifyMilestoneAccess('toggleMilestone', milestoneId))) return
   const { data: m, error: fetchErr } = await db.from('goal_milestones').select('completed_at').eq('id', milestoneId).single()
   if (fetchErr) { log.error('toggleMilestone', 'fetch failed', fetchErr); return }
   const newVal = m.completed_at ? null : new Date().toISOString()
@@ -848,6 +887,7 @@ async function toggleMilestone(milestoneId, goalId, clientId) {
 }
 
 async function toggleClientMilestone(milestoneId) {
+  if (!(await _verifyMilestoneAccess('toggleClientMilestone', milestoneId))) return
   const { data: m, error: fetchErr } = await db.from('goal_milestones').select('completed_at').eq('id', milestoneId).single()
   if (fetchErr) { log.error('toggleClientMilestone', 'fetch failed', fetchErr); return }
   const newVal = m.completed_at ? null : new Date().toISOString()
@@ -875,6 +915,7 @@ async function saveGoalProgress(goalId) {
   const errEl  = document.getElementById(`gpf-err-${goalId}`)
   const val    = parseFloat(input?.value)
   if (isNaN(val)) { if (errEl) errEl.textContent = 'Enter a valid number'; return }
+  if (!(await _verifyGoalAccess('saveGoalProgress', goalId))) { if (errEl) errEl.textContent = 'Save failed — permission denied.'; return }
   const { error } = await db.from('goals').update({ current_value: val }).eq('id', goalId)
   if (error) { log.error('saveGoalProgress', 'update failed', error); if (errEl) errEl.textContent = error.message; return }
   _renderOwnDashboard()   // see app-core.js — hardcoding the client dashboard breaks solo
@@ -919,6 +960,7 @@ async function saveCheckIn(goalId, clientId) {
   const errorEl = document.getElementById('ci-error')
   const value   = document.getElementById('ci-value').value
 
+  if (!(await _verifyGoalAccess('saveCheckIn', goalId))) { errorEl.textContent = 'Save failed — permission denied.'; return }
   log.info('saveCheckIn', 'inserting check-in', { goalId })
   const { error } = await db.from('goal_check_ins').insert({
     goal_id:       goalId,
