@@ -13,6 +13,16 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:/Program Files/nodejs/node.exe\" \"C:/Users/jaken/.claude/hooks/standing-behaviours.mjs\""
+          }
+        ]
+      }
     ]
   }
 }
