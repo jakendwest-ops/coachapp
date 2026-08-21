@@ -72,6 +72,7 @@ test.describe('weight_logs INSERT — an unrelated coach cannot write a weight e
     const ptPage = await ptCtx.newPage()
     const pt2Page = await pt2Ctx.newPage()
     let plantedId = null
+    let strays = []          // ids PT can SEE, independent of what PT2 was allowed to read back
 
     try {
       await loginAsPT(ptPage)
@@ -89,15 +90,23 @@ test.describe('weight_logs INSERT — an unrelated coach cannot write a weight e
 
       // Don't trust the client-side result alone -- independently confirm from PT's own session
       // (which definitely owns and can see this client's data) whether the row actually landed.
-      const actualFromPT = await ptPage.evaluate(async (clientId) => {
+      strays = await ptPage.evaluate(async (clientId) => {
         const { data } = await db.from('weight_logs').select('id').eq('client_id', clientId).eq('weight_kg', 999)
-        return data?.length || 0
+        return data?.map(r => r.id) || []
       }, realClientId)
 
       expect(attempt.insertedId, 'an unrelated coach must not be able to insert a weight_logs row for a client they do not own').toBeNull()
-      expect(actualFromPT, 'no row should have actually been written, regardless of what the inserting session saw').toBe(0)
+      expect(strays, 'no row should have actually been written, regardless of what the inserting session saw').toEqual([])
     } finally {
-      if (plantedId) await ptPage.evaluate(async (id) => { await db.from('weight_logs').delete().eq('id', id) }, plantedId).catch(() => {})
+      // Delete the id PT2 reported AND every id PT can independently see. plantedId alone is
+      // insufficient: it comes from PT2's own .insert().select() -- a write followed by an
+      // RLS-gated READ of that row. If INSERT regresses permissive while SELECT stays restrictive
+      // (the likeliest shape, and exactly what this probe exists to catch) data is null, plantedId
+      // stays null, and the cleanup never runs -- stranding the row this test just proved should
+      // not exist. bugs/2026-08-20-cross-tenant-probes-not-cleanup-safe. Same defence that
+      // ledger-fixes-2026-08-01.spec.js:188 documented and this file never inherited.
+      const doomed = [plantedId, ...strays].filter(Boolean)
+      if (doomed.length) await ptPage.evaluate(async (ids) => { await db.from('weight_logs').delete().in('id', ids) }, doomed).catch(() => {})
       await ptCtx.close().catch(() => {})
       await pt2Ctx.close().catch(() => {})
     }
@@ -486,6 +495,7 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
     const ptPage = await ptCtx.newPage()
     const pt2Page = await pt2Ctx.newPage()
     let plantedId = null
+    let strays = []          // ids PT can SEE, independent of what PT2 was allowed to read back
     try {
       await loginAsPT(ptPage)
       const realClientId = await ptPage.evaluate(async () => {
@@ -498,14 +508,22 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
         return { insertedId: data?.id || null, errorMessage: error?.message || null }
       }, realClientId)
       plantedId = attempt.insertedId
-      const actualFromPT = await ptPage.evaluate(async (clientId) => {
+      strays = await ptPage.evaluate(async (clientId) => {
         const { data } = await db.from('client_1rms').select('id').eq('client_id', clientId).eq('exercise_name', '[E2E] Boundary Probe')
-        return data?.length || 0
+        return data?.map(r => r.id) || []
       }, realClientId)
       expect(attempt.insertedId, 'an unrelated coach must not be able to insert a client_1rms row for a client they do not own').toBeNull()
-      expect(actualFromPT, 'no row should have actually been written').toBe(0)
+      expect(strays, 'no row should have actually been written').toEqual([])
     } finally {
-      if (plantedId) await ptPage.evaluate(async (id) => { await db.from('client_1rms').delete().eq('id', id) }, plantedId).catch(() => {})
+      // Delete the id PT2 reported AND every id PT can independently see. plantedId alone is
+      // insufficient: it comes from PT2's own .insert().select() -- a write followed by an
+      // RLS-gated READ of that row. If INSERT regresses permissive while SELECT stays restrictive
+      // (the likeliest shape, and exactly what this probe exists to catch) data is null, plantedId
+      // stays null, and the cleanup never runs -- stranding the row this test just proved should
+      // not exist. bugs/2026-08-20-cross-tenant-probes-not-cleanup-safe. Same defence that
+      // ledger-fixes-2026-08-01.spec.js:188 documented and this file never inherited.
+      const doomed = [plantedId, ...strays].filter(Boolean)
+      if (doomed.length) await ptPage.evaluate(async (ids) => { await db.from('client_1rms').delete().in('id', ids) }, doomed).catch(() => {})
       await ptCtx.close().catch(() => {})
       await pt2Ctx.close().catch(() => {})
     }
@@ -542,6 +560,7 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
     const ptPage = await ptCtx.newPage()
     const pt2Page = await pt2Ctx.newPage()
     let plantedId = null
+    let strays = []          // ids PT can SEE, independent of what PT2 was allowed to read back
     try {
       await loginAsPT(ptPage)
       const realClientId = await ptPage.evaluate(async () => {
@@ -554,14 +573,22 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
         return { insertedId: data?.id || null, errorMessage: error?.message || null }
       }, realClientId)
       plantedId = attempt.insertedId
-      const actualFromPT = await ptPage.evaluate(async (clientId) => {
+      strays = await ptPage.evaluate(async (clientId) => {
         const { data } = await db.from('goals').select('id').eq('client_id', clientId).eq('title', '[E2E] Boundary Probe Goal')
-        return data?.length || 0
+        return data?.map(r => r.id) || []
       }, realClientId)
       expect(attempt.insertedId, 'an unrelated coach must not be able to insert a goal for a client they do not own').toBeNull()
-      expect(actualFromPT, 'no row should have actually been written').toBe(0)
+      expect(strays, 'no row should have actually been written').toEqual([])
     } finally {
-      if (plantedId) await ptPage.evaluate(async (id) => { await db.from('goals').delete().eq('id', id) }, plantedId).catch(() => {})
+      // Delete the id PT2 reported AND every id PT can independently see. plantedId alone is
+      // insufficient: it comes from PT2's own .insert().select() -- a write followed by an
+      // RLS-gated READ of that row. If INSERT regresses permissive while SELECT stays restrictive
+      // (the likeliest shape, and exactly what this probe exists to catch) data is null, plantedId
+      // stays null, and the cleanup never runs -- stranding the row this test just proved should
+      // not exist. bugs/2026-08-20-cross-tenant-probes-not-cleanup-safe. Same defence that
+      // ledger-fixes-2026-08-01.spec.js:188 documented and this file never inherited.
+      const doomed = [plantedId, ...strays].filter(Boolean)
+      if (doomed.length) await ptPage.evaluate(async (ids) => { await db.from('goals').delete().in('id', ids) }, doomed).catch(() => {})
       await ptCtx.close().catch(() => {})
       await pt2Ctx.close().catch(() => {})
     }
@@ -573,6 +600,7 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
     const ptPage = await ptCtx.newPage()
     const pt2Page = await pt2Ctx.newPage()
     let plantedId = null
+    let strays = []          // ids PT can SEE, independent of what PT2 was allowed to read back
     try {
       await loginAsPT(ptPage)
       const realClientId = await ptPage.evaluate(async () => {
@@ -585,14 +613,22 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
         return { insertedId: data?.id || null, errorMessage: error?.message || null }
       }, realClientId)
       plantedId = attempt.insertedId
-      const actualFromPT = await ptPage.evaluate(async (clientId) => {
+      strays = await ptPage.evaluate(async (clientId) => {
         const { data } = await db.from('events').select('id').eq('client_id', clientId).eq('title', '[E2E] Boundary Probe Event')
-        return data?.length || 0
+        return data?.map(r => r.id) || []
       }, realClientId)
       expect(attempt.insertedId, 'an unrelated coach must not be able to insert an event for a client they do not own').toBeNull()
-      expect(actualFromPT, 'no row should have actually been written').toBe(0)
+      expect(strays, 'no row should have actually been written').toEqual([])
     } finally {
-      if (plantedId) await ptPage.evaluate(async (id) => { await db.from('events').delete().eq('id', id) }, plantedId).catch(() => {})
+      // Delete the id PT2 reported AND every id PT can independently see. plantedId alone is
+      // insufficient: it comes from PT2's own .insert().select() -- a write followed by an
+      // RLS-gated READ of that row. If INSERT regresses permissive while SELECT stays restrictive
+      // (the likeliest shape, and exactly what this probe exists to catch) data is null, plantedId
+      // stays null, and the cleanup never runs -- stranding the row this test just proved should
+      // not exist. bugs/2026-08-20-cross-tenant-probes-not-cleanup-safe. Same defence that
+      // ledger-fixes-2026-08-01.spec.js:188 documented and this file never inherited.
+      const doomed = [plantedId, ...strays].filter(Boolean)
+      if (doomed.length) await ptPage.evaluate(async (ids) => { await db.from('events').delete().in('id', ids) }, doomed).catch(() => {})
       await ptCtx.close().catch(() => {})
       await pt2Ctx.close().catch(() => {})
     }
