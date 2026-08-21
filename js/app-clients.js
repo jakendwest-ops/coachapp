@@ -33,6 +33,13 @@ async function saveClientPB(clientId) {
   }
   errorEl.textContent = ''
 
+  // Deliberately AFTER input validation, not before. Authorization-first reads tidier, but two
+  // existing tests (pb-consolidation-2026-08-17.spec.js:79 and :143) drive this function with a
+  // dummy client id precisely to exercise the validation path without an insert, and the guard's
+  // job is to stop the WRITE. For a real caller the id is always their own, so ordering changes
+  // nothing they see; the only thing authz-first would hide is 'these fields are required',
+  // which is not a disclosure worth breaking two tests' stated intent for.
+  if (!(await _verifyOwnClientId('saveClientPB', clientId))) { errorEl.textContent = 'Save failed — permission denied.'; return }
   const row = { client_id: clientId, logged_by: currentUser.id, category, name, value, unit, date }
   if (notes) row.notes = notes
 
@@ -49,6 +56,31 @@ async function saveClientPB(clientId) {
   else _renderOwnDashboard()   // shared helper (app-core.js) — was correct but hand-rolled here
 }
 
+// ONE guard for all three client self-service writes (saveClientPB / saveClientCheckIn /
+// saveClientWeight). Each took `clientId` as a bare parameter, embedded into an inline onclick at
+// render time, and never re-checked at save time — so nothing in the app stopped
+// `saveClientWeight('<another clients uuid>')` from devtools. Flagged by the 2026-08-12 audit.
+//
+// APP-LEVEL HARDENING, NOT A LIVE HOLE. Verified 2026-08-12 by
+// tests/audit-ownership-anchors-rls-2026-08-12.spec.js: as the E2E client against a different
+// client's id, all of these are refused by RLS (42501). The audit filed it High and unverified;
+// proving it downgraded the row to Medium. This closes the app-level half so the defence does not
+// rest solely on policies this repo neither versions nor owns.
+//
+// Safe against every caller, checked not assumed: all five render sites (_pbFormHtml in
+// app-dashboard renderClientDashboard/renderSoloDashboard and app-progress renderProgressPBs, plus
+// the two weight buttons) derive clientId from _getCurrentClientId() — the user's OWN record. No
+// coach-for-a-client path renders these forms, so a strict self-check cannot break a legitimate flow.
+//
+// Fails CLOSED on a null own-id: if we cannot establish who we are, we do not write. A coach with no
+// self client record never reaches these forms, so this costs nothing real.
+async function _verifyOwnClientId(fnName, clientId) {
+  const mine = await _getCurrentClientId()
+  if (mine && clientId && mine === clientId) return true
+  log.error(fnName, 'ownership check failed — refusing to write for another client', { clientId })
+  return false
+}
+
 function showClientWeightForm(clientId) {
   const form = document.getElementById('client-weight-form')
   if (!form) return
@@ -63,6 +95,7 @@ async function saveClientCheckIn(clientId) {
   const notes    = document.getElementById('ci-notes')?.value.trim() || null
   const errEl    = document.getElementById('ci-error')
   if ([sleep,energy,stress,soreness].some(isNaN)) { if(errEl) errEl.textContent = 'Please fill in all ratings'; return }
+  if (!(await _verifyOwnClientId('saveClientCheckIn', clientId))) { if (errEl) errEl.textContent = 'Save failed — permission denied.'; return }
   const { error } = await db.from('client_check_ins').insert({ client_id: clientId, sleep, energy, stress, soreness, notes })
   if (error) { log.error('saveClientCheckIn', 'insert failed', error); if(errEl) errEl.textContent = error.message; return }
   _renderOwnDashboard()   // see app-core.js — hardcoding the client dashboard breaks solo
@@ -79,6 +112,7 @@ async function saveClientWeight(clientId) {
   if (!date || weight == null) { errorEl.textContent = 'Date and weight are required.'; return }
   errorEl.textContent = ''
 
+  if (!(await _verifyOwnClientId('saveClientWeight', clientId))) { errorEl.textContent = 'Save failed — permission denied.'; return }
   const row = { client_id: clientId, date, weight_kg: weight }
   if (bf)    row.body_fat_pct = parseFloat(bf)
   if (notes) row.notes = notes
