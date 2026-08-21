@@ -211,6 +211,14 @@ test.describe('A refused write must not report success', () => {
       const orig = db.from.bind(db)
       let call = 0
       db.from = (t) => {
+        // 2026-08-21: moveTemplateExercise now calls _verifyTemplateOwnership before doing anything,
+        // which reads workout_templates. Without this branch that read falls through to the real DB,
+        // finds no row for the fabricated id 't1', and the function returns at its ownership guard —
+        // so the half-applied-swap path this test exists to cover is never reached. Satisfying the new
+        // precondition is the correct fix; moving the guard later would defeat the guard.
+        if (t === 'workout_templates') {
+          return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 't1' }, error: null }) }) }) }) }
+        }
         if (t !== 'workout_template_exercises') return orig(t)
         const rows = { data: [{ id: 'a', order_index: 0 }, { id: 'b', order_index: 1 }], error: null }
         return {

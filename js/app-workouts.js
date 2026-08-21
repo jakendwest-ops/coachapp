@@ -1316,6 +1316,15 @@ async function openClientProgramsTab(clientId) {
 
 async function moveTemplateExercise(templateId, exId, dir) {
   const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, exId)
+  // Anchoring the two swap updates on template_id (below) stops a write landing on a row in someone
+  // else's template, but it never established that THIS template is ours — it only proved both rows
+  // belong to the same parent. Verifying the parent is the other half, and the convention every
+  // sibling in this write family already follows. 2026-08-12 audit; fixed 2026-08-21.
+  const coachId = await _resolveTemplateOwnerCoachId()
+  if (!(await _verifyTemplateOwnership(targetId, coachId))) {
+    log.error('moveTemplateExercise', 'ownership check failed', { templateId: targetId })
+    return
+  }
   const { data: all } = await db
     .from('workout_template_exercises')
     // exercise_name is selected for propagation: a sibling copy has its own row ids, so the resulting
@@ -2072,6 +2081,20 @@ async function saveExerciseToTemplate(templateId) {
   const notes = document.getElementById('att-notes').value.trim() || null
   const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   const { templateId: targetId } = await _resolveEditableTemplateId(templateId)
+  // _resolveEditableTemplateId handles the fork-on-shared-slot case; it does NOT verify ownership.
+  // This write family's own convention (documented at _verifyTemplateOwnership) is that every sibling
+  // anchors AND verifies — saveEditTemplateExercise and deleteTemplateExercise both do. This one and
+  // moveTemplateExercise were the two odd ones out, flagged by the 2026-08-12 architecture audit.
+  // App-level hardening: a live 2-account probe (tests/template-exercise-write-rls-2026-08-10.spec.js)
+  // already confirms RLS refuses a foreign write to this table, so this closes an inconsistency rather
+  // than a live hole — but "RLS will catch it" is the reasoning that leaves a file with no app-level
+  // defence at all, and this file's own comment says so.
+  const coachId = await _resolveTemplateOwnerCoachId()
+  if (!(await _verifyTemplateOwnership(targetId, coachId))) {
+    log.error('saveExerciseToTemplate', 'ownership check failed', { templateId: targetId })
+    errorEl.textContent = 'Save failed — template not found or permission denied.'
+    return
+  }
   log.info('saveExerciseToTemplate', 'adding exercise to template', { templateId: targetId })
 
   const { data: existing } = await db
