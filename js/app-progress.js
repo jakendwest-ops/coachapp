@@ -363,6 +363,7 @@ function _updateAdd1RMEpleyPreview() {
 }
 
 async function save1RM(clientId, existingId = null) {
+  if (!(await _verifyClientAccess('save1RM', clientId))) { const e = document.getElementById('1rm-error'); if (e) e.textContent = 'Save failed — permission denied.'; return }
   const picked     = window._oneRMDetailPicked
   const epleyMode  = document.getElementById('orm-epley-fields') && document.getElementById('orm-epley-fields').style.display === 'block'
   let weight
@@ -391,6 +392,7 @@ async function save1RM(clientId, existingId = null) {
 
 async function delete1RM(id, clientId) {
   if (!confirm('Delete this 1RM?')) return
+  if (!(await _verifyClientAccess('delete1RM', clientId))) return
   // Rowcount check, matching its two siblings deletePerfLog and deleteWeightLog. Without it a refused
   // delete simply re-rendered with the row still sitting there, which reads as "the button is broken".
   const { data: removed, error } = await dbq('delete1RM', db.from('client_1rms').delete().eq('id', id).select('id'))
@@ -673,6 +675,7 @@ function updatePerfUnits() {
 }
 
 async function savePerformanceLog(clientId) {
+  if (!(await _verifyClientAccess('savePerformanceLog', clientId))) return
   const category = document.getElementById('pl-category')?.value
   const date     = document.getElementById('pl-date')?.value
   const name     = document.getElementById('pl-name')?.value?.trim()
@@ -703,6 +706,7 @@ async function savePerformanceLog(clientId) {
 
 async function deletePerfLog(id, clientId) {
   if (!confirm('Delete this record?')) return
+  if (!(await _verifyClientAccess('deletePerfLog', clientId))) return
   log.info('deletePerfLog', 'deleting performance record', { id })
   // .select() + rowcount, not just an error check: a policy-blocked delete returns
   // { data: [], error: null }, so an error-only guard treats "refused" as "succeeded", re-renders,
@@ -957,7 +961,11 @@ async function sendClientInvite(clientId, email) {
   }
 
   log.ok('sendClientInvite', 'invite sent via edge function', { userId: json.userId })
-  const { error: stampErr } = await db.from('clients').update({ invited_at: new Date().toISOString() }).eq('id', clientId)
+  // Direct coach_id anchor rather than _verifyClientAccess: this is a coach-only path that runs
+  // AFTER the invite Edge Function has already authorised the action, so the check is belt-and-
+  // braces on a cosmetic stamp. One clause costs nothing; leaving the only unanchored write in
+  // the family behind would just invite the next reader to copy it.
+  const { error: stampErr } = await db.from('clients').update({ invited_at: new Date().toISOString() }).eq('id', clientId).eq('coach_id', currentUser.id)
   if (stampErr) log.error('sendClientInvite', 'failed to stamp invited_at', stampErr)
 
   btn.textContent = '✓ Invite sent'
@@ -966,6 +974,7 @@ async function sendClientInvite(clientId, email) {
 }
 
 async function saveWeightLog(clientId) {
+  if (!(await _verifyClientAccess('saveWeightLog', clientId))) { const e = document.getElementById('wl-error'); if (e) e.textContent = 'Save failed — permission denied.'; return }
   const date   = document.getElementById('wl-date')?.value
   const weight = document.getElementById('wl-weight')?.value
   const bf     = document.getElementById('wl-bf')?.value
@@ -993,6 +1002,7 @@ async function saveWeightLog(clientId) {
 }
 
 async function saveWeightGoals(clientId) {
+  if (!(await _verifyClientAccess('saveWeightGoals', clientId))) { const e = document.getElementById('wg-error'); if (e) e.textContent = 'Save failed — permission denied.'; return }
   const startingRaw = document.getElementById('wg-starting')?.value
   const goalRaw      = document.getElementById('wg-goal')?.value
   const errEl = document.getElementById('wg-error')
@@ -1015,6 +1025,7 @@ async function saveWeightGoals(clientId) {
 
 async function deleteWeightLog(id, clientId) {
   if (!confirm('Delete this entry?')) return
+  if (!(await _verifyClientAccess('deleteWeightLog', clientId))) return
   log.info('deleteWeightLog', 'deleting weight entry', { id })
   const { data: deleted, error } = await db.from('weight_logs').delete().eq('id', id).select()
   if (error) {

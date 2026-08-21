@@ -732,6 +732,36 @@ function _renderOwnDashboard() {
 
 // Returns the client_id for the current view context
 // Solo view → personal record. Client view → coached record.
+// ONE ownership check for every write keyed on a caller-supplied clientId — client_1rms,
+// performance_logs, weight_logs and the clients row itself. Ten such writes across app-progress.js
+// and app-runner.js took clientId as a bare parameter and never re-verified it (2026-08-12 audit).
+// Lives in app-core because both modules need it; a per-module copy is how the next new write
+// function quietly reintroduces the gap.
+//
+// Deliberately modelled on saveRunnerSession (app-runner.js:2345), NOT on _effectiveCoachIdForClient
+// (app-workouts.js:1913). The difference is the whole point:
+//   - saveRunnerSession REFUSES when the client row is not visible. Its comment records why —
+//     "Confirmed exploitable via a live cross-tenant probe, 2026-07-30": the unverified version let a
+//     coach's save attribute a workout log to someone else's client.
+//   - _effectiveCoachIdForClient ends `|| currentUser.id`, so an RLS-denied read silently becomes
+//     "it's mine". That is its own open bug (2026-08-17-effectivecoachidforclient-swallows-an-rls-denial)
+//     and must not be the model for a security check.
+//
+// Two legitimate shapes, because the caller may be either side of the relationship:
+//   - coach_id === me  → a client I coach
+//   - user_id  === me  → my OWN record, whether I am a client or a solo user (solo's coach_id is NULL
+//                        by design, so a coach_id-only test would exclude solo — four bugs of that
+//                        exact shape have shipped here)
+// Anything else, including an unreadable row, fails CLOSED.
+async function _verifyClientAccess(fnName, clientId) {
+  if (!clientId) { log.error(fnName, 'ownership check failed — no clientId'); return false }
+  const { data } = await db.from('clients').select('id, coach_id, user_id').eq('id', clientId).maybeSingle()
+  if (!data) { log.error(fnName, 'ownership check failed — client not visible', { clientId }); return false }
+  if (data.coach_id === currentUser.id || data.user_id === currentUser.id) return true
+  log.error(fnName, 'ownership check failed — client is neither mine nor me', { clientId })
+  return false
+}
+
 async function _getCurrentClientId() {
   if (currentProfile?.role === 'solo') return window._soloClientId || null
   const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle()

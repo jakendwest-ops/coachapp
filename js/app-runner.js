@@ -2534,6 +2534,7 @@ function showPostSessionOneRMModal(clientId, candidates) {
 }
 
 async function _savePostSessionOneRM(i, clientId, exerciseName, estimate) {
+  if (!(await _verifyClientAccess('_savePostSessionOneRM', clientId))) { showToast(`Couldn't save 1RM for ${exerciseName} — permission denied`, 'error'); return }
   const { error } = await dbq('savePostSessionOneRM', db.from('client_1rms').insert({
     client_id: clientId, exercise_name: exerciseName, one_rm_kg: estimate, recorded_at: new Date().toISOString().split('T')[0]
   }), { showUserError: false })
@@ -2652,6 +2653,7 @@ async function saveRunnerOneRM(exIdx) {
     oneRM = _estimate1RM(w, r)
   }
   if (!oneRM || oneRM <= 0) { errEl.textContent = 'Enter a valid value'; return }
+  if (!(await _verifyClientAccess('saveRunnerOneRM', _runner.clientId))) { errEl.textContent = 'Save failed — permission denied.'; return }
 
   const { error } = await dbq('saveRunnerOneRM', db.from('client_1rms').insert({
     client_id: _runner.clientId, exercise_name: ex.name, one_rm_kg: oneRM, recorded_at: new Date().toISOString().split('T')[0]

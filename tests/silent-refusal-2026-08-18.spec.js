@@ -76,6 +76,13 @@ test.describe('A refused write must not report success', () => {
     const r = await page.evaluate(async () => {
       const orig = db.from.bind(db)
       db.from = (t) => {
+        // 2026-08-21: delete1RM now calls _verifyClientAccess first, which reads the clients table.
+        // Without this branch that read falls through to the live DB, finds no row for the fabricated id
+        // 'c1', and the function returns at its ownership guard — so the silent-refusal path this
+        // test exists to cover is never reached. Satisfying the precondition is the correct fix.
+        if (t === 'clients') {
+          return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'c1', coach_id: currentUser.id, user_id: null }, error: null }) }) }) }
+        }
         if (t !== 'client_1rms') return orig(t)
         const refusal = { data: [], error: null }
         const chain = { eq: () => chain, select: () => Promise.resolve(refusal) }
