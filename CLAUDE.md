@@ -44,7 +44,11 @@ module you change**, in the same commit.
   of this exact shape. Use `.or('coach_id.eq.<uid>,user_id.eq.<uid>')` for any query that must see solo.
 - **`is_personal` is a DISPLAY flag, not a security boundary** — never put it in an RLS policy.
 - **Multi-tenancy = `coach_id` + `client_id`.** Never trust a client-supplied id for ownership.
-- **Never push without running `multi-agent-review`** (pre-push). `checks.sh` (pre-push hook) enforces
+- **`multi-agent-review` before the COMMIT for ownership/RLS work** (`_verifyX`, `coach_id`, `client_id`,
+  `auth.uid`, policies), before the **push** for everything else. Moved 2026-08-22: reviewing at push
+  time caught things a full cycle late — every ownership commit reviewed that day came back with a real
+  finding. `hooks/guardrails.mjs` **blocks** `git commit` on unreviewed ownership diffs; the review skill
+  writes the marker that clears it. `checks.sh` (pre-push hook) enforces
   column names, query scoping, cache-bust, PII-in-logs, and duplicate functions on every push.
 - **The pre-push Playwright gate is a SMOKE gate, not the suite** — `runner.spec.js` +
   `solo-account.spec.js` only, **57 of 523 tests**. Run `npm test` yourself before any push touching a
