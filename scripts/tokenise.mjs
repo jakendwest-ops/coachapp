@@ -34,8 +34,96 @@ const RADIUS = {
   '18px': '--legacy-radius-18', '24px': '--legacy-radius-24'
 }
 const COLOUR = {
-  '#ef4444': '--danger', '#f59e0b': '--warning', '#22c55e': '--success'
+  '#ef4444': '--danger', '#f59e0b': '--warning', '#10b981': '--success', '#6366f1': '--accent'
 }
+// '#22c55e' (14 uses) was in this map pointing at --success and IS NOT ANYMORE. --success's
+// real value in css/main.css is #10b981 -- #22c55e was never it. That earlier entry would
+// have converted every #22c55e site to var(--success, #22c55e), which resolves to #10b981 at
+// runtime (the fallback only ever applies when the variable is undefined, which it never is
+// here) -- a real, visible colour shift the round-trip verifier is structurally unable to
+// catch, because it only proves the fallback literal matches the original, never the token's
+// resolved value. Caught by reading Step 4's dry-run output, not by the map being "obviously"
+// wrong. #22c55e now has no exact token and is correctly left alone by ASSERT_MAPS below and
+// by the codemod itself.
+//
+// '#9ca3af' is deliberately NOT mapped even though it exactly equals --sidebar-text: a
+// location-specific token must not silently absorb a general-purpose grey used elsewhere --
+// a future sidebar-only restyle would otherwise bleed into unrelated UI. Value-identical is
+// not meaning-identical.
+
+const MAIN_CSS = join(dirname(fileURLToPath(import.meta.url)), '..', 'css', 'main.css')
+
+// GUARD against exactly this class of bug recurring: before touching any file, resolve every
+// token named in TYPE/RADIUS/COLOUR against its real declaration in css/main.css and abort if
+// a map's key disagrees with what the token actually holds. A map entry that disagrees with
+// the stylesheet is a guaranteed visual regression once --apply'd, so it must be impossible to
+// run the codemod in that state -- warning and continuing is not enough.
+//
+// --radius-full is a documented, approved exception (design spec 3.4): it intentionally folds
+// three different literals (99px/100px/999px, all "fully round" in practice) onto one token.
+// That is a deliberate many-keys-to-one-token fold, not an accidental value mismatch, so ONLY
+// --radius-full is allowed to have claimant literals that don't equal its stylesheet value,
+// and even then at least one claimant (999px) still must match exactly -- catching the token
+// itself drifting. Every other token, in every map including RADIUS, is claimed by exactly one
+// literal and that literal must equal the stylesheet value exactly. Naming the exception by
+// TOKEN rather than waiving the whole map is deliberate: a blanket per-map allowance would have
+// let an accidental second claimant on, say, --radius-sm hide behind a correct one the same way
+// the bad #22c55e entry hid behind the correct #10b981 one for --success the first time this
+// guard was tried (caught during Step (a)'s own proof, not before).
+const SANCTIONED_FOLDS = new Set(['--radius-full'])
+
+function assertMapsMatchStylesheet () {
+  let css
+  try {
+    css = readFileSync(MAIN_CSS, 'utf8')
+  } catch (e) {
+    console.error(`ABORT -- could not read ${MAIN_CSS} to verify the token maps: ${e.message}`)
+    process.exit(1)
+  }
+
+  const cssTokens = new Map()
+  for (const m of css.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/gi)) {
+    const name = m[1].trim()
+    if (!cssTokens.has(name)) cssTokens.set(name, m[2].trim()) // first declaration wins
+  }
+  const norm = v => v.trim().toLowerCase()
+
+  const errors = []
+  const check = (map, label) => {
+    const byToken = new Map()
+    for (const [literal, token] of Object.entries(map)) {
+      if (!byToken.has(token)) byToken.set(token, [])
+      byToken.get(token).push(literal)
+    }
+    for (const [token, literals] of byToken) {
+      if (!cssTokens.has(token)) {
+        errors.push(`${label}: ${token} is not defined anywhere in ${MAIN_CSS} (claimed by ${literals.join(', ')})`)
+        continue
+      }
+      const cssVal = cssTokens.get(token)
+      const matching = literals.filter(l => norm(l) === norm(cssVal))
+      const nonMatching = literals.filter(l => norm(l) !== norm(cssVal))
+      if (matching.length === 0) {
+        errors.push(`${label}: ${token} = ${cssVal} in css/main.css, but its map key(s) (${literals.join(', ')}) do not include that exact value`)
+      } else if (nonMatching.length && !SANCTIONED_FOLDS.has(token)) {
+        errors.push(`${label}: ${token} = ${cssVal} in css/main.css, but ${nonMatching.join(', ')} also claim ${token} and that fold is not sanctioned`)
+      }
+    }
+  }
+
+  check(TYPE, 'TYPE')
+  check(RADIUS, 'RADIUS')
+  check(COLOUR, 'COLOUR')
+
+  if (errors.length) {
+    console.error('ABORT -- a token map disagrees with css/main.css. Converting with this map would')
+    console.error('be a guaranteed visual regression once resolved, since the fallback literal in')
+    console.error('var(--token, <literal>) only ever applies while the variable is undefined.')
+    for (const e of errors) console.error(`  ${e}`)
+    process.exit(1)
+  }
+}
+assertMapsMatchStylesheet()
 
 const file = process.argv[2]
 const apply = process.argv.includes('--apply')
