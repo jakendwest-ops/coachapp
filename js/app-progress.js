@@ -35,6 +35,13 @@ function _refresh1RMs(clientId) {
 // time would stamp a fresh entry against today for lifts that were never touched, burying the real
 // history under a wall of duplicate values.
 async function saveOneRMGrid(clientId) {
+  // Missed by the 2026-08-21 sweep that guarded its two neighbours in this very render function
+  // (save1RM at the onclick three lines below renderClient1RMs' delete1RM). Found by pre-push
+  // review 2026-08-22: the class has TWELVE members, not the ten the app-core comment claimed.
+  if (!(await _verifyClientAccess('saveOneRMGrid', clientId))) {
+    const e = document.getElementById('orm-grid-error'); if (e) e.textContent = 'Save failed — permission denied.'
+    return
+  }
   // Guards against a double-tap: _resolveExerciseIdForSave does a non-atomic select-then-insert,
   // so two concurrent calls for the same exercise name can both miss the not-yet-inserted row
   // and create duplicate library entries.

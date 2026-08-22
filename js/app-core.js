@@ -733,10 +733,19 @@ function _renderOwnDashboard() {
 // Returns the client_id for the current view context
 // Solo view → personal record. Client view → coached record.
 // ONE ownership check for every write keyed on a caller-supplied clientId — client_1rms,
-// performance_logs, weight_logs and the clients row itself. Ten such writes across app-progress.js
-// and app-runner.js took clientId as a bare parameter and never re-verified it (2026-08-12 audit).
-// Lives in app-core because both modules need it; a per-module copy is how the next new write
-// function quietly reintroduces the gap.
+// performance_logs, weight_logs and the clients row itself. TWELVE such writes took clientId as a
+// bare parameter and never re-verified it, across app-progress.js, app-runner.js, app-clients.js and
+// app-programs.js (2026-08-12 audit).
+// Lives in app-core because four modules need it; a per-module copy is how the next new write
+// function quietly reintroduces the gap — and app-clients.js proved that on 2026-08-22, when its own
+// strict-self copy broke "View as" while this helper handled it correctly.
+//
+// This comment said TEN, and named only app-progress and app-runner, until 2026-08-22. That count came
+// from the ledger row's enumeration rather than from a grep of the codebase, and pre-push review found
+// two more: saveOneRMGrid (app-progress.js, three lines from two sites the same sweep DID guard) and
+// _saveMissingOneRMEntries (app-programs.js, a file the inventory omitted entirely). A borrowed count
+// presented as a swept class is worse than no claim. If you extend this, grep `client_id: clientId`
+// and `.eq('client_id', clientId)` YOURSELF, and put the number you found here with the date.
 //
 // Deliberately modelled on saveRunnerSession (app-runner.js:2345), NOT on _effectiveCoachIdForClient
 // (app-workouts.js:1913). The difference is the whole point:

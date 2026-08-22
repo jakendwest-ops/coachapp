@@ -613,6 +613,11 @@ async function _refreshMissingOneRMs(programId, clientId, containerId) {
 
 // Saves whatever quick-entry rows were filled in. Skipped rows are silently left for the runner's own inline prompt to catch later.
 async function _saveMissingOneRMEntries(clientId) {
+  // app-programs.js was absent from the app-core inventory comment entirely, which is how this
+  // client_1rms insert survived the 2026-08-21 sweep. Found by pre-push review 2026-08-22.
+  // Silent return: this runs inside the assign flow AFTER the assignment itself has succeeded, so
+  // a refusal here must not imply the assignment failed. The caller already toasts its own result.
+  if (!(await _verifyClientAccess('_saveMissingOneRMEntries', clientId))) return
   const missing = window._missingOneRMExercises || []
   const today = new Date().toISOString().split('T')[0]
   const rows = []

@@ -81,12 +81,73 @@ test.describe('client self-service writes refuse a foreign client_id at the app 
       const err = document.getElementById('cwf-error').textContent
       const { data } = await db.from('weight_logs').select('id').eq('client_id', mine).eq('date', '2026-01-02').eq('weight_kg', 81)
       const ids = (data || []).map(x => x.id)
-      // Reap immediately — this is a real row on a real (fixture) client.
-      if (ids.length) await db.from('weight_logs').delete().in('id', ids)
-      return { err, landed: ids.length }
+      // Reap immediately — this is a real row on a real (fixture) client — and ASSERT the reap.
+      // A policy-refused delete returns { data: [], error: null }: no error, zero rows. Without the
+      // .select() this silently leaked the row and the test still passed — the exact class the commit
+      // immediately before this one (a4725d4) fixed across four cross-tenant probes, and that the
+      // source files in this same diff now guard against at ~20 sites. Caught by pre-push review.
+      let reaped = 0
+      if (ids.length) {
+        const { data: gone } = await db.from('weight_logs').delete().in('id', ids).select('id')
+        reaped = (gone || []).length
+      }
+      return { err, landed: ids.length, reaped }
     })
 
     expect(r.err, 'a write to my own record must NOT be refused').toBe('')
     expect(r.landed, 'the row must actually have been written').toBeGreaterThan(0)
+    expect(r.reaped, 'the cleanup must actually have removed what it wrote, not silently no-op')
+      .toBe(r.landed)
+  })
+
+  // The test whose ABSENCE let a regression into a commit. On 2026-08-21 these three writes were given
+  // a strict "clientId must equal my own client record" guard; pre-push review on 2026-08-22 found it
+  // broke "View as", because renderClientDashboard renders these very forms with the SUDO'D client's
+  // id while currentUser stays the coach. Refusal tests all passed — the risk was never a stranger
+  // getting in, it was the legitimate coach being refused, and no role-specific happy path covered it.
+  //
+  // sudoAsClient() itself is hard-gated to one real email (app-dashboard.js:241), so the E2E PT cannot
+  // call it. This reproduces the STATE that function creates, which is all the guard can see:
+  // window._sudoClientId set, currentProfile.role forced to 'client', currentUser still the COACH.
+  test('a coach in "View as" can still log a weight for the client they are viewing', async ({ page }) => {
+    const { loginAsPT } = require('./helpers')
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      const { data: c } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+      const origProfile = currentProfile
+      const mk = (id) => { let e = document.getElementById(id); if (!e) { e = document.createElement('input'); e.id = id; document.body.appendChild(e) } return e }
+      const err = document.createElement('p'); err.id = 'cwf-error'; document.body.appendChild(err)
+      mk('cwf-date').value = '2026-01-03'
+      mk('cwf-weight').value = '77'
+      mk('cwf-bf').value = ''
+      mk('cwf-notes').value = '[E2E] sudo probe'
+      const oP = window.renderProgressWeight, oD = window._renderOwnDashboard
+      window.renderProgressWeight = () => {}; window._renderOwnDashboard = () => {}
+
+      window._sudoClientId = c.id
+      currentProfile = { ...currentProfile, role: 'client' }   // exactly what sudoAsClient does
+      try {
+        await saveClientWeight(c.id)
+      } finally {
+        delete window._sudoClientId
+        currentProfile = origProfile
+        window.renderProgressWeight = oP; window._renderOwnDashboard = oD
+      }
+
+      const errText = document.getElementById('cwf-error').textContent
+      const { data } = await db.from('weight_logs').select('id').eq('client_id', c.id).eq('date', '2026-01-03').eq('weight_kg', 77)
+      const ids = (data || []).map(x => x.id)
+      let reaped = 0
+      if (ids.length) {
+        const { data: gone } = await db.from('weight_logs').delete().in('id', ids).select('id')
+        reaped = (gone || []).length
+      }
+      err.remove()
+      return { errText, landed: ids.length, reaped }
+    })
+
+    expect(r.errText, 'a coach in View-as mode must NOT be refused — this is the 2026-08-22 regression').toBe('')
+    expect(r.landed, 'the weight must actually have been written for the viewed client').toBeGreaterThan(0)
+    expect(r.reaped, 'cleanup must remove what it wrote').toBe(r.landed)
   })
 })
