@@ -172,7 +172,7 @@ if [ ! -f "$SB" ]; then
 else
   SB_BAD=""
   for f in js/*.js css/main.css; do
-    n=$(sed -E 's/var\([^)]*\)//g' "$f" | grep -ohiE 'font-size[[:space:]]*:[[:space:]]*[0-9.]+px|border-radius[[:space:]]*:[[:space:]]*[0-9]+px|#[0-9a-fA-F]{3,8}\b' | wc -l | tr -d ' ')
+    n=$(sh scripts/style-count.sh "$f")
     b=$(grep -oE "\"$(echo "$f" | sed 's#/#\\/#g')\"[[:space:]]*:[[:space:]]*[0-9]+" "$SB" | grep -oE '[0-9]+$')
     [ -z "$b" ] && b=0
     if [ "$n" -gt "$b" ]; then SB_BAD="$SB_BAD $f($b->$n)"; fi
