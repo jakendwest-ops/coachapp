@@ -60,6 +60,24 @@ if grep -n "from('programs')\.select" $FILES | grep -v "eq('id'" | grep -v "sing
   warn "programs query may be missing coach_id scope."
 fi
 
+# -- 2b. Truthy tests on fields where 0 is a LEGITIMATE value --
+# A RATCHET, not a cleanup: this class is currently at ZERO violations, so it can only ever fire on
+# a regression. Scoped deliberately to the fields where 0 genuinely means something -- weight (an
+# unloaded/bodyweight set), order_index and session_order (0 is the FIRST item, not a missing one),
+# and tier. Fields where 0 is meaningless (reps, duration) are excluded: `if (!reps)` is correct
+# there, and flagging it would be the false-refusal failure this project keeps shipping.
+# The original bug hit 4 sites in one go on the runner's weight save path (2026-07-29).
+# The character class here is deliberately plain [A-Za-z_.] — an earlier version wrote
+# [a-zA-Z_.\[\]'] which is MALFORMED in POSIX ERE (a backslash is not an escape inside a bracket
+# expression), so the rule matched nothing and passed silently. It was caught only by neutering a
+# real file and watching the check NOT fire.
+echo "Checking truthy tests on fields where zero is meaningful..."
+ZERO_HITS=$(grep -nE "if \(!?[A-Za-z_.]*(weight|order_index|session_order|orderIndex|sessionOrder|tier)\)" $FILES)
+if [ -n "$ZERO_HITS" ]; then
+  echo "$ZERO_HITS" | while IFS= read -r line; do echo "    $line"; done
+  fail "truthy test on a field where 0 is legitimate -- use an explicit null/undefined check (x == null), not !x"
+fi
+
 # -- 3. Cache bust -- all module files must have ?v= in index.html --
 echo "Checking cache bust..."
 MISSING_VER=""
