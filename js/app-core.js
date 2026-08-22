@@ -320,6 +320,28 @@ async function _saveQuickPrefs() {
 }
 
 // ─── SHELL HELPERS ────────────────────────────────────────────────────────────
+// The empty-state for a phase with no sessions — the fix for the 2026-07-13 CRITICAL live crash
+// ("a phase with zero sessions kills the coach's entire client Programs tab"). weekNums.length === 0
+// is a normal state for a phase not yet filled in, and the pre-fix code went straight to
+// weekMap[weekNums[0]] → renderDays(undefined) → throw, which killed the WHOLE innerHTML assignment,
+// so every other phase vanished too.
+//
+// Shared because the guard exists at TWO render sites that are otherwise different shapes and cannot
+// be collapsed further: app-programs.js renderClientPrograms (coach → client profile → Programs) and
+// app-workouts.js renderClientWorkoutsPage (the client/solo Workouts page, which renders week TABS).
+// They were byte-identical copy-pasted literals until 2026-08-22, so they could drift silently.
+//
+// BOTH sites are tested, one spec each — verified by neutering each guard in turn:
+//   app-programs.js:140  → tests/regression-2026-07-13.spec.js  ("a phase with zero sessions…")
+//   app-workouts.js:747  → tests/client-workout.spec.js         ("a phase with no sessions assigned yet…")
+// An earlier version of this comment claimed only the first was covered. That was wrong: I neutered
+// the app-workouts guard and ran the app-PROGRAMS spec, which of course still passed. Running the
+// right spec against it fails with the original crash, `Cannot read properties of undefined (reading
+// 'forEach')`. Testing the wrong path and concluding from it is a mistake worth naming here, because
+// it is the same one that nearly got a live test reported as decorative the same day.
+const NO_SESSIONS_EMPTY_STATE =
+  '<div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">No sessions added to this phase yet</div>'
+
 function escapeHtml(str) {
   if (!str) return ''
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')

@@ -744,7 +744,7 @@ async function renderClientWorkoutsPage(el) {
                 <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0;transform:rotate(${pi === 0 ? '180deg' : '0deg'})"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
               <div id="${panelId}" style="display:${pi === 0 ? 'block' : 'none'}">
-                ${!weekNums.length ? '<div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">No sessions added to this phase yet</div>' :
+                ${!weekNums.length ? NO_SESSIONS_EMPTY_STATE :
                   !showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : `
                   <!-- Label is the tab's sequential position (wi+1), not the raw week_number -- see the
                        matching fix in app-programs.js's builder tabs for the same finding. -->
