@@ -56,11 +56,15 @@ This plan requires NINE consecutive version bumps, so this lands first.
 
 ```bash
 cd c:/Users/jaken/OneDrive/coachapp
-cp js/app-core.js /tmp/t1.bak
+# Rule 3 compares `git diff origin/master HEAD`, so it CANNOT see an UNCOMMITTED edit.
+# The probe must be COMMITTED to be visible -- which is how checks.sh is really invoked:
+# a pre-push hook, after commit. An uncommitted probe reads as "the rule is dead", which
+# is the wrong conclusion, and this plan originally told you to do exactly that.
 printf '\n// probe\n' >> js/app-core.js       # change a module, do NOT bump index.html
+git add js/app-core.js && git commit -qm "probe: temporary, reverted below"
 CI=true sh scripts/checks.sh > /tmp/t1.out 2>&1; echo "EXIT=$?"
 grep -c "FAIL" /tmp/t1.out
-cp /tmp/t1.bak js/app-core.js && rm /tmp/t1.bak
+git reset -q --hard HEAD~1                      # drop the probe commit entirely
 ```
 
 Expected: `EXIT=0` and `0` FAILs — the current rule is blind to it. Record this; it is the red-before.
@@ -103,11 +107,15 @@ fi
 
 ```bash
 cd c:/Users/jaken/OneDrive/coachapp
-cp js/app-core.js /tmp/t1.bak
+# Rule 3 compares `git diff origin/master HEAD`, so it CANNOT see an UNCOMMITTED edit.
+# The probe must be COMMITTED to be visible -- which is how checks.sh is really invoked:
+# a pre-push hook, after commit. An uncommitted probe reads as "the rule is dead", which
+# is the wrong conclusion, and this plan originally told you to do exactly that.
 printf '\n// probe\n' >> js/app-core.js
+git add js/app-core.js && git commit -qm "probe: temporary, reverted below"
 CI=true sh scripts/checks.sh > /tmp/t1.out 2>&1; echo "EXIT=$?"
 grep "did not rise" /tmp/t1.out
-cp /tmp/t1.bak js/app-core.js && rm /tmp/t1.bak
+git reset -q --hard HEAD~1                      # drop the probe commit entirely
 ```
 
 Expected: `EXIT=1` and a line naming `js/app-core.js`. **If it does not fail, the rule is dead — stop and fix it before continuing.**
@@ -116,11 +124,11 @@ Expected: `EXIT=1` and a line naming `js/app-core.js`. **If it does not fail, th
 
 ```bash
 cd c:/Users/jaken/OneDrive/coachapp
-cp js/app-core.js /tmp/t1.bak; cp index.html /tmp/t1h.bak
 printf '\n// probe\n' >> js/app-core.js
 sed -i 's#js/app-core\.js?v=15#js/app-core.js?v=16#' index.html
+git add js/app-core.js index.html && git commit -qm "probe: temporary, reverted below"
 CI=true sh scripts/checks.sh > /tmp/t1.out 2>&1; echo "EXIT=$?"
-cp /tmp/t1.bak js/app-core.js; cp /tmp/t1h.bak index.html; rm /tmp/t1.bak /tmp/t1h.bak
+git reset -q --hard HEAD~1                      # drop the probe commit entirely
 ```
 
 Expected: `EXIT=0`. A guard's real risk here is refusing a legitimate push.
