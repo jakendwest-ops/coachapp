@@ -170,68 +170,7 @@ grep -nE '^\s*--(font|text-|legacy-|radius-(xs|sm|md|xl|full))' css/main.css
 
 Expected: **no output**. If any name already exists, STOP — redefining it would move pixels.
 
-- [ ] **Step 2: Add the tokens to `:root`**
-
-Append inside the existing `:root { … }` block in `css/main.css`, immediately after the last existing token:
-
-```css
-  /* ── TYPE ──────────────────────────────────────────────────────────────
-     Derived from measured usage on 2026-08-22, not from a typographic ratio:
-     13px carries the app because it already did. 11 canonical steps cover
-     635 of 721 uses. --font is the single swap point when the real brand
-     typeface arrives; Inter is a placeholder. */
-  --font:          'Inter', system-ui, -apple-system, sans-serif;
-  --text-2xs:      9px;
-  --text-xs:      10px;
-  --text-sm:      11px;
-  --text-md:      12px;
-  --text-base:    13px;
-  --text-lg:      14px;
-  --text-xl:      16px;
-  --text-2xl:     18px;
-  --text-3xl:     20px;
-  --text-4xl:     24px;
-  --text-display: 32px;
-
-  /* LEGACY TYPE -- 86 uses across 14 off-scale values. These exist so nothing
-     moves today. Each FOLD comment is a to-do for a later, per-site pass that
-     needs eyes on the screen -- folding them MOVES PIXELS and is out of scope. */
-  --legacy-text-7:    7px;    /* FOLD -> --text-2xs     */
-  --legacy-text-8:    8px;    /* FOLD -> --text-2xs     */
-  --legacy-text-10-5: 10.5px; /* FOLD -> --text-xs      */
-  --legacy-text-11-5: 11.5px; /* FOLD -> --text-sm  (18 uses -- a real decision) */
-  --legacy-text-12-5: 12.5px; /* FOLD -> --text-md      */
-  --legacy-text-13-5: 13.5px; /* FOLD -> --text-base    */
-  --legacy-text-15:   15px;   /* FOLD -> undecided  (25 uses -- needs Jake) */
-  --legacy-text-17:   17px;   /* FOLD -> --text-xl      */
-  --legacy-text-19:   19px;   /* FOLD -> --text-2xl     */
-  --legacy-text-22:   22px;   /* FOLD -> --text-3xl     */
-  --legacy-text-26:   26px;   /* FOLD -> --text-4xl     */
-  --legacy-text-30:   30px;   /* FOLD -> --text-display */
-  --legacy-text-40:   40px;   /* FOLD -> --text-display */
-  --legacy-text-64:   64px;   /* FOLD -> --text-display */
-
-  /* ── RADIUS ────────────────────────────────────────────────────────────
-     --radius (10px) and --radius-lg (14px) are NOT redefined: both have live
-     var() consumers, so changing either would move real pixels.
-     Monotonic: xs 4 · sm 8 · radius 10 · md 12 · lg 14 · xl 20. */
-  --radius-xs:    4px;
-  --radius-sm:    8px;
-  --radius-md:   12px;
-  --radius-xl:   20px;
-  --radius-full: 999px;   /* folds 99px / 100px / 999px, all "fully round" */
-
-  --legacy-radius-2:   2px;
-  --legacy-radius-3:   3px;
-  --legacy-radius-5:   5px;
-  --legacy-radius-7:   7px;
-  --legacy-radius-9:   9px;
-  --legacy-radius-16: 16px;
-  --legacy-radius-18: 18px;
-  --legacy-radius-24: 24px;
-```
-
-- [ ] **Step 3: Write the failing token-resolution test**
+- [ ] **Step 2: Write the token-resolution test — BEFORE the tokens exist**
 
 Create `tests/design-tokens-2026-08-22.spec.js`:
 
@@ -291,7 +230,7 @@ test.describe('design tokens resolve', () => {
 })
 ```
 
-- [ ] **Step 4: Run the test — it must FAIL first**
+- [ ] **Step 3: Run it — it MUST FAIL, because no token is defined yet**
 
 ```bash
 cd c:/Users/jaken/OneDrive/coachapp
@@ -300,7 +239,68 @@ npx playwright test tests/design-tokens-2026-08-22.spec.js --reporter=line > /tm
 grep -E "[0-9]+ (passed|failed)" /tmp/t2.out
 ```
 
-Run this BEFORE step 2's edit is saved if possible; otherwise temporarily comment out the token block. Expected: FAIL, because the tokens do not resolve. This is the red-before.
+Expected: **FAIL** — every token resolves to an empty string because `css/main.css` does not define them yet. This is the red-before, and it is only meaningful BEFORE Step 4. An earlier draft of this plan ran it after the tokens were added, where it could only ever pass.
+
+- [ ] **Step 4: Add the tokens to `:root`**
+
+Append inside the existing `:root { … }` block in `css/main.css`, immediately after the last existing token:
+
+```css
+  /* ── TYPE ──────────────────────────────────────────────────────────────
+     Derived from measured usage on 2026-08-22, not from a typographic ratio:
+     13px carries the app because it already did. 11 canonical steps cover
+     635 of 721 uses. --font is the single swap point when the real brand
+     typeface arrives; Inter is a placeholder. */
+  --font:          'Inter', system-ui, -apple-system, sans-serif;
+  --text-2xs:      9px;
+  --text-xs:      10px;
+  --text-sm:      11px;
+  --text-md:      12px;
+  --text-base:    13px;
+  --text-lg:      14px;
+  --text-xl:      16px;
+  --text-2xl:     18px;
+  --text-3xl:     20px;
+  --text-4xl:     24px;
+  --text-display: 32px;
+
+  /* LEGACY TYPE -- 86 uses across 14 off-scale values. These exist so nothing
+     moves today. Each FOLD comment is a to-do for a later, per-site pass that
+     needs eyes on the screen -- folding them MOVES PIXELS and is out of scope. */
+  --legacy-text-7:    7px;    /* FOLD -> --text-2xs     */
+  --legacy-text-8:    8px;    /* FOLD -> --text-2xs     */
+  --legacy-text-10-5: 10.5px; /* FOLD -> --text-xs      */
+  --legacy-text-11-5: 11.5px; /* FOLD -> --text-sm  (18 uses -- a real decision) */
+  --legacy-text-12-5: 12.5px; /* FOLD -> --text-md      */
+  --legacy-text-13-5: 13.5px; /* FOLD -> --text-base    */
+  --legacy-text-15:   15px;   /* FOLD -> undecided  (25 uses -- needs Jake) */
+  --legacy-text-17:   17px;   /* FOLD -> --text-xl      */
+  --legacy-text-19:   19px;   /* FOLD -> --text-2xl     */
+  --legacy-text-22:   22px;   /* FOLD -> --text-3xl     */
+  --legacy-text-26:   26px;   /* FOLD -> --text-4xl     */
+  --legacy-text-30:   30px;   /* FOLD -> --text-display */
+  --legacy-text-40:   40px;   /* FOLD -> --text-display */
+  --legacy-text-64:   64px;   /* FOLD -> --text-display */
+
+  /* ── RADIUS ────────────────────────────────────────────────────────────
+     --radius (10px) and --radius-lg (14px) are NOT redefined: both have live
+     var() consumers, so changing either would move real pixels.
+     Monotonic: xs 4 · sm 8 · radius 10 · md 12 · lg 14 · xl 20. */
+  --radius-xs:    4px;
+  --radius-sm:    8px;
+  --radius-md:   12px;
+  --radius-xl:   20px;
+  --radius-full: 999px;   /* folds 99px / 100px / 999px, all "fully round" */
+
+  --legacy-radius-2:   2px;
+  --legacy-radius-3:   3px;
+  --legacy-radius-5:   5px;
+  --legacy-radius-7:   7px;
+  --legacy-radius-9:   9px;
+  --legacy-radius-16: 16px;
+  --legacy-radius-18: 18px;
+  --legacy-radius-24: 24px;
+```
 
 - [ ] **Step 5: Bump the CSS cache-bust**
 
