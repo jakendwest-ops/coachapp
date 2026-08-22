@@ -145,12 +145,35 @@ assertMapsMatchStylesheet()
 // Converting something that should not have been touched is the only unrecoverable direction.
 //
 // This is a small hand-rolled JS lexer, not a full parser -- it does not understand regex
-// literals (`/like this/`), so a stray `/` that opens what looks like a regex containing a
-// quote character could in principle misclassify a few characters. That is an accepted,
-// narrow gap: it can only ever cause MORE conservatism (an attribute wrongly judged
-// ambiguous and skipped), never less, because it can only make the mask flip to "not flat
-// text" where it should not have -- it cannot manufacture a false "flat text" span across a
-// real boundary. Skip is the safe direction, so this gap does not undermine the guarantee.
+// literals (`/like this/`). CORRECTION (round 3): an earlier version of this comment claimed
+// that gap could only ever make the codemod MORE conservative (skip more), never less. That
+// claim is FALSE and was reproduced live against this exact file:
+//
+//   const re = /`/;
+//   const help = 'Example only: style="color:#ef4444" not real';
+//   function real() { return `<span style="border-radius:10px">real</span>`; }
+//
+//   -> replacements:  1  color #ef4444 -> var(--danger)      <- WRONGLY CONVERTED
+//      SKIPPED:       1  not inside a template literal        <- the REAL attribute, skipped
+//
+// An unbalanced quote or backtick sitting inside what the lexer reads as a `/.../` regex
+// literal (here the backtick inside `/`\`/`) flips the tracked state for the rest of the
+// file, in EITHER direction -- it can just as easily manufacture a false "flat template
+// literal text" span over a plain string as it can over-flag real text as ambiguous. The
+// consequence can therefore be a wrongly-CONVERTED comment or plain-string mention (the
+// exact Finding-A hazard this file exists to close), not merely extra, harmless caution.
+// Telling a future reader otherwise would be a false safety assurance, which is worse than no
+// comment at all.
+//
+// STATUS: verified to have zero effect on the real codebase as of this commit -- re-running
+// this codemod against all 9 js/ modules and diffing every changed line found no comment or
+// plain-string mention wrongly converted; the trigger (a `/.../`-shaped regex literal
+// containing an odd number of quote/backtick characters) does not occur near any real style
+// attribute today. This is NOT a standing guarantee: it must be RE-CHECKED (re-run the dry run,
+// re-diff the SKIPPED and replacements lists) if a regex literal is ever added near a style
+// attribute before this codemod is next run. Deliberately NOT fixed by making the lexer
+// regex-aware -- distinguishing a regex literal from division correctly needs real parsing,
+// and adding that now, immediately before the conversion tasks, would be the wrong trade.
 function computeTemplateLiteralTextMask (src) {
   const n = src.length
   const mask = new Uint8Array(n) // 1 = inside the flat literal text of a template literal
