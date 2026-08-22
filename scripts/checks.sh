@@ -78,18 +78,31 @@ if [ -n "$ZERO_HITS" ]; then
   fail "truthy test on a field where 0 is legitimate -- use an explicit null/undefined check (x == null), not !x"
 fi
 
-# -- 3. Cache bust -- all module files must have ?v= in index.html --
+# -- 3. Cache bust -- a CHANGED module's ?v= must RISE, not merely exist --
+# The old rule only asserted a ?v= was PRESENT. On 2026-08-22 three modules shipped their
+# ownership guards with no bump at all and this rule passed on every one of those pushes --
+# a returning browser ran the OLD, UNGUARDED code while index.html said nothing had changed.
+# It also hardcoded 8 modules and omitted starter-content.js, which had never been checked.
+# Enumerate from disk; compare versions between origin/master and HEAD.
 echo "Checking cache bust..."
-MISSING_VER=""
-for module in app-core app-dashboard app-programs app-clients app-calendar-goals app-workouts app-runner app-progress; do
-  if ! grep -q "${module}\.js?v=[0-9]" index.html; then
-    MISSING_VER="$MISSING_VER $module"
-  fi
-done
-if [ -n "$MISSING_VER" ]; then
-  fail "index.html missing ?v=N on:$MISSING_VER"
+CB_BASE=origin/master
+if ! git rev-parse --verify "$CB_BASE" >/dev/null 2>&1; then
+  echo "  [SKIP] $CB_BASE not available -- cannot diff versions. This is a SKIP, not a pass."
 else
-  echo "  All module script tags have ?v= cache busters."
+  CB_BAD=""
+  for f in js/*.js css/main.css; do
+    git diff --quiet "$CB_BASE" HEAD -- "$f" && continue          # unchanged, nothing to check
+    old=$(git show "$CB_BASE:index.html" 2>/dev/null | grep -oE "${f}\?v=[0-9]+" | grep -oE '[0-9]+$')
+    new=$(grep -oE "${f}\?v=[0-9]+" index.html | grep -oE '[0-9]+$')
+    if [ -z "$new" ]; then CB_BAD="$CB_BAD $f(no-tag)"; continue; fi
+    if [ -z "$old" ]; then continue; fi                            # new file, nothing to compare
+    if [ "$new" -le "$old" ]; then CB_BAD="$CB_BAD $f($old->$new)"; fi
+  done
+  if [ -n "$CB_BAD" ]; then
+    fail "changed file(s) whose ?v= did not rise:$CB_BAD -- a cached browser will run the OLD code"
+  else
+    echo "  Every changed module's ?v= rose."
+  fi
 fi
 
 # -- 4. No bare alert() calls --
