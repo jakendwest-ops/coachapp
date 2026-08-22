@@ -1,4 +1,86 @@
-﻿async function renderClientPrograms(clientId, el) {
+﻿// ─── OWNERSHIP ANCHORS ────────────────────────────────────────────────────────
+// This file is the heaviest raw db.from() user in the repo and had NO equivalent of app-workouts'
+// _verifyTemplateOwnership for its own tables — every phase/slot write was .eq('id', X)-only, i.e.
+// relying on unverified RLS as the sole backstop. Bug row
+// 2026-08-12-app-programs-phase-writes-no-ownership-anchor.
+//
+// Two rules learned the hard way and encoded here:
+//
+// 1. VERIFY THE ID THE WRITE ACTUALLY KEYS ON. A guard that checks programId while the write keys on
+//    phaseId is worse than no guard, because it reads as anchored. So the phase helper resolves the
+//    phase's OWN program_id from the database and verifies that — it never takes the caller's word
+//    for which program a phase belongs to. Where the caller supplies a programId/phaseId alongside,
+//    the helper asserts the pair actually match rather than ignoring the second id.
+//    (See 2026-08-22-guard-verifies-one-id-while-the-write-keys-on-another.)
+//
+// 2. FAIL CLOSED, INCLUDING ON AN UNREADABLE ROW. An RLS-denied read must not become "it's mine".
+//    Modelled on _verifyClientAccess (app-core.js), NOT on _effectiveCoachIdForClient, whose
+//    trailing `|| currentUser.id` is its own open bug.
+//
+// Ownership here is coach-side and anchored on currentUser.id directly — see the note on
+// _verifyProgramOwnership for why a role-resolved coach id is the WRONG anchor for this family.
+// Solo is safe under a coach_id test in THIS family — solo's programs.coach_id is the auth uid (see
+// saveProgram's insert), unlike its clients.coach_id, which is NULL and has caused four bugs.
+// Assignment rows (client_programs) are the exception: they are anchored client-side, via
+// _verifyClientAccess, because solo self-assignment and coach-assignment are both legitimate.
+//
+// If you add a write to program_phases / program_phase_workouts, it goes through one of these. Do
+// not trust a count in a comment — grep the file yourself.
+// Anchored on currentUser.id DIRECTLY, and deliberately not on app-workouts'
+// _resolveTemplateOwnerCoachId-style role resolution. That helper answers "who is the coach behind this
+// session", which for role='client' is THE CLIENT'S COACH — so a gate built on it asks "is this my
+// coach's program?" and returns TRUE for that coach's entire program set. Reachable shape: a master
+// account (a coach who is also another coach's client) in Client view, where currentProfile.role is
+// forced to 'client' while currentUser.id stays their own. Caught by the 2026-08-22 review.
+//
+// currentUser.id is not merely safer, it is the CORRECT question: programs.coach_id is the authoring
+// account's own auth uid at every writer in the repo — js/app-programs.js saveProgram's insert and
+// js/starter-content.js's seed are the only two, both `coach_id: currentUser.id`. It also matches all
+// six sibling programs writes in this file. Solo is safe for the same reason: solo's PROGRAMS carry the
+// auth uid even though its CLIENTS row has coach_id NULL.
+async function _verifyProgramOwnership(fnName, programId) {
+  if (!programId) { log.error(fnName, 'ownership check failed — no programId'); return false }
+  const { data } = await db.from('programs').select('id').eq('id', programId).eq('coach_id', currentUser.id).maybeSingle()
+  if (!data) { log.error(fnName, 'ownership check failed — program is not mine', { programId }); return false }
+  return true
+}
+
+// expectedProgramId is optional because several entry points only receive a phaseId — but when one
+// IS passed, a mismatch is refused rather than shrugged off: passing your own programId with someone
+// else's phaseId is precisely how a two-id guard gets defeated.
+async function _verifyPhaseOwnership(fnName, phaseId, expectedProgramId = null) {
+  if (!phaseId) { log.error(fnName, 'ownership check failed — no phaseId'); return false }
+  const { data: phase } = await db.from('program_phases').select('id, program_id').eq('id', phaseId).maybeSingle()
+  if (!phase) { log.error(fnName, 'ownership check failed — phase not visible', { phaseId }); return false }
+  if (expectedProgramId && phase.program_id !== expectedProgramId) {
+    log.error(fnName, 'ownership check failed — phase does not belong to the program passed with it', { phaseId, programId: expectedProgramId })
+    return false
+  }
+  return _verifyProgramOwnership(fnName, phase.program_id)
+}
+
+async function _verifyPhaseWorkoutOwnership(fnName, pwId, expectedPhaseId = null) {
+  if (!pwId) { log.error(fnName, 'ownership check failed — no phase-workout id'); return false }
+  const { data: pw } = await db.from('program_phase_workouts').select('id, phase_id').eq('id', pwId).maybeSingle()
+  if (!pw) { log.error(fnName, 'ownership check failed — slot not visible', { pwId }); return false }
+  if (expectedPhaseId && pw.phase_id !== expectedPhaseId) {
+    log.error(fnName, 'ownership check failed — slot does not belong to the phase passed with it', { pwId, phaseId: expectedPhaseId })
+    return false
+  }
+  return _verifyPhaseOwnership(fnName, pw.phase_id)
+}
+
+// client_programs is anchored through the CLIENT, not the coach: the legitimate callers are a coach
+// acting on their own client and a solo user acting on their own record, which is exactly the pair
+// _verifyClientAccess allows (coach_id === me OR user_id === me).
+async function _verifyAssignmentAccess(fnName, assignmentId) {
+  if (!assignmentId) { log.error(fnName, 'ownership check failed — no assignmentId'); return false }
+  const { data } = await db.from('client_programs').select('id, client_id').eq('id', assignmentId).maybeSingle()
+  if (!data) { log.error(fnName, 'ownership check failed — assignment not visible', { assignmentId }); return false }
+  return _verifyClientAccess(fnName, data.client_id)
+}
+
+async function renderClientPrograms(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const [{ data: assignments, error }, { data: clientData }] = await Promise.all([
@@ -333,6 +415,9 @@ async function saveAssignProgram(clientId) {
   const btn       = document.getElementById('ap-save-btn')
 
   if (!programId) { errorEl.textContent = 'Please select a program'; return }
+  if (!(await _verifyClientAccess('saveAssignProgram', clientId)) || !(await _verifyProgramOwnership('saveAssignProgram', programId))) {
+    errorEl.textContent = 'Could not assign — permission denied.'; return
+  }
 
   // Disable for the whole run. A check-then-insert in the browser cannot beat a double-tap: two
   // invocations both await the lookup before either INSERT lands, both see zero rows, and both
@@ -632,6 +717,7 @@ async function _saveMissingOneRMEntries(clientId) {
 
 async function unassignProgram(clientId, assignmentId) {
   if (!confirm('Remove this program from the client?')) return
+  if (!(await _verifyAssignmentAccess('unassignProgram', assignmentId))) { showToast('Could not remove the program', 'error'); return }
   // Was a bare delete of the client_programs row. Its client_program_workouts cascade away, but the
   // client-owned template clones they pointed at do NOT (the FK runs the other way), so every
   // removal stranded ~30 orphan templates forever — for real clients as well as the owner. Now goes
@@ -672,8 +758,12 @@ function showEditStartDateModal(clientId, assignmentId, currentDate) {
 async function saveEditStartDate(clientId, assignmentId) {
   const newDate = document.getElementById('esd-date')?.value
   if (!newDate) return
-  const { error } = await db.from('client_programs').update({ start_date: newDate }).eq('id', assignmentId)
-  if (error) { log.error('saveEditStartDate', 'update failed', error); return }
+  if (!(await _verifyAssignmentAccess('saveEditStartDate', assignmentId))) { showToast('Could not update the start date', 'error'); return }
+  // .select() + rowcount, per this file's own documented rule at moveProgramToPersonal: PostgREST
+  // returns error:null for an UPDATE matching ZERO rows, so without it a refused write closes the
+  // modal and re-renders as though it had saved.
+  const { data, error } = await db.from('client_programs').update({ start_date: newDate }).eq('id', assignmentId).select('id')
+  if (error || data?.length !== 1) { log.error('saveEditStartDate', 'update failed', error || { rows: data?.length }); showToast('Could not update the start date', 'error'); return }
   document.getElementById('esd-modal')?.remove()
   renderClientPrograms(clientId, document.getElementById('tab-content'))
 }
@@ -728,6 +818,13 @@ async function saveAssignProgramToClient(programId, soloClientId) {
   const clientId = soloClientId || document.getElementById('apc-client')?.value
   const startDate = document.getElementById('apc-start').value || null
   if (!clientId) { errEl.textContent = 'Please select a client'; return }
+  // Both ids are caller-supplied: programId from the onclick, clientId from a <select> (or the solo
+  // record). _verifyClientAccess is the right test for the client side because it allows BOTH shapes
+  // this function legitimately serves — a coach assigning to their own client (coach_id === me) and a
+  // solo user adding to their own plan (user_id === me, coach_id NULL).
+  if (!(await _verifyClientAccess('saveAssignProgramToClient', clientId)) || !(await _verifyProgramOwnership('saveAssignProgramToClient', programId))) {
+    errEl.textContent = 'Could not assign — permission denied.'; return
+  }
 
   const btn = document.getElementById('apc-save-btn')
   if (btn?.disabled) return
@@ -1133,8 +1230,11 @@ async function saveProgram(programId) {
 
   if (id) {
     log.info('saveProgram', 'updating', { id })
-    const { error } = await db.from('programs').update({ name, description: desc || null }).eq('id', id)
-    if (error) { log.error('saveProgram', 'update failed', error); errorEl.textContent = error.message; return }
+    if (!(await _verifyProgramOwnership('saveProgram', id))) { errorEl.textContent = 'Could not save — permission denied.'; return }
+    // Anchor AND rowcount, matching moveProgramToPersonal below, which documents why both are
+    // required. This function was the sibling that did not follow its own family's rule.
+    const { data: upd, error } = await db.from('programs').update({ name, description: desc || null }).eq('id', id).eq('coach_id', currentUser.id).select('id')
+    if (error || upd?.length !== 1) { log.error('saveProgram', 'update failed', error || { rows: upd?.length }); errorEl.textContent = error?.message || 'Save failed — program not found or permission denied.'; return }
     log.ok('saveProgram', 'updated', { id })
     closeProgramModal()
     openProgram(id)
@@ -1342,6 +1442,15 @@ async function copyProgramToCoaching(programId) {
 }
 
 async function deleteProgram(programId) {
+  // FIRST STATEMENT, ahead of every read and write. The programs delete at the bottom has always been
+  // anchored on coach_id, but the phase-slot delete, the template sweep, AND the
+  // _removeAssignmentAndClones loop below all run before it, unanchored. An earlier pass at this put
+  // the gate just above the phase cascade and wrote a comment claiming it was "before the cascade" —
+  // it was not before the assignment loop, which deletes client_program_workouts and template clones.
+  // All three review agents caught it. Same class as
+  // 2026-08-22-resolveeditabletemplateid-writes-before-the-ownership-check: a guard that is present,
+  // visible, and simply not first reads as protection while protecting nothing.
+  if (!(await _verifyProgramOwnership('deleteProgram', programId))) { showToast('Could not delete this program', 'error'); return }
   const { realClients: blocking, soloOwnIds } = await _programAssignments(programId)
 
   if (blocking.length) {
@@ -1426,12 +1535,17 @@ async function savePhase(programId) {
 
   if (phaseId) {
     log.info('savePhase', 'updating', { phaseId })
-    const { error } = await db.from('program_phases').update({ name, duration_weeks: weeks }).eq('id', phaseId)
-    if (error) { log.error('savePhase', 'update failed', error); errorEl.textContent = error.message; return }
+    // The UPDATE keys on phaseId, so phaseId is what gets verified — and the programId passed with it
+    // is asserted to match, not ignored. phaseId comes from a hidden DOM input.
+    if (!(await _verifyPhaseOwnership('savePhase', phaseId, programId))) { errorEl.textContent = 'Could not save — permission denied.'; return }
+    const { data: upd, error } = await db.from('program_phases').update({ name, duration_weeks: weeks }).eq('id', phaseId).select('id')
+    if (error || upd?.length !== 1) { log.error('savePhase', 'update failed', error || { rows: upd?.length }); errorEl.textContent = error?.message || 'Save failed — phase not found or permission denied.'; return }
     // If duration shrank below any already-generated weeks, prune the now out-of-range rows (master + propagated client copies)
     await _cleanupPhaseWeeksBeyond(phaseId, weeks, programId)
     log.ok('savePhase', 'updated', { phaseId })
   } else {
+    // The INSERT keys on programId, so that is what gets verified on this branch.
+    if (!(await _verifyProgramOwnership('savePhase', programId))) { errorEl.textContent = 'Could not save — permission denied.'; return }
     // Get current max order_index to append at end
     const { data: existing } = await db.from('program_phases').select('order_index').eq('program_id', programId).order('order_index', { ascending: false }).limit(1)
     const nextIndex = (existing?.[0]?.order_index ?? -1) + 1
@@ -1448,6 +1562,9 @@ async function savePhase(programId) {
 async function deletePhase(programId, phaseId) {
   if (!confirm('Remove this phase?')) return
   log.info('deletePhase', 'deleting', { phaseId })
+  // Ahead of everything: this function deletes client copies and sweeps templates before it ever
+  // touches the phase row, so a check placed at the phase delete would refuse only the last write.
+  if (!(await _verifyPhaseOwnership('deletePhase', phaseId, programId))) { showToast('Could not remove this phase', 'error'); return }
 
   // Deleting the phase row cascades its program_phase_workouts (and, through them, the client copies)
   // — but it does NOT touch the workout_templates those slots pointed at. So this used to orphan, on
@@ -1585,6 +1702,9 @@ async function savePeriodizationConfig() {
   const type = window._pzType || null
   let config = null
 
+  // Before the undulating branch's per-slot tier writes, which land before the phase update below.
+  if (!(await _verifyPhaseOwnership('savePeriodizationConfig', phaseId, programId))) { errEl.textContent = 'Could not save — permission denied.'; return }
+
   if (type === 'linear') {
     const startPct = parseFloat(document.getElementById('pz-start')?.value)
     const endPct = parseFloat(document.getElementById('pz-end')?.value)
@@ -1616,6 +1736,7 @@ async function savePeriodizationConfig() {
 }
 
 async function generatePhasePeriodization(phaseId, programId) {
+  if (!(await _verifyPhaseOwnership('generatePhasePeriodization', phaseId, programId))) { showToast('Could not generate — permission denied', 'error'); return }
   const { data: phase, error: phErr } = await db.from('program_phases').select('*').eq('id', phaseId).single()
   if (phErr || !phase) { showToast('Could not load phase', 'error'); return }
   if (!phase.periodization_type) { showToast('Set a periodization type first', 'error'); return }
@@ -2034,6 +2155,12 @@ function _editPhaseWorkout(templateId, phaseWorkoutId) {
 // Cheap by design: new rows point at the SAME template_id as the source week; they only become
 // independent workouts once someone actually edits one (see _resolveEditableTemplateId in app-workouts.js).
 async function duplicatePhaseWeek(phaseId, sourceWeek) {
+  // window._openProgramId is passed as the expected program because this function later keys its
+  // client-copy fan-out on it (the client_programs read and the cpw inserts). Verifying the phase and
+  // then writing against an unasserted second id is the exact shape these helpers exist to close — it
+  // does not stop being that shape because the second id came from window state instead of a
+  // parameter. A null _openProgramId skips the assertion, so this cannot refuse a legitimate user.
+  if (!(await _verifyPhaseOwnership('duplicatePhaseWeek', phaseId, window._openProgramId || null))) { showToast('Could not duplicate that week', 'error'); return }
   let clientCopyFailures = 0
   const phase = (window._openProgramPhases || []).find(p => p.id === phaseId)
   const durationWeeks = phase?.duration_weeks || 1
@@ -2136,6 +2263,9 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
 // coach reuses elsewhere; deleting this week must not destroy that.
 async function deletePhaseWeek(phaseId, weekNumber) {
   if (!confirm(`Delete Week ${weekNumber}? This removes every session in this week and cannot be undone. Later weeks will shift down.`)) return
+  // Same reason as duplicatePhaseWeek: _deleteClientCopiesForSlots and _deleteOwnedUnreferencedTemplates
+  // below are both keyed on window._openProgramId.
+  if (!(await _verifyPhaseOwnership('deletePhaseWeek', phaseId, window._openProgramId || null))) { showToast('Could not delete that week', 'error'); return }
 
   // The browser has no transaction, so this whole function is a sequence of independent writes: delete
   // the week, shift every later week down by one in program_phase_workouts, do the same for the client
@@ -2380,6 +2510,15 @@ function _pickWorkout(templateId) {
 async function _quickAssignPhaseWorkout(slot, templateId) {
   const { phaseId, dayOfWeek, sessionOrder, weekNumber } = slot
   if (!templateId) return
+  if (!(await _verifyPhaseOwnership('_quickAssignPhaseWorkout', phaseId))) { showToast('Could not assign workout — permission denied', 'error'); return }
+  // templateId is caller-supplied too, and it is WRITTEN into program_phase_workouts.template_id below.
+  // Gating only the phase would verify one id and write another. _verifyTemplateOwnership lives in
+  // js/app-workouts.js — a later <script> in index.html, which is fine: this is a call-time reference
+  // inside an async function, and function declarations are global here (no bundler).
+  if (!(await _verifyTemplateOwnership(templateId, await _resolveTemplateOwnerCoachId()))) {
+    log.error('_quickAssignPhaseWorkout', 'ownership check failed — template is not mine', { templateId })
+    showToast('Could not assign workout — permission denied', 'error'); return
+  }
 
   // sessionOrder was computed from the grid's state as of its last render, which can go stale
   // under concurrent edits (two tabs, or two fast picks before the refresh below completes) —
@@ -2400,6 +2539,9 @@ async function _quickAssignPhaseWorkout(slot, templateId) {
 }
 
 async function removePhaseWorkout(pwId, phaseId) {
+  // The DELETE keys on pwId, so pwId is verified — and the phaseId passed alongside is asserted to be
+  // the slot's real one, rather than being taken on trust or dropped.
+  if (!(await _verifyPhaseWorkoutOwnership('removePhaseWorkout', pwId, phaseId))) { showToast('Could not remove that workout', 'error'); return }
   // Removing the slot used to leave its template behind. If that template was created inline via
   // "+ Create new workout (this day only)" it carries program_id, which EXCLUDES it from the reusable
   // library list — so it became unreachable debris the moment its only slot was removed. deleteProgram
