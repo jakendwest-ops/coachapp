@@ -728,7 +728,9 @@ Every changed line must be explainable. **If anything is unexplainable, stop** â
 ```bash
 cd c:/Users/jaken/OneDrive/coachapp
 sed -i 's#js/app-core\.js?v=15#js/app-core.js?v=16#' index.html
+[ -f js/app-core.js ] || { echo "NO SUCH FILE: js/app-core.js -- check the module name"; exit 1; }
 n=$(sh scripts/style-count.sh js/app-core.js)
+[ -n "$n" ] && [ "$n" -gt 0 ] || echo "WARNING: count is $n -- verify this is real, not a typo'd path"
 echo "new app-core count: $n"
 sed -i -E "s#(\"js/app-core\.js\"[[:space:]]*:[[:space:]]*)[0-9]+#\1${n}#" scripts/style-baseline.json
 grep "app-core" scripts/style-baseline.json
@@ -815,7 +817,9 @@ Expected `ROUNDTRIP_EXIT=0`. If not, revert with `git checkout -- js/app-runner.
 ```bash
 cd c:/Users/jaken/OneDrive/coachapp
 sed -i 's#js/app-runner\.js?v=74#js/app-runner.js?v=75#' index.html
+[ -f js/app-runner.js ] || { echo "NO SUCH FILE: js/app-runner.js -- check the module name"; exit 1; }
 n=$(sh scripts/style-count.sh js/app-runner.js)
+[ -n "$n" ] && [ "$n" -gt 0 ] || echo "WARNING: count is $n -- verify this is real, not a typo'd path"
 sed -i -E "s#(\"js/app-runner\.js\"[[:space:]]*:[[:space:]]*)[0-9]+#\1${n}#" scripts/style-baseline.json
 CI=true sh scripts/checks.sh > /tmp/t6c.out 2>&1; echo "CHECKS_EXIT=$?"
 npx playwright test tests/runner.spec.js tests/runner-fast-table-metrics.spec.js tests/unilateral-runner-2026-08-19.spec.js --reporter=line > /tmp/t6t.out 2>&1; echo "TEST_EXIT=$?"
@@ -873,7 +877,9 @@ node scripts/tokenise.mjs js/<MOD>.js --apply
 node scripts/tokenise-verify.mjs js/<MOD>.js; echo "ROUNDTRIP_EXIT=$?"
 node --check js/<MOD>.js && echo "SYNTAX OK"
 sed -i 's#js/<MOD>\.js?v=<OLD>#js/<MOD>.js?v=<NEW>#' index.html
+[ -f js/<MOD>.js ] || { echo "NO SUCH FILE: js/<MOD>.js -- check the module name"; exit 1; }
 n=$(sh scripts/style-count.sh js/<MOD>.js)
+[ -n "$n" ] && [ "$n" -gt 0 ] || echo "WARNING: count is $n -- verify this is real, not a typo'd path"
 sed -i -E "s#(\"js/<MOD>\.js\"[[:space:]]*:[[:space:]]*)[0-9]+#\1${n}#" scripts/style-baseline.json
 CI=true sh scripts/checks.sh > /tmp/<MOD>c.out 2>&1; echo "CHECKS_EXIT=$?"
 npx playwright test --reporter=line > /tmp/<MOD>t.out 2>&1; echo "TEST_EXIT=$?"
