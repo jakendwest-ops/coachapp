@@ -92,17 +92,30 @@ fi
 #      against it is always empty and would silently report a pass on every single push.
 #   2. origin/master, if it resolves and differs from HEAD (the local pre-push case).
 #   3. HEAD~1, if it exists (covers a CI re-run, or any run against an already-pushed HEAD).
+#      NOTE: HEAD~1 only sees the single most-recent commit -- on a multi-commit push
+#      whose chain falls all the way here, an earlier commit's stale bump could be
+#      invisible. This path is only reached when neither $CB_BASE nor origin/master are
+#      usable, which should be rare in practice. Known, bounded weakness -- not solved
+#      here; walking back to the true push base without an event.before is out of scope.
 #   4. Otherwise: [SKIP] -- never a silent pass.
 echo "Checking cache bust..."
 CB_HEAD_SHA=$(git rev-parse HEAD)
 
+# Verifies the ref/SHA is a real, reachable COMMIT (not just a syntactically well-formed
+# string) and that it differs from HEAD. `git rev-parse --verify X` alone is NOT enough --
+# it accepts a well-formed-but-nonexistent SHA like the all-zeroes sentinel git uses for
+# "no previous commit" (a branch's first push, some force-pushes) with exit 0. That let a
+# nonexistent CB_BASE slip through to the diff loop, which then failed 10x with
+# "fatal: bad object" and still printed the pass text -- the same false-pass class this
+# whole rule exists to close, reached through a different door. Peeling to ^{commit}
+# forces git to confirm the object actually exists.
 cb_usable() {
-  git rev-parse --verify "$1" >/dev/null 2>&1 || return 1
-  [ "$(git rev-parse "$1")" != "$CB_HEAD_SHA" ]
+  CB_CANDIDATE_SHA=$(git rev-parse --verify --quiet "$1^{commit}" 2>/dev/null) || return 1
+  [ "$CB_CANDIDATE_SHA" != "$CB_HEAD_SHA" ]
 }
 
 if [ -n "$CB_BASE" ] && ! cb_usable "$CB_BASE"; then
-  echo "  [WARN] CB_BASE=$CB_BASE does not resolve, or resolves to HEAD itself -- ignoring it, auto-detecting instead."
+  echo "  [WARN] CB_BASE=$CB_BASE does not resolve to an existing commit, or resolves to HEAD itself -- ignoring it, auto-detecting instead."
   CB_BASE=""
 fi
 if [ -z "$CB_BASE" ]; then
