@@ -17,6 +17,11 @@ const orig = readFileSync(origPath, 'utf8')
 const conv = readFileSync(convPath, 'utf8')
 
 // var(--anything, LITERAL) -> LITERAL
+// Not general-purpose: this regex is untested against nested var(--a, var(--b, 13px)) or a
+// comma-bearing fallback like rgba(0,0,0,0.5). That's ruled out by construction, not by this
+// file -- every fallback tokenise.mjs can emit is a flat px or hex literal taken straight from
+// its own TYPE/RADIUS/COLOUR maps, so neither shape is reachable here. (The nested case would
+// also fail SAFE -- i.e. block rather than silently pass -- if it ever were reachable.)
 const expanded = conv.replace(/var\(--[a-z0-9-]+,\s*([^)]*)\)/gi, (_m, lit) => lit.trim())
 
 if (expanded === orig) {
