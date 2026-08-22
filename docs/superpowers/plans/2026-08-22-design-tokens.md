@@ -378,7 +378,7 @@ cd c:/Users/jaken/OneDrive/coachapp
   echo '{'
   first=1
   for f in js/*.js css/main.css; do
-    n=$(sed -E 's/var\([^)]*\)//g' "$f" | grep -ohE 'font-size:[[:space:]]*[0-9.]+px|border-radius:[[:space:]]*[0-9]+px|#[0-9a-fA-F]{3,8}\b' | wc -l)
+    n=$(sh scripts/style-count.sh "$f")
     [ $first -eq 0 ] && echo ','
     printf '  "%s": %s' "$f" "$n"
     first=0
@@ -412,7 +412,7 @@ if [ ! -f "$SB" ]; then
 else
   SB_BAD=""
   for f in js/*.js css/main.css; do
-    n=$(sed -E 's/var\([^)]*\)//g' "$f" | grep -ohE 'font-size:[[:space:]]*[0-9.]+px|border-radius:[[:space:]]*[0-9]+px|#[0-9a-fA-F]{3,8}\b' | wc -l | tr -d ' ')
+    n=$(sh scripts/style-count.sh "$f")
     b=$(grep -oE "\"$(echo "$f" | sed 's#/#\\/#g')\"[[:space:]]*:[[:space:]]*[0-9]+" "$SB" | grep -oE '[0-9]+$')
     [ -z "$b" ] && b=0
     if [ "$n" -gt "$b" ]; then SB_BAD="$SB_BAD $f($b->$n)"; fi
@@ -728,7 +728,7 @@ Every changed line must be explainable. **If anything is unexplainable, stop** â
 ```bash
 cd c:/Users/jaken/OneDrive/coachapp
 sed -i 's#js/app-core\.js?v=15#js/app-core.js?v=16#' index.html
-n=$(sed -E 's/var\([^)]*\)//g' js/app-core.js | grep -ohE 'font-size:[[:space:]]*[0-9.]+px|border-radius:[[:space:]]*[0-9]+px|#[0-9a-fA-F]{3,8}\b' | wc -l | tr -d ' ')
+n=$(sh scripts/style-count.sh js/app-core.js)
 echo "new app-core count: $n"
 sed -i -E "s#(\"js/app-core\.js\"[[:space:]]*:[[:space:]]*)[0-9]+#\1${n}#" scripts/style-baseline.json
 grep "app-core" scripts/style-baseline.json
@@ -815,7 +815,7 @@ Expected `ROUNDTRIP_EXIT=0`. If not, revert with `git checkout -- js/app-runner.
 ```bash
 cd c:/Users/jaken/OneDrive/coachapp
 sed -i 's#js/app-runner\.js?v=74#js/app-runner.js?v=75#' index.html
-n=$(sed -E 's/var\([^)]*\)//g' js/app-runner.js | grep -ohE 'font-size:[[:space:]]*[0-9.]+px|border-radius:[[:space:]]*[0-9]+px|#[0-9a-fA-F]{3,8}\b' | wc -l | tr -d ' ')
+n=$(sh scripts/style-count.sh js/app-runner.js)
 sed -i -E "s#(\"js/app-runner\.js\"[[:space:]]*:[[:space:]]*)[0-9]+#\1${n}#" scripts/style-baseline.json
 CI=true sh scripts/checks.sh > /tmp/t6c.out 2>&1; echo "CHECKS_EXIT=$?"
 npx playwright test tests/runner.spec.js tests/runner-fast-table-metrics.spec.js tests/unilateral-runner-2026-08-19.spec.js --reporter=line > /tmp/t6t.out 2>&1; echo "TEST_EXIT=$?"
@@ -873,7 +873,7 @@ node scripts/tokenise.mjs js/<MOD>.js --apply
 node scripts/tokenise-verify.mjs js/<MOD>.js; echo "ROUNDTRIP_EXIT=$?"
 node --check js/<MOD>.js && echo "SYNTAX OK"
 sed -i 's#js/<MOD>\.js?v=<OLD>#js/<MOD>.js?v=<NEW>#' index.html
-n=$(sed -E 's/var\([^)]*\)//g' js/<MOD>.js | grep -ohE 'font-size:[[:space:]]*[0-9.]+px|border-radius:[[:space:]]*[0-9]+px|#[0-9a-fA-F]{3,8}\b' | wc -l | tr -d ' ')
+n=$(sh scripts/style-count.sh js/<MOD>.js)
 sed -i -E "s#(\"js/<MOD>\.js\"[[:space:]]*:[[:space:]]*)[0-9]+#\1${n}#" scripts/style-baseline.json
 CI=true sh scripts/checks.sh > /tmp/<MOD>c.out 2>&1; echo "CHECKS_EXIT=$?"
 npx playwright test --reporter=line > /tmp/<MOD>t.out 2>&1; echo "TEST_EXIT=$?"
