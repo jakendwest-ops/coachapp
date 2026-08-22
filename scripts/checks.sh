@@ -156,6 +156,34 @@ else
   fi
 fi
 
+# -- 3b. Style-literal ratchet -- a file's count must never RISE --
+# --radius has existed for months and the code still drifted to 18 distinct radius
+# values, including three spellings of "fully round" (99px/100px/999px). Tokens
+# without enforcement demonstrably do not hold, so this ships BEFORE the conversion.
+# PER-FILE, not a global total: one total would let ten literals added to the runner
+# be offset by ten removed from clients. A file with no baseline entry gets 0, so a
+# new module carrying literals fails immediately -- allowlist, not denylist.
+# var(...) is stripped BEFORE counting: the fallback form var(--danger, #ef4444)
+# would otherwise be miscounted as unconverted work (verified 2026-08-22).
+echo "Checking style-literal ratchet..."
+SB=scripts/style-baseline.json
+if [ ! -f "$SB" ]; then
+  fail "$SB is missing -- the ratchet cannot run, and a missing baseline is not a pass"
+else
+  SB_BAD=""
+  for f in js/*.js css/main.css; do
+    n=$(sed -E 's/var\([^)]*\)//g' "$f" | grep -ohE 'font-size:[[:space:]]*[0-9.]+px|border-radius:[[:space:]]*[0-9]+px|#[0-9a-fA-F]{3,8}\b' | wc -l | tr -d ' ')
+    b=$(grep -oE "\"$(echo "$f" | sed 's#/#\\/#g')\"[[:space:]]*:[[:space:]]*[0-9]+" "$SB" | grep -oE '[0-9]+$')
+    [ -z "$b" ] && b=0
+    if [ "$n" -gt "$b" ]; then SB_BAD="$SB_BAD $f($b->$n)"; fi
+  done
+  if [ -n "$SB_BAD" ]; then
+    fail "style literals INCREASED:$SB_BAD -- use a token from css/main.css, or lower the baseline if you converted"
+  else
+    echo "  No file exceeds its style-literal baseline."
+  fi
+fi
+
 # -- 4. No bare alert() calls --
 echo "Checking for bare alert() calls..."
 ALERTS=$(grep -n "alert(" $FILES | grep -v "//")
