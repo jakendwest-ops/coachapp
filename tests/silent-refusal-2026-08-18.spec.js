@@ -170,7 +170,7 @@ test.describe('A refused write must not report success', () => {
           update: () => { const c = { eq: () => c, select: () => Promise.resolve({ data: [], error: null }) }; return c },
         }
         if (t === 'workout_templates') return {
-          select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { id: 'SHARED', coach_id: 'COACH-1' }, error: null }) }) }),
+          select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { id: 'SHARED', coach_id: currentUser.id }, error: null }) }) }),
           delete: () => { const c = { eq: (col, v) => { c._f = { ...(c._f||{}), [col]: v }; return c },
             select: () => { deletes.push({ table: 'workout_templates', filters: c._f }); return Promise.resolve({ data: [{ id: 'CLONE' }], error: null }) } }; return c },
         }
@@ -187,7 +187,7 @@ test.describe('A refused write must not report success', () => {
       window._templateCtx = { phaseWorkoutId: 'slot-1', isClientPlan: false }
       try {
         const out = await _resolveEditableTemplateId('SHARED', 'ex1')
-        return { out, deletes, toast }
+        return { out, deletes, toast, coachId: currentUser.id }
       } finally {
         db.from = orig; window._cloneSharedMasterTemplate = origClone
         window.showToast = origToast; window._templateCtx = {}
@@ -207,7 +207,11 @@ test.describe('A refused write must not report success', () => {
     expect(tmplDelete, 'the clone must be deleted').toBeTruthy()
     expect(tmplDelete.filters.id, 'it must delete the CLONE, never the shared original').toBe('CLONE')
     // 4. Ownership anchor — an id-only delete on workout_templates is the standing ledger finding.
-    expect(tmplDelete.filters.coach_id, 'the reap must be ownership-anchored').toBe('COACH-1')
+    // 2026-08-22: was the literal 'COACH-1'. _resolveEditableTemplateId now refuses to fork a template
+    // it does not own (the gate added so the clone+repoint cannot happen before ownership is checked),
+    // so the stubbed template must present OUR coach_id or the fork never runs and this whole path is
+    // unreachable. Asserting against the same value keeps the ownership-anchor check intact.
+    expect(tmplDelete.filters.coach_id, 'the reap must be ownership-anchored').toBe(r.coachId)
     expect(r.deletes.some(d => d.table === 'workout_template_exercises' && d.filters.template_id === 'CLONE'),
       'the clone exercises must be reaped too, anchored on the clone').toBe(true)
   })

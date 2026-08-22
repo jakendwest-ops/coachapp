@@ -2847,6 +2847,27 @@ async function _resolveEditableTemplateId(templateId, exerciseId = null) {
 
   const { data: tmpl } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('id', templateId).single()
   if (!tmpl) return { templateId, exerciseId }
+
+  // OWNERSHIP GATE, HERE rather than in the callers. Everything below this line WRITES — it clones a
+  // workout_templates row plus its exercises, and repoints a program_phase_workouts row. Every caller
+  // that verifies ownership does so AFTER calling this, so an unverified templateId could produce a
+  // clone and a slot repoint before the check ever ran, and the caller's refusal would leave the clone
+  // behind. Found by pre-push review 2026-08-22 (Agent C, then Agent A independently).
+  //
+  // Placed in the helper, not at the call sites: there are SIX callers, not the four the ledger row
+  // listed — moveTemplateExercise, showAddExerciseToTemplateModal, saveExerciseToTemplate,
+  // saveEditTemplateExercise, deleteTemplateExercise, saveEditTemplate. Guarding each would be six
+  // chances to miss one, which is exactly how this class keeps recurring here.
+  //
+  // Free: tmpl is already fetched, so this is a field comparison, not another round-trip. It compares
+  // against the SAME coachId resolver the callers use, so a legitimate fork is unaffected — the clone
+  // is inserted with tmpl.coach_id, so if that is not ours we had no business cloning it.
+  const _ownerCoachId = await _resolveTemplateOwnerCoachId()
+  if (tmpl.coach_id !== _ownerCoachId) {
+    log.error('_resolveEditableTemplateId', 'refusing to fork a template we do not own', { templateId })
+    return { templateId, exerciseId }
+  }
+
   const cloned = await _cloneSharedMasterTemplate(tmpl)
   if (!cloned) return { templateId, exerciseId }
 

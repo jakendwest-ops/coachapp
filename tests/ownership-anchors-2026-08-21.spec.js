@@ -77,6 +77,66 @@ test.describe('saveExerciseToTemplate / moveTemplateExercise verify template own
     }
   })
 
+  // _resolveEditableTemplateId is not a resolver — on the shared-slot path it INSERTS a cloned
+  // workout_templates row plus its exercises and REPOINTS a program_phase_workouts row. Every caller
+  // that verifies ownership does so AFTER calling it, so an unverified templateId could produce a
+  // clone and a repoint before any check ran, and the caller's refusal would leave the clone behind.
+  // Found by pre-push review 2026-08-22; the gate now lives inside the helper because there are SIX
+  // callers, not the four the ledger row listed.
+  //
+  // Stubbed rather than driven live: the fork only triggers when a template is shared across >1 slot
+  // AND _templateCtx carries a phaseWorkoutId, and building that against a FOREIGN coach's template
+  // is not something the E2E PT can legitimately set up. The stub reproduces exactly the state the
+  // helper reads, which is all the gate can see.
+  test('_resolveEditableTemplateId refuses to fork a template owned by another coach', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      const orig = db.from.bind(db)
+      let cloneAttempted = false
+      db.from = (t) => {
+        if (t === 'program_phase_workouts') return {
+          select: () => ({ eq: () => Promise.resolve({ count: 2, error: null }) }),   // shared → fork path
+          // update() supplied even though the gate should stop us reaching it: without it, a REGRESSION
+          // (gate removed) throws 'update is not a function' and the test fails with a TypeError rather
+          // than the assertion message that explains what broke. Still red either way — but a red test
+          // that misreports the cause costs the next reader the same hour it cost to find this.
+          update: () => { const c = { eq: () => c, select: () => Promise.resolve({ data: [], error: null }) }; return c },
+        }
+        if (t === 'workout_templates') return {
+          // A template belonging to somebody else entirely.
+          select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { id: 'FOREIGN', coach_id: 'SOMEONE-ELSE' }, error: null }) }) }),
+          // delete() is here only so a REGRESSION reaches the assertion. With the gate removed the code
+          // clones, fails the repoint, then reaps the clone — and an unstubbed delete throws a TypeError
+          // that reports 'delete is not a function' instead of 'it must refuse BEFORE cloning'.
+          delete: () => { const c = { eq: () => c, select: () => Promise.resolve({ data: [{ id: 'CLONE' }], error: null }) }; return c },
+        }
+        if (t === 'workout_template_exercises') return {
+          delete: () => { const c = { eq: () => c, select: () => Promise.resolve({ data: [], error: null }) }; return c },
+        }
+        return orig(t)
+      }
+      const origClone = window._cloneSharedMasterTemplate
+      window._cloneSharedMasterTemplate = async () => { cloneAttempted = true; return { id: 'CLONE' } }
+      const seen = []
+      const origErr = log.error
+      log.error = (fn, msg, meta) => { seen.push(fn + '|' + msg); return origErr(fn, msg, meta) }
+      window._templateCtx = { phaseWorkoutId: 'slot-1', isClientPlan: false }
+      try {
+        const out = await _resolveEditableTemplateId('FOREIGN', 'ex1')
+        return { out, cloneAttempted, seen: seen.join(',') }
+      } finally {
+        db.from = orig; window._cloneSharedMasterTemplate = origClone
+        log.error = origErr; window._templateCtx = {}
+      }
+    })
+
+    // The load-bearing assertion: nothing was WRITTEN. A refusal that still clones has not prevented
+    // anything — the orphan is the damage.
+    expect(r.cloneAttempted, 'it must refuse BEFORE cloning, not clean up after').toBe(false)
+    expect(r.seen, 'and say why').toContain('_resolveEditableTemplateId|refusing to fork a template we do not own')
+    expect(r.out.templateId, 'the caller gets the original id back, unchanged').toBe('FOREIGN')
+  })
+
   test('moveTemplateExercise refuses a template owned by another coach, at the app layer', async ({ browser }) => {
     const pt2Ctx = await browser.newContext()
     const ptCtx = await browser.newContext()
