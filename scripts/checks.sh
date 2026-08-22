@@ -83,12 +83,40 @@ fi
 # ownership guards with no bump at all and this rule passed on every one of those pushes --
 # a returning browser ran the OLD, UNGUARDED code while index.html said nothing had changed.
 # It also hardcoded 8 modules and omitted starter-content.js, which had never been checked.
-# Enumerate from disk; compare versions between origin/master and HEAD.
+#
+# Base resolution -- a base that resolves to HEAD itself can NEVER show a diff, so it is
+# treated as unusable everywhere it could occur, not just for one source:
+#   1. An explicit $CB_BASE from the environment, if it resolves and differs from HEAD.
+#      CI sets this from the push event's true previous commit (see deploy.yml) because on
+#      a push-triggered run origin/master IS the commit that was just pushed -- diffing
+#      against it is always empty and would silently report a pass on every single push.
+#   2. origin/master, if it resolves and differs from HEAD (the local pre-push case).
+#   3. HEAD~1, if it exists (covers a CI re-run, or any run against an already-pushed HEAD).
+#   4. Otherwise: [SKIP] -- never a silent pass.
 echo "Checking cache bust..."
-CB_BASE=origin/master
-if ! git rev-parse --verify "$CB_BASE" >/dev/null 2>&1; then
-  echo "  [SKIP] $CB_BASE not available -- cannot diff versions. This is a SKIP, not a pass."
+CB_HEAD_SHA=$(git rev-parse HEAD)
+
+cb_usable() {
+  git rev-parse --verify "$1" >/dev/null 2>&1 || return 1
+  [ "$(git rev-parse "$1")" != "$CB_HEAD_SHA" ]
+}
+
+if [ -n "$CB_BASE" ] && ! cb_usable "$CB_BASE"; then
+  echo "  [WARN] CB_BASE=$CB_BASE does not resolve, or resolves to HEAD itself -- ignoring it, auto-detecting instead."
+  CB_BASE=""
+fi
+if [ -z "$CB_BASE" ]; then
+  if cb_usable origin/master; then
+    CB_BASE=origin/master
+  elif cb_usable HEAD~1; then
+    CB_BASE=HEAD~1
+  fi
+fi
+
+if [ -z "$CB_BASE" ]; then
+  echo "  [SKIP] no usable base to diff against (checked \$CB_BASE, origin/master, HEAD~1) -- cannot check cache bust. This is a SKIP, not a pass."
 else
+  echo "  Diffing against base: $CB_BASE"
   CB_BAD=""
   for f in js/*.js css/main.css; do
     git diff --quiet "$CB_BASE" HEAD -- "$f" && continue          # unchanged, nothing to check
