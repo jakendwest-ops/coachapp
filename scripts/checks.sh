@@ -121,11 +121,16 @@ if [ -n "$BARE_CLEAR" ]; then
 fi
 
 # -- 9a. PII in console logs --
+# Delegated to scripts/check-pii-logs.mjs on 2026-08-22 — see that file for why this is not an inline
+# grep. Short version: the shell rule ended `| grep -v "clientId\|userId\|date\|//"`, and that
+# exclusion applied to the whole LINE rather than to the PII match. So any log call carrying an id
+# ALONGSIDE PII was silently exempt — and `log.<level>(fn, msg, { clientId })` is the commonest log
+# shape in this codebase. Proven with a positive control: `{ full_name: n }` fired, and
+# `{ clientId, full_name: n }` did not. The rule was structurally blind to the shape the newest code
+# is written in. Identical failure, identical fix, as rule 9d below.
 echo "Checking for PII in log calls..."
-PII_LOGS=$(grep -n "log\.\(info\|ok\|warn\|error\)(" $FILES | grep -iE "\{ email|\bemail\b.*\}|full_name|, row\b|weight_kg.*weight\b|body_fat|{ name: [a-z]" | grep -v "clientId\|userId\|date\|//")
-if [ -n "$PII_LOGS" ]; then
-  fail "PII found in log call(s) -- strip email/name/weight values, log IDs only:"
-  echo "$PII_LOGS" | head -5 | sed 's/^/    /'
+if ! node scripts/check-pii-logs.mjs $FILES; then
+  fail "PII found in log call(s) -- strip email/name/weight values, log IDs only"
 fi
 
 # -- 9b. Timed set guard --
