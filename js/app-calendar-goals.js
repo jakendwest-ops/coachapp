@@ -639,6 +639,10 @@ async function saveNewGoal(clientId) {
   const errorEl = document.getElementById('ag-error')
   if (!title) { errorEl.textContent = 'Title is required'; return }
 
+  // The CREATE path. _verifyGoalAccess/_verifyMilestoneAccess key on an EXISTING goalId, so neither
+  // can cover this one — it was missed by the 2026-08-21 goal sweep for exactly that reason and
+  // found by pre-push review 2026-08-22, as the 15th member of the caller-supplied-clientId class.
+  if (!(await _verifyClientAccess('saveNewGoal', clientId))) { errorEl.textContent = 'Save failed — permission denied.'; return }
   log.info('saveNewGoal', 'inserting goal', { clientId })
   const startVal = document.getElementById('ag-start').value
   const { error } = await db.from('goals').insert({

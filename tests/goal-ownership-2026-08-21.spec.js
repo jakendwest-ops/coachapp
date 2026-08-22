@@ -63,7 +63,12 @@ test.describe('goal + milestone writes verify ownership per role', () => {
         if (ids.length) {
           await db.from('goal_milestones').delete().in('goal_id', ids)
           await db.from('goal_check_ins').delete().in('goal_id', ids)
-          await db.from('goals').delete().in('id', ids)
+          // .select() + rowcount: a policy-refused delete returns { data: [], error: null }, so without
+          // it this reports success while stranding the fixture goal. Same class as a4725d4.
+          const { data: gone } = await db.from('goals').delete().in('id', ids).select('id')
+          if ((gone || []).length !== ids.length) {
+            console.error('CLEANUP INCOMPLETE: expected to reap', ids.length, 'goals, reaped', (gone || []).length)
+          }
         }
       }, TAG).catch(() => {})
     } finally { await ctx.close().catch(() => {}) }

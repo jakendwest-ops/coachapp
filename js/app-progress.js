@@ -388,7 +388,10 @@ async function save1RM(clientId, existingId = null) {
   const row = { client_id: clientId, exercise_id: picked.id || null, exercise_name: picked.name, one_rm_kg: weight, recorded_at: date }
   let error
   if (existingId) {
-    ;({ error } = await dbq('save1RM:update', db.from('client_1rms').update(row).eq('id', existingId)))
+    // .eq('client_id', clientId) as well as the row id: the guard above verifies clientId, so the
+    // write MUST be keyed on the same fact it verified. Without it the guard is decorative here —
+    // pass your own clientId, target someone else's row id. Found by pre-push review 2026-08-22.
+    ;({ error } = await dbq('save1RM:update', db.from('client_1rms').update(row).eq('id', existingId).eq('client_id', clientId)))
   } else {
     ;({ error } = await dbq('save1RM:insert', db.from('client_1rms').insert(row)))
   }
@@ -402,7 +405,10 @@ async function delete1RM(id, clientId) {
   if (!(await _verifyClientAccess('delete1RM', clientId))) return
   // Rowcount check, matching its two siblings deletePerfLog and deleteWeightLog. Without it a refused
   // delete simply re-rendered with the row still sitting there, which reads as "the button is broken".
-  const { data: removed, error } = await dbq('delete1RM', db.from('client_1rms').delete().eq('id', id).select('id'))
+  // .eq('client_id', clientId) as well as the row id: the guard above verifies clientId, so the
+  // write MUST be keyed on the same fact it verified. Without it the guard is decorative here —
+  // pass your own clientId, target someone else's row id. Found by pre-push review 2026-08-22.
+  const { data: removed, error } = await dbq('delete1RM', db.from('client_1rms').delete().eq('id', id).eq('client_id', clientId).select('id'))
   if (error) return
   if (!removed?.length) {
     log.error('delete1RM', 'delete removed no rows — permission denied or already gone', { id })
@@ -718,7 +724,9 @@ async function deletePerfLog(id, clientId) {
   // .select() + rowcount, not just an error check: a policy-blocked delete returns
   // { data: [], error: null }, so an error-only guard treats "refused" as "succeeded", re-renders,
   // and the row is still sitting there with no explanation. Same shape as deleteTemplate's guard.
-  const { data: deleted, error } = await db.from('performance_logs').delete().eq('id', id).select()
+  // Anchored on client_id too — the guard above verified clientId, so the write must be keyed on
+  // that same fact. Pre-push review 2026-08-22.
+  const { data: deleted, error } = await db.from('performance_logs').delete().eq('id', id).eq('client_id', clientId).select()
   if (error) {
     log.error('deletePerfLog', 'delete failed', error)
     showToast('Could not delete that record — try again', 'error')
@@ -1034,7 +1042,9 @@ async function deleteWeightLog(id, clientId) {
   if (!confirm('Delete this entry?')) return
   if (!(await _verifyClientAccess('deleteWeightLog', clientId))) return
   log.info('deleteWeightLog', 'deleting weight entry', { id })
-  const { data: deleted, error } = await db.from('weight_logs').delete().eq('id', id).select()
+  // Anchored on client_id too — the guard above verified clientId, so the write must be keyed on
+  // that same fact. Pre-push review 2026-08-22.
+  const { data: deleted, error } = await db.from('weight_logs').delete().eq('id', id).eq('client_id', clientId).select()
   if (error) {
     log.error('deleteWeightLog', 'delete failed', error)
     showToast('Could not delete that entry — try again', 'error')

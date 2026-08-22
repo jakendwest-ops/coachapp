@@ -29,7 +29,11 @@ test.describe('saveExerciseToTemplate / moveTemplateExercise verify template own
       const p = await ctx.newPage()
       await loginAsPT2(p)
       await p.evaluate(async (name) => {
-        await db.from('workout_templates').delete().eq('coach_id', currentUser.id).eq('name', name)
+        // Rowcount-checked: a refused delete returns { data: [], error: null } and would leave the
+        // fixture template behind while this reported success. Same class as a4725d4.
+        const { data: gone } = await db.from('workout_templates')
+          .delete().eq('coach_id', currentUser.id).eq('name', name).select('id')
+        if (!(gone || []).length) console.error('CLEANUP: nothing reaped for', name, '- may already be gone, or refused')
       }, tag).catch(() => {})
     } finally { await ctx.close().catch(() => {}) }
   })

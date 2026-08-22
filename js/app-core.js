@@ -740,12 +740,21 @@ function _renderOwnDashboard() {
 // function quietly reintroduces the gap — and app-clients.js proved that on 2026-08-22, when its own
 // strict-self copy broke "View as" while this helper handled it correctly.
 //
-// This comment said TEN, and named only app-progress and app-runner, until 2026-08-22. That count came
-// from the ledger row's enumeration rather than from a grep of the codebase, and pre-push review found
-// two more: saveOneRMGrid (app-progress.js, three lines from two sites the same sweep DID guard) and
-// _saveMissingOneRMEntries (app-programs.js, a file the inventory omitted entirely). A borrowed count
-// presented as a swept class is worse than no claim. If you extend this, grep `client_id: clientId`
-// and `.eq('client_id', clientId)` YOURSELF, and put the number you found here with the date.
+// THIS COMMENT NO LONGER STATES A COUNT, DELIBERATELY. It said TEN (naming only app-progress and
+// app-runner), then TWELVE, and an independent sweep then found FOURTEEN call sites plus a fifteenth
+// member that was still unguarded (saveNewGoal). Three wrong numbers in two days, each one written
+// with more confidence than the last. The count was never the useful part — a stale number reads as a
+// closed class and stops the next person looking.
+//
+// THE RULE, which does not go stale: any function taking a clientId (or any client-scoped row id) as a
+// parameter and then writing to client_1rms, performance_logs, weight_logs, client_check_ins, goals or
+// clients must call this helper FIRST — and the write must then be keyed on the SAME id the helper
+// verified. On 2026-08-22 four sites verified `clientId` and then wrote `.eq('id', someOtherId)`, which
+// made the guard decorative: pass your own clientId, target someone else's row. Verifying one fact and
+// writing on another is worse than no guard, because it reads as anchored.
+//
+// If you extend this, grep it yourself. Do not trust a number in a comment — including this one's
+// absence of one.
 //
 // Deliberately modelled on saveRunnerSession (app-runner.js:2345), NOT on _effectiveCoachIdForClient
 // (app-workouts.js:1913). The difference is the whole point:
