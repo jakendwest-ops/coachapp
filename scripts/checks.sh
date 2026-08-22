@@ -99,50 +99,60 @@ fi
 #      here; walking back to the true push base without an event.before is out of scope.
 #   4. Otherwise: [SKIP] -- never a silent pass.
 echo "Checking cache bust..."
-CB_HEAD_SHA=$(git rev-parse HEAD)
+# Guarded: an unguarded `$(git rev-parse HEAD)` that ever fails or returns empty (no
+# `set -e` in this script -- a failed assignment does not abort) would make CB_HEAD_SHA
+# the empty string, degrading cb_usable()'s equality test to `[ "<any-sha>" != "" ]`,
+# which is TRUE -- a self-referential base would then be silently ACCEPTED. A missing
+# HEAD means the comparison cannot be made at all, so this must be a [SKIP], not a pass.
+CB_HEAD_SHA=$(git rev-parse --verify --quiet HEAD 2>/dev/null)
 
-# Verifies the ref/SHA is a real, reachable COMMIT (not just a syntactically well-formed
-# string) and that it differs from HEAD. `git rev-parse --verify X` alone is NOT enough --
-# it accepts a well-formed-but-nonexistent SHA like the all-zeroes sentinel git uses for
-# "no previous commit" (a branch's first push, some force-pushes) with exit 0. That let a
-# nonexistent CB_BASE slip through to the diff loop, which then failed 10x with
-# "fatal: bad object" and still printed the pass text -- the same false-pass class this
-# whole rule exists to close, reached through a different door. Peeling to ^{commit}
-# forces git to confirm the object actually exists.
-cb_usable() {
-  CB_CANDIDATE_SHA=$(git rev-parse --verify --quiet "$1^{commit}" 2>/dev/null) || return 1
-  [ "$CB_CANDIDATE_SHA" != "$CB_HEAD_SHA" ]
-}
-
-if [ -n "$CB_BASE" ] && ! cb_usable "$CB_BASE"; then
-  echo "  [WARN] CB_BASE=$CB_BASE does not resolve to an existing commit, or resolves to HEAD itself -- ignoring it, auto-detecting instead."
-  CB_BASE=""
-fi
-if [ -z "$CB_BASE" ]; then
-  if cb_usable origin/master; then
-    CB_BASE=origin/master
-  elif cb_usable HEAD~1; then
-    CB_BASE=HEAD~1
-  fi
-fi
-
-if [ -z "$CB_BASE" ]; then
-  echo "  [SKIP] no usable base to diff against (checked \$CB_BASE, origin/master, HEAD~1) -- cannot check cache bust. This is a SKIP, not a pass."
+if [ -z "$CB_HEAD_SHA" ]; then
+  echo "  [SKIP] HEAD does not resolve -- cannot check cache bust. This is a SKIP, not a pass."
 else
-  echo "  Diffing against base: $CB_BASE"
-  CB_BAD=""
-  for f in js/*.js css/main.css; do
-    git diff --quiet "$CB_BASE" HEAD -- "$f" && continue          # unchanged, nothing to check
-    old=$(git show "$CB_BASE:index.html" 2>/dev/null | grep -oE "${f}\?v=[0-9]+" | grep -oE '[0-9]+$')
-    new=$(grep -oE "${f}\?v=[0-9]+" index.html | grep -oE '[0-9]+$')
-    if [ -z "$new" ]; then CB_BAD="$CB_BAD $f(no-tag)"; continue; fi
-    if [ -z "$old" ]; then continue; fi                            # new file, nothing to compare
-    if [ "$new" -le "$old" ]; then CB_BAD="$CB_BAD $f($old->$new)"; fi
-  done
-  if [ -n "$CB_BAD" ]; then
-    fail "changed file(s) whose ?v= did not rise:$CB_BAD -- a cached browser will run the OLD code"
+  # Verifies the ref/SHA is a real, reachable COMMIT (not just a syntactically well-formed
+  # string) and that it differs from HEAD. `git rev-parse --verify X` alone is NOT enough --
+  # it accepts a well-formed-but-nonexistent SHA like the all-zeroes sentinel git uses for
+  # "no previous commit" (a branch's first push, some force-pushes) with exit 0. That let a
+  # nonexistent CB_BASE slip through to the diff loop, which then failed 10x with
+  # "fatal: bad object" and still printed the pass text -- the same false-pass class this
+  # whole rule exists to close, reached through a different door. Peeling to ^{commit}
+  # forces git to confirm the object actually exists.
+  cb_usable() {
+    [ -n "$CB_HEAD_SHA" ] || return 1   # belt and braces -- never accept without a real HEAD
+    CB_CANDIDATE_SHA=$(git rev-parse --verify --quiet "$1^{commit}" 2>/dev/null) || return 1
+    [ "$CB_CANDIDATE_SHA" != "$CB_HEAD_SHA" ]
+  }
+
+  if [ -n "$CB_BASE" ] && ! cb_usable "$CB_BASE"; then
+    echo "  [WARN] CB_BASE=$CB_BASE does not resolve to an existing commit, or resolves to HEAD itself -- ignoring it, auto-detecting instead."
+    CB_BASE=""
+  fi
+  if [ -z "$CB_BASE" ]; then
+    if cb_usable origin/master; then
+      CB_BASE=origin/master
+    elif cb_usable HEAD~1; then
+      CB_BASE=HEAD~1
+    fi
+  fi
+
+  if [ -z "$CB_BASE" ]; then
+    echo "  [SKIP] no usable base to diff against (checked \$CB_BASE, origin/master, HEAD~1) -- cannot check cache bust. This is a SKIP, not a pass."
   else
-    echo "  Every changed module's ?v= rose."
+    echo "  Diffing against base: $CB_BASE"
+    CB_BAD=""
+    for f in js/*.js css/main.css; do
+      git diff --quiet "$CB_BASE" HEAD -- "$f" && continue          # unchanged, nothing to check
+      old=$(git show "$CB_BASE:index.html" 2>/dev/null | grep -oE "${f}\?v=[0-9]+" | grep -oE '[0-9]+$')
+      new=$(grep -oE "${f}\?v=[0-9]+" index.html | grep -oE '[0-9]+$')
+      if [ -z "$new" ]; then CB_BAD="$CB_BAD $f(no-tag)"; continue; fi
+      if [ -z "$old" ]; then continue; fi                            # new file, nothing to compare
+      if [ "$new" -le "$old" ]; then CB_BAD="$CB_BAD $f($old->$new)"; fi
+    done
+    if [ -n "$CB_BAD" ]; then
+      fail "changed file(s) whose ?v= did not rise:$CB_BAD -- a cached browser will run the OLD code"
+    else
+      echo "  Every changed module's ?v= rose."
+    fi
   fi
 fi
 
