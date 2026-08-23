@@ -155,7 +155,7 @@ function _showRunnerResumeModal(clientId, draft) {
       <div class="modal-header">
         <h2 class="modal-title">Resume in-progress workout?</h2>
       </div>
-      <p style="font-size:14px;line-height:1.6;margin:0 0 20px">You have an unsaved workout from earlier today (${escapeHtml(draft.name || 'Workout')}${loggedCount ? `, ${loggedCount} set${loggedCount === 1 ? '' : 's'} logged` : ''}). Resume where you left off, or discard it and start fresh?</p>
+      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px">You have an unsaved workout from earlier today (${escapeHtml(draft.name || 'Workout')}${loggedCount ? `, ${loggedCount} set${loggedCount === 1 ? '' : 's'} logged` : ''}). Resume where you left off, or discard it and start fresh?</p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="_discardRunnerDraftAndStartFresh('${clientId}')">Discard &amp; start fresh</button>
         <button class="btn-primary" onclick="_resumeRunnerFromDraft('${clientId}')">Resume</button>
@@ -243,9 +243,9 @@ function renderRunnerLastSession(exName) {
       const dateStr = new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
       el.innerHTML = `
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);white-space:nowrap">↑ Beat · ${dateStr}</span>
+          <span style="font-size:var(--text-2xs, 9px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);white-space:nowrap">↑ Beat · ${dateStr}</span>
           ${data.sets.map(s => `
-            <span style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap">
+            <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text);white-space:nowrap">
               <span style="color:var(--text-muted)">S${s.set_number}</span>
               ${s.weight_kg ? fmtWeight(Math.round(s.weight_kg * 10) / 10) : ''}${s.weight_kg && s.reps_achieved ? ' × ' : ''}${s.reps_achieved ? s.reps_achieved : ''}
             </span>`).join('')}
@@ -348,14 +348,14 @@ function _renderRunnerVsLast(ex) {
         : `<span style="color:${col}">${up ? '▲' : '▼'} ${up ? '+' : '−'}${disp(Math.abs(diff))}${unit}${pct != null ? ` (${pct}%)` : ''}</span>`
     }
     return `<div style="flex:1;min-width:0;text-align:center">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</div>
-      <div style="font-size:13px;font-weight:800">${disp(cur)}${unit}</div>
-      <div style="font-size:9px;font-weight:700;white-space:nowrap">${bottom}</div></div>`
+      <div style="font-size:var(--text-2xs, 9px);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</div>
+      <div style="font-size:var(--text-base, 13px);font-weight:800">${disp(cur)}${unit}</div>
+      <div style="font-size:var(--text-2xs, 9px);font-weight:700;white-space:nowrap">${bottom}</div></div>`
   }
   const heading = d.logged ? `vs last session · ${dateStr}` : `last session · ${dateStr} · beat it`
   return `
-    <div style="margin-bottom:12px;padding:10px 12px;border-radius:10px;background:var(--surface-2)">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">${heading}</div>
+    <div style="margin-bottom:12px;padding:10px 12px;border-radius:var(--radius, 10px);background:var(--surface-2)">
+      <div style="font-size:var(--text-2xs, 9px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">${heading}</div>
       <div style="display:flex;gap:6px">
         ${chip('Volume', d.cur.vol, d.prev.vol, true)}
         ${chip('Top', d.cur.top, d.prev.top, true)}
@@ -493,9 +493,9 @@ function _renderRepsTallyHtml(ex) {
   const prevTotal = _previousRepsTotal(ex)
   if (!curTotal && prevTotal == null) return ''
   const beat = prevTotal != null && curTotal > prevTotal
-  return `<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--surface-2);display:flex;justify-content:space-between;align-items:center">
-    <span style="font-size:11px;font-weight:600;color:var(--text-muted)">This exercise</span>
-    <span style="font-size:13px;font-weight:800;color:${beat ? 'var(--accent)' : 'var(--text)'}">${curTotal} reps${prevTotal != null ? ` <span style="font-size:11px;font-weight:600;color:var(--text-muted)">· last time ${prevTotal}</span>` : ''}</span>
+  return `<div style="margin-top:8px;padding:8px 10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);display:flex;justify-content:space-between;align-items:center">
+    <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">This exercise</span>
+    <span style="font-size:13px;font-weight:800;color:${beat ? 'var(--accent)' : 'var(--text)'}">${curTotal} reps${prevTotal != null ? ` <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· last time ${prevTotal}</span>` : ''}</span>
   </div>`
 }
 
@@ -578,7 +578,7 @@ function _renderTargetBarHtml(cols) {
   return `<div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:10px">${cols.map((c, i) =>
     `<div style="flex:1;text-align:center;padding:8px 4px${i < cols.length-1 ? ';border-right:1px solid var(--border)' : ''}">
       <div style="font-size:18px;font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'};line-height:1.1">${c.val}</div>
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
+      <div style="font-size:var(--text-2xs, 9px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
     </div>`
   ).join('')}</div>`
 }
@@ -593,9 +593,9 @@ function renderStrengthTable(ex) {
   const { cols, needsOneRM } = _buildTargetCols(tgt, ex)
   const targetBar = _renderTargetBarHtml(cols)
   const oneRMBanner = needsOneRM ? `
-    <div id="wr-onerm-banner" onclick="showRunnerOneRMSheet(${_runner.exIdx})" style="background:rgba(245,158,11,.1);border:1.5px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;cursor:pointer;margin-bottom:10px">
-      <div style="font-size:13px;font-weight:700;color:#b45309">⚠ Set your 1RM to see target weight</div>
-      <div style="font-size:11px;color:#b45309;margin-top:2px">Tap to add</div>
+    <div id="wr-onerm-banner" onclick="showRunnerOneRMSheet(${_runner.exIdx})" style="background:rgba(245,158,11,.1);border:1.5px solid #f59e0b;border-radius:var(--radius, 10px);padding:12px;text-align:center;cursor:pointer;margin-bottom:10px">
+      <div style="font-size:var(--text-base, 13px);font-weight:700;color:#b45309">⚠ Set your 1RM to see target weight</div>
+      <div style="font-size:var(--text-sm, 11px);color:#b45309;margin-top:2px">Tap to add</div>
     </div>` : ''
 
   let restBar = ''
@@ -606,13 +606,13 @@ function renderStrengthTable(ex) {
     const nextEx = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name)
     const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (ex.loggedSets.length + 1)
     restBar = `
-    <div id="rest-timer-overlay" style="display:flex;align-items:center;gap:12px;padding:10px 12px;margin-bottom:10px;border-radius:10px;background:var(--surface-2);border:1.5px solid var(--accent)">
-      <div id="rt-countdown" style="font-size:24px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;min-width:56px;text-align:center">${fmtRestCountdown(_runner.restRemaining)}</div>
+    <div id="rest-timer-overlay" style="display:flex;align-items:center;gap:12px;padding:10px 12px;margin-bottom:10px;border-radius:var(--radius, 10px);background:var(--surface-2);border:1.5px solid var(--accent)">
+      <div id="rt-countdown" style="font-size:var(--text-4xl, 24px);font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;min-width:56px;text-align:center">${fmtRestCountdown(_runner.restRemaining)}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
-        <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nextLabel}</div>
+        <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
+        <div style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nextLabel}</div>
       </div>
-      <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:8px;background:var(--surface);font-size:13px;font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
+      <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:var(--radius-sm, 8px);background:var(--surface);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
     </div>`
   }
 
@@ -665,7 +665,7 @@ function renderStrengthTable(ex) {
   // for screen readers, so the shrunk visual label costs nothing there.
   // margin-left stays >=8px — a separate Jake request from 2026-07-05 (deliberate spacing so the delete
   // is not mis-tapped) with its own regression test. Smaller AND spaced; the two are not in conflict.
-  const inDel = (i) => ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="width:32px;height:32px;flex-shrink:0;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:15px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center">&times;</button>` : ''
+  const inDel = (i) => ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="width:32px;height:32px;flex-shrink:0;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:var(--legacy-text-15, 15px);font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center">&times;</button>` : ''
   const inSetNum = (i, isCurrent) => `<span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text-muted)'};text-align:center">${i+1}</span>`
 
   const rows = ex.tableRows.map((row, i) => {
@@ -689,8 +689,8 @@ function renderStrengthTable(ex) {
       // Two sub-rows per set (L then R) — keeps the table to two data columns on a 390px phone rather
       // than cramming four. One ✓ logs the whole set; _syncLoggedSetsFromTable emits both sides.
       const side = (label, wField, rField) => `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-        <span style="width:14px;flex-shrink:0;font-size:11px;font-weight:800;color:var(--text-muted);text-align:center">${label}</span>
-        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, wField, { mode:'decimal', step:'0.5', ph: oneRMPh || window._unitPrefs.weight, unit:'weight' })}
+        <span style="width:14px;flex-shrink:0;font-size:var(--text-sm, 11px);font-weight:800;color:var(--text-muted);text-align:center">${label}</span>
+        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:var(--text-base, 13px);font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, wField, { mode:'decimal', step:'0.5', ph: oneRMPh || window._unitPrefs.weight, unit:'weight' })}
         ${inCell(i, row, rField, { mode:'numeric', ph:'reps' })}
       </div>`
       return `${cardOpen}<div style="display:flex;align-items:flex-start;gap:6px">
@@ -704,7 +704,7 @@ function renderStrengthTable(ex) {
       return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${inCell(i, row, 'duration', { mode:'numeric', ph:'0:00', fmt:true })}
-        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:window._unitPrefs.weight, unit:'weight' })}
+        ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:window._unitPrefs.weight, unit:'weight' })}
         ${inDone(i, row)}${inDel(i)}
       </div></div>`
     }
@@ -738,7 +738,7 @@ function renderStrengthTable(ex) {
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${ex.bodyweight
-          ? `<div style="flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--text)">BW</div>`
+          ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>`
           : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder, unit:'weight' })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
         ${inDone(i, row)}${inDel(i)}
@@ -769,7 +769,7 @@ function renderStrengthTable(ex) {
     ${restBar}
     ${header}
     ${rows}
-    <button onclick="addTableRow()" style="width:100%;margin-top:8px;padding:8px;border:1px dashed var(--border);border-radius:8px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add set</button>
+    <button onclick="addTableRow()" style="width:100%;margin-top:8px;padding:8px;border:1px dashed var(--border);border-radius:var(--radius-sm, 8px);background:transparent;font-size:var(--text-md, 12px);font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add set</button>
     ${tally}
   `
 }
@@ -792,32 +792,32 @@ function renderRunner() {
       <!-- Header -->
       <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-          ${_runner.exIdx > 0 ? `<button onclick="runnerGoBack()" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:13px;font-weight:700;cursor:pointer;color:var(--text-muted);flex-shrink:0">← Back</button>` : ''}
+          ${_runner.exIdx > 0 ? `<button onclick="runnerGoBack()" style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm, 8px);background:transparent;font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;color:var(--text-muted);flex-shrink:0">← Back</button>` : ''}
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}</span>
-              <span style="font-size:11px;font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
+              <span style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}</span>
+              <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
-            <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${escapeHtml(ex.name)||'Exercise name'}</div>
-            ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
-            ${nextEx ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
+            <div style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${escapeHtml(ex.name)||'Exercise name'}</div>
+            ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
+            ${nextEx ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
           </div>
           <div style="display:flex;gap:8px;flex-shrink:0">
             ${_quickPrefsIconHtml()}
-            <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:8px;background:#ef4444;font-size:13px;font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
+            <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:var(--radius-sm, 8px);background:var(--danger, #ef4444);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
           </div>
         </div>
         ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${escapeHtml(e.name||'Exercise '+(i+1))}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
         ${_runner.restRemaining != null && _runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx ? `
-        <div onclick="runnerJumpTo(${_runner._restForExIdx})" style="display:flex;align-items:center;gap:8px;margin-top:8px;min-height:44px;padding:10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--accent);cursor:pointer;box-sizing:border-box">
-          <span id="wr-rest-chip-countdown" style="font-size:13px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;flex-shrink:0">${_runner._restPendingFire ? 'Done' : fmtRestCountdown(_runner.restRemaining)}</span>
-          <span style="font-size:12px;font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_runner._restPendingFire ? 'Rest done — tap to continue' : 'Resting ' + escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '') + ' — tap to return'}</span>
+        <div onclick="runnerJumpTo(${_runner._restForExIdx})" style="display:flex;align-items:center;gap:8px;margin-top:8px;min-height:44px;padding:10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);border:1px solid var(--accent);cursor:pointer;box-sizing:border-box">
+          <span id="wr-rest-chip-countdown" style="font-size:var(--text-base, 13px);font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;flex-shrink:0">${_runner._restPendingFire ? 'Done' : fmtRestCountdown(_runner.restRemaining)}</span>
+          <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_runner._restPendingFire ? 'Rest done — tap to continue' : 'Resting ' + escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '') + ' — tap to return'}</span>
         </div>` : ''}
         <div style="display:flex;gap:14px;margin-top:8px">
-          <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">⇄ Swap exercise</button>
-          <button id="wr-add-btn" onclick="showExercisePicker('add')" style="border:none;background:none;padding:0;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted)">+ Add exercise</button>
+          <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="border:none;background:none;padding:0;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">⇄ Swap exercise</button>
+          <button id="wr-add-btn" onclick="showExercisePicker('add')" style="border:none;background:none;padding:0;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">+ Add exercise</button>
         </div>
-        ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:8px;font-size:11.5px;color:var(--text-muted);line-height:1.5">${escapeHtml(_runner.templateDesc)}</div>` : ''}
+        ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:var(--radius-sm, 8px);font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);line-height:1.5">${escapeHtml(_runner.templateDesc)}</div>` : ''}
       </div>
 
       <!-- Scrollable area: logged sets + PT note + client notes -->
@@ -825,22 +825,22 @@ function renderRunner() {
         ${_renderRunnerVsLast(ex)}
         <!-- Logged sets -->
         ${isTable ? renderStrengthTable(ex) : !ex.loggedSets.length
-          ? `<p style="color:var(--text-muted);font-size:13px;margin:0 0 8px">No sets logged yet.</p>`
+          ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px);margin:0 0 8px">No sets logged yet.</p>`
           : `<div style="margin-bottom:8px">${ex.loggedSets.map((s,i) => `
             <div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px">
-              <span style="font-size:13px;color:var(--text-muted);font-weight:600;width:48px;flex-shrink:0">Set ${i+1}</span>
+              <span style="font-size:var(--text-base, 13px);color:var(--text-muted);font-weight:600;width:48px;flex-shrink:0">Set ${i+1}</span>
               <span style="flex:1;display:flex;gap:10px;align-items:center">
                 ${ex.type === 'cardio'
-                  ? `<span style="font-size:15px;font-weight:700">${s.duration ? s.duration : (_cardioDistanceM(s) > 0 ? fmtDistanceM(_cardioDistanceM(s)) : '—')}</span>`
+                  ? `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.duration ? s.duration : (_cardioDistanceM(s) > 0 ? fmtDistanceM(_cardioDistanceM(s)) : '—')}</span>`
                   : s.distance_m
-                    ? `<span style="font-size:15px;font-weight:700">${s.weight?fmtWeight(s.weight, { spaced: true }):'—'}</span><span style="font-size:15px;font-weight:700">${s.distance_m} m</span>`
+                    ? `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.weight?fmtWeight(s.weight, { spaced: true }):'—'}</span><span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.distance_m} m</span>`
                     : s.duration
-                    ? `<span style="font-size:15px;font-weight:700">⏱ ${s.duration}</span>${s.weight?`<span style="font-size:14px;font-weight:600;color:var(--text-muted)">${fmtWeight(s.weight, { spaced: true })}</span>`:''}`
+                    ? `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">⏱ ${s.duration}</span>${s.weight?`<span style="font-size:var(--text-lg, 14px);font-weight:600;color:var(--text-muted)">${fmtWeight(s.weight, { spaced: true })}</span>`:''}`
                     : s.leftReps != null
-                    ? `<span style="font-size:13px;font-weight:700">L: ${s.leftReps||'—'}${s.leftWeight?' @ '+fmtWeight(s.leftWeight):''}</span><span style="font-size:13px;font-weight:700">R: ${s.rightReps||'—'}${s.rightWeight?' @ '+fmtWeight(s.rightWeight):''}</span>`
-                    : `<span style="font-size:15px;font-weight:700">${s.weight&&s.weight!=='BW'?fmtWeight(s.weight, { spaced: true }):s.weight==='BW'?'BW':'—'}</span><span style="font-size:15px;font-weight:700">${s.reps||'—'} reps</span>`}
+                    ? `<span style="font-size:var(--text-base, 13px);font-weight:700">L: ${s.leftReps||'—'}${s.leftWeight?' @ '+fmtWeight(s.leftWeight):''}</span><span style="font-size:var(--text-base, 13px);font-weight:700">R: ${s.rightReps||'—'}${s.rightWeight?' @ '+fmtWeight(s.rightWeight):''}</span>`
+                    : `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.weight&&s.weight!=='BW'?fmtWeight(s.weight, { spaced: true }):s.weight==='BW'?'BW':'—'}</span><span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.reps||'—'} reps</span>`}
               </span>
-              <button onclick="editRunnerSet(${_runner.exIdx},${i})" style="flex-shrink:0;padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--accent)">✎ Edit</button>
+              <button onclick="editRunnerSet(${_runner.exIdx},${i})" style="flex-shrink:0;padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:var(--text-sm, 11px);font-weight:700;cursor:pointer;color:var(--accent)">✎ Edit</button>
             </div>`).join('')}</div>`}
 
         <!-- PT note (always shown if exists, label prefix stripped) -->
@@ -853,18 +853,18 @@ function renderRunner() {
           // escapeHtml both — the sibling render of this exact regex on this exact column
           // (app-workouts.js's session-detail preview) already escapes all 3 branches; this one
           // didn't. Found by the 2026-07-30 full-file review.
-          return `<div style="margin:8px 0 4px;padding:10px 12px;border-radius:8px;background:rgba(99,102,241,.07);border-left:3px solid var(--accent)">
-            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">${escapeHtml(label)}</span>
-            <div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.5">${escapeHtml(noteText)}</div>
+          return `<div style="margin:8px 0 4px;padding:10px 12px;border-radius:var(--radius-sm, 8px);background:rgba(99,102,241,.07);border-left:3px solid var(--accent)">
+            <span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)">${escapeHtml(label)}</span>
+            <div style="font-size:var(--text-base, 13px);color:var(--text);margin-top:3px;line-height:1.5">${escapeHtml(noteText)}</div>
           </div>`
         })()}
 
         <!-- Client notes -->
         <div style="margin-top:14px">
-          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Your notes</label>
+          <label style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Your notes</label>
           <textarea id="wr-client-notes" placeholder="e.g. wide grip felt comfortable…" rows="2"
             oninput="_runner.exercises[${_runner.exIdx}].clientNotes=this.value"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);resize:none;box-sizing:border-box;font-family:inherit;line-height:1.5">${escapeHtml(ex.clientNotes||'')}</textarea>
+            style="width:100%;margin-top:6px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm, 8px);font-size:var(--text-base, 13px);color:var(--text);resize:none;box-sizing:border-box;font-family:inherit;line-height:1.5">${escapeHtml(ex.clientNotes||'')}</textarea>
         </div>
       </div>
 
@@ -873,7 +873,7 @@ function renderRunner() {
 
       <!-- Set counter — above stats bar (table view shows this per-row instead) -->
       ${!isTable && ex.targetSets ? `<div style="padding:6px 14px;border-top:1px solid var(--border);background:var(--bg);display:flex;align-items:center;gap:8px">
-        <span style="font-size:13px;font-weight:700;color:var(--accent)">Set ${setNum} of ${ex.targetSets}</span>
+        <span style="font-size:var(--text-base, 13px);font-weight:700;color:var(--accent)">Set ${setNum} of ${ex.targetSets}</span>
         <div style="display:flex;gap:4px">${Array.from({length:ex.targetSets},(_,i)=>`<div style="width:20px;height:6px;border-radius:3px;background:${i<ex.loggedSets.length?'var(--accent)':i===ex.loggedSets.length?'rgba(99,102,241,0.4)':'var(--border)'}"></div>`).join('')}</div>
       </div>` : ''}
 
@@ -882,11 +882,11 @@ function renderRunner() {
       <div style="padding:10px 12px 12px;background:var(--surface)">
         ${isTable ? `
           ${ex.loggedSets.length > 0
-            ? `<button onclick="skipToNextExercise()" style="width:100%;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">${isLast?'Finish 🏁':'Next exercise →'}</button>`
-            : `<div style="text-align:center;padding:14px;font-size:12px;color:var(--text-muted)">Check off a set to continue</div>`}
+            ? `<button onclick="skipToNextExercise()" style="width:100%;height:52px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:#fff;font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer">${isLast?'Finish 🏁':'Next exercise →'}</button>`
+            : `<div style="text-align:center;padding:14px;font-size:var(--text-md, 12px);color:var(--text-muted)">Check off a set to continue</div>`}
         ` : _runner._restInterval && _runner._restForExIdx === _runner.exIdx ? `
-          <div style="padding:14px;text-align:center;border-radius:10px;background:var(--surface-2)">
-            <div style="font-size:13px;font-weight:600;color:var(--text-muted)">Resting — inputs available after rest</div>
+          <div style="padding:14px;text-align:center;border-radius:var(--radius, 10px);background:var(--surface-2)">
+            <div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text-muted)">Resting — inputs available after rest</div>
           </div>
         ` : ex.type === 'cardio' ? (() => {
           const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
@@ -908,42 +908,42 @@ function renderRunner() {
           return `
           <!-- Cardio targets -->
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-            ${distBased && _cardioDistanceM(tgt) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${fmtDistanceM(_cardioDistanceM(tgt))}</span>` : ''}
-            ${!distBased && effDuration && effDuration !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${escapeHtml(normalizeDuration(effDuration))}</span>` : ''}
-            ${_hasTimeTarget(tgt.pace500Min) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.pace500Min))}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+escapeHtml(String(tgt.pace500Max)):''} /500m</span>` : ''}
-            ${_hasTimeTarget(tgt.paceKmMin) ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.paceKmMin))}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+escapeHtml(String(tgt.paceKmMax)):''} /km</span>` : ''}
-            ${tgt.wattsMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.wattsMin))}${tgt.wattsMax && tgt.wattsMax!==tgt.wattsMin?'–'+escapeHtml(String(tgt.wattsMax)):''} W</span>` : ''}
-            ${tgt.hrZoneMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${escapeHtml(String(tgt.hrZoneMin))}${tgt.hrZoneMax?'–'+escapeHtml(String(tgt.hrZoneMax)):''} bpm</span>` : ''}
-            ${effRestMin && effRestMin !== '0:00' ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof effRestMin === 'number' ? fmtDuration(effRestMin) : escapeHtml(effRestMin)}</span>` : ''}
-            ${tgt.strokeRateMin ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">${escapeHtml(String(tgt.strokeRateMin))}${tgt.strokeRateMax?'–'+escapeHtml(String(tgt.strokeRateMax)):''} spm</span>` : ''}
-            ${tgt.restHrMax ? `<span style="font-size:12px;padding:3px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest HR &lt;${escapeHtml(String(tgt.restHrMax))}</span>` : ''}
+            ${distBased && _cardioDistanceM(tgt) ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${fmtDistanceM(_cardioDistanceM(tgt))}</span>` : ''}
+            ${!distBased && effDuration && effDuration !== '0:00' ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${escapeHtml(normalizeDuration(effDuration))}</span>` : ''}
+            ${_hasTimeTarget(tgt.pace500Min) ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.pace500Min))}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+escapeHtml(String(tgt.pace500Max)):''} /500m</span>` : ''}
+            ${_hasTimeTarget(tgt.paceKmMin) ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.paceKmMin))}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+escapeHtml(String(tgt.paceKmMax)):''} /km</span>` : ''}
+            ${tgt.wattsMin ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.wattsMin))}${tgt.wattsMax && tgt.wattsMax!==tgt.wattsMin?'–'+escapeHtml(String(tgt.wattsMax)):''} W</span>` : ''}
+            ${tgt.hrZoneMin ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${escapeHtml(String(tgt.hrZoneMin))}${tgt.hrZoneMax?'–'+escapeHtml(String(tgt.hrZoneMax)):''} bpm</span>` : ''}
+            ${effRestMin && effRestMin !== '0:00' ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof effRestMin === 'number' ? fmtDuration(effRestMin) : escapeHtml(effRestMin)}</span>` : ''}
+            ${tgt.strokeRateMin ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">${escapeHtml(String(tgt.strokeRateMin))}${tgt.strokeRateMax?'–'+escapeHtml(String(tgt.strokeRateMax)):''} spm</span>` : ''}
+            ${tgt.restHrMax ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest HR &lt;${escapeHtml(String(tgt.restHrMax))}</span>` : ''}
           </div>
           <!-- Set label -->
-          <div style="text-align:center;font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Set ${setNum}</div>
+          <div style="text-align:center;font-size:var(--text-base, 13px);font-weight:700;color:var(--text-muted);margin-bottom:8px">Set ${setNum}</div>
           <!-- Cardio input -->
           <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
             ${distBased ? `
               <div>
-                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance achieved (m)</div>
+                <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance achieved (m)</div>
                 <input id="wr-cardio-dist" type="number" step="1" inputmode="numeric" placeholder="${_cardioDistanceM(tgt)||'0'}" value="${_cardioDistanceM(lastCardio)||_cardioDistanceM(tgt)||''}"
-                  style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+                  style="width:100%;padding:12px;font-size:var(--text-4xl, 24px);font-weight:700;border:2px solid var(--accent);border-radius:var(--radius, 10px);text-align:center;background:var(--bg);color:var(--text)">
               </div>` : `
               <div>
-                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Duration (MM:SS)</div>
+                <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Duration (MM:SS)</div>
                 <input id="wr-cardio-dur" type="text" inputmode="numeric" placeholder="${escapeHtml(normalizeDuration(effDuration))||'0:00'}" value="${escapeHtml(normalizeDuration(lastCardio?.duration||effDuration||''))}"
                   oninput="this.value=fmtRestInput(this.value)"
-                  style="width:100%;padding:12px;font-size:24px;font-weight:700;border:2px solid var(--accent);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+                  style="width:100%;padding:12px;font-size:var(--text-4xl, 24px);font-weight:700;border:2px solid var(--accent);border-radius:var(--radius, 10px);text-align:center;background:var(--bg);color:var(--text)">
               </div>`}
           </div>
           <!-- HR/watts/pace/stroke rate are captured once, on the exercise-finish card
                (renderCardioCaptureCard) — not here (2026-08-08). -->
           <!-- Buttons -->
           <div style="display:flex;gap:8px;margin-bottom:6px">
-            ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
-            ${(!distBased || _isIntervalExercise(ex)) ? `<button onclick="event.stopPropagation();startCardioTimer()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--surface-2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
-            ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:18px;font-weight:800;cursor:pointer">LOG</button>` : ''}
+            ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-md, 12px);font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
+            ${(!distBased || _isIntervalExercise(ex)) ? `<button onclick="event.stopPropagation();startCardioTimer()" style="flex:1;height:52px;border:none;border-radius:var(--radius, 10px);background:var(--surface-2);color:var(--text);font-size:var(--text-lg, 14px);font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
+            ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:#fff;font-size:var(--text-2xl, 18px);font-weight:800;cursor:pointer">LOG</button>` : ''}
           </div>
-          ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;background:transparent;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
+          ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-md, 12px);font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
         })() : ''}
       </div>
     </div>
@@ -1169,7 +1169,7 @@ function renderStrengthSetTimer() {
   overlay.id = 'wr-set-timer-overlay'
   overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
   overlay.innerHTML = `
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — Set ${setNum}</div>
+    <div style="font-size:var(--text-md, 12px);font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — Set ${setNum}</div>
     <div style="position:relative;display:inline-block;margin-bottom:24px">
       <svg width="140" height="140" viewBox="0 0 120 120">
         <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
@@ -1178,9 +1178,9 @@ function renderStrengthSetTimer() {
           stroke-linecap="round" transform="rotate(-90 60 60)"
           style="transition:stroke-dashoffset .9s linear"/>
       </svg>
-      <div id="wr-set-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
+      <div id="wr-set-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:var(--legacy-text-40, 40px);font-weight:800;color:var(--accent)">${fmtRestCountdown(secs)}</div>
     </div>
-    <div style="font-size:13px;color:var(--text-muted)">SET IN PROGRESS</div>
+    <div style="font-size:var(--text-base, 13px);color:var(--text-muted)">SET IN PROGRESS</div>
   `
   mountModal(overlay)
 }
@@ -1243,9 +1243,9 @@ function renderRunnerCountIn() {
   overlay.id = 'wr-countin-overlay'
   overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
   overlay.innerHTML = `
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — ${roundLabel}</div>
-    <div id="wr-countin-countdown" style="font-size:64px;font-weight:800;color:var(--accent);margin-bottom:16px">${_runner._countInRemaining}</div>
-    <div style="font-size:13px;color:var(--text-muted)">GET READY</div>
+    <div style="font-size:var(--text-md, 12px);font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${escapeHtml(ex.name)} — ${roundLabel}</div>
+    <div id="wr-countin-countdown" style="font-size:var(--legacy-text-64, 64px);font-weight:800;color:var(--accent);margin-bottom:16px">${_runner._countInRemaining}</div>
+    <div style="font-size:var(--text-base, 13px);color:var(--text-muted)">GET READY</div>
   `
   mountModal(overlay)
 }
@@ -1529,7 +1529,7 @@ function renderIntervalTimer() {
   overlay.id = 'wr-interval-overlay'
   overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px'
   overlay.innerHTML = `
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${topLabel}</div>
+    <div style="font-size:var(--text-md, 12px);font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px">${topLabel}</div>
     <div style="position:relative;display:inline-block;margin-bottom:24px">
       <svg width="140" height="140" viewBox="0 0 120 120">
         <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>
@@ -1538,18 +1538,18 @@ function renderIntervalTimer() {
           stroke-linecap="round" transform="rotate(-90 60 60)"
           style="transition:stroke-dashoffset .9s linear"/>
       </svg>
-      <div id="wr-interval-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:var(--accent)">${countdownDisplay}</div>
+      <div id="wr-interval-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:var(--legacy-text-40, 40px);font-weight:800;color:var(--accent)">${countdownDisplay}</div>
     </div>
     <div style="font-size:13px;color:var(--text-muted);margin-bottom:${isInterval ? '4px' : '24px'}">${phaseNameLabel}</div>
-    ${isInterval ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:24px">${remainingLine}</div>` : ''}
+    ${isInterval ? `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:24px">${remainingLine}</div>` : ''}
     <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
       <div>
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance covered (m) — optional</div>
+        <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">Distance covered (m) — optional</div>
         <input id="wr-cardio-dist-opt" type="number" step="1" inputmode="numeric" placeholder="e.g. 1240"
-          style="width:100%;padding:10px 12px;font-size:18px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--surface);color:var(--text)">
+          style="width:100%;padding:10px 12px;font-size:var(--text-2xl, 18px);font-weight:700;border:2px solid var(--border);border-radius:var(--radius, 10px);text-align:center;background:var(--surface);color:var(--text)">
       </div>
     </div>
-    <button onclick="event.stopPropagation();${doneOnclick}" style="width:100%;max-width:340px;padding:16px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">${escapeHtml(doneLabel)}</button>
+    <button onclick="event.stopPropagation();${doneOnclick}" style="width:100%;max-width:340px;padding:16px;border:none;border-radius:var(--radius-md, 12px);background:var(--accent);color:#fff;font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer">${escapeHtml(doneLabel)}</button>
   `
   mountModal(overlay)
 }
@@ -1696,17 +1696,17 @@ function renderRestTimer() {
           stroke-linecap="round" transform="rotate(-90 22 22)"
           style="transition:stroke-dashoffset .9s linear"/>
       </svg>
-      <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--accent)">${secs < 60 ? secs+'s' : fmtRestCountdown(secs)}</div>
+      <div id="rt-countdown" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:var(--text-lg, 14px);font-weight:800;color:var(--accent)">${secs < 60 ? secs+'s' : fmtRestCountdown(secs)}</div>
     </div>
     <div style="flex:1;min-width:0">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
-      <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nextLabel}</div>
+      <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
+      <div style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nextLabel}</div>
     </div>
     <div style="text-align:right;flex-shrink:0;margin-right:4px">
-      <div style="font-size:10px;color:var(--text-muted)">Session</div>
-      <div id="rt-session-timer" style="font-size:13px;font-weight:700">${fmtRunnerTime(_runner.startTime)}</div>
+      <div style="font-size:var(--text-xs, 10px);color:var(--text-muted)">Session</div>
+      <div id="rt-session-timer" style="font-size:var(--text-base, 13px);font-weight:700">${fmtRunnerTime(_runner.startTime)}</div>
     </div>
-    <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:8px;background:var(--surface-2);font-size:13px;font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
+    <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:var(--radius-sm, 8px);background:var(--surface-2);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
   `
   mountModal(overlay)
 }
@@ -1743,9 +1743,9 @@ function renderCardioCaptureCard(ex, onContinue, prefill = {}) {
   const chip = (label, key) => `<button type="button" onclick="_toggleCardioCaptureMetric('${key}')" style="padding:8px 14px;font-size:13px;font-weight:700;border-radius:20px;cursor:pointer;border:1px solid ${t[key]?'var(--accent)':'var(--border)'};background:${t[key]?'var(--accent)':'var(--surface-2)'};color:${t[key]?'#fff':'var(--text-muted)'}">${label}</button>`
   const field = (label, id, val, opts, wrapStyle) => `
     <div style="${wrapStyle || 'margin-bottom:10px'}">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${label}</div>
+      <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${label}</div>
       <input id="${id}" value="${escapeHtml(val || '')}" ${opts}
-        style="width:100%;padding:12px;font-size:20px;font-weight:700;border:2px solid var(--border);border-radius:10px;text-align:center;background:var(--bg);color:var(--text)">
+        style="width:100%;padding:12px;font-size:var(--text-3xl, 20px);font-weight:700;border:2px solid var(--border);border-radius:var(--radius, 10px);text-align:center;background:var(--bg);color:var(--text)">
     </div>`
 
   let el = document.getElementById('workout-runner')
@@ -1753,8 +1753,8 @@ function renderCardioCaptureCard(ex, onContinue, prefill = {}) {
   el.innerHTML = `
     <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
       <div style="padding:20px 20px 12px;border-bottom:1px solid var(--border)">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${escapeHtml(ex.name)} — done</div>
-        <div style="font-size:19px;font-weight:800;color:var(--text)">Log what you saw on the machine</div>
+        <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${escapeHtml(ex.name)} — done</div>
+        <div style="font-size:var(--legacy-text-19, 19px);font-weight:800;color:var(--text)">Log what you saw on the machine</div>
       </div>
       <div style="flex:1;overflow-y:auto;padding:16px 20px">
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
@@ -1764,11 +1764,11 @@ function renderCardioCaptureCard(ex, onContinue, prefill = {}) {
         ${t.watts ? field('Avg watts', 'wr-capture-watts', prefill.watts, `type="number" inputmode="numeric" step="1" min="0" max="2000" placeholder="${escapeHtml(String(tgt.wattsMin||''))}"`) : ''}
         ${t.pace ? field('Pace /500m', 'wr-capture-pace', prefill.pace, 'type="text" inputmode="numeric" placeholder="e.g. 2:07" oninput="this.value=fmtRestInput(this.value)"') : ''}
         ${t.strokeRate ? field('Stroke rate (spm)', 'wr-capture-stroke-rate', prefill.strokeRate, 'type="number" inputmode="numeric" step="1" min="0" max="100"') : ''}
-        ${!t.hr && !t.watts && !t.pace && !t.strokeRate ? `<p style="color:var(--text-muted);font-size:13px;text-align:center;padding:24px 0">Nothing toggled on — tap a chip above, or just continue.</p>` : ''}
+        ${!t.hr && !t.watts && !t.pace && !t.strokeRate ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px);text-align:center;padding:24px 0">Nothing toggled on — tap a chip above, or just continue.</p>` : ''}
       </div>
       <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px">
-        <button onclick="_applyCardioCapture(_runner.exercises[_runner.exIdx]);_runner._captureOnContinue()" style="width:100%;padding:16px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer">Continue</button>
-        <button onclick="_runner._captureOnContinue()" style="width:100%;padding:8px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-muted)">Skip — don't log numbers this time</button>
+        <button onclick="_applyCardioCapture(_runner.exercises[_runner.exIdx]);_runner._captureOnContinue()" style="width:100%;padding:16px;border:none;border-radius:var(--radius-md, 12px);background:var(--accent);color:#fff;font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer">Continue</button>
+        <button onclick="_runner._captureOnContinue()" style="width:100%;padding:8px;border:none;background:none;font-size:var(--text-base, 13px);font-weight:600;cursor:pointer;color:var(--text-muted)">Skip — don't log numbers this time</button>
       </div>
     </div>
   `
@@ -1831,22 +1831,22 @@ function editRunnerSet(exIdx, setIdx) {
   overlay.id = 'wr-edit-overlay'
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center'
   overlay.innerHTML = `
-    <div style="width:100%;max-width:480px;background:var(--surface);border-radius:24px 24px 0 0;padding:24px 20px 36px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:16px">Edit Set ${setIdx+1}</div>
+    <div style="width:100%;max-width:480px;background:var(--surface);border-radius:var(--legacy-radius-24, 24px) 24px 0 0;padding:24px 20px 36px">
+      <div style="font-size:var(--legacy-text-15, 15px);font-weight:700;margin-bottom:16px">Edit Set ${setIdx+1}</div>
       <div style="display:flex;gap:10px;margin-bottom:16px">
         <div style="flex:1">
-          <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">${window._unitPrefs.weight}</label>
-          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.weight === 'BW' ? 'BW' : (_hasNumVal(s.weight) ? weightToPref(s.weight) : '')}" placeholder="—">
+          <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">${window._unitPrefs.weight}</label>
+          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${s.weight === 'BW' ? 'BW' : (_hasNumVal(s.weight) ? weightToPref(s.weight) : '')}" placeholder="—">
         </div>
         <div style="flex:1">
-          <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase">Reps</label>
-          <input id="wr-edit-reps" class="field-input" style="width:100%;margin-top:4px;font-size:22px;font-weight:700;text-align:center" value="${s.reps||''}" placeholder="—" type="number">
+          <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">Reps</label>
+          <input id="wr-edit-reps" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${s.reps||''}" placeholder="—" type="number">
         </div>
       </div>
       <div style="display:flex;gap:8px">
-        <button onclick="document.getElementById('wr-edit-overlay').remove()" style="flex:1;padding:13px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:14px;font-weight:600;cursor:pointer">Cancel</button>
-        <button onclick="deleteRunnerSet(${exIdx},${setIdx})" style="flex:1;padding:13px;border:1px solid #ef4444;border-radius:10px;background:transparent;color:#ef4444;font-size:14px;font-weight:600;cursor:pointer">Delete</button>
-        <button onclick="saveEditRunnerSet(${exIdx},${setIdx})" style="flex:2;padding:13px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Save</button>
+        <button onclick="document.getElementById('wr-edit-overlay').remove()" style="flex:1;padding:13px;border:1px solid var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Cancel</button>
+        <button onclick="deleteRunnerSet(${exIdx},${setIdx})" style="flex:1;padding:13px;border:1px solid #ef4444;border-radius:var(--radius, 10px);background:transparent;color:var(--danger, #ef4444);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Delete</button>
+        <button onclick="saveEditRunnerSet(${exIdx},${setIdx})" style="flex:2;padding:13px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:#fff;font-size:var(--text-lg, 14px);font-weight:700;cursor:pointer">Save</button>
       </div>
     </div>`
   mountModal(overlay)
@@ -2137,29 +2137,29 @@ async function showRunnerFinish() {
       <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
         <div style="padding:20px 16px 16px;border-bottom:1px solid var(--border)">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-            <h2 style="font-size:20px;font-weight:700;margin:0">Workout complete</h2>
-            ${prCount > 0 ? `<span style="background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px">🏆 ${prCount} PR${prCount>1?'s':''}</span>` : ''}
+            <h2 style="font-size:var(--text-3xl, 20px);font-weight:700;margin:0">Workout complete</h2>
+            ${prCount > 0 ? `<span style="background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-size:var(--text-sm, 11px);font-weight:700;padding:3px 8px;border-radius:var(--radius-xl, 20px)">🏆 ${prCount} PR${prCount>1?'s':''}</span>` : ''}
           </div>
           <div style="display:grid;grid-template-columns:repeat(${totalVol>0&&totalDist>0?4:3},1fr);gap:8px">
-            <div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
-              <div style="font-size:17px;font-weight:800">${duration}</div>
-              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Time</div>
+            <div style="background:var(--surface-2);border-radius:var(--radius, 10px);padding:10px 8px;text-align:center">
+              <div style="font-size:var(--legacy-text-17, 17px);font-weight:800">${duration}</div>
+              <div style="font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Time</div>
             </div>
-            <div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
-              <div style="font-size:17px;font-weight:800">${totalSets}</div>
-              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Sets</div>
+            <div style="background:var(--surface-2);border-radius:var(--radius, 10px);padding:10px 8px;text-align:center">
+              <div style="font-size:var(--legacy-text-17, 17px);font-weight:800">${totalSets}</div>
+              <div style="font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Sets</div>
             </div>
-            ${totalReps > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
-              <div style="font-size:17px;font-weight:800">${totalReps.toLocaleString()}</div>
-              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Reps</div>
+            ${totalReps > 0 ? `<div style="background:var(--surface-2);border-radius:var(--radius, 10px);padding:10px 8px;text-align:center">
+              <div style="font-size:var(--legacy-text-17, 17px);font-weight:800">${totalReps.toLocaleString()}</div>
+              <div style="font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Reps</div>
             </div>` : ''}
-            ${totalVol > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
-              <div style="font-size:17px;font-weight:800;color:var(--accent)">${window._unitPrefs.weight==='lb' ? Math.round(weightToPref(totalVol)).toLocaleString()+'lb' : (totalVol>=1000?(totalVol/1000).toFixed(1)+'t':totalVol.toLocaleString()+'kg')}</div>
-              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Volume</div>
+            ${totalVol > 0 ? `<div style="background:var(--surface-2);border-radius:var(--radius, 10px);padding:10px 8px;text-align:center">
+              <div style="font-size:var(--legacy-text-17, 17px);font-weight:800;color:var(--accent)">${window._unitPrefs.weight==='lb' ? Math.round(weightToPref(totalVol)).toLocaleString()+'lb' : (totalVol>=1000?(totalVol/1000).toFixed(1)+'t':totalVol.toLocaleString()+'kg')}</div>
+              <div style="font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Volume</div>
             </div>` : ''}
-            ${totalDist > 0 ? `<div style="background:var(--surface-2);border-radius:10px;padding:10px 8px;text-align:center">
-              <div style="font-size:17px;font-weight:800;color:var(--accent)">${fmtDistanceM(totalDist)}</div>
-              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Distance</div>
+            ${totalDist > 0 ? `<div style="background:var(--surface-2);border-radius:var(--radius, 10px);padding:10px 8px;text-align:center">
+              <div style="font-size:var(--legacy-text-17, 17px);font-weight:800;color:var(--accent)">${fmtDistanceM(totalDist)}</div>
+              <div style="font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Distance</div>
             </div>` : ''}
           </div>
         </div>
@@ -2185,12 +2185,12 @@ async function showRunnerFinish() {
               : s.phase === 'cooldown' ? 'Cool-down'
               : 'Set ' + (++_finWorkN))
             return `
-            <div style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+            <div style="margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);overflow:hidden">
               <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
-                <span style="font-weight:600;font-size:14px">${escapeHtml(e.name)}</span>
+                <span style="font-weight:600;font-size:var(--text-lg, 14px)">${escapeHtml(e.name)}</span>
                 <div style="display:flex;align-items:center;gap:6px">
-                  ${isPR ? `<span style="font-size:10px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.12);padding:2px 7px;border-radius:10px">🏆 PR</span>` : ''}
-                  <span style="font-size:12px;color:var(--text-muted)">${exSets.length} set${exSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+Math.round(weightToPref(exVol)).toLocaleString()+window._unitPrefs.weight:''} ${isCardio&&exDist>0?'· '+fmtDistanceM(exDist):''}</span>
+                  ${isPR ? `<span style="font-size:var(--text-xs, 10px);font-weight:700;color:var(--warning, #f59e0b);background:rgba(245,158,11,.12);padding:2px 7px;border-radius:var(--radius, 10px)">🏆 PR</span>` : ''}
+                  <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${exSets.length} set${exSets.length>1?'s':''} ${!isCardio&&exVol>0?'· '+Math.round(weightToPref(exVol)).toLocaleString()+window._unitPrefs.weight:''} ${isCardio&&exDist>0?'· '+fmtDistanceM(exDist):''}</span>
                 </div>
               </div>
               ${e.loggedSets.map((s,i) => {
@@ -2226,8 +2226,8 @@ async function showRunnerFinish() {
         </div>
 
         <div style="padding:12px 16px 24px;border-top:1px solid var(--border);display:flex;gap:8px">
-          <button onclick="confirmDiscardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:10px;background:transparent;font-size:13px;font-weight:600;cursor:pointer;color:var(--danger)">Discard</button>
-          <button onclick="saveRunnerSession()" style="flex:1;height:48px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:700;cursor:pointer">Save workout</button>
+          <button onclick="confirmDiscardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-base, 13px);font-weight:600;cursor:pointer;color:var(--danger)">Discard</button>
+          <button onclick="saveRunnerSession()" style="flex:1;height:48px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:#fff;font-size:var(--text-xl, 16px);font-weight:700;cursor:pointer">Save workout</button>
         </div>
       </div>
     `
@@ -2516,12 +2516,12 @@ function showPostSessionOneRMModal(clientId, candidates) {
       </div>
       <div id="psorm-rows">
         ${candidates.map((c, i) => `
-          <div id="psorm-row-${i}" style="background:rgba(99,102,241,.07);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
-            <div style="font-size:13px;font-weight:700;color:var(--accent)">${escapeHtml(c.name)} — ${fmtWeight(c.weight)} × ${c.reps} reps</div>
-            <div style="font-size:12px;color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${fmtWeight(c.estimate, { spaced: true, decimals: 1 })}</div>
+          <div id="psorm-row-${i}" style="background:rgba(99,102,241,.07);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:12px;margin-bottom:10px">
+            <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--accent)">${escapeHtml(c.name)} — ${fmtWeight(c.weight)} × ${c.reps} reps</div>
+            <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${fmtWeight(c.estimate, { spaced: true, decimals: 1 })}</div>
             <div style="display:flex;gap:6px">
-              <button class="btn-primary" style="flex:1;font-size:12px;padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${escapeAttr(c.name)}',${c.estimate})">Save as my 1RM</button>
-              <button class="btn-secondary" style="flex:1;font-size:12px;padding:8px" onclick="document.getElementById('psorm-row-${i}').remove()">Skip</button>
+              <button class="btn-primary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${escapeAttr(c.name)}',${c.estimate})">Save as my 1RM</button>
+              <button class="btn-secondary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="document.getElementById('psorm-row-${i}').remove()">Skip</button>
             </div>
           </div>`).join('')}
       </div>
@@ -2594,8 +2594,8 @@ function showRunnerOneRMSheet(exIdx) {
         <button class="modal-close" onclick="document.getElementById('modal-runner-1rm').remove()">✕</button>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:14px">
-        <button id="rorm-mode-direct" onclick="_setRunnerOneRMMode('direct')" class="btn-primary" style="flex:1;font-size:12px;padding:8px">I know it (${window._unitPrefs.weight})</button>
-        <button id="rorm-mode-epley" onclick="_setRunnerOneRMMode('epley')" class="btn-secondary" style="flex:1;font-size:12px;padding:8px">Estimate from a set</button>
+        <button id="rorm-mode-direct" onclick="_setRunnerOneRMMode('direct')" class="btn-primary" style="flex:1;font-size:var(--text-md, 12px);padding:8px">I know it (${window._unitPrefs.weight})</button>
+        <button id="rorm-mode-epley" onclick="_setRunnerOneRMMode('epley')" class="btn-secondary" style="flex:1;font-size:var(--text-md, 12px);padding:8px">Estimate from a set</button>
       </div>
       <div id="rorm-direct-fields">
         <div class="field">
@@ -2612,7 +2612,7 @@ function showRunnerOneRMSheet(exIdx) {
           <label class="field-label">Reps</label>
           <input class="field-input" id="rorm-est-reps" type="number" inputmode="numeric" oninput="_updateRunnerEpleyPreview()">
         </div>
-        <p id="rorm-epley-preview" style="font-size:12px;color:var(--text-muted)"></p>
+        <p id="rorm-epley-preview" style="font-size:var(--text-md, 12px);color:var(--text-muted)"></p>
       </div>
       <p class="modal-error" id="rorm-error"></p>
       <div class="modal-footer">
@@ -2682,7 +2682,7 @@ function renderLogExercises() {
   if (!container) return
 
   const isMobile = window.innerWidth < 520
-  const hdr = (txt) => `<span style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);text-align:center">${txt}</span>`
+  const hdr = (txt) => `<span style="font-size:var(--text-2xs, 9px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);text-align:center">${txt}</span>`
   const si_style = `class="field-input" style="padding:${isMobile?'8px 6px':'4px 5px'};font-size:${isMobile?'16px':'12px'};text-align:center;min-width:0"`
 
   container.innerHTML = window._logBlocks.map((block, bi) => {
@@ -2723,7 +2723,7 @@ function renderLogExercises() {
         </div>
       </div>
       <div style="text-align:center">
-        <div style="display:flex;border-radius:5px;border:1px solid var(--border);overflow:hidden">
+        <div style="display:flex;border-radius:var(--legacy-radius-5, 5px);border:1px solid var(--border);overflow:hidden">
           <button onclick="flushLogState();window._logBlocks[${bi}].effortMode='RPE';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${!isRIR?'var(--accent)':'transparent'};color:${!isRIR?'#fff':'var(--text-muted)'}">RPE</button>
           <button onclick="flushLogState();window._logBlocks[${bi}].effortMode='RIR';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${isRIR?'var(--accent)':'transparent'};color:${isRIR?'#fff':'var(--text-muted)'}">RIR</button>
         </div>
@@ -2734,12 +2734,12 @@ function renderLogExercises() {
 
     const setsHtml = block.sets.map((s, si) => {
       const wFromPct = orm
-        ? `<div style="font-size:9px;color:var(--accent);text-align:center;margin-top:1px">${_calcWeightFromPct(orm, s.pctMin) ? weightToPref(_calcWeightFromPct(orm, s.pctMin)) : ''}${s.pctMax && s.pctMax !== s.pctMin && _calcWeightFromPct(orm, s.pctMax) ? '–' + weightToPref(_calcWeightFromPct(orm, s.pctMax)) : ''}${orm && (s.pctMin || s.pctMax) ? window._unitPrefs.weight : ''}</div>`
+        ? `<div style="font-size:var(--text-2xs, 9px);color:var(--accent);text-align:center;margin-top:1px">${_calcWeightFromPct(orm, s.pctMin) ? weightToPref(_calcWeightFromPct(orm, s.pctMin)) : ''}${s.pctMax && s.pctMax !== s.pctMin && _calcWeightFromPct(orm, s.pctMax) ? '–' + weightToPref(_calcWeightFromPct(orm, s.pctMax)) : ''}${orm && (s.pctMin || s.pctMax) ? window._unitPrefs.weight : ''}</div>`
         : ''
       const delBtn = `<button onclick="flushLogState();window._logBlocks[${bi}].sets.splice(${si},1);renderLogExercises()" style="width:${isMobile?'28px':'22px'};height:${isMobile?'36px':'22px'};border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;padding:0">×</button>`
       return `
         <div style="display:grid;grid-template-columns:${GRID};gap:${isMobile?'5px':'3px'};align-items:center;margin-bottom:${isMobile?'6px':'3px'}">
-          <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-align:center">${si + 1}</span>
+          <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-align:center">${si + 1}</span>
           ${isCardio ? `
             <input id="ls-dur-${bi}-${si}" ${si_style} type="text" placeholder="0:00" value="${escapeHtml(String(s.duration || '0:00'))}" oninput="this.value=fmtRestInput(this.value)">
             <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'}" value="${_cardioDistanceM(s) ? distanceToPref(_cardioDistanceM(s)) : ''}">
@@ -2767,22 +2767,22 @@ function renderLogExercises() {
     }).join('')
 
     return `
-      <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px">
+      <div style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);overflow:hidden;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(99,102,241,.06);border-bottom:1px solid var(--border)">
-          <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">${String.fromCharCode(65+bi)}</div>
-          <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:16px;font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${escapeHtml(String(block.name || ''))}" oninput="window._logBlocks[${bi}].name=this.value">
-          <select id="ls-extype-${bi}" class="field-input" style="padding:5px 8px;font-size:16px;width:100px;flex-shrink:0" onchange="flushLogState();window._logBlocks[${bi}].type=this.value;renderLogExercises()">
+          <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:600;flex-shrink:0">${String.fromCharCode(65+bi)}</div>
+          <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:var(--text-xl, 16px);font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${escapeHtml(String(block.name || ''))}" oninput="window._logBlocks[${bi}].name=this.value">
+          <select id="ls-extype-${bi}" class="field-input" style="padding:5px 8px;font-size:var(--text-xl, 16px);width:100px;flex-shrink:0" onchange="flushLogState();window._logBlocks[${bi}].type=this.value;renderLogExercises()">
             <option value="strength" ${!isCardio?'selected':''}>Strength</option>
             <option value="cardio" ${isCardio?'selected':''}>Cardio</option>
           </select>
-          <button onclick="flushLogState();window._logBlocks.splice(${bi},1);renderLogExercises()" style="font-size:16px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0 2px;flex-shrink:0">×</button>
+          <button onclick="flushLogState();window._logBlocks.splice(${bi},1);renderLogExercises()" style="font-size:var(--text-xl, 16px);color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0 2px;flex-shrink:0">×</button>
         </div>
         ${!isCardio ? `
         <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)">
-          <span style="font-size:11px;font-weight:500;color:var(--text-muted);white-space:nowrap">1 Rep Max</span>
-          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:16px;text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM ? weightToPref(block.oneRM) : ''}" oninput="window._logBlocks[${bi}].oneRM=this.value" onchange="flushLogState();renderLogExercises()">
-          <span style="font-size:11px;color:var(--text-muted)">${window._unitPrefs.weight}</span>
-          <span style="font-size:11px;color:var(--text-muted);margin-left:2px">${orm ? '— % 1RM will auto-fill weight' : '— enter to enable % 1RM'}</span>
+          <span style="font-size:var(--text-sm, 11px);font-weight:500;color:var(--text-muted);white-space:nowrap">1 Rep Max</span>
+          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:var(--text-xl, 16px);text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM ? weightToPref(block.oneRM) : ''}" oninput="window._logBlocks[${bi}].oneRM=this.value" onchange="flushLogState();renderLogExercises()">
+          <span style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${window._unitPrefs.weight}</span>
+          <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-left:2px">${orm ? '— % 1RM will auto-fill weight' : '— enter to enable % 1RM'}</span>
         </div>
         ` : ''}
         <div style="padding:8px 12px 2px">
@@ -2790,7 +2790,7 @@ function renderLogExercises() {
             ${colHeaders}
           </div>
           ${setsHtml}
-          <button onclick="flushLogState();window._logBlocks[${bi}].sets.push({});renderLogExercises()" style="margin-top:5px;font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600">+ Add set</button>
+          <button onclick="flushLogState();window._logBlocks[${bi}].sets.push({});renderLogExercises()" style="margin-top:5px;font-size:var(--text-md, 12px);color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600">+ Add set</button>
         </div>
       </div>
     `
@@ -2846,7 +2846,7 @@ async function showLogSessionModal(clientId) {
 
       <div id="ls-exercises" style="margin-top:4px"></div>
 
-      <button onclick="flushLogState();window._logBlocks.push({name:'',type:'strength',sets:[{}]});renderLogExercises();setTimeout(()=>{const blocks=document.querySelectorAll('#ls-exercises > div');const last=blocks[blocks.length-1];if(last){const inp=last.querySelector('input');if(inp)inp.focus()}},50)" style="margin:4px 0 12px;font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600;display:block">+ Add exercise</button>
+      <button onclick="flushLogState();window._logBlocks.push({name:'',type:'strength',sets:[{}]});renderLogExercises();setTimeout(()=>{const blocks=document.querySelectorAll('#ls-exercises > div');const last=blocks[blocks.length-1];if(last){const inp=last.querySelector('input');if(inp)inp.focus()}},50)" style="margin:4px 0 12px;font-size:var(--text-base, 13px);color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600;display:block">+ Add exercise</button>
 
       <div class="field">
         <label class="field-label">Session notes</label>
@@ -3090,25 +3090,25 @@ async function openWorkoutLog(logId, clientId) {
 
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       <div>
-        <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${escapeHtml(session.name)}</h2>
+        <h2 style="font-size:var(--text-3xl, 20px);font-weight:700;margin-bottom:4px">${escapeHtml(session.name)}</h2>
         <p style="color:var(--text-muted)">${dateStr}</p>
       </div>
-      ${_isCoachView ? `<button class="btn-danger" style="font-size:13px;padding:6px 12px" onclick="deleteWorkoutLog('${logId}','${clientId}')">Delete</button>` : ''}
+      ${_isCoachView ? `<button class="btn-danger" style="font-size:var(--text-base, 13px);padding:6px 12px" onclick="deleteWorkoutLog('${logId}','${clientId}')">Delete</button>` : ''}
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
-        <div style="font-size:17px;font-weight:700">${totalVol > 0 ? Math.round(weightToPref(totalVol)).toLocaleString()+' '+window._unitPrefs.weight : '—'}</div>
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Volume</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:10px 12px;text-align:center">
+        <div style="font-size:var(--legacy-text-17, 17px);font-weight:700">${totalVol > 0 ? Math.round(weightToPref(totalVol)).toLocaleString()+' '+window._unitPrefs.weight : '—'}</div>
+        <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Volume</div>
         ${volDelta !== null && totalVol > 0 ? `<div style="font-size:11px;font-weight:600;margin-top:3px;color:${volDelta >= 0 ? '#10b981' : '#ef4444'}">${volDelta >= 0 ? '+' : ''}${Math.round(weightToPref(volDelta)).toLocaleString()} ${window._unitPrefs.weight}</div>` : ''}
       </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
-        <div style="font-size:17px;font-weight:700">${totalSets}</div>
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Sets</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:10px 12px;text-align:center">
+        <div style="font-size:var(--legacy-text-17, 17px);font-weight:700">${totalSets}</div>
+        <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Sets</div>
       </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center">
-        <div style="font-size:17px;font-weight:700">${exercises.length}</div>
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Exercises</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:10px 12px;text-align:center">
+        <div style="font-size:var(--legacy-text-17, 17px);font-weight:700">${exercises.length}</div>
+        <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">Exercises</div>
       </div>
     </div>
 
@@ -3152,13 +3152,13 @@ async function openWorkoutLog(logId, clientId) {
           <div class="card" style="margin-bottom:12px">
             <div class="card-body">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-                <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0">${i+1}</div>
-                <span style="font-weight:600;font-size:15px">${escapeHtml(ex.exercise_name)}</span>
-                ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
+                <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);flex-shrink:0">${i+1}</div>
+                <span style="font-weight:600;font-size:var(--legacy-text-15, 15px)">${escapeHtml(ex.exercise_name)}</span>
+                ${isCardio ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
               </div>
-              ${prevSummary ? `<div style="font-size:11px;color:var(--text-muted);margin-left:36px;margin-bottom:10px">Last time: ${prevSummary}</div>` : `<div style="margin-bottom:10px"></div>`}
-              ${ex.client_notes ? `<div style="font-size:12px;color:var(--text);background:rgba(99,102,241,.06);border-radius:8px;padding:8px 10px;margin-bottom:10px"><span style="font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px">Client note</span><div style="margin-top:2px;white-space:pre-wrap">${escapeHtml(ex.client_notes)}</div></div>` : ''}
-              ${sets.length === 0 ? `<div style="color:var(--text-muted);font-size:13px">No sets recorded</div>` : `
+              ${prevSummary ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-left:36px;margin-bottom:10px">Last time: ${prevSummary}</div>` : `<div style="margin-bottom:10px"></div>`}
+              ${ex.client_notes ? `<div style="font-size:var(--text-md, 12px);color:var(--text);background:rgba(99,102,241,.06);border-radius:var(--radius-sm, 8px);padding:8px 10px;margin-bottom:10px"><span style="font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:var(--text-xs, 10px)">Client note</span><div style="margin-top:2px;white-space:pre-wrap">${escapeHtml(ex.client_notes)}</div></div>` : ''}
+              ${sets.length === 0 ? `<div style="color:var(--text-muted);font-size:var(--text-base, 13px)">No sets recorded</div>` : `
                 <table style="width:100%;border-collapse:collapse">
                   <thead>
                     <tr style="border-bottom:1px solid var(--border)">
@@ -3176,14 +3176,14 @@ async function openWorkoutLog(logId, clientId) {
                   <tbody>
                     ${sets.map((s, si) => `
                       <tr style="border-bottom:1px solid var(--border)">
-                        <td style="padding:8px 12px 8px 0;font-size:13px;color:var(--text-muted);font-weight:600">${setLabels[si]}</td>
+                        <td style="padding:8px 12px 8px 0;font-size:var(--text-base, 13px);color:var(--text-muted);font-weight:600">${setLabels[si]}</td>
                         ${isCardio
-                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:13px">${_hasNumVal(s.distance_m) ? fmtDistanceM(s.distance_m) : '—'}</td>`
+                          ? `<td style="padding:8px 12px 8px 0;font-size:var(--text-base, 13px)">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:var(--text-base, 13px)">${_hasNumVal(s.distance_m) ? fmtDistanceM(s.distance_m) : '—'}</td>`
                           : isJumpHeight
-                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.height_cm) ? fmtJumpHeight(s.height_cm, { spaced: true }) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.reps_achieved || '—'}</td>`
+                          ? `<td style="padding:8px 12px 8px 0;font-size:var(--text-base, 13px)">${_hasNumVal(s.height_cm) ? fmtJumpHeight(s.height_cm, { spaced: true }) : '—'}</td><td style="padding:8px 0;font-size:var(--text-base, 13px)">${s.reps_achieved || '—'}</td>`
                           : isJumpDistance
-                          ? `<td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.distance_m) ? fmtDistanceM(s.distance_m) : '—'}</td><td style="padding:8px 0;font-size:13px">${s.reps_achieved || '—'}</td>`
-                          : `<td style="padding:8px 12px 8px 0;font-size:13px">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:13px">${_hasNumVal(s.weight_kg) ? fmtWeight(s.weight_kg, { spaced: true }) : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:13px">${s.effort_value != null ? (effortMixed ? (s.effort_type === 'rir' ? 'RIR ' : 'RPE ') + s.effort_value : s.effort_value) : '—'}</td>` : ''}`
+                          ? `<td style="padding:8px 12px 8px 0;font-size:var(--text-base, 13px)">${_hasNumVal(s.distance_m) ? fmtDistanceM(s.distance_m) : '—'}</td><td style="padding:8px 0;font-size:var(--text-base, 13px)">${s.reps_achieved || '—'}</td>`
+                          : `<td style="padding:8px 12px 8px 0;font-size:var(--text-base, 13px)">${s.reps_achieved || '—'}</td><td style="padding:8px 12px 8px 0;font-size:var(--text-base, 13px)">${_hasNumVal(s.weight_kg) ? fmtWeight(s.weight_kg, { spaced: true }) : '—'}</td>${hasRpe ? `<td style="padding:8px 0;font-size:var(--text-base, 13px)">${s.effort_value != null ? (effortMixed ? (s.effort_type === 'rir' ? 'RIR ' : 'RPE ') + s.effort_value : s.effort_value) : '—'}</td>` : ''}`
                         }
                       </tr>
                     `).join('')}
@@ -3197,14 +3197,14 @@ async function openWorkoutLog(logId, clientId) {
     }
     <div class="card" style="margin-top:8px">
       <div class="card-body">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Coach notes</div>
+        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Coach notes</div>
         ${_isCoachView
           ? `<textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${escapeHtml(session.notes)}</textarea>
-             <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:13px;padding:7px 16px">Save notes</button>
-             <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:12px;color:#10b981;font-weight:600">Saved ✓</span>`
+             <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:var(--text-base, 13px);padding:7px 16px">Save notes</button>
+             <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:var(--text-md, 12px);color:var(--success, #10b981);font-weight:600">Saved ✓</span>`
           : session.notes
-            ? `<div style="white-space:pre-wrap;font-size:14px;line-height:1.5">${escapeHtml(session.notes)}</div>`
-            : `<div style="font-size:13px;color:var(--text-muted)">No notes from your coach yet.</div>`}
+            ? `<div style="white-space:pre-wrap;font-size:var(--text-lg, 14px);line-height:1.5">${escapeHtml(session.notes)}</div>`
+            : `<div style="font-size:var(--text-base, 13px);color:var(--text-muted)">No notes from your coach yet.</div>`}
       </div>
     </div>
   `
