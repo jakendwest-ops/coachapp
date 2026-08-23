@@ -184,6 +184,29 @@ else
   fi
 fi
 
+# -- 3c. Every var(--x) referenced in js/ must be DEFINED in css/main.css --
+# An undefined custom property does NOT error. The declaration is silently dropped and the
+# element falls back to its inherited value, so it looks plausible and nothing reports.
+# Found 2026-08-22: js/app-progress.js used `var(--surface2)` for a table-row background --
+# the token is `--surface-2`. Pre-existing, invisible, and the design-token test could not
+# catch it: that test asserts every token DEFINED resolves, never that a token REFERENCED
+# exists. This matters more since the tokenisation added ~770 new var() references; those
+# carry a `var(--token, <literal>)` fallback, but a bare var(--x) written by hand later
+# does not, and nothing else is checking.
+echo "Checking var(--token) references resolve..."
+VT_USED=$(grep -ohE 'var\(--[a-z0-9-]+' js/*.js | sed 's/var(//' | sort -u)
+VT_DEF=$(grep -ohE '^[[:space:]]*--[a-z0-9-]+:' css/main.css | tr -d ' :' | sort -u)
+VT_BAD=$(echo "$VT_USED" | while IFS= read -r t; do
+  [ -n "$t" ] || continue
+  echo "$VT_DEF" | grep -qxF -- "$t" || echo "$t"
+done)
+if [ -n "$VT_BAD" ]; then
+  echo "$VT_BAD" | while IFS= read -r t; do echo "    $t"; done
+  fail "var() references a token css/main.css does not define -- the declaration is silently dropped"
+else
+  echo "  Every var(--token) referenced in js/ is defined."
+fi
+
 # -- 4. No bare alert() calls --
 echo "Checking for bare alert() calls..."
 ALERTS=$(grep -n "alert(" $FILES | grep -v "//")

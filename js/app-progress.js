@@ -848,7 +848,7 @@ async function renderClientWeight(clientId, el) {
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);overflow:hidden">
         <table style="width:100%;border-collapse:collapse">
           <thead>
-            <tr style="background:var(--surface2)">
+            <tr style="background:var(--surface-2)">
               <th style="padding:10px 14px;text-align:left;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Date</th>
               <th style="padding:10px 14px;text-align:right;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Weight</th>
               <th style="padding:10px 14px;text-align:right;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Body fat</th>
