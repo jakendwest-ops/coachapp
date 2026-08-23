@@ -178,7 +178,7 @@ async function renderClients(el) {
             <span class="badge badge-${c.status}">${c.status}</span>
             <span style="font-size:11px;font-weight:600;color:${lastColour}">${lastText}</span>
           </div>
-          ${currentUser.email === 'jakendwest@gmail.com' ? `<button onclick="event.stopPropagation();sudoAsClient('${c.id}','${escapeAttr(c.full_name)}')" style="font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:#f59e0b;cursor:pointer;white-space:nowrap">View as</button>` : ''}
+          ${currentUser.email === 'jakendwest@gmail.com' ? `<button onclick="event.stopPropagation();sudoAsClient('${c.id}','${escapeAttr(c.full_name)}')" style="font-size:var(--text-sm, 11px);font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:var(--warning, #f59e0b);cursor:pointer;white-space:nowrap">View as</button>` : ''}
           <svg style="width:15px;height:15px;color:#d1d5db;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>`
       }).join('')}
@@ -293,7 +293,7 @@ async function openClient(id) {
 
     <div class="page-header">
       <div style="display:flex;align-items:center;gap:14px">
-        <div class="avatar" style="width:48px;height:48px;font-size:18px">${client.full_name.charAt(0).toUpperCase()}</div>
+        <div class="avatar" style="width:48px;height:48px;font-size:var(--text-2xl, 18px)">${client.full_name.charAt(0).toUpperCase()}</div>
         <div>
           <h1 class="page-title" style="margin-bottom:2px">${escapeHtml(client.full_name)}</h1>
           <p class="page-subtitle">${escapeHtml(client.email || '')}</p>
@@ -355,7 +355,7 @@ function clientOverviewTab(client, programName = null) {
   return `
     <div class="card">
       <div class="card-body">
-        ${programName ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Active program</span><span style="font-size:14px;font-weight:600;color:var(--accent)">${programName}</span></div>` : ''}
+        ${programName ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)"><span style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Active program</span><span style="font-size:var(--text-lg, 14px);font-weight:600;color:var(--accent)">${programName}</span></div>` : ''}
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:20px">
           ${infoItem('Status', `<span class="badge badge-${client.status}">${client.status}</span>`)}
           ${infoItem('Email', client.email ? escapeHtml(client.email) : '—')}
@@ -363,7 +363,7 @@ function clientOverviewTab(client, programName = null) {
           ${infoItem('Date of birth', age ? `${dob} (age ${age})` : dob)}
           ${infoItem('Height', client.height_cm ? `${client.height_cm} cm` : '—')}
         </div>
-        ${client.notes ? `<div class="divider"></div><p style="color:var(--text-muted);font-size:13.5px;line-height:1.6">${escapeHtml(client.notes)}</p>` : ''}
+        ${client.notes ? `<div class="divider"></div><p style="color:var(--text-muted);font-size:var(--legacy-text-13-5, 13.5px);line-height:1.6">${escapeHtml(client.notes)}</p>` : ''}
       </div>
     </div>
   `
@@ -392,24 +392,24 @@ async function renderClientOverview(id, el) {
     <div class="card" style="margin-top:16px">
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div style="font-size:13px;font-weight:700">Latest check-in</div>
-          <div style="font-size:11px;color:var(--text-muted)">${new Date(latestCI.created_at).toLocaleDateString('en-GB', { day:'numeric',month:'short' })}</div>
+          <div style="font-size:var(--text-base, 13px);font-weight:700">Latest check-in</div>
+          <div style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${new Date(latestCI.created_at).toLocaleDateString('en-GB', { day:'numeric',month:'short' })}</div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
           ${[['Sleep','sleep'],['Energy','energy'],['Stress','stress'],['Soreness','soreness']].map(([label,key])=>`
-          <div style="text-align:center;background:var(--surface-2);border-radius:8px;padding:8px">
+          <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:8px">
             <div style="font-size:20px;font-weight:800;color:${ciColour(latestCI[key])}">${latestCI[key]}/5</div>
-            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${label}</div>
+            <div style="font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px">${label}</div>
             ${ciTrend(key)}
           </div>`).join('')}
         </div>
-        ${latestCI.notes ? `<p style="font-size:13px;color:var(--text-muted);margin:0;font-style:italic">"${escapeHtml(latestCI.notes)}"</p>` : ''}
+        ${latestCI.notes ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0;font-style:italic">"${escapeHtml(latestCI.notes)}"</p>` : ''}
         ${(checkIns?.length || 0) > 1 ? `
         <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Previous check-ins</div>
+          <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Previous check-ins</div>
           ${checkIns.slice(1).map(ci => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
-            <span style="font-size:12px;color:var(--text-muted)">${new Date(ci.created_at).toLocaleDateString('en-GB', { day:'numeric',month:'short' })}</span>
+            <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${new Date(ci.created_at).toLocaleDateString('en-GB', { day:'numeric',month:'short' })}</span>
             <div style="display:flex;gap:8px">
               ${[['S',ci.sleep],['E',ci.energy],['St',ci.stress],['So',ci.soreness]].map(([abbr,val])=>`
               <span style="font-size:12px;font-weight:600;color:${ciColour(val)}">${abbr}:${val}</span>`).join('')}
@@ -424,8 +424,8 @@ async function renderClientOverview(id, el) {
 function infoItem(label, value) {
   return `
     <div>
-      <div style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px">${label}</div>
-      <div style="font-size:14px;font-weight:500">${value}</div>
+      <div style="font-size:var(--legacy-text-11-5, 11.5px);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px">${label}</div>
+      <div style="font-size:var(--text-lg, 14px);font-weight:500">${value}</div>
     </div>
   `
 }
