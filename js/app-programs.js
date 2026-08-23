@@ -92,7 +92,7 @@ async function renderClientPrograms(clientId, el) {
 
   if (error) {
     el.innerHTML = `<div class="card"><div class="card-body" style="padding:20px">
-      <p style="color:var(--danger);font-size:13px">${error.message}</p>
+      <p style="color:var(--danger);font-size:var(--text-base, 13px)">${error.message}</p>
     </div></div>`
     return
   }
@@ -136,12 +136,12 @@ async function renderClientPrograms(clientId, el) {
           <div class="card-body">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
               <div>
-                <div style="font-size:16px;font-weight:700">${escapeHtml(p?.name || 'Unknown program')}</div>
-                <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Started ${startLabel}</div>
+                <div style="font-size:var(--text-xl, 16px);font-weight:700">${escapeHtml(p?.name || 'Unknown program')}</div>
+                <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">Started ${startLabel}</div>
               </div>
               <div style="display:flex;gap:6px;flex-shrink:0">
-                <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showEditStartDateModal('${clientId}','${a.id}','${a.start_date||''}')">Edit date</button>
-                <button class="btn-secondary" style="font-size:12px;padding:4px 10px;color:var(--danger);border-color:var(--danger)" onclick="unassignProgram('${clientId}','${a.id}')">Remove</button>
+                <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditStartDateModal('${clientId}','${a.id}','${a.start_date||''}')">Edit date</button>
+                <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;color:var(--danger);border-color:var(--danger)" onclick="unassignProgram('${clientId}','${a.id}')">Remove</button>
               </div>
             </div>
             ${phases.map((phase, pi) => {
@@ -165,8 +165,8 @@ async function renderClientPrograms(clientId, el) {
                     <div style="border-top:1px solid var(--border)">
                       <button onclick="toggleClientPhase('${dayPanelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:none;border:none;cursor:pointer;text-align:left">
                         <div>
-                          <span style="font-size:12px;font-weight:700;color:var(--accent)">DAY ${day}</span>
-                          <span style="font-size:13px;font-weight:500;color:var(--text);margin-left:8px">${sessionSummary}</span>
+                          <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--accent)">DAY ${day}</span>
+                          <span style="font-size:var(--text-base, 13px);font-weight:500;color:var(--text);margin-left:8px">${sessionSummary}</span>
                         </div>
                         <svg id="${dayPanelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
                       </button>
@@ -178,10 +178,10 @@ async function renderClientPrograms(clientId, el) {
                           const exs = [...(cpw?.exercises || [])].sort((a,b) => a.order_index - b.order_index)
                           return `
                             <div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
-                              ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
+                              ${multi ? `<div style="font-size:var(--text-xs, 10px);font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
                               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '0'}">
-                                <span style="font-size:13px;font-weight:600">${sessionName}</span>
-                                ${templateId ? `<button class="btn-secondary" style="font-size:12px;padding:3px 8px;flex-shrink:0" onclick="openTemplate('${templateId}',{backTo:'client',backLabel:'${clientName}',clientId:'${clientId}',clientName:'${clientName}',clientProgramId:'${a.id}'})">Edit</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
+                                <span style="font-size:var(--text-base, 13px);font-weight:600">${sessionName}</span>
+                                ${templateId ? `<button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:3px 8px;flex-shrink:0" onclick="openTemplate('${templateId}',{backTo:'client',backLabel:'${clientName}',clientId:'${clientId}',clientName:'${clientName}',clientProgramId:'${a.id}'})">Edit</button>` : `<span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Not set up</span>`}
                               </div>
                               ${exs.length ? `
                               <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
@@ -195,10 +195,10 @@ async function renderClientPrograms(clientId, el) {
                                   return `
                                   <div style="padding:5px 0;border-bottom:1px solid var(--border)">
                                     <div style="display:flex;justify-content:space-between;gap:8px">
-                                      <span style="font-size:12px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
-                                      <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
+                                      <span style="font-size:var(--text-md, 12px);font-weight:600">${escapeHtml(ex.exercise_name)}</span>
+                                      <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
                                     </div>
-                                    ${presc ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
+                                    ${presc ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
                                   </div>`
                                 }).join('')}
                               </div>` : ''}
@@ -210,18 +210,18 @@ async function renderClientPrograms(clientId, el) {
               }
 
               return `
-                <div style="margin-bottom:6px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+                <div style="margin-bottom:6px;border:1px solid var(--border);border-radius:var(--radius, 10px);overflow:hidden">
                   <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
                     <div>
-                      <span style="font-size:13px;font-weight:700;color:var(--text)">${escapeHtml(phase.name)}</span>
-                      <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${_builtWeekCount(allSessions)}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
+                      <span style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text)">${escapeHtml(phase.name)}</span>
+                      <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-left:8px">${_builtWeekCount(allSessions)}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
                     </div>
                     <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
                   <div id="${panelId}" style="display:none">
                     ${!weekNums.length ? NO_SESSIONS_EMPTY_STATE :
                       !showWeeks ? renderDays(weekMap[weekNums[0]], panelId) : weekNums.map(w => `
-                      <div style="padding:8px 14px 2px;font-size:11px;font-weight:700;color:var(--accent);background:var(--surface-2);border-top:1px solid var(--border)">WEEK ${w}</div>
+                      <div style="padding:8px 14px 2px;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);background:var(--surface-2);border-top:1px solid var(--border)">WEEK ${w}</div>
                       ${renderDays(weekMap[w], `${panelId}-w${w}`)}
                     `).join('')}
                   </div>
@@ -613,11 +613,11 @@ async function _getProgramOneRMStatus(programId, clientId) {
 // One toggleable "I know it (kg) / Estimate from a set" row. idPrefix must be unique per row on the page.
 function _renderOneRMQuickEntry(idPrefix, exerciseName) {
   return `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">
-      <div style="font-size:12px;font-weight:700;margin-bottom:8px">${escapeHtml(exerciseName)}</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:var(--text-md, 12px);font-weight:700;margin-bottom:8px">${escapeHtml(exerciseName)}</div>
       <div style="display:flex;gap:6px;margin-bottom:8px">
-        <button type="button" id="${idPrefix}-mode-direct" onclick="_setOneRMQuickEntryMode('${idPrefix}','direct')" class="btn-primary" style="flex:1;font-size:11px;padding:6px">I know it (${window._unitPrefs.weight})</button>
-        <button type="button" id="${idPrefix}-mode-epley" onclick="_setOneRMQuickEntryMode('${idPrefix}','epley')" class="btn-secondary" style="flex:1;font-size:11px;padding:6px">Estimate from a set</button>
+        <button type="button" id="${idPrefix}-mode-direct" onclick="_setOneRMQuickEntryMode('${idPrefix}','direct')" class="btn-primary" style="flex:1;font-size:var(--text-sm, 11px);padding:6px">I know it (${window._unitPrefs.weight})</button>
+        <button type="button" id="${idPrefix}-mode-epley" onclick="_setOneRMQuickEntryMode('${idPrefix}','epley')" class="btn-secondary" style="flex:1;font-size:var(--text-sm, 11px);padding:6px">Estimate from a set</button>
       </div>
       <div id="${idPrefix}-direct-fields">
         <input class="field-input" id="${idPrefix}-weight" type="number" step="0.5" inputmode="decimal" placeholder="1RM (${window._unitPrefs.weight})">
@@ -627,7 +627,7 @@ function _renderOneRMQuickEntry(idPrefix, exerciseName) {
           <input class="field-input" id="${idPrefix}-est-weight" type="number" step="0.5" inputmode="decimal" placeholder="Weight (${window._unitPrefs.weight})" oninput="_updateOneRMQuickEntryPreview('${idPrefix}')">
           <input class="field-input" id="${idPrefix}-est-reps" type="number" inputmode="numeric" placeholder="Reps" oninput="_updateOneRMQuickEntryPreview('${idPrefix}')">
         </div>
-        <p id="${idPrefix}-epley-preview" style="font-size:11px;color:var(--text-muted);margin:6px 0 0"></p>
+        <p id="${idPrefix}-epley-preview" style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin:6px 0 0"></p>
       </div>
     </div>`
 }
@@ -665,14 +665,14 @@ function _renderProgramOneRMChecklist(status) {
   const total = status.have.length + status.missing.length
   if (!total) return ''
   const haveHtml = status.have.map(h => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:12px;color:var(--text-muted)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:var(--text-md, 12px);color:var(--text-muted)">
       <span>✓ ${escapeHtml(h.name)}</span>
       <span>${fmtWeight(parseFloat(h.kg), { spaced: true, decimals: 1 })} (on file)</span>
     </div>`).join('')
   const missingHtml = status.missing.map((name, i) => _renderOneRMQuickEntry(`mor-${i}`, name)).join('')
   return `
-    <div style="background:rgba(245,158,11,.08);border:1px solid #f59e0b;border-radius:10px;padding:12px;margin-bottom:14px">
-      <div style="font-size:12px;font-weight:700;color:#b45309;margin-bottom:8px">This program uses %1RM for ${total} lift${total!==1?'s':''}${status.missing.length ? ` — missing ${status.missing.length}` : ' — all on file'}</div>
+    <div style="background:rgba(245,158,11,.08);border:1px solid #f59e0b;border-radius:var(--radius, 10px);padding:12px;margin-bottom:14px">
+      <div style="font-size:var(--text-md, 12px);font-weight:700;color:#b45309;margin-bottom:8px">This program uses %1RM for ${total} lift${total!==1?'s':''}${status.missing.length ? ` — missing ${status.missing.length}` : ' — all on file'}</div>
       ${haveHtml}
       ${missingHtml}
     </div>`
@@ -744,7 +744,7 @@ function showEditStartDateModal(clientId, assignmentId, currentDate) {
           <label class="field-label">Program start date</label>
           <input class="field-input" type="date" id="esd-date" value="${currentDate}">
         </div>
-        <p style="font-size:12px;color:var(--text-muted);margin-top:8px">Changing the start date shifts all scheduled workouts on the client's calendar.</p>
+        <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:8px">Changing the start date shifts all scheduled workouts on the client's calendar.</p>
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="document.getElementById('esd-modal').remove()">Cancel</button>
@@ -910,13 +910,13 @@ async function renderPrograms(el) {
       <div class="list">
         ${programs.map(p => `
           <div class="list-row" onclick="openProgram('${p.id}')">
-            <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📋</div>
+            <div style="width:40px;height:40px;border-radius:var(--radius, 10px);background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-2xl, 18px);flex-shrink:0">📋</div>
             <div class="row-info">
               <div class="row-name">${escapeHtml(p.name)}</div>
               <div class="row-meta">${p.description ? escapeHtml(p.description) : `${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}`}</div>
             </div>
             <div class="row-right">
-              <span style="font-size:12px;color:var(--text-muted)">${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}</span>
+              <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}</span>
               <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
           </div>`).join('')}
@@ -931,14 +931,14 @@ async function renderPrograms(el) {
           <button class="btn-icon" onclick="closeProgramModal()">✕</button>
         </div>
         <div style="margin-bottom:14px">
-          <label class="form-label">Program name <span style="color:#ef4444">*</span></label>
+          <label class="form-label">Program name <span style="color:var(--danger, #ef4444)">*</span></label>
           <input type="text" id="pm-name" class="form-input" placeholder="e.g. 12-Week Strength Block">
         </div>
         <div style="margin-bottom:14px">
           <label class="form-label">Description <span style="color:var(--text-muted)">(optional)</span></label>
           <textarea id="pm-desc" class="form-input" rows="3" placeholder="What is this program for?" style="resize:vertical"></textarea>
         </div>
-        <p id="pm-error" style="color:#ef4444;font-size:12px;margin:0 0 10px"></p>
+        <p id="pm-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 10px"></p>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-secondary" onclick="closeProgramModal()">Cancel</button>
           <button class="btn btn-primary" id="pm-save-btn" onclick="saveProgram()">Create program</button>
@@ -1083,7 +1083,7 @@ async function openProgram(programId) {
 
   el.innerHTML = `
     <div style="margin-bottom:20px">
-      <a href="#" onclick="navigate('programs');return false" style="font-size:13px;color:var(--accent);display:inline-flex;align-items:center;gap:4px;margin-bottom:12px">
+      <a href="#" onclick="navigate('programs');return false" style="font-size:var(--text-base, 13px);color:var(--accent);display:inline-flex;align-items:center;gap:4px;margin-bottom:12px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="15 18 9 12 15 6"/></svg>
         All programs
       </a>
@@ -1091,8 +1091,8 @@ async function openProgram(programId) {
         <h1 class="page-title" style="margin-bottom:4px">${escapeHtml(program.name)}</h1>
         ${_quickPrefsIconHtml()}
       </div>
-      ${program.description ? `<p style="color:var(--text-muted);font-size:14px">${escapeHtml(program.description)}</p>` : ''}
-      <p style="font-size:12px;color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
+      ${program.description ? `<p style="color:var(--text-muted);font-size:var(--text-lg, 14px)">${escapeHtml(program.description)}</p>` : ''}
+      <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${escapeAttr(program.name)}','${escapeAttr((program.description||''))}')">Edit</button>
         ${_assignBtnHtml(program)}
@@ -1106,27 +1106,27 @@ async function openProgram(programId) {
 
     <!-- Phases -->
     <div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
-      <h2 style="font-size:15px;font-weight:600">Phases</h2>
+      <h2 style="font-size:var(--legacy-text-15, 15px);font-weight:600">Phases</h2>
       <button class="btn btn-primary" onclick="showAddPhaseForm('${program.id}')">+ Add phase</button>
     </div>
 
     <div id="phases-list">
-      ${!phases.length ? `<p style="color:var(--text-muted);font-size:13px">No phases yet. Add the first phase to get started.</p>` :
+      ${!phases.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No phases yet. Add the first phase to get started.</p>` :
         phases.map((ph, i) => `
           <div class="card" style="margin-bottom:12px">
             <div class="card-body">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-                <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i + 1}</div>
+                <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-size:var(--text-base, 13px);font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i + 1}</div>
                 <div style="flex:1">
-                  <div style="font-weight:600;font-size:15px">${escapeHtml(ph.name)}</div>
-                  <div style="font-size:12px;color:var(--text-muted)">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}</div>
+                  <div style="font-weight:600;font-size:var(--legacy-text-15, 15px)">${escapeHtml(ph.name)}</div>
+                  <div style="font-size:var(--text-md, 12px);color:var(--text-muted)">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}</div>
                 </div>
-                <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showEditPhaseForm('${program.id}','${ph.id}','${escapeAttr(ph.name)}',${ph.duration_weeks},${ph.order_index})">Edit</button>
-                <button class="btn-danger" style="font-size:12px;padding:4px 10px" onclick="deletePhase('${program.id}','${ph.id}')">Remove</button>
+                <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditPhaseForm('${program.id}','${ph.id}','${escapeAttr(ph.name)}',${ph.duration_weeks},${ph.order_index})">Edit</button>
+                <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="deletePhase('${program.id}','${ph.id}')">Remove</button>
               </div>
               ${ph.duration_weeks > 1 ? `
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--surface-2);border-radius:8px;padding:8px 12px;margin-bottom:10px">
-                <div style="font-size:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:8px 12px;margin-bottom:10px">
+                <div style="font-size:var(--text-md, 12px)">
                   <span style="font-weight:600;color:var(--text-muted)">Periodization:</span>
                   <span style="font-weight:700;margin-left:4px">${ph.periodization_type === 'linear'
                     ? `Linear${ph.periodization_config?.startPct != null && ph.periodization_config?.endPct != null ? ` (${ph.periodization_config.startPct}→${ph.periodization_config.endPct}%)` : ''}`
@@ -1135,23 +1135,23 @@ async function openProgram(programId) {
                     : 'None'}</span>
                 </div>
                 <div style="display:flex;gap:6px">
-                  <button class="btn-secondary" style="font-size:11px;padding:3px 9px" onclick="showPeriodizationModal('${ph.id}','${program.id}')">Configure</button>
-                  ${ph.periodization_type ? `<button class="btn-primary" style="font-size:11px;padding:3px 9px" onclick="generatePhasePeriodization('${ph.id}','${program.id}')">Generate weeks</button>` : ''}
+                  <button class="btn-secondary" style="font-size:var(--text-sm, 11px);padding:3px 9px" onclick="showPeriodizationModal('${ph.id}','${program.id}')">Configure</button>
+                  ${ph.periodization_type ? `<button class="btn-primary" style="font-size:var(--text-sm, 11px);padding:3px 9px" onclick="generatePhasePeriodization('${ph.id}','${program.id}')">Generate weeks</button>` : ''}
                 </div>
               </div>` : ''}
-              <div id="phase-workouts-${ph.id}"><div style="color:var(--text-muted);font-size:12px">Loading workouts…</div></div>
+              <div id="phase-workouts-${ph.id}"><div style="color:var(--text-muted);font-size:var(--text-md, 12px)">Loading workouts…</div></div>
             </div>
           </div>`).join('')}
     </div>
 
     <!-- Add/edit phase form -->
-    <div id="phase-form" style="display:none;background:var(--surface-2);border-radius:10px;padding:16px;margin-top:12px">
-      <h3 style="font-size:14px;font-weight:600;margin-bottom:12px" id="phase-form-title">Add phase</h3>
+    <div id="phase-form" style="display:none;background:var(--surface-2);border-radius:var(--radius, 10px);padding:16px;margin-top:12px">
+      <h3 style="font-size:var(--text-lg, 14px);font-weight:600;margin-bottom:12px" id="phase-form-title">Add phase</h3>
       <input type="hidden" id="pf-phase-id">
       <input type="hidden" id="pf-order-index">
       <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:10px">
         <div>
-          <label class="form-label">Phase name <span style="color:#ef4444">*</span></label>
+          <label class="form-label">Phase name <span style="color:var(--danger, #ef4444)">*</span></label>
           <input type="text" id="pf-name" class="form-input" placeholder="e.g. Base Building">
         </div>
         <div>
@@ -1159,10 +1159,10 @@ async function openProgram(programId) {
           <input type="number" id="pf-weeks" class="form-input" placeholder="4" min="1" max="52" style="width:90px">
         </div>
       </div>
-      <p id="pf-error" style="color:#ef4444;font-size:12px;margin:0 0 8px"></p>
+      <p id="pf-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 8px"></p>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" id="pf-save-btn" onclick="savePhase('${program.id}')">Add phase</button>
-        <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('phase-form').style.display='none'">Cancel</button>
+        <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" id="pf-save-btn" onclick="savePhase('${program.id}')">Add phase</button>
+        <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('phase-form').style.display='none'">Cancel</button>
       </div>
     </div>
 
@@ -1175,14 +1175,14 @@ async function openProgram(programId) {
           <button class="btn-icon" onclick="closeProgramModal()">✕</button>
         </div>
         <div style="margin-bottom:14px">
-          <label class="form-label">Program name <span style="color:#ef4444">*</span></label>
+          <label class="form-label">Program name <span style="color:var(--danger, #ef4444)">*</span></label>
           <input type="text" id="pm-name" class="form-input">
         </div>
         <div style="margin-bottom:14px">
           <label class="form-label">Description <span style="color:var(--text-muted)">(optional)</span></label>
           <textarea id="pm-desc" class="form-input" rows="3" style="resize:vertical"></textarea>
         </div>
-        <p id="pm-error" style="color:#ef4444;font-size:12px;margin:0 0 10px"></p>
+        <p id="pm-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 10px"></p>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-secondary" onclick="closeProgramModal()">Cancel</button>
           <button class="btn btn-primary" id="pm-save-btn" onclick="saveProgram('${program.id}')">Save changes</button>
@@ -1639,13 +1639,13 @@ function renderPeriodizationBody(durationWeeks) {
       <div style="display:flex;gap:6px">${tog('None', '')}${tog('Linear', 'linear')}${tog('Undulating', 'undulating')}</div>
     </div>
     ${type === 'linear' ? `
-      <p style="font-size:12px;color:var(--text-muted);margin:4px 0 10px">Intensity steps evenly from the start % to the end % across ${durationWeeks} weeks. Every %1RM set in Week 1 is regenerated per week — reps, rest and tempo stay exactly as you set them.</p>
+      <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">Intensity steps evenly from the start % to the end % across ${durationWeeks} weeks. Every %1RM set in Week 1 is regenerated per week — reps, rest and tempo stay exactly as you set them.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="field"><label class="field-label">Start %1RM</label><input class="field-input" id="pz-start" type="number" min="1" max="100" value="${cfg.startPct ?? 65}"></div>
         <div class="field"><label class="field-label">End %1RM</label><input class="field-input" id="pz-end" type="number" min="1" max="100" value="${cfg.endPct ?? 85}"></div>
       </div>
       <div class="field">
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer">
+        <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-base, 13px);font-weight:600;cursor:pointer">
           <input type="checkbox" id="pz-deload-on" ${cfg.deloadWeek ? 'checked' : ''} onchange="document.getElementById('pz-deload-fields').style.display=this.checked?'grid':'none'">
           Add a deload week
         </label>
@@ -1656,16 +1656,16 @@ function renderPeriodizationBody(durationWeeks) {
       </div>
     ` : ''}
     ${type === 'undulating' ? `
-      <p style="font-size:12px;color:var(--text-muted);margin:4px 0 10px">The same Heavy/Moderate/Light pattern repeats every week — it doesn't progress week to week. Assign a tier to each Week 1 session below, and set what each tier means.</p>
+      <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">The same Heavy/Moderate/Light pattern repeats every week — it doesn't progress week to week. Assign a tier to each Week 1 session below, and set what each tier means.</p>
       <div style="margin-bottom:12px">
         ${['heavy', 'moderate', 'light'].map(t => `
           <div style="display:grid;grid-template-columns:70px 1fr 1fr;gap:8px;align-items:center;margin-bottom:6px">
-            <span style="font-size:12px;font-weight:700;text-transform:capitalize">${t}</span>
+            <span style="font-size:var(--text-md, 12px);font-weight:700;text-transform:capitalize">${t}</span>
             <input class="field-input" id="pz-tier-${t}-pct" type="number" min="1" max="100" placeholder="%1RM" value="${cfg.tiers?.[t]?.pct ?? tierDefault[t]}">
             <input class="field-input" id="pz-tier-${t}-reps" type="text" placeholder="Reps e.g. 3-5" value="${cfg.tiers?.[t]?.reps ?? repsDefault[t]}">
           </div>`).join('')}
       </div>
-      <div id="pz-day-tiers"><div style="color:var(--text-muted);font-size:12px">Loading Week 1 sessions…</div></div>
+      <div id="pz-day-tiers"><div style="color:var(--text-muted);font-size:var(--text-md, 12px)">Loading Week 1 sessions…</div></div>
     ` : ''}
   `
   if (type === 'undulating') loadDayTierAssignment(window._pzPhaseId)
@@ -1681,8 +1681,8 @@ async function loadDayTierAssignment(phaseId) {
   window._pzDaySlots = pws.map(pw => ({ id: pw.id, tier: pw.tier || 'moderate' }))
   el.innerHTML = pws.map(pw => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:12px">${escapeHtml(pw.day_label)} — ${escapeHtml(pw.workout_templates?.name || 'Untitled')}</span>
-      <select class="field-input" style="width:120px;padding:4px 8px;font-size:16px" onchange="_pzTierChange('${pw.id}', this.value)">
+      <span style="font-size:var(--text-md, 12px)">${escapeHtml(pw.day_label)} — ${escapeHtml(pw.workout_templates?.name || 'Untitled')}</span>
+      <select class="field-input" style="width:120px;padding:4px 8px;font-size:var(--text-xl, 16px)" onchange="_pzTierChange('${pw.id}', this.value)">
         <option value="heavy" ${pw.tier === 'heavy' ? 'selected' : ''}>Heavy</option>
         <option value="moderate" ${(!pw.tier || pw.tier === 'moderate') ? 'selected' : ''}>Moderate</option>
         <option value="light" ${pw.tier === 'light' ? 'selected' : ''}>Light</option>
@@ -2114,8 +2114,8 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
 
   return `
     <div class="pwk-weekhead">
-      ${sessions.length ? `<button class="btn-secondary" style="font-size:11px;padding:3px 9px" onclick="duplicatePhaseWeek('${phase.id}',${weekNum})">Duplicate week</button>` : ''}
-      ${sessions.length ? `<button class="btn-secondary" style="font-size:11px;padding:3px 9px;color:#ef4444" onclick="deletePhaseWeek('${phase.id}',${weekNum})">Delete week</button>` : ''}
+      ${sessions.length ? `<button class="btn-secondary" style="font-size:var(--text-sm, 11px);padding:3px 9px" onclick="duplicatePhaseWeek('${phase.id}',${weekNum})">Duplicate week</button>` : ''}
+      ${sessions.length ? `<button class="btn-secondary" style="font-size:var(--text-sm, 11px);padding:3px 9px;color:var(--danger, #ef4444)" onclick="deletePhaseWeek('${phase.id}',${weekNum})">Delete week</button>` : ''}
     </div>
     <div class="pwk-days">
       ${dayLabels.map((label, i) => {
@@ -2450,7 +2450,7 @@ function _closeWorkoutPicker() {
 // One definition, used by both the results list and the lazy-load's own loading state — this row
 // depends on no data, so it stays tappable while the pool is still being fetched.
 function _workoutPickerCreateRowHtml() {
-  return `<div onclick="_createWorkoutFromPicker()" style="padding:12px;border:1.5px dashed var(--accent);border-radius:10px;background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:12px">＋ Create new workout (this day only)</div>`
+  return `<div onclick="_createWorkoutFromPicker()" style="padding:12px;border:1.5px dashed var(--accent);border-radius:var(--radius, 10px);background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:var(--text-lg, 14px);cursor:pointer;margin-bottom:12px">＋ Create new workout (this day only)</div>`
 }
 
 function _renderWorkoutPickerResults(query) {
@@ -2471,11 +2471,11 @@ function _renderWorkoutPickerResults(query) {
   // is the discriminator that survives that case: it says WHICH copy this is.
   const rowHtml = t => `
     <div onclick="_pickWorkout('${t.id}')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;min-height:44px">
-      <div style="font-size:14px;font-weight:600">${escapeHtml(t.name)}</div>
-      ${t.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${escapeHtml(t.description)}</div>` : ''}
-      ${t._exPreview ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px">${escapeHtml(t._exPreview)}</div>` : '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">No exercises yet</div>'}
-      ${t._inThisProgram ? `<div style="font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--accent);margin-top:3px">BUILT IN THIS PROGRAMME</div>` : ''}
-      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px;font-size:11px">
+      <div style="font-size:var(--text-lg, 14px);font-weight:600">${escapeHtml(t.name)}</div>
+      ${t.description ? `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${escapeHtml(t.description)}</div>` : ''}
+      ${t._exPreview ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:3px">${escapeHtml(t._exPreview)}</div>` : '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">No exercises yet</div>'}
+      ${t._inThisProgram ? `<div style="font-size:var(--text-xs, 10px);font-weight:700;letter-spacing:.04em;color:var(--accent);margin-top:3px">BUILT IN THIS PROGRAMME</div>` : ''}
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px;font-size:var(--text-sm, 11px)">
         <!-- Three states, not two. "Not used yet" is a CLAIM, and asserting it when the lookup failed
              is how every row silently read "unused" on a single query error (Jake, 2026-08-14). -->
         <span style="color:${t._usageFailed ? 'var(--text-muted)' : t._usage ? 'var(--accent)' : 'var(--text-muted)'};font-weight:${t._usage && !t._usageFailed ? '600' : '400'};font-style:${t._usageFailed ? 'italic' : 'normal'}">${
