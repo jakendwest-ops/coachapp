@@ -468,16 +468,16 @@ async function openSessionDetail(templateId, name, ctx = {}) {
             : null
 
           return `<div style="display:flex;align-items:baseline;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-            <span style="font-size:11px;font-weight:700;color:var(--text-muted);width:56px;flex-shrink:0">${label}</span>
-            <span style="font-size:13px;flex:1">${escapeHtml(detail)}</span>
-            ${rest ? `<span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${escapeHtml(rest)}</span>` : ''}
+            <span style="font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted);width:56px;flex-shrink:0">${label}</span>
+            <span style="font-size:var(--text-base, 13px);flex:1">${escapeHtml(detail)}</span>
+            ${rest ? `<span style="font-size:var(--text-sm, 11px);color:var(--text-muted);flex-shrink:0">${escapeHtml(rest)}</span>` : ''}
           </div>`
         }).join('')
 
         return `<div style="margin-bottom:${isLast ? 0 : 16}px;padding-bottom:${isLast ? 0 : 16}px;border-bottom:${isLast ? 'none' : '1px solid var(--border)'}">
-          <div style="font-size:14px;font-weight:700;margin-bottom:6px">${escapeHtml(ex.exercise_name)}</div>
+          <div style="font-size:var(--text-lg, 14px);font-weight:700;margin-bottom:6px">${escapeHtml(ex.exercise_name)}</div>
           ${setsHtml || '<span style="font-size:12px;color:var(--text-muted)">No sets defined</span>'}
-          ${ex.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:6px;font-style:italic">${escapeHtml(ex.notes)}</div>` : ''}
+          ${ex.notes ? `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:6px;font-style:italic">${escapeHtml(ex.notes)}</div>` : ''}
         </div>`
       }).join('')
 
@@ -490,10 +490,10 @@ async function openSessionDetail(templateId, name, ctx = {}) {
     <div onclick="closeSessionDetail()" style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.45)"></div>
     <div id="session-detail-drawer" style="position:absolute;top:0;right:0;bottom:0;width:min(420px,100vw);background:var(--surface);overflow-y:auto;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .3s cubic-bezier(.32,.72,0,1)">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 16px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
-        <h2 style="font-size:17px;font-weight:700;margin:0">${escapeHtml(name)}</h2>
+        <h2 style="font-size:var(--legacy-text-17, 17px);font-weight:700;margin:0">${escapeHtml(name)}</h2>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
-          ${canEdit ? `<button onclick="_editFromSessionDetail('${templateId}')" style="border:1px solid var(--border);background:none;cursor:pointer;padding:5px 12px;border-radius:8px;color:var(--accent);font-size:13px;font-weight:700">Edit</button>` : ''}
-          <button onclick="closeSessionDetail()" style="border:none;background:none;cursor:pointer;padding:4px 8px;color:var(--text-muted);font-size:22px;line-height:1">✕</button>
+          ${canEdit ? `<button onclick="_editFromSessionDetail('${templateId}')" style="border:1px solid var(--border);background:none;cursor:pointer;padding:5px 12px;border-radius:var(--radius-sm, 8px);color:var(--accent);font-size:var(--text-base, 13px);font-weight:700">Edit</button>` : ''}
+          <button onclick="closeSessionDetail()" style="border:none;background:none;cursor:pointer;padding:4px 8px;color:var(--text-muted);font-size:var(--legacy-text-22, 22px);line-height:1">✕</button>
         </div>
       </div>
       <div style="padding:16px;flex:1">${exHtml}</div>
@@ -595,11 +595,11 @@ function _buildWorkoutsHero(clientId, activeAssignment, cpwMap) {
 
 function _renderWorkoutsHeroHtml(hero) {
   return `
-    <div style="background:var(--accent);border-radius:12px;padding:18px 20px;margin-bottom:16px;color:#fff">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
-      <div style="font-size:19px;font-weight:700;margin-bottom:3px">${escapeHtml(hero.title)}</div>
-      <div style="font-size:13px;opacity:.8;margin-bottom:14px">${escapeHtml(hero.meta)}</div>
-      <button onclick="${hero.action}" style="padding:8px 20px;border-radius:8px;background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:13px;font-weight:700;cursor:pointer">${hero.btnLabel} →</button>
+    <div style="background:var(--accent);border-radius:var(--radius-md, 12px);padding:18px 20px;margin-bottom:16px;color:#fff">
+      <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
+      <div style="font-size:var(--legacy-text-19, 19px);font-weight:700;margin-bottom:3px">${escapeHtml(hero.title)}</div>
+      <div style="font-size:var(--text-base, 13px);opacity:.8;margin-bottom:14px">${escapeHtml(hero.meta)}</div>
+      <button onclick="${hero.action}" style="padding:8px 20px;border-radius:var(--radius-sm, 8px);background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">${hero.btnLabel} →</button>
     </div>`
 }
 
@@ -670,7 +670,7 @@ async function renderClientWorkoutsPage(el) {
     ${hasProgram ? (() => {
       const prog = activeAssignment.programs
       const phases = [...(prog?.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
-      return `<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px">${escapeHtml(prog?.name || 'My Program')}</div>
+      return `<div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-bottom:10px">${escapeHtml(prog?.name || 'My Program')}</div>
         <div style="margin-bottom:28px">
           ${phases.map((phase, pi) => {
             const allSessions = [...(phase.program_phase_workouts || [])].sort((a, b) => a.week_number - b.week_number || a.day_of_week - b.day_of_week || a.session_order - b.session_order)
@@ -692,8 +692,8 @@ async function renderClientWorkoutsPage(el) {
                 return `<div style="border-top:1px solid var(--border)">
                   <button onclick="toggleClientPhase('${dayPanelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:none;border:none;cursor:pointer;text-align:left">
                     <div>
-                      <span style="font-size:12px;font-weight:700;color:var(--accent)">DAY ${day}</span>
-                      <span style="font-size:13px;font-weight:500;color:var(--text);margin-left:8px">${escapeHtml(sessionSummary)}</span>
+                      <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--accent)">DAY ${day}</span>
+                      <span style="font-size:var(--text-base, 13px);font-weight:500;color:var(--text);margin-left:8px">${escapeHtml(sessionSummary)}</span>
                     </div>
                     <svg id="${dayPanelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
@@ -704,10 +704,10 @@ async function renderClientWorkoutsPage(el) {
                       const templateId = cpw?.templateId
                       const exs = (cpw?.exercises || []).sort((a,b) => a.order_index - b.order_index)
                       return `<div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
-                        ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
+                        ${multi ? `<div style="font-size:var(--text-xs, 10px);font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
                         <div style="display:flex;align-items:center;justify-content:${multi ? 'space-between' : 'flex-end'};margin-bottom:${exs.length ? '8px' : '0'}">
-                          ${multi ? `<span style="font-size:13px;font-weight:600">${escapeHtml(name)}</span>` : ''}
-                          ${templateId ? `<button class="btn-primary" style="font-size:12px;padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:12px;color:var(--text-muted)">Not set up</span>`}
+                          ${multi ? `<span style="font-size:var(--text-base, 13px);font-weight:600">${escapeHtml(name)}</span>` : ''}
+                          ${templateId ? `<button class="btn-primary" style="font-size:var(--text-md, 12px);padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Not set up</span>`}
                         </div>
                         ${exs.length ? `
                         <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
@@ -721,10 +721,10 @@ async function renderClientWorkoutsPage(el) {
                             return `
                             <div style="padding:5px 0;border-bottom:1px solid var(--border)">
                               <div style="display:flex;justify-content:space-between;gap:8px">
-                                <span style="font-size:12px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
-                                <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
+                                <span style="font-size:var(--text-md, 12px);font-weight:600">${escapeHtml(ex.exercise_name)}</span>
+                                <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
                               </div>
-                              ${presc ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
+                              ${presc ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
                             </div>`
                           }).join('')}
                         </div>` : ''}
@@ -735,11 +735,11 @@ async function renderClientWorkoutsPage(el) {
               }).join('')
             }
 
-            return `<div style="margin-bottom:6px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+            return `<div style="margin-bottom:6px;border:1px solid var(--border);border-radius:var(--radius, 10px);overflow:hidden">
               <button onclick="toggleClientPhase('${panelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
                 <div>
-                  <span style="font-size:13px;font-weight:700;color:var(--text)">${escapeHtml(phase.name)}</span>
-                  <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${_builtWeekCount(allSessions)}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
+                  <span style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text)">${escapeHtml(phase.name)}</span>
+                  <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-left:8px">${_builtWeekCount(allSessions)}w · ${allSessions.length} session${allSessions.length !== 1 ? 's' : ''}</span>
                 </div>
                 <svg id="${panelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);transition:transform .2s;flex-shrink:0;transform:rotate(${pi === 0 ? '180deg' : '0deg'})"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
@@ -756,7 +756,7 @@ async function renderClientWorkoutsPage(el) {
         </div>`
     })() : (() => {
       const allTemplates = templates || []
-      return `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Templates</div>
+      return `<div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Templates</div>
       ${!allTemplates.length ? `
         <div class="empty-state">
           <div class="empty-icon">💪</div>
@@ -764,13 +764,13 @@ async function renderClientWorkoutsPage(el) {
           <div class="empty-text">Your coach hasn't added any workout templates yet.</div>
         </div>` : `<div style="margin-bottom:28px">${allTemplates.map(t => {
           const exs = (t.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
-          return `<div style="border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--surface)">
+          return `<div style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);margin-bottom:8px;overflow:hidden;background:var(--surface)">
             <div style="display:flex;align-items:center;gap:12px;padding:12px 14px">
               <div class="row-info" style="flex:1;min-width:0;cursor:pointer" onclick="openSessionDetail('${t.id}','${escapeAttr(t.name)}')">
                 <div class="row-name">${escapeHtml(t.name)}</div>
                 <div class="row-meta">${exs.length} exercise${exs.length!==1?'s':''} · tap to preview</div>
               </div>
-              <button class="btn-primary" style="font-size:13px;padding:6px 14px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
+              <button class="btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
             </div>
           </div>`
         }).join('')}</div>`}
@@ -778,14 +778,14 @@ async function renderClientWorkoutsPage(el) {
     })()}
 
     ${!(logs?.length) ? `
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Recent sessions</div>
+      <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Recent sessions</div>
       <div class="empty-state">
         <div class="empty-icon">📋</div>
         <div class="empty-title">No sessions yet</div>
         <div class="empty-text">Complete a workout to see your history here.</div>
       </div>` : `
       <button onclick="toggleClientPhase('client-session-history')" style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;background:none;border:none;padding:0;cursor:pointer;text-align:left">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Recent sessions</div>
+        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Recent sessions</div>
         <div style="display:flex;align-items:center;gap:6px">
           <svg id="client-session-history-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text-muted);transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
@@ -794,7 +794,7 @@ async function renderClientWorkoutsPage(el) {
         <div class="list" id="client-session-list">
           ${logs.slice(0, 5).map(l => `
             <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${l.id}','${clientId}')">
-              <div style="width:36px;height:36px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">✓</div>
+              <div style="width:36px;height:36px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:var(--text-xl, 16px)">✓</div>
               <div class="row-info">
                 <div class="row-name">${new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</div>
               </div>
@@ -835,13 +835,13 @@ async function renderWorkoutTemplates(el) {
 
   const templateRow = t => `
     <div class="list-row" onclick="openTemplate('${t.id}')">
-      <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
+      <div style="width:40px;height:40px;border-radius:var(--radius, 10px);background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-2xl, 18px);flex-shrink:0">💪</div>
       <div class="row-info">
         <div class="row-name">${escapeHtml(t.name)}</div>
         <div class="row-meta">${t.description ? escapeHtml(t.description) : (t.workout_template_exercises.length + ' exercise' + (t.workout_template_exercises.length !== 1 ? 's' : ''))}</div>
       </div>
       <div class="row-right">
-        <span style="font-size:12px;color:var(--text-muted)">${t.workout_template_exercises.length} ex</span>
+        <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${t.workout_template_exercises.length} ex</span>
         <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
     </div>`
@@ -875,7 +875,7 @@ async function renderExerciseLibrary(el) {
                 <div class="row-name">${escapeHtml(e.name)}</div>
                 <div class="row-meta">${escapeHtml([e.category, e.default_sets ? `${e.default_sets} sets × ${e.default_reps} reps` : null].filter(Boolean).join(' · '))}</div>
               </div>
-              <button class="btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0" onclick="showEditExerciseModal('${e.id}');event.stopPropagation()">Edit</button>
+              <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;flex-shrink:0" onclick="showEditExerciseModal('${e.id}');event.stopPropagation()">Edit</button>
             </div>
           `).join('')}
         </div>
@@ -897,7 +897,7 @@ async function renderExerciseLibrary(el) {
     ` : groupRows(active)}
     ${archived.length ? `
       <div style="margin-top:8px">
-        <button type="button" onclick="_toggleArchivedExerciseLibrary()" style="width:100%;text-align:left;padding:10px 4px;background:none;border:none;color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer">Archived Exercises (${archived.length}) ▾</button>
+        <button type="button" onclick="_toggleArchivedExerciseLibrary()" style="width:100%;text-align:left;padding:10px 4px;background:none;border:none;color:var(--text-muted);font-size:var(--text-base, 13px);font-weight:600;cursor:pointer">Archived Exercises (${archived.length}) ▾</button>
         <div id="exl-archived-list" style="display:none">${groupRows(archived)}</div>
       </div>
     ` : ''}
@@ -1208,7 +1208,7 @@ async function openTemplate(id, ctx = {}) {
          raw was therefore a live stored-XSS sink: a client named `<img src=x onerror=…>` executed with
          the coach's own Supabase session. 5th instance of the client→coach pattern CRITICAL.md tracks. */''}${escapeHtml(_ctx.backLabel)}
     </a>
-    ${_ctx.isClientPlan ? `<div style="font-size:11px;font-weight:600;color:var(--accent);background:rgba(99,102,241,.08);border-radius:6px;padding:6px 10px;margin-bottom:12px">Editing ${escapeHtml(_ctx.clientName || 'client')}’s plan — changes affect only this client</div>` : ''}
+    ${_ctx.isClientPlan ? `<div style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--accent);background:rgba(99,102,241,.08);border-radius:6px;padding:6px 10px;margin-bottom:12px">Editing ${escapeHtml(_ctx.clientName || 'client')}’s plan — changes affect only this client</div>` : ''}
 
     <div class="page-header">
       <div>
@@ -1252,13 +1252,13 @@ async function openTemplate(id, ctx = {}) {
                 <button onclick="moveTemplateExercise('${id}','${ex.id}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
                 <button onclick="moveTemplateExercise('${id}','${ex.id}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
               </div>
-              <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0">${i + 1}</div>
+              <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);flex-shrink:0">${i + 1}</div>
               <div style="flex:1;min-width:0">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                  <span style="font-weight:600;font-size:14px">${escapeHtml(ex.exercise_name)}</span>
-                  ${isCardio ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
-                  ${ex.superset_group ? `<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:4px;background:rgba(245,158,11,.15);color:#d97706">SS: ${escapeHtml(ex.superset_group)}</span>` : ''}
-                  ${ex.sets_json?.[0]?.bodyweight ? `<span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:rgba(16,185,129,.12);color:#059669">BW</span>` : ''}
+                  <span style="font-weight:600;font-size:var(--text-lg, 14px)">${escapeHtml(ex.exercise_name)}</span>
+                  ${isCardio ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
+                  ${ex.superset_group ? `<span style="font-size:var(--text-sm, 11px);font-weight:700;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(245,158,11,.15);color:#d97706">SS: ${escapeHtml(ex.superset_group)}</span>` : ''}
+                  ${ex.sets_json?.[0]?.bodyweight ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(16,185,129,.12);color:#059669">BW</span>` : ''}
                 </div>
                 ${ex.sets_json?.length ? (() => {
                   const rows = ex.sets_json.map((s, si) => {
@@ -1268,18 +1268,18 @@ async function openTemplate(id, ctx = {}) {
                     // replaces "Set N" rather than being repeated inside the summary (markAmrap:false).
                     const summary = _fmtSetDetail(s, { isCardio, isInterval, includeRest: true, markAmrap: false, isUnilateral: _mt === 'unilateral' })
                     const setLabel = s.amrap ? 'AMRAP:' : `Set ${si+1}:`
-                    return summary && summary !== '—' ? `<div style="font-size:11.5px;color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">${setLabel}</span> ${escapeHtml(summary)}</div>` : null
+                    return summary && summary !== '—' ? `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">${setLabel}</span> ${escapeHtml(summary)}</div>` : null
                   }).filter(Boolean)
-                  return rows.length ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:4px">${rows.join('')}</div>` : `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${meta}</div>`
-                })() : `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${meta}</div>`}
+                  return rows.length ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:4px">${rows.join('')}</div>` : `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${meta}</div>`
+                })() : `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${meta}</div>`}
                 ${(() => {
                   if (!ex.notes) return ''
                   const m = ex.notes.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
-                  if (m) return `<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:4px;background:rgba(99,102,241,.1);color:var(--accent);display:inline-block">${escapeHtml(m[1])}</span>${m[2] ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:1px;font-style:italic">${escapeHtml(m[2])}</div>` : ''}</div>`
-                  return `<div style="font-size:11.5px;color:var(--accent);margin-top:3px;font-style:italic">${escapeHtml(ex.notes)}</div>`
+                  if (m) return `<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px"><span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(99,102,241,.1);color:var(--accent);display:inline-block">${escapeHtml(m[1])}</span>${m[2] ? `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-top:1px;font-style:italic">${escapeHtml(m[2])}</div>` : ''}</div>`
+                  return `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--accent);margin-top:3px;font-style:italic">${escapeHtml(ex.notes)}</div>`
                 })()}
               </div>
-              <button class="btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
+              <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;flex-shrink:0" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
             </div>
           </div>
         </div>`
@@ -1563,17 +1563,17 @@ function renderTemplateSets(containerId, type) {
       ? _togPill('Unilateral (per side)', type === 'unilateral', `toggleUnilateralType('${containerId}')`)
       : ''
   }
-  const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;font-weight:600;color:var(--text)">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
+  const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
   // 16px, not smaller -- an inline font-size beats the global input{font-size:16px} rule (css/main.css),
   // and below 16px iOS Safari re-triggers the auto-zoom-on-focus the pinch-to-zoom fix was paired
   // against (2026-08-01). Same reasoning at every other inline input/select font-size in this codebase.
-  const mini = (id, opts='') => `<input id="${id}" class="field-input" style="width:60px;padding:5px 8px;font-size:16px;text-align:center" ${opts}>`
-  const dash = `<span style="color:var(--text-muted);font-size:12px">–</span>`
+  const mini = (id, opts='') => `<input id="${id}" class="field-input" style="width:60px;padding:5px 8px;font-size:var(--text-xl, 16px);text-align:center" ${opts}>`
+  const dash = `<span style="color:var(--text-muted);font-size:var(--text-md, 12px)">–</span>`
   // Grid variant of `mini`/`row` (2026-08-05) — same input, flexible width instead of a fixed 60px,
   // so it can sit inside a `.ts-cell` half-width grid column. `cell()` wraps it with a small caption
   // label above instead of `row()`'s label-left/value-right — same ids, same flushTemplateSets reads,
   // just packs 2 fields per line instead of 1. See .ts-grid in main.css.
-  const gmini = (id, opts='') => `<input id="${id}" class="field-input" style="padding:6px 6px;font-size:16px;text-align:center" ${opts}>`
+  const gmini = (id, opts='') => `<input id="${id}" class="field-input" style="padding:6px 6px;font-size:var(--text-xl, 16px);text-align:center" ${opts}>`
   const cell = (label, inner) => `<div class="ts-cell"><label>${label}</label><div class="ts-cell-inputs">${inner}</div></div>`
   // Progressive disclosure for the fields that are genuinely optional. Native <details> so there is no
   // open/closed state to track (a re-render would lose it anyway) and no extra key polluting sets_json.
@@ -1615,7 +1615,7 @@ function renderTemplateSets(containerId, type) {
     const isSteady = _isSteadyIntervalBlock(s)
     container.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:13px;font-weight:600;color:var(--text)">Effort</span>
+        <span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Effort</span>
         <div style="display:flex;gap:4px">
           ${tog('Steady effort', isSteady, `toggleTsSteady('${containerId}')`)}
           ${tog('Repeating', !isSteady, `toggleTsSteady('${containerId}')`)}
@@ -1626,7 +1626,7 @@ function renderTemplateSets(containerId, type) {
         ${row('Warm-up', mini('ts-warmup-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.warmupSecs||0)}"`))}
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:13px;font-weight:600;color:var(--text)">Work measured by</span>
+        <span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Work measured by</span>
         <div style="display:flex;gap:4px">
           ${tog('Time', !s.isDistanceBased, `toggleTsSet(0,'isDistanceBased','${containerId}')`)}
           ${tog('Distance', s.isDistanceBased, `toggleTsSet(0,'isDistanceBased','${containerId}')`)}
@@ -1647,11 +1647,11 @@ function renderTemplateSets(containerId, type) {
         // without a sensor, so say so rather than show a number that is simply wrong.
         const txt = hasUnknown ? `${fmtRestCountdown(total)} + work time` : fmtRestCountdown(total)
         return row('<span style="font-weight:700">Total time</span>',
-          `<span id="ts-interval-total" style="font-size:13px;font-weight:700;color:var(--accent)">${txt}</span>`)
+          `<span id="ts-interval-total" style="font-size:var(--text-base, 13px);font-weight:700;color:var(--accent)">${txt}</span>`)
       })()}
       ${more('+ More targets', !!(_hasTimeTarget(s.pace500Min) || _hasTimeTarget(s.pace500Max) || s.wattsMin || s.wattsMax || s.hrZoneMin || s.hrZoneMax || s.restHrMax || s.strokeRateMin || s.strokeRateMax || _hasTimeTarget(s.paceKmMin) || _hasTimeTarget(s.paceKmMax)), `
         ${row('Pace / 500m', mini(`ts-p500min-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${escapeHtml(s.pace500Min||'')}"`) + dash + mini(`ts-p500max-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${escapeHtml(s.pace500Max||'')}"`))}
-        ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:13px;font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
+        ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:var(--text-base, 13px);font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
         ${row('Watts', mini(`ts-wattsmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.wattsMin?` value="${escapeHtml(String(s.wattsMin))}"`:'')) + dash + mini(`ts-wattsmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.wattsMax?` value="${escapeHtml(String(s.wattsMax))}"`:'')))}
         ${row('HR Zone (BPM)', mini(`ts-hrzmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.hrZoneMin?` value="${escapeHtml(String(s.hrZoneMin))}"`:'')) + dash + mini(`ts-hrzmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.hrZoneMax?` value="${escapeHtml(String(s.hrZoneMax))}"`:'')))}
         ${row('Rest HR max (BPM)', mini(`ts-resthr-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.restHrMax ? ` value="${escapeHtml(String(s.restHrMax))}"` : '')))}
@@ -1669,20 +1669,20 @@ function renderTemplateSets(containerId, type) {
     return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:12px;font-weight:700;color:var(--text)">Set ${i+1}</span>
-          ${i > 0 ? `<button type="button" onclick="copyPrevTemplateSet(${i},'${containerId}','${tid}')" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">Copy set ${i} ↑</button>` : ''}
+          <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--text)">Set ${i+1}</span>
+          ${i > 0 ? `<button type="button" onclick="copyPrevTemplateSet(${i},'${containerId}','${tid}')" style="font-size:var(--text-sm, 11px);font-weight:700;padding:3px 9px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">Copy set ${i} ↑</button>` : ''}
         </div>
         <div style="display:flex;gap:4px">
           ${showToggleRow ? `
             ${showAmrap ? tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`) : ''}
             ${showBodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
           ` : ''}
-          <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:15px;line-height:1">×</button>
+          <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--legacy-text-15, 15px);line-height:1">×</button>
         </div>
       </div>
       ${isCardio ? `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-          <span style="font-size:13px;font-weight:600;color:var(--text)">Target</span>
+          <span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Target</span>
           <div style="display:flex;gap:4px">
             ${tog('Duration', !s.isDistanceBased, `toggleTsSet(${i},'isDistanceBased','${containerId}')`)}
             ${tog('Distance', s.isDistanceBased, `toggleTsSet(${i},'isDistanceBased','${containerId}')`)}
@@ -1693,7 +1693,7 @@ function renderTemplateSets(containerId, type) {
         ${row('Rest', mini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + mini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
         ${more('+ More targets', !!(_hasTimeTarget(s.pace500Min) || _hasTimeTarget(s.pace500Max) || s.wattsMin || s.wattsMax || s.hrZoneMin || s.hrZoneMax || s.restHrMax || s.strokeRateMin || s.strokeRateMax || _hasTimeTarget(s.paceKmMin) || _hasTimeTarget(s.paceKmMax)), `
           ${row('Pace / 500m', mini(`ts-p500min-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${escapeHtml(s.pace500Min||'')}"`) + dash + mini(`ts-p500max-${i}`, `type="text" placeholder="0:00" oninput="tsPace500Input(${i},'${containerId}')" value="${escapeHtml(s.pace500Max||'')}"`))}
-          ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:13px;font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
+          ${row('Pace / 1000m', `<span id="ts-p1000-${i}" style="font-size:var(--text-base, 13px);font-weight:600;color:var(--accent);min-width:100px;text-align:right">${calcPace1000(s.pace500Min, s.pace500Max)}</span>`)}
           ${row('Watts', mini(`ts-wattsmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.wattsMin?` value="${escapeHtml(String(s.wattsMin))}"`:'')) + dash + mini(`ts-wattsmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.wattsMax?` value="${escapeHtml(String(s.wattsMax))}"`:'')))}
           ${row('HR Zone (BPM)', mini(`ts-hrzmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.hrZoneMin?` value="${escapeHtml(String(s.hrZoneMin))}"`:'')) + dash + mini(`ts-hrzmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.hrZoneMax?` value="${escapeHtml(String(s.hrZoneMax))}"`:'')))}
           ${row('Rest HR max (BPM)', mini(`ts-resthr-${i}`, 'type="number" inputmode="numeric" placeholder="—"'+(s.restHrMax ? ` value="${escapeHtml(String(s.restHrMax))}"` : '')))}
@@ -1738,7 +1738,7 @@ function renderTemplateSets(containerId, type) {
       `}
     </div>`
   }).join('') + `
-  <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.push({effortType:'rpe'});renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="margin-top:6px;font-size:13px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Add set</button>`
+  <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.push({effortType:'rpe'});renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="margin-top:6px;font-size:var(--text-base, 13px);color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Add set</button>`
 }
 
 function copyPrevTemplateSet(i, containerId, tid) {
@@ -1825,9 +1825,9 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
       </div>
       <div class="field">
         <label class="field-label">Exercise</label>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
-          <span id="att-name-display" style="font-size:15px;font-weight:700">${escapeHtml(picked.name)}</span>
-          <button type="button" class="btn-secondary" style="font-size:12px;padding:5px 12px;flex-shrink:0" onclick="_reopenExercisePickerFromDetail()">Change</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm, 8px);background:var(--surface-2)">
+          <span id="att-name-display" style="font-size:var(--legacy-text-15, 15px);font-weight:700">${escapeHtml(picked.name)}</span>
+          <button type="button" class="btn-secondary" style="font-size:var(--text-md, 12px);padding:5px 12px;flex-shrink:0" onclick="_reopenExercisePickerFromDetail()">Change</button>
         </div>
       </div>
       <div class="field">
@@ -1849,7 +1849,7 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
         <div id="att-metric-pills" style="display:flex;gap:6px;margin-top:8px"></div>
       </div>
 
-      <div style="margin:16px 0 10px;font-size:13px;font-weight:600;color:var(--text)">Set targets</div>
+      <div style="margin:16px 0 10px;font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Set targets</div>
       <div id="att-sets-container"></div>
 
       <div class="field" style="margin-top:14px">
@@ -1985,14 +1985,14 @@ function _renderExercisePickerResults(query) {
   // inline handler for any name with an apostrophe (e.g. "Farmer's Carry"). Keep escapeHtml()
   // only for the separately-rendered visible text.
   const jsArg = escapeAttr   // was a local JS-escape that left `"` live — a " closes the HTML attribute
-  const rowHtml = e => `<div onclick="_pickExercise('${e.id}','${jsArg(e.name)}','${e.metric_type || 'weight_reps'}')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px">${escapeHtml(e.name)}${e.muscle_group ? `<span style="color:var(--text-muted);font-size:12px"> · ${escapeHtml(e.muscle_group)}</span>` : ''}</div>`
-  const createRow = query.trim() ? `<div onclick="_createExerciseFromPicker('${jsArg(query.trim())}')" style="padding:12px;border:1.5px dashed var(--accent);border-radius:10px;background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;margin-bottom:12px">+ Create new exercise: "${escapeHtml(query.trim())}"</div>` : ''
+  const rowHtml = e => `<div onclick="_pickExercise('${e.id}','${jsArg(e.name)}','${e.metric_type || 'weight_reps'}')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:var(--text-lg, 14px)">${escapeHtml(e.name)}${e.muscle_group ? `<span style="color:var(--text-muted);font-size:var(--text-md, 12px)"> · ${escapeHtml(e.muscle_group)}</span>` : ''}</div>`
+  const createRow = query.trim() ? `<div onclick="_createExerciseFromPicker('${jsArg(query.trim())}')" style="padding:12px;border:1.5px dashed var(--accent);border-radius:var(--radius, 10px);background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:var(--text-lg, 14px);cursor:pointer;margin-bottom:12px">+ Create new exercise: "${escapeHtml(query.trim())}"</div>` : ''
   resultsEl.innerHTML = `
     ${createRow}
     ${activeMatches.length ? activeMatches.map(rowHtml).join('') : (!q ? '<div class="empty-state" style="padding:20px 0"><div class="empty-text">No exercises yet — search above to create your first one.</div></div>' : '')}
     ${archivedMatches.length ? `
     <div style="margin-top:10px">
-      <button type="button" onclick="_toggleArchivedExercisePicks()" style="width:100%;text-align:left;padding:8px 4px;background:none;border:none;color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer">Archived Exercises (${archivedMatches.length}) ▾</button>
+      <button type="button" onclick="_toggleArchivedExercisePicks()" style="width:100%;text-align:left;padding:8px 4px;background:none;border:none;color:var(--text-muted);font-size:var(--text-md, 12px);font-weight:600;cursor:pointer">Archived Exercises (${archivedMatches.length}) ▾</button>
       <div id="exp-archived-list" style="display:none">${archivedMatches.map(rowHtml).join('')}</div>
     </div>` : ''}
   `
@@ -2425,7 +2425,7 @@ function _showClientCopyPropagateModal(clientNames, templateId) {
         <h2 class="modal-title">Update assigned clients?</h2>
         <button class="modal-close" onclick="_continueAfterClientCopy('${templateId}',false)">✕</button>
       </div>
-      <p style="font-size:14px;line-height:1.6;margin:0 0 20px"><strong>${n}</strong> client${n === 1 ? ' has' : 's have'} this workout assigned (${escapeHtml(names)}). Apply your change to their copies too?</p>
+      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px"><strong>${n}</strong> client${n === 1 ? ' has' : 's have'} this workout assigned (${escapeHtml(names)}). Apply your change to their copies too?</p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="_continueAfterClientCopy('${templateId}',false)">Not now</button>
         <button class="btn-primary" onclick="_continueAfterClientCopy('${templateId}',true)">Update their copies</button>
@@ -2478,7 +2478,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride)
           <h2 class="modal-title">Apply to other sessions?</h2>
           <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
         </div>
-        <p style="font-size:14px;line-height:1.6;margin:0 0 20px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}. ${
+        <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}. ${
           isRename
             ? 'Only the name and description will be applied — a week marker like "— W2" is kept.'
             : change?.op === 'reorder'
@@ -3025,11 +3025,11 @@ async function renderClientWorkouts(clientId, el) {
       const unique = cpwRows.filter(r => { const id = r.workout_template_id; if (seen.has(id)) return false; seen.add(id); return true })
       const programName = clientProgs[0]?.programs?.name || 'Program'
       programWorkoutsHtml = `
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${programName}</div>
+        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${programName}</div>
         <div class="list" style="margin-bottom:20px">
           ${unique.map(r => `
             <div class="list-row" onclick="openTemplate('${r.workout_templates?.id||r.workout_template_id}',{backTo:'client',backLabel:'${escapeAttr((clientData?.full_name||'Client'))}',clientId:'${clientId}',clientName:'${escapeAttr((clientData?.full_name||'Client'))}',clientProgramId:'${cpIds[0]||''}'})">
-              <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
+              <div style="width:40px;height:40px;border-radius:var(--radius, 10px);background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-2xl, 18px);flex-shrink:0">💪</div>
               <div class="row-info">
                 <div class="row-name">${escapeHtml(r.workout_templates?.name||'Workout')}</div>
                 <div class="row-meta">Tap to edit for this client</div>
@@ -3046,7 +3046,7 @@ async function renderClientWorkouts(clientId, el) {
 
   el.innerHTML = `
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">
-      <button class="btn-secondary" style="font-size:13px" onclick="showLogSessionModal('${clientId}')">Log past session</button>
+      <button class="btn-secondary" style="font-size:var(--text-base, 13px)" onclick="showLogSessionModal('${clientId}')">Log past session</button>
       <button class="btn-primary" onclick="startWorkoutRunner('${clientId}')">▶ Start workout</button>
     </div>
     ${programWorkoutsHtml}
@@ -3061,7 +3061,7 @@ async function renderClientWorkouts(clientId, el) {
       </div>
     ` : `
       <button onclick="toggleClientPhase('pt-session-history')" style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;background:none;border:none;padding:0;cursor:pointer;text-align:left">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Recent sessions</div>
+        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Recent sessions</div>
         <div style="display:flex;align-items:center;gap:6px">
           <svg id="pt-session-history-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text-muted);transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
@@ -3072,7 +3072,7 @@ async function renderClientWorkouts(clientId, el) {
             const dateStr = new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
             return `
               <div class="list-row" onclick="openWorkoutLog('${l.id}','${clientId}')">
-                <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">💪</div>
+                <div style="width:40px;height:40px;border-radius:var(--radius, 10px);background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-2xl, 18px);flex-shrink:0">💪</div>
                 <div class="row-info">
                   <div class="row-name">${dateStr}</div>
                 </div>
