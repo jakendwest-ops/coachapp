@@ -205,11 +205,11 @@ async function renderClient1RMs(clientId, el) {
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <h3 style="margin:0;font-size:16px;font-weight:700">1 Rep Maxes</h3>
-      <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add lift</button>
+      <h3 style="margin:0;font-size:var(--text-xl, 16px);font-weight:700">1 Rep Maxes</h3>
+      <button class="btn-primary" style="font-size:var(--text-base, 13px);padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add lift</button>
     </div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Edit any value and press Save all. Each save keeps your previous number as history.</div>
-    <div style="border:1px solid var(--border);border-radius:12px;padding:4px 16px 16px;background:var(--surface)">
+    <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:14px">Edit any value and press Save all. Each save keeps your previous number as history.</div>
+    <div style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:4px 16px 16px;background:var(--surface)">
       ${gridRows.map((r, i) => {
         const latest = r.entries[0]
         const history = r.entries.slice(1)
@@ -226,36 +226,36 @@ async function renderClient1RMs(clientId, el) {
         return `
         <div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:${i < gridRows.length - 1 ? '1px solid var(--border)' : 'none'}">
           <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.name)}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:1px">${latest ? 'Recorded ' + fmtDate(latest.recorded_at) : 'Not recorded yet'}</div>
+            <div style="font-size:var(--text-base, 13px);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.name)}</div>
+            <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:1px">${latest ? 'Recorded ' + fmtDate(latest.recorded_at) : 'Not recorded yet'}</div>
           </div>
           <!-- 16px: an inline font-size beats the global input rule, and below 16px iOS Safari
                re-triggers auto-zoom-on-focus. Same reasoning as every other inline input here. -->
           <input class="field-input" id="orm-${i}" type="number" step="0.5" inputmode="decimal"
                  value="${escapeHtml(orig)}" data-orig="${escapeHtml(orig)}" placeholder="—"
-                 style="width:82px;text-align:center;font-size:16px;flex-shrink:0">
-          <span style="font-size:11px;color:var(--text-muted);width:20px;flex-shrink:0">${escapeHtml(unit)}</span>
-          ${latest ? `<button onclick="delete1RM('${latest.id}','${clientId}')" title="Delete" style="width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:14px;line-height:1;cursor:pointer;color:var(--text-muted)">×</button>` : `<span style="width:26px;flex-shrink:0"></span>`}
+                 style="width:82px;text-align:center;font-size:var(--text-xl, 16px);flex-shrink:0">
+          <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);width:20px;flex-shrink:0">${escapeHtml(unit)}</span>
+          ${latest ? `<button onclick="delete1RM('${latest.id}','${clientId}')" title="Delete" style="width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:var(--text-lg, 14px);line-height:1;cursor:pointer;color:var(--text-muted)">×</button>` : `<span style="width:26px;flex-shrink:0"></span>`}
         </div>
-        <div style="display:flex;align-items:center;gap:8px;padding:0 0 9px 0;margin-top:-4px;font-size:11px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px;padding:0 0 9px 0;margin-top:-4px;font-size:var(--text-sm, 11px);flex-wrap:wrap">
           <span style="color:var(--text-muted)">Dated</span>
           <input class="field-input" id="orm-date-${i}" type="date" value="${escapeHtml(today)}"
-                 style="width:140px;padding:3px 6px;font-size:16px">
+                 style="width:140px;padding:3px 6px;font-size:var(--text-xl, 16px)">
           <button type="button" onclick="_toggleOneRMEstimate(${i})"
-                  style="padding:3px 9px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:11px;font-weight:600;cursor:pointer;color:var(--text-muted)">Estimate from a set</button>
+                  style="padding:3px 9px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:var(--text-sm, 11px);font-weight:600;cursor:pointer;color:var(--text-muted)">Estimate from a set</button>
         </div>
-        <div id="orm-est-${i}" style="display:none;align-items:center;gap:6px;padding:0 0 10px 0;margin-top:-4px;font-size:11px;flex-wrap:wrap">
+        <div id="orm-est-${i}" style="display:none;align-items:center;gap:6px;padding:0 0 10px 0;margin-top:-4px;font-size:var(--text-sm, 11px);flex-wrap:wrap">
           <input class="field-input" id="orm-estw-${i}" type="number" step="0.5" inputmode="decimal" placeholder="${escapeHtml(unit)}"
-                 oninput="_applyOneRMEstimate(${i})" style="width:74px;text-align:center;font-size:16px;padding:3px 6px">
+                 oninput="_applyOneRMEstimate(${i})" style="width:74px;text-align:center;font-size:var(--text-xl, 16px);padding:3px 6px">
           <span style="color:var(--text-muted)">×</span>
           <input class="field-input" id="orm-estr-${i}" type="number" inputmode="numeric" placeholder="reps"
-                 oninput="_applyOneRMEstimate(${i})" style="width:64px;text-align:center;font-size:16px;padding:3px 6px">
+                 oninput="_applyOneRMEstimate(${i})" style="width:64px;text-align:center;font-size:var(--text-xl, 16px);padding:3px 6px">
           <span id="orm-estout-${i}" style="color:var(--text-muted);font-weight:600"></span>
         </div>
         ${history.length ? `
         <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 0 9px 0;margin-top:-2px">
-          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Was</span>
-          ${history.map(h => `<span style="font-size:11px;color:var(--text-muted)">${fmtWeight(parseFloat(h.one_rm_kg), { spaced: true, decimals: 1 })} <span style="font-size:10px">${fmtDate(h.recorded_at)}</span></span>`).join('<span style="color:var(--border)">·</span>')}
+          <span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Was</span>
+          ${history.map(h => `<span style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${fmtWeight(parseFloat(h.one_rm_kg), { spaced: true, decimals: 1 })} <span style="font-size:var(--text-xs, 10px)">${fmtDate(h.recorded_at)}</span></span>`).join('<span style="color:var(--border)">·</span>')}
         </div>` : ''}`
       }).join('')}
       <p class="modal-error" id="orm-grid-error" style="margin-top:12px"></p>
@@ -292,14 +292,14 @@ function _showOneRMDetailModal(clientId, picked, opts = {}) {
       </div>
       <div class="field">
         <label class="field-label">Exercise</label>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
-          <span style="font-size:15px;font-weight:700">${escapeHtml(picked.name)}</span>
-          <button type="button" class="btn-secondary" style="font-size:12px;padding:5px 12px;flex-shrink:0" onclick="_reopenExercisePickerFor1RM('${clientId}'${existingId ? `,'${existingId}'` : ',null'})">Change</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm, 8px);background:var(--surface-2)">
+          <span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${escapeHtml(picked.name)}</span>
+          <button type="button" class="btn-secondary" style="font-size:var(--text-md, 12px);padding:5px 12px;flex-shrink:0" onclick="_reopenExercisePickerFor1RM('${clientId}'${existingId ? `,'${existingId}'` : ',null'})">Change</button>
         </div>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:14px">
-        <button id="orm-mode-direct" onclick="_setAdd1RMMode('direct')" class="btn-primary" style="flex:1;font-size:12px;padding:8px">I know my 1RM</button>
-        <button id="orm-mode-epley" onclick="_setAdd1RMMode('epley')" class="btn-secondary" style="flex:1;font-size:12px;padding:8px">Estimate from a set</button>
+        <button id="orm-mode-direct" onclick="_setAdd1RMMode('direct')" class="btn-primary" style="flex:1;font-size:var(--text-md, 12px);padding:8px">I know my 1RM</button>
+        <button id="orm-mode-epley" onclick="_setAdd1RMMode('epley')" class="btn-secondary" style="flex:1;font-size:var(--text-md, 12px);padding:8px">Estimate from a set</button>
       </div>
       <div id="orm-direct-fields">
         <div class="field">
@@ -316,9 +316,9 @@ function _showOneRMDetailModal(clientId, picked, opts = {}) {
           <label class="field-label">Reps</label>
           <input class="field-input" id="orm-est-reps" type="number" inputmode="numeric" oninput="_updateAdd1RMEpleyPreview()">
         </div>
-        <div id="orm-epley-result" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;margin-bottom:14px">
-          <div style="font-size:11px;color:#15803d">Estimated 1RM (Epley)</div>
-          <div id="orm-epley-value" style="font-size:20px;font-weight:800;color:#15803d"></div>
+        <div id="orm-epley-result" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--radius-sm, 8px);padding:10px;text-align:center;margin-bottom:14px">
+          <div style="font-size:var(--text-sm, 11px);color:#15803d">Estimated 1RM (Epley)</div>
+          <div id="orm-epley-value" style="font-size:var(--text-3xl, 20px);font-weight:800;color:#15803d"></div>
         </div>
       </div>
       <div class="field">
@@ -476,41 +476,41 @@ async function renderClientPerformance(clientId, el) {
     <div style="padding:20px 0">
 
       <!-- Log entry form -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:24px">
-        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Log a PB / performance record</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:24px">
+        <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:14px">Log a PB / performance record</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Category</label>
+            <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Category</label>
             <select id="pl-category" class="field-input" onchange="updatePerfUnits()">
               ${PERF_CATEGORIES.map(c => `<option value="${c.id}">${c.label}</option>`).join('')}
             </select>
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Date</label>
+            <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Date</label>
             <input id="pl-date" type="date" class="field-input" value="${new Date().toISOString().split('T')[0]}">
           </div>
         </div>
         <div style="margin-bottom:10px">
-          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Name</label>
+          <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Name</label>
           <input id="pl-name" type="text" class="field-input" placeholder="${PERF_CATEGORIES[0].placeholder}">
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Value</label>
+            <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Value</label>
             <input id="pl-value" type="number" step="0.01" class="field-input" placeholder="e.g. 120">
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Unit</label>
+            <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Unit</label>
             <select id="pl-unit" class="field-input">
               ${PERF_CATEGORIES[0].units.map(u => `<option value="${u}"${u === _preferredPerfUnit(PERF_CATEGORIES[0].units) ? ' selected' : ''}>${u}</option>`).join('')}
             </select>
           </div>
         </div>
         <div style="margin-bottom:12px">
-          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Notes <span style="font-weight:400">(optional)</span></label>
+          <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Notes <span style="font-weight:400">(optional)</span></label>
           <input id="pl-notes" type="text" class="field-input" placeholder="e.g. Competition day, fresh, with belt">
         </div>
-        <p id="perf-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
+        <p id="perf-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
         <button onclick="savePerformanceLog('${clientId}')" class="btn-primary" style="width:100%">Save record</button>
       </div>
 
@@ -531,8 +531,8 @@ async function renderClientPerformance(clientId, el) {
         <div style="margin-bottom:24px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
             <span style="width:10px;height:10px;border-radius:50%;background:${colour};display:inline-block"></span>
-            <span style="font-size:13px;font-weight:700;color:var(--text)">${cat.label}</span>
-            <span style="font-size:11px;color:var(--text-muted)">${catLogs.length} record${catLogs.length !== 1 ? 's' : ''}</span>
+            <span style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text)">${cat.label}</span>
+            <span style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${catLogs.length} record${catLogs.length !== 1 ? 's' : ''}</span>
           </div>
 
           ${Object.entries(byName).map(([name, records]) => {
@@ -540,21 +540,21 @@ async function renderClientPerformance(clientId, el) {
             const slug = name.replace(/[^a-z0-9]/gi,'_') + '_' + cat.id
             const chartData = [...records].reverse() // oldest→newest for chart
             return `
-            <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden">
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);margin-bottom:10px;overflow:hidden">
 
               <!-- Summary row — click to expand -->
               <div onclick="togglePerfHistory('${slug}')"
                 style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer">
                 <div style="display:flex;align-items:center;gap:10px">
                   <div>
-                    <div style="font-size:13px;font-weight:600">${escapeHtml(name)}</div>
-                    <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${records.length} entr${records.length !== 1 ? 'ies' : 'y'}</div>
+                    <div style="font-size:var(--text-base, 13px);font-weight:600">${escapeHtml(name)}</div>
+                    <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-top:1px">${records.length} entr${records.length !== 1 ? 'ies' : 'y'}</div>
                   </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:10px">
                   <span style="font-size:15px;font-weight:700;color:${colour}">${escapeHtml(String(best.value))} ${escapeHtml(best.unit || '')}</span>
-                  <span style="font-size:10px;font-weight:700;background:gold;color:#78350f;padding:2px 7px;border-radius:4px">PB</span>
-                  <span id="perf-chevron-${slug}" style="color:var(--text-muted);font-size:12px;transition:transform 0.2s">▼</span>
+                  <span style="font-size:var(--text-xs, 10px);font-weight:700;background:gold;color:#78350f;padding:2px 7px;border-radius:var(--radius-xs, 4px)">PB</span>
+                  <span id="perf-chevron-${slug}" style="color:var(--text-muted);font-size:var(--text-md, 12px);transition:transform 0.2s">▼</span>
                 </div>
               </div>
 
@@ -571,9 +571,9 @@ async function renderClientPerformance(clientId, el) {
                 <table style="width:100%;border-collapse:collapse">
                   <thead>
                     <tr style="background:var(--surface-2)">
-                      <th style="padding:8px 14px;text-align:left;font-size:11px;color:var(--text-muted);font-weight:600">Date</th>
-                      <th style="padding:8px 14px;text-align:right;font-size:11px;color:var(--text-muted);font-weight:600">Value</th>
-                      <th style="padding:8px 14px;text-align:left;font-size:11px;color:var(--text-muted);font-weight:600">Notes</th>
+                      <th style="padding:8px 14px;text-align:left;font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600">Date</th>
+                      <th style="padding:8px 14px;text-align:right;font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600">Value</th>
+                      <th style="padding:8px 14px;text-align:left;font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600">Notes</th>
                       <th style="padding:8px 14px;width:36px"></th>
                     </tr>
                   </thead>
@@ -584,15 +584,15 @@ async function renderClientPerformance(clientId, el) {
                       const isBest = r.id === best.id
                       return `
                     <tr style="border-top:${i > 0 ? '1px solid var(--border)' : 'none'}">
-                      <td style="padding:9px 14px;font-size:12.5px;color:var(--text-muted)">${r.date}</td>
+                      <td style="padding:9px 14px;font-size:var(--legacy-text-12-5, 12.5px);color:var(--text-muted)">${r.date}</td>
                       <td style="padding:9px 14px;text-align:right;font-size:13px;font-weight:${isBest ? '700' : '500'};color:${isBest ? colour : 'var(--text)'}">
                         ${escapeHtml(String(r.value))} ${escapeHtml(r.unit || '')}
-                        ${isBest ? `<span style="font-size:9px;font-weight:700;background:gold;color:#78350f;padding:1px 5px;border-radius:3px;margin-left:4px">PB</span>` : ''}
+                        ${isBest ? `<span style="font-size:var(--text-2xs, 9px);font-weight:700;background:gold;color:#78350f;padding:1px 5px;border-radius:var(--legacy-radius-3, 3px);margin-left:4px">PB</span>` : ''}
                       </td>
-                      <td style="padding:9px 14px;font-size:12px;color:var(--text-muted)">${escapeHtml(r.notes || '—')}</td>
+                      <td style="padding:9px 14px;font-size:var(--text-md, 12px);color:var(--text-muted)">${escapeHtml(r.notes || '—')}</td>
                       <td style="padding:9px 14px;text-align:right">
                         <button onclick="deletePerfLog('${r.id}','${clientId}')"
-                          style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:2px 5px">×</button>
+                          style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:var(--text-lg, 14px);padding:2px 5px">×</button>
                       </td>
                     </tr>`
                     }).join('')}
@@ -768,70 +768,70 @@ async function renderClientWeight(clientId, el) {
     <div style="padding:20px 0">
 
       <!-- Log entry form -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:20px">
-        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Log weight</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:20px">
+        <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:14px">Log weight</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Date</label>
+            <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Date</label>
             <input id="wl-date" type="date" class="field-input" value="${new Date().toISOString().split('T')[0]}">
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Weight (${window._unitPrefs.weight})</label>
+            <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Weight (${window._unitPrefs.weight})</label>
             <input id="wl-weight" type="number" step="0.1" class="field-input" placeholder="e.g. 82.5">
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Body fat % <span style="font-weight:400">(optional)</span></label>
+            <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Body fat % <span style="font-weight:400">(optional)</span></label>
             <input id="wl-bf" type="number" step="0.1" class="field-input" placeholder="e.g. 18.5">
           </div>
         </div>
         <div style="margin-bottom:12px">
-          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Notes <span style="font-weight:400">(optional)</span></label>
+          <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Notes <span style="font-weight:400">(optional)</span></label>
           <input id="wl-notes" type="text" class="field-input" placeholder="e.g. morning, fasted">
         </div>
-        <p id="wl-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
+        <p id="wl-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
         <button onclick="saveWeightLog('${clientId}')" class="btn-primary" style="width:100%">Save entry</button>
       </div>
 
       <!-- Weight goals — sets the chart's Y-axis range below -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:20px">
-        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:20px">
+        <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
+        <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (${window._unitPrefs.weight})</label>
+            <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (${window._unitPrefs.weight})</label>
             <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg != null ? weightToPref(startingWeightKg) : ''}">
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (${window._unitPrefs.weight})</label>
+            <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (${window._unitPrefs.weight})</label>
             <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg != null ? weightToPref(goalWeightKg) : ''}">
           </div>
         </div>
-        <p id="wg-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
+        <p id="wg-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
         <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>
       </div>
 
       <!-- Stats row -->
       ${logs.length > 0 ? `
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">CURRENT</div>
-          <div style="font-size:20px;font-weight:700;color:var(--text)">${fmt(latest.weight_kg)}</div>
-          <div style="font-size:11px;color:var(--text-muted)">${latest.date}</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:14px;text-align:center">
+          <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;margin-bottom:4px">CURRENT</div>
+          <div style="font-size:var(--text-3xl, 20px);font-weight:700;color:var(--text)">${fmt(latest.weight_kg)}</div>
+          <div style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${latest.date}</div>
         </div>
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">CHANGE</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:14px;text-align:center">
+          <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;margin-bottom:4px">CHANGE</div>
           <div style="font-size:20px;font-weight:700;color:${changeColour}">${change !== null ? (change > 0 ? '+' : '') + fmtWeight(change, { spaced: true, decimals: 1 }) : '—'}</div>
-          <div style="font-size:11px;color:var(--text-muted)">${logs.length >= 2 ? oldest.date + ' → now' : 'Need 2+ entries'}</div>
+          <div style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${logs.length >= 2 ? oldest.date + ' → now' : 'Need 2+ entries'}</div>
         </div>
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">ENTRIES</div>
-          <div style="font-size:20px;font-weight:700;color:var(--text)">${logs.length}</div>
-          <div style="font-size:11px;color:var(--text-muted)">logged</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:14px;text-align:center">
+          <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;margin-bottom:4px">ENTRIES</div>
+          <div style="font-size:var(--text-3xl, 20px);font-weight:700;color:var(--text)">${logs.length}</div>
+          <div style="font-size:var(--text-sm, 11px);color:var(--text-muted)">logged</div>
         </div>
       </div>
 
       <!-- Chart -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:20px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:20px">
         <div style="display:flex;gap:6px;margin-bottom:14px">
           ${['1M','3M','6M','All'].map(r => `<button onclick="weightChartRange('${r}')" id="wcr-${r}" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:${r==='3M'?'var(--accent)':'transparent'};color:${r==='3M'?'#fff':'var(--text-muted)'};font-size:12px;font-weight:600;cursor:pointer">${r}</button>`).join('')}
         </div>
@@ -845,14 +845,14 @@ async function renderClientWeight(clientId, el) {
           <div class="empty-title">No weight entries yet</div>
           <div class="empty-text">Log the first entry above to start tracking</div>
         </div>` : `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);overflow:hidden">
         <table style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:var(--surface2)">
-              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Date</th>
-              <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Weight</th>
-              <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Body fat</th>
-              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Notes</th>
+              <th style="padding:10px 14px;text-align:left;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Date</th>
+              <th style="padding:10px 14px;text-align:right;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Weight</th>
+              <th style="padding:10px 14px;text-align:right;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Body fat</th>
+              <th style="padding:10px 14px;text-align:left;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Notes</th>
               <th style="padding:10px 14px;width:40px"></th>
             </tr>
           </thead>
@@ -861,10 +861,10 @@ async function renderClientWeight(clientId, el) {
             <tr style="border-top:1px solid var(--border)${i === 0 ? ';background:rgba(99,102,241,0.03)' : ''}">
               <td style="padding:10px 14px;font-size:13px;color:var(--text);font-weight:${i === 0 ? '600' : '400'}">${l.date}</td>
               <td style="padding:10px 14px;font-size:13px;color:var(--text);font-weight:${i === 0 ? '700' : '500'};text-align:right">${fmt(l.weight_kg)}</td>
-              <td style="padding:10px 14px;font-size:13px;color:var(--text-muted);text-align:right">${l.body_fat_pct != null ? l.body_fat_pct + '%' : '—'}</td>
-              <td style="padding:10px 14px;font-size:13px;color:var(--text-muted)">${escapeHtml(l.notes || '—')}</td>
+              <td style="padding:10px 14px;font-size:var(--text-base, 13px);color:var(--text-muted);text-align:right">${l.body_fat_pct != null ? l.body_fat_pct + '%' : '—'}</td>
+              <td style="padding:10px 14px;font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(l.notes || '—')}</td>
               <td style="padding:10px 14px;text-align:right">
-                <button onclick="deleteWeightLog('${l.id}','${clientId}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:15px;padding:2px 6px;border-radius:4px" title="Delete">×</button>
+                <button onclick="deleteWeightLog('${l.id}','${clientId}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:var(--legacy-text-15, 15px);padding:2px 6px;border-radius:var(--radius-xs, 4px)" title="Delete">×</button>
               </td>
             </tr>`).join('')}
           </tbody>
@@ -1495,18 +1495,18 @@ async function renderProgressPerSession(clientId, el) {
     // rather than an accurate empty state. Show a plain note instead of the tile row in that case.
     const noSetsLogged = totals.sets === 0
     return `
-    <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden">
+    <div style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);margin-bottom:10px;overflow:hidden">
       <button onclick="_togglePerfSession(${i})" style="width:100%;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:13px;font-weight:700">${escapeHtml(s.name || 'Session')}</span>
-          <span style="font-size:12px;color:var(--text-muted)">${new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          <span style="font-size:var(--text-base, 13px);font-weight:700">${escapeHtml(s.name || 'Session')}</span>
+          <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
         </div>
         ${noSetsLogged
-          ? `<div style="font-size:12px;color:var(--text-muted)">No sets logged</div>`
+          ? `<div style="font-size:var(--text-md, 12px);color:var(--text-muted)">No sets logged</div>`
           : `<div style="display:flex;gap:6px">
-          ${tiles.map(([l, v, key]) => `<div style="flex:1;text-align:center;background:var(--surface);border-radius:8px;padding:6px 4px">
+          ${tiles.map(([l, v, key]) => `<div style="flex:1;text-align:center;background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 4px">
             <div style="font-size:13px;font-weight:800;color:${_METRIC_COLORS[key] || 'var(--accent)'}">${v}</div>
-            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${l}</div></div>`).join('')}
+            <div style="font-size:var(--text-2xs, 9px);font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${l}</div></div>`).join('')}
         </div>`}
       </button>
       <div id="perf-sess-${i}" style="display:none;padding:6px 14px 12px"></div>
@@ -1540,11 +1540,11 @@ function _renderPerfSessionDetail(i) {
     return `
       <div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="_expandPerfSessionExercise(${i},${ei})">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-          <span style="font-size:13px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
-          <span style="font-size:13px;font-weight:700;white-space:nowrap">${m.main.fmt} ${mainDelta}</span>
+          <span style="font-size:var(--text-base, 13px);font-weight:600">${escapeHtml(ex.exercise_name)}</span>
+          <span style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap">${m.main.fmt} ${mainDelta}</span>
         </div>
-        ${m.setLine ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${m.setLine}</div>` : ''}
-        ${m.sec ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${m.sec.label} ${m.sec.fmt} ${secDelta}</div>` : ''}
+        ${m.setLine ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${m.setLine}</div>` : ''}
+        ${m.sec ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${m.sec.label} ${m.sec.fmt} ${secDelta}</div>` : ''}
         <div id="perf-sess-${i}-ex-${ei}-chart" style="display:none;position:relative;height:80px;margin-top:8px"></div>
       </div>`
   }).join('')
@@ -1591,8 +1591,8 @@ async function renderProgressWeight(el) {
   // node (#client-weight-form) that existed on the Dashboard pages — never on this Progress page
   // it's actually clicked from. Silent no-op, same bug shape as the "Log PB" fix earlier this
   // session. Adding the form here (same markup as app-dashboard.js) makes the button real.
-  const addWeightBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Body weight log</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log weight</button></div>
-    <div id="client-weight-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+  const addWeightBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Body weight log</span><button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log weight</button></div>
+    <div id="client-weight-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div><label class="form-label">Date</label><input type="date" id="cwf-date" class="form-input" value="${new Date().toISOString().split('T')[0]}"></div>
         <div><label class="form-label">Weight (${window._unitPrefs.weight})</label><input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300"></div>
@@ -1604,27 +1604,27 @@ async function renderProgressWeight(el) {
       <div style="margin-bottom:8px">
         <div><label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label><input type="text" id="cwf-notes" class="form-input" placeholder="Any notes…"></div>
       </div>
-      <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+      <p id="cwf-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 6px"></p>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
-        <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
+        <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
+        <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
       </div>
     </div>`
   const goalsCard = `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px">
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
-      <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:16px">
+      <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
+      <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
-          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (${window._unitPrefs.weight})</label>
+          <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (${window._unitPrefs.weight})</label>
           <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg != null ? weightToPref(startingWeightKg) : ''}">
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (${window._unitPrefs.weight})</label>
+          <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (${window._unitPrefs.weight})</label>
           <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg != null ? weightToPref(goalWeightKg) : ''}">
         </div>
       </div>
-      <p id="wg-error" style="color:#ef4444;font-size:12px;margin:4px 0 0"></p>
+      <p id="wg-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
       <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>
     </div>`
   if (!logs?.length) { el.innerHTML = addWeightBtn + goalsCard + '<div class="empty-state"><p>No weight logs yet. Tap + Log weight to add your first entry.</p></div>'; return }
@@ -1641,21 +1641,21 @@ async function renderProgressWeight(el) {
     ${goalsCard}
     <div style="display:flex;gap:12px;margin-bottom:16px">
       ${[['Starting', fmtWeight(effectiveStarting, { spaced: true })], ['Current', fmtWeight(latest.weight_kg, { spaced: true })], ['Change', sign + fmtWeight(change, { spaced: true, decimals: 1 })]].map(([l,v])=>`
-        <div style="flex:1;padding:12px;border-radius:12px;background:var(--surface);text-align:center">
-          <div style="font-size:18px;font-weight:800;color:var(--accent)">${v}</div>
-          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${l}</div>
+        <div style="flex:1;padding:12px;border-radius:var(--radius-md, 12px);background:var(--surface);text-align:center">
+          <div style="font-size:var(--text-2xl, 18px);font-weight:800;color:var(--accent)">${v}</div>
+          <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${l}</div>
         </div>`).join('')}
     </div>
     <div style="position:relative;height:200px;margin-bottom:16px"><canvas id="pw-chart" style="width:100%;height:100%"></canvas></div>
-    <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border)">
+    <div style="border-radius:var(--radius-md, 12px);overflow:hidden;border:1px solid var(--border)">
       ${logs.slice().reverse().slice(0,10).map(l=>`
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border)">
-          <span style="font-size:13px;color:var(--text-muted)">${new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
-          <span style="font-size:14px;font-weight:700">${fmtWeight(l.weight_kg, { spaced: true })}${l.body_fat_pct ? ' · '+l.body_fat_pct+'% BF' : ''}</span>
+          <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
+          <span style="font-size:var(--text-lg, 14px);font-weight:700">${fmtWeight(l.weight_kg, { spaced: true })}${l.body_fat_pct ? ' · '+l.body_fat_pct+'% BF' : ''}</span>
         </div>`).join('')}
     </div>
     ${(() => { const hr = logs.filter(l => l.resting_hr != null); if (hr.length < 2) return ''
-      return `<div style="margin-top:20px;margin-bottom:8px;font-size:13px;font-weight:600;color:var(--text)">Resting heart rate</div>
+      return `<div style="margin-top:20px;margin-bottom:8px;font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Resting heart rate</div>
         <div style="position:relative;height:160px"><canvas id="resting-hr-chart" style="width:100%;height:100%"></canvas></div>` })()}
   `
   // Y-axis range blends whichever of goal/starting weight are set with the actual logged data —
@@ -2000,7 +2000,7 @@ async function renderProgressPerProgram(clientId, el) {
   // Honest about the day-one state: history only accrues from a restart, so a brand-new setup has one
   // block and nothing to compare. Saying so beats an empty second dropdown the user has to interpret.
   const singleBlockNote = blocks.length < 2
-    ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-bottom:12px">Only one block so far. Restarting or changing a programme files the current one away, and it becomes available here to compare against.</div>`
+    ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;margin-bottom:12px">Only one block so far. Restarting or changing a programme files the current one away, and it becomes available here to compare against.</div>`
     : ''
 
   window._blockState = window._blockState || {}
@@ -2016,14 +2016,14 @@ async function renderProgressPerProgram(clientId, el) {
   el.innerHTML = `
     ${singleBlockNote}
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
-      <select class="field-input" id="blk-ex" onchange="_setBlockState('ex', this.value)" style="font-size:16px">
+      <select class="field-input" id="blk-ex" onchange="_setBlockState('ex', this.value)" style="font-size:var(--text-xl, 16px)">
         ${_exerciseOptionsHtml(names, st.ex)}
       </select>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <select class="field-input" id="blk-a" onchange="_setBlockState('a', this.value)" style="flex:1;min-width:150px;font-size:16px">
+        <select class="field-input" id="blk-a" onchange="_setBlockState('a', this.value)" style="flex:1;min-width:150px;font-size:var(--text-xl, 16px)">
           ${blocks.map(b => opt(b, st.a)).join('')}
         </select>
-        <select class="field-input" id="blk-b" onchange="_setBlockState('b', this.value)" style="flex:1;min-width:150px;font-size:16px">
+        <select class="field-input" id="blk-b" onchange="_setBlockState('b', this.value)" style="flex:1;min-width:150px;font-size:var(--text-xl, 16px)">
           <option value="">Compare with…</option>
           ${blocks.map(b => opt(b, st.b)).join('')}
         </select>
@@ -2082,10 +2082,10 @@ function _renderBlockComparison() {
   const summary = s => {
     if (!s) return ''
     const vals = s.pts.map(p => p[active[0]]).filter(usable)
-    if (!vals.length) return `<div style="font-size:12px;color:var(--text-muted);padding:3px 0">${escapeHtml(s.b.name)} · <em>no sessions logged in this window</em></div>`
+    if (!vals.length) return `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);padding:3px 0">${escapeHtml(s.b.name)} · <em>no sessions logged in this window</em></div>`
     const first = vals[0], last = vals[vals.length - 1]   // sessions are sorted by date in _buildExerciseSeries
     const { delta, arrow, colour } = _deltaBadge(first, last, lowerIsBetter)
-    return `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:12px">
+    return `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:var(--text-md, 12px)">
       <span style="color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.b.name)} · ${escapeHtml(_fmtBlockRange(s.b))}</span>
       <span style="flex-shrink:0"><strong>${escapeHtml(active[3](first))} → ${escapeHtml(active[3](last))}</strong>
         <span style="color:${colour};font-weight:700"> ${arrow}${delta == null ? '' : ` ${Math.abs(delta)}%`}</span>
@@ -2103,12 +2103,12 @@ function _renderBlockComparison() {
 
   const chartable = (A?.agg.length >= 2) || (B?.agg.length >= 2)
   host.innerHTML = `
-    <div style="padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
-      <div style="font-size:14px;font-weight:700;margin-bottom:2px">${escapeHtml(ex.name)}</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">${escapeHtml(active[1])} · sessions logged between each block's dates</div>
+    <div style="padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
+      <div style="font-size:var(--text-lg, 14px);font-weight:700;margin-bottom:2px">${escapeHtml(ex.name)}</div>
+      <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-bottom:10px">${escapeHtml(active[1])} · sessions logged between each block's dates</div>
       ${chips}
       ${chartable ? `<div style="position:relative;height:120px"><canvas id="blk-chart"></canvas></div>`
-                  : `<div style="font-size:11px;color:var(--text-muted);font-style:italic;padding:2px 0 8px">Not enough sessions in these windows to plot a line yet.</div>`}
+                  : `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;padding:2px 0 8px">Not enough sessions in these windows to plot a line yet.</div>`}
       <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
         ${summary(A)}${summary(B)}
       </div>
@@ -2441,9 +2441,9 @@ function _sessionSetsBlockHtml(pts) {
   const shown = withSets.slice(-MAX)
   const hidden = withSets.length - shown.length
   return `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
-    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">Per session</div>
-    ${hidden ? `<div style="font-size:10px;color:var(--text-muted);font-style:italic;margin-bottom:4px">${hidden} earlier session${hidden === 1 ? '' : 's'} not shown</div>` : ''}
-    ${shown.map(p => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px">
+    <div style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">Per session</div>
+    ${hidden ? `<div style="font-size:var(--text-xs, 10px);color:var(--text-muted);font-style:italic;margin-bottom:4px">${hidden} earlier session${hidden === 1 ? '' : 's'} not shown</div>` : ''}
+    ${shown.map(p => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:var(--text-md, 12px)">
       <span style="color:var(--text-muted);flex-shrink:0">${new Date(p.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
       <span style="text-align:right;font-weight:600">${escapeHtml(_collapsedSetLine(p.sets))}</span></div>`).join('')}
   </div>`
@@ -2452,16 +2452,16 @@ function _sessionSetsBlockHtml(pts) {
 function _recordsBlockHtml(rows) {
   if (!rows.length) return ''
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
-    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">Personal records</div>
-    ${rows.map(([label, val]) => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px">
+    <div style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">Personal records</div>
+    ${rows.map(([label, val]) => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:var(--text-md, 12px)">
       <span style="color:var(--text-muted)">${label}</span><span style="font-weight:700">${escapeHtml(String(val))}</span></div>`).join('')}
   </div>`
 }
 
 function _trendCardEmpty(ex) {
-  return `<div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
-    <div style="font-size:14px;font-weight:700;margin-bottom:4px">${escapeHtml(ex.name)}</div>
-    <div style="font-size:11px;color:var(--text-muted)">No sessions in this range.</div>
+  return `<div style="margin-bottom:20px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
+    <div style="font-size:var(--text-lg, 14px);font-weight:700;margin-bottom:4px">${escapeHtml(ex.name)}</div>
+    <div style="font-size:var(--text-sm, 11px);color:var(--text-muted)">No sessions in this range.</div>
     ${_recordsBlockHtml(_exerciseRecords(ex))}</div>`
 }
 
@@ -2501,12 +2501,12 @@ function _renderPerfExerciseList(query) {
     const vals = r.pts.map(p => p[r.activeKey]).filter(v => v > 0)
     const best = vals.length ? (r.active[4] ? Math.min(...vals) : Math.max(...vals)) : 0
     return `
-      <div style="margin-bottom:20px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+      <div style="margin-bottom:20px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span style="font-size:14px;font-weight:700">${escapeHtml(r.ex.name)}</span>
-          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${_TREND_BADGE[r.ex.metricType]||'Strength'}</span>
+          <span style="font-size:var(--text-lg, 14px);font-weight:700">${escapeHtml(r.ex.name)}</span>
+          <span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${_TREND_BADGE[r.ex.metricType]||'Strength'}</span>
         </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Best ${r.active[1].toLowerCase()}: ${r.active[3](best)} · ${r.pts.length} session${r.pts.length===1?'':'s'}</div>
+        <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-bottom:8px">Best ${r.active[1].toLowerCase()}: ${r.active[3](best)} · ${r.pts.length} session${r.pts.length===1?'':'s'}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           ${r.metrics.map(([key,label]) => `<button onclick="_setTrendMetric('${escapeAttr(r.ex.name)}','${key}')"
             style="padding:4px 10px;border:none;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
@@ -2514,7 +2514,7 @@ function _renderPerfExerciseList(query) {
         </div>
         ${r.chartable
           ? `<div style="position:relative;height:90px"><canvas id="ps-chart-${r.i}"></canvas></div>`
-          : `<div style="font-size:11px;color:var(--text-muted);font-style:italic;padding:2px 0 6px">One session so far — the graph appears from the second.</div>`}
+          : `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;padding:2px 0 6px">One session so far — the graph appears from the second.</div>`}
         ${_sessionSetsBlockHtml(r.pts)}
         ${_recordsBlockHtml(_exerciseRecords(r.ex))}
       </div>`
@@ -2597,8 +2597,8 @@ async function renderProgressPBs(el) {
   _destroyManagedCharts()
   el.innerHTML = '<div class="loading-state">Loading personal bests…</div>'
   const clientId = await _getCurrentClientId()
-  const addPBBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:13px;font-weight:600;color:var(--text)">Cardio &amp; benchmarks</span><button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button></div>
-    <div id="client-pb-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+  const addPBBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Cardio &amp; benchmarks</span><button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button></div>
+    <div id="client-pb-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
       ${_pbFormHtml(clientId)}
     </div>`
   // `name`, `category` and `unit` are PLAIN COLUMNS on performance_logs — that is exactly what
@@ -2657,18 +2657,18 @@ async function renderProgressPBs(el) {
     const chartByIndex = new Set(pbChartPlan.map(c => c.canvasId))
 
     pbListHtml = Object.entries(byExercise).map(([name, { best, all, category }], i) => `
-      <div style="margin-bottom:12px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+      <div style="margin-bottom:12px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
-            <div style="font-size:14px;font-weight:700">${escapeHtml(name)}</div>
-            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${escapeHtml(category || '')}${category === 'strength' ? ' · historical' : ''}</div>
+            <div style="font-size:var(--text-lg, 14px);font-weight:700">${escapeHtml(name)}</div>
+            <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${escapeHtml(category || '')}${category === 'strength' ? ' · historical' : ''}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:20px;font-weight:800;color:var(--accent)">${escapeHtml(String(best.value))} <span style="font-size:12px">${escapeHtml(best.unit || '')}</span></div>
-            <div style="font-size:11px;color:var(--text-muted)">${new Date(best.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+            <div style="font-size:var(--text-3xl, 20px);font-weight:800;color:var(--accent)">${escapeHtml(String(best.value))} <span style="font-size:var(--text-md, 12px)">${escapeHtml(best.unit || '')}</span></div>
+            <div style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${new Date(best.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
           </div>
         </div>
-        ${all.length > 1 ? `<div style="margin-top:8px;font-size:11px;color:var(--text-muted)">${all.length} entries</div>` : ''}
+        ${all.length > 1 ? `<div style="margin-top:8px;font-size:var(--text-sm, 11px);color:var(--text-muted)">${all.length} entries</div>` : ''}
         ${chartByIndex.has(`pb-chart-${i}`) ? `<div style="position:relative;height:90px;margin-top:10px"><canvas id="pb-chart-${i}"></canvas></div>` : ''}
       </div>`).join('')
   }
@@ -2680,7 +2680,7 @@ async function renderProgressPBs(el) {
   // writer reaches it through _refresh1RMs, which now finds it on the new tab instead.
   el.innerHTML = `
     ${addPBBtn}
-    ${hasHistoricalStrength ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-bottom:10px;padding:8px 10px;border-radius:8px;background:var(--surface-2)">Your older lift records are kept here. New lifts go on the <strong>Personal Bests</strong> tab.</div>` : ''}
+    ${hasHistoricalStrength ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;margin-bottom:10px;padding:8px 10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2)">Your older lift records are kept here. New lifts go on the <strong>Personal Bests</strong> tab.</div>` : ''}
     ${pbListHtml}
   `
 
@@ -2729,7 +2729,7 @@ async function renderSettings(el) {
           <h2 class="section-title">Invite a personal user</h2>
         </div>
         <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
-          <p style="font-size:13px;color:var(--text-muted);margin:0">Creates a brand-new, standalone solo account — never linked to you as a client. They get a real invite email and set their own name/password.</p>
+          <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0">Creates a brand-new, standalone solo account — never linked to you as a client. They get a real invite email and set their own name/password.</p>
           <div class="field">
             <label class="field-label">Name</label>
             <input class="field-input" type="text" id="solo-invite-name" placeholder="Their name">
@@ -2739,8 +2739,8 @@ async function renderSettings(el) {
             <input class="field-input" type="email" id="solo-invite-email" placeholder="their@email.com">
           </div>
           <div>
-            <button class="btn-primary" style="font-size:14px" onclick="inviteSoloUser()">Send invite</button>
-            <span id="solo-invite-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+            <button class="btn-primary" style="font-size:var(--text-lg, 14px)" onclick="inviteSoloUser()">Send invite</button>
+            <span id="solo-invite-msg" style="font-size:var(--text-base, 13px);margin-left:12px;color:var(--text-muted)"></span>
           </div>
         </div>
       </div>` : ''
@@ -2760,23 +2760,23 @@ async function renderSettings(el) {
             <label class="field-label">Logo</label>
             ${currentLogoUrl ? `
             <div style="margin-bottom:10px">
-              <img id="branding-logo-preview" src="${currentLogoUrl}" alt="Logo" style="height:64px;width:auto;max-width:200px;object-fit:contain;border-radius:8px;border:1px solid var(--border);padding:8px;background:var(--surface-2)">
+              <img id="branding-logo-preview" src="${currentLogoUrl}" alt="Logo" style="height:64px;width:auto;max-width:200px;object-fit:contain;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);padding:8px;background:var(--surface-2)">
             </div>
-            <button onclick="removeBrandingLogo()" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:5px 12px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:10px">Remove logo</button>
+            <button onclick="removeBrandingLogo()" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:5px 12px;border-radius:var(--legacy-radius-7, 7px);font-size:var(--text-md, 12px);font-weight:600;cursor:pointer;margin-bottom:10px">Remove logo</button>
             ` : `
-            <div id="branding-logo-preview" style="height:64px;width:180px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:10px">
-              <span style="font-size:12px;color:var(--text-muted)">No logo uploaded</span>
+            <div id="branding-logo-preview" style="height:64px;width:180px;border:2px dashed var(--border);border-radius:var(--radius-sm, 8px);display:flex;align-items:center;justify-content:center;margin-bottom:10px">
+              <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">No logo uploaded</span>
             </div>
             `}
-            <label style="display:inline-block;cursor:pointer;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;color:var(--text)">
+            <label style="display:inline-block;cursor:pointer;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm, 8px);padding:7px 14px;font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">
               ${currentLogoUrl ? 'Replace logo' : 'Upload logo'}
               <input type="file" id="branding-logo-file" accept="image/jpeg,image/png,image/webp,image/svg+xml" style="display:none" onchange="previewBrandingLogo(this)">
             </label>
-            <span style="font-size:11px;color:var(--text-muted);margin-left:8px">JPG, PNG, WebP, SVG</span>
+            <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-left:8px">JPG, PNG, WebP, SVG</span>
           </div>
           <div>
-            <button class="btn-primary" style="font-size:14px" onclick="saveBrandingSettings()">Save branding</button>
-            <span id="branding-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+            <button class="btn-primary" style="font-size:var(--text-lg, 14px)" onclick="saveBrandingSettings()">Save branding</button>
+            <span id="branding-msg" style="font-size:var(--text-base, 13px);margin-left:12px;color:var(--text-muted)"></span>
           </div>
         </div>
       </div>` : ''
@@ -2806,8 +2806,8 @@ async function renderSettings(el) {
             <input class="field-input" type="email" value="${escapeHtml(currentUser.email || '')}" disabled style="opacity:.6;cursor:default">
           </div>
           <div>
-            <button class="btn-primary" style="font-size:14px" onclick="saveSettingsProfile()">Save changes</button>
-            <span id="settings-profile-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+            <button class="btn-primary" style="font-size:var(--text-lg, 14px)" onclick="saveSettingsProfile()">Save changes</button>
+            <span id="settings-profile-msg" style="font-size:var(--text-base, 13px);margin-left:12px;color:var(--text-muted)"></span>
           </div>
         </div>
       </div>
@@ -2844,8 +2844,8 @@ async function renderSettings(el) {
             </select>
           </div>
           <div>
-            <button class="btn-primary" style="font-size:14px" onclick="saveSettingsUnits()">Save units</button>
-            <span id="settings-units-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+            <button class="btn-primary" style="font-size:var(--text-lg, 14px)" onclick="saveSettingsUnits()">Save units</button>
+            <span id="settings-units-msg" style="font-size:var(--text-base, 13px);margin-left:12px;color:var(--text-muted)"></span>
           </div>
         </div>
       </div>
@@ -2865,8 +2865,8 @@ async function renderSettings(el) {
             <input class="field-input" type="password" id="settings-pw2" placeholder="Repeat password">
           </div>
           <div>
-            <button class="btn-primary" style="font-size:14px" onclick="saveSettingsPassword()">Update password</button>
-            <span id="settings-pw-msg" style="font-size:13px;margin-left:12px;color:var(--text-muted)"></span>
+            <button class="btn-primary" style="font-size:var(--text-lg, 14px)" onclick="saveSettingsPassword()">Update password</button>
+            <span id="settings-pw-msg" style="font-size:var(--text-base, 13px);margin-left:12px;color:var(--text-muted)"></span>
           </div>
         </div>
       </div>
@@ -2878,12 +2878,12 @@ async function renderSettings(el) {
         </div>
         <div class="card-body" style="padding:12px 20px 16px">
           <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">
-            <span style="font-size:13px;color:var(--text-muted)">Role</span>
-            <span style="font-size:13px;font-weight:600;text-transform:capitalize">${profile?.role || '—'}</span>
+            <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">Role</span>
+            <span style="font-size:var(--text-base, 13px);font-weight:600;text-transform:capitalize">${profile?.role || '—'}</span>
           </div>
           <div style="display:flex;justify-content:space-between;padding:7px 0">
-            <span style="font-size:13px;color:var(--text-muted)">Member since</span>
-            <span style="font-size:13px;font-weight:600">${memberSince}</span>
+            <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">Member since</span>
+            <span style="font-size:var(--text-base, 13px);font-weight:600">${memberSince}</span>
           </div>
         </div>
       </div>
@@ -2891,7 +2891,7 @@ async function renderSettings(el) {
       <!-- Sign out -->
       <div class="card">
         <div class="card-body" style="padding:16px 20px">
-          <button id="settings-sign-out-btn" onclick="db.auth.signOut().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Sign out</button>
+          <button id="settings-sign-out-btn" onclick="db.auth.signOut().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Sign out</button>
         </div>
       </div>
 
@@ -2901,10 +2901,10 @@ async function renderSettings(el) {
           <h2 class="section-title">Data &amp; privacy</h2>
         </div>
         <div class="card-body" style="padding:12px 20px 20px;display:flex;flex-direction:column;gap:10px">
-          <p style="font-size:13px;color:var(--text-muted);margin:0 0 4px">Your data is stored in the EU under UK GDPR. You can download a copy or permanently delete your account at any time.</p>
-          <button onclick="downloadMyData()" style="background:none;border:1px solid var(--border);color:var(--text);padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-align:left">Download my data</button>
-          <button onclick="deleteAccount()" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-align:left">Delete account</button>
-          <span id="settings-data-msg" style="font-size:13px;color:var(--text-muted)"></span>
+          <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 4px">Your data is stored in the EU under UK GDPR. You can download a copy or permanently delete your account at any time.</p>
+          <button onclick="downloadMyData()" style="background:none;border:1px solid var(--border);color:var(--text);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer;text-align:left">Download my data</button>
+          <button onclick="deleteAccount()" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer;text-align:left">Delete account</button>
+          <span id="settings-data-msg" style="font-size:var(--text-base, 13px);color:var(--text-muted)"></span>
         </div>
       </div>
 
@@ -3159,11 +3159,11 @@ function deleteAccount() {
   overlay.style.cssText = 'align-items:flex-start;padding-top:60px'
   overlay.innerHTML = `
     <div class="modal" style="max-width:400px">
-      <h2 style="font-size:18px;font-weight:700;margin:0 0 8px;color:var(--danger)">Delete account</h2>
-      <p style="font-size:14px;color:var(--text-muted);margin:0 0 16px;line-height:1.5">This will permanently delete your account and all your data. This cannot be undone.</p>
-      <p style="font-size:14px;color:var(--text);margin:0 0 8px;font-weight:600">Type <strong>DELETE</strong> to confirm:</p>
-      <input id="delete-confirm-input" type="text" class="field-input" placeholder="DELETE" autocomplete="off" style="margin-bottom:16px;font-size:16px">
-      <p id="delete-confirm-error" style="font-size:13px;color:var(--danger);margin:0 0 12px;display:none">You must type DELETE exactly to proceed.</p>
+      <h2 style="font-size:var(--text-2xl, 18px);font-weight:700;margin:0 0 8px;color:var(--danger)">Delete account</h2>
+      <p style="font-size:var(--text-lg, 14px);color:var(--text-muted);margin:0 0 16px;line-height:1.5">This will permanently delete your account and all your data. This cannot be undone.</p>
+      <p style="font-size:var(--text-lg, 14px);color:var(--text);margin:0 0 8px;font-weight:600">Type <strong>DELETE</strong> to confirm:</p>
+      <input id="delete-confirm-input" type="text" class="field-input" placeholder="DELETE" autocomplete="off" style="margin-bottom:16px;font-size:var(--text-xl, 16px)">
+      <p id="delete-confirm-error" style="font-size:var(--text-base, 13px);color:var(--danger);margin:0 0 12px;display:none">You must type DELETE exactly to proceed.</p>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
         <button id="delete-confirm-btn" class="btn-primary" style="background:var(--danger)" onclick="deleteAccountConfirmed(this.closest('.modal-overlay'))">Delete my account</button>
