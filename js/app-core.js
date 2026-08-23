@@ -144,11 +144,11 @@ function _pbFormHtml(clientId, { todayStr } = {}) {
       <div><label class="form-label">Date</label><input type="date" id="cpb-date" class="form-input" value="${escapeHtml(today)}"></div>
     </div>
     <div style="margin-bottom:8px"><label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label><input type="text" id="cpb-notes" class="form-input" placeholder="Any notes…"></div>
-    <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px">Logging a lift? Records go on the <strong>Personal Bests</strong> tab.</p>
-    <p id="cpb-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+    <p style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin:0 0 6px">Logging a lift? Records go on the <strong>Personal Bests</strong> tab.</p>
+    <p id="cpb-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 6px"></p>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientPB('${escapeAttr(clientId)}')">Save</button>
-      <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
+      <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="saveClientPB('${escapeAttr(clientId)}')">Save</button>
+      <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
     </div>`
 }
 
@@ -240,7 +240,7 @@ async function _saveUnitPrefs(weight, jumpHeight, cardioDistance) {
 // mechanism — this app has no anchored-popover precedent, and a small centered modal gives the same
 // "tap icon, get a compact panel" feel with zero new CSS.
 function _quickPrefsIconHtml() {
-  return `<button onclick="_openQuickPrefsPopover()" title="Preferences" style="width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">⚙</button>`
+  return `<button onclick="_openQuickPrefsPopover()" title="Preferences" style="width:36px;height:36px;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);background:var(--surface);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:var(--text-xl, 16px)">⚙</button>`
 }
 
 function _openQuickPrefsPopover() {
@@ -543,13 +543,13 @@ function _applyBrandingToSidebar() {
     brand.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:4px 0">
         <img src="${b.logoUrl}" alt="${escapeHtml(b.businessName) || 'Logo'}" style="height:52px;width:auto;max-width:160px;object-fit:contain;border-radius:6px">
-        <span style="font-size:9px;color:var(--text-muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">powered by CoachApp</span>
+        <span style="font-size:var(--text-2xs, 9px);color:var(--text-muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">powered by CoachApp</span>
       </div>`
   } else if (b.businessName) {
     brand.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:4px 0">
-        <span style="font-size:16px;font-weight:700;color:var(--text);line-height:1.2">${escapeHtml(b.businessName)}</span>
-        <span style="font-size:9px;color:var(--text-muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">powered by CoachApp</span>
+        <span style="font-size:var(--text-xl, 16px);font-weight:700;color:var(--text);line-height:1.2">${escapeHtml(b.businessName)}</span>
+        <span style="font-size:var(--text-2xs, 9px);color:var(--text-muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">powered by CoachApp</span>
       </div>`
   }
   // else: default "C CoachApp" design unchanged
