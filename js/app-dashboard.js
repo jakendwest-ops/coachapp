@@ -20,9 +20,9 @@ function _fetchFailureBanner (failed, page) {
   if (!failed.length) return ''
   log.error('dashboard', 'fetch(es) failed', { page, failed })
   return `
-    <div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <span style="font-size:13px;color:var(--text)">Couldn't load: ${escapeHtml(failed.join(', '))}. What you see below may be incomplete.</span>
-      <button onclick="navigate('${page}','replace')" style="background:none;border:1px solid #ef4444;color:#ef4444;padding:5px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Retry</button>
+    <div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;border-radius:var(--radius, 10px);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <span style="font-size:var(--text-base, 13px);color:var(--text)">Couldn't load: ${escapeHtml(failed.join(', '))}. What you see below may be incomplete.</span>
+      <button onclick="navigate('${page}','replace')" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:5px 14px;border-radius:var(--radius-sm, 8px);font-size:var(--text-base, 13px);font-weight:600;cursor:pointer">Retry</button>
     </div>`
 }
 
@@ -130,9 +130,9 @@ async function renderDashboard(el) {
         [sessionsThisWeekTotal, 'Sessions this week'],
         [goalCount ?? 0, 'Active goals'],
       ].map(([val, label]) => `
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
-          <div style="font-size:26px;font-weight:700;color:var(--text)">${val}</div>
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:3px">${label}</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:14px 16px">
+          <div style="font-size:var(--legacy-text-26, 26px);font-weight:700;color:var(--text)">${val}</div>
+          <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:3px">${label}</div>
         </div>`).join('')}
     </div>
 
@@ -142,22 +142,22 @@ async function renderDashboard(el) {
       <div class="dashboard-card">
         <div class="card-header">
           <h2 class="card-title">Recent activity</h2>
-          <span style="font-size:12px;color:var(--text-muted)">Last 7 days</span>
+          <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Last 7 days</span>
         </div>
         ${feed.length === 0 ? `
-          <p style="color:var(--text-muted);font-size:13px">No activity in the last 7 days.</p>
+          <p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No activity in the last 7 days.</p>
         ` : feed.map(f => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
             <div style="display:flex;align-items:center;gap:10px">
-              <div style="width:32px;height:32px;border-radius:8px;background:var(--bg-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <div style="width:32px;height:32px;border-radius:var(--radius-sm, 8px);background:var(--bg-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
                 <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-accent)" stroke-width="2" style="width:15px;height:15px"><path d="${f.type === 'weight' ? 'M3 6h18M3 12h18M3 18h18' : 'M6 5h12M6 12h12M6 19h12'}"/></svg>
               </div>
               <div>
-                <div style="font-size:13px;font-weight:600;cursor:pointer" onclick="openClient('${f.client_id}')">${escapeHtml(clientMap[f.client_id] || 'Unknown')}</div>
-                <div style="font-size:11.5px;color:var(--text-muted)">${f.type === 'weight' ? f.detail : 'Session logged'}</div>
+                <div style="font-size:var(--text-base, 13px);font-weight:600;cursor:pointer" onclick="openClient('${f.client_id}')">${escapeHtml(clientMap[f.client_id] || 'Unknown')}</div>
+                <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted)">${f.type === 'weight' ? f.detail : 'Session logged'}</div>
               </div>
             </div>
-            <div style="font-size:11.5px;color:var(--text-muted);white-space:nowrap">${timeAgo(f.logged_at)}</div>
+            <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);white-space:nowrap">${timeAgo(f.logged_at)}</div>
           </div>
         `).join('')}
       </div>
@@ -175,7 +175,7 @@ async function renderDashboard(el) {
                 const parts = []
                 if (atRisk > 0) parts.push(`<span style="color:var(--danger);font-weight:600">${atRisk} at risk</span>`)
                 if (onTrack > 0) parts.push(`<span style="color:var(--success);font-weight:600">${onTrack} on track</span>`)
-                return parts.length ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">${parts.join(' · ')}</p>` : ''
+                return parts.length ? `<p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${parts.join(' · ')}</p>` : ''
               })() : ''}
             </div>
             <div style="display:flex;gap:4px" id="compliance-filter-btns">
@@ -183,7 +183,7 @@ async function renderDashboard(el) {
             </div>
           </div>
           <div id="compliance-rows">
-            ${complianceRows.length === 0 ? `<p style="color:var(--text-muted);font-size:13px">No active clients.</p>` :
+            ${complianceRows.length === 0 ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No active clients.</p>` :
               complianceRows.map(c => {
                 const dot = c.sessions === 0 ? 'var(--danger)' : c.sessions === 1 ? 'var(--warning)' : 'var(--success)'
                 const label = c.sessions === 0 ? 'No sessions' : `${c.sessions} session${c.sessions !== 1 ? 's' : ''}`
@@ -192,7 +192,7 @@ async function renderDashboard(el) {
                 <div class="compliance-row" data-zone="${zone}" style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
                   <div style="display:flex;align-items:center;gap:8px">
                     <div style="width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0"></div>
-                    <div style="font-size:13px;font-weight:500;cursor:pointer" onclick="openClient('${c.id}')">${escapeHtml(c.full_name)}</div>
+                    <div style="font-size:var(--text-base, 13px);font-weight:500;cursor:pointer" onclick="openClient('${c.id}')">${escapeHtml(c.full_name)}</div>
                   </div>
                   <span style="font-size:11.5px;font-weight:600;color:${dot}">${label}</span>
                 </div>`
@@ -203,17 +203,17 @@ async function renderDashboard(el) {
         <div class="dashboard-card">
           <div class="card-header">
             <h2 class="card-title">Goals due soon</h2>
-            <span style="font-size:12px;color:var(--text-muted)">Next 14 days</span>
+            <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Next 14 days</span>
           </div>
           ${!upcomingGoals?.length ? `
-            <p style="color:var(--text-muted);font-size:13px">No goals due in the next 14 days.</p>
+            <p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No goals due in the next 14 days.</p>
           ` : upcomingGoals.map(g => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
               <div>
-                <div style="font-size:13px;font-weight:500">${escapeHtml(g.title)}</div>
-                <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(g.clients?.full_name || '')}</div>
+                <div style="font-size:var(--text-base, 13px);font-weight:500">${escapeHtml(g.title)}</div>
+                <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted)">${escapeHtml(g.clients?.full_name || '')}</div>
               </div>
-              <div style="font-size:11.5px;font-weight:600;color:var(--accent);white-space:nowrap">${daysUntil(g.target_date)}</div>
+              <div style="font-size:var(--legacy-text-11-5, 11.5px);font-weight:600;color:var(--accent);white-space:nowrap">${daysUntil(g.target_date)}</div>
             </div>
           `).join('')}
         </div>
@@ -385,45 +385,45 @@ async function renderClientDashboard(el) {
   el.innerHTML = `
     ${_fetchFailureBanner(_failed, 'client-dashboard')}
     ${isSudo ? `
-    <div style="background:#f59e0b;color:#fff;border-radius:10px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
-      <span style="font-size:13px;font-weight:700">👁 Viewing as ${escapeHtml(window._sudoClientName || 'Client')}</span>
-      <button onclick="exitSudo()" style="background:rgba(0,0,0,.18);border:none;color:#fff;font-size:12px;font-weight:700;padding:5px 12px;border-radius:6px;cursor:pointer">Exit ✕</button>
+    <div style="background:var(--warning, #f59e0b);color:#fff;border-radius:var(--radius, 10px);padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <span style="font-size:var(--text-base, 13px);font-weight:700">👁 Viewing as ${escapeHtml(window._sudoClientName || 'Client')}</span>
+      <button onclick="exitSudo()" style="background:rgba(0,0,0,.18);border:none;color:#fff;font-size:var(--text-md, 12px);font-weight:700;padding:5px 12px;border-radius:6px;cursor:pointer">Exit ✕</button>
     </div>` : ''}
 
     ${window._branding?.logoUrl || window._branding?.businessName ? `
-    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);margin-bottom:16px">
       ${window._branding.logoUrl ? `<img src="${window._branding.logoUrl}" alt="${escapeHtml(window._branding.businessName) || ''}" style="height:44px;width:auto;max-width:120px;object-fit:contain;border-radius:6px">` : ''}
       <div>
-        ${window._branding.businessName ? `<div style="font-size:14px;font-weight:700;color:var(--text)">${escapeHtml(window._branding.businessName)}</div>` : ''}
-        <div style="font-size:12px;color:var(--text-muted)">Coached by your PT</div>
+        ${window._branding.businessName ? `<div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text)">${escapeHtml(window._branding.businessName)}</div>` : ''}
+        <div style="font-size:var(--text-md, 12px);color:var(--text-muted)">Coached by your PT</div>
       </div>
     </div>` : ''}
 
     <div class="page-header" style="margin-bottom:16px">
       <div>
         <h1 class="page-title">Hi, ${firstName}</h1>
-        <p style="font-size:13px;color:var(--text-muted);margin-top:2px">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+        <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin-top:2px">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
       </div>
     </div>
 
     <!-- Current program header -->
     ${assignedPrograms?.[0] ? `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:12px 16px;margin-bottom:12px">
       <div style="min-width:0">
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Current program</div>
-        <div style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(cHeroTitle)}</div>
+        <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Current program</div>
+        <div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(cHeroTitle)}</div>
       </div>
-      <button onclick="navigate('workouts')" class="btn-secondary" style="font-size:12px;padding:6px 14px;flex-shrink:0">View program</button>
+      <button onclick="navigate('workouts')" class="btn-secondary" style="font-size:var(--text-md, 12px);padding:6px 14px;flex-shrink:0">View program</button>
     </div>` : ''}
 
     <!-- Hero card -->
-    <div style="background:var(--accent);border-radius:12px;padding:18px 20px;margin-bottom:16px;color:#fff">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
-      <div style="font-size:19px;font-weight:700;margin-bottom:3px">${cHeroTitle}</div>
-      <div style="font-size:13px;opacity:.8;margin-bottom:14px">${cHeroMeta}</div>
+    <div style="background:var(--accent);border-radius:var(--radius-md, 12px);padding:18px 20px;margin-bottom:16px;color:#fff">
+      <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
+      <div style="font-size:var(--legacy-text-19, 19px);font-weight:700;margin-bottom:3px">${cHeroTitle}</div>
+      <div style="font-size:var(--text-base, 13px);opacity:.8;margin-bottom:14px">${cHeroMeta}</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button onclick="${cHeroAction}" style="padding:8px 20px;border-radius:8px;background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:13px;font-weight:700;cursor:pointer">${cHeroBtnLabel} →</button>
-        ${checkInDue ? `<button onclick="document.getElementById('checkin-card').scrollIntoView({behavior:'smooth'})" style="padding:8px 16px;border-radius:8px;background:rgba(245,158,11,.25);color:#fff;border:1.5px solid rgba(245,158,11,.5);font-size:13px;font-weight:600;cursor:pointer">Check-in due</button>` : ''}
+        <button onclick="${cHeroAction}" style="padding:8px 20px;border-radius:var(--radius-sm, 8px);background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">${cHeroBtnLabel} →</button>
+        ${checkInDue ? `<button onclick="document.getElementById('checkin-card').scrollIntoView({behavior:'smooth'})" style="padding:8px 16px;border-radius:var(--radius-sm, 8px);background:rgba(245,158,11,.25);color:#fff;border:1.5px solid rgba(245,158,11,.5);font-size:var(--text-base, 13px);font-weight:600;cursor:pointer">Check-in due</button>` : ''}
       </div>
     </div>
 
@@ -434,7 +434,7 @@ async function renderClientDashboard(el) {
 
         <div class="dashboard-card">
           <div class="card-header"><h2 class="card-title">Goals</h2></div>
-          ${!goals?.length ? `<p style="color:var(--text-muted);font-size:13px">No active goals yet.</p>` : goals.map(goal => {
+          ${!goals?.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No active goals yet.</p>` : goals.map(goal => {
             const milestones = (goal.goal_milestones || []).sort((a, b) => a.order - b.order)
             const done = milestones.filter(m => m.completed_at).length
             const pct = (() => {
@@ -447,23 +447,23 @@ async function renderClientDashboard(el) {
             return `
             <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-                <div style="font-size:14px;font-weight:600">${escapeHtml(goal.title)}</div>
-                ${daysLeft ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
+                <div style="font-size:var(--text-lg, 14px);font-weight:600">${escapeHtml(goal.title)}</div>
+                ${daysLeft ? `<span style="font-size:var(--text-sm, 11px);color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
               </div>
               ${goal.target_value != null ? `
-              <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <span>Current: <strong style="color:var(--text)">${goal.current_value ?? '—'}</strong> → Target: <strong style="color:var(--accent)">${goal.target_value}</strong></span>
-                <button onclick="showGoalProgressForm('${goal.id}',${goal.current_value ?? ''})" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;padding:0">Update</button>
+                <button onclick="showGoalProgressForm('${goal.id}',${goal.current_value ?? ''})" style="font-size:var(--text-sm, 11px);color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;padding:0">Update</button>
               </div>
               <div id="gpf-${goal.id}" style="display:none;margin-bottom:6px">
                 <div style="display:flex;gap:6px;align-items:center">
-                  <input type="number" id="gpf-val-${goal.id}" class="field-input" style="width:100px;padding:4px 8px;font-size:16px" step="0.1" placeholder="New value">
-                  <button class="btn-primary" style="font-size:12px;padding:4px 12px" onclick="saveGoalProgress('${goal.id}')">Save</button>
-                  <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="document.getElementById('gpf-${goal.id}').style.display='none'">Cancel</button>
+                  <input type="number" id="gpf-val-${goal.id}" class="field-input" style="width:100px;padding:4px 8px;font-size:var(--text-xl, 16px)" step="0.1" placeholder="New value">
+                  <button class="btn-primary" style="font-size:var(--text-md, 12px);padding:4px 12px" onclick="saveGoalProgress('${goal.id}')">Save</button>
+                  <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="document.getElementById('gpf-${goal.id}').style.display='none'">Cancel</button>
                 </div>
-                <p id="gpf-err-${goal.id}" style="color:var(--danger);font-size:11px;margin:4px 0 0"></p>
+                <p id="gpf-err-${goal.id}" style="color:var(--danger);font-size:var(--text-sm, 11px);margin:4px 0 0"></p>
               </div>` : ''}
-              <div style="height:4px;background:var(--surface-2);border-radius:4px;overflow:hidden;margin-bottom:6px">
+              <div style="height:4px;background:var(--surface-2);border-radius:var(--radius-xs, 4px);overflow:hidden;margin-bottom:6px">
                 <div style="height:100%;width:${pct}%;background:var(--accent);border-radius:4px"></div>
               </div>
               ${milestones.length ? `
@@ -480,16 +480,16 @@ async function renderClientDashboard(el) {
         <div class="dashboard-card">
           <div class="card-header">
             <h2 class="card-title">Recent sessions</h2>
-            <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="startWorkoutRunner('${clientId}')">▶ Start</button>
+            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="startWorkoutRunner('${clientId}')">▶ Start</button>
           </div>
-          ${!recentSessions?.length ? `<p style="color:var(--text-muted);font-size:13px">No sessions logged yet.</p>` : `
+          ${!recentSessions?.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No sessions logged yet.</p>` : `
           <div class="list">
             ${recentSessions.map(s => {
               const dateStr = new Date(s.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
               const exCount = s.workout_log_exercises?.length || 0
               return `
               <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${s.id}','${clientId}')">
-                <div style="width:36px;height:36px;border-radius:9px;background:var(--bg-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <div style="width:36px;height:36px;border-radius:var(--legacy-radius-9, 9px);background:var(--bg-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
                   <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-accent)" stroke-width="2" style="width:15px;height:15px"><path d="M6 5h12M6 12h12M6 19h12"/></svg>
                 </div>
                 <div class="row-info">
@@ -511,17 +511,17 @@ async function renderClientDashboard(el) {
         <div class="dashboard-card">
           <div class="card-header">
             <h2 class="card-title">Weight</h2>
-            <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log</button>
+            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log</button>
           </div>
         ${latestWeight ? `
           <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
-            <span style="font-size:32px;font-weight:700">${weightToPref(latestWeight.weight_kg)}</span>
-            <span style="font-size:16px;color:var(--text-muted)">${window._unitPrefs.weight}</span>
+            <span style="font-size:var(--text-display, 32px);font-weight:700">${weightToPref(latestWeight.weight_kg)}</span>
+            <span style="font-size:var(--text-xl, 16px);color:var(--text-muted)">${window._unitPrefs.weight}</span>
             <span style="font-size:22px;color:${trendColour};margin-left:4px">${weightTrend}</span>
           </div>
-          <p style="font-size:12px;color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
-          ${prevWeight ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">Previous: ${fmtWeight(prevWeight.weight_kg, { spaced: true })}</p>` : ''}
-        ` : `<p style="color:var(--text-muted);font-size:13px">No weight logged yet.</p>`}
+          <p style="font-size:var(--text-md, 12px);color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
+          ${prevWeight ? `<p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">Previous: ${fmtWeight(prevWeight.weight_kg, { spaced: true })}</p>` : ''}
+        ` : `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No weight logged yet.</p>`}
         <div id="client-weight-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
             <div>
@@ -549,24 +549,24 @@ async function renderClientDashboard(el) {
               <input type="number" inputmode="numeric" id="cwf-resting-hr" class="form-input" placeholder="e.g. 58" step="1" min="20" max="250">
             </div>
           </div>
-          <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+          <p id="cwf-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 6px"></p>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
-            <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
+            <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
+            <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
           </div>
         </div>
       </div>
 
         <div class="dashboard-card">
           <div class="card-header"><h2 class="card-title">Upcoming</h2></div>
-          ${!events?.length ? `<p style="color:var(--text-muted);font-size:13px">No upcoming events.</p>` : events.map(ev => {
+          ${!events?.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No upcoming events.</p>` : events.map(ev => {
             const s = eventStyle(ev.type)
             return `
             <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
               <div style="width:3px;min-width:3px;height:34px;border-radius:2px;background:${s.colour};margin-top:2px"></div>
               <div>
-                <div style="font-size:13px;font-weight:500">${escapeHtml(ev.title)}</div>
-                <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${s.label} · ${formatDate(ev.date)} · ${daysUntil(ev.date)}</div>
+                <div style="font-size:var(--text-base, 13px);font-weight:500">${escapeHtml(ev.title)}</div>
+                <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-top:1px">${s.label} · ${formatDate(ev.date)} · ${daysUntil(ev.date)}</div>
               </div>
             </div>`
           }).join('')}
@@ -575,14 +575,14 @@ async function renderClientDashboard(el) {
         <div class="dashboard-card">
           <div class="card-header">
             <h2 class="card-title">Benchmarks</h2>
-            <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button>
+            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button>
           </div>
-          ${!pbs.length ? `<p style="color:var(--text-muted);font-size:13px">No records yet.</p>` : pbs.slice(0,4).map(pb => `
+          ${!pbs.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No records yet.</p>` : pbs.slice(0,4).map(pb => `
             <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
-              <span style="font-size:13px;color:var(--text-muted)">${escapeHtml(pb.name)}</span>
-              <span style="font-size:14px;font-weight:700">${pb.value} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
+              <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
+              <span style="font-size:var(--text-lg, 14px);font-weight:700">${pb.value} <span style="font-size:var(--text-sm, 11px);font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
             </div>`).join('')}
-          ${pbs.length > 4 ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more</p>` : ''}
+          ${pbs.length > 4 ? `<p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more</p>` : ''}
           <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
             ${_pbFormHtml(clientId)}
           </div>
@@ -591,33 +591,33 @@ async function renderClientDashboard(el) {
         <div class="dashboard-card" id="checkin-card">
           <div class="card-header">
             <h2 class="card-title">Weekly check-in</h2>
-            ${lastCheckIn ? `<span style="font-size:12px;color:var(--text-muted)">${daysSinceCheckIn === 0 ? 'Submitted today' : daysSinceCheckIn + 'd ago'}</span>` : ''}
+            ${lastCheckIn ? `<span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${daysSinceCheckIn === 0 ? 'Submitted today' : daysSinceCheckIn + 'd ago'}</span>` : ''}
           </div>
           ${!checkInDue && lastCheckIn ? `
             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px">
               ${[['Sleep',lastCheckIn.sleep],['Energy',lastCheckIn.energy],['Stress',lastCheckIn.stress],['Soreness',lastCheckIn.soreness]].map(([label,val])=>`
-              <div style="text-align:center;background:var(--surface-2);border-radius:8px;padding:8px">
-                <div style="font-size:18px;font-weight:700;color:var(--accent)">${val}/5</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${label}</div>
+              <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:8px">
+                <div style="font-size:var(--text-2xl, 18px);font-weight:700;color:var(--accent)">${val}/5</div>
+                <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${label}</div>
               </div>`).join('')}
             </div>
-            ${lastCheckIn.notes ? `<p style="font-size:13px;color:var(--text-muted);margin:0 0 10px">${escapeHtml(lastCheckIn.notes)}</p>` : ''}
-            <button onclick="document.getElementById('checkin-form').style.display='block'" class="btn-secondary" style="font-size:13px">Submit new check-in</button>
-          ` : `<p style="font-size:13px;color:var(--text-muted);margin:0 0 10px">${checkInDue ? 'Your weekly check-in is due. Let your coach know how you\'re feeling.' : 'No check-ins yet.'}</p>`}
+            ${lastCheckIn.notes ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 10px">${escapeHtml(lastCheckIn.notes)}</p>` : ''}
+            <button onclick="document.getElementById('checkin-form').style.display='block'" class="btn-secondary" style="font-size:var(--text-base, 13px)">Submit new check-in</button>
+          ` : `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 10px">${checkInDue ? 'Your weekly check-in is due. Let your coach know how you\'re feeling.' : 'No check-ins yet.'}</p>`}
           <div id="checkin-form" style="${checkInDue ? '' : 'display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)'}">
             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px">
               ${[['sleep','Sleep (1–5)'],['energy','Energy (1–5)'],['stress','Stress (1–5)'],['soreness','Soreness (1–5)']].map(([id,label])=>`
               <div>
                 <label class="field-label">${label}</label>
                 <input type="range" id="ci-${id}" min="1" max="5" step="1" value="${lastCheckIn?.[id]||3}" class="field-input" style="padding:6px 0">
-                <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-top:2px"><span>Low</span><span>High</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px"><span>Low</span><span>High</span></div>
               </div>`).join('')}
             </div>
             <div class="field">
               <label class="field-label">Notes for your coach <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
               <textarea id="ci-notes" class="field-input" rows="2" placeholder="How's training feeling? Any injuries or concerns?">${escapeHtml(lastCheckIn?.notes||'')}</textarea>
             </div>
-            <p id="ci-error" style="color:var(--danger);font-size:12px;margin:4px 0"></p>
+            <p id="ci-error" style="color:var(--danger);font-size:var(--text-md, 12px);margin:4px 0"></p>
             <button onclick="saveClientCheckIn('${clientId}')" class="btn-primary" style="margin-top:8px">Submit check-in</button>
           </div>
         </div>
@@ -717,32 +717,32 @@ async function renderSoloDashboard(el) {
     <div class="page-header" style="margin-bottom:16px">
       <div>
         <h1 class="page-title">My Training</h1>
-        <p style="font-size:13px;color:var(--text-muted);margin-top:2px">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+        <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin-top:2px">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
       </div>
     </div>
 
     ${assignedPrograms?.[0] ? `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:12px 16px;margin-bottom:12px">
       <div style="min-width:0">
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Current program</div>
-        <div style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(heroTitle)}</div>
+        <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Current program</div>
+        <div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(heroTitle)}</div>
       </div>
-      <button onclick="navigate('workouts')" class="btn-secondary" style="font-size:12px;padding:6px 14px;flex-shrink:0">View program</button>
+      <button onclick="navigate('workouts')" class="btn-secondary" style="font-size:var(--text-md, 12px);padding:6px 14px;flex-shrink:0">View program</button>
     </div>` : ''}
 
-    <div style="background:var(--accent);border-radius:12px;padding:18px 20px;margin-bottom:16px;color:#fff">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
-      <div style="font-size:19px;font-weight:700;margin-bottom:3px">${heroTitle}</div>
-      <div style="font-size:13px;opacity:.8;margin-bottom:14px">${heroMeta}</div>
-      <button onclick="${heroAction}" style="padding:8px 20px;border-radius:8px;background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:13px;font-weight:700;cursor:pointer">${heroBtnLabel} →</button>
+    <div style="background:var(--accent);border-radius:var(--radius-md, 12px);padding:18px 20px;margin-bottom:16px;color:#fff">
+      <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
+      <div style="font-size:var(--legacy-text-19, 19px);font-weight:700;margin-bottom:3px">${heroTitle}</div>
+      <div style="font-size:var(--text-base, 13px);opacity:.8;margin-bottom:14px">${heroMeta}</div>
+      <button onclick="${heroAction}" style="padding:8px 20px;border-radius:var(--radius-sm, 8px);background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">${heroBtnLabel} →</button>
     </div>
 
     <div class="solo-stats">
       ${[['Sessions',sessionsThisWeek,'This week'],['Weight',latestWeight?fmtWeight(latestWeight.weight_kg, { spaced: true }):'—','Current'],['Goals',goals?.length||0,'Active'],['Bests',pbs.length,'On record']].map(([label,val,sub])=>`
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${label}</div>
-          <div style="font-size:22px;font-weight:700;color:var(--text)">${val}</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${sub}</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:12px 14px">
+          <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${label}</div>
+          <div style="font-size:var(--legacy-text-22, 22px);font-weight:700;color:var(--text)">${val}</div>
+          <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${sub}</div>
         </div>`).join('')}
     </div>
 
@@ -752,13 +752,13 @@ async function renderSoloDashboard(el) {
 
         <div class="dashboard-card">
           <div class="card-header"><h2 class="card-title">Recent sessions</h2></div>
-          ${!recentSessions?.length ? `<p style="color:var(--text-muted);font-size:13px">No sessions logged yet.</p>` : `
+          ${!recentSessions?.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No sessions logged yet.</p>` : `
           <div class="list">
             ${recentSessions.map(s => {
               const exCount = s.workout_log_exercises?.length || 0
               return `
               <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${s.id}','${clientId}')">
-                <div style="width:36px;height:36px;border-radius:9px;background:var(--bg-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <div style="width:36px;height:36px;border-radius:var(--legacy-radius-9, 9px);background:var(--bg-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
                   <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-accent)" stroke-width="2" style="width:15px;height:15px"><path d="M6 5h12M6 12h12M6 19h12"/></svg>
                 </div>
                 <div class="row-info">
@@ -773,7 +773,7 @@ async function renderSoloDashboard(el) {
 
         <div class="dashboard-card">
           <div class="card-header"><h2 class="card-title">Goals</h2></div>
-          ${!goals?.length ? `<p style="color:var(--text-muted);font-size:13px">No active goals.</p>` : goals.map(goal => {
+          ${!goals?.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No active goals.</p>` : goals.map(goal => {
             const milestones = (goal.goal_milestones || []).sort((a,b) => a.order - b.order)
             const pct = (() => {
               const sv=parseFloat(goal.start_value), cv=parseFloat(goal.current_value), tv=parseFloat(goal.target_value)
@@ -785,11 +785,11 @@ async function renderSoloDashboard(el) {
             return `
             <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px">
-                <div style="font-size:14px;font-weight:600">${escapeHtml(goal.title)}</div>
-                ${daysLeft ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
+                <div style="font-size:var(--text-lg, 14px);font-weight:600">${escapeHtml(goal.title)}</div>
+                ${daysLeft ? `<span style="font-size:var(--text-sm, 11px);color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
               </div>
-              ${goal.target_value != null ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:5px">Current: <strong style="color:var(--text)">${goal.current_value ?? '—'}</strong> → Target: <strong style="color:var(--accent)">${goal.target_value}</strong></div>` : ''}
-              <div style="height:4px;background:var(--surface-2);border-radius:4px;overflow:hidden;margin-bottom:6px">
+              ${goal.target_value != null ? `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:5px">Current: <strong style="color:var(--text)">${goal.current_value ?? '—'}</strong> → Target: <strong style="color:var(--accent)">${goal.target_value}</strong></div>` : ''}
+              <div style="height:4px;background:var(--surface-2);border-radius:var(--radius-xs, 4px);overflow:hidden;margin-bottom:6px">
                 <div style="height:100%;width:${pct}%;background:var(--accent);border-radius:4px"></div>
               </div>
               ${milestones.length ? `
@@ -808,17 +808,17 @@ async function renderSoloDashboard(el) {
         <div class="dashboard-card">
           <div class="card-header">
             <h2 class="card-title">Weight</h2>
-            <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log</button>
+            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log</button>
           </div>
           ${latestWeight ? `
             <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px">
-              <span style="font-size:30px;font-weight:700">${weightToPref(latestWeight.weight_kg)}</span>
-              <span style="font-size:15px;color:var(--text-muted)">${window._unitPrefs.weight}</span>
+              <span style="font-size:var(--legacy-text-30, 30px);font-weight:700">${weightToPref(latestWeight.weight_kg)}</span>
+              <span style="font-size:var(--legacy-text-15, 15px);color:var(--text-muted)">${window._unitPrefs.weight}</span>
               <span style="font-size:18px;color:${trendColour};margin-left:2px">${weightTrend}</span>
             </div>
-            <p style="font-size:12px;color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
-            ${prevWeight ? `<p style="font-size:12px;color:var(--text-muted);margin-top:2px">Previous: ${fmtWeight(prevWeight.weight_kg, { spaced: true })}</p>` : ''}
-          ` : `<p style="color:var(--text-muted);font-size:13px">No weight logged yet.</p>`}
+            <p style="font-size:var(--text-md, 12px);color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
+            ${prevWeight ? `<p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">Previous: ${fmtWeight(prevWeight.weight_kg, { spaced: true })}</p>` : ''}
+          ` : `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No weight logged yet.</p>`}
           <div id="client-weight-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
               <div><label class="form-label">Date</label><input type="date" id="cwf-date" class="form-input" value="${todayStr}"></div>
@@ -831,10 +831,10 @@ async function renderSoloDashboard(el) {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
               <div><label class="form-label">Resting HR (bpm) <span style="color:var(--text-muted)">(opt)</span></label><input type="number" inputmode="numeric" id="cwf-resting-hr" class="form-input" placeholder="e.g. 58" step="1" min="20" max="250"></div>
             </div>
-            <p id="cwf-error" style="color:#ef4444;font-size:12px;margin:0 0 6px"></p>
+            <p id="cwf-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 6px"></p>
             <div style="display:flex;gap:8px">
-              <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
-              <button class="btn-secondary" style="font-size:13px;padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
+              <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
+              <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
             </div>
           </div>
         </div>
@@ -842,14 +842,14 @@ async function renderSoloDashboard(el) {
         <div class="dashboard-card">
           <div class="card-header">
             <h2 class="card-title">Benchmarks</h2>
-            <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button>
+            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button>
           </div>
-          ${!pbs.length ? `<p style="color:var(--text-muted);font-size:13px">No records yet.</p>` : pbs.slice(0,4).map(pb => `
+          ${!pbs.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No records yet.</p>` : pbs.slice(0,4).map(pb => `
             <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
-              <span style="font-size:13px;color:var(--text-muted)">${escapeHtml(pb.name)}</span>
-              <span style="font-size:14px;font-weight:700">${pb.value} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
+              <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
+              <span style="font-size:var(--text-lg, 14px);font-weight:700">${pb.value} <span style="font-size:var(--text-sm, 11px);font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
             </div>`).join('')}
-          ${pbs.length > 4 ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more in Progress → Benchmarks</p>` : ''}
+          ${pbs.length > 4 ? `<p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more in Progress → Benchmarks</p>` : ''}
           <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
             ${_pbFormHtml(clientId)}
           </div>
@@ -862,8 +862,8 @@ async function renderSoloDashboard(el) {
             <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
               <div style="width:3px;min-width:3px;height:34px;border-radius:2px;background:${eventColour(ev.type)};margin-top:2px"></div>
               <div>
-                <div style="font-size:13px;font-weight:500">${escapeHtml(ev.title)}</div>
-                <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${formatDate(ev.date)} · ${daysUntil(ev.date)}</div>
+                <div style="font-size:var(--text-base, 13px);font-weight:500">${escapeHtml(ev.title)}</div>
+                <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-top:1px">${formatDate(ev.date)} · ${daysUntil(ev.date)}</div>
               </div>
             </div>`).join('')}
         </div>` : ''}
