@@ -119,13 +119,13 @@
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
           <button class="btn-secondary" style="padding:6px 14px" onclick="calNav(-1)">←</button>
-          <h2 style="font-size:16px;font-weight:600">${monthName}</h2>
+          <h2 style="font-size:var(--text-xl, 16px);font-weight:600">${monthName}</h2>
           <button class="btn-secondary" style="padding:6px 14px" onclick="calNav(1)">→</button>
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">
           ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d =>
-            `<div style="font-size:11px;font-weight:600;color:var(--text-muted);padding:4px 0">${d}</div>`
+            `<div style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);padding:4px 0">${d}</div>`
           ).join('')}
           ${cells.map(d => {
             if (!d) return `<div style="padding:4px;min-height:52px"></div>`
@@ -173,7 +173,7 @@
 function renderEventList(events, clientMap) {
   if (!events.length) return `
     <div class="card"><div class="card-body" style="padding:20px;text-align:center">
-      <p style="color:var(--text-muted);font-size:13px">No events this month</p>
+      <p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No events this month</p>
     </div></div>
   `
   return `
@@ -188,17 +188,17 @@ function renderEventList(events, clientMap) {
           return `
             <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
               <div style="width:40px;text-align:center;flex-shrink:0">
-                <div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase">${dateLabel.split(' ')[0]}</div>
-                <div style="font-size:18px;font-weight:700;line-height:1.1">${dateLabel.split(' ')[1]}</div>
+                <div style="font-size:var(--text-xs, 10px);font-weight:600;color:var(--text-muted);text-transform:uppercase">${dateLabel.split(' ')[0]}</div>
+                <div style="font-size:var(--text-2xl, 18px);font-weight:700;line-height:1.1">${dateLabel.split(' ')[1]}</div>
               </div>
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:600">${escapeHtml(e.title)}</div>
+                <div style="font-size:var(--text-base, 13px);font-weight:600">${escapeHtml(e.title)}</div>
                 <div style="display:flex;gap:6px;margin-top:3px;align-items:center">
                   <span style="font-size:11px;padding:2px 7px;border-radius:4px;background:${col.bg};color:${col.text};font-weight:600">${e.type}</span>
-                  ${e.client_id ? `<span style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(clientMap[e.client_id] || '')}</span>` : ''}
+                  ${e.client_id ? `<span style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted)">${escapeHtml(clientMap[e.client_id] || '')}</span>` : ''}
                 </div>
               </div>
-              <button onclick="deleteEvent('${e.id}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;font-size:14px" title="Delete">✕</button>
+              <button onclick="deleteEvent('${e.id}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;font-size:var(--text-lg, 14px)" title="Delete">✕</button>
             </div>
           `
         }).join('')}
@@ -256,12 +256,12 @@ function showClientDayDetail(dateStr) {
           const multi = workouts.length > 1
           return `
           <div style="padding:14px 0;border-bottom:1px solid var(--border)">
-            ${multi ? `<div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${workouts.length}</div>` : ''}
+            ${multi ? `<div style="font-size:var(--text-xs, 10px);font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${workouts.length}</div>` : ''}
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '10px'}">
-              <span style="font-size:15px;font-weight:600">${escapeHtml((pw.workout_templates?.name || 'Workout').replace(/ — W\d+/, ''))}</span>
+              <span style="font-size:var(--legacy-text-15, 15px);font-weight:600">${escapeHtml((pw.workout_templates?.name || 'Workout').replace(/ — W\d+/, ''))}</span>
             </div>
             ${exs.length ? `
-            <div style="margin-bottom:10px;padding:6px 8px;background:var(--surface-2);border-radius:8px">
+            <div style="margin-bottom:10px;padding:6px 8px;background:var(--surface-2);border-radius:var(--radius-sm, 8px)">
               ${exs.map(ex => {
                 // metric_type is the source of truth; exercise_type alone can't tell an interval
                 // block from real cardio — _deriveFromMetricType writes 'cardio' as the legacy
@@ -281,18 +281,18 @@ function showClientDayDetail(dateStr) {
                 return `
                 <div style="padding:5px 0;border-bottom:1px solid var(--border)">
                   <div style="display:flex;justify-content:space-between;gap:8px">
-                    <span style="font-size:12px;font-weight:600">${escapeHtml(ex.exercise_name)}</span>
-                    <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
+                    <span style="font-size:var(--text-md, 12px);font-weight:600">${escapeHtml(ex.exercise_name)}</span>
+                    <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
                   </div>
-                  ${presc ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
+                  ${presc ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
                 </div>`}).join('')}
             </div>` : ''}
             <button onclick="startWorkoutRunner('${clientId}','${pw._clientTemplateId||pw.workout_templates?.id}');document.getElementById('client-day-modal').remove()" class="btn-primary" style="width:100%">▶ Start workout</button>
           </div>`}).join('') : `
           <div style="text-align:center;padding:24px 0">
-            <div style="font-size:32px;margin-bottom:8px">🛋️</div>
-            <div style="font-size:15px;font-weight:600;margin-bottom:4px">Rest day</div>
-            <div style="font-size:13px;color:var(--text-muted)">No sessions scheduled</div>
+            <div style="font-size:var(--text-display, 32px);margin-bottom:8px">🛋️</div>
+            <div style="font-size:var(--legacy-text-15, 15px);font-weight:600;margin-bottom:4px">Rest day</div>
+            <div style="font-size:var(--text-base, 13px);color:var(--text-muted)">No sessions scheduled</div>
           </div>`}
       </div>
     </div>`
@@ -528,26 +528,26 @@ function goalCard(g, clientId) {
       <div class="card-body">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px">
           <div>
-            <div style="font-weight:600;font-size:15px;margin-bottom:3px">${escapeHtml(g.title)}</div>
-            ${g.description ? `<div style="color:var(--text-muted);font-size:13px">${escapeHtml(g.description)}</div>` : ''}
+            <div style="font-weight:600;font-size:var(--legacy-text-15, 15px);margin-bottom:3px">${escapeHtml(g.title)}</div>
+            ${g.description ? `<div style="color:var(--text-muted);font-size:var(--text-base, 13px)">${escapeHtml(g.description)}</div>` : ''}
           </div>
           <span class="badge badge-${g.status === 'active' ? 'accent' : g.status === 'completed' ? 'active' : 'inactive'}">${g.status}</span>
         </div>
 
         ${progress !== null ? `
           <div style="margin-bottom:10px">
-            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:5px">
+            <div style="display:flex;justify-content:space-between;font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:5px">
               <span>${g.metric_label || 'Progress'}</span>
               <span>${g.current_value ?? g.start_value} → ${g.target_value} ${g.metric_unit || ''}</span>
             </div>
-            <div style="height:6px;background:var(--border);border-radius:99px;overflow:hidden">
+            <div style="height:6px;background:var(--border);border-radius:var(--radius-full, 99px);overflow:hidden">
               <div style="height:100%;width:${Math.max(0, progress)}%;background:var(--accent);border-radius:99px;transition:width 0.4s"></div>
             </div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${progress}% complete</div>
+            <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:4px">${progress}% complete</div>
           </div>
         ` : ''}
 
-        <div style="display:flex;align-items:center;gap:16px;font-size:12px;color:var(--text-muted)">
+        <div style="display:flex;align-items:center;gap:16px;font-size:var(--text-md, 12px);color:var(--text-muted)">
           ${dueStr ? `<span>📅 Target: ${dueStr}</span>` : ''}
           ${milestones.length ? `<span>🏁 ${completed}/${milestones.length} milestones</span>` : ''}
           <span style="margin-left:auto;color:var(--accent);font-weight:500">View →</span>
@@ -694,12 +694,12 @@ async function openGoal(goalId, clientId) {
 
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:24px;flex-wrap:wrap">
       <div>
-        <h2 style="font-size:20px;font-weight:700;margin-bottom:4px">${escapeHtml(g.title)}</h2>
+        <h2 style="font-size:var(--text-3xl, 20px);font-weight:700;margin-bottom:4px">${escapeHtml(g.title)}</h2>
         ${g.description ? `<p style="color:var(--text-muted)">${escapeHtml(g.description)}</p>` : ''}
       </div>
       <div style="display:flex;gap:8px">
         <span class="badge badge-${g.status === 'active' ? 'accent' : g.status === 'completed' ? 'active' : 'inactive'}">${g.status}</span>
-        <button class="btn-secondary" style="font-size:13px;padding:6px 12px" onclick="showEditGoalModal('${goalId}','${clientId}')">Edit</button>
+        <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 12px" onclick="showEditGoalModal('${goalId}','${clientId}')">Edit</button>
       </div>
     </div>
 
@@ -708,12 +708,12 @@ async function openGoal(goalId, clientId) {
         <div class="card-body">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <span style="font-weight:600">${g.metric_label || 'Progress'}</span>
-            <span style="font-size:22px;font-weight:700;color:var(--accent)">${progress}%</span>
+            <span style="font-size:var(--legacy-text-22, 22px);font-weight:700;color:var(--accent)">${progress}%</span>
           </div>
-          <div style="height:8px;background:var(--border);border-radius:99px;overflow:hidden;margin-bottom:8px">
+          <div style="height:8px;background:var(--border);border-radius:var(--radius-full, 99px);overflow:hidden;margin-bottom:8px">
             <div style="height:100%;width:${Math.max(0, progress)}%;background:var(--accent);border-radius:99px"></div>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted)">
+          <div style="display:flex;justify-content:space-between;font-size:var(--text-md, 12px);color:var(--text-muted)">
             <span>Start: ${g.start_value} ${g.metric_unit || ''}</span>
             <span>Current: <strong style="color:var(--text)">${g.current_value ?? '—'} ${g.metric_unit || ''}</strong></span>
             <span>Target: ${g.target_value} ${g.metric_unit || ''}</span>
@@ -728,7 +728,7 @@ async function openGoal(goalId, clientId) {
       <div>
         <div class="section-header">
           <h3 class="section-title">Milestones</h3>
-          <button class="btn-primary" style="font-size:12px;padding:5px 10px" onclick="showAddMilestoneModal('${goalId}','${clientId}')">+ Add</button>
+          <button class="btn-primary" style="font-size:var(--text-md, 12px);padding:5px 10px" onclick="showAddMilestoneModal('${goalId}','${clientId}')">+ Add</button>
         </div>
         <div class="list" id="milestone-list">
           ${milestones.length === 0 ? `<div class="empty-state" style="padding:30px"><div class="empty-text">No milestones yet</div></div>` :
@@ -742,7 +742,7 @@ async function openGoal(goalId, clientId) {
                   </button>
                   <div>
                     <div style="font-weight:500;font-size:13.5px;${m.completed_at ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${escapeHtml(m.title)}</div>
-                    ${m.target_date ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${new Date(m.target_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>` : ''}
+                    ${m.target_date ? `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${new Date(m.target_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>` : ''}
                   </div>
                 </div>
               </div>
@@ -754,7 +754,7 @@ async function openGoal(goalId, clientId) {
       <div>
         <div class="section-header">
           <h3 class="section-title">Check-ins</h3>
-          <button class="btn-primary" style="font-size:12px;padding:5px 10px" onclick="showAddCheckInModal('${goalId}','${clientId}')">+ Add</button>
+          <button class="btn-primary" style="font-size:var(--text-md, 12px);padding:5px 10px" onclick="showAddCheckInModal('${goalId}','${clientId}')">+ Add</button>
         </div>
         <div class="list">
           ${checkIns.length === 0 ? `<div class="empty-state" style="padding:30px"><div class="empty-text">No check-ins yet</div></div>` :
@@ -762,10 +762,10 @@ async function openGoal(goalId, clientId) {
               <div class="card" style="margin-bottom:0">
                 <div class="card-body" style="padding:14px 16px">
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-                    <span style="font-size:12px;color:var(--text-muted)">${new Date(ci.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
+                    <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${new Date(ci.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
                     ${ci.current_value != null ? `<span style="font-weight:600;color:var(--accent)">${ci.current_value} ${g.metric_unit || ''}</span>` : ''}
                   </div>
-                  ${ci.notes ? `<div style="font-size:13px;color:var(--text-muted)">${escapeHtml(ci.notes)}</div>` : ''}
+                  ${ci.notes ? `<div style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(ci.notes)}</div>` : ''}
                 </div>
               </div>
             `).join('')}
