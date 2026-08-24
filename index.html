@@ -89,6 +89,12 @@
           <label class="field-label">Password</label>
           <input class="field-input" type="password" id="invite-password" placeholder="Min. 6 characters" required minlength="6">
         </div>
+        <div class="field">
+          <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:var(--text-lg, 14px);color:var(--text-muted, #6b7280);line-height:1.5">
+            <input type="checkbox" id="invite-consent" required style="margin-top:3px;flex:none;width:16px;height:16px;accent-color:var(--accent, #6366f1);cursor:pointer">
+            <span>I have read and agree to the <a href="privacy-policy.html" target="_blank" rel="noopener" style="color:var(--accent, #6366f1);font-weight:600">Privacy Policy</a>, including how my health and training data is stored and used.</span>
+          </label>
+        </div>
         <p class="auth-error" id="invite-error"></p>
         <button class="btn-primary btn-full" type="submit" id="invite-submit">Activate account</button>
       </form>
@@ -141,7 +147,7 @@
 
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <script src="js/app-core.js?v=16"></script>
+  <script src="js/app-core.js?v=17"></script>
   <script src="js/starter-content.js?v=5"></script>
   <script src="js/app-dashboard.js?v=13"></script>
   <script src="js/app-programs.js?v=45"></script>
@@ -149,7 +155,7 @@
   <script src="js/app-calendar-goals.js?v=17"></script>
   <script src="js/app-workouts.js?v=77"></script>
   <script src="js/app-runner.js?v=75"></script>
-  <script src="js/app-progress.js?v=52"></script>
+  <script src="js/app-progress.js?v=53"></script>
 </body>
 </html>
 

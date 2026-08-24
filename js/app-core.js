@@ -1,6 +1,14 @@
 ﻿// ─── CONFIG ───────────────────────────────────────────────────────────────────
 const _initialHash = window.location.hash
 
+// The version of privacy-policy.html a user consented to, stamped alongside `consented_at` on the
+// profiles row. Consent is only meaningful against a SPECIFIC text: without this, a later edit to the
+// policy would silently re-interpret an old consent as covering wording the person never saw.
+// MUST match the "Last updated:" date in privacy-policy.html — bump both together, and expect to
+// re-take consent when it changes.
+const PRIVACY_POLICY_VERSION = '2026-06-29'
+const PRIVACY_POLICY_URL = 'privacy-policy.html'
+
 // ─── LOGGER ───────────────────────────────────────────────────────────────────
 // Structured console logging + user-visible error toasts.
 // Open DevTools → Console to trace any failure instantly.

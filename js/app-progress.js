@@ -1085,6 +1085,16 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
   const errorEl = document.getElementById('invite-error')
   const name    = document.getElementById('invite-name').value.trim()
   const password = document.getElementById('invite-password').value
+  const consent  = document.getElementById('invite-consent')
+
+  // UK GDPR consent gate (2026-08-24). The `required` attribute alone is not enough: it is trivially
+  // removed in devtools, and this app handles special-category health data. Activation must be
+  // refused HERE too, so the only path to an active account passes an explicit check.
+  if (!consent?.checked) {
+    errorEl.textContent = 'Please read and agree to the Privacy Policy to activate your account.'
+    consent?.focus()
+    return
+  }
 
   btn.disabled = true
   btn.textContent = 'Activating…'
@@ -1093,7 +1103,7 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
   // Supabase JS v2 auto-processes the invite hash on init and establishes the session.
   // No manual setSession needed — call updateUser directly.
   log.info('inviteForm', 'submitting invite acceptance')
-  const { error } = await db.auth.updateUser({
+  const { data: updated, error } = await db.auth.updateUser({
     password,
     data: { full_name: name }
   })
@@ -1104,6 +1114,24 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
     btn.disabled = false
     btn.textContent = 'Activate account'
     return
+  }
+
+  // Record the consent, and check that it landed. An ACTIVATED account with no consent row is
+  // precisely the compliance gap this whole change exists to close, so this must never be a
+  // fire-and-forget write — PostgREST returns { data: [], error: null } for a policy-refused write,
+  // so assert on the returned row rather than only on `error`.
+  const uid = updated?.user?.id
+  if (uid) {
+    const { data: consentRow } = await dbq('inviteForm:consent', db.from('profiles').upsert({
+      id: uid,
+      full_name: name,
+      consented_at: new Date().toISOString(),
+      consent_policy_version: PRIVACY_POLICY_VERSION
+    }, { onConflict: 'id' }).select('id'))
+    if (!consentRow?.length) log.error('inviteForm', 'consent was NOT recorded for an activated account', { uid })
+    else log.ok('inviteForm', 'consent recorded', { version: PRIVACY_POLICY_VERSION })
+  } else {
+    log.error('inviteForm', 'no user id returned — consent could not be recorded')
   }
 
   log.ok('inviteForm', 'account activated successfully')
@@ -2904,6 +2932,7 @@ async function renderSettings(el) {
           <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 4px">Your data is stored in the EU under UK GDPR. You can download a copy or permanently delete your account at any time.</p>
           <button onclick="downloadMyData()" style="background:none;border:1px solid var(--border);color:var(--text);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer;text-align:left">Download my data</button>
           <button onclick="deleteAccount()" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer;text-align:left">Delete account</button>
+          <a href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener" id="settings-privacy-link" style="font-size:var(--text-base, 13px);color:var(--accent, #6366f1);font-weight:600;text-decoration:none">Read the Privacy Policy →</a>
           <span id="settings-data-msg" style="font-size:var(--text-base, 13px);color:var(--text-muted)"></span>
         </div>
       </div>
