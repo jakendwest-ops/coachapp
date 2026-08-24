@@ -1088,8 +1088,22 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
   const consent  = document.getElementById('invite-consent')
 
   // UK GDPR consent gate (2026-08-24). The `required` attribute alone is not enough: it is trivially
-  // removed in devtools, and this app handles special-category health data. Activation must be
-  // refused HERE too, so the only path to an active account passes an explicit check.
+  // removed in devtools, and this app handles special-category health data — so activation is refused
+  // here too, in JS, not only by the browser.
+  //
+  // ⚠️ THIS IS NOT THE ONLY PATH TO AN ACTIVE ACCOUNT. An earlier version of this comment claimed it
+  // was; the pre-push review proved that false. Three routes reach an activated account and only this
+  // one is gated:
+  //   1. #invite-form (here)          — invited clients and solo users. GATED.
+  //   2. #new-password-form (:~1215)  — the recovery link. NOT gated. This is the app's own documented
+  //      fallback for an expired invite, and it is how the real 2026-08-09 beta tester was recovered.
+  //   3. coach accounts               — provisioned by Jake directly (app-core.js:662), straight to
+  //      #login-form. Never sees this form, so a coach can never consent through the app.
+  // Nothing reads `consented_at` back, so nothing prompts those users either.
+  //
+  // The durable fix is a READ-side gate — prompt whenever profiles.consented_at is null (or its
+  // version is older than PRIVACY_POLICY_VERSION) — which covers all three routes and the re-consent
+  // case in one place. Tracked as its own piece of work; this handler covers new invitees only.
   if (!consent?.checked) {
     errorEl.textContent = 'Please read and agree to the Privacy Policy to activate your account.'
     consent?.focus()
@@ -1100,6 +1114,16 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
   btn.textContent = 'Activating…'
   errorEl.textContent = ''
 
+  // A THROW past here (rather than a returned `error`) used to leave the button dead on "Activating…"
+  // for good: this is an async listener, so the rejection went nowhere and nothing restored the
+  // button. The commit added a second await, widening that window, which the pre-push review flagged.
+  // Restores and tells the user to reload — the invite hash is still in the URL and supabase-js
+  // re-processes it, so a reload genuinely recovers.
+  //
+  // A HANG is NOT fixed by this — supabase-js sets no fetch timeout, so an await that never settles
+  // never reaches a catch. That is pre-existing and shared with every other await in this file; it
+  // needs a timeout, not a try/catch, and is not in scope for this commit.
+  try {
   // Supabase JS v2 auto-processes the invite hash on init and establishes the session.
   // No manual setSession needed — call updateUser directly.
   log.info('inviteForm', 'submitting invite acceptance')
@@ -1133,11 +1157,23 @@ document.getElementById('invite-form').addEventListener('submit', async e => {
   } else {
     log.error('inviteForm', 'no user id returned — consent could not be recorded')
   }
+  // Deliberately NOT refusing here, and not signing the user out. By this point updateUser has already
+  // set the password and established the session, so refusing would strand a legitimate user with no
+  // route back in — the exact shape that broke "View as" (feedback-guard-risk-is-refusing-the-
+  // legitimate-user). The review disagreed with itself on this; the account being already-activated is
+  // what settles it. The operator-visible signal is the migration's own report query:
+  //   select id, full_name, consented_at from public.profiles where consented_at is null;
 
   log.ok('inviteForm', 'account activated successfully')
   // Clear the hash so the invite token isn't reused
   history.replaceState(null, '', window.location.pathname)
   showApp()
+  } catch (err) {
+    log.error('inviteForm', 'activation threw', err)
+    errorEl.textContent = 'Something went wrong. Please reload the page and try again.'
+    btn.disabled = false
+    btn.textContent = 'Activate account'
+  }
 })
 
 // ─── PASSWORD RESET (2026-08-18) ──────────────────────────────────────────────
@@ -3118,7 +3154,12 @@ async function _buildMyDataBundle() {
   {
     let bundle = { exportedAt: new Date().toISOString(), profile: null }
 
-    const { data: profile } = await db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single()
+    // consented_at / consent_policy_version added 2026-08-24: WHEN a person consented and to WHICH
+    // version of the policy is their personal data and is squarely Art. 15 material, so it belongs in
+    // the subject-access bundle. This select is an explicit ALLOWLIST — a new column does not appear
+    // here on its own, which is the documented feedback-embed-select-column-allowlist class. It was
+    // missed on the first pass of this very commit and caught by the pre-push review.
+    const { data: profile } = await db.from('profiles').select('full_name, role, created_at, consented_at, consent_policy_version').eq('id', currentUser.id).single()
     bundle.profile = profile
 
     // GDPR Art. 15/20 covers every piece of personal data held on this person - which VIEW they happen

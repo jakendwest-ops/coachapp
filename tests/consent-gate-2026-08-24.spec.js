@@ -66,6 +66,36 @@ test.describe('GDPR consent gate', () => {
     await expect(page.locator('#auth-screen')).toBeVisible()
   })
 
+  test('with consent TICKED the guard does NOT block — activation is attempted', async ({ page }) => {
+    // The green path, and the one the other three cannot cover. Every other test here proves a
+    // REFUSAL, so a guard written `!consent?.value` instead of `!consent?.checked` would refuse every
+    // legitimate user on earth and all of them would still pass. A guard's real risk is refusing the
+    // person it is supposed to let through — that is how "View as" broke.
+    //
+    // This asserts the REQUEST is attempted, not that activation succeeds: there is no real invite
+    // session in a test, so Supabase answers "Auth session missing!". Reaching Supabase at all is the
+    // proof that the guard stepped aside.
+    await page.goto('/')
+    await page.waitForSelector('#auth-screen', { state: 'visible', timeout: 10000 })
+    await page.evaluate(() => showInviteForm())
+
+    await page.fill('#invite-name', 'Consent Probe')
+    await page.fill('#invite-password', 'probe-password-123')
+    await page.check('#invite-consent')
+    await page.click('#invite-submit')
+
+    // Assert on the ERROR TEXT, not on a network request. supabase-js rejects updateUser
+    // client-side when there is no session, so it never puts a request on the wire — a
+    // request-listener assertion here fails for the wrong reason and looks like a broken guard.
+    // (It did, on the first version of this test.) What DOES prove passage is which message
+    // comes back: Supabase's own, rather than the consent refusal.
+    const err = page.locator('#invite-error')
+    await expect(err).not.toBeEmpty({ timeout: 8000 })
+    await expect(err).not.toContainText('agree to the Privacy Policy')
+    // The button is restored, so a legitimate user who hit a downstream error can retry.
+    await expect(page.locator('#invite-submit')).toBeEnabled()
+  })
+
   test('Settings exposes the policy to an already-active user', async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, '[data-page="settings"]')
