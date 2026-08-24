@@ -394,6 +394,10 @@ function mountModal(node) {
 }
 
 function showAuth() {
+  // Drop the consent gate if it is still mounted. It is position:fixed, so a session that dies while
+  // it is up (token-refresh failure, sign-out in another tab) would leave it painted over the login
+  // form, and "Agree and continue" would then throw on a null currentUser.
+  document.getElementById('consent-gate-modal')?.remove()
   document.getElementById('auth-screen').style.display = 'flex'
   document.getElementById('app-shell').style.display   = 'none'
 }
@@ -416,17 +420,27 @@ function showAuth() {
 // gap it closes. So: unreadable consent state means "do not prompt", never "block". Once the
 // migration lands the gate simply starts working.
 async function _loadConsentState () {
-  const { data, error } = await db
-    .from('profiles')
-    .select('consented_at, consent_policy_version')
-    .eq('id', currentUser.id)
-    .maybeSingle()
-  if (error) {
-    // PGRST204 = column missing (migration not run). Anything else = transient. Both mean "unknown".
-    log.warn('consent', 'consent state unreadable — not prompting', { code: error.code })
+  // try/catch is not decoration. The whole gate rests on "unreadable means do not prompt", and
+  // postgrest-js only *happens* to resolve rather than throw (it catches internally unless
+  // .throwOnError() is set). Inheriting that property from a library version is not the same as
+  // guaranteeing it: one upgrade, or one non-postgrest throw, and showApp() would reject mid-boot —
+  // shell visible, no nav, no modal, no in-app escape. Make the promise structural.
+  try {
+    const { data, error } = await db
+      .from('profiles')
+      .select('consented_at, consent_policy_version')
+      .eq('id', currentUser.id)
+      .maybeSingle()
+    if (error) {
+      // 42703 = column does not exist (migration not run). Anything else = transient. Both "unknown".
+      log.warn('consent', 'consent state unreadable — not prompting', { code: error.code })
+      return null
+    }
+    return data
+  } catch (e) {
+    log.warn('consent', 'consent lookup threw — not prompting', { name: e?.name })
     return null
   }
-  return data
 }
 
 // null row (unknown) never blocks. A stored version that is not the CURRENT one re-prompts, which is
@@ -488,10 +502,21 @@ async function acceptConsent () {
   btn.textContent = 'Saving…'
   errEl.textContent = ''
 
-  const { data } = await dbq('acceptConsent', db.from('profiles').update({
-    consented_at: new Date().toISOString(),
-    consent_policy_version: PRIVACY_POLICY_VERSION
-  }).eq('id', currentUser.id).select('id'), { showUserError: false })
+  let data
+  try {
+    ;({ data } = await dbq('acceptConsent', db.from('profiles').update({
+      consented_at: new Date().toISOString(),
+      consent_policy_version: PRIVACY_POLICY_VERSION
+    }).eq('id', currentUser.id).select('id'), { showUserError: false }))
+  } catch (e) {
+    // Without this the button sticks on "Saving…" with an EMPTY error line — the user is told
+    // nothing at all. Same restore the invite form already does on its error path.
+    log.warn('acceptConsent', 'consent write threw', { name: e?.name })
+    errEl.textContent = 'We couldn\'t save that. Please try again, or sign out and contact support.'
+    btn.disabled = false
+    btn.textContent = 'Agree and continue'
+    return
+  }
 
   // A policy-refused UPDATE returns { data: [], error: null } — no error, zero rows. Asserting on
   // the row is the only way to tell "saved" from "silently refused".
@@ -770,6 +795,11 @@ function updateViewSwitcherButtons(activeView) {
 }
 
 function switchView(view) {
+  // Needs its own guard even though navigate() has one: switchView calls applyRoleUI() FIRST, which
+  // paints the nav behind the modal before navigate() ever refuses. The overlay is z-index:1000 so
+  // the "View as" buttons are not clickable, but nothing traps focus — they are reachable by Tab.
+  // This is the owner's own account shape, which is precisely the account the gate most needs to hold.
+  if (document.getElementById('consent-gate-modal')) return
   if (!window._masterAccount) return
   currentProfile = { ...currentProfile, role: view }
   localStorage.setItem('_activeView', view)
@@ -824,6 +854,15 @@ document.getElementById('sign-out-btn').addEventListener('click', async () => {
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
 function navigate(page, _historyOp = 'push') {
+  // The consent gate is a GATE, not a dialog — it is the one overlay this must not clear.
+  // Guarded HERE rather than in each caller because every route into the app funnels through
+  // navigate(): popstate (browser Back), switchView, the nav click handlers, and showApp itself.
+  // Found by the pre-push review 2026-08-24: the gate mounts and showApp returns WITHOUT pushing a
+  // history entry, so the entries from before a reload survive — press Back and popstate called
+  // navigate(), which removed the gate and painted the full app for an unconsented user. Re-consent
+  // after a policy edit made that near-certain rather than exotic, since by construction it hits
+  // people who are already using the app and already have history.
+  if (document.getElementById('consent-gate-modal')) return
   document.querySelectorAll('.modal-overlay').forEach(m => m.remove())
   if (currentPage && currentPage !== page) window._prevPage = currentPage
   currentPage = page
@@ -940,6 +979,13 @@ async function _getCurrentClientId() {
 
 // Browser back/forward — re-render without pushing another history entry
 window.addEventListener('popstate', e => {
+  // navigate() already refuses while the consent gate is up, but refusing alone would let Back walk
+  // the user OFF the page entirely (the browser has already popped the entry by the time we run).
+  // Re-anchor so Back is inert rather than an exit: they consent, or they use Sign out.
+  if (document.getElementById('consent-gate-modal')) {
+    history.pushState(e.state, '', window.location.href)
+    return
+  }
   if (e.state?.page) navigate(e.state.page, 'none')
 })
 

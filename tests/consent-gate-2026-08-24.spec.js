@@ -144,6 +144,48 @@ test.describe('GDPR consent gate', () => {
     await expect(modal.locator('a[href="privacy-policy.html"]')).toBeVisible()
   })
 
+  test('the browser Back button cannot walk past the gate', async ({ page }) => {
+    // The gate mounts and showApp() RETURNS without pushing a history entry, so entries from before
+    // a reload survive. navigate() clears every .modal-overlay unconditionally and popstate calls
+    // navigate() — so Back used to remove the gate and paint the whole app for an unconsented user.
+    // Re-consent after a policy edit makes this the DEFAULT shape, not an edge case: by construction
+    // it hits people already using the app, who therefore already have history entries.
+    await page.goto('/')
+    await page.waitForSelector('#auth-screen', { state: 'visible', timeout: 10000 })
+    // TWO entries, deliberately. The first version of this test pushed only one, so goBack() landed
+    // on the initial entry — which has state === null — and the popstate handler's `e.state?.page`
+    // short-circuited before ever reaching navigate(). The modal survived whether or not the guard
+    // existed, i.e. the test was DECORATIVE. Caught by neutering the guard and watching it still
+    // pass. Going back must land on an entry that actually carries state.
+    await page.evaluate(() => {
+      history.pushState({ page: 'clients' },  '', '#clients')
+      history.pushState({ page: 'programs' }, '', '#programs')
+      showConsentGate(false)
+    })
+    await expect(page.locator('#consent-gate-modal')).toBeVisible()
+
+    await page.goBack()                                   // -> the #clients entry, state.page set
+    await expect(page.locator('#consent-gate-modal')).toBeVisible()
+    // And the app must not have painted behind it.
+    await expect(page.locator('#main-content')).not.toContainText('Clients')
+  })
+
+  test('the "View as" switcher cannot walk past the gate', async ({ page }) => {
+    // switchView() calls applyRoleUI() BEFORE navigate(), so navigate's guard alone is not enough —
+    // the nav would paint behind the modal first. The overlay is z-index:1000 so the buttons are not
+    // clickable, but nothing traps focus and they are reachable by Tab. This is the master-account
+    // shape, i.e. the owner's own account — the one the gate most needs to hold.
+    await page.goto('/')
+    await page.waitForSelector('#auth-screen', { state: 'visible', timeout: 10000 })
+    await page.evaluate(() => {
+      window._masterAccount = true
+      showConsentGate(false)
+      // try/catch so a throw from applyRoleUI cannot masquerade as the assertion below failing.
+      try { switchView('solo') } catch (e) { /* the guard should return before this can throw */ }
+    })
+    await expect(page.locator('#consent-gate-modal')).toBeVisible()
+  })
+
   test('Settings exposes the policy to an already-active user', async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, '[data-page="settings"]')
