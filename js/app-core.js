@@ -398,6 +398,116 @@ function showAuth() {
   document.getElementById('app-shell').style.display   = 'none'
 }
 
+// ─── UK GDPR CONSENT GATE (read-side, 2026-08-24) ─────────────────────────────
+// The write-side checkbox on #invite-form covers ONE of three routes to an active account. The
+// pre-push review proved the other two are ungated: #new-password-form (the recovery link — the
+// app's own documented fallback for an expired invite, and how the real 2026-08-09 beta tester was
+// recovered) and coach accounts, which are provisioned directly and never see an invite form.
+// Every account that existed before 2026-08-24 also has no consent and no way to give one.
+//
+// A read-side gate closes all of that in ONE place: it does not care how you got here, only whether
+// consent is on record. It also covers re-consent after a policy edit, which PRIVACY_POLICY_VERSION
+// described but nothing implemented.
+//
+// ⚠️ THE FETCH IS SEPARATE FROM loadUserInfo's ON PURPOSE, and it FAILS OPEN.
+// If these columns were added to loadUserInfo's select and the migration had not been run, that
+// select would ERROR -> currentProfile null -> showApp's fail-closed branch -> the app is dead for
+// EVERY user including the owner. A gate whose failure mode is total lockout is far worse than the
+// gap it closes. So: unreadable consent state means "do not prompt", never "block". Once the
+// migration lands the gate simply starts working.
+async function _loadConsentState () {
+  const { data, error } = await db
+    .from('profiles')
+    .select('consented_at, consent_policy_version')
+    .eq('id', currentUser.id)
+    .maybeSingle()
+  if (error) {
+    // PGRST204 = column missing (migration not run). Anything else = transient. Both mean "unknown".
+    log.warn('consent', 'consent state unreadable — not prompting', { code: error.code })
+    return null
+  }
+  return data
+}
+
+// null row (unknown) never blocks. A stored version that is not the CURRENT one re-prompts, which is
+// what makes a policy edit re-take consent rather than silently inheriting the old agreement.
+function _needsConsent (row) {
+  if (!row) return false
+  if (!row.consented_at) return true
+  return row.consent_policy_version !== PRIVACY_POLICY_VERSION
+}
+
+function showConsentGate (isReconsent) {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'consent-gate-modal'
+  // Deliberately NOT dismissable by clicking the backdrop, and no ✕ — the only ways out are giving
+  // consent or signing out. Above everything, including the runner's z-index:300 layer.
+  overlay.style.zIndex = '1000'
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:460px;width:92%">
+      <div class="modal-header">
+        <h2 class="modal-title">${isReconsent ? 'Our privacy policy has changed' : 'Before you continue'}</h2>
+      </div>
+      <div style="padding:16px 20px 20px">
+        <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 14px;line-height:1.6">
+          ${isReconsent
+            ? 'We\'ve updated our privacy policy since you last agreed. Please read it and confirm you\'re happy to continue.'
+            : 'CoachApp stores health and training data about you. Before you carry on, please read our privacy policy and confirm you agree.'}
+        </p>
+        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:var(--text-lg, 14px);line-height:1.5;margin-bottom:16px">
+          <input type="checkbox" id="consent-gate-box" style="margin-top:3px;flex:none;width:16px;height:16px;accent-color:var(--accent, #6366f1);cursor:pointer"
+                 onchange="document.getElementById('consent-gate-accept').disabled = !this.checked">
+          <span>I have read and agree to the <a href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener" style="color:var(--accent, #6366f1);font-weight:600">Privacy Policy</a>.</span>
+        </label>
+        <p id="consent-gate-error" style="font-size:var(--text-base, 13px);color:var(--danger, #ef4444);margin:0 0 12px;min-height:18px"></p>
+        <div style="display:flex;gap:10px">
+          <button id="consent-gate-accept" class="btn-primary" disabled onclick="acceptConsent()" style="flex:1">Agree and continue</button>
+          <button class="btn-secondary" onclick="signOutFromConsentGate()" style="flex:none">Sign out</button>
+        </div>
+      </div>
+    </div>`
+  mountModal(overlay)
+}
+
+async function signOutFromConsentGate () {
+  document.getElementById('consent-gate-modal')?.remove()
+  await db.auth.signOut()
+  showAuth()
+}
+
+// Writes the consent and VERIFIES it landed. Unlike the invite-form path — where the password is
+// already set, so refusing would strand a legitimate user with no route back — the user here is
+// simply signed in and can retry or sign out. So this one does NOT proceed on a failed write: an
+// unverified consent is the whole thing we are trying to stop recording as if it were real.
+async function acceptConsent () {
+  const btn = document.getElementById('consent-gate-accept')
+  const errEl = document.getElementById('consent-gate-error')
+  if (!document.getElementById('consent-gate-box')?.checked) return
+  btn.disabled = true
+  btn.textContent = 'Saving…'
+  errEl.textContent = ''
+
+  const { data } = await dbq('acceptConsent', db.from('profiles').update({
+    consented_at: new Date().toISOString(),
+    consent_policy_version: PRIVACY_POLICY_VERSION
+  }).eq('id', currentUser.id).select('id'), { showUserError: false })
+
+  // A policy-refused UPDATE returns { data: [], error: null } — no error, zero rows. Asserting on
+  // the row is the only way to tell "saved" from "silently refused".
+  if (!data?.length) {
+    log.error('acceptConsent', 'consent did not save', { userId: currentUser.id })
+    errEl.textContent = 'We couldn\'t save that. Please try again, or sign out and contact support.'
+    btn.disabled = false
+    btn.textContent = 'Agree and continue'
+    return
+  }
+
+  log.ok('acceptConsent', 'consent recorded', { version: PRIVACY_POLICY_VERSION })
+  document.getElementById('consent-gate-modal')?.remove()
+  showApp()
+}
+
 async function showApp() {
   document.getElementById('auth-screen').style.display = 'none'
   document.getElementById('app-shell').style.display   = 'flex'
@@ -412,6 +522,18 @@ async function showApp() {
     document.getElementById('main-content').innerHTML = '<div class="loading-state">Couldn\'t load your account. <a href="#" onclick="showApp();return false" style="color:var(--accent)">Retry</a></div>'
     return
   }
+
+  // UK GDPR consent gate. Deliberately placed AFTER the fail-closed profile check (so a broken boot
+  // is still a broken boot, not a consent prompt) and BEFORE applyRoleUI/navigate (so no page renders
+  // until consent is on record). Role-agnostic on purpose: coach, client and solo all pass here, and
+  // this is the only route that catches accounts which never saw an invite form.
+  const _consent = await _loadConsentState()
+  if (_needsConsent(_consent)) {
+    log.info('consent', 'consent required before app use', { reconsent: !!_consent?.consented_at })
+    showConsentGate(!!_consent?.consented_at)
+    return
+  }
+
   applyRoleUI()
   const role = currentProfile?.role
   const defaultPage = role === 'client' ? 'client-dashboard' : role === 'solo' ? 'solo-dashboard' : 'dashboard'

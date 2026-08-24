@@ -96,6 +96,54 @@ test.describe('GDPR consent gate', () => {
     await expect(page.locator('#invite-submit')).toBeEnabled()
   })
 
+  // ── the READ-side gate ──────────────────────────────────────────────────────
+  // The checkbox above covers one of three routes to an active account. This gate covers all of
+  // them, plus every account that predates it, plus re-consent after a policy edit.
+  test('_needsConsent FAILS OPEN when consent state is unreadable', async ({ page }) => {
+    // The single most important property in this file. If the migration has not been run, the
+    // consent columns do not exist, the select errors, and _loadConsentState returns null. If that
+    // null were treated as "needs consent", EVERY user — including the owner — would be locked out
+    // of the whole app by a gate they cannot satisfy. Unknown must mean "do not prompt".
+    await page.goto('/')
+    await page.waitForSelector('#auth-screen', { state: 'visible', timeout: 10000 })
+    expect(await page.evaluate(() => _needsConsent(null))).toBe(false)
+  })
+
+  test('_needsConsent decides correctly on real row shapes', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForSelector('#auth-screen', { state: 'visible', timeout: 10000 })
+    const r = await page.evaluate(() => ({
+      noConsent:  _needsConsent({ consented_at: null, consent_policy_version: null }),
+      current:    _needsConsent({ consented_at: '2026-08-24T00:00:00Z', consent_policy_version: PRIVACY_POLICY_VERSION }),
+      superseded: _needsConsent({ consented_at: '2026-08-24T00:00:00Z', consent_policy_version: '2020-01-01' })
+    }))
+    expect(r.noConsent).toBe(true)    // never consented
+    expect(r.current).toBe(false)     // consented to the CURRENT policy — must not nag
+    expect(r.superseded).toBe(true)   // consented to an older text — re-consent. This is the
+                                      // behaviour PRIVACY_POLICY_VERSION documented and nothing
+                                      // implemented until now.
+  })
+
+  test('the consent gate cannot be dismissed without deciding', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForSelector('#auth-screen', { state: 'visible', timeout: 10000 })
+    await page.evaluate(() => showConsentGate(false))
+
+    const modal = page.locator('#consent-gate-modal')
+    await expect(modal).toBeVisible()
+    // No close affordance — consent or sign out are the only exits.
+    await expect(modal.locator('.modal-close')).toHaveCount(0)
+    // Clicking the backdrop must NOT dismiss it (every other modal in the app does dismiss).
+    await modal.click({ position: { x: 5, y: 5 } })
+    await expect(modal).toBeVisible()
+    // Opt-IN: the accept button is dead until the box is ticked.
+    const accept = page.locator('#consent-gate-accept')
+    await expect(accept).toBeDisabled()
+    await page.check('#consent-gate-box')
+    await expect(accept).toBeEnabled()
+    await expect(modal.locator('a[href="privacy-policy.html"]')).toBeVisible()
+  })
+
   test('Settings exposes the policy to an already-active user', async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, '[data-page="settings"]')

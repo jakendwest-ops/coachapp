@@ -31,6 +31,30 @@ comment on column public.profiles.consent_policy_version is
 -- 2026-08-09 beta tester). This is a REPORT, not something to fix with an UPDATE.
 --   select id, full_name, consented_at from public.profiles where consented_at is null;
 
+-- ── REQUIRED: stamp the E2E fixture accounts ─────────────────────────────────────────────────────
+-- Run this IN THE SAME SITTING as the two ALTERs above, or the Playwright suite goes red.
+--
+-- The read-side consent gate (js/app-core.js showApp) blocks the app for any account with
+-- consented_at IS NULL. Before the migration it cannot read the columns at all, so it fails open and
+-- nothing happens. The moment the columns exist it starts working — correctly — and the three E2E
+-- accounts have no consent, so every test that logs in would hang on the consent modal.
+--
+-- These are FIXTURES, not data subjects: they exist only to drive the test suite. Stamping them is
+-- housekeeping. That is NOT true of any real account, including Jake's own — see the note below.
+-- Anchored via auth.users because profiles has no email column; safe here because the SQL editor runs
+-- as postgres. (Never do this inside an RLS policy — use auth.uid()/auth.email(). sql-safety §2.)
+
+update public.profiles
+   set consented_at = now(),
+       consent_policy_version = '2026-06-29'
+ where id in (select id from auth.users where email like 'coachapp.e2e%');
+
+-- Expect 3 rows updated. Verify:
+--   select p.id, p.consented_at, p.consent_policy_version
+--     from public.profiles p
+--     join auth.users u on u.id = p.id
+--    where u.email like 'coachapp.e2e%';
+
 -- ── RLS check (sql-safety, "adding a new role or account type" §3) ───────────────────────────────
 -- The consent write is `db.from('profiles').upsert({ id, ... }).select('id')` — that is an INSERT,
 -- an UPDATE (on conflict) AND a SELECT (the returning). If ANY of the three has no policy covering
