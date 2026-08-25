@@ -6,6 +6,10 @@ const _initialHash = window.location.hash
 // policy would silently re-interpret an old consent as covering wording the person never saw.
 // MUST match the "Last updated:" date in privacy-policy.html — bump both together, and expect to
 // re-take consent when it changes.
+// ENFORCED since 2026-08-25 by checks.sh rule 9e (scripts/check-policy-version.mjs): a push where
+// these two disagree is BLOCKED. Until then this paragraph was the only thing holding the invariant,
+// and its failure mode is silent — _needsConsent() re-prompts only on a version mismatch, so a
+// policy edit without a bump leaves everyone consented to a text they never saw, with no symptom.
 const PRIVACY_POLICY_VERSION = '2026-06-29'
 const PRIVACY_POLICY_URL = 'privacy-policy.html'
 

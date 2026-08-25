@@ -307,6 +307,28 @@ if ! node scripts/check-escaping.mjs $FILES; then
   fail "unescaped free-text interpolation(s) -- see the paths above"
 fi
 
+# -- 9e. Consent policy version must match the policy document -- BLOCKING from 2026-08-25 --
+# Delegated to scripts/check-policy-version.mjs. js/app-core.js already carried this rule as a
+# COMMENT ("MUST match ... bump both together") -- a prose obligation with no writer, which is the
+# class OS v3 exists to close. The two agreed when this landed; nothing made them keep agreeing.
+#
+# The failure is silent and it is a COMPLIANCE failure: _needsConsent() re-prompts only when
+# consent_policy_version !== PRIVACY_POLICY_VERSION, so editing the policy without bumping the
+# constant leaves every user consented to a document they never saw, with no symptom anywhere.
+#
+# Measured before being given teeth (les-082): it reports ZERO violations on a clean tree, so this
+# is a pure ratchet -- it can only ever fire on a real regression, never on existing correct code.
+# Self-test runs FIRST and blocks on its own failure, same as rule 2, and includes a LIVE case
+# asserting both real paths resolve (les-083 -- fixtures prove logic, only the repo proves plumbing).
+echo "Checking consent policy version..."
+if ! node scripts/check-policy-version.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-policy-version.selftest.mjs 2>&1 | sed 's/^/    /'
+  fail "check-policy-version self-test FAILED -- the consent-version gate can no longer be trusted."
+fi
+if ! node scripts/check-policy-version.mjs; then
+  fail "privacy policy version drift -- see above. Consent re-prompting is broken until both agree."
+fi
+
 # -- 10. Playwright smoke tests --
 if [ "${CI}" = "true" ]; then
   echo "Playwright: skipped in CI (pre-push hook only)"
