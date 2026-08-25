@@ -178,7 +178,7 @@ async function renderClients(el) {
             <span class="badge badge-${c.status}">${c.status}</span>
             <span style="font-size:11px;font-weight:600;color:${lastColour}">${lastText}</span>
           </div>
-          ${currentUser.email === 'jakendwest@gmail.com' ? `<button onclick="event.stopPropagation();sudoAsClient('${c.id}','${escapeAttr(c.full_name)}')" style="font-size:var(--text-sm, 11px);font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:var(--warning, #f59e0b);cursor:pointer;white-space:nowrap">View as</button>` : ''}
+          ${_isOwnerAccount() ? `<button onclick="event.stopPropagation();sudoAsClient('${c.id}','${escapeAttr(c.full_name)}')" style="font-size:var(--text-sm, 11px);font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:var(--warning, #f59e0b);cursor:pointer;white-space:nowrap">View as</button>` : ''}
           <svg style="width:15px;height:15px;color:#d1d5db;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>`
       }).join('')}

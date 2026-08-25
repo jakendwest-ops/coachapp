@@ -2786,7 +2786,7 @@ async function renderSettings(el) {
   // STANDALONE solo/personal account (2026-08-09) — never a coach_id-linked client, unlike Send invite
   // on a client's own profile. See supabase/functions/invite-solo-user/index.ts; the real authorization
   // check lives there server-side, this is a UI convenience only.
-  const soloInviteCard = currentUser?.email === 'jakendwest@gmail.com' ? `
+  const soloInviteCard = _isOwnerAccount() ? `
       <!-- Invite a personal user -->
       <div class="card">
         <div class="card-header" style="padding:16px 20px 0">
@@ -2997,7 +2997,7 @@ async function saveSettingsProfile() {
 // sendClientInvite's shape as closely as this call's differences allow (no clientId, no follow-up
 // invited_at stamp, no navigate-away — there's no client profile to jump to for a solo invite).
 // The real authorization check is server-side in the Edge Function; the Settings-card gate that only
-// renders this for jakendwest@gmail.com is a UI convenience, not the security boundary.
+// renders this for the owner account (_isOwnerAccount) is a UI convenience, not the security boundary.
 // Module-level so it survives across separate inviteSoloUser() calls — without this, sending a second
 // invite while the first one's 3s success/error revert is still pending lets the stale timeout stomp
 // the second invite's in-progress "Sending…" label back to "Send invite" (found by multi-agent-review;

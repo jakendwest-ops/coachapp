@@ -238,7 +238,7 @@ function filterCompliance(filter) {
 // ─── CLIENT DASHBOARD ─────────────────────────────────────────────────────────
 // ─── SUDO (impersonation) ─────────────────────────────────────────────────────
 function sudoAsClient(clientId, clientName) {
-  if (currentUser?.email !== 'jakendwest@gmail.com') return
+  if (!_isOwnerAccount()) return
   window._sudoClientId   = clientId
   window._sudoClientName = clientName
   window._sudoFromRole   = currentProfile?.role || 'coach'

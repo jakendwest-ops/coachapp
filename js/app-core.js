@@ -9,6 +9,21 @@ const _initialHash = window.location.hash
 const PRIVACY_POLICY_VERSION = '2026-06-29'
 const PRIVACY_POLICY_URL = 'privacy-policy.html'
 
+// The owner's account — the single definition. Until 2026-08-25 this literal was pasted at THREE
+// call sites (app-dashboard sudoAsClient, app-clients "View as" button, app-progress solo-invite
+// card), which is the fix-the-class shape: three siblings doing one job, free to drift apart, and
+// three copies of a personal email in the source of a public GitHub Pages site.
+//
+// This is a UI-AFFORDANCE gate, NOT a security boundary. RLS decides what any account can actually
+// read or write; this only decides which buttons render. Same category as `is_personal` — never put
+// it anywhere a real boundary is required.
+//
+// It is deliberately NOT the same predicate as `window._masterAccount`, which means only "this user
+// holds both a coached and a solo clients row". Collapsing the two would hand impersonation to any
+// dual-row user, so the near-miss is worth naming: they look interchangeable and are not.
+const OWNER_EMAIL = 'jakendwest@gmail.com'
+function _isOwnerAccount () { return currentUser?.email === OWNER_EMAIL }
+
 // ─── LOGGER ───────────────────────────────────────────────────────────────────
 // Structured console logging + user-visible error toasts.
 // Open DevTools → Console to trace any failure instantly.

@@ -43,21 +43,24 @@ if grep -n "coach_notes" $FILES | grep -q "from('workout_logs')"; then
   fail "workout_logs has no 'coach_notes' column -- use 'notes'."
 fi
 
-# -- 2. Unscoped queries on multi-tenant tables --
+# -- 2. Unscoped queries on multi-tenant tables -- BLOCKING since 2026-08-25 --
+# Delegated to scripts/check-query-scope.mjs -- see that file for why this cannot be an inline grep.
+#
+# This was three warn-only sub-checks for months, covering the project's MOST-SHIPPED bug class (four
+# separate solo/coach_id scoping bugs). Measuring before flipping is what stopped that being a
+# disaster: the three sub-checks reported four "violations" on a clean tree, every one a FALSE
+# POSITIVE, and the clients sub-check was structurally incapable of ever firing. Flipping them as
+# written would have blocked every push by refusing correct code -- on the rule most in need of teeth.
+#
+# The self-test runs FIRST and blocks on its own failure. A checker nothing verifies is exactly the
+# decorative sub-check this replaces; running it here is what keeps that from recurring.
 echo "Checking query scoping..."
-
-if grep -A3 "from('clients')" $FILES | grep -q "\.select('\*')" && \
-   ! grep -A5 "from('clients')" $FILES | grep -q "coach_id"; then
-  warn "clients query found without coach_id scope -- verify RLS is enforcing this."
+if ! node scripts/check-query-scope.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-query-scope.selftest.mjs 2>&1 | sed 's/^/    /'
+  fail "check-query-scope self-test FAILED -- the scoping gate can no longer be trusted, fix it before relying on the result below."
 fi
-
-TEMPLATE_LINES=$(grep -n "from('workout_templates')\.select" $FILES | grep -v "eq('id'" | grep -v "\.single()")
-if echo "$TEMPLATE_LINES" | grep -v "coach_id" | grep -q "select"; then
-  warn "workout_templates query may be missing coach_id scope -- check each instance."
-fi
-
-if grep -n "from('programs')\.select" $FILES | grep -v "eq('id'" | grep -v "single" | grep -qv "coach_id"; then
-  warn "programs query may be missing coach_id scope."
+if ! node scripts/check-query-scope.mjs $FILES; then
+  fail "multi-tenant query with no ownership anchor -- see the lines above."
 fi
 
 # -- 2b. Truthy tests on fields where 0 is a LEGITIMATE value --
@@ -217,16 +220,28 @@ fi
 
 # -- 5. No hardcoded UUIDs or emails --
 echo "Checking for hardcoded IDs..."
+# BLOCKING since 2026-08-25. A RATCHET, not a cleanup: measured at ZERO violations when flipped, so
+# it can only ever fire on a regression. That is the whole reason this one was safe to make hard while
+# the email sub-check below needed real code changes first -- flip what is already clean, fix what is
+# not, never flip a rule onto an existing violation and call it enforcement.
 HARDCODED=$(grep -n "'[0-9a-f]\{8\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{12\}'" $FILES | grep -v "//")
 if [ -n "$HARDCODED" ]; then
-  warn "hardcoded UUID(s) found -- should these be dynamic?"
-  echo "$HARDCODED" | head -3 | sed 's/^/    /'
+  fail "hardcoded UUID(s) found -- resolve identifiers at query time, never pin a row id in shipped JS:"
+  echo "$HARDCODED" | head -5 | sed 's/^/    /'
 fi
 
-HARDCODED_EMAIL=$(grep -n "'[a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]*\.[a-zA-Z]*'" $FILES | grep -v "placeholder\|example\|//")
+# BLOCKING since 2026-08-25. This one had 3 real violations when measured, so it was NOT simply
+# flipped: the code was fixed first (one OWNER_EMAIL constant + _isOwnerAccount() in app-core.js,
+# replacing the same literal pasted at three call sites), and only then did the rule get teeth.
+#
+# Exactly ONE definition site is sanctioned, and it is named here rather than marked in the source so
+# that adding a second copy requires editing this gate — a deliberate act, not an oversight.
+HARDCODED_EMAIL=$(grep -n "'[a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]*\.[a-zA-Z]*'" $FILES \
+  | grep -v "placeholder\|example\|//" \
+  | grep -v "const OWNER_EMAIL =")
 if [ -n "$HARDCODED_EMAIL" ]; then
-  warn "hardcoded email(s) found:"
-  echo "$HARDCODED_EMAIL" | head -3 | sed 's/^/    /'
+  fail "hardcoded email(s) found -- route through _isOwnerAccount() rather than pasting the literal again:"
+  echo "$HARDCODED_EMAIL" | head -5 | sed 's/^/    /'
 fi
 
 # -- 6. set_type in inserts --
