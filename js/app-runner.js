@@ -2490,7 +2490,11 @@ async function saveRunnerSession() {
       if (!best) return null
       const currentOneRM = ex.oneRM ? parseFloat(ex.oneRM) : 0
       if (best.estimate <= currentOneRM) return null
-      return { name: ex.name, ...best }
+      // exerciseId carried, not dropped: _savePostSessionOneRM writes client_1rms, and a row without
+      // exercise_id survives only on the name fallback — it breaks the moment the lift is renamed,
+      // the precise failure exercise_id exists to prevent. The id is already here; discarding it and
+      // then looking it up by name later is how the other two writers ended up broken.
+      return { name: ex.name, exerciseId: ex.exerciseId || null, ...best }
     })
     .filter(Boolean)
 
@@ -2520,7 +2524,7 @@ function showPostSessionOneRMModal(clientId, candidates) {
             <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--accent)">${escapeHtml(c.name)} — ${fmtWeight(c.weight)} × ${c.reps} reps</div>
             <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${fmtWeight(c.estimate, { spaced: true, decimals: 1 })}</div>
             <div style="display:flex;gap:6px">
-              <button class="btn-primary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${escapeAttr(c.name)}',${c.estimate})">Save as my 1RM</button>
+              <button class="btn-primary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${escapeAttr(c.name)}',${c.estimate},${c.exerciseId ? `'${c.exerciseId}'` : 'null'})">Save as my 1RM</button>
               <button class="btn-secondary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="document.getElementById('psorm-row-${i}').remove()">Skip</button>
             </div>
           </div>`).join('')}
@@ -2533,10 +2537,13 @@ function showPostSessionOneRMModal(clientId, candidates) {
   mountModal(overlay)
 }
 
-async function _savePostSessionOneRM(i, clientId, exerciseName, estimate) {
+// exerciseId defaults to null so an older cached page calling the 4-arg form still works rather than
+// throwing — it just writes the pre-fix (name-only) row it would have written anyway.
+async function _savePostSessionOneRM(i, clientId, exerciseName, estimate, exerciseId = null) {
   if (!(await _verifyClientAccess('_savePostSessionOneRM', clientId))) { showToast(`Couldn't save 1RM for ${exerciseName} — permission denied`, 'error'); return }
   const { error } = await dbq('savePostSessionOneRM', db.from('client_1rms').insert({
-    client_id: clientId, exercise_name: exerciseName, one_rm_kg: estimate, recorded_at: new Date().toISOString().split('T')[0]
+    client_id: clientId, exercise_id: exerciseId || null, exercise_name: exerciseName,
+    one_rm_kg: estimate, recorded_at: new Date().toISOString().split('T')[0]
   }), { showUserError: false })
   if (error) { showToast(`Couldn't save 1RM for ${exerciseName} — try again`, 'error'); return }
   document.getElementById(`psorm-row-${i}`)?.remove()
@@ -2656,7 +2663,8 @@ async function saveRunnerOneRM(exIdx) {
   if (!(await _verifyClientAccess('saveRunnerOneRM', _runner.clientId))) { errEl.textContent = 'Save failed — permission denied.'; return }
 
   const { error } = await dbq('saveRunnerOneRM', db.from('client_1rms').insert({
-    client_id: _runner.clientId, exercise_name: ex.name, one_rm_kg: oneRM, recorded_at: new Date().toISOString().split('T')[0]
+    client_id: _runner.clientId, exercise_id: ex.exerciseId || null, exercise_name: ex.name,
+    one_rm_kg: oneRM, recorded_at: new Date().toISOString().split('T')[0]
   }))
   if (error) { errEl.textContent = 'Save failed — try again'; return }
 

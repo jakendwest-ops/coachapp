@@ -586,7 +586,15 @@ async function _getProgramOneRMStatus(programId, clientId) {
     ;(phase.program_phase_workouts || []).filter(pw => (pw.week_number || 1) === 1).forEach(pw => {
       ;(pw.workout_templates?.workout_template_exercises || []).forEach(ex => {
         const usesPct = (ex.sets_json || []).some(s => s.intensityMin != null || s.intensityMax != null)
-        if (usesPct) neededByName.set(ex.exercise_name, ex.exercise_id || null)
+        // A later NULL must not overwrite a real id. Several writers insert `exercise_id: … || null`
+        // (starter-content.js:130, app-workouts.js:2113/2180), so one name can legitimately appear
+        // twice across week-1 slots with the id on only one of them. This was harmless while `missing`
+        // carried bare names — the id was discarded anyway and matching fell through to the name. It
+        // became load-bearing the moment _saveMissingOneRMEntries started WRITING the id: a lost id
+        // here puts back exactly the name-only row this change exists to remove. Found in review.
+        // `!prev` covers both "not seen yet" and "seen but null", so a real id can still upgrade a
+        // null, and the first real id wins over any later one.
+        if (usesPct && !neededByName.get(ex.exercise_name)) neededByName.set(ex.exercise_name, ex.exercise_id || null)
       })
     })
   })
@@ -605,7 +613,12 @@ async function _getProgramOneRMStatus(programId, clientId) {
     const k = name.trim().toLowerCase()
     if (exerciseId && exerciseId in haveById) have.push({ name, kg: haveById[exerciseId] })
     else if (k in haveByName) have.push({ name, kg: haveByName[k] })
-    else missing.push(name)
+    // Objects, not bare names — matching `have` above, which has always been {name, kg}. The id is
+    // in hand here (neededByName maps name -> exerciseId) and used to be thrown away, which is why
+    // _saveMissingOneRMEntries had no id to write and its client_1rms rows survived on the name
+    // fallback alone. Carrying it costs nothing; re-deriving it later would mean a name lookup that
+    // could silently create library rows from a screen with no exercise picker.
+    else missing.push({ name, exerciseId: exerciseId || null })
   })
   return { have, missing }
 }
@@ -669,7 +682,7 @@ function _renderProgramOneRMChecklist(status) {
       <span>✓ ${escapeHtml(h.name)}</span>
       <span>${fmtWeight(parseFloat(h.kg), { spaced: true, decimals: 1 })} (on file)</span>
     </div>`).join('')
-  const missingHtml = status.missing.map((name, i) => _renderOneRMQuickEntry(`mor-${i}`, name)).join('')
+  const missingHtml = status.missing.map((m, i) => _renderOneRMQuickEntry(`mor-${i}`, m.name)).join('')
   return `
     <div style="background:rgba(245,158,11,.08);border:1px solid #f59e0b;border-radius:var(--radius, 10px);padding:12px;margin-bottom:14px">
       <div style="font-size:var(--text-md, 12px);font-weight:700;color:#b45309;margin-bottom:8px">This program uses %1RM for ${total} lift${total!==1?'s':''}${status.missing.length ? ` — missing ${status.missing.length}` : ' — all on file'}</div>
@@ -706,9 +719,9 @@ async function _saveMissingOneRMEntries(clientId) {
   const missing = window._missingOneRMExercises || []
   const today = new Date().toISOString().split('T')[0]
   const rows = []
-  missing.forEach((name, i) => {
+  missing.forEach((m, i) => {
     const val = _readOneRMQuickEntry(`mor-${i}`)
-    if (val) rows.push({ client_id: clientId, exercise_name: name, one_rm_kg: val, recorded_at: today })
+    if (val) rows.push({ client_id: clientId, exercise_id: m.exerciseId || null, exercise_name: m.name, one_rm_kg: val, recorded_at: today })
   })
   if (!rows.length) return
   const { error } = await db.from('client_1rms').insert(rows)
