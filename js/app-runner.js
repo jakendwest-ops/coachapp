@@ -1836,7 +1836,7 @@ function editRunnerSet(exIdx, setIdx) {
       <div style="display:flex;gap:10px;margin-bottom:16px">
         <div style="flex:1">
           <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">${window._unitPrefs.weight}</label>
-          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${s.weight === 'BW' ? 'BW' : (_hasNumVal(s.weight) ? weightToPref(s.weight) : '')}" placeholder="—">
+          <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" ${s.weight === 'BW' ? 'value="BW"' : (_hasNumVal(s.weight) ? weightInputAttrs(s.weight) : 'value=""')} placeholder="—">
         </div>
         <div style="flex:1">
           <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">Reps</label>
@@ -1853,7 +1853,7 @@ function editRunnerSet(exIdx, setIdx) {
 }
 
 function saveEditRunnerSet(exIdx, setIdx) {
-  const weight = weightFromPref(document.getElementById('wr-edit-weight')?.value.trim()) ?? ''
+  const weight = weightFromInput(document.getElementById('wr-edit-weight')) ?? ''
   const reps   = document.getElementById('wr-edit-reps')?.value.trim()
   if (!reps) return
   _runner.exercises[exIdx].loggedSets[setIdx] = { ..._runner.exercises[exIdx].loggedSets[setIdx], weight, reps }
@@ -2550,7 +2550,7 @@ window._logBlocks = []
 function flushLogState() {
   window._logBlocks.forEach((block, bi) => {
     const orm = document.getElementById(`ls-orm-${bi}`)
-    if (orm) block.oneRM = weightFromPref(orm.value) ?? ''
+    if (orm) block.oneRM = weightFromInput(orm) ?? ''
     block.sets.forEach((set, si) => {
       const g = (id) => document.getElementById(id)?.value ?? ''
       if (block.type === 'cardio') {
@@ -2559,7 +2559,7 @@ function flushLogState() {
       } else {
         set.repsMin = g(`ls-rmin-${bi}-${si}`)
         set.repsMax = g(`ls-rmax-${bi}-${si}`) || set.repsMin
-        set.weight  = weightFromPref(g(`ls-weight-${bi}-${si}`)) ?? ''
+        set.weight  = weightFromInput(document.getElementById(`ls-weight-${bi}-${si}`)) ?? ''
         set.pctMin  = g(`ls-pmin-${bi}-${si}`)
         set.pctMax  = g(`ls-pmax-${bi}-${si}`)
         set.effort  = g(`ls-effort-${bi}-${si}`)
@@ -2745,13 +2745,13 @@ function renderLogExercises() {
             <input id="ls-dist-${bi}-${si}" ${si_style} type="number" step="${window._unitPrefs.cardioDistance === 'mi' ? '0.01' : '1'}" inputmode="decimal" placeholder="${window._unitPrefs.cardioDistance === 'mi' ? 'mi' : 'm'}" value="${_cardioDistanceM(s) ? distanceToPref(_cardioDistanceM(s)) : ''}">
           ` : isMobile ? `
             <input id="ls-rmin-${bi}-${si}" ${si_style} inputmode="numeric" placeholder="reps" value="${escapeHtml(String(s.repsMin || ''))}">
-            <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="${window._unitPrefs.weight}" value="${_hasNumVal(s.weight) ? weightToPref(s.weight) : ''}">
+            <input id="ls-weight-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" placeholder="${window._unitPrefs.weight}" ${_hasNumVal(s.weight) ? weightInputAttrs(s.weight) : 'value=""'}>
             <input id="ls-effort-${bi}-${si}" ${si_style} inputmode="decimal" step="0.5" min="0" max="10" placeholder="${isRIR?'0–5':'1–10'}" value="${escapeHtml(String(s.effort || ''))}">
           ` : `
             <input id="ls-rmin-${bi}-${si}" ${si_style} type="number" placeholder="min" value="${escapeHtml(String(s.repsMin || ''))}">
             <input id="ls-rmax-${bi}-${si}" ${si_style} type="number" placeholder="max" value="${escapeHtml(String(s.repsMax || ''))}">
             <div>
-              <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="${window._unitPrefs.weight}" value="${weightToPref(orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||(_hasNumVal(s.weight)?s.weight:'')) : (_hasNumVal(s.weight)?s.weight:''))}">
+              <input id="ls-weight-${bi}-${si}" ${si_style} type="number" step="0.5" placeholder="${window._unitPrefs.weight}" ${weightInputAttrs(orm && (s.pctMin||s.pctMax) ? (_calcWeightFromPct(orm,s.pctMin)||(_hasNumVal(s.weight)?s.weight:'')) : (_hasNumVal(s.weight)?s.weight:''))}>
             </div>
             <input id="ls-pmin-${bi}-${si}" ${si_style} type="number" placeholder="%" value="${escapeHtml(String(s.pctMin || ''))}" oninput="flushLogState()" onchange="renderLogExercises()">
             <div>
@@ -2780,7 +2780,7 @@ function renderLogExercises() {
         ${!isCardio ? `
         <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)">
           <span style="font-size:var(--text-sm, 11px);font-weight:500;color:var(--text-muted);white-space:nowrap">1 Rep Max</span>
-          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:var(--text-xl, 16px);text-align:center" type="number" step="0.5" placeholder="e.g. 100" value="${block.oneRM ? weightToPref(block.oneRM) : ''}" oninput="window._logBlocks[${bi}].oneRM=this.value" onchange="flushLogState();renderLogExercises()">
+          <input id="ls-orm-${bi}" class="field-input" style="width:72px;padding:4px 8px;font-size:var(--text-xl, 16px);text-align:center" type="number" step="0.5" placeholder="e.g. 100" ${block.oneRM ? weightInputAttrs(block.oneRM) : 'value=""'} oninput="window._logBlocks[${bi}].oneRM=this.value" onchange="flushLogState();renderLogExercises()">
           <span style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${window._unitPrefs.weight}</span>
           <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-left:2px">${orm ? '— % 1RM will auto-fill weight' : '— enter to enable % 1RM'}</span>
         </div>

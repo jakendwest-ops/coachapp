@@ -1436,7 +1436,7 @@ function flushTemplateSets(containerId) {
     // then deleted) — weightFromPref returns null there too, so it must NOT fall through to the old
     // s.weight the way a missing element correctly does, or clearing the field would silently un-clear
     // itself on the next flush.
-    { const wEl = document.getElementById(`ts-weight-${i}`); s.weight = wEl ? (weightFromPref(wEl.value) ?? '') : s.weight }
+    { const wEl = document.getElementById(`ts-weight-${i}`); s.weight = wEl ? (weightFromInput(wEl) ?? '') : s.weight }
     s.intensityMin = document.getElementById(`ts-imin-${i}`)?.value     ?? s.intensityMin
     s.intensityMax = document.getElementById(`ts-imax-${i}`)?.value     ?? s.intensityMax
     s.restMin      = document.getElementById(`ts-restmin-${i}`)?.value  ?? s.restMin
@@ -1708,7 +1708,7 @@ function renderTemplateSets(containerId, type) {
       ` : isTimedHold ? `
         <div class="ts-grid">
           ${cell('Duration (mm:ss)', gmini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${escapeHtml(String(s.duration||'0:00'))}"`))}
-          ${cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
+          ${cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
           <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
@@ -1724,7 +1724,7 @@ function renderTemplateSets(containerId, type) {
       ` : `
         <div class="ts-grid">
           ${cell('Reps', gmini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${escapeHtml(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${escapeHtml(String(s.repsMax))}"`:'')))}
-          ${s.bodyweight ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` value="${weightToPref(s.weight)}"`:'')))}
+          ${s.bodyweight ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
           <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>

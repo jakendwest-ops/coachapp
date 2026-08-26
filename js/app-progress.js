@@ -84,7 +84,11 @@ async function saveOneRMGrid(clientId) {
       const valNum = parseFloat(val)
       if (!isNaN(origNum) && valNum === origNum && recordedAt === today) return
 
-      const kg = weightFromPref(val)
+      // weightFromInput, not weightFromPref: an untouched (or identically retyped) field returns the
+      // stored kg verbatim instead of the lb round-trip of what was painted. See app-core.js.
+      // This is the path that drifted 200 -> 199.99 on a DATE-ONLY edit, because the equality guard
+      // above only skips when the date is also unchanged.
+      const kg = weightFromInput(inp)
       // A typed 0, a negative, or text is a REAL edit that cannot be stored. Surfacing it beats
       // dropping it: silently skipping meant either "Nothing changed" (false — they did change it)
       // or, in a mixed save, the other rows saving while this one re-rendered showing its old value,
@@ -232,7 +236,7 @@ async function renderClient1RMs(clientId, el) {
           <!-- 16px: an inline font-size beats the global input rule, and below 16px iOS Safari
                re-triggers auto-zoom-on-focus. Same reasoning as every other inline input here. -->
           <input class="field-input" id="orm-${i}" type="number" step="0.5" inputmode="decimal"
-                 value="${escapeHtml(orig)}" data-orig="${escapeHtml(orig)}" placeholder="—"
+                 ${weightInputAttrs(latest ? latest.one_rm_kg : null, orig)} data-orig="${escapeHtml(orig)}" placeholder="—"
                  style="width:82px;text-align:center;font-size:var(--text-xl, 16px);flex-shrink:0">
           <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);width:20px;flex-shrink:0">${escapeHtml(unit)}</span>
           ${latest ? `<button onclick="delete1RM('${latest.id}','${clientId}')" title="Delete" style="width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:var(--text-lg, 14px);line-height:1;cursor:pointer;color:var(--text-muted)">×</button>` : `<span style="width:26px;flex-shrink:0"></span>`}
@@ -799,11 +803,11 @@ async function renderClientWeight(clientId, el) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
             <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (${window._unitPrefs.weight})</label>
-            <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg != null ? weightToPref(startingWeightKg) : ''}">
+            <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" ${weightInputAttrs(startingWeightKg)}>
           </div>
           <div>
             <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (${window._unitPrefs.weight})</label>
-            <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg != null ? weightToPref(goalWeightKg) : ''}">
+            <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" ${weightInputAttrs(goalWeightKg)}>
           </div>
         </div>
         <p id="wg-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
@@ -1024,8 +1028,8 @@ async function saveWeightGoals(clientId) {
 
   log.info('saveWeightGoals', 'updating weight goals', { clientId })
   const { error } = await db.from('clients').update({
-    starting_weight_kg: startingRaw ? weightFromPref(startingRaw) : null,
-    goal_weight_kg:      goalRaw ? weightFromPref(goalRaw) : null
+    starting_weight_kg: weightFromInput(document.getElementById('wg-starting')),
+    goal_weight_kg:      weightFromInput(document.getElementById('wg-goal'))
   }).eq('id', clientId)
 
   if (error) { log.error('saveWeightGoals', 'update failed', error); if (errEl) errEl.textContent = error.message; return }
@@ -1681,11 +1685,11 @@ async function renderProgressWeight(el) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
           <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (${window._unitPrefs.weight})</label>
-          <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" value="${startingWeightKg != null ? weightToPref(startingWeightKg) : ''}">
+          <input id="wg-starting" type="number" step="0.1" class="field-input" placeholder="e.g. 90" ${weightInputAttrs(startingWeightKg)}>
         </div>
         <div>
           <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Goal weight (${window._unitPrefs.weight})</label>
-          <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" value="${goalWeightKg != null ? weightToPref(goalWeightKg) : ''}">
+          <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" ${weightInputAttrs(goalWeightKg)}>
         </div>
       </div>
       <p id="wg-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>

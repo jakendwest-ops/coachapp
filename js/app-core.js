@@ -211,6 +211,52 @@ function weightFromPref(val) {
   if (isNaN(v)) return null
   return window._unitPrefs.weight === 'lb' ? v / _WEIGHT_KG_TO_LB : v
 }
+
+// ── The display value is a LOSSY proxy for the stored one. Never save it back blind. ──────────────
+//
+// Reproduced 2026-08-26 (bug 2026-07-09). A 1RM stored as exactly 200 kg renders in lb as
+// `200 * 2.20462 = 440.924` -> toFixed(1) -> "440.9". Read that back with weightFromPref and you get
+// **199.99 kg**, not 200. Every save that re-reads an untouched prefilled field therefore rewrites the
+// row slightly wrong, and the next render rounds it again — so the screen keeps showing "200" while
+// the database drifts. That is why reading the code twice never found it: the corruption is invisible
+// from the UI, and it is bounded (~0.023 kg) so it never looks like a bug, it looks like data.
+//
+// weightFromInput is the ONE place that knows the difference between "the user typed a new number"
+// and "the user left the number we rendered". Given `data-shown` (exactly what was painted into the
+// box) and `data-kg` (the canonical value it was painted FROM), an unedited field returns the stored
+// kg VERBATIM and cannot drift. Anything genuinely retyped converts normally.
+//
+// ONE helper, five call sites, deliberately: this codebase's most-repeated failure is a guard landing
+// in the function where the bug was found while its siblings keep the defect. A site that renders a
+// weight WITHOUT both data attributes silently falls back to the old lossy path — so if you add a
+// sixth prefilled weight input, stamp them.
+function weightFromInput(el) {
+  if (!el) return null
+  const raw = (el.value == null ? '' : String(el.value)).trim()
+  if (raw === '') return null
+  const shown = el.dataset ? el.dataset.shown : undefined
+  const kg = el.dataset ? el.dataset.kg : undefined
+  // Compared NUMERICALLY so "200" and "200.0" are the same untouched field, matching how
+  // saveOneRMGrid already compares its own data-orig.
+  if (shown !== undefined && shown !== '' && kg !== undefined && kg !== '') {
+    const shownNum = parseFloat(shown)
+    const rawNum = parseFloat(raw)
+    const kgNum = parseFloat(kg)
+    if (!isNaN(shownNum) && !isNaN(rawNum) && !isNaN(kgNum) && rawNum === shownNum) return kgNum
+  }
+  return weightFromPref(raw)
+}
+
+// Emits the value + the two data attributes weightFromInput needs, from a canonical kg.
+// `shownOverride` is for the one site that paints something other than raw weightToPref output
+// (the 1RM grid re-rounds to 1dp) — what is PAINTED must be what is stamped, or the equality test
+// compares the wrong two things.
+function weightInputAttrs(kg, shownOverride = null) {
+  if (kg == null || kg === '') return 'value=""'
+  const shown = shownOverride != null ? shownOverride : weightToPref(kg)
+  if (shown === '') return 'value=""'
+  return `value="${shown}" data-shown="${shown}" data-kg="${kg}"`
+}
 // Full display string with unit suffix, for read-only contexts. `spaced` matches each call site's
 // existing convention (some sites render "100kg", others "100 kg") — not standardized here, only the
 // unit itself becomes preference-aware. `decimals` forces a fixed precision (e.g. "100.0") for sites
