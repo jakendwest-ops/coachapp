@@ -287,4 +287,111 @@ test.describe('Session identity — family_id', () => {
       }, ids)
     }
   })
+
+  // ── THE JOIN. Added 2026-08-26, after Jake said "you need to test this". ────────────────────────
+  //
+  // The two tests above each cover HALF of his scenario, and nothing joined them:
+  //   * 'generated week clones inherit ...' runs the REAL generator, but never renames anything.
+  //   * 'renaming a session offers ...' renames, but HAND-SETS family_id on its fixture and calls
+  //     saveEditTemplate() against stubbed DOM (mk('et-name'), mk('edit-template-modal')).
+  // So "the real generator produces the clones, THEN renaming the base offers the prompt" — which is
+  // literally what Jake does — was never asserted end to end. Two green halves are not a green whole:
+  // that is exactly the 'adjacent flow' the closure rule refuses as evidence, and I had started to
+  // offer those two halves to Jake as proof before he pushed back.
+  //
+  // NO STUBS HERE. Real generatePhasePeriodization, real openTemplate (which is what sets
+  // _templateCtx in production — app-programs.js:2150 calls it exactly this way), real
+  // showEditTemplateModal DOM, and real Playwright clicks on the real Save and Apply buttons.
+  test('END TO END: real generated weeks, then a real rename click, offers the real prompt', async ({ page }) => {
+    await loginAsPT(page)
+    let ids = null
+    try {
+      const setup = await page.evaluate(async () => {
+        const tag = '[E2E] join ' + Date.now()
+        const { data: prog } = await db.from('programs')
+          .insert({ coach_id: currentUser.id, name: tag + ' prog', is_personal: false }).select('id').single()
+        const { data: phase } = await db.from('program_phases')
+          .insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 3, order_index: 0, periodization_type: 'linear' })
+          .select('id').single()
+        const { data: base } = await db.from('workout_templates')
+          .insert({ coach_id: currentUser.id, name: tag + ' Session', is_personal: false }).select('id, family_id').single()
+        await db.from('workout_template_exercises').insert({
+          template_id: base.id, exercise_name: 'Back Squat', exercise_type: 'strength',
+          metric_type: 'weight_reps', order_index: 0, sets_json: [{ effortType: 'rpe', repsMin: '5' }]
+        })
+        await db.from('program_phase_workouts').insert({
+          phase_id: phase.id, template_id: base.id, day_of_week: 1, day_label: 'Monday',
+          session_order: 1, week_number: 1
+        })
+        // REAL periodization — the clones and their family_id come from shipped code, not from the test.
+        window._openProgramId = prog.id
+        const realConfirm = window.confirm
+        window.confirm = () => true
+        try { await generatePhasePeriodization(phase.id, prog.id) } finally { window.confirm = realConfirm }
+        await new Promise(r => setTimeout(r, 2000))
+        const { data: pws } = await db.from('program_phase_workouts')
+          .select('week_number, template_id, workout_templates(id, name)').eq('phase_id', phase.id)
+        const gen = (pws || []).filter(p => (p.week_number || 1) > 1)
+        return {
+          progId: prog.id, phaseId: phase.id, baseId: base.id, tag,
+          generatedIds: gen.map(p => p.template_id),
+          generatedNames: gen.map(p => p.workout_templates && p.workout_templates.name)
+        }
+      })
+      ids = setup
+      expect(setup.generatedIds.length, 'the real generator must have produced week clones to propagate to')
+        .toBeGreaterThan(0)
+      expect(setup.generatedNames.some(n => / — W\d+$/.test(n || '')),
+        'the clones must carry the week marker — that rename is what used to break the match').toBe(true)
+
+      // Real navigation into the editor, the way the Programs page does it.
+      await page.evaluate(async s => {
+        await openTemplate(s.baseId, { backLabel: 'Back to program', programId: s.progId })
+        await showEditTemplateModal(s.baseId)
+      }, setup)
+      await page.waitForSelector('#edit-template-modal #et-name', { timeout: 10000 })
+
+      // Real user actions on the real modal.
+      await page.fill('#edit-template-modal #et-name', setup.tag + ' Renamed')
+      await page.click('#edit-template-modal .modal-footer .btn-primary')
+
+      // THE ASSERTION: the prompt actually appears for a REAL periodized phase.
+      await page.waitForSelector('#propagate-modal', { timeout: 15000 })
+      const shown = await page.evaluate(() => ({
+        text: (document.getElementById('propagate-modal') || {}).innerText || '',
+        targets: (window._propagateTargets || []).slice()
+      }))
+      expect(shown.targets.slice().sort(), 'the prompt must target exactly the REAL generated week clones')
+        .toEqual(setup.generatedIds.slice().sort())
+      expect(shown.text, 'wording must describe a rename, not an exercise change').toContain('name and description')
+
+      // Taking it must rename every copy while keeping each week marker.
+      await page.click('#propagate-modal .modal-footer .btn-primary')
+      await page.waitForTimeout(2500)
+      const after = await page.evaluate(async s => {
+        const { data } = await db.from('workout_templates').select('id, name')
+          .in('id', [s.baseId].concat(s.generatedIds))
+        return Object.fromEntries((data || []).map(t2 => [t2.id, t2.name]))
+      }, setup)
+      expect(after[setup.baseId]).toBe(setup.tag + ' Renamed')
+      for (let n = 0; n < setup.generatedIds.length; n++) {
+        const gid = setup.generatedIds[n]
+        // Take the marker from the name the GENERATOR produced, so a two-digit week (— W10) works too.
+        const marker = (setup.generatedNames[n] || '').match(/ — W\d+$/)
+        expect(marker, 'the generated clone must have had a week marker to preserve').not.toBeNull()
+        expect(after[gid], 'every generated week keeps its own marker after the rename')
+          .toBe(setup.tag + ' Renamed' + marker[0])
+      }
+    } finally {
+      if (ids) await page.evaluate(async i => {
+        const { data: pws } = await db.from('program_phase_workouts').select('template_id').eq('phase_id', i.phaseId)
+        const tids = [...new Set((pws || []).map(p => p.template_id).filter(Boolean))]
+        await db.from('program_phase_workouts').delete().eq('phase_id', i.phaseId)
+        await db.from('program_phases').delete().eq('id', i.phaseId)
+        if (tids.length) await db.from('workout_template_exercises').delete().in('template_id', tids)
+        if (tids.length) await db.from('workout_templates').delete().in('id', tids)
+        await db.from('programs').delete().eq('id', i.progId)
+      }, ids)
+    }
+  })
 })
