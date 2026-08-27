@@ -42,10 +42,19 @@ test.describe('PT Workouts page', () => {
     await clickVisible(page, '[data-page="workouts"]')
     // If a template row exists, click it and expect the template editor to load
     const templateRow = page.locator('.list-row').first()
+    // Wait for the page to SETTLE before concluding "no templates". A bare .count() here does not
+    // auto-wait, so it can read 0 simply because the list has not rendered yet — and the test then
+    // RETURNS having asserted nothing, passing green while testing nothing. That is worse than a
+    // flake: a flake is visible, a vacuous pass is not.
+    await page.waitForSelector('.list-row, .empty-state', { timeout: 8000 }).catch(() => {})
     const count = await page.locator('.list-row').count()
-    if (count === 0) return // no standalone templates — skip
+    if (count === 0) return // genuinely no standalone templates — nothing to open
     await templateRow.click()
-    await expect(page.locator('text=Exercises')).toBeVisible({ timeout: 8000 })
+    // .first(): 'text=Exercises' matches TWO elements in the template editor, so a bare locator is a
+    // strict-mode violation. That was invisible until the settle-wait above stopped this test
+    // returning early — i.e. the assertion had never actually run. A vacuous pass had been hiding a
+    // broken assertion, which is the more dangerous half of the two.
+    await expect(page.getByText('Exercises').first()).toBeVisible({ timeout: 8000 })
   })
 
   test('flat Templates list query excludes periodization-generated week clones (2026-07-08 data-leak fix)', async ({ page }) => {

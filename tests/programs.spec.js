@@ -178,8 +178,10 @@ test.describe('Inline assign grid', () => {
     test.skip(templateIds.length === 0, 'E2E PT account has no workout templates to test filtering')
 
     await openDayPicker(page, 1)
-    const rowsBefore = await page.locator('#wkp-results div[onclick^="_pickWorkout"]').count()
-    expect(rowsBefore).toBeGreaterThan(0)
+    // Retrying assertion, not a captured .count(). `.count()` is a one-shot snapshot with no
+    // auto-waiting, so reading it straight after opening the picker races the render: under
+    // full-suite load it can return 0 and fail a test that is perfectly correct.
+    await expect(page.locator('#wkp-results div[onclick^="_pickWorkout"]')).not.toHaveCount(0)
 
     await page.fill('#wkp-search', 'zzz-no-such-template-zzz')
     await expect(page.locator('#wkp-results div[onclick^="_pickWorkout"]')).toHaveCount(0)
