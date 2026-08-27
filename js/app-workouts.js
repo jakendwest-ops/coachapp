@@ -1080,11 +1080,20 @@ async function saveEditExercise(id) {
 async function deleteExercise(id) {
   if (!confirm('Delete this exercise? This only works if it has never been used in a template, log, or 1RM entry — use Archive instead for exercises with history.')) return
   log.info('deleteExercise', 'deleting exercise', { id })
-  const { error } = await db.from('exercises').delete().eq('id', id).eq('coach_id', currentUser.id)
+  // Rowcount check, matching delete1RM / deletePerfLog / deleteWeightLog (app-progress.js). The FK
+  // violation below is caught because it returns an error; a POLICY-refused delete does not — it
+  // returns `{ data: [], error: null }`, so `error` alone can never detect it and the library simply
+  // re-renders with the exercise still there, reading as "the button is broken".
+  const { data: removed, error } = await dbq('deleteExercise', db.from('exercises').delete().eq('id', id).eq('coach_id', currentUser.id).select('id'))
   if (error) {
     // 23503 = foreign_key_violation — this exercise is still referenced by real history
     if (error.code === '23503') { showToast('This exercise has history attached — archive it instead of deleting.', 'warn', 5000); return }
     log.error('deleteExercise', 'delete failed', error)
+    return
+  }
+  if (!removed?.length) {
+    log.error('deleteExercise', 'delete removed no rows — permission denied or already gone', { id })
+    showToast('That exercise could not be deleted', 'error')
     return
   }
   log.ok('deleteExercise', 'exercise deleted', { id })

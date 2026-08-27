@@ -303,8 +303,17 @@ function showClientDayDetail(dateStr) {
 async function deleteEvent(id) {
   if (!confirm('Delete this event?')) return
   log.info('deleteEvent', 'deleting event', { eventId: id })
-  const { error } = await db.from('events').delete().eq('id', id).eq('created_by', currentUser.id)
+  // Rowcount check, matching delete1RM / deletePerfLog / deleteWeightLog (app-progress.js). Without
+  // it a REFUSED delete re-renders with the row still sitting there, which reads as "the button is
+  // broken" — the user tapped Delete, got no error, and the thing is still there. A policy-refused
+  // delete returns `{ data: [], error: null }`, so `error` alone can never detect it.
+  const { data: removed, error } = await dbq('deleteEvent', db.from('events').delete().eq('id', id).eq('created_by', currentUser.id).select('id'))
   if (error) { log.error('deleteEvent', 'delete failed', error); return }
+  if (!removed?.length) {
+    log.error('deleteEvent', 'delete removed no rows — permission denied or already gone', { eventId: id })
+    showToast('That event could not be deleted', 'error')
+    return
+  }
   log.ok('deleteEvent', 'event deleted', { eventId: id })
   renderCalendar(document.getElementById('main-content'))
 }
@@ -1070,8 +1079,17 @@ async function saveEditGoal(goalId, clientId) {
 async function deleteGoal(goalId, clientId) {
   if (!confirm('Delete this goal and all its milestones and check-ins? This cannot be undone.')) return
   log.info('deleteGoal', 'deleting goal', { goalId })
-  const { error } = await db.from('goals').delete().eq('id', goalId).eq('created_by', currentUser.id)
+  // Rowcount check, matching delete1RM / deletePerfLog / deleteWeightLog (app-progress.js). The
+  // confirm promises "this cannot be undone" and deletes milestones and check-ins too, so a silent
+  // no-op here is the worst version of this class: the user believes a cascade happened. A
+  // policy-refused delete returns `{ data: [], error: null }`, so `error` alone cannot detect it.
+  const { data: removed, error } = await dbq('deleteGoal', db.from('goals').delete().eq('id', goalId).eq('created_by', currentUser.id).select('id'))
   if (error) { log.error('deleteGoal', 'delete failed', error); return }
+  if (!removed?.length) {
+    log.error('deleteGoal', 'delete removed no rows — permission denied or already gone', { goalId })
+    showToast('That goal could not be deleted', 'error')
+    return
+  }
   log.ok('deleteGoal', 'goal deleted', { goalId })
   closeModal('edit-goal-modal')
   const content = document.getElementById('tab-content')
