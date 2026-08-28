@@ -1781,26 +1781,38 @@ async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
   const isRunner = !!runnerCtx
   if (isRunner) _setExercisePickerButtonsDisabled(true)
 
-  let coachId, targetId
-  try {
+  // Resolution is started but NOT awaited here. Awaiting it meant 2-3 sequential round-trips of
+  // completely unchanged screen before the overlay even mounted — that was Jake's "adding new
+  // exercises takes ages to load" (2026-08-28). The picker paints instantly with its own loading
+  // state and consumes this promise itself.
+  const ctxPromise = (async () => {
     if (isRunner) {
       const { data: clientRecord } = await db.from('clients').select('coach_id').eq('id', _runner.clientId).single()
-      coachId = clientRecord?.coach_id || currentUser.id
-      targetId = templateId
-    } else {
-      const resolved = await _resolveEditableTemplateId(templateId)
-      targetId = resolved.templateId
-      const { data: tmplRow } = await db.from('workout_templates').select('coach_id').eq('id', targetId).single()
-      coachId = tmplRow?.coach_id || currentUser.id
+      return { coachId: clientRecord?.coach_id || currentUser.id, targetId: templateId }
     }
-  } catch (err) {
-    if (isRunner) _setExercisePickerButtonsDisabled(false)
-    log.error('showAddExerciseToTemplateModal', 'failed to resolve coach', err)
-    showToast('Could not open exercise picker — try again.', 'error', 3000)
-    return
-  }
-  if (isRunner) _setExercisePickerButtonsDisabled(false)
-  _openExercisePicker(coachId, picked => {
+    // PARALLEL, not sequential. coach_id is invariant across the fork: _cloneSharedMasterTemplate
+    // inserts the clone with `coach_id: tmpl.coach_id`, so reading it from the PRE-fork id gives the
+    // same answer as reading it from the clone — and can therefore start immediately rather than
+    // waiting for the resolve.
+    const [resolved, tmplRes] = await Promise.all([
+      _resolveEditableTemplateId(templateId),
+      db.from('workout_templates').select('coach_id').eq('id', templateId).single()
+    ])
+    return { coachId: tmplRes?.data?.coach_id || currentUser.id, targetId: resolved.templateId }
+  })()
+
+  // Re-enable the runner's buttons once resolution settles, either way. Without the catch here the
+  // rejection is also unhandled at the top level; _openExercisePicker reports it to the user.
+  ctxPromise.then(
+    () => { if (isRunner) _setExercisePickerButtonsDisabled(false) },
+    err => {
+      if (isRunner) _setExercisePickerButtonsDisabled(false)
+      log.error('showAddExerciseToTemplateModal', 'failed to resolve coach', err)
+    }
+  )
+
+  _openExercisePicker(ctxPromise.then(c => c.coachId), async picked => {
+    const { targetId, coachId } = await ctxPromise
     _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, existingType: picked.metric_type || 'weight_reps' })
   })
 }
@@ -1945,9 +1957,15 @@ async function _resolveExerciseIdForSave(name, coachId) {
 
 let _exercisePickerState = null
 
+// `coachId` may be a VALUE or a PROMISE. Accepting a promise is what lets the caller paint this
+// overlay immediately instead of after 2-3 sequential round-trips of unchanged screen — which is
+// what "adding new exercises takes ages to load" actually was (Jake, 2026-08-28). The overlay and
+// its loading state mount synchronously below; only the exercise fetch waits.
 async function _openExercisePicker(coachId, onPick) {
   if (document.getElementById('exercise-picker-modal')) return
-  _exercisePickerState = { coachId, onPick, allExercises: [] }
+  // Resolved below if it is a promise. _createExerciseFromPicker reads _exercisePickerState.coachId,
+  // so the state must end up holding the VALUE, never the promise.
+  _exercisePickerState = { coachId: null, onPick, allExercises: [] }
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'exercise-picker-modal'
@@ -1973,6 +1991,18 @@ async function _openExercisePicker(coachId, onPick) {
     _syncExercisePickerHeight()
     window.visualViewport.addEventListener('resize', _syncExercisePickerHeight)
   }
+  // Await the caller's resolution HERE, after the overlay is already on screen. A rejection must
+  // not leave a permanently "Loading…" modal, so it closes and reports rather than hanging.
+  try {
+    coachId = await coachId
+  } catch (err) {
+    log.error('_openExercisePicker', 'could not resolve the library owner', err)
+    if (_exercisePickerState) _closeExercisePicker()
+    showToast('Could not open exercise picker — try again.', 'error', 3000)
+    return
+  }
+  if (!_exercisePickerState) return // closed while resolving
+  _exercisePickerState.coachId = coachId
   const { data } = await db.from('exercises').select('id, name, muscle_group, is_archived, metric_type').eq('coach_id', coachId).eq('is_personal', currentProfile?.role === 'solo').order('name')
   if (!_exercisePickerState) return // closed before the fetch resolved
   _exercisePickerState.allExercises = data || []
