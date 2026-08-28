@@ -1778,6 +1778,12 @@ async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
   // Synchronous DOM-existence check STAYS: it is a DIFFERENT guard from re-entry (it also stops a
   // second modal opening over a different one) and it is correct because no await precedes it.
   if (document.getElementById('add-to-template-modal') || document.getElementById('exercise-picker-modal')) return
+  // NOT guardReentry-wrapped, deliberately. After the picker-latency change this function contains
+  // no await at all - it starts ctxPromise and hands it to _openExercisePicker, which mounts its
+  // overlay synchronously. A re-entry wrapper would acquire and release inside one microtask and
+  // block nothing: a decorative guard, which this project treats as WORSE than none because it
+  // reads as protection. The synchronous DOM check above is the real guard, and it is already true
+  // by the time any second click can land. Found by the pre-push review, 2026-08-28.
   const isRunner = !!runnerCtx
   if (isRunner) _setExercisePickerButtonsDisabled(true)
 
@@ -1816,7 +1822,6 @@ async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
     _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, existingType: picked.metric_type || 'weight_reps' })
   })
 }
-guardReentry('showAddExerciseToTemplateModal')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 // Step 2 of add/swap/edit — sets/reps/notes screen, shown once an exercise has been picked.
 // Shared by the workout builder (add + edit) and the runner swap/add modal.
