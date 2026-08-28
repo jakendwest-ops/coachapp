@@ -1453,6 +1453,7 @@ async function copyProgramToCoaching(programId) {
   log.ok('copyProgramToCoaching', 'copied', { from: programId, to: newProg.id, templates: templateMap.size })
   showToast(`Copied to your coaching programs as "${newName}".`, 'success', 6000)
 }
+guardReentry('copyProgramToCoaching')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 async function deleteProgram(programId) {
   // FIRST STATEMENT, ahead of every read and write. The programs delete at the bottom has always been
@@ -2266,6 +2267,7 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
   if (extendedTo && window._openProgramId) openProgram(window._openProgramId)
   else loadAllPhaseWorkouts([{ id: phaseId }])
 }
+guardReentry('duplicatePhaseWeek')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 // Deletes one week from a phase entirely — its own program_phase_workouts (+ the templates it
 // actually owns) and any client-propagated copies + their clones, then renumbers every later
@@ -2550,6 +2552,7 @@ async function _quickAssignPhaseWorkout(slot, templateId) {
   if (error) { log.error('_quickAssignPhaseWorkout', 'insert failed', error); showToast('Could not assign workout — try again', 'error'); return }
   loadAllPhaseWorkouts([{ id: phaseId }])
 }
+guardReentry('_quickAssignPhaseWorkout')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 async function removePhaseWorkout(pwId, phaseId) {
   // The DELETE keys on pwId, so pwId is verified — and the phaseId passed alongside is asserted to be

@@ -173,7 +173,13 @@ test.describe('A double-pressed write must not insert twice', () => {
     const registered = []
     for (const src of Object.values(scan.srcs)) {
       for (const m of src.matchAll(/^(?:async )?function ([A-Za-z_][A-Za-z0-9_]*)\s*\(/gm)) declared.add(m[1])
-      for (const m of src.matchAll(/guardReentry\(['"]([A-Za-z_][A-Za-z0-9_]*)['"]\)/g)) registered.push(m[1])
+      // Skip COMMENT lines. app-core.js's own doc comment contains guardReentry('name'), and the
+      // first version of this scan counted that prose as a real registration — a scanner reading
+      // documentation as code, which is the same shape as the bug it is here to catch.
+      for (const line of src.split('\n')) {
+        if (/^\s*(\/\/|\*)/.test(line)) continue
+        for (const m of line.matchAll(/guardReentry\(['"]([A-Za-z_][A-Za-z0-9_]*)['"]\)/g)) registered.push(m[1])
+      }
     }
     // A typo here leaves the path unguarded while LOOKING guarded, which is worse than no guard.
     expect(registered.filter(n => !declared.has(n)),
@@ -205,7 +211,15 @@ test.describe('A double-pressed write must not insert twice', () => {
           if (!e) { e = document.createElement(tag2); e.id = id; document.body.appendChild(e) }
           return e
         }
+        // The REAL inputs saveExerciseToTemplate reads unguarded: att-type (.value), att-notes
+        // (.value.trim()), att-superset (optional-chained). Omitting them makes the function throw
+        // BEFORE the insert — which is how the first version of this test went red for the wrong
+        // reason and looked like it had reproduced the duplicate when it had reproduced nothing.
         mk('att-error', 'p'); mk('add-to-template-modal'); mk('att-sets-container')
+        const sel = mk('att-type', 'select'); sel.innerHTML = '<option value="weight_reps">w</option>'
+        sel.value = 'weight_reps'
+        mk('att-notes', 'textarea').value = ''
+        mk('att-superset', 'input').value = ''
         await Promise.all([
           saveExerciseToTemplate(i.templateId).catch(e => e),
           saveExerciseToTemplate(i.templateId).catch(e => e)

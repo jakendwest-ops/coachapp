@@ -997,6 +997,7 @@ async function saveNewExercise() {
   closeModal('add-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
 }
+guardReentry('saveNewExercise')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 async function showEditExerciseModal(id) {
   const { data: e } = await db.from('exercises').select('*').eq('id', id).single()
@@ -1181,6 +1182,7 @@ async function saveNewTemplate() {
 
   openTemplate(data.id)
 }
+guardReentry('saveNewTemplate')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 async function openTemplate(id, ctx = {}) {
   window._templateCtx = {
@@ -1766,7 +1768,6 @@ function copyPrevTemplateSet(i, containerId, tid) {
 // in app-runner.js) instead of writing a workout_template_exercises row — matches the
 // existing session-only swap/add behaviour, just via the identical picking UI Jake builds
 // workouts with, per his 2026-07-03 instruction that both buttons must open "the same modal".
-let _addExerciseModalPending = false
 
 // Guards against the picker's own fetch-latency race: showExercisePicker fires this
 // on tap, but the overlay isn't appended until the Promise.all below resolves — a fast
@@ -1774,8 +1775,9 @@ let _addExerciseModalPending = false
 // sharing the hardcoded id 'add-to-template-modal', and getElementById/closeModal only
 // ever operate on the first one, permanently freezing the second (visible) modal.
 async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
-  if (_addExerciseModalPending || document.getElementById('add-to-template-modal') || document.getElementById('exercise-picker-modal')) return
-  _addExerciseModalPending = true
+  // Synchronous DOM-existence check STAYS: it is a DIFFERENT guard from re-entry (it also stops a
+  // second modal opening over a different one) and it is correct because no await precedes it.
+  if (document.getElementById('add-to-template-modal') || document.getElementById('exercise-picker-modal')) return
   const isRunner = !!runnerCtx
   if (isRunner) _setExercisePickerButtonsDisabled(true)
 
@@ -1792,18 +1794,17 @@ async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
       coachId = tmplRow?.coach_id || currentUser.id
     }
   } catch (err) {
-    _addExerciseModalPending = false
     if (isRunner) _setExercisePickerButtonsDisabled(false)
     log.error('showAddExerciseToTemplateModal', 'failed to resolve coach', err)
     showToast('Could not open exercise picker — try again.', 'error', 3000)
     return
   }
-  _addExerciseModalPending = false
   if (isRunner) _setExercisePickerButtonsDisabled(false)
   _openExercisePicker(coachId, picked => {
     _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, existingType: picked.metric_type || 'weight_reps' })
   })
 }
+guardReentry('showAddExerciseToTemplateModal')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 // Step 2 of add/swap/edit — sets/reps/notes screen, shown once an exercise has been picked.
 // Shared by the workout builder (add + edit) and the runner swap/add modal.
@@ -2018,21 +2019,18 @@ function _pickExercise(id, name, metricType) {
   if (cb) cb({ id, name, metric_type: metricType || 'weight_reps' })
 }
 
-let _createExerciseFromPickerPending = false
 
 async function _createExerciseFromPicker(name) {
   // Guards against a fast double-tap firing two concurrent inserts before either resolves —
   // same failure class as the exercise-picker-modal race fixed 2026-07-04 (les-013/pth pattern).
-  if (_createExerciseFromPickerPending) return
-  _createExerciseFromPickerPending = true
   const coachId = _exercisePickerState?.coachId
   const trimmed = (name || '').trim()
-  if (!trimmed || !coachId) { _createExerciseFromPickerPending = false; return }
+  if (!trimmed || !coachId) { return }
   const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, is_personal: currentProfile?.role === 'solo', name: trimmed }).select('id, name').single()
-  _createExerciseFromPickerPending = false
   if (error) { log.error('_createExerciseFromPicker', 'insert failed', error); showToast('Could not create exercise — try again.', 'error'); return }
   _pickExercise(created.id, created.name)
 }
+guardReentry('_createExerciseFromPicker')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 function _syncExercisePickerHeight() {
   const box = document.getElementById('exp-modal-box')
@@ -2142,6 +2140,7 @@ async function saveExerciseToTemplate(templateId) {
   } }
   _afterTemplateExerciseSave(targetId)
 }
+guardReentry('saveExerciseToTemplate')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 async function showEditTemplateExerciseModal(templateExId, templateId) {
   const { data: ex } = await db.from('workout_template_exercises').select('*').eq('id', templateExId).single()

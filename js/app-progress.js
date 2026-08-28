@@ -15,7 +15,6 @@
 
 const BIG_5_EXERCISES = ['Back Squat', 'Deadlift', 'Bench Press', 'Overhead Press', 'Barbell Row']
 
-let _saveOneRMGridPending = false
 
 // Refresh whichever container is actually showing the 1RMs list — the client/solo 1RMs tab
 // (pb-1rms-section) or the PT-facing client-profile 1RMs tab (tab-content). Was three byte-identical
@@ -42,90 +41,82 @@ async function saveOneRMGrid(clientId) {
     const e = document.getElementById('orm-grid-error'); if (e) e.textContent = 'Save failed — permission denied.'
     return
   }
-  // Guards against a double-tap: _resolveExerciseIdForSave does a non-atomic select-then-insert,
-  // so two concurrent calls for the same exercise name can both miss the not-yet-inserted row
-  // and create duplicate library entries.
-  if (_saveOneRMGridPending) return
-  _saveOneRMGridPending = true
-  // try/finally, so an unexpected rejection anywhere below can't strand the flag `true` and silently
-  // kill Save-all for the rest of the session with no message.
-  try {
-    const errEl = document.getElementById('orm-grid-error')
-    if (errEl) errEl.textContent = ''
-    const today = new Date().toISOString().split('T')[0]
+  // The try/finally that used to live here existed ONLY to release _saveOneRMGridPending.
+  // guardReentry (js/app-core.js) owns that now, in one place, so the wrapper is gone.
+  const errEl = document.getElementById('orm-grid-error')
+  if (errEl) errEl.textContent = ''
+  const today = new Date().toISOString().split('T')[0]
 
-    const changed = []
-    const invalid = []
-    ;(window._oneRMGridRows || []).forEach((d, i) => {
-      const inp = document.getElementById(`orm-${i}`)
-      if (!inp) return
-      const val = (inp.value || '').trim()
-      if (!val) return   // left blank — not an edit
-      // Per-row date, read BEFORE the equality guard below. Replaces the backdating that used to live
-      // behind the row's ⋯ (removed 2026-08-15). A cleared or malformed value is a real edit that
-      // cannot be stored, so it is rejected by name rather than silently stamped with today — the same
-      // treatment an unusable weight gets. (A browser with native date support only ever yields '' or
-      // a valid yyyy-mm-dd; the regex is the guard for one that degrades to a text field.)
-      const dateVal = (document.getElementById(`orm-date-${i}`)?.value || '').trim()
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) { invalid.push(`${d.name} (date)`); return }
-      const recordedAt = dateVal
+  const changed = []
+  const invalid = []
+  ;(window._oneRMGridRows || []).forEach((d, i) => {
+    const inp = document.getElementById(`orm-${i}`)
+    if (!inp) return
+    const val = (inp.value || '').trim()
+    if (!val) return   // left blank — not an edit
+    // Per-row date, read BEFORE the equality guard below. Replaces the backdating that used to live
+    // behind the row's ⋯ (removed 2026-08-15). A cleared or malformed value is a real edit that
+    // cannot be stored, so it is rejected by name rather than silently stamped with today — the same
+    // treatment an unusable weight gets. (A browser with native date support only ever yields '' or
+    // a valid yyyy-mm-dd; the regex is the guard for one that degrades to a text field.)
+    const dateVal = (document.getElementById(`orm-date-${i}`)?.value || '').trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) { invalid.push(`${d.name} (date)`); return }
+    const recordedAt = dateVal
 
-      // Compared NUMERICALLY, with both sides already in the display unit, so "100.0" and "100" are
-      // the same edit rather than a duplicate append. Comparing the CONVERTED kg would be wrong: a
-      // kg→lb→kg round trip drifts in the last decimal and would read as a change on every save.
-      //
-      // `recordedAt === today` is the second half of the test, and it is load-bearing. Without it a
-      // DATE-ONLY change was skipped here and the user got "Nothing changed — edit a value first"
-      // while looking at the date control they had just changed. Worse, it silently removed the very
-      // capability the ⋯ was deleted in favour of: the old modal inserted unconditionally, so
-      // "I hit 100kg again on the 20th" recorded fine. client_1rms is append-only precisely so a
-      // repeat at the same weight on a new date is a real entry. Caught by pre-push review.
-      const origNum = parseFloat(inp.dataset.orig || '')
-      const valNum = parseFloat(val)
-      if (!isNaN(origNum) && valNum === origNum && recordedAt === today) return
+    // Compared NUMERICALLY, with both sides already in the display unit, so "100.0" and "100" are
+    // the same edit rather than a duplicate append. Comparing the CONVERTED kg would be wrong: a
+    // kg→lb→kg round trip drifts in the last decimal and would read as a change on every save.
+    //
+    // `recordedAt === today` is the second half of the test, and it is load-bearing. Without it a
+    // DATE-ONLY change was skipped here and the user got "Nothing changed — edit a value first"
+    // while looking at the date control they had just changed. Worse, it silently removed the very
+    // capability the ⋯ was deleted in favour of: the old modal inserted unconditionally, so
+    // "I hit 100kg again on the 20th" recorded fine. client_1rms is append-only precisely so a
+    // repeat at the same weight on a new date is a real entry. Caught by pre-push review.
+    const origNum = parseFloat(inp.dataset.orig || '')
+    const valNum = parseFloat(val)
+    if (!isNaN(origNum) && valNum === origNum && recordedAt === today) return
 
-      // weightFromInput, not weightFromPref: an untouched (or identically retyped) field returns the
-      // stored kg verbatim instead of the lb round-trip of what was painted. See app-core.js.
-      // This is the path that drifted 200 -> 199.99 on a DATE-ONLY edit, because the equality guard
-      // above only skips when the date is also unchanged.
-      const kg = weightFromInput(inp)
-      // A typed 0, a negative, or text is a REAL edit that cannot be stored. Surfacing it beats
-      // dropping it: silently skipping meant either "Nothing changed" (false — they did change it)
-      // or, in a mixed save, the other rows saving while this one re-rendered showing its old value,
-      // looking for all the world like it had saved too.
-      if (kg == null || !(kg > 0)) { invalid.push(d.name); return }
-      changed.push({ name: d.name, exerciseId: d.exerciseId, kg, recordedAt })
-    })
+    // weightFromInput, not weightFromPref: an untouched (or identically retyped) field returns the
+    // stored kg verbatim instead of the lb round-trip of what was painted. See app-core.js.
+    // This is the path that drifted 200 -> 199.99 on a DATE-ONLY edit, because the equality guard
+    // above only skips when the date is also unchanged.
+    const kg = weightFromInput(inp)
+    // A typed 0, a negative, or text is a REAL edit that cannot be stored. Surfacing it beats
+    // dropping it: silently skipping meant either "Nothing changed" (false — they did change it)
+    // or, in a mixed save, the other rows saving while this one re-rendered showing its old value,
+    // looking for all the world like it had saved too.
+    if (kg == null || !(kg > 0)) { invalid.push(d.name); return }
+    changed.push({ name: d.name, exerciseId: d.exerciseId, kg, recordedAt })
+  })
 
-    if (invalid.length) {
-      if (errEl) errEl.textContent = `Enter a weight above 0 for ${invalid.join(', ')}`
-      return
-    }
-    if (!changed.length) {
-      if (errEl) errEl.textContent = 'Nothing changed — edit a value first'
-      return
-    }
-
-    const coachId = await _effectiveCoachIdForClient(clientId)
-    const rows = await Promise.all(changed.map(async r => ({
-      client_id: clientId,
-      // Auto-create a library exercise ONLY for the Big 5 quick-start names — the contract
-      // _resolveExerciseIdForSave documents for itself ("kept only for the Big 5 quick-start 1RM
-      // form, which has no free text entry at all", app-workouts.js:1834). The grid now lists every
-      // exercise_name in this client's 1RM history, so an ungated call would silently insert a
-      // permanent `exercises` row named after any legacy or imported string the moment its value was
-      // edited — from a screen that shows no exercise picker. exercise_id is nullable; skipping is safe.
-      exercise_id: r.exerciseId || (BIG_5_EXERCISES.includes(r.name) ? await _resolveExerciseIdForSave(r.name, coachId) : null),
-      exercise_name: r.name, one_rm_kg: r.kg, recorded_at: r.recordedAt || today
-    })))
-    const { error } = await dbq('saveOneRMGrid', db.from('client_1rms').insert(rows))
-    if (error) { if (errEl) errEl.textContent = 'Save failed — try again'; return }
-    showToast(`${rows.length} 1RM${rows.length === 1 ? '' : 's'} saved`, 'success')
-    await _refresh1RMs(clientId)
-  } finally {
-    _saveOneRMGridPending = false
+  if (invalid.length) {
+    if (errEl) errEl.textContent = `Enter a weight above 0 for ${invalid.join(', ')}`
+    return
   }
+  if (!changed.length) {
+    if (errEl) errEl.textContent = 'Nothing changed — edit a value first'
+    return
+  }
+
+  const coachId = await _effectiveCoachIdForClient(clientId)
+  const rows = await Promise.all(changed.map(async r => ({
+    client_id: clientId,
+    // Auto-create a library exercise ONLY for the Big 5 quick-start names — the contract
+    // _resolveExerciseIdForSave documents for itself ("kept only for the Big 5 quick-start 1RM
+    // form, which has no free text entry at all", app-workouts.js:1834). The grid now lists every
+    // exercise_name in this client's 1RM history, so an ungated call would silently insert a
+    // permanent `exercises` row named after any legacy or imported string the moment its value was
+    // edited — from a screen that shows no exercise picker. exercise_id is nullable; skipping is safe.
+    exercise_id: r.exerciseId || (BIG_5_EXERCISES.includes(r.name) ? await _resolveExerciseIdForSave(r.name, coachId) : null),
+    exercise_name: r.name, one_rm_kg: r.kg, recorded_at: r.recordedAt || today
+  })))
+  const { error } = await dbq('saveOneRMGrid', db.from('client_1rms').insert(rows))
+  if (error) { if (errEl) errEl.textContent = 'Save failed — try again'; return }
+  showToast(`${rows.length} 1RM${rows.length === 1 ? '' : 's'} saved`, 'success')
+  await _refresh1RMs(clientId)
 }
+guardReentry('saveOneRMGrid')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 // The two affordances that used to live behind the row's ⋯ (removed 2026-08-15 on Jake's challenge:
 // "I can update the maxes on the landing page, so please can you explain the need to click the 3
