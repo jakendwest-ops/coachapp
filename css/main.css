@@ -243,6 +243,10 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+/* Set by guardReentry (js/app-core.js) for the duration of an in-flight write. `pointer-events` is
+   the belt for elements where `disabled` does not exist — the exercise/workout picker rows are
+   <div>s, and a <div> with disabled=true is still perfectly tappable. */
+[aria-busy="true"] { opacity: 0.55; cursor: progress; pointer-events: none; }
 
 .btn-secondary {
   background: var(--surface);

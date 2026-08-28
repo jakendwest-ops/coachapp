@@ -1132,7 +1132,7 @@ function showCreateTemplateModal(phaseCtx = null) {
       <p class="modal-error" id="ct-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="closeModal('create-template-modal')">Cancel</button>
-        <button class="btn-primary" onclick="saveNewTemplate()">Create</button>
+        <button class="btn-primary" data-busy-text="Creating…" onclick="saveNewTemplate()">Create</button>
       </div>
     </div>
   `
@@ -1873,7 +1873,7 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
       <div class="modal-footer">
         ${editingTexId ? `<button class="btn-danger" onclick="deleteTemplateExercise('${editingTexId}','${targetId}')">Remove</button><div style="flex:1"></div>` : ''}
         <button class="btn-secondary" onclick="closeModal('${modalId}')">Cancel</button>
-        <button class="btn-primary" id="att-confirm-btn" onclick="${confirmAction}">${confirmLabel}</button>
+        <button class="btn-primary" id="att-confirm-btn" data-busy-text="Saving…" onclick="${confirmAction}">${confirmLabel}</button>
       </div>
     </div>
   `

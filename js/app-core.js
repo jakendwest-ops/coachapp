@@ -56,6 +56,81 @@ function showToast(msg, type = 'error', duration = 4000) {
   setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300) }, duration)
 }
 
+// ─── RE-ENTRY GUARD ───────────────────────────────────────────────────────────
+// One implementation. Registered per function with guardReentry('name') beneath its declaration.
+// The class it covers, and the WRITTEN REASON for every non-member, live in
+// tests/reentry-guard-2026-08-28.spec.js — that spec is the inventory, not this comment.
+//
+// WHY A REGISTRATION WRAPPER rather than a check inside each function:
+//  · Inline onclick= strings resolve names off the global object AT CLICK TIME, so replacing
+//    window[name] guards every call site at once — including handler strings assembled in a
+//    variable (js/app-workouts.js:1815-1817 -> :1876), which a per-call-site wrapper would have to
+//    find, and which a scan of literal onclick= attributes provably does NOT see.
+//  · The release lives in ONE try/finally. The three hand-rolled flags this replaces released on the
+//    happy path only: an unexpected rejection stranded them `true` and silently killed that button
+//    for the rest of the session, with no message. One finally makes that impossible by
+//    construction rather than by discipline — and only one of the three ever had it.
+//
+// TRADE-OFF, stated: this is action at a distance — reading the function does not show the guard.
+// Mitigated by putting the registration line directly beneath each function, by the class test, and
+// by the loud console error below when a name does not resolve.
+//
+// LIMITATION: only works on `function` declarations, which live on the global object. A
+// `const fn = async () => {}` does not, and would need converting to a declaration first. Every
+// current member is a declaration, which is also how the spec enumerates them.
+const _writesInFlight = new Set()
+
+// Inline handlers run with window.event set during dispatch — already relied on at
+// js/app-progress.js:957 (`const btn = event.target`), so this is a shipped assumption, not a new
+// one. Invoked outside a gesture (a test, or a programmatic call) this returns null and the guard
+// still works, just with no visual feedback.
+function _busyTarget() {
+  const t = window.event && (window.event.currentTarget || window.event.target)
+  if (!t || !t.closest) return null
+  return t.closest('button') || t          // picker rows are <div>s, not buttons — style those too
+}
+
+function _setBusy(el, busy) {
+  if (!el) return
+  if (busy) {
+    // Remember the PRIOR disabled state: moveTemplateExercise's up/down arrows are legitimately
+    // disabled at the ends of the list, and re-enabling one on release would be a new bug.
+    el._reentryPrevDisabled = !!el.disabled
+    el._reentryPrevText = null
+    if ('disabled' in el) el.disabled = true
+    el.setAttribute('aria-busy', 'true')
+    const t = el.getAttribute && el.getAttribute('data-busy-text')
+    if (t) { el._reentryPrevText = el.textContent; el.textContent = t }
+  } else {
+    if ('disabled' in el) el.disabled = !!el._reentryPrevDisabled
+    el.removeAttribute('aria-busy')
+    if (el._reentryPrevText != null) { el.textContent = el._reentryPrevText; el._reentryPrevText = null }
+  }
+}
+
+function guardReentry(name) {
+  const inner = window[name]
+  // LOUD, never silent. A typo here would leave the path unguarded while LOOKING guarded, which is
+  // worse than no guard at all. The spec also asserts every guardReentry() names a real function.
+  if (typeof inner !== 'function') { console.error('[guardReentry] no such function:', name); return }
+  if (inner._reentryGuarded) return                     // idempotent — re-registration is a no-op
+  const wrapped = async function (...args) {
+    if (_writesInFlight.has(name)) return undefined     // press #2 while #1 is in flight: swallowed
+    _writesInFlight.add(name)
+    const el = _busyTarget()
+    _setBusy(el, true)
+    try {
+      return await inner.apply(this, args)              // rethrows — callers see today's behaviour
+    } finally {
+      _writesInFlight.delete(name)
+      _setBusy(el, false)                               // safe on a node closeModal already removed
+    }
+  }
+  wrapped._reentryGuarded = true
+  wrapped._inner = inner                                // test seam: reach the unwrapped function
+  window[name] = wrapped
+}
+
 // Supabase query wrapper — auto-logs all errors; warns on PGRST116 (no row found)
 // Pass showUserError:false to suppress toast for expected "no row" scenarios.
 async function dbq(label, query, { showUserError = true } = {}) {
