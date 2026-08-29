@@ -2919,8 +2919,16 @@ async function _resolveEditableTemplateId(templateId, exerciseId = null) {
   // all, silently discarded, under a green toast saying the opposite. Fall back to the original id and
   // say so. The clone is reaped rather than left behind: orphaned templates are what grew one real
   // account to 2013 rows, 1223 of them dead.
+  // The .eq('template_id', templateId) anchor is load-bearing, added 2026-08-29 by the weekly
+  // full-file review. The gate 14 lines above verifies tmpl.coach_id — that protects the TEMPLATE.
+  // This write targets ctx.phaseWorkoutId, which neither this function nor any of its callers has
+  // verified, so on its own it is verbatim the decorative-guard shape app-core.js:1084 warns about
+  // ("four sites verified clientId and then wrote .eq('id', someOtherId)"). Requiring the slot to
+  // CURRENTLY point at the template we just proved we own ties the two ids together, and is cheaper
+  // than re-resolving phase -> program -> coach_id. The named sibling removePhaseWorkout got this
+  // same gate on 2026-08-22; this site was missed.
   const { data: repointed, error: repointErr } = await db.from('program_phase_workouts')
-    .update({ template_id: cloned.id }).eq('id', ctx.phaseWorkoutId).select('id')
+    .update({ template_id: cloned.id }).eq('id', ctx.phaseWorkoutId).eq('template_id', templateId).select('id')
   if (repointErr || !repointed?.length) {
     log.error('_resolveEditableTemplateId', 'slot repoint failed — falling back to the shared template', { phaseWorkoutId: ctx.phaseWorkoutId, error: repointErr })
     // The reap needs the SAME treatment as everything else in this commit, or it is a silent write

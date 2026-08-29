@@ -2342,6 +2342,20 @@ async function saveRunnerSession() {
   // a line below — but a clientId RLS denies (0 rows) used to silently do the exact same fallback,
   // which would have inserted a workout_logs row for someone else's client, attributed to whoever is
   // currently logged in. Confirmed exploitable via a live cross-tenant probe, 2026-07-30.
+  // 2026-08-29 (weekly full-file review). The fetch below proves the row is READABLE, not that it is
+  // OURS. _verifyClientAccess asserts coach_id === uid || user_id === uid and fails closed —
+  // app-core.js:1093 records that it was "deliberately modelled on saveRunnerSession", yet this
+  // function and saveWorkoutSession were never migrated onto it while the two 1RM writers in this
+  // same file were. 2 of 4 client-scoped writers had the strong check; now 4 of 4.
+  // Any clients SELECT policy broader than "mine" (a support role, a future gym/team feature) and the
+  // readability check alone passes. Costs one extra round-trip on a save that already awaits eight —
+  // deliberately preferred over inlining the ownership test, because a second copy of that logic is
+  // exactly how these two drifted from the helper they inspired.
+  if (!(await _verifyClientAccess('saveRunnerSession', clientId))) {
+    showToast('Could not verify this client — please refresh and try again.', 'error')
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
+    return
+  }
   const { data: clientRecord, error: clientErr } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
   if (!clientRecord) {
     log.error('saveRunnerSession', 'client ownership could not be verified — refusing to save', clientErr)
@@ -2924,6 +2938,12 @@ async function saveWorkoutSession(clientId) {
   // Derive coach_id from the client record — works for both coach and client self-logging.
   // MUST fail loud, not fall back to currentUser.id — see saveRunnerSession's identical fix, same
   // confirmed cross-tenant-write risk, 2026-07-30.
+  // 2026-08-29 (weekly full-file review) — same fix as saveRunnerSession above, same reason. This is
+  // the manual-log twin, and it had the same readability-is-not-ownership gap.
+  if (!(await _verifyClientAccess('saveWorkoutSession', clientId))) {
+    errorEl.textContent = 'Could not verify this client — please refresh and try again.'
+    return
+  }
   const { data: clientRecord, error: clientErr } = await dbq('saveWorkoutSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
   if (!clientRecord) {
     log.error('saveWorkoutSession', 'client ownership could not be verified — refusing to save', clientErr)
