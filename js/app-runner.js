@@ -10,6 +10,22 @@
   }
   await _startFreshRunner(clientId)
 }
+// Guarded 2026-08-29 (weekly full-file review). Double-tapping ▶ Start ran _startFreshRunner twice:
+// its first suspension is the client_1rms fetch at :27 and it does not remove #runner-setup until
+// :45, so the button stays live and enabled across a full round-trip. Line :47 then assigns a NEW
+// _runner, orphaning the first call's 1 Hz _timerInterval for the life of the page — discardRunner
+// and showRunnerFinish clear only the second one.
+//
+// It DOES suspend (await _startFreshRunner above), so this guard is not decorative — which is the
+// test that matters after the decorative registration found on 2026-08-28. The early `draft` return
+// acquires and releases in one microtask, but that branch removes #runner-setup synchronously, so it
+// needs no guard.
+//
+// NOTE for the re-entry spec: launchRunner is invisible to its FROZEN_UNGUARDED enumeration, which
+// lists functions containing `db.from(...).insert(`. This is the SECOND escape (saveWorkoutSession
+// was the first). "A double press causes damage" is a strictly wider set than "a double press
+// inserts a row" — see bugs/2026-08-29-runner-timer-interval-leaks-on-a-double-tapped-start.
+guardReentry('launchRunner')
 
 async function _startFreshRunner(clientId) {
   // Unlock audio/speech here too — this function can be reached directly from the
@@ -56,6 +72,16 @@ async function _startFreshRunner(clientId) {
 }
 
 function _startRunnerTimerTick() {
+  // Clear before starting. Added 2026-08-29 by the weekly full-file review: this was the ONLY one of
+  // the seven setInterval sites in this file without a preceding clear — its sibling twelve lines
+  // below (_startRunnerDraftSafetyNet, :138), called on the very next line at both call sites, does
+  // clear. Straight copy-paste drift between two back-to-back functions.
+  //
+  // This alone does NOT close the leak: on a double-tapped ▶ Start, _startFreshRunner assigns a NEW
+  // _runner at :47, so the first call's interval id is already unreachable by the time the second
+  // call runs and there is nothing here to clear. The re-entry guard on launchRunner is what actually
+  // prevents the orphan; this line stops the simpler case (any future re-entry within one _runner).
+  _runner._timerInterval = clearTimer(_runner._timerInterval)
   _runner._timerInterval = setInterval(() => {
     if (!_runner) return
     const t = fmtRunnerTime(_runner.startTime)
@@ -1818,6 +1844,16 @@ function _applyCardioCapture(ex) {
 }
 
 
+// A logged CARDIO/interval round carries { duration, distanceM } (logRunnerSet :973/:986,
+// startIntervalTimer :1360, _logIntervalPhase :1336) — never `reps`. Detected from the SET, not from
+// ex.type, so an interval round inside a mixed session is handled on its own shape and a future
+// metric cannot silently fall into the weight/reps branch.
+function _isCardioSetShape(s) {
+  if (!s) return false
+  if (s.reps != null && s.reps !== '') return false
+  return (s.duration != null && s.duration !== '') || (s.distanceM != null && s.distanceM !== '') || s.phase != null
+}
+
 function editRunnerSet(exIdx, setIdx) {
   const s = _runner.exercises[exIdx].loggedSets[setIdx]
   if (!s) return
@@ -1832,8 +1868,17 @@ function editRunnerSet(exIdx, setIdx) {
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center'
   overlay.innerHTML = `
     <div style="width:100%;max-width:480px;background:var(--surface);border-radius:var(--legacy-radius-24, 24px) 24px 0 0;padding:24px 20px 36px">
-      <div style="font-size:var(--legacy-text-15, 15px);font-weight:700;margin-bottom:16px">Edit Set ${setIdx+1}</div>
+      <div style="font-size:var(--legacy-text-15, 15px);font-weight:700;margin-bottom:16px">Edit ${_isCardioSetShape(s) ? 'Round' : 'Set'} ${setIdx+1}</div>
       <div style="display:flex;gap:10px;margin-bottom:16px">
+        ${_isCardioSetShape(s) ? `
+        <div style="flex:1">
+          <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">Time</label>
+          <input id="wr-edit-duration" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${escapeAttr(s.duration || '')}" placeholder="0:00" inputmode="numeric">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">Distance (m)</label>
+          <input id="wr-edit-distance" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${escapeAttr(s.distanceM == null ? '' : String(s.distanceM))}" placeholder="—" type="number">
+        </div>` : `
         <div style="flex:1">
           <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">${window._unitPrefs.weight}</label>
           <input id="wr-edit-weight" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" ${s.weight === 'BW' ? 'value="BW"' : (_hasNumVal(s.weight) ? weightInputAttrs(s.weight) : 'value=""')} placeholder="—">
@@ -1841,7 +1886,7 @@ function editRunnerSet(exIdx, setIdx) {
         <div style="flex:1">
           <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">Reps</label>
           <input id="wr-edit-reps" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${s.reps||''}" placeholder="—" type="number">
-        </div>
+        </div>`}
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="document.getElementById('wr-edit-overlay').remove()" style="flex:1;padding:13px;border:1px solid var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Cancel</button>
@@ -1853,10 +1898,37 @@ function editRunnerSet(exIdx, setIdx) {
 }
 
 function saveEditRunnerSet(exIdx, setIdx) {
-  const weight = weightFromInput(document.getElementById('wr-edit-weight')) ?? ''
-  const reps   = document.getElementById('wr-edit-reps')?.value.trim()
-  if (!reps) return
-  _runner.exercises[exIdx].loggedSets[setIdx] = { ..._runner.exercises[exIdx].loggedSets[setIdx], weight, reps }
+  const existing = _runner.exercises[exIdx].loggedSets[setIdx]
+  let patch
+
+  if (_isCardioSetShape(existing)) {
+    // Before 2026-08-29 this function only ever read weight/reps, while ✎ Edit is reachable ONLY for
+    // cardio (renderRunner shows it in the !isTable branch, and _isPlainStrengthExercise is
+    // `ex.type !== 'cardio'`). No cardio round carries `reps`, so the guard below was always taken and
+    // Save did nothing, every time, with no message. Found by the weekly full-file review.
+    const duration = document.getElementById('wr-edit-duration')?.value.trim()
+    const distance = document.getElementById('wr-edit-distance')?.value.trim()
+    // A distance-only round (isDistanceBased) legitimately has no duration, so require ONE of the two
+    // rather than duration outright — demanding a time here would refuse a legitimate Skierg round.
+    if ((!duration || duration === '0:00') && !distance) {
+      showToast('Enter a time or a distance', 'warn')
+      return
+    }
+    // null, not '', when a field is cleared: _cardioDistanceM treats '' and null alike, but `duration`
+    // is read as a display string elsewhere and an empty string would render as a blank time rather
+    // than falling back. Keeps the shape identical to what logRunnerSet writes.
+    patch = { duration: duration || null, distanceM: distance || null }
+  } else {
+    const weight = weightFromInput(document.getElementById('wr-edit-weight')) ?? ''
+    const reps   = document.getElementById('wr-edit-reps')?.value.trim()
+    // Toast rather than a bare return — the file's own convention (toggleTableSet :430,
+    // logRunnerSet :968). A silent return on a required field reads as a broken button, which is
+    // exactly how the cardio case above went unnoticed.
+    if (!reps) { showToast('Enter reps first', 'warn'); return }
+    patch = { weight, reps }
+  }
+
+  _runner.exercises[exIdx].loggedSets[setIdx] = { ...existing, ...patch }
   document.getElementById('wr-edit-overlay')?.remove()
   renderRunner()
 }

@@ -98,6 +98,104 @@ test.describe('review fixes 2026-08-29', () => {
     expect(result.resolvedId, 'a refused repoint must fall back to the original template id').toBe(fx.tA)
   })
 
+  // ── Finding C2 ────────────────────────────────────────────────────────────────
+  //
+  // No network, no fixtures: this drives the MECHANISM. A double-tapped ▶ Start used to run
+  // _startFreshRunner twice, and because :47 assigns a NEW _runner the first call's 1 Hz interval
+  // became unreachable and ticked for the life of the page. Counting real timer ids is the only way
+  // to see that — the UI looks identical either way, which is why it survived this long.
+  test('a double-invoked launchRunner leaves exactly one live interval', async ({ page }) => {
+    await loginAsPT(page)
+
+    const result = await page.evaluate(async () => {
+      // Count live intervals by wrapping the timer functions. setInterval/clearInterval are the only
+      // things that can create or destroy one, so a wrapper sees every id with no guesswork.
+      const live = new Set()
+      const realSet = window.setInterval, realClear = window.clearInterval
+      window.setInterval = function (...a) { const id = realSet.apply(this, a); live.add(id); return id }
+      window.clearInterval = function (id) { live.delete(id); return realClear.call(this, id) }
+
+      // Stub _startFreshRunner's slow half so this needs no DB: keep the two things that matter —
+      // it SUSPENDS (so the guard has a window to hold across), and it starts the timer tick.
+      const realFresh = window._startFreshRunner
+      window._startFreshRunner = async function (clientId) {
+        await new Promise(r => setTimeout(r, 60))          // the round-trip the button stays live across
+        // BARE assignment, not window._runner: _runner is `let _runner = null` (app-workouts.js:3140),
+        // a lexical binding that never becomes a window property. window._runner would be a different
+        // slot the code never reads — which is exactly how this test failed on first write.
+        _runner = { startTime: Date.now(), exercises: [], clientId }
+        _startRunnerTimerTick()
+      }
+      window._loadRunnerDraft = () => null                  // force the fresh path, not the resume path
+
+      try {
+        // Both presses fired before the first resolves — exactly a hard double-tap.
+        await Promise.all([launchRunner('probe-client'), launchRunner('probe-client')])
+        await new Promise(r => setTimeout(r, 40))
+        const liveCount = live.size
+        // Tear down whatever survived so the probe cannot leak into later tests.
+        for (const id of Array.from(live)) realClear.call(window, id)
+        return { liveCount }
+      } finally {
+        window.setInterval = realSet
+        window.clearInterval = realClear
+        window._startFreshRunner = realFresh
+        _runner = null
+      }
+    })
+
+    // Without guardReentry('launchRunner') both presses run, the second overwrites _runner, and the
+    // first interval is orphaned — liveCount is 2 and nothing can ever clear the first.
+    expect(result.liveCount, 'a double-tapped Start must leave exactly one live interval — the second '
+      + 'press overwrites _runner, so any interval the first press started can never be cleared again')
+      .toBe(1)
+  })
+
+  // ── Finding C1 ────────────────────────────────────────────────────────────────
+  //
+  // Drives the REAL editRunnerSet / saveEditRunnerSet against a real cardio round, with no stubbing
+  // of either — a test that re-typed the save logic would pass whether or not the source is fixed
+  // (the decorative-test class). The sheet is opened, the field is typed into, Save is pressed.
+  test('editing a logged cardio round actually saves — the Save button is not dead', async ({ page }) => {
+    await loginAsPT(page)
+
+    const result = await page.evaluate(async () => {
+      // A duration-based cardio round, exactly the shape logRunnerSet writes at :986.
+      _runner = {
+        startTime: Date.now(), exIdx: 0, clientId: 'probe',
+        exercises: [{ name: 'Skierg', type: 'cardio', loggedSets: [{ duration: '2:00', distanceM: '400' }] }]
+      }
+
+      editRunnerSet(0, 0)
+      const sheetOpened = !!document.getElementById('wr-edit-overlay')
+      // The cardio branch must render TIME/DISTANCE, not the weight/reps pair that made Save dead.
+      const hasDuration = !!document.getElementById('wr-edit-duration')
+      const hasReps     = !!document.getElementById('wr-edit-reps')
+      const prefilled   = document.getElementById('wr-edit-duration')?.value
+
+      document.getElementById('wr-edit-duration').value = '3:30'
+      document.getElementById('wr-edit-distance').value = '750'
+      saveEditRunnerSet(0, 0)
+
+      const after = _runner.exercises[0].loggedSets[0]
+      const stillOpen = !!document.getElementById('wr-edit-overlay')
+      _runner = null
+      return { sheetOpened, hasDuration, hasReps, prefilled, after, stillOpen }
+    })
+
+    expect(result.sheetOpened, 'the edit sheet must mount').toBe(true)
+    expect(result.hasDuration, 'a cardio round must get a Time field').toBe(true)
+    expect(result.hasReps, 'a cardio round must NOT get the Reps field — no cardio set shape carries reps, '
+      + 'which is what made Save hit its bare `return` every time').toBe(false)
+    expect(result.prefilled, 'the sheet must prefill from the logged round').toBe('2:00')
+
+    // THE load-bearing assertion. Before the fix this was still 2:00 / 400 — Save read wr-edit-reps,
+    // found it absent, and returned with no toast and no change.
+    expect(result.after.duration, 'the edited time must persist').toBe('3:30')
+    expect(result.after.distanceM, 'the edited distance must persist').toBe('750')
+    expect(result.stillOpen, 'a successful save must close the sheet').toBe(false)
+  })
+
   // ── Finding A2 ────────────────────────────────────────────────────────────────
   test('every client-scoped writer in app-runner calls _verifyClientAccess', async () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'app-runner.js'), 'utf8')
