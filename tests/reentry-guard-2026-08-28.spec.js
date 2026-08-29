@@ -62,11 +62,18 @@ const FROZEN_UNGUARDED = {
   savePerformanceLog:                 'one row, appears in the log list, deletable',
   saveWeightLog:                      'one row, appears in the weight history, deletable',
 
-  // ── Runner / session saves. Each is reached from a screen that is torn down on success, so the
-  //    button does not survive the first press to be pressed again.
-  _savePostSessionOneRM:              'its row is removed from the modal on success (psorm-row-N)',
-  saveRunnerOneRM:                    'closes modal-runner-1rm on success; the button goes with it',
-  saveWorkoutSession:                 'manual-log twin of saveRunnerSession; navigates away on success'
+  // ── The runner/session-save category USED to live here, under one shared justification:
+  //    "each is reached from a screen that is torn down on success, so the button does not survive the
+  //    first press to be pressed again." That reasoning was FALSE for all three, and the weekly
+  //    full-file review caught it on 2026-08-29. In every one the teardown runs AFTER the awaits —
+  //    precisely the window a second press lands in — and none disabled its button. The claimed
+  //    "twin", saveRunnerSession, disables synchronously at app-runner.js:2336 before its first await,
+  //    which is the difference the word "twin" was hiding.
+  //
+  //    _savePostSessionOneRM, saveRunnerOneRM and saveWorkoutSession are now GUARDED and appear in
+  //    MUST_BE_GUARDED below. Left as a comment rather than deleted, because the failure mode worth
+  //    remembering is not the three functions — it is that ONE plausible sentence exempted a whole
+  //    category, and nothing checked it against the code for four days.
 }
 
 // Phase-1 members: guarded in this commit. Named here so the test states the intended set rather
@@ -78,7 +85,18 @@ const MUST_BE_GUARDED = [
   '_quickAssignPhaseWorkout', // check-then-insert on a day slot
   'duplicatePhaseWeek',       // double-tap duplicates an entire training week
   'copyProgramToCoaching',    // 100-line deep copy, NOT confirm-gated — found by applying the criterion
-  '_createExerciseFromPicker' // already guarded, but by the strandable form — converted
+  '_createExerciseFromPicker', // already guarded, but by the strandable form — converted
+
+  // ── Added 2026-08-29 by the weekly full-file review, all three moved out of FROZEN_UNGUARDED.
+  //    Their shared exemption ("torn down on success") described what happens AFTER the awaits.
+  'saveWorkoutSession',       // double-tap = TWO workout_logs rows plus their exercises and sets
+  'saveRunnerOneRM',          // double-tap = two identical client_1rms rows; modal .remove() is after
+  '_savePostSessionOneRM'     // same; the psorm-row-N .remove() is after both awaits
+
+  // NOT added: launchRunner. It IS guarded (app-runner.js), but it inserts nothing, so it is invisible
+  // to the enumeration below and listing it here would assert membership of a set it is not in. That
+  // gap is the point — see bugs/2026-08-29-runner-timer-interval-leaks-on-a-double-tapped-start:
+  // "a double press causes damage" is a strictly wider set than "a double press inserts a row".
 ]
 
 async function readModules (page) {

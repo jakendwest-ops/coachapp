@@ -2636,6 +2636,17 @@ async function _savePostSessionOneRM(i, clientId, exerciseName, estimate, exerci
   showToast(`1RM saved for ${exerciseName}`, 'success', 2000)
 }
 
+// ── Guarded 2026-08-29 (weekly full-file review) ──────────────────────────────────────────────
+// All three of these were EXEMPT in tests/reentry-guard-2026-08-28.spec.js under one shared
+// justification: "reached from a screen that is torn down on success, so the button does not survive
+// the first press to be pressed again." That reasoning is false for all three, and I wrote it.
+// The teardown runs AFTER the awaits — which is precisely the window a second press lands in — and
+// none of them disables its button. Verified per function, not assumed: no `disabled` assignment
+// exists in any of the three bodies, while saveRunnerSession (the "twin" one of them cited) does
+// disable synchronously at :2336 before its first await.
+// _savePostSessionOneRM: double-tap = two identical client_1rms rows. The psorm-row-N .remove() runs AFTER both awaits.
+guardReentry('_savePostSessionOneRM')
+
 // ─── LOG SESSION ──────────────────────────────────────────────────────────────
 // _logBlocks: [{name, type, defaultSets, defaultReps, defaultWeight, sets:[{reps,weight,duration,distance,effort}]}]
 window._logBlocks = []
@@ -2758,6 +2769,9 @@ async function saveRunnerOneRM(exIdx) {
   document.getElementById('modal-runner-1rm').remove()
   renderRunner()
 }
+
+// saveRunnerOneRM: double-tap = two identical client_1rms rows. The modal .remove() runs AFTER both awaits.
+guardReentry('saveRunnerOneRM')
 
 // Two bugs lived in this function's inline handlers, both fixed 2026-07-13:
 //
@@ -3115,6 +3129,9 @@ async function saveWorkoutSession(clientId) {
   if (tabContent) renderClientWorkouts(clientId, tabContent)   // coach acting on a client's tab
   else _renderOwnDashboard()                                   // see app-core.js — solo-safe fallback
 }
+
+// saveWorkoutSession: double-tap = TWO workout_logs rows plus their exercises and sets. closeModal is at the END, after eight awaits including three inserts.
+guardReentry('saveWorkoutSession')
 
 async function openWorkoutLog(logId, clientId) {
   // This screen is reachable by a CLIENT from their own session history (app-workouts.js), and it had
