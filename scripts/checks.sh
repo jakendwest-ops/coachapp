@@ -330,9 +330,25 @@ if ! node scripts/check-policy-version.mjs; then
 fi
 
 # -- 10. Playwright smoke tests --
+#
+# 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print
+# "Fix tests before pushing" -- naming the wrong cause entirely. playwright.config.js now carries a
+# webServer block (so the server is started if absent) plus a globalSetup that asserts the served
+# page is CoachApp and not merely a 200, because a stale .claude/launch.json can serve a different
+# app on that port. Both apply here automatically, since this invocation uses the same config.
+#
+# The precondition's own self-test runs FIRST and blocks on its own failure, matching rule 2's
+# pattern above: a check that has only ever been seen to PASS cannot be distinguished from one
+# incapable of failing. It drives the precondition through all four states (down / 500 / wrong app
+# / correct) on a spare port, so it never touches a real preview server.
 if [ "${CI}" = "true" ]; then
   echo "Playwright: skipped in CI (pre-push hook only)"
 else
+  echo "Checking the preview-server precondition..."
+  if ! node scripts/check-preview-server.selftest.mjs > /dev/null 2>&1; then
+    node scripts/check-preview-server.selftest.mjs 2>&1 | sed 's/^/    /'
+    fail "check-preview-server self-test FAILED -- the suite's server precondition can no longer be trusted, so a dead or wrong server would again be reported as failing tests."
+  fi
   echo "Running Playwright smoke tests..."
   if npx playwright test tests/runner.spec.js tests/solo-account.spec.js --reporter=line 2>&1; then
     echo "  Playwright: passed"
