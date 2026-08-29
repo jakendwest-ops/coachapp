@@ -115,7 +115,7 @@ async function renderDashboard(el) {
     ${_fetchFailureBanner(_failed, 'dashboard')}
     <div class="page-header">
       <div>
-        <h1 class="page-title">Welcome back, ${firstName}</h1>
+        <h1 class="page-title">Welcome back, ${escapeHtml(firstName)}</h1>
         <p class="page-subtitle">${window._branding?.businessName ? escapeHtml(window._branding.businessName) + ' · ' : ''}${today}</p>
       </div>
       <div style="display:flex;gap:8px">

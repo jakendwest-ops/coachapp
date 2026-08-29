@@ -3076,7 +3076,7 @@ async function renderClientWorkouts(clientId, el) {
       const unique = cpwRows.filter(r => { const id = r.workout_template_id; if (seen.has(id)) return false; seen.add(id); return true })
       const programName = clientProgs[0]?.programs?.name || 'Program'
       programWorkoutsHtml = `
-        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${programName}</div>
+        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${escapeHtml(programName)}</div>
         <div class="list" style="margin-bottom:20px">
           ${unique.map(r => `
             <div class="list-row" onclick="openTemplate('${r.workout_templates?.id||r.workout_template_id}',{backTo:'client',backLabel:'${escapeAttr((clientData?.full_name||'Client'))}',clientId:'${clientId}',clientName:'${escapeAttr((clientData?.full_name||'Client'))}',clientProgramId:'${cpIds[0]||''}'})">

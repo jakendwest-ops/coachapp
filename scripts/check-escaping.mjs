@@ -40,11 +40,77 @@ const BUILDS_HTML = /</
 
 const findings = []
 const wrongEscaper = []
+const indirect = []
+
+// ── ONE-HOP INDIRECTION (added 2026-08-29) ────────────────────────────────────────────────────────
+// The comment further down used to say indirection "needs a human reading the dataflow, periodically
+// — it is a full-file-review job, not a regex one." The 2026-08-29 full-file review duly found three
+// such sinks, which is the documented process working. But it is the 7th instance of this class, and
+// RULE 0 says an incident produces a CHECK. So one hop is now mechanised — not the general dataflow
+// problem, just the single shape that keeps recurring:
+//
+//     const label = 'Next: ' + ex.name      // free text, unescaped, assigned to a local
+//     ...  `<div>${label}</div>`            // interpolated raw into markup
+//
+// MEASURED BEFORE BEING GIVEN TEETH (feedback_measure_before_giving_a_gate_teeth). Three iterations:
+//   v1 name-keyed, file-wide  -> 6 candidates, 2 FALSE (a tainted arrow fn in one function collided
+//                                with an innocent PARAMETER of the same name in another)
+//   v2 + function scoping     -> 1 candidate, and it silently DROPPED a real site, because a
+//                                name-only key let the second `nextLabel` assignment overwrite the first
+//   v3 keyed by function+name -> 6 candidates, ALL SIX REAL, zero false positives
+// v3 ships. It found twice what the three review agents found by hand.
+// KNOWN LIMIT, found while proving this rule can fail (2026-08-29): the assignment must START a line.
+// A `const x = ... .name` declared mid-line inside an IIFE or a nested arrow is NOT seen. My first
+// plant used exactly that shape, the checker stayed green, and I nearly recorded it as "the rule is
+// dead" — it was the PLANT that was wrong. Stated here so the next person plants the right shape:
+// a line-leading const/let/var, then `${name}` on an HTML-building line in the same top-level function.
+function taintedLocals (lines) {
+  // Enclosing top-level function per line. Assignment and use must share one, or a parameter in a
+  // different function collides with a tainted name elsewhere in the file — that was v1's whole
+  // false-positive population.
+  const fnAt = []
+  let cur = null
+  lines.forEach((l, i) => {
+    if (/^(?:async )?function [A-Za-z_$][\w$]*\s*\(/.test(l)) cur = i
+    fnAt[i] = cur
+  })
+  const map = new Map()   // `${fn}|${name}` -> line number
+  lines.forEach((line, i) => {
+    if (/^\s*\/\//.test(line)) return
+    const m = line.match(/^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/)
+    if (!m) return
+    const [, name, rhs] = m
+    // NOT_A_SINK is deliberately NOT applied here. It exists to say "a bare `.length` is not a sink",
+    // which is right for a single ${...} expression but wrong for a compound RHS: this exact line —
+    //   const nextLabel = ... 'Next: ' + nextEx.name ... : 'Next: Set ' + (ex.loggedSets.length + 1)
+    // holds a REAL sink (nextEx.name) and a `.length` in the same expression, and applying NOT_A_SINK
+    // to the whole RHS silently dropped it. Measured without it: 6 candidates, all 6 real, 0 false.
+    if (!FREE_TEXT.test(rhs) || ESCAPED.test(rhs)) return
+    map.set(fnAt[i] + '|' + name, i + 1)
+  })
+  return { map, fnAt }
+}
 
 for (const file of FILES) {
   let src
   try { src = readFileSync(file, 'utf8') } catch { continue }
-  src.split('\n').forEach((line, i) => {
+  const _lines = src.split(/\r?\n/)   // CRLF-safe: this repo's working files are CRLF
+  const { map: _tainted, fnAt: _fnAt } = taintedLocals(_lines)
+  _lines.forEach((line, i) => {
+    if (/^\s*\/\//.test(line)) return
+    if (BUILDS_HTML.test(line)) {
+      for (const m of line.matchAll(/\$\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g)) {
+        const expr = m[1].trim()
+        if (ESCAPED.test(expr)) continue
+        const at = _tainted.get(_fnAt[i] + '|' + expr)
+        if (at) indirect.push({ file, line: i + 1, expr, at })
+      }
+    }
+  })
+  // CRLF-safe. Verified 2026-08-29: with split('\n') the one-hop rule below found ZERO sites in
+  // app-programs.js that it finds with this split — a trailing \r was breaking the assignment match.
+  // Changed here too rather than only in the new code, because the same latent weakness applied.
+  src.split(/\r?\n/).forEach((line, i) => {
     // Point 3 of the docstring, finally implemented. It was stated as a design goal from the start
     // but never written, and ESCAPED below whitelists escapeAttr unconditionally — so every misuse
     // passed. That gap shipped this bug TWICE: commit 9d0003b (2026-08-12), and again in the Per
@@ -117,8 +183,9 @@ for (const file of FILES) {
   })
 }
 
-if (findings.length || wrongEscaper.length) {
+if (findings.length || wrongEscaper.length || indirect.length) {
   for (const f of findings) console.log(`    ${f.file}:${f.line}  \${${f.expr}}   (unescaped)`)
+  for (const f of indirect) console.log(`    ${f.file}:${f.line}  \${${f.expr}}   (unescaped via ${f.file}:${f.at} — one hop)`)
   for (const f of wrongEscaper) console.log(`    ${f.file}:${f.line}  \${${f.expr}}   (WRONG ESCAPER: escapeAttr in a plain attribute)`)
   console.log('')
   console.log('    escapeHtml() for text content AND for plain attributes (value="", title="").')

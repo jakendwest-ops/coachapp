@@ -166,7 +166,7 @@ async function renderClientPrograms(clientId, el) {
                       <button onclick="toggleClientPhase('${dayPanelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:none;border:none;cursor:pointer;text-align:left">
                         <div>
                           <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--accent)">DAY ${day}</span>
-                          <span style="font-size:var(--text-base, 13px);font-weight:500;color:var(--text);margin-left:8px">${sessionSummary}</span>
+                          <span style="font-size:var(--text-base, 13px);font-weight:500;color:var(--text);margin-left:8px">${escapeHtml(sessionSummary)}</span>
                         </div>
                         <svg id="${dayPanelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
                       </button>
@@ -180,7 +180,7 @@ async function renderClientPrograms(clientId, el) {
                             <div style="margin-bottom:${si < daySessions.length - 1 ? '10px' : '0'};padding-bottom:${si < daySessions.length - 1 ? '10px' : '0'};border-bottom:${si < daySessions.length - 1 ? '1px solid var(--border)' : 'none'}">
                               ${multi ? `<div style="font-size:var(--text-xs, 10px);font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${daySessions.length}</div>` : ''}
                               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '0'}">
-                                <span style="font-size:var(--text-base, 13px);font-weight:600">${sessionName}</span>
+                                <span style="font-size:var(--text-base, 13px);font-weight:600">${escapeHtml(sessionName)}</span>
                                 ${templateId ? `<button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:3px 8px;flex-shrink:0" onclick="openTemplate('${templateId}',{backTo:'client',backLabel:'${clientName}',clientId:'${clientId}',clientName:'${clientName}',clientProgramId:'${a.id}'})">Edit</button>` : `<span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Not set up</span>`}
                               </div>
                               ${exs.length ? `

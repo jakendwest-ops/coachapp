@@ -636,7 +636,7 @@ function renderStrengthTable(ex) {
       <div id="rt-countdown" style="font-size:var(--text-4xl, 24px);font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;min-width:56px;text-align:center">${fmtRestCountdown(_runner.restRemaining)}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
-        <div style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nextLabel}</div>
+        <div style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(nextLabel)}</div>
       </div>
       <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:var(--radius-sm, 8px);background:var(--surface);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
     </div>`
@@ -1726,7 +1726,7 @@ function renderRestTimer() {
     </div>
     <div style="flex:1;min-width:0">
       <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
-      <div style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nextLabel}</div>
+      <div style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(nextLabel)}</div>
     </div>
     <div style="text-align:right;flex-shrink:0;margin-right:4px">
       <div style="font-size:var(--text-xs, 10px);color:var(--text-muted)">Session</div>
@@ -1873,11 +1873,11 @@ function editRunnerSet(exIdx, setIdx) {
         ${_isCardioSetShape(s) ? `
         <div style="flex:1">
           <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">Time</label>
-          <input id="wr-edit-duration" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${escapeAttr(s.duration || '')}" placeholder="0:00" inputmode="numeric">
+          <input id="wr-edit-duration" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${escapeHtml(s.duration || '')}" placeholder="0:00" inputmode="numeric">
         </div>
         <div style="flex:1">
           <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">Distance (m)</label>
-          <input id="wr-edit-distance" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${escapeAttr(s.distanceM == null ? '' : String(s.distanceM))}" placeholder="—" type="number">
+          <input id="wr-edit-distance" class="field-input" style="width:100%;margin-top:4px;font-size:var(--legacy-text-22, 22px);font-weight:700;text-align:center" value="${escapeHtml(s.distanceM == null ? '' : String(s.distanceM))}" placeholder="—" type="number">
         </div>` : `
         <div style="flex:1">
           <label style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted);text-transform:uppercase">${window._unitPrefs.weight}</label>
