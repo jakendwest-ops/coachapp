@@ -1,4 +1,50 @@
-﻿async function renderCalendar(el) {
+﻿// Maps a client's assigned programme onto real calendar dates: { 'YYYY-MM-DD': [phaseWorkout, ...] }.
+//
+// Extracted 2026-08-30 from the inline block inside renderCalendar, unchanged in behaviour, so the
+// solo dashboard's "Next up" and "Next session" tiles resolve dates by the SAME rule the calendar
+// grid draws. Before this there was no function anywhere answering "what is scheduled on date X" —
+// _buildWorkoutsHero (app-workouts.js:563) only returns the first session of the current programme
+// WEEK, ignoring today's date entirely, so a tile built on it would disagree with the calendar.
+//
+// Returns {} rather than null for any unusable input: callers iterate the result, and a null here
+// would move the failure into their loop instead of this function's own guard.
+function _programWorkoutsByDate(cp0, cpwMap) {
+  const byDate = {}
+  // _mondayOfWeek returns null for an unparseable date. The original code guarded on this because
+  // a null would throw at weekStart.getDate() and kill the WHOLE calendar render.
+  if (!cp0?.start_date || !_mondayOfWeek(cp0.start_date)) return byDate
+  const weekStart = _mondayOfWeek(cp0.start_date)
+  const map = cpwMap || {}
+
+  const phases = [...(cp0.programs?.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
+  let weekOffset = 0
+  phases.forEach(phase => {
+    // Group by week_number. A phase without generated periodization has only week_number=1 rows,
+    // which repeat identically across every week of the phase. Once periodization generates weeks
+    // 2+, each week's own rows are placed ONLY on their own week — no repeating.
+    const pwsByWeek = {}
+    ;(phase.program_phase_workouts || []).forEach(pw => { (pwsByWeek[pw.week_number || 1] = pwsByWeek[pw.week_number || 1] || []).push(pw) })
+    const generated = Object.keys(pwsByWeek).length > 1
+    for (let w = 0; w < (phase.duration_weeks || 1); w++) {
+      const weekPws = generated ? (pwsByWeek[w + 1] || []) : (pwsByWeek[1] || [])
+      weekPws.forEach(pw => {
+        // day_of_week is 1-BASED everywhere it is stored (Monday = 1), hence the -1.
+        const offset = ((weekOffset + w) * 7) + (pw.day_of_week - 1)
+        const d = new Date(weekStart)
+        d.setDate(weekStart.getDate() + offset)
+        const ds = _ymdLocal(d)
+        if (!byDate[ds]) byDate[ds] = []
+        const _clone = map[pw.id]
+        byDate[ds].push({ ...pw, _clientTemplateId: _clone?.templateId || null, _clientExercises: _clone?.exercises || null })
+      })
+    }
+    weekOffset += (phase.duration_weeks || 1)
+  })
+  Object.values(byDate).forEach(arr => arr.sort((a, b) => (a.session_order || 1) - (b.session_order || 1)))
+  return byDate
+}
+
+async function renderCalendar(el) {
   const now = new Date()
   calendarYear  = calendarYear  ?? now.getFullYear()
   calendarMonth = calendarMonth ?? now.getMonth()
@@ -47,38 +93,12 @@
     // _mondayOfWeek returns null for an unparseable date, where the old inline code returned an
     // Invalid Date and degraded to unusable day keys. Null would throw at weekStart.getDate() below
     // and kill the WHOLE calendar render — a strictly worse failure than the one it replaced.
+    // Extracted 2026-08-30 into _programWorkoutsByDate (top of this file) so the solo dashboard
+    // tiles resolve dates by THIS exact rule instead of a second copy that would drift from the
+    // grid. Guard and assignment kept verbatim: the original only published the global when the
+    // start_date parsed, and a null _mondayOfWeek would throw and kill the whole calendar render.
     if (cp0?.start_date && _mondayOfWeek(cp0.start_date)) {
-      // Monday of the start week. Hoisted to _mondayOfWeek (app-core.js) 2026-08-15 so the
-      // per-programme progress window derives a block's start from the SAME rule this grid uses —
-      // otherwise the two would disagree about which week a block begins in.
-      const weekStart = _mondayOfWeek(cp0.start_date)
-
-      const phases = [...(cp0.programs?.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
-      let weekOffset = 0
-      phases.forEach(phase => {
-        // Group this phase's workouts by week_number. Phases without generated periodization
-        // only have week_number=1 rows — those repeat identically across every week of the phase
-        // (unchanged legacy behaviour). Once periodization generates weeks 2+, each week's own
-        // rows are placed only on their own week — no repeating.
-        const pwsByWeek = {}
-        ;(phase.program_phase_workouts || []).forEach(pw => { (pwsByWeek[pw.week_number || 1] = pwsByWeek[pw.week_number || 1] || []).push(pw) })
-        const generated = Object.keys(pwsByWeek).length > 1
-        for (let w = 0; w < (phase.duration_weeks || 1); w++) {
-          const weekPws = generated ? (pwsByWeek[w + 1] || []) : (pwsByWeek[1] || [])
-          weekPws.forEach(pw => {
-            const offset = ((weekOffset + w) * 7) + (pw.day_of_week - 1)
-            const d = new Date(weekStart)
-            d.setDate(weekStart.getDate() + offset)
-            const ds = localDate(d)
-            if (!programWorkoutsByDate[ds]) programWorkoutsByDate[ds] = []
-            const _clone = _cpwMap[pw.id]
-            programWorkoutsByDate[ds].push({ ...pw, _clientTemplateId: _clone?.templateId || null, _clientExercises: _clone?.exercises || null })
-          })
-        }
-        weekOffset += (phase.duration_weeks || 1)
-      })
-      // Sort each day by session_order
-      Object.values(programWorkoutsByDate).forEach(arr => arr.sort((a,b)=>(a.session_order||1)-(b.session_order||1)))
+      Object.assign(programWorkoutsByDate, _programWorkoutsByDate(cp0, _cpwMap))
       window._calProgramWorkouts = programWorkoutsByDate
     }
   } else {
