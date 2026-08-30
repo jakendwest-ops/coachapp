@@ -730,7 +730,12 @@ async function showApp() {
   const role = currentProfile?.role
   const defaultPage = role === 'client' ? 'client-dashboard' : role === 'solo' ? 'solo-dashboard' : 'dashboard'
   const clientPages = ['client-dashboard', 'workouts', 'calendar', 'progress', 'settings']
-  const soloPages   = ['solo-dashboard', 'workouts', 'library', 'programs', 'calendar', 'progress', 'settings']
+  // 'goals' added 2026-08-30. renderClientGoals -- the full goals UI with add/open/edit/delete,
+  // milestones and progress updates -- already existed but was reachable ONLY from the coach's
+  // client-profile tab (app-clients.js:338). A solo user's only goals surface was the dashboard
+  // card, which could list them and tick milestones but could not CREATE one. This is a route, not
+  // a feature: the UI is scoped purely by .eq('client_id', ...) and is solo-safe as written.
+  const soloPages   = ['solo-dashboard', 'workouts', 'library', 'programs', 'calendar', 'progress', 'goals', 'settings']
   const coachPages  = ['dashboard', 'clients', 'workouts', 'calendar', 'programs', 'settings']
   const validPages  = role === 'client' ? clientPages : role === 'solo' ? soloPages : coachPages
 
@@ -1059,6 +1064,23 @@ function navigate(page, _historyOp = 'push') {
       _catch('programs',         renderPrograms);         break
     case 'clients':          _catch('clients',          renderClients);          break
     case 'workouts':         _catch('workouts',         renderWorkouts);         break
+    case 'goals':
+      // Renders the EXISTING renderClientGoals into a #tab-content wrapper, because every function in
+      // the goals module re-renders into that id (openGoal :698, backToGoals :809, deleteGoal :1116).
+      // Providing the id it already expects means add / open / edit / delete / milestones / progress
+      // all work here with ZERO change to that module — a route, not a rewrite.
+      //
+      // Resolved via _getCurrentClientId(), never window._soloClientId directly: the resolver is what
+      // handles all three roles, and a bare global would exclude a coached client if this page is
+      // later opened to them.
+      _catch('goals', async (container) => {
+        container.innerHTML = '<div class="page-header"><div><h1 class="page-title">Goals</h1></div></div><div id="tab-content"></div>'
+        const cid = await _getCurrentClientId()
+        const host = document.getElementById('tab-content')
+        if (!cid) { host.innerHTML = '<div class="loading-state">No client profile found.</div>'; return }
+        await renderClientGoals(cid, host)
+      })
+      break
     case 'library':
       // Same guard as `programs` above, added 2026-08-29 by the weekly full-file review.
       // renderWorkoutLibrary is the coach/solo BUILDER chrome ("+ New template", the Exercise Library

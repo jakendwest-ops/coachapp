@@ -40,8 +40,22 @@ test.describe('client health data write surface — behavioural RLS probe', () =
     const fx = await page.evaluate(async (TAG) => {
       const { data: all } = await db.from('clients').select('id, user_id, starting_weight_kg, goal_weight_kg')
         .eq('coach_id', currentUser.id)
-      const victim = (all || []).find(c => !c.user_id)          // no user_id => not the E2E login
-      if (!victim) return { fail: 'no non-login client available as victim' }
+      // OWNS ITS VICTIM as of 2026-08-30. This used to BORROW any existing coach-owned client with no
+      // user_id. That worked only because [E2E] debris happened to be lying around: once 18 stale
+      // fixture clients were reaped the account had exactly one client, it HAS a user_id, and this
+      // test failed with "no non-login client available as victim" — a fixture failure dressed as a
+      // security-test failure. Borrowing shared data is the anti-pattern that caused real flakiness
+      // here before; it also makes a security test silently dependent on litter.
+      let victim = (all || []).find(c => !c.user_id)          // no user_id => not the E2E login
+      let createdVictim = false
+      if (!victim) {
+        const { data: made, error: mkErr } = await db.from('clients')
+          .insert({ coach_id: currentUser.id, full_name: TAG + ' Victim' })
+          .select('id, user_id, starting_weight_kg, goal_weight_kg').single()
+        if (mkErr) return { fail: 'could not create a victim client: ' + mkErr.message }
+        victim = made
+        createdVictim = true
+      }
 
       const today = new Date().toISOString().split('T')[0]
       const errs = []
@@ -61,7 +75,7 @@ test.describe('client health data write surface — behavioural RLS probe', () =
       if (errs.length) return { fail: errs.join(' || ') }
 
       return {
-        clientId: victim.id, oneRmId: oneRm?.id, perfId: perf?.id, weightId: wl?.id,
+        clientId: victim.id, createdVictim, oneRmId: oneRm?.id, perfId: perf?.id, weightId: wl?.id,
         origStart: victim.starting_weight_kg, origGoal: victim.goal_weight_kg,
       }
     }, TAG)
@@ -146,6 +160,15 @@ test.describe('client health data write surface — behavioural RLS probe', () =
         await db.from('client_1rms').delete().eq('client_id', f.clientId).eq('exercise_name', 'PWNED')
         await db.from('performance_logs').delete().eq('client_id', f.clientId).eq('name', 'PWNED')
         await db.from('weight_logs').delete().eq('client_id', f.clientId).eq('weight_kg', 999)
+        // Reap the victim only if THIS run created it — never a client that already existed, which
+        // would turn a security test into a destructive one. Rowcount-checked: a refused delete
+        // returns { data: [], error: null } and would report success while leaving the row behind,
+        // which is precisely how 18 stale fixture clients accumulated in the first place.
+        if (f.createdVictim) {
+          const { data: gone } = await db.from('clients')
+            .delete().eq('id', f.clientId).eq('coach_id', currentUser.id).select('id')
+          if (!(gone || []).length) console.error('CLEANUP: victim client not reaped', f.clientId)
+        }
       }, fx)
     }
   })

@@ -113,13 +113,22 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('#session-detail-panel')).toHaveCount(0)
   })
 
-  test('solo stats strip stays visible (not display:none) on mobile', async ({ page }) => {
+  // MIGRATED 2026-08-30. This asserted '.solo-stats' -- the 4-up number strip that the tile
+  // redesign removed. Its INTENT was a real past bug: the strip once rendered display:none on
+  // mobile, so the dashboard's main content silently vanished at phone width. That guard is still
+  // needed; only the element it names changed. Deleting the test with the markup would have thrown
+  // the guard away with it, which is how affordances get lost here.
+  test('solo dashboard tiles stay visible (not display:none) on mobile', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.setViewportSize({ width: 400, height: 844 })
     await page.waitForTimeout(300)
-    await expect(page.locator('.solo-stats')).toBeVisible()
+    await expect(page.locator('.solo-tiles')).toBeVisible()
+    // Non-zero denominator: an empty grid is visible too, and would pass while showing nothing.
+    // EXACT count, not >=: a tile silently disappearing is the failure this guards. Update it
+    // deliberately when a tile is added — it went 4 -> 5 when Goals was added on 2026-08-30.
+    expect(await page.locator('.solo-tiles .solo-tile').count()).toBe(5)
+    await expect(page.locator('.solo-tiles .solo-tile').first()).toBeVisible()
   })
-
   test('switching back to PT restores coach dashboard', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.evaluate(() => switchView('coach'))

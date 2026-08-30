@@ -757,6 +757,20 @@ async function renderClientWeight(clientId, el) {
   const latest = logs[0]
   const oldest = logs[logs.length - 1]
   const change = logs.length >= 2 ? (parseFloat(latest.weight_kg) - parseFloat(oldest.weight_kg)).toFixed(1) : null
+  // Destroy BEFORE the innerHTML replace below. Closes
+  // bugs/2026-08-17-renderclientweight-leaks-a-chart-on-every-save: this function replaces the whole
+  // subtree, detaching #weight-chart, then calls _renderMetricChart at the bottom. Both of that
+  // helper's own guards miss on a rebuild — Chart.getChart(el) resolves the NEW canvas (undefined)
+  // and the _activeCharts filter compares against the new element — so the old entry survives, a
+  // live Chart bound to a detached canvas with its listeners and animation loop still running.
+  // saveWeightLog re-enters this function on every save, so it grew by one per save.
+  //
+  // Its twin renderProgressWeight has always destroyed, as does every other chart entry point; this
+  // one was missed. Fixed here rather than later because the solo dashboard added a THIRD chart
+  // entry point in the same change, and shipping that beside a known-broken second is
+  // fix-the-instance-not-the-class.
+  _destroyManagedCharts()
+
   const changeColour = change === null ? 'var(--text-muted)' : change > 0 ? '#ef4444' : change < 0 ? '#22c55e' : 'var(--text-muted)'
 
   el.innerHTML = `

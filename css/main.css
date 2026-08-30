@@ -522,6 +522,42 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 .dashboard-split-grid { display:grid; grid-template-columns:3fr 2fr; gap:16px; }
 .pt-stats   { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
 .solo-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
+/* Solo dashboard "at a glance" tiles (2026-08-30). Replaced .solo-stats + the hero card + the
+   Weight/Upcoming/Recent cards. Every value here is a token or an uncounted property: the
+   style-literal ratchet counts only bare font-size:Npx, border-radius:Npx and hex colours
+   (scripts/style-count.sh), so this block costs ZERO budget by construction. */
+.solo-tiles { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-bottom:16px; }
+.solo-tile { cursor:pointer; display:flex; flex-direction:column; gap:6px; }
+.solo-tile:hover { border-color:var(--accent); }
+.solo-tile-figure { font-size:var(--legacy-text-30, 30px); font-weight:700; line-height:1.1; color:var(--text); }
+.solo-tile-unit { font-size:var(--legacy-text-15, 15px); font-weight:600; color:var(--text-muted); margin-left:4px; }
+.solo-tile-name { font-size:var(--legacy-text-19, 19px); font-weight:700; color:var(--text); }
+.solo-tile-line { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
+.solo-tile-delta { font-size:var(--text-lg, 14px); font-weight:600; color:var(--text); }
+.solo-tile-sub { font-size:var(--text-md, 12px); color:var(--text-muted); }
+.solo-tile-empty { font-size:var(--text-base, 13px); color:var(--text-muted); margin:0; }
+.solo-tile-row { display:flex; align-items:center; gap:9px; padding:6px 0; border-bottom:1px solid var(--border); }
+.solo-tile-row:last-child { border-bottom:none; }
+.solo-tile-pip { width:3px; min-width:3px; height:26px; border-radius:var(--radius-xs, 4px); }
+.solo-tile-btn { align-self:flex-start; font-size:var(--text-base, 13px); padding:7px 16px; margin-top:2px; }
+/* Fixed height: the canvas must not grow the tile, and Chart.js needs a bounded parent or it
+   re-measures on every repaint and creeps taller. */
+.solo-spark { height:70px; margin-top:auto; }
+.solo-spark canvas { width:100% !important; height:70px !important; }
+.solo-goal-row { margin-top:6px; }
+.solo-goal-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.solo-goal-bar { height:4px; background:var(--surface-2); border-radius:var(--radius-xs, 4px); overflow:hidden; margin-top:4px; }
+.solo-goal-fill { height:100%; background:var(--accent); border-radius:var(--radius-xs, 4px); }
+.solo-lower { display:grid; grid-template-columns:1fr; gap:16px; }
+/* Five tiles in a two-column grid leave the last one alone at half width. Span it instead of
+   leaving a hole. :nth-child(odd) so it only applies when the count IS odd. */
+.solo-tiles > .solo-tile:last-child:nth-child(odd) { grid-column:1 / -1; }
+.solo-program-strip { display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius, 10px); padding:12px 14px; margin-bottom:16px; }
+.solo-strip-eyebrow { font-size:var(--text-xs, 10px); font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); }
+.solo-strip-name { font-size:var(--text-lg, 14px); font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.solo-strip-btn { font-size:var(--text-md, 12px); padding:6px 14px; flex-shrink:0; }
+.solo-milestone { display:inline-flex; align-items:center; gap:4px; font-size:var(--text-sm, 11px); padding:3px 8px; border-radius:var(--radius-full, 999px); border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
+
 
 /* ─── Client List ────────────────────────────────────────────────────────────── */
 .list {
@@ -756,6 +792,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   .dashboard-split-grid { grid-template-columns: 1fr; }
   .pt-stats   { grid-template-columns: repeat(2, 1fr); }
   .solo-stats { grid-template-columns: repeat(2, 1fr); }
+  .solo-tiles { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 540px) {

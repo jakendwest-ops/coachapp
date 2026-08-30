@@ -687,7 +687,11 @@ test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-br
   test('goal/milestone title and template description sinks are escaped, not raw, in every render site', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => {
-      const dashboardSrc = renderDashboard.toString() + renderClientDashboard.toString() + renderSoloDashboard.toString()
+      // _soloTileGoals added 2026-08-30: the solo dashboard's goal-title sink moved OUT of
+      // renderSoloDashboard into that tile builder. Without it this guard silently stopped
+      // covering the solo surface — the count fell 3 -> 2 and the assertion caught it, which is
+      // the guard working. A sink that moves must take its guard with it.
+      const dashboardSrc = renderDashboard.toString() + renderClientDashboard.toString() + renderSoloDashboard.toString() + _soloTileGoals.toString() + openGoal.toString()
       const templateSrc  = renderWorkoutTemplates.toString() + openTemplate.toString() + showEditTemplateModal.toString()
       return {
         rawGoalTitle: /\$\{g\.title\}|\$\{goal\.title\}/.test(dashboardSrc),
@@ -709,6 +713,11 @@ test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-br
     expect(r.rawMilestoneTitle, 'milestone title still interpolated raw somewhere').toBe(false)
     expect(r.rawClientFullName, 'client full_name still interpolated raw on the coach dashboard goals widget').toBe(false)
     expect(r.rawDescription, 'template description still interpolated raw somewhere').toBe(false)
+    // 2026-08-30: the solo dashboard no longer renders milestone CHIPS — the Goals tile shows a
+    // progress bar and links to the Goals page, where openGoal renders them. So the milestone sink
+    // moved out of the dashboards entirely and openGoal is scanned above. The threshold stays at 2
+    // (renderClientDashboard + openGoal) rather than being lowered, because lowering it would have
+    // quietly accepted the loss of a sink instead of following it.
     // 3 dashboards (coach/client/solo) each show goal title at least once; 2 show a milestone title;
     // 3 template surfaces (list row, detail page, edit modal) each show description once.
     expect(r.escapedGoalTitle).toBeGreaterThanOrEqual(3)

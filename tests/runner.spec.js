@@ -38,23 +38,60 @@ test.describe('PT Workouts page', () => {
     expect(true).toBe(true)
   })
 
+  // OWNS ITS FIXTURE, as of 2026-08-30. It used to click `.list-row` FIRST — whatever happened to be
+  // top of the list. That is the "pick whatever's first" anti-pattern this repo has been bitten by
+  // before (it caused real flakiness and masked a deleteProgram data-loss bug), and it finally broke
+  // the PUSH GATE: [E2E] debris had accumulated to 74 of the account's 77 templates, so the first row
+  // was a leftover probe template with 0 exercises and the editor assertion could not pass.
+  //
+  // Proven to be data, not code: this test still failed when the working tree was restored to
+  // 4bf805d — the exact commit whose full-suite run had it GREEN.
+  //
+  // It now creates a template it controls, clicks THAT row by name, and reaps it afterwards.
   test('PT can open a template for editing', async ({ page }) => {
-    await clickVisible(page, '[data-page="workouts"]')
-    // If a template row exists, click it and expect the template editor to load
-    const templateRow = page.locator('.list-row').first()
-    // Wait for the page to SETTLE before concluding "no templates". A bare .count() here does not
-    // auto-wait, so it can read 0 simply because the list has not rendered yet — and the test then
-    // RETURNS having asserted nothing, passing green while testing nothing. That is worse than a
-    // flake: a flake is visible, a vacuous pass is not.
-    await page.waitForSelector('.list-row, .empty-state', { timeout: 8000 }).catch(() => {})
-    const count = await page.locator('.list-row').count()
-    if (count === 0) return // genuinely no standalone templates — nothing to open
-    await templateRow.click()
-    // .first(): 'text=Exercises' matches TWO elements in the template editor, so a bare locator is a
-    // strict-mode violation. That was invisible until the settle-wait above stopped this test
-    // returning early — i.e. the assertion had never actually run. A vacuous pass had been hiding a
-    // broken assertion, which is the more dangerous half of the two.
-    await expect(page.getByText('Exercises').first()).toBeVisible({ timeout: 8000 })
+    const name = '[E2E] OpenForEdit ' + Date.now()
+    const made = await page.evaluate(async (n) => {
+      const { data, error } = await db.from('workout_templates')
+        .insert({ coach_id: currentUser.id, name: n }).select('id').single()
+      if (error) return { error: error.message }
+      // One exercise, so the editor has something to render and the assertion is not passing on an
+      // empty shell.
+      await db.from('workout_template_exercises').insert({
+        template_id: data.id, exercise_name: 'Back Squat', exercise_type: 'strength',
+        metric_type: 'weight_reps', order_index: 0, sets_json: [{ reps: 5 }]
+      })
+      return { id: data.id }
+    }, name)
+    expect(made.error, 'fixture template must be created before this asserts anything').toBeUndefined()
+
+    try {
+      await clickVisible(page, '[data-page="workouts"]')
+      // Wait for OUR row specifically, not for "a list", so a slow render cannot be mistaken for
+      // "no templates" — the failure mode the old settle-wait was added for.
+      const row = page.locator('.list-row', { hasText: name })
+      await row.first().waitFor({ state: 'visible', timeout: 15000 })
+      await row.first().click()
+      // Assert what the template editor ACTUALLY renders. This used to look for 'Exercises', which
+      // exists in exactly one place in the app — app-workouts.js:1981, the exercise-PICKER MODAL —
+      // and never in the editor. I introduced that in 91341e8: the test had been passing vacuously
+      // (a bare "if (count === 0) return"), I made it non-vacuous, hit a strict-mode violation, and
+      // patched it with .first() without checking the assertion meant anything. It then passed only
+      // when test ordering happened to leave a modal open. Fixing a vacuous test is only half the
+      // job; the assertion underneath has to be checked too.
+      await expect(page.locator('h1', { hasText: name })).toBeVisible({ timeout: 8000 })
+      // '+ Add exercise' is the editor's defining affordance — present for a template with or
+      // without exercises, and absent everywhere else.
+      await expect(page.getByText('+ Add exercise').first()).toBeVisible({ timeout: 8000 })
+    } finally {
+      // Rowcount-checked: a refused delete returns { data: [], error: null } and would report success
+      // while leaving the fixture behind — which is how 74 of these accumulated in the first place.
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        const { data: gone } = await db.from('workout_templates')
+          .delete().eq('id', id).eq('coach_id', currentUser.id).select('id')
+        if (!(gone || []).length) console.error('CLEANUP: fixture template not reaped', id)
+      }, made.id).catch(() => {})
+    }
   })
 
   test('flat Templates list query excludes periodization-generated week clones (2026-07-08 data-leak fix)', async ({ page }) => {

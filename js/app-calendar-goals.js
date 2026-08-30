@@ -534,7 +534,7 @@ async function renderClientGoals(clientId, el) {
         <div class="empty-state">
           <div class="empty-icon">🎯</div>
           <div class="empty-title">No goals yet</div>
-          <div class="empty-text">Set a goal to give this client a clear roadmap to success</div>
+          <div class="empty-text">${currentProfile?.role === 'solo' ? 'Set a goal to give yourself a clear roadmap' : 'Set a goal to give this client a clear roadmap to success'}</div>
           <button class="btn-primary" onclick="showAddGoalModal('${clientId}')">+ Add first goal</button>
         </div>
       ` : goals.map(g => goalCard(g, clientId)).join('')}
