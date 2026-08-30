@@ -1230,7 +1230,7 @@ async function openTemplate(id, ctx = {}) {
         ${_quickPrefsIconHtml()}
         <button class="btn-secondary" onclick="showEditTemplateModal('${id}')">Edit</button>
         <button class="btn-secondary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
-        ${currentProfile?.role === 'solo'
+        ${currentProfile?.role === 'solo' && window._soloClientId
           ? `<button class="btn-primary" onclick="startWorkoutRunner('${window._soloClientId}','${id}')">▶ Start</button>`
           : _ctx.clientId
             ? `<button class="btn-primary" onclick="startWorkoutRunner('${_ctx.clientId}','${id}')">▶ Start</button>`
@@ -2817,7 +2817,11 @@ async function _copyTemplateToLibrary(templateId) {
 // Per-workout entry point — the button lives in the session-detail drawer (openSessionDetail),
 // which already has the template in context and room for it; the phase-grid row is just name + ✕.
 async function saveTemplateToLibrary(templateId, btnEl) {
-  const btn = btnEl || document.getElementById('sd-save-library')
+  // The `sd-save-library` fallback was removed 2026-08-29: that id exists nowhere in the codebase, and
+  // openSessionDetail:486 says explicitly that the button no longer renders. The sole caller
+  // (app-programs.js) always passes `this`, so it was harmless — but a fallback naming a dead element
+  // documents an affordance that is gone. Found by the weekly full-file review.
+  const btn = btnEl
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…' }
   const result = await _copyTemplateToLibrary(templateId)
   if (btn) { btn.disabled = false; btn.textContent = 'Save to Library' }

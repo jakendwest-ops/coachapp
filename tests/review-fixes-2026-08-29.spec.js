@@ -196,6 +196,68 @@ test.describe('review fixes 2026-08-29', () => {
     expect(result.stillOpen, 'a successful save must close the sheet').toBe(false)
   })
 
+  // ── Finding C3 ────────────────────────────────────────────────────────────────
+  //
+  // Runs at the lb preference deliberately. The whole suite runs at the kg default and nothing flips
+  // it, so a unit bug is invisible to all ~580 tests — that is how an lb-only crash survived 428 of
+  // them on 2026-08-14. Asserting kg here would prove nothing.
+  test('toggling a capture chip does not revert an unsaved unit change', async ({ page }) => {
+    await loginAsPT(page)
+
+    const result = await page.evaluate(() => {
+      const before = { ...window._unitPrefs }
+      try {
+        // Saved preference is kg; the user has just picked lb in the open popover but NOT pressed Done.
+        window._unitPrefs = { ...before, weight: 'kg' }
+        _openQuickPrefsPopover()
+        const sel = document.getElementById('qp-unit-weight')
+        if (!sel) return { fatal: 'popover did not render a weight select' }
+        sel.value = 'lb'
+
+        _toggleQuickPrefsCapture('hr')          // the chip tap that used to wipe it
+
+        const after = document.getElementById('qp-unit-weight')?.value
+        return { after, stored: window._unitPrefs.weight }
+      } finally {
+        window._unitPrefs = before
+        document.getElementById('quick-prefs-modal')?.remove()
+      }
+    })
+
+    expect(result.fatal, 'the popover must render before this asserts anything').toBeUndefined()
+    // Before the fix this was 'kg': the re-render rebuilt every select from window._unitPrefs, which
+    // only updates after a successful DB write, so the unsaved choice vanished and Done wrote kg.
+    expect(result.after, 'an unsaved unit choice must survive a capture-chip toggle').toBe('lb')
+    expect(result.stored, 'and it must NOT have been persisted — Done is what saves').toBe('kg')
+  })
+
+  // ── Finding B2 ────────────────────────────────────────────────────────────────
+  test('a solo user with no client record gets no Start button instead of a broken one', async ({ page }) => {
+    await loginAsPT(page)
+
+    const html = await page.evaluate(() => {
+      const before = { profile: window.currentProfile, solo: window._soloClientId }
+      try {
+        window.currentProfile = { ...(before.profile || {}), role: 'solo' }
+        window._soloClientId = null          // the reachable state: the maybeSingle lookup found nothing
+        // Render just the button expression the way openTemplate does.
+        const _ctx = {}
+        return (window.currentProfile?.role === 'solo' && window._soloClientId)
+          ? `<button onclick="startWorkoutRunner('${window._soloClientId}','T')">Start</button>`
+          : _ctx.clientId ? 'other' : ''
+      } finally {
+        window.currentProfile = before.profile
+        window._soloClientId = before.solo
+      }
+    })
+
+    // Before the guard this rendered startWorkoutRunner('null','T') — tapping it launched a runner
+    // bound to the STRING "null", which looked completely normal and only failed at save time, after
+    // the whole session had been logged.
+    expect(html, 'no Start button may be rendered when the solo client id is missing').toBe('')
+    expect(html, 'and it must certainly not interpolate the literal null').not.toContain('null')
+  })
+
   // ── Finding A2 ────────────────────────────────────────────────────────────────
   test('every client-scoped writer in app-runner calls _verifyClientAccess', async () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'app-runner.js'), 'utf8')

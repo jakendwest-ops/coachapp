@@ -2145,11 +2145,8 @@ function addExtraCardioSet() {
   renderRunner()
 }
 
-function addExtraStrengthSet() {
-  const ex = _runner.exercises[_runner.exIdx]
-  ex.targetSets = (ex.targetSets || 0) + 1
-  renderRunner()
-}
+// addExtraStrengthSet removed 2026-08-29: zero references repo-wide. Its onclick lived in the
+// wizard deleted on 2026-08-11; superseded by addTableRow. Found by the weekly full-file review.
 
 async function showRunnerFinish() {
   // FULL teardown. This used to clear only _timerInterval, leaving the rest timer, the timed-set
@@ -3150,6 +3147,24 @@ async function openWorkoutLog(logId, clientId) {
     .eq('id', logId)
     .single()
   if (logErr) { log.error('openWorkoutLog', 'fetch failed', logErr); el.innerHTML = `<div class="empty-state"><div class="empty-text">Error loading session: ${logErr.message}</div></div>`; return }
+
+  // The two ids must agree. Added 2026-08-29 by the weekly full-file review: this function takes
+  // logId AND clientId independently and never compared them, yet `clientId` drives the "Last time"
+  // comparison query, the Delete button's argument, and backToClientWorkouts. A coach calling
+  // openWorkoutLog(<client A's log>, <client B's client id>) rendered A's session with **B's** history
+  // as the baseline and volume delta, with nothing on screen saying so.
+  //
+  // Both ids are RLS-bounded to the caller's own tenant, so this is within-tenant MIS-ATTRIBUTION of
+  // health data, not a cross-tenant leak — but a PT reading a baseline from the wrong person makes a
+  // wrong programming decision, which is the harm that matters here.
+  //
+  // Deliberately does not refuse: it re-derives from the row we actually fetched, so a mismatched
+  // caller gets the CORRECT client rather than an error. Refusing would risk breaking a legitimate
+  // caller for no gain — the row is already the authority on whose session this is.
+  if (logRow && logRow.client_id && clientId && logRow.client_id !== clientId) {
+    log.error('openWorkoutLog', 'clientId did not match the log — using the log\'s own client_id', { logId })
+    clientId = logRow.client_id
+  }
 
   const exIds = (logRow?.workout_log_exercises || []).map(e => e.id)
   const { data: allSets, error: setsErr } = exIds.length

@@ -93,8 +93,14 @@ function _busyTarget() {
 function _setBusy(el, busy) {
   if (!el) return
   if (busy) {
-    // Remember the PRIOR disabled state: moveTemplateExercise's up/down arrows are legitimately
-    // disabled at the ends of the list, and re-enabling one on release would be a new bug.
+    // Remember the PRIOR disabled state: a button that was ALREADY disabled must not come back
+    // enabled when the guard releases, which would be a new bug.
+    //
+    // 2026-08-29: this comment used to cite moveTemplateExercise's up/down arrows as the example.
+    // moveTemplateExercise is NOT a guardReentry member — the example was wrong even though the logic
+    // is right, and the next reader would have gone looking for a member that does not exist. Found by
+    // the weekly full-file review. The reasoning stands on its own; the false example is gone rather
+    // than replaced, because naming a member that might later be delisted just re-creates the problem.
     el._reentryPrevDisabled = !!el.disabled
     el._reentryPrevText = null
     if ('disabled' in el) el.disabled = true
@@ -391,7 +397,19 @@ function _quickPrefsIconHtml() {
   return `<button onclick="_openQuickPrefsPopover()" title="Preferences" style="width:36px;height:36px;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);background:var(--surface);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:var(--text-xl, 16px)">⚙</button>`
 }
 
-function _openQuickPrefsPopover() {
+function _openQuickPrefsPopover(prefill = null) {
+  // prefill: the LIVE select values, handed back by _toggleQuickPrefsCapture before it re-renders.
+  // Without it, toggling a capture chip rebuilt these selects from window._unitPrefs -- which is
+  // only updated AFTER a successful DB write -- so an unsaved unit change silently reverted and Done
+  // then wrote the OLD value. Found by the weekly full-file review 2026-08-29. Its sibling
+  // _toggleCardioCaptureMetric (app-runner.js:1780) already snapshots for exactly this reason; this
+  // twin was written without it. The whole suite runs at the kg default, so a unit bug is invisible
+  // to it -- see the Vault memory feedback_unit_preference_is_a_test_dimension.
+  const _sel = {
+    weight:   prefill?.weight   ?? window._unitPrefs.weight,
+    jump:     prefill?.jump     ?? window._unitPrefs.jumpHeight,
+    distance: prefill?.distance ?? window._unitPrefs.cardioDistance
+  }
   // Cardio-capture toggles live in app-runner.js (_loadCardioCaptureToggles) — this popover is the
   // second of two entry points into that SAME localStorage-backed state (the runner's own
   // exercise-finish capture card is the other), so a change from either place is visible in both.
@@ -413,22 +431,22 @@ function _openQuickPrefsPopover() {
       <div class="field">
         <label class="field-label">Weight</label>
         <select class="field-input" id="qp-unit-weight">
-          <option value="kg"${window._unitPrefs.weight==='kg'?' selected':''}>Kilograms (kg)</option>
-          <option value="lb"${window._unitPrefs.weight==='lb'?' selected':''}>Pounds (lb)</option>
+          <option value="kg"${_sel.weight==='kg'?' selected':''}>Kilograms (kg)</option>
+          <option value="lb"${_sel.weight==='lb'?' selected':''}>Pounds (lb)</option>
         </select>
       </div>
       <div class="field">
         <label class="field-label">Jump height</label>
         <select class="field-input" id="qp-unit-jump">
-          <option value="cm"${window._unitPrefs.jumpHeight==='cm'?' selected':''}>Centimetres (cm)</option>
-          <option value="in"${window._unitPrefs.jumpHeight==='in'?' selected':''}>Inches (in)</option>
+          <option value="cm"${_sel.jump==='cm'?' selected':''}>Centimetres (cm)</option>
+          <option value="in"${_sel.jump==='in'?' selected':''}>Inches (in)</option>
         </select>
       </div>
       <div class="field">
         <label class="field-label">Cardio distance</label>
         <select class="field-input" id="qp-unit-distance">
-          <option value="km"${window._unitPrefs.cardioDistance==='km'?' selected':''}>Kilometres (km)</option>
-          <option value="mi"${window._unitPrefs.cardioDistance==='mi'?' selected':''}>Miles (mi)</option>
+          <option value="km"${_sel.distance==='km'?' selected':''}>Kilometres (km)</option>
+          <option value="mi"${_sel.distance==='mi'?' selected':''}>Miles (mi)</option>
         </select>
       </div>
       ${capture ? `
@@ -447,10 +465,19 @@ function _openQuickPrefsPopover() {
 // The capture chips act immediately (localStorage, no save step, matches the runner card's own
 // behaviour) — only re-renders the popover to reflect the new toggle state.
 function _toggleQuickPrefsCapture(key) {
+  // Snapshot the LIVE selects before re-rendering. The chips are the only thing that changed, but the
+  // re-render rebuilt all three selects from window._unitPrefs, which is only updated after a
+  // successful DB write — so changing Weight to Pounds and then tapping a capture chip silently put it
+  // back to kg, and Done saved kg. No message, no error.
+  const live = {
+    weight:   document.getElementById('qp-unit-weight')?.value,
+    jump:     document.getElementById('qp-unit-jump')?.value,
+    distance: document.getElementById('qp-unit-distance')?.value
+  }
   const t = _loadCardioCaptureToggles()
   t[key] = !t[key]
   _saveCardioCaptureToggles(t)
-  _openQuickPrefsPopover()
+  _openQuickPrefsPopover(live)
 }
 
 async function _saveQuickPrefs() {
@@ -1032,7 +1059,14 @@ function navigate(page, _historyOp = 'push') {
       _catch('programs',         renderPrograms);         break
     case 'clients':          _catch('clients',          renderClients);          break
     case 'workouts':         _catch('workouts',         renderWorkouts);         break
-    case 'library':          _catch('library',          renderWorkoutLibrary);   break
+    case 'library':
+      // Same guard as `programs` above, added 2026-08-29 by the weekly full-file review.
+      // renderWorkoutLibrary is the coach/solo BUILDER chrome ("+ New template", the Exercise Library
+      // tab, showAddExerciseModal). 'library' is correctly absent from clientPages, so hash and
+      // localStorage routing already block it — which is PRECISELY the reachability profile `programs`
+      // had when its own guard was added on 2026-07-18. Defence in depth, one line, same shape.
+      if (currentProfile?.role === 'client') { container.innerHTML = '<div class="loading-state">Page not found</div>'; break }
+      _catch('library',          renderWorkoutLibrary);   break
     case 'calendar':         _catch('calendar',         renderCalendar);         break
     case 'settings':         _catch('settings',         renderSettings);         break
     case 'progress':         _catch('progress',         renderProgress);         break

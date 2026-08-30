@@ -810,7 +810,7 @@ async function showAssignProgramToClientModal(programId) {
       <p class="modal-error" id="apc-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="document.getElementById('apc-modal').remove()">Cancel</button>
-        <button class="btn-primary" id="apc-save-btn" onclick="saveAssignProgramToClient('${programId}','${isSolo ? window._soloClientId : ''}')">Assign</button>
+        <button class="btn-primary" id="apc-save-btn" onclick="saveAssignProgramToClient('${programId}','${isSolo ? (window._soloClientId || '') : ''}')">Assign</button>
       </div>
     </div>`
 
