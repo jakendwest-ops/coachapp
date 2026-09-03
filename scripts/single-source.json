@@ -1,0 +1,37 @@
+{
+  "_readme": [
+    "Facts that must have exactly ONE definition, and must have it in a named file.",
+    "",
+    "This is not the same thing as the count ratchet. A ratchet says 'do not add a 37th'; this says",
+    "'there is exactly one, and it lives HERE'. It therefore also catches a definition that MOVED,",
+    "and it names the surviving home in the refusal so the fix is obvious.",
+    "",
+    "checks.sh rule 9c already refuses two functions with the same NAME. Nothing here duplicates that:",
+    "these are values and call shapes, which rule 9c cannot see.",
+    "",
+    "Phases 3 and 4 of the refactor programme add a line here per consolidation -- unit constants, the",
+    "day-label array, the metric_type enum, fmtDateGB, _isSolo, the 1RM entry trio. The three seeded on",
+    "2026-09-03 were verified single-sourced by hand first; a registry seeded with something already",
+    "duplicated would fail on the commit that created it."
+  ],
+  "facts": {
+    "Epley formula": {
+      "pattern": "1 \\+ r / 30",
+      "scope": "js",
+      "file": "js/app-workouts.js",
+      "why": "The one-rep-max estimate, read by nine call sites across four modules. A second copy is how the estimate starts disagreeing with itself between the runner and My Progress. See bugs/2026-09-03-estimate1rm-inflates-a-single-by-3-percent -- if that judgement changes, it must change in exactly one place."
+    },
+    "Supabase client construction": {
+      "pattern": "createClient\\(",
+      "scope": "js",
+      "file": "js/app-core.js",
+      "why": "TWO clients means two auth sessions in one tab: one refreshes its token, the other does not, and requests start failing on whichever half of the app holds the stale one. There is one client, built in app-core, and everything else uses `db`."
+    },
+    "Metres per mile": {
+      "pattern": "1609\\.344",
+      "scope": "js",
+      "file": "js/app-workouts.js",
+      "why": "A unit constant. The related weight constants are ALREADY duplicated in two different forms (_WEIGHT_KG_TO_LB = 2.2046226218 in app-core.js:182 and lbs: v => v * 0.45359237 in app-progress.js:431), which is the Phase 3 consolidation -- this pins the one that is still clean before it goes the same way."
+    }
+  }
+}

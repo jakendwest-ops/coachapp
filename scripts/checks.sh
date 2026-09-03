@@ -437,6 +437,23 @@ fi
 if ! node scripts/check-count-ratchet.mjs; then
   fail "a ratcheted pattern grew -- see the lines above."
 fi
+# -- 9j. Single-source registry -- a registered fact has ONE definition, in the file that owns it --
+# Not the same as rule 9i. A ratchet says "do not add a 37th"; this says "there is exactly one, and it
+# lives HERE" -- so it also catches a definition that MOVED, and the refusal names the surviving home.
+# Rule 9c already refuses two FUNCTIONS with the same name; these are values and call shapes, which
+# rule 9c cannot see.
+#
+# Phases 3 and 4 add a line per consolidation. Seeded 2026-09-03 with three facts verified
+# single-sourced by hand -- deliberately NOT an empty registry, which would report success while
+# checking nothing. The checker refuses an empty registry for that reason.
+echo "Checking single-source registry..."
+if ! node scripts/check-single-source.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-single-source.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-single-source self-test FAILED -- the registry gate can no longer be trusted, fix it before relying on the result below."
+fi
+if ! node scripts/check-single-source.mjs; then
+  fail "a single-sourced fact was duplicated or moved -- see the lines above."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print
