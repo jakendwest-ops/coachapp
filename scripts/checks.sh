@@ -418,6 +418,25 @@ fi
 if ! node scripts/check-references.mjs; then
   fail "a cross-module reference does not resolve, or a new backward const/let read was added -- see above."
 fi
+# -- 9i. Count ratchets -- patterns that may fall but never rise --
+# Not defects: 36 hand-rolled empty states and 41 inlined `role === 'solo'` tests are the duplication
+# the consolidation phases exist to remove. What the ratchet buys is that the number cannot go UP
+# while that work is in progress -- otherwise a phase spends a week removing twelve copies while three
+# new ones are added behind it.
+#
+# Seeded 2026-09-03 from a clean tree, pinned AT the measurement: 36 empty-state, 25 Loading, 36
+# toLocaleDateString, 41 role===solo, 5 typeof shields, 123 waitForTimeout, 101 swallowed catches.
+# The PATTERN lives in scripts/count-baseline.json, not in the checker -- style-count.sh is the
+# cautionary tale, where six copies of one pattern drifted and the generator could then write a
+# baseline the counter disagreed with.
+echo "Checking count ratchets..."
+if ! node scripts/check-count-ratchet.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-count-ratchet.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-count-ratchet self-test FAILED -- the ratchets can no longer be trusted, fix it before relying on the result below."
+fi
+if ! node scripts/check-count-ratchet.mjs; then
+  fail "a ratcheted pattern grew -- see the lines above."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print

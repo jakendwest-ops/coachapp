@@ -1,0 +1,55 @@
+{
+  "_readme": [
+    "Ratchets for patterns that should only ever get RARER. Measured 2026-09-03 on a clean tree.",
+    "The pattern lives HERE and nowhere else -- scripts/check-count-ratchet.mjs reads it from this",
+    "file rather than carrying its own copy. That is the lesson from scripts/style-count.sh: the",
+    "style-literal pattern was duplicated six times, one copy drifted, and the generator could then",
+    "write a baseline the counter disagreed with -- failing the very commit meant to lower it.",
+    "A count RISING fails the push. A count FALLING prints a note asking for this file to be lowered;",
+    "leaving it high turns a ratchet into a permit."
+  ],
+  "counts": {
+    "empty-state markup": {
+      "pattern": "\\bempty-state\\b",
+      "scope": "js",
+      "count": 36,
+      "why": "36 hand-rolled empty states. Phase 6 replaces them with one _emptyState(msg) builder; until then this stops a 37th being written."
+    },
+    "Loading ellipsis": {
+      "pattern": "Loading…",
+      "scope": "js",
+      "count": 25,
+      "why": "25 copies of the same loading string. Same story as empty-state: a _loading() builder in Phase 6."
+    },
+    "toLocaleDateString(": {
+      "pattern": "toLocaleDateString\\(",
+      "scope": "js",
+      "count": 36,
+      "why": "Ten distinct option shapes across 36 sites, which is why dates render inconsistently between pages. Phase 3 introduces fmtDateGB(dateStr, shape)."
+    },
+    "role === 'solo'": {
+      "pattern": "role === 'solo'",
+      "scope": "js",
+      "count": 41,
+      "why": "The solo role test, inlined 41 times. Every one is a place a future _isSolo() change would have to be repeated -- and solo scoping is this project's most-shipped bug class (four separate coach_id/solo bugs). Phase 3 adds _isSolo()."
+    },
+    "typeof shield": {
+      "pattern": "typeof\\s+[A-Za-z_$][\\w$]*\\s*!==\\s*'undefined'",
+      "scope": "js",
+      "count": 5,
+      "why": "A load-order shield. It does not throw -- it quietly yields the fallback, so the symptom is an empty list or a missing colour with no error anywhere. Phase 5 hoists the declarations and deletes these."
+    },
+    "waitForTimeout(": {
+      "pattern": "waitForTimeout\\(",
+      "scope": "tests",
+      "count": 123,
+      "why": "Fixed sleeps in the E2E suite -- pure wall-clock cost on a 35-minute run, and each one is either too short (flaky) or too long (slow). Phase 2 converts them to real waits."
+    },
+    "swallowed catch": {
+      "pattern": "\\.catch\\(\\(\\)\\s*=>\\s*\\{\\s*\\}\\)",
+      "scope": "tests",
+      "count": 101,
+      "why": "A .catch(() => {}) in a test hides the failure it was meant to tolerate. One of these hid a ReferenceError in program-ownership-anchors-2026-08-22.spec.js:27 for eleven days, during which that spec's cleanup never ran once and left 242 rows in the live database."
+    }
+  }
+}
