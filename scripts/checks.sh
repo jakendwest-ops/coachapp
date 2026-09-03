@@ -350,9 +350,15 @@ fi
 # _mondayOfWeek (removing the Sunday wrap) each turned exactly one test red, exit 1. The first
 # attempt at that proof used sed patterns that matched NOTHING -- both neuters reported green while
 # changing zero lines. The neuter now asserts the file actually changed before drawing a conclusion.
+#
+# The GLOB is deliberate. The pattern is quoted so node expands it, not the shell, and a new
+# tests-node/*.test.mjs file is picked up with no edit here -- a hardcoded filename would have meant
+# adding a test file and silently not running it. Verified by watching the count rise 27 -> 33 when
+# guard-shape.test.mjs landed; node --test with a bare DIRECTORY argument does NOT work on node 24
+# (it tries to load the directory as a module and fails), so the glob is not interchangeable with it.
 echo "Running Node unit tests..."
-if ! node --test tests-node/pure.test.mjs > /dev/null 2>&1; then
-  node --test tests-node/pure.test.mjs 2>&1 | grep -E "^(not ok|✖)" | head -20 | sed "s/^/    /"
+if ! node --test "tests-node/*.test.mjs" > /dev/null 2>&1; then
+  node --test "tests-node/*.test.mjs" 2>&1 | grep -E "^(not ok|✖)" | head -20 | sed "s/^/    /"
   fail "Node unit tests failed -- a pure function changed behaviour. Fix before pushing."
 fi
 # -- 10. Playwright smoke tests --
