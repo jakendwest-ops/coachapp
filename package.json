@@ -6,7 +6,8 @@
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
-    "test:unit": "node --test \"tests-node/*.test.mjs\""
+    "test:unit": "node --test \"tests-node/*.test.mjs\"",
+    "near-dup": "node scripts/near-dup.mjs"
   },
   "repository": {
     "type": "git",
