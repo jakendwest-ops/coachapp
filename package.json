@@ -16,6 +16,8 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@supabase/supabase-js": "^2.108.2",
+    "acorn": "^8.18.0",
+    "acorn-walk": "^8.3.5",
     "dotenv": "^17.4.2"
   }
 }

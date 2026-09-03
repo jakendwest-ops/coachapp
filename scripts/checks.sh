@@ -382,6 +382,33 @@ fi
 if ! node scripts/check-handler-targets.mjs index.html $FILES; then
   fail "an inline handler names a function that does not exist -- see the lines above."
 fi
+# -- 9h. Cross-module references must resolve, and must not read a const/let declared LATER --
+# Nine files share one global scope with no module system, loaded in a fixed order from index.html.
+# Twenty bindings cross file boundaries. Nothing in this repo could check either half until now:
+# a real parser was needed, so acorn is a dev dependency as of 2026-09-03.
+#
+# Two findings, with different teeth:
+#   - an UNDECLARED reference always blocks. There are none today, so it can only fire on a
+#     regression -- the only kind of teeth worth having on a class that is already clean.
+#   - a BACKWARD const/let read is a RATCHET pinned at the measured 6. Phase 5 of the refactor
+#     programme hoists all six into app-core.js. Blocking on them now would block every push until
+#     then, which is how a gate gets bypassed rather than fixed.
+#
+# Measured on the clean tree 2026-09-03: 9 modules, 2417 distinct references, 578 top-level names,
+# 0 undeclared, 6 backward (3 typeof-shielded, 3 unguarded). A shielded one does not throw -- it
+# quietly yields the fallback, so the symptom is an empty list or a missing colour with no error.
+#
+# The scope analysis deliberately UNDER-reports (any name bound anywhere in a file counts as declared
+# for that whole file). A checker that flags correct code gets switched off; this project has that
+# scar. Silence on a real problem costs one finding, a false refusal costs the gate.
+echo "Checking cross-module references..."
+if ! node scripts/check-references.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-references.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-references self-test FAILED -- the reference gate can no longer be trusted, fix it before relying on the result below."
+fi
+if ! node scripts/check-references.mjs; then
+  fail "a cross-module reference does not resolve, or a new backward const/let read was added -- see above."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print
