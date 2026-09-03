@@ -102,6 +102,15 @@ fi
 #      here; walking back to the true push base without an event.before is out of scope.
 #   4. Otherwise: [SKIP] -- never a silent pass.
 echo "Checking cache bust..."
+# The auto-bump that FEEDS this rule is scripts/bump-versions.mjs, run by the pre-commit hook. Its
+# self-test runs here because the two are one mechanism seen from both ends: the hook raises the
+# number, this rule refuses if it did not rise. Deliberately NOT merged into one check -- .git/hooks
+# is untracked, so a fresh clone has no pre-commit hook at all and rule 3 is then the only thing
+# standing between an unbumped module and a returning browser running the old code.
+if ! node scripts/bump-versions.selftest.mjs > /dev/null 2>&1; then
+  node scripts/bump-versions.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "bump-versions self-test FAILED -- the auto-bump can no longer be trusted. Bump by hand until it is fixed."
+fi
 # Guarded: an unguarded `$(git rev-parse HEAD)` that ever fails or returns empty (no
 # `set -e` in this script -- a failed assignment does not abort) would make CB_HEAD_SHA
 # the empty string, degrading cb_usable()'s equality test to `[ "<any-sha>" != "" ]`,
