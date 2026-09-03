@@ -244,6 +244,18 @@ if [ -n "$HARDCODED_EMAIL" ]; then
   echo "$HARDCODED_EMAIL" | head -5 | sed 's/^/    /'
 fi
 
+# -- 5b. No stray probe specs on disk --
+# tests/zz-*.spec.js and tests/_adhoc.spec.js are .gitignored (.gitignore:13-14) so `git status` is
+# STRUCTURALLY BLIND to them -- which is exactly how six of them, one a DESTRUCTIVE one-off that reaps
+# every [E2E] row on the test account, sat in tests/ on 2026-09-02 after "rm -f" and a clean
+# `git status --short`. Playwright has no testIgnore, so anything present WILL run in the next full
+# suite. This rule looks at the FILESYSTEM, not git, because git is the thing that cannot see them.
+echo "Checking for stray probe specs on disk..."
+STRAYS=$(ls tests/zz-*.spec.js tests/_adhoc*.spec.js 2>/dev/null)
+if [ -n "$STRAYS" ]; then
+  echo "$STRAYS" | sed 's/^/    /'
+  fail "stray probe spec(s) on disk -- these are gitignored, git status cannot see them, and Playwright will run them. Delete before pushing."
+fi
 # -- 6. set_type in inserts --
 echo "Checking for set_type in inserts..."
 SET_TYPE=$(grep -n "set_type:" $FILES | grep -v "//")
@@ -342,7 +354,7 @@ fi
 # incapable of failing. It drives the precondition through all four states (down / 500 / wrong app
 # / correct) on a spare port, so it never touches a real preview server.
 if [ "${CI}" = "true" ]; then
-  echo "Playwright: skipped in CI (pre-push hook only)"
+  echo "[WARN] Playwright NOT run in CI -- CI currently runs ZERO browser tests. Coverage exists only on the local pre-push hook. (Phase 2 of the 2026-09-02 refactor plan wires the smoke gate into CI.)"
 else
   echo "Checking the preview-server precondition..."
   if ! node scripts/check-preview-server.selftest.mjs > /dev/null 2>&1; then

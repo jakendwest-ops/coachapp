@@ -2740,8 +2740,14 @@ async function _applyToAllSessions(sourceTemplateId) {
 // logic — _copyTemplateToLibrary passes { program_id: null, generated_from_phase_id: null } to lift
 // a program-owned workout out into the standalone (reusable) library pool.
 async function _cloneSharedMasterTemplate(tmpl, overrides = {}) {
+  // Computed ONCE because coach_id sits before ...overrides in the insert below, so a caller can
+  // legitimately redirect it. The rollback further down must delete with the SAME value that was
+  // inserted — anchoring on tmpl.coach_id happens to be right for all three current callers (none
+  // overrides it) but would silently fail to reap the shell the moment one did, leaving exactly the
+  // orphan the rollback exists to remove. Correct by construction, not by inspection.
+  const _cloneCoachId = overrides.coach_id ?? tmpl.coach_id
   const { data: newTmpl, error } = await db.from('workout_templates').insert({
-    coach_id: tmpl.coach_id, client_id: null, program_id: tmpl.program_id || null,
+    coach_id: _cloneCoachId, client_id: null, program_id: tmpl.program_id || null,
     is_personal: tmpl.is_personal, name: tmpl.name, description: tmpl.description || null,
     // Inherit the source's identity (2026-08-14). THIS is the function that manufactured Jake's
     // duplicates: every fork-on-edit produced a same-named library row with no link back, so the
@@ -2766,7 +2772,18 @@ async function _cloneSharedMasterTemplate(tmpl, overrides = {}) {
       order_index: ex.order_index, sets: ex.sets || null,
       sets_json: ex.sets_json || null, notes: ex.notes || null, superset_group: ex.superset_group || null
     }))).select('id, order_index')
-    if (exErr) log.error('_cloneSharedMasterTemplate', 'exercise clone failed', exErr)
+    if (exErr) {
+      // Roll back the shell and return null -- matching _cloneTemplateForClient (app-programs.js:494),
+      // which has done this since its own rollback fix. Until 2026-09-02 this branch only logged and
+      // then RETURNED THE ID ANYWAY, so fork-on-edit could hand every subsequent write a valid id for
+      // an EMPTY workout, under a green toast. The pair had drifted: the fix landed in one twin only.
+      // Anchored on coach_id and ROWCOUNT-checked, because a policy-blocked delete resolves with
+      // { data: [], error: null } and would report success while leaving an orphan shell behind.
+      log.error('_cloneSharedMasterTemplate', 'exercise clone failed -- rolling back shell', exErr)
+      const { data: rolled } = await db.from('workout_templates').delete().eq('id', newTmpl.id).eq('coach_id', _cloneCoachId).select('id')
+      if (!rolled?.length) log.error('_cloneSharedMasterTemplate', 'rollback deleted no rows -- empty template shell may survive', { templateId: newTmpl.id })
+      return null
+    }
     const origByOrder = {}
     origExs.forEach(ex => { origByOrder[ex.order_index] = ex.id })
     ;(insertedExs || []).forEach(newEx => { const oldId = origByOrder[newEx.order_index]; if (oldId) exMap[oldId] = newEx.id })

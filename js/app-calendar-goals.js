@@ -902,6 +902,7 @@ async function _verifyGoalAccess(fnName, goalId) {
 }
 
 async function _verifyMilestoneAccess(fnName, milestoneId) {
+  if (!milestoneId) { log.error(fnName, 'ownership check failed — no milestoneId'); return false }
   const { data: m } = await db.from('goal_milestones').select('goal_id').eq('id', milestoneId).maybeSingle()
   if (!m?.goal_id) { log.error(fnName, 'ownership check failed — milestone not visible', { milestoneId }); return false }
   return await _verifyGoalAccess(fnName, m.goal_id)

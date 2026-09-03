@@ -24,7 +24,7 @@ test.describe('app-programs ownership anchors — mismatched-id pairs are refuse
   const tag = PREFIX + ' ' + Date.now()
 
   test.afterEach(async ({ page }) => {
-    await page.evaluate(async (t) => {
+    await page.evaluate(async (p) => {
       // Rowcount-checked: a refused delete returns { data: [], error: null } and would report success
       // while leaving the fixtures behind.
       const { data: gone } = await db.from('programs')

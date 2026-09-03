@@ -455,7 +455,15 @@ async function saveAssignProgram(clientId) {
   // manual refresh — the "old data until refresh" bug, most visible when the program starts today.
   const tabEl = document.getElementById('tab-content')
   if (tabEl) tabEl.innerHTML = '<div class="loading-state">Assigning program…</div>'
-  await _cloneProgramForClient(cp.id, programId, clientId)
+  // Capture the result, like the twin saveAssignProgramToClient does. Until 2026-09-02 this path
+  // DISCARDED the return value, so a failed clone re-rendered as if it had worked and the user saw
+  // an assignment with no sessions behind it. The twin gates its toast on cloneOk with a comment
+  // explaining exactly this; the fix had landed in one member of the pair only.
+  const cloneOk = await _cloneProgramForClient(cp.id, programId, clientId)
+  if (!cloneOk) {
+    log.error('saveAssignProgram', 'program clone reported failure -- assignment may be incomplete', { programId, clientId })
+    showToast('The program was assigned but its sessions could not all be copied — check the plan.', 'error')
+  }
   renderClientPrograms(clientId, tabEl)
 }
 

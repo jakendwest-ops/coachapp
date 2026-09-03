@@ -104,7 +104,7 @@ async function renderDashboard(el) {
   }
 
   function daysUntil(dateStr) {
-    const diff = new Date(dateStr) - new Date(todayStr)
+    const diff = new Date(dateStr + 'T00:00:00') - new Date(todayStr + 'T00:00:00')
     const d = Math.round(diff / 86400000)
     if (d === 0) return 'today'
     if (d === 1) return 'tomorrow'
@@ -341,7 +341,7 @@ async function renderClientDashboard(el) {
   }
 
   function daysUntil(dateStr) {
-    const diff = new Date(dateStr) - new Date(todayStr)
+    const diff = new Date(dateStr + 'T00:00:00') - new Date(todayStr + 'T00:00:00')
     const d = Math.round(diff / 86400000)
     if (d === 0) return 'Today'
     if (d === 1) return 'Tomorrow'
@@ -651,7 +651,7 @@ function _dashDaysUntil(dateStr, todayStr) {
 // carry. That copy had drifted to a different blue for `gym` and held a raw hex with a TODO — two
 // definitions of one fact, and the hex was costing style-literal budget.
 function _dashEventColour(type) {
-  return (typeof EVENT_COLOURS !== 'undefined' && EVENT_COLOURS[type]) || 'var(--text-muted)'
+  return (typeof EVENT_COLOURS !== 'undefined' && EVENT_COLOURS[type]?.dot) || 'var(--text-muted)'
 }
 
 // Merge calendar events and programmed sessions into ONE date-ordered timeline. No function in the
