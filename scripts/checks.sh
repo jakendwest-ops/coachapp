@@ -361,6 +361,27 @@ if ! node --test "tests-node/*.test.mjs" > /dev/null 2>&1; then
   node --test "tests-node/*.test.mjs" 2>&1 | grep -E "^(not ok|✖)" | head -20 | sed "s/^/    /"
   fail "Node unit tests failed -- a pure function changed behaviour. Fix before pushing."
 fi
+# -- 9g. Inline handler targets must exist --
+# 402 onclick= strings name 202 functions. A handler name in an HTML attribute is a STRING: rename or
+# delete the function and nothing complains -- no parser, no linter, no test. The button is simply
+# dead when pressed. The consolidation phases DELETE duplicate functions by design, so this is the
+# most likely way those commits break the app.
+#
+# Self-test runs FIRST and blocks on its own failure, same as rule 2. Two drafts of this checker
+# reported CORRECT code as broken -- window.weightChartRange (registered at runtime) and an onclick=
+# written inside a comment -- and a checker that refuses correct code is one that gets switched off.
+# Both are PASS cases in the self-test.
+#
+# Measured on the clean tree 2026-09-03 before being given teeth: 399 attributes (402 in source, 3 of
+# them inside comments), 0 findings, 7 dynamic sites.
+echo "Checking inline handler targets..."
+if ! node scripts/check-handler-targets.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-handler-targets.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-handler-targets self-test FAILED -- the handler gate can no longer be trusted, fix it before relying on the result below."
+fi
+if ! node scripts/check-handler-targets.mjs index.html $FILES; then
+  fail "an inline handler names a function that does not exist -- see the lines above."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print
