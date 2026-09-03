@@ -341,6 +341,20 @@ if ! node scripts/check-policy-version.mjs; then
   fail "privacy policy version drift -- see above. Consent re-prompting is broken until both agree."
 fi
 
+# -- 9f. Node unit tests (pure functions, no browser, no DB) --
+# Runs BEFORE Playwright because it is ~65ms against ~35 minutes: if a pure function is broken there
+# is no point booting a browser to find out. Added 2026-09-03 with the tests-node/ harness, which
+# loads the nine js/ modules into a vm context in index.html script order.
+#
+# Proven able to FAIL before being trusted: breaking escapeHtml (dropping the < escape) and breaking
+# _mondayOfWeek (removing the Sunday wrap) each turned exactly one test red, exit 1. The first
+# attempt at that proof used sed patterns that matched NOTHING -- both neuters reported green while
+# changing zero lines. The neuter now asserts the file actually changed before drawing a conclusion.
+echo "Running Node unit tests..."
+if ! node --test tests-node/pure.test.mjs > /dev/null 2>&1; then
+  node --test tests-node/pure.test.mjs 2>&1 | grep -E "^(not ok|✖)" | head -20 | sed "s/^/    /"
+  fail "Node unit tests failed -- a pure function changed behaviour. Fix before pushing."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print
