@@ -1,4 +1,4 @@
-﻿#!/bin/sh
+#!/bin/sh
 # CoachApp code quality checks
 # Run by: git pre-push hook AND GitHub Actions CI
 # Any failure blocks the push / fails the CI job.
