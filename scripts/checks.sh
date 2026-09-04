@@ -480,6 +480,27 @@ fi
 if ! node scripts/check-single-source.mjs; then
   fail "a single-sourced fact was duplicated or moved -- see the lines above."
 fi
+# -- 9k. Spec teardown must ask what it actually deleted --
+# A Supabase delete that RLS refuses does NOT throw and does NOT set error -- it resolves as
+# { data: [], error: null }, indistinguishable from one that removed the row. So a teardown written
+# as .delete().eq('id', id) reports success whether it worked or not.
+#
+# Not hypothetical: 242 [E2E] rows were reaped from the live test account on 2026-08-30 (96% of the
+# workout_templates on it), left by teardown that had been "passing" for months -- and TWO specs
+# turned out to be silently depending on that debris as their fixture.
+#
+# MEASURED BEFORE TEETH 2026-09-04: 366 .delete() calls in tests/, 348 of them (95%) with no
+# .select() at all. So this is a RATCHET pinned at 348, never a blocking rule -- blocking would
+# refuse essentially every spec, which is how a gate gets switched off instead of satisfied.
+# The plan converts these as their specs are touched, not as a sweep.
+echo "Checking spec teardown hygiene..."
+if ! node scripts/check-spec-hygiene.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-spec-hygiene.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-spec-hygiene self-test FAILED -- the teardown gate can no longer be trusted, fix it before relying on the result below."
+fi
+if ! node scripts/check-spec-hygiene.mjs; then
+  fail "a new .delete() in tests/ does not check what it deleted -- see the lines above."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print

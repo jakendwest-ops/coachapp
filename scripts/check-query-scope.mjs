@@ -41,6 +41,7 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs'
+import { collectChain, isCommentLine } from './lib/chains.mjs'
 
 // The tables the original rule covered. Deliberately NOT widened in the same change that flips this
 // to a hard failure — widening the subject and raising the severity at once is how a gate becomes a
@@ -54,26 +55,6 @@ const ANCHOR_COLS = [
   'program_id', 'phase_id', 'generated_from_phase_id', 'template_id'
 ]
 
-// Net bracket movement on a line, ignoring brackets inside string literals — a template literal such
-// as `coach_id.eq.${uid}` would otherwise leave the depth permanently open and swallow the rest of
-// the file into one "chain".
-function depthOf (s) {
-  let d = 0, quote = null
-  for (let k = 0; k < s.length; k++) {
-    const c = s[k]
-    if (quote) {
-      if (c === '\\') { k++; continue }
-      if (c === quote) quote = null
-      continue
-    }
-    if (c === "'" || c === '"' || c === '`') { quote = c; continue }
-    if (c === '/' && s[k + 1] === '/') break            // a trailing comment ends the code on this line
-    if (c === '(' || c === '[' || c === '{') d++
-    if (c === ')' || c === ']' || c === '}') d--
-  }
-  return d
-}
-
 const files = process.argv.slice(2).filter(f => existsSync(f))
 const findings = []
 
@@ -86,35 +67,11 @@ for (const file of files) {
 
     // Comment lines describe queries, they do not run them. Matching them is how a rule ends up
     // refusing its own documentation.
-    if (/^\s*(\/\/|\*)/.test(lines[i])) continue
+    if (isCommentLine(lines[i])) continue
 
-    // Accumulate the whole chained expression. Two things make this more than a line read, and the
-    // first draft of THIS file got both wrong before the run below caught them:
-    //   1. the anchor is usually on a continuation line (`.eq('coach_id', …)` under the `.select()`);
-    //   2. a payload can be a multi-line object literal, and its body lines start with a key, not a
-    //      dot — so a dot-only rule stops dead at `.insert({` and never sees the filters after it.
-    // Track bracket depth, and keep going while the expression is open OR the next line continues it.
-    // A comment line does not end a chain. This codebase annotates heavily BETWEEN the .from() and
-    // the .insert()/.eq() that follows it (app-programs.js:1772 has four such lines), so treating a
-    // comment as a terminator reports correctly-anchored code as unanchored.
-    const continues = (idx) => {
-      for (let k = idx; k < lines.length; k++) {
-        const t = (lines[k] || '').trim()
-        if (!t || t.startsWith('//')) continue          // blank / comment: look past it
-        return t.startsWith('.')
-      }
-      return false
-    }
-
-    let chain = lines[i].slice(lines[i].indexOf(m[0]))
-    let depth = depthOf(chain)
-    for (let j = i + 1; j < lines.length; j++) {
-      const t = (lines[j] || '').trim()
-      if (depth <= 0 && !t.startsWith('.') && !(!t || t.startsWith('//')) ) break
-      if (depth <= 0 && (!t || t.startsWith('//')) && !continues(j)) break
-      if (!t.startsWith('//')) { chain += ' ' + t; depth += depthOf(lines[j]) }
-      if (depth <= 0 && !continues(j + 1)) break
-    }
+    // The multi-line chain walker moved to scripts/lib/chains.mjs on 2026-09-04, unchanged, when a
+    // third rule needed it. See that file for why a line-oriented grep cannot do this job.
+    const chain = collectChain(lines, i, lines[i].indexOf(m[0]))
 
     // An INSERT carries no filters by design — it is anchored by the tenant column in its PAYLOAD.
     // Requiring `.eq()` on an insert would refuse every correct write in the codebase, which is
