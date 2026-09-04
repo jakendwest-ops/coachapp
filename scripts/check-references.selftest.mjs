@@ -40,6 +40,14 @@ const CASES = [
   { want: 'BLOCK', why: 'one MORE backward read than the baseline allows -- the ratchet',
     env: { REFS_BACKWARD_BASELINE: '1' },
     files: { 'a.js': 'function go(){ return C1 + C2 }', 'b.js': 'const C1 = 1\nconst C2 = 2' } },
+  { want: 'BLOCK', why: 'a NON-NUMERIC baseline must refuse, not silently disarm the ratchet',
+    // `Number(env ?? 6)` gives NaN, and BOTH comparisons are false against NaN -- so neither the
+    // refusal nor the note fired, and it printed "(baseline NaN)" and exited 0. Review, 2026-09-04.
+    env: { REFS_BACKWARD_BASELINE: 'abc' },
+    files: { 'a.js': 'function go(){ return C1 + C2 }', 'b.js': 'const C1 = 1\nconst C2 = 2' } },
+  { want: 'BLOCK', why: 'an EMPTY baseline must refuse too -- ?? does not catch it, and Number("") is 0',
+    env: { REFS_BACKWARD_BASELINE: '' },
+    files: { 'a.js': 'const EARLY = 1', 'b.js': 'function go(){ return EARLY }' } },
 
   // -- must PASS: the shapes this codebase legitimately writes -----------------
   { want: 'PASS', why: 'FORWARD read -- a later file reading an earlier const is the normal case',

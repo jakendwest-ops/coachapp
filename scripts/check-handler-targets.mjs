@@ -33,6 +33,7 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { readBaseline } from './lib/baseline.mjs'
 
 const files = process.argv.slice(2)
 if (!files.length) {
@@ -49,7 +50,10 @@ if (!files.length) {
 // RISE, because each new one is another handler this checker cannot verify.
 // Overridable ONLY so the self-test can drive both sides of the comparison against its own small
 // fixtures. checks.sh never sets it, so the real run always uses the measured 7.
-const DYNAMIC_BASELINE = Number(process.env.HANDLER_DYNAMIC_BASELINE ?? 7)
+// readBaseline VALIDATES rather than just parsing. The first version here was
+// `Number(process.env.X ?? 7)`, which silently disarmed this gate -- see scripts/lib/baseline.mjs for
+// what went wrong and how it was reproduced.
+const DYNAMIC_BASELINE = readBaseline('HANDLER_DYNAMIC_BASELINE', 7)
 
 // Placeholder for a `${...}` interpolation. A SPACE was tried first and is wrong: it is
 // indistinguishable from ordinary spacing inside the attribute, so the dynamic test would be keying on

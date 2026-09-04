@@ -33,6 +33,7 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { readBaseline } from './lib/baseline.mjs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as acorn from 'acorn'
@@ -275,7 +276,10 @@ if (undeclared.length) {
 // hoists all six into app-core.js; blocking on them now would block every push until then, which is
 // how a gate gets bypassed rather than fixed. Pinned AT six, never above: a threshold set above
 // current is a permit. Adding a seventh is refused today.
-const BACKWARD_BASELINE = Number(process.env.REFS_BACKWARD_BASELINE ?? 6)
+// readBaseline VALIDATES rather than just parsing. `Number(env ?? 6)` was the first version, and both
+// comparisons below are false against NaN, so neither the refusal nor the lower-the-baseline note
+// fired -- it printed "(baseline NaN)" and exited 0. See scripts/lib/baseline.mjs.
+const BACKWARD_BASELINE = readBaseline('REFS_BACKWARD_BASELINE', 6)
 if (backward.length > BACKWARD_BASELINE) {
   console.log('')
   console.log(`  ${backward.length} backward const/let reads, baseline is ${BACKWARD_BASELINE}. A backward read works only`)

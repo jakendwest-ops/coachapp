@@ -45,6 +45,14 @@ const CASES = [
   { want: 'BLOCK', why: 'dynamic sites ABOVE the baseline -- each one is a handler this cannot verify',
     env: { HANDLER_DYNAMIC_BASELINE: '0' },
     src: 'const a = "x"\nconst h = `<button onclick="${a}">x</button>`' },
+  { want: 'BLOCK', why: 'a NON-NUMERIC baseline must refuse, not silently disarm the ratchet',
+    // The first version did `Number(env ?? 7)`. A non-numeric value gives NaN, `count > NaN` is false,
+    // and the check exited 0 while printing its reassuring summary. Found by review 2026-09-04.
+    env: { HANDLER_DYNAMIC_BASELINE: 'abc' },
+    src: 'const a = "x"\nconst h = `<button onclick="${a}">x</button>`' },
+  { want: 'BLOCK', why: 'an EMPTY baseline must refuse too -- ?? does not catch it, and Number("") is 0',
+    env: { HANDLER_DYNAMIC_BASELINE: '' },
+    src: 'function saveThing(){}\nconst h = `<button onclick="saveThing()">x</button>`' },
 
   // -- must PASS: real shapes from js/ ---------------------------------------
   { want: 'PASS', why: 'plain function declaration at column 0',
