@@ -56,14 +56,21 @@ async function assertPreviewServer (base) {
 // instead of re-typing credentials. See tests/session-store.js for the measurement that motivated it
 // and for why every failure path falls back to the form rather than failing the run.
 async function captureSessions (base) {
+  const fs = require('fs')
   const { chromium } = require('@playwright/test')
-  const { captureSession } = require('./session-store')
+  const { captureSession, DIR } = require('./session-store')
 
   const roles = [
     ['pt', process.env.PT_EMAIL, process.env.PT_PASSWORD],
     ['client', process.env.CLIENT_EMAIL, process.env.CLIENT_PASSWORD],
     ['pt2', process.env.PT2_EMAIL, process.env.PT2_PASSWORD]
   ]
+
+  // Clear first, so "a file exists" means "captured on THIS run" and can never mean "left over from
+  // a run last week". Without this, a capture that failed would leave the previous run's tokens in
+  // place and every spec would silently authenticate as a stale session -- working right up until the
+  // refresh token was rotated, then failing somewhere unrelated.
+  fs.rmSync(DIR, { recursive: true, force: true })
 
   const browser = await chromium.launch()
   try {

@@ -84,6 +84,13 @@ async function captureSession (browser, base, role, email, password) {
  * on the auth screen and the caller's own assertion would fail somewhere confusing instead.
  */
 async function injectSession (page, role, ready, extra = {}) {
+  // The escape hatch has to be honoured HERE, not only in globalSetup. Its first version disabled
+  // capture alone, so a run with NO_SESSION_REUSE=1 happily injected the PREVIOUS run's files and
+  // reported the fast timings while claiming to be form-logging. Measured: 1.30s per login with the
+  // stale files present versus 1.76s once they were removed -- the flag did nothing. Found by
+  // insisting on proving the fallback actually runs rather than trusting the comment that said it did.
+  if (process.env.NO_SESSION_REUSE) return false
+
   let saved
   try {
     saved = JSON.parse(fs.readFileSync(fileFor(role), 'utf8'))
