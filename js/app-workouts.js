@@ -841,7 +841,13 @@ async function renderWorkoutTemplates(el) {
   // list. Confirmed root cause 2026-07-08: Jake's own solo-program week-clones were cluttering
   // this list, since solo shares coach_id with the PT account. Matches the filter already used
   // correctly elsewhere (the phase day-slot assign picker, app-programs.js).
-  const { data: templates, error } = await db.from('workout_templates').select('*, workout_template_exercises(id)').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(100)
+  // TWO queries, not one per template. The Library page already carries an open "feels slow"
+  // complaint, so the trained dates are fetched as ONE bounded batch and reduced in memory — never a
+  // lookup per row. .limit(500) bounds the cost; older logs cannot change which sessions are recent.
+  const [{ data: templates, error }, { data: recentLogs }] = await Promise.all([
+    db.from('workout_templates').select('*, workout_template_exercises(id), updated_at').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(100),
+    db.from('workout_logs').select('template_id, date').eq('coach_id', currentUser.id).not('template_id', 'is', null).order('date', { ascending: false }).limit(500)
+  ])
 
   if (error) { log.error('renderWorkoutTemplates', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
@@ -850,6 +856,28 @@ async function renderWorkoutTemplates(el) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No standalone templates</div><div class="empty-text">Create one below, or if it's part of a phased plan, add it via Programs → phase view.</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
     return
   }
+
+  // Newest log per template. recentLogs is already newest-first, so the FIRST time a template_id is
+  // seen is its most recent training — no comparison needed.
+  const trainedAt = new Map()
+  for (const l of recentLogs || []) {
+    if (l.template_id && !trainedAt.has(l.template_id)) trainedAt.set(l.template_id, l.date)
+  }
+
+  for (const t of templates) {
+    // 'T00:00:00' is NOT optional. workout_logs.date is a DATE, and `new Date('2026-09-04')` parses
+    // as UTC midnight — which lands on the previous day for anyone west of UTC, and for a UK user
+    // during BST. This app has shipped that exact bug twice (app-core.js:194 documents it).
+    const trainedStr = trainedAt.get(t.id)
+    const trained = trainedStr ? new Date(trainedStr + 'T00:00:00') : null
+    const edited = t.updated_at ? new Date(t.updated_at) : null
+    t._lastUsed = (trained && (!edited || trained > edited)) ? trained : edited
+  }
+
+  // Most recently used first. A template with neither date sorts last rather than throwing — the
+  // migration backfilled updated_at, so this should not occur, but a row inserted by a path that
+  // bypasses the trigger would otherwise break the whole sort.
+  templates.sort((a, b) => (b._lastUsed?.getTime() || 0) - (a._lastUsed?.getTime() || 0))
 
   const templateRow = t => `
     <div class="list-row" onclick="openTemplate('${t.id}')">
