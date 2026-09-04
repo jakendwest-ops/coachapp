@@ -718,11 +718,23 @@ test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-br
     // moved out of the dashboards entirely and openGoal is scanned above. The threshold stays at 2
     // (renderClientDashboard + openGoal) rather than being lowered, because lowering it would have
     // quietly accepted the loss of a sink instead of following it.
-    // 3 dashboards (coach/client/solo) each show goal title at least once; 2 show a milestone title;
-    // 3 template surfaces (list row, detail page, edit modal) each show description once.
+    // 3 dashboards (coach/client/solo) each show goal title at least once; 2 show a milestone title.
+    //
+    // 2026-09-04: escapedDescription lowered 3 -> 2, and this is the OPPOSITE call to the 2026-08-30
+    // one recorded above, so the difference matters. There, a sink MOVED and the threshold was held so
+    // that losing it would still fail. Here the Library row's description sink was DELETED on purpose:
+    // the row's subtitle now carries "Last used <age>" instead, per the approved design
+    // (docs/superpowers/specs/2026-09-04-library-last-used-design.md, "The row"), because the row
+    // previously said "5 exercises" beside a right-hand "5 ex" and told the user nothing.
+    //
+    // Verified before lowering, not assumed: the description is GONE from the row builder, not left
+    // computed-and-unrendered, and the two survivors are openTemplate's detail page
+    // (app-workouts.js:1323) and showEditTemplateModal's textarea (:3110) -- both still escaped.
+    // rawDescription above independently catches an unescaped re-introduction at any of the three.
+    // 2 is pinned AT the current count, not above it, so losing either survivor still fails here.
     expect(r.escapedGoalTitle).toBeGreaterThanOrEqual(3)
     expect(r.escapedMilestoneTitle).toBeGreaterThanOrEqual(2)
-    expect(r.escapedDescription).toBeGreaterThanOrEqual(3)
+    expect(r.escapedDescription).toBeGreaterThanOrEqual(2)
     expect(r.neutralised).toBe(true)
   })
 })
