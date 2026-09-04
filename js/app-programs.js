@@ -1918,6 +1918,20 @@ async function generatePhasePeriodization(phaseId, programId) {
   else showToast(genSummary, 'success')
   openProgram(programId)
 }
+// GUARDED 2026-09-04. It was exempted as "confirm()-gated before any write — the dialog blocks
+// re-entry". The literal words are true — the confirm does precede every write — but the conclusion is
+// not: the confirm is reached only after THREE awaits (an ownership check and two reads), so a
+// confirm() cannot stop a second invocation that is already past them. Two rapid taps both reach their
+// own dialog, and accepting both runs the body twice.
+//
+// That matters here more than for a plain double-insert, because this function DELETES before it
+// writes: `_cleanupPhaseWeeksBeyond(phaseId, 1, …)` removes every Week 2+ row, then the generation
+// rebuilds them. Two interleaved runs can therefore delete what the other has just inserted, leaving a
+// partially generated phase — data loss, not a duplicate row.
+//
+// Found by tests-node/exemptions.test.mjs on its first run, which is the second false exemption on
+// that list after saveWorkoutSession. Both were prose nobody could check until now.
+guardReentry('generatePhasePeriodization')
 
 // Deletes ONLY the templates this program/phase actually owns AND that nothing else still points at.
 // Two separate questions, and both must be asked — they look alike but are not:

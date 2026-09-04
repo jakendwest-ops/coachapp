@@ -41,9 +41,12 @@ const FROZEN_UNGUARDED = {
   _cloneSharedMasterTemplate:         'internal — runs inside _resolveEditableTemplateId',
   _seedStarterContent:                'internal — runs once from loadUserInfo on first login, no button',
 
-  // ── Confirm-gated: a native confirm() blocks the main thread, so the second tap cannot start
-  //    until the first has been accepted. The dialog IS the re-entry barrier.
-  generatePhasePeriodization:         'confirm()-gated before any write — the dialog blocks re-entry',
+  // ── (The confirm-gated category is empty. generatePhasePeriodization lived here as
+  //    'confirm()-gated before any write — the dialog blocks re-entry' until 2026-09-04, when
+  //    tests-node/exemptions.test.mjs showed the reasoning was wrong: its confirm() sits after THREE
+  //    awaits, so it cannot stop an invocation already past them. It is now GUARDED. Keep the category
+  //    comment as a warning — "there is a confirm() somewhere in the body" is not a re-entry barrier;
+  //    only a confirm reached SYNCHRONOUSLY from the gesture is.)
 
   // ── Single-row modal saves. The modal closes on success and the row appears immediately in a list
   //    the user is already looking at, so a duplicate is visible and one tap to delete. Fails (c).
