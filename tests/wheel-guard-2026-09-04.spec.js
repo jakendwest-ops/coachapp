@@ -62,6 +62,34 @@ test.describe('Wheel guard on number inputs (2026-09-04)', () => {
     expect(r.stillPresent).toBe(true)
   })
 
+  test('the hazard exists in BOTH units, and the guard is unit-agnostic', async ({ page }) => {
+    // Jake asked directly (2026-09-04) whether the 0.5 shift happens in lb as well as kg. It does —
+    // but NOT by the same amount, because every weight input in this app hardcodes its `step`. None is
+    // unit-aware, unlike the cardio-distance field which switches between 0.01 and 1. So one notch
+    // always moves the DISPLAYED number by 0.5, and what that means in stored kg depends on the unit.
+    //
+    // Measured with the app's own weightFromPref rather than arithmetic done here, so the numbers stay
+    // true if the conversion constant ever changes.
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const orig = window._unitPrefs.weight
+      const delta = (unit) => {
+        window._unitPrefs.weight = unit
+        return weightFromPref(200.5) - weightFromPref(200)
+      }
+      const out = { kg: delta('kg'), lb: delta('lb') }
+      window._unitPrefs.weight = orig
+      return out
+    })
+
+    // kg: one notch is exactly the 0.5 kg Jake reported.
+    expect(r.kg, 'in kg, one notch moves the STORED value by exactly 0.5 kg').toBeCloseTo(0.5, 6)
+    // lb: the same notch is 0.5 LB, which is a smaller real change — about 0.227 kg. So the bug is
+    // real in both units, and only kg can produce exactly "0.5kg", which is what was reported.
+    expect(r.lb, 'in lb, one notch moves the STORED value by ~0.227 kg — real, but not 0.5').toBeCloseTo(0.2268, 3)
+    expect(r.lb, 'the hazard must not be zero in lb — it is smaller, not absent').toBeGreaterThan(0)
+  })
+
   test('every number input in the app is covered — the guard is global, not per-field', async ({ page }) => {
     await loginAsPT(page)
     // The listener is on `document`, so coverage is a property of where it is registered rather than of
