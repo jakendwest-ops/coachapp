@@ -384,8 +384,16 @@ async function _removeAssignmentAndClones(clientProgramId, reason) {
     .select('workout_template_id').eq('client_program_id', clientProgramId)
   const cloneIds = [...new Set((cpws || []).map(r => r.workout_template_id).filter(Boolean))]
 
-  const { error: delErr } = await db.from('client_programs').delete().eq('id', clientProgramId)
+  // ROWCOUNT: one assignment, by id, that the caller has already verified access to. Zero rows means
+  // RLS refused it — and returning true there tells every caller the programme was unassigned while it
+  // is still on the client's plan.
+  const { data: goneAssign, error: delErr } = await db.from('client_programs')
+    .delete().eq('id', clientProgramId).select('id')
   if (delErr) { log.error('_removeAssignmentAndClones', 'assignment delete failed', delErr); return false }
+  if (!goneAssign?.length) {
+    log.error('_removeAssignmentAndClones', 'assignment delete removed no rows — refused', { clientProgramId })
+    return false
+  }
 
   if (cloneIds.length) {
     // Only clones nothing else still needs: not referenced by any surviving assignment, and never
@@ -400,9 +408,16 @@ async function _removeAssignmentAndClones(clientProgramId, reason) {
     ])
     const dead = cloneIds.filter(id => !keep.has(id))
     if (dead.length) {
-      const { error: tErr } = await db.from('workout_templates').delete().in('id', dead).not('client_id', 'is', null)
+      // ROWCOUNT, but NOT a failure. Zero here has a legitimate reading as well as a refusal: the
+      // `.not('client_id','is',null)` filter deliberately spares any master template that reached this
+      // list, so a run where every candidate was a master correctly deletes nothing. Log the ACTUAL
+      // count against the expected one rather than asserting — the assignment is gone either way, and
+      // turning a correct no-op into an error toast is the false-refusal failure this project ships.
+      const { data: cleaned, error: tErr } = await db.from('workout_templates')
+        .delete().in('id', dead).not('client_id', 'is', null).select('id')
       if (tErr) log.error('_removeAssignmentAndClones', 'clone cleanup failed', tErr) // assignment is gone either way
-      else log.ok('_removeAssignmentAndClones', 'cleaned clones', { count: dead.length })
+      else if (!cleaned?.length) log.warn('_removeAssignmentAndClones', 'clone cleanup removed nothing — all candidates were masters, or refused', { candidates: dead.length })
+      else log.ok('_removeAssignmentAndClones', 'cleaned clones', { count: cleaned.length, candidates: dead.length })
     }
   }
   return true
@@ -1403,8 +1418,16 @@ async function copyProgramToCoaching(programId) {
   // cascade from programs, so one delete unwinds the lot; the template clones are removed explicitly.
   const _rollback = async (msg) => {
     const { data: orphanTmpls } = await db.from('workout_templates').select('id').eq('program_id', newProg.id)
-    if (orphanTmpls?.length) await db.from('workout_templates').delete().in('id', orphanTmpls.map(t => t.id))
-    await db.from('programs').delete().eq('id', newProg.id).eq('coach_id', currentUser.id)
+    // ROWCOUNT on a ROLLBACK. A rollback that silently removes nothing is the worst case this whole
+    // block exists to prevent: the user is told the copy failed, but the half-built programme survives
+    // and the name-collision guard above then blocks their retry. Its two siblings
+    // (_cloneSharedMasterTemplate, generatePhasePeriodization) already log this; this one did not.
+    if (orphanTmpls?.length) {
+      const { data: tGone } = await db.from('workout_templates').delete().in('id', orphanTmpls.map(t => t.id)).select('id')
+      if (!tGone?.length) log.error('copyProgramToCoaching', 'rollback deleted no templates — orphans survive', { programId: newProg.id, expected: orphanTmpls.length })
+    }
+    const { data: pGone } = await db.from('programs').delete().eq('id', newProg.id).eq('coach_id', currentUser.id).select('id')
+    if (!pGone?.length) log.error('copyProgramToCoaching', 'ROLLBACK FAILED — the partial programme survives and will block a retry', { programId: newProg.id })
     log.error('copyProgramToCoaching', 'rolled back partial copy', { programId: newProg.id })
     showToast(msg, 'error', 5000)
   }
@@ -1518,12 +1541,24 @@ async function deleteProgram(programId) {
     // only genuinely EXTERNAL survivors (another program still using a shared standalone template).
     // These rows would cascade with the phases anyway; removing them first is what makes the shared
     // helper usable here at all.
+    // ZERO ROWS IS LEGITIMATE HERE — a program whose phases hold no sessions has no slot rows. The
+    // ledger row for this class calls this site out by name for exactly that reason: a bare
+    // `length !== 0` check would refuse deleting an empty program.
     await db.from('program_phase_workouts').delete().in('phase_id', phaseIds)
     await _deleteOwnedUnreferencedTemplates(templateIds, programId, phaseIds)
   }
 
-  const { error } = await db.from('programs').delete().eq('id', programId).eq('coach_id', currentUser.id)
+  // ROWCOUNT: one program, by id AND coach_id, that the user pressed Delete on. Zero rows means RLS
+  // refused it — and without .select() the app would log "deleted", navigate to the programs list, and
+  // the program would still be in it.
+  const { data: goneProg, error } = await db.from('programs')
+    .delete().eq('id', programId).eq('coach_id', currentUser.id).select('id')
   if (error) { log.error('deleteProgram', 'failed', error); return }
+  if (!goneProg?.length) {
+    log.error('deleteProgram', 'delete removed no rows — refused, or already gone', { programId })
+    showToast('Could not delete that programme — try again.', 'error')
+    return
+  }
   log.ok('deleteProgram', 'deleted', { programId })
   navigate('programs')
 }
@@ -1568,7 +1603,11 @@ async function savePhase(programId) {
     if (!(await _verifyPhaseOwnership('savePhase', phaseId, programId))) { errorEl.textContent = 'Could not save — permission denied.'; return }
     const { data: upd, error } = await db.from('program_phases').update({ name, duration_weeks: weeks }).eq('id', phaseId).select('id')
     if (error || upd?.length !== 1) { log.error('savePhase', 'update failed', error || { rows: upd?.length }); errorEl.textContent = error?.message || 'Save failed — phase not found or permission denied.'; return }
-    // If duration shrank below any already-generated weeks, prune the now out-of-range rows (master + propagated client copies)
+    // If duration shrank below any already-generated weeks, prune the now out-of-range rows (master + propagated client copies).
+    // Deliberately NOT aborted on a refused prune, unlike generatePhasePeriodization. The phase's own
+    // duration UPDATE has already committed and is the thing the user actually asked for, so bailing
+    // here would report a failed save that in fact succeeded. The helper has already toasted; the
+    // leftover rows are merely out of range, and the next successful prune clears them.
     await _cleanupPhaseWeeksBeyond(phaseId, weeks, programId)
     log.ok('savePhase', 'updated', { phaseId })
   } else {
@@ -1605,11 +1644,23 @@ async function deletePhase(programId, phaseId) {
   const pwIds = (pws || []).map(p => p.id)
 
   await _deleteClientCopiesForSlots(pwIds, programId)
+  // ZERO ROWS IS LEGITIMATE HERE — a phase with no sessions in it has no slot rows to remove. Not
+  // rowcount-checked on purpose; a `length` guard would refuse the perfectly ordinary case of deleting
+  // an empty phase, which is the false-refusal failure this project keeps shipping.
   await db.from('program_phase_workouts').delete().eq('phase_id', phaseId)   // before the sweep, so
   await _deleteOwnedUnreferencedTemplates(templateIds, programId, phaseId)   // survivors are external
 
-  const { error } = await db.from('program_phases').delete().eq('id', phaseId)
+  // ROWCOUNT: this one is keyed on a single phase the user pressed Delete on, so zero rows means the
+  // delete was REFUSED, not that there was nothing to do. error:null on a zero-row DELETE is the
+  // "reports success while doing nothing" class — without .select() the app navigates back to the
+  // program and the phase is still sitting there.
+  const { data: goneP, error } = await db.from('program_phases').delete().eq('id', phaseId).select('id')
   if (error) { log.error('deletePhase', 'failed', error); return }
+  if (!goneP?.length) {
+    log.error('deletePhase', 'delete removed no rows — refused, or already gone', { phaseId })
+    showToast('Could not delete that phase — try again.', 'error')
+    return
+  }
   log.ok('deletePhase', 'deleted', { phaseId })
   openProgram(programId)
 }
@@ -1778,8 +1829,11 @@ async function generatePhasePeriodization(phaseId, programId) {
   if (!confirm(`Generate weeks 2–${phase.duration_weeks} from Week 1? This deletes any existing Week 2+ content for this phase — periodization-generated OR manually added/duplicated — and rebuilds it from Week 1.`)) return
 
   // Idempotent regeneration — clear any weeks generated by a previous run (or manually built via
-  // "Duplicate week"/the add-workout grid) first: master rows + any already-propagated client copies
-  await _cleanupPhaseWeeksBeyond(phaseId, 1, programId)
+  // "Duplicate week"/the add-workout grid) first: master rows + any already-propagated client copies.
+  // ABORT if that clear was REFUSED. This function rebuilds weeks 2+ immediately afterwards, so
+  // generating on top of rows that were never removed leaves the phase holding two sets of week-2
+  // content. Adding a toast here would only clobber the helper's own message (showToast keeps one node).
+  if (!(await _cleanupPhaseWeeksBeyond(phaseId, 1, programId))) return
 
   const config = phase.periodization_config || {}
   const newInserts = []
@@ -1978,7 +2032,19 @@ async function _deleteOwnedUnreferencedTemplates(templateIds, programId, phaseId
   const { data: stillUsed } = await db.from('program_phase_workouts').select('template_id').in('template_id', ownedIds)
   const stillUsedIds = new Set((stillUsed || []).map(r => r.template_id))
   const safeToDelete = ownedIds.filter(id => !stillUsedIds.has(id))
-  if (safeToDelete.length) await db.from('workout_templates').delete().in('id', safeToDelete)
+  // ROWCOUNT: this branch only runs once safeToDelete has been narrowed to templates we own AND that
+  // nothing still references, so zero removed means refused. Silence here is what strands templates
+  // forever — the exact "12 templates stranded per periodized phase" outcome this helper was written
+  // to stop. Logged rather than toasted: the caller's primary action (deleting the phase/programme)
+  // has already succeeded, and failing it now would refuse a user whose real work completed.
+  if (safeToDelete.length) {
+    const { data: sweptTmpls } = await db.from('workout_templates').delete().in('id', safeToDelete).select('id')
+    if (!sweptTmpls?.length) {
+      log.error('_deleteOwnedUnreferencedTemplates', 'delete removed no rows — templates stranded', { expected: safeToDelete.length, programId })
+    } else if (sweptTmpls.length !== safeToDelete.length) {
+      log.warn('_deleteOwnedUnreferencedTemplates', 'partial delete — some templates stranded', { removed: sweptTmpls.length, expected: safeToDelete.length })
+    }
+  }
 }
 
 // Deletes generated program_phase_workouts (+ the workout_templates it owns) beyond maxWeek for a
@@ -2005,16 +2071,36 @@ async function _deleteClientCopiesForSlots(stalePwIds, programId) {
   const deletable = staleCpws.filter(c => allowed.has(c.client_program_id))
   if (!deletable.length) return
 
-  await db.from('client_program_workouts').delete().in('id', deletable.map(c => c.id))
+  // ROWCOUNT on both. `deletable` was proven non-empty above, so zero removed means refused — and a
+  // refusal here is the destructive half of the fan-out failing silently, which leaves assigned
+  // clients holding stale week copies that the rebuild will then sit on top of. Logged, not toasted:
+  // this runs inside a larger operation whose own success reporting is the caller's job.
+  const { data: cpwGone } = await db.from('client_program_workouts')
+    .delete().in('id', deletable.map(c => c.id)).select('id')
+  if (!cpwGone?.length) {
+    log.error('_deleteClientCopiesForSlots', 'client copy delete removed no rows — refused; clients keep stale copies',
+      { expected: deletable.length, programId })
+  }
   // Client clones are per-slot by construction (never shared), so these are always safe to remove.
   const cloneIds = deletable.map(c => c.workout_template_id).filter(Boolean)
-  if (cloneIds.length) await db.from('workout_templates').delete().in('id', cloneIds)
+  if (cloneIds.length) {
+    const { data: clonesGone } = await db.from('workout_templates').delete().in('id', cloneIds).select('id')
+    if (!clonesGone?.length) {
+      log.error('_deleteClientCopiesForSlots', 'clone delete removed no rows — refused; clones stranded',
+        { expected: cloneIds.length, programId })
+    }
+  }
 }
 
 // phase, along with any client-side copies already propagated from a previous generation.
+// Returns TRUE when there was nothing to clear or the clear succeeded, FALSE when the delete was
+// REFUSED. Callers must not proceed on false: generatePhasePeriodization rebuilds weeks 2+ on top of
+// whatever survives, so continuing past a refused clear is how a phase ends up holding two sets of
+// week-2 content — the toast alone would tell the user something went wrong while the app did the
+// damaging thing anyway.
 async function _cleanupPhaseWeeksBeyond(phaseId, maxWeek, programId) {
   const { data: staleRows } = await db.from('program_phase_workouts').select('id, template_id').eq('phase_id', phaseId).gt('week_number', maxWeek)
-  if (!staleRows?.length) return
+  if (!staleRows?.length) return true
 
   const stalePwIds = staleRows.map(r => r.id)
   const staleMasterTemplateIds = staleRows.map(r => r.template_id).filter(Boolean)
@@ -2025,15 +2111,26 @@ async function _cleanupPhaseWeeksBeyond(phaseId, maxWeek, programId) {
   // its must-not-diverge pair (see deletePhaseWeek's own comment) and they HAVE diverged before — this
   // sibling went a day without the ownership guard in 2026-07-11. Instrumented the same way so a failed
   // cleanup is at least visible in the console: silence here means generation proceeds over stale weeks.
-  await dbq('_cleanupPhaseWeeksBeyond:deleteStaleWeeks',
-    db.from('program_phase_workouts').delete().eq('phase_id', phaseId).gt('week_number', maxWeek),
+  // ROWCOUNT: the function already returned above if `staleRows` was empty, so by here there ARE rows
+  // to remove and zero removed means the delete was refused. Silence at this point is the dangerous
+  // outcome the comment above worries about — generation then proceeds ON TOP of stale weeks, which is
+  // how a phase ends up holding two sets of week-2 content.
+  const { data: sweptWeeks } = await dbq('_cleanupPhaseWeeksBeyond:deleteStaleWeeks',
+    db.from('program_phase_workouts').delete().eq('phase_id', phaseId).gt('week_number', maxWeek).select('id'),
     { showUserError: false })
+  if (!sweptWeeks?.length) {
+    log.error('_cleanupPhaseWeeksBeyond', 'stale-week delete removed NO rows though rows were found — refused',
+      { phaseId, maxWeek, expected: stalePwIds.length })
+    showToast('Could not clear the old weeks — nothing was changed.', 'error')
+    return false
+  }
   // Was an unguarded `delete().in('id', staleMasterTemplateIds)` — it deleted EVERY template a stale
   // week referenced, with no ownership or still-referenced check, unlike its sibling deletePhaseWeek.
   // That destroyed (a) a Week-1 workout whose template_id a duplicated Week 2 shared, and (b) any
   // standalone library template assigned into a later week, removing it from every program using it.
   // Found by multi-agent review 2026-07-11.
   await _deleteOwnedUnreferencedTemplates(staleMasterTemplateIds, programId, phaseId)
+  return true
 }
 
 function _computePeriodizedPct(type, config, week, totalWeeks, tier) {
@@ -2316,10 +2413,17 @@ async function deletePhaseWeek(phaseId, weekNumber) {
   // "Week deleted" regardless — leaving a phase with a duplicated or missing week number and no hint
   // that anything went wrong. Collect failures and refuse to claim success.
   const weekFailures = []
-  const step = async (label, query) => {
-    const { error } = await dbq('deletePhaseWeek:' + label, query, { showUserError: false })
-    if (error) weekFailures.push(label)
-    return !error
+  // `expectRows` extends the same failure-collection to the ROWCOUNT, not just the error. A DELETE or
+  // UPDATE that matched zero rows comes back error:null, so at a site where the caller has already
+  // proven rows exist, zero removed means REFUSED — and without this the user is told "Week deleted"
+  // while the week is still there, which is precisely the silence this helper was built to end.
+  // Defaults false because the renumber UPDATEs below carry no .select() and would otherwise all
+  // report as failures.
+  const step = async (label, query, { expectRows = false } = {}) => {
+    const { data, error } = await dbq('deletePhaseWeek:' + label, query, { showUserError: false })
+    if (error) { weekFailures.push(label); return false }
+    if (expectRows && !data?.length) { weekFailures.push(label + ' (removed no rows)'); return false }
+    return true
   }
 
   const programId = window._openProgramId
@@ -2329,7 +2433,10 @@ async function deletePhaseWeek(phaseId, weekNumber) {
 
   if (stalePwIds.length) {
     await _deleteClientCopiesForSlots(stalePwIds, programId)
-    await step('deleteWeek', db.from('program_phase_workouts').delete().eq('phase_id', phaseId).eq('week_number', weekNumber))
+    // expectRows: this branch only runs when stalePwIds.length proved there ARE rows for this week.
+    await step('deleteWeek',
+      db.from('program_phase_workouts').delete().eq('phase_id', phaseId).eq('week_number', weekNumber).select('id'),
+      { expectRows: true })
 
     // Shared with _cleanupPhaseWeeksBeyond — both must apply the ownership AND still-referenced
     // checks, and keeping them in one helper is what stops the two from silently diverging again
@@ -2594,8 +2701,19 @@ async function removePhaseWorkout(pwId, phaseId) {
   const programId = window._openProgramId || null
 
   await _deleteClientCopiesForSlots([pwId], programId)
-  const { error } = await dbq('removePhaseWorkout', db.from('program_phase_workouts').delete().eq('id', pwId))
+  // ROWCOUNT, not just `error`. PostgREST returns error:null for a DELETE that matched ZERO rows, so
+  // an RLS refusal and a successful removal are indistinguishable without .select(). This one is keyed
+  // on a single id the user just pressed Remove on, so zero rows is never legitimate here — it means
+  // the row was refused or had already gone, and re-rendering as though it worked leaves the session
+  // visibly still there after a "success".
+  const { data: removed, error } = await dbq('removePhaseWorkout',
+    db.from('program_phase_workouts').delete().eq('id', pwId).select('id'))
   if (error) return
+  if (!removed?.length) {
+    log.error('removePhaseWorkout', 'delete removed no rows — refused, or already gone', { pwId })
+    showToast('Could not remove that session — try again.', 'error')
+    return
+  }
   // After the slot is gone, so a template still referenced by a sibling week is correctly spared.
   if (pw?.template_id) await _deleteOwnedUnreferencedTemplates([pw.template_id], programId, phaseId)
 
