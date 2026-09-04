@@ -63,6 +63,7 @@ test.describe('The runner records template_id (2026-09-04)', () => {
 
     expect(r.built, 'the fixture must exist or this test asserts nothing').toBe(true)
     expect(r.templateIdOnLog, 'the runner log must carry the template it was launched from').not.toBeNull()
+    expect(r.cleanup.logs, 'the runner log row must be deleted, and the delete seen').toBe(1)
     expect(r.cleanup.template, 'the fixture template must be deleted, and the delete seen').toBe(1)
     expect(r.cleanup.client, 'the fixture client must be deleted, and the delete seen').toBe(1)
   })

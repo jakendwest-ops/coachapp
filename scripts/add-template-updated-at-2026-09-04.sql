@@ -25,6 +25,18 @@ update workout_templates
    set updated_at = coalesce(created_at, now())
  where updated_at is null;
 
+-- 2b. AMENDMENT 2026-09-04 (later the same day) -----------------------------------
+-- The original migration gave EXISTING rows an updated_at and kept it current on UPDATE, but set
+-- nothing on INSERT. Probed against production: a freshly inserted template came back with
+-- updated_at = NULL. So every session created from that point on would sort LAST in the Library and
+-- its row would read "Last used -".
+--
+-- A DEFAULT, not a BEFORE INSERT trigger. The trigger function assigns unconditionally
+-- (new.updated_at := now()), so on INSERT it would also clobber an explicitly supplied value -- which
+-- is exactly how the tests seed a known "edited last month" row. A DEFAULT fills the gap when nothing
+-- is supplied and yields when something is.
+alter table workout_templates alter column updated_at set default now();
+
 -- 3. Keep it current on the template row itself ----------------------------------
 create or replace function touch_workout_template_updated_at()
 returns trigger language plpgsql as $$
@@ -83,4 +95,5 @@ create index if not exists workout_templates_coach_updated_idx
 -- drop function if exists touch_parent_workout_template();
 -- drop function if exists touch_workout_template_updated_at();
 -- drop index if exists workout_templates_coach_updated_idx;
+-- alter table workout_templates alter column updated_at drop default;
 -- alter table workout_templates drop column if exists updated_at;
