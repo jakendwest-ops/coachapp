@@ -100,6 +100,14 @@ async function saveOneRMGrid(clientId) {
   }
 
   const coachId = await _effectiveCoachIdForClient(clientId)
+  // REFUSE rather than guess. This is the one caller with a WRITE blast radius: coachId is handed to
+  // _resolveExerciseIdForSave, which INSERTs into `exercises`. Under the old `|| currentUser.id`
+  // fallback, a client row we were denied read access to resolved to "me" — so a foreign client's lift
+  // name could become a permanent row in the current user's own exercise library.
+  if (!coachId) {
+    if (errEl) errEl.textContent = 'Could not verify this client — please refresh and try again.'
+    return
+  }
   const rows = await Promise.all(changed.map(async r => ({
     client_id: clientId,
     // Auto-create a library exercise ONLY for the Big 5 quick-start names — the contract
@@ -264,6 +272,10 @@ function showAdd1RMModal(clientId, prefillExercise = '', prefillExerciseId = nul
     _showOneRMDetailModal(clientId, { id: prefillExerciseId || null, name: prefillExercise })
   } else {
     _effectiveCoachIdForClient(clientId).then(coachId => {
+      // null means the client row was not readable. Opening the picker with it showed the CURRENT
+      // USER's own exercise library under the old fallback — the wrong library to pick a client's 1RM
+      // from, and indistinguishable from the right one on screen.
+      if (!coachId) { showToast('Could not verify this client — please refresh and try again.', 'error'); return }
       _openExercisePicker(coachId, picked => _showOneRMDetailModal(clientId, picked))
     })
   }
@@ -336,6 +348,8 @@ function _reopenExercisePickerFor1RM(clientId, existingId) {
   const date = document.getElementById('1rm-date')?.value || new Date().toISOString().split('T')[0]
   document.getElementById('modal-1rm')?.remove()
   _effectiveCoachIdForClient(clientId).then(coachId => {
+    // Same as showAdd1RMModal — null is "we could not establish whose library this is".
+    if (!coachId) { showToast('Could not verify this client — please refresh and try again.', 'error'); return }
     _openExercisePicker(coachId, picked => _showOneRMDetailModal(clientId, picked, { existingId, weight, date }))
   })
 }

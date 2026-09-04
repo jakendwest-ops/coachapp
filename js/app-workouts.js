@@ -666,8 +666,16 @@ async function renderClientWorkoutsPage(el) {
     // (same shape as a genuine standalone template), so without this they'd leak into this flat
     // fallback list. Same fix as renderWorkoutTemplates below.
     const coachId = await _effectiveCoachIdForClient(clientId)
-    const { data } = await db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', coachId).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(100)
-    templates = data
+    // null means the client row could not be read. Under the old `|| currentUser.id` fallback this
+    // query then listed the CURRENT USER's own templates as though they were this client's. An empty
+    // list is the honest answer to "we could not establish whose library this is"; the resolver has
+    // already logged the reason.
+    if (!coachId) {
+      templates = []
+    } else {
+      const { data } = await db.from('workout_templates').select('id, name, description, workout_template_exercises(id, exercise_name, exercise_type, order_index, sets_json, notes)').eq('coach_id', coachId).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(100)
+      templates = data
+    }
   }
 
   el.innerHTML = `
@@ -1947,9 +1955,30 @@ function _setExercisePickerButtonsDisabled(disabled) {
 // Resolves the effective coach_id for a client row — for a normal client this is coach_id
 // directly; for a solo/personal client record coach_id is null by design (severed from any
 // PT), so the owning "coach" is the same person's own account (clients.user_id).
+// Returns the coach_id that owns this client's library, or NULL when the client row cannot be read.
+//
+// IT NO LONGER FALLS BACK TO currentUser.id. The old tail was
+//
+//     return clientRow?.coach_id || clientRow?.user_id || currentUser.id
+//
+// and `|| currentUser.id` made an RLS-DENIED read (0 rows, so `data` is null) indistinguishable from a
+// genuine solo record — a refusal silently became "it's mine". app-core.js names this function as the
+// anti-model `_verifyClientAccess` was written against, and saveRunnerSession documents the same rule
+// verbatim: "MUST fail loud, not fall back to currentUser.id".
+//
+// The `|| user_id` clause STAYS. Solo's coach_id is legitimately NULL, so that branch is a real answer,
+// not a guess — this is the distinction the old code collapsed. The trailing fallback was only ever
+// reachable when BOTH columns were null, which is an orphaned row, not an owner.
+//
+// `.single()` errors with PGRST116 on zero rows, which is precisely the denial signal, so the error is
+// captured rather than discarded. Callers must handle null; every one of the four does.
 async function _effectiveCoachIdForClient(clientId) {
-  const { data: clientRow } = await db.from('clients').select('coach_id, user_id').eq('id', clientId).single()
-  return clientRow?.coach_id || clientRow?.user_id || currentUser.id
+  const { data: clientRow, error } = await db.from('clients').select('coach_id, user_id').eq('id', clientId).single()
+  if (error || !clientRow) {
+    log.error('_effectiveCoachIdForClient', 'client record not readable — refusing to guess an owner', { clientId, code: error?.code })
+    return null
+  }
+  return clientRow.coach_id || clientRow.user_id || null
 }
 
 // Silent resolve-or-create — kept only for the Big 5 quick-start 1RM form, which has no free
