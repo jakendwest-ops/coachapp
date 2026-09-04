@@ -1173,6 +1173,32 @@ async function _getCurrentClientId() {
   return data?.id || null
 }
 
+// ── A mouse wheel must never rewrite a number a user typed ──────────────────────────────────────────
+//
+// MEASURED 2026-09-04 in three browsers, on an isolated data: URL containing nothing but
+// `<input type="number" step="0.5" value="200">`:
+//
+//     Playwright's bundled Chromium 149   wheel: 200 -> 200      no change
+//     real Chrome 152                     wheel: 200 -> 200.5    STEPPED
+//     real Edge                           wheel: 200 -> 200.5    STEPPED
+//
+// Scrolling with the pointer over a focused number field silently changes it by one step in the
+// browsers Jake actually uses, and CANNOT be reproduced by this project's test suite, which runs the
+// bundled build. That is exactly why an earlier investigation tested this route, found nothing, and
+// had to record "caveat: headless Chromium, real Chrome may differ and I could not test that".
+//
+// 95 number inputs in this app, 17 of them `step="0.5"` — the exact increment in the 2026-07-09 report
+// "1RM value silently shifts by 0.5kg". Fixed as a class, not on the one field the symptom was noticed
+// on: any of the 95 can be nudged by a stray scroll, and the result looks like data, not like a bug.
+//
+// blur() rather than preventDefault(): both were measured to stop the step in real Chrome and Edge,
+// but blur can stay `passive`, so it never interferes with ordinary page scrolling. Losing focus is
+// also the honest outcome — the user was scrolling the page, not editing the field.
+document.addEventListener('wheel', (e) => {
+  const t = e.target
+  if (t && t.type === 'number' && t === document.activeElement) t.blur()
+}, { passive: true })
+
 // Browser back/forward — re-render without pushing another history entry
 window.addEventListener('popstate', e => {
   // navigate() already refuses while the consent gate is up, but refusing alone would let Back walk
