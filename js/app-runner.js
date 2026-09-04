@@ -60,7 +60,7 @@ async function _startFreshRunner(clientId) {
 
   document.getElementById('runner-setup')?.remove()
 
-  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null }
+  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null, templateId: template?.id || null }
   // Interval exercises store ONE sets_json entry describing the whole block, so the generic
   // `targetSets: ex.sets_json?.length || 3` above always comes out as 1 (or 3, on a legacy fallback)
   // for them — expand now so targetSets reflects the real work-round count everywhere it's read
@@ -121,6 +121,7 @@ function _saveRunnerDraft() {
       startTime: _runner.startTime,
       exIdx: _runner.exIdx,
       templateDesc: _runner.templateDesc || null,
+      templateId: _runner.templateId || null,
       exercises: _runner.exercises,
       savedAt: Date.now()
     }
@@ -203,7 +204,8 @@ async function _resumeRunnerFromDraft(clientId) {
   _runner = {
     clientId: draft.clientId, name: draft.name, date: draft.date, exercises: draft.exercises,
     exIdx: draft.exIdx || 0, startTime: draft.startTime, _timerInterval: null,
-    templateDesc: draft.templateDesc || null
+    templateDesc: draft.templateDesc || null,
+    templateId: draft.templateId || null
   }
   renderRunner()
   _startRunnerTimerTick()
@@ -2435,7 +2437,10 @@ async function saveRunnerSession() {
   const coachId = clientRecord.coach_id || currentUser.id
 
   const { data: sessionLog, error } = await db.from('workout_logs').insert({
-    coach_id: coachId, client_id: clientId, name, date, notes
+    // template_id is what lets the Library page say when a session was last TRAINED. Its sibling
+    // saveWorkoutSession has always recorded it; this path never did, so until 2026-09-04 a session
+    // trained in the actual runner left no link back to the template it came from.
+    coach_id: coachId, client_id: clientId, template_id: _runner?.templateId || null, name, date, notes
   }).select().single()
   if (error) {
     log.error('saveRunnerSession', 'workout_logs insert failed', error)
