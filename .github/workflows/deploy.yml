@@ -45,7 +45,11 @@ jobs:
         run: sh scripts/checks.sh
 
   e2e:
-    name: Smoke tests (57)
+    # Named for what a GREEN badge on it actually means. While the secrets are absent this job passes
+    # having run nothing at all, and "Smoke tests (57): success" would read as 57 tests having passed.
+    # A green check that ran nothing is the exact failure this repo's rules exist to catch; the name
+    # and the warning below are the two things stopping this one from being an instance of it.
+    name: Smoke tests (57, skipped without secrets)
     runs-on: ubuntu-latest
     needs: check
     steps:
@@ -61,7 +65,10 @@ jobs:
         run: |
           if [ -z "$PT_EMAIL" ]; then
             echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Smoke tests SKIPPED - repository secrets are not set."
+            # A WARNING, not a notice. Notices are easy to scroll past; this needs to be visible on
+            # the run summary every time, because the whole point of the job is coverage that is not
+            # currently happening.
+            echo "::warning::Smoke tests SKIPPED - repository secrets are not set. CI ran ZERO browser tests."
             echo "Add PT_EMAIL, PT_PASSWORD, CLIENT_EMAIL, CLIENT_PASSWORD, PT2_EMAIL and"
             echo "PT2_PASSWORD under Settings > Secrets and variables > Actions, then re-run."
             echo "Until then CI runs ZERO browser tests and the only browser coverage is the"
