@@ -1025,6 +1025,43 @@ document.getElementById('sign-out-btn').addEventListener('click', async () => {
 })
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
+// Hands a render a container that STOPS ACCEPTING PAINT once the user has navigated away.
+//
+// Every async render in this app has the same shape: paint "Loading…", await several Supabase
+// queries, then write el.innerHTML. None of them asks whether the page is still the one that wanted
+// them. So a render still in flight when you navigate lands AFTERWARDS and replaces the new page's
+// content — while the nav highlight, set synchronously below, stays on the new page.
+//
+// The end state is genuinely confusing, and is why this defeated four investigations: the nav says
+// Library, `currentPage` says 'library', and the screen shows the dashboard. It reads like a click
+// that did nothing, not like a race. Reproduced deterministically 2026-09-04 (see
+// tests/stale-render-clobber-2026-09-04.spec.js) and matching the preserved failure screenshot of
+// solo-account.spec.js:48 exactly.
+//
+// MEASURED: 24 of 26 async render* functions write innerHTML after an await; 3 carry any staleness
+// guard. Guarding them individually would be 24 opportunities to miss one, and every new render would
+// be a 25th. This is the single place page renders are dispatched from, so the guard lives here.
+//
+// It refuses LOUDLY. A silent no-op would be the reports-success-while-doing-nothing shape, in the
+// mechanism written to stop a render lying about what is on screen.
+function _pageScopedContainer(el, page) {
+  if (!el) return el
+  return new Proxy(el, {
+    get(t, prop) {
+      const v = Reflect.get(t, prop, t)
+      return typeof v === 'function' ? v.bind(t) : v
+    },
+    set(t, prop, value) {
+      if (prop === 'innerHTML' && currentPage !== page) {
+        log.warn('navigate', 'stale render refused — the page changed while it was loading',
+          { rendered: page, now: currentPage })
+        return true                      // obsolete, not an error; the caller has nothing to fix
+      }
+      return Reflect.set(t, prop, value, t)
+    }
+  })
+}
+
 function navigate(page, _historyOp = 'push') {
   // The consent gate is a GATE, not a dialog — it is the one overlay this must not clear.
   // Guarded HERE rather than in each caller because every route into the app funnels through
@@ -1046,7 +1083,9 @@ function navigate(page, _historyOp = 'push') {
     el.classList.toggle('active', el.dataset.page === page)
   })
 
-  const container = document.getElementById('main-content')
+  // Scoped to THIS navigation. `currentPage` was set to `page` a few lines above, so a render
+  // dispatched here paints freely until some later navigate() moves currentPage on.
+  const container = _pageScopedContainer(document.getElementById('main-content'), page)
 
   const _catch = (page, fn) => fn(container).catch(err => {
     log.error('navigate', `render failed for ${page}`, err)
