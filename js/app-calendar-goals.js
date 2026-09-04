@@ -495,12 +495,26 @@ async function saveClientEvent() {
   if (!title) { errorEl.textContent = 'Title is required'; return }
   if (!date)  { errorEl.textContent = 'Date is required'; return }
 
-  const { data: clientRow, error: clientErr } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-  if (clientErr || !clientRow) { errorEl.textContent = 'Could not find your client record'; return }
+  // Save against the record THIS CALENDAR IS SHOWING, not a fresh guess from user_id.
+  //
+  // The old shape was `db.from('clients').select('id').eq('user_id', currentUser.id).single()`, which
+  // is wrong in a way the ledger row for it described imprecisely. MEASURED 2026-09-04: the database
+  // carries a UNIQUE index on clients.user_id (`clients_user_id_idx` — an insert of a second row for
+  // the same user_id is refused with 23505), so it can never match two rows and the "PGRST116 on a
+  // master account" story is not the mechanism. What IS real is the second half: the query was not
+  // bound to the ACTIVE VIEW. It re-derived an id from the auth user while the page the user is
+  // looking at had already resolved one, so the two could disagree.
+  //
+  // renderCalendar sets window._calClientId from _getCurrentClientId() before it paints the "+ Add
+  // event" button that reaches this function, and that button is only rendered for a client/solo view.
+  // Preferring it means the event lands on exactly the calendar the user is looking at. The resolver
+  // stays as the fallback for a direct call.
+  const clientId = window._calClientId || await _getCurrentClientId()
+  if (!clientId) { errorEl.textContent = 'Could not find your client record'; return }
 
   const { error } = await db.from('events').insert({
     title, date, type, notes,
-    client_id: clientRow.id,
+    client_id: clientId,
     is_pt_assigned: false,
     created_by: currentUser.id
   })
