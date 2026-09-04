@@ -102,4 +102,51 @@ test.describe('Library orders by last used (2026-09-04)', () => {
     expect(r.meta).toContain('today')
     expect(r.cleanup, 'the fixture must be deleted, and the delete seen').toBe(1)
   })
+
+  test('search filters the list as you type, and clearing restores it', async ({ page }) => {
+    await loginAsPT(page)
+
+    const r = await page.evaluate(async () => {
+      const stamp = Date.now()
+      const keep = `[E2E] findme ${stamp}`
+      const hide = `[E2E] other ${stamp}`
+      const out = { built: false, before: 0, filtered: 0, restored: 0, cleanup: 0 }
+
+      const mk = async (name) => (await db.from('workout_templates')
+        .insert({ coach_id: currentUser.id, client_id: null, program_id: null,
+                  name, is_personal: currentProfile?.role === 'solo' })
+        .select('id').single()).data?.id || null
+      const a = await mk(keep)
+      const b = await mk(hide)
+      if (!a || !b) return out
+      out.built = true
+
+      try {
+        const host = document.createElement('div')
+        host.id = 'workout-tab-content'
+        document.body.appendChild(host)
+        await renderWorkoutTemplates(host)
+        const visible = () => [...host.querySelectorAll('.list-row')]
+          .filter(r2 => r2.style.display !== 'none').length
+
+        out.before = visible()
+        filterTemplates('findme')
+        out.filtered = visible()
+        filterTemplates('')
+        out.restored = visible()
+        host.remove()
+      } finally {
+        const { data: gone } = await db.from('workout_templates')
+          .delete().in('id', [a, b]).eq('coach_id', currentUser.id).select('id')
+        out.cleanup = (gone || []).length
+      }
+      return out
+    })
+
+    expect(r.built, 'both fixtures must exist or this test asserts nothing').toBe(true)
+    expect(r.before, 'both fixtures must be listed before filtering').toBeGreaterThanOrEqual(2)
+    expect(r.filtered, 'only the matching row may remain visible').toBe(1)
+    expect(r.restored, 'clearing the box must restore every row').toBe(r.before)
+    expect(r.cleanup, 'both fixtures must be deleted, and the delete seen').toBe(2)
+  })
 })

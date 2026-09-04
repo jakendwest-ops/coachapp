@@ -548,6 +548,8 @@ async function renderWorkoutLibrary(el) {
       <button class="tab-btn active" id="wt-tab-templates" onclick="switchWorkoutTab('templates')">Templates</button>
       <button class="tab-btn" id="wt-tab-exercises" onclick="switchWorkoutTab('exercises')">Exercise Library</button>
     </div>
+      <input id="wt-search" class="form-input" type="search" placeholder="Search sessions"
+             oninput="filterTemplates(this.value)" style="margin-bottom:12px">
     <div id="workout-tab-content"></div>
   `
   await renderWorkoutTemplates(document.getElementById('workout-tab-content'))
@@ -845,6 +847,24 @@ function _relativeAge(d) {
   return `${Math.floor(days / 30)} months ago`
 }
 
+// Filters the ALREADY-RENDERED rows. No query, no re-render: every row is in the DOM, so this is a
+// show/hide pass and stays instant as you type. Re-fetching per keystroke would put the page's open
+// "feels slow" complaint straight back.
+function filterTemplates(term) {
+  const q = (term || '').trim().toLowerCase()
+  const host = document.getElementById('workout-tab-content')
+  if (!host) return
+  let shown = 0
+  for (const row of host.querySelectorAll('.list-row')) {
+    const name = row.querySelector('.row-name')?.textContent?.toLowerCase() || ''
+    const hit = !q || name.includes(q)
+    row.style.display = hit ? '' : 'none'
+    if (hit) shown++
+  }
+  const none = document.getElementById('wt-no-matches')
+  if (none) none.style.display = shown ? 'none' : ''
+}
+
 async function renderWorkoutTemplates(el) {
   log.info('renderWorkoutTemplates', 'fetching templates')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
@@ -907,7 +927,11 @@ async function renderWorkoutTemplates(el) {
       </div>
     </div>`
 
-  el.innerHTML = `<div class="list">${templates.map(templateRow).join('')}</div>`
+  // A plain hidden line, NOT an .empty-state block: searching to no result is a transient state, and
+  // the class carries a large icon and a call-to-action button that would be wrong here. It also
+  // keeps checks.sh rule 9i's empty-state count flat — see this task's Step 6.
+  el.innerHTML = `<div class="list">${templates.map(templateRow).join('')}</div>
+    <div id="wt-no-matches" style="display:none;padding:24px;text-align:center;color:var(--text-muted)">No sessions match that search.</div>`
 }
 
 async function renderExerciseLibrary(el) {
