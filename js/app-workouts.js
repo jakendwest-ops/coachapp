@@ -93,10 +93,20 @@ function _hasTimeTarget(v) { return !!v && v !== '0:00' && v !== '00:00' }
 // validation and only the runner's post-session auto-detector capped reps; consolidating here applies
 // the cap to manual entry and to the Progress e1RM charts too. 12 is a generous upper bound — an
 // 11–12-rep set still estimates, a burnout set does not.
+// A SINGLE IS NOT AN ESTIMATE (Jake's call, 2026-09-04, as the training-domain authority). Plain
+// Epley is w * (1 + r/30), which at r=1 returns 1.0333 x the weight — so a lifter who proved 100kg
+// for one was credited with 103.33kg they had not lifted. That number is not decorative: it drives
+// %1RM prescription, and app-progress.js:1839/:2482 apply this function to sets ALREADY LOGGED, so
+// the e1RM charts overstated real performance without anyone asking for a projection.
+//
+// The discontinuity is real and accepted: 100x1 now reports 100.0 while 100x2 reports 106.7, so
+// adding a rep raises the number by 6.7kg. That is the honest shape — one is measured, the other is
+// extrapolated — and it is preferable to being consistently 3.3% wrong about the one case we KNOW.
 const _ESTIMATE_1RM_MAX_REPS = 12
 function _estimate1RM(weight, reps) {
   const w = parseFloat(weight), r = parseInt(reps)
   if (!(w > 0) || !(r > 0) || r > _ESTIMATE_1RM_MAX_REPS) return null
+  if (r === 1) return w                       // measured, not estimated
   return w * (1 + r / 30)
 }
 

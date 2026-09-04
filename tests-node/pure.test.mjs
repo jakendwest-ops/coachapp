@@ -112,12 +112,22 @@ describe('training maths', () => {
     assert.equal(f(100, 999), null, 'beyond _ESTIMATE_1RM_MAX_REPS — the estimate stops being meaningful')
   })
 
-  test('_estimate1RM at 1 rep returns MORE than the weight lifted (current behaviour, questioned)', () => {
-    // Documented, not endorsed. Epley is w*(1+r/30), so a single 100kg reports 103.33kg — but a
-    // single IS a demonstrated 1RM, so this inflates by 3.3% and that number drives %1RM prescription.
-    // Encoded so a deliberate change is visible; raised with Jake as a training-domain judgement.
-    // See bugs/2026-09-03-estimate1rm-inflates-a-single-by-3-percent.
-    assert.equal(Math.round(get('_estimate1RM')(100, 1) * 100) / 100, 103.33)
+  test('_estimate1RM at 1 rep returns EXACTLY the weight lifted', () => {
+    // Jake's call, 2026-09-04, as the training-domain authority: a single IS a demonstrated one-rep
+    // max, so there is nothing to estimate. Plain Epley (w * (1 + r/30)) reported 103.33kg for a
+    // 100kg single — 3.3% higher than the lifter actually proved — and that number is not decorative:
+    // it drives %1RM prescription, and app-progress.js:1839/:2482 apply it to sets already LOGGED,
+    // so the charts overstated real performance without ever being asked for a projection.
+    assert.equal(get('_estimate1RM')(100, 1), 100)
+    assert.equal(get('_estimate1RM')(62.5, 1), 62.5, 'a non-integer weight must pass through untouched')
+  })
+
+  test('_estimate1RM at 2+ reps still uses Epley — only the r=1 case changed', () => {
+    // Guards against over-correcting. The discontinuity this creates is real and accepted: 100x1
+    // reports 100.0 and 100x2 reports 106.7, so adding a rep raises the estimate by 6.7kg. That is
+    // the honest shape — one is measured, the other is extrapolated.
+    assert.equal(Math.round(get('_estimate1RM')(100, 2) * 100) / 100, 106.67)
+    assert.equal(Math.round(get('_estimate1RM')(100, 5) * 100) / 100, 116.67)
   })
 
   test('_rollingAvg averages over the trailing window', () => {

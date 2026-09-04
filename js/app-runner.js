@@ -2737,7 +2737,13 @@ function _updateRunnerEpleyPreview() {
   const r = parseInt(document.getElementById('rorm-est-reps')?.value)
   const preview = document.getElementById('rorm-epley-preview')
   const est = _estimate1RM(w, r)
-  preview.textContent = est ? `≈ Epley estimate: ${fmtWeight(est, { spaced: true, decimals: 1 })}`
+  // At one rep there is nothing being estimated — see the twin in _updateOneRMQuickEntryPreview
+  // (app-programs.js:666). Both changed together: fixing one and not the other is how this project's
+  // duplicate clusters drift apart in the first place.
+  preview.textContent = est
+    ? (r === 1
+        ? `= ${fmtWeight(est, { spaced: true, decimals: 1 })} — a single IS your 1RM`
+        : `≈ Epley estimate: ${fmtWeight(est, { spaced: true, decimals: 1 })}`)
     : (w && r > _ESTIMATE_1RM_MAX_REPS ? `Too many reps for a reliable estimate (max ${_ESTIMATE_1RM_MAX_REPS})` : '')
 }
 

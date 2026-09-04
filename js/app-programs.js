@@ -665,7 +665,13 @@ function _updateOneRMQuickEntryPreview(idPrefix) {
   const r = parseInt(document.getElementById(`${idPrefix}-est-reps`)?.value)
   const preview = document.getElementById(`${idPrefix}-epley-preview`)
   const est = _estimate1RM(w, r)
-  preview.textContent = est ? `≈ Epley estimate: ${fmtWeight(est, { spaced: true, decimals: 1 })}`
+  // At one rep there is nothing being estimated, so the label must not claim there is — the number
+  // shown IS the weight typed in. Same wording in _updateRunnerEpleyPreview (app-runner.js:2739);
+  // these two are a known duplicate pair the consolidation phase merges.
+  preview.textContent = est
+    ? (r === 1
+        ? `= ${fmtWeight(est, { spaced: true, decimals: 1 })} — a single IS your 1RM`
+        : `≈ Epley estimate: ${fmtWeight(est, { spaced: true, decimals: 1 })}`)
     : (w && r > _ESTIMATE_1RM_MAX_REPS ? `Too many reps for a reliable estimate (max ${_ESTIMATE_1RM_MAX_REPS})` : '')
 }
 
