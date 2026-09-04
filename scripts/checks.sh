@@ -514,7 +514,12 @@ fi
 # incapable of failing. It drives the precondition through all four states (down / 500 / wrong app
 # / correct) on a spare port, so it never touches a real preview server.
 if [ "${CI}" = "true" ]; then
-  echo "[WARN] Playwright NOT run in CI -- CI currently runs ZERO browser tests. Coverage exists only on the local pre-push hook. (Phase 2 of the 2026-09-02 refactor plan wires the smoke gate into CI.)"
+  # Not run HERE, on purpose: as of 2026-09-04 the smoke gate is its own `e2e` job in
+  # .github/workflows/deploy.yml, so running it inside this job too would double the browser load on
+  # one shared Supabase test account. That job skips itself with a notice until the test-account
+  # secrets exist, so "CI runs browser tests" is still conditional -- check the Actions tab rather
+  # than assuming it from this line.
+  echo "[WARN] Playwright not run in THIS job -- the smoke gate runs as the separate 'e2e' job, which skips itself until the test-account secrets are set. Local pre-push remains the guaranteed coverage."
 else
   echo "Checking the preview-server precondition..."
   if ! node scripts/check-preview-server.selftest.mjs > /dev/null 2>&1; then

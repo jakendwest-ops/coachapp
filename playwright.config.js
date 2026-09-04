@@ -6,6 +6,12 @@ const path = require('path')
 // The preview-server command lives in ONE place: .claude/launch.json. Copying it in here would be
 // two fields carrying one fact, and they would drift the first time either is edited.
 function previewServerCommand () {
+  // CI runs on Linux, where launch.json's PowerShell HttpListener cannot start at all. The override
+  // keeps .claude/launch.json as the single source of truth for the LOCAL command -- which is the
+  // point of reading it rather than hardcoding one -- while letting the workflow supply a portable
+  // equivalent (python3 -m http.server). Without this the e2e job cannot boot the app under test.
+  if (process.env.PREVIEW_SERVER_CMD) return process.env.PREVIEW_SERVER_CMD
+
   const p = path.join(__dirname, '.claude', 'launch.json')
   let cfg
   try {
