@@ -67,4 +67,39 @@ test.describe('Library orders by last used (2026-09-04)', () => {
     expect(r.order[0], 'the recently edited template must sort first').toContain('zzz newer')
     expect(r.cleanup.templates, 'both fixtures must be deleted, and the delete seen').toBe(2)
   })
+
+  test('each row states when it was last used', async ({ page }) => {
+    await loginAsPT(page)
+
+    const r = await page.evaluate(async () => {
+      const tag = `[E2E] row line ${Date.now()}`
+      const out = { built: false, meta: null, cleanup: 0 }
+      const { data: t } = await db.from('workout_templates')
+        .insert({ coach_id: currentUser.id, client_id: null, program_id: null,
+                  name: tag, is_personal: currentProfile?.role === 'solo' })
+        .select('id').single()
+      if (!t?.id) return out
+      out.built = true
+      try {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        await renderWorkoutTemplates(host)
+        const row = [...host.querySelectorAll('.list-row')]
+          .find(r2 => r2.querySelector('.row-name')?.textContent === tag)
+        out.meta = row?.querySelector('.row-meta')?.textContent || null
+        host.remove()
+      } finally {
+        const { data: gone } = await db.from('workout_templates')
+          .delete().eq('id', t.id).eq('coach_id', currentUser.id).select('id')
+        out.cleanup = (gone || []).length
+      }
+      return out
+    })
+
+    expect(r.built, 'the fixture must exist or this test asserts nothing').toBe(true)
+    expect(r.meta, 'the row must state when it was last used').toContain('Last used')
+    // Just created, so its updated_at is now — anything else means the merge in Task 2 is wrong.
+    expect(r.meta).toContain('today')
+    expect(r.cleanup, 'the fixture must be deleted, and the delete seen').toBe(1)
+  })
 })

@@ -830,6 +830,21 @@ function switchWorkoutTab(tab) {
   else renderExerciseLibrary(el)
 }
 
+// Relative age for the Library's "Last used" line. Deliberately coarse — the question the row answers
+// is "recently, or ages ago", never "exactly when".
+//
+// Returns '—' for a missing or unparseable date rather than "NaN days ago". A template should never
+// have neither date after the 2026-09-04 backfill, but printing junk into a row is worse than a dash.
+function _relativeAge(d) {
+  if (!d || isNaN(d.getTime())) return '—'
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 14) return `${days} days ago`
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`
+  return `${Math.floor(days / 30)} months ago`
+}
+
 async function renderWorkoutTemplates(el) {
   log.info('renderWorkoutTemplates', 'fetching templates')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
@@ -884,7 +899,7 @@ async function renderWorkoutTemplates(el) {
       <div style="width:40px;height:40px;border-radius:var(--radius, 10px);background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-2xl, 18px);flex-shrink:0">💪</div>
       <div class="row-info">
         <div class="row-name">${escapeHtml(t.name)}</div>
-        <div class="row-meta">${t.description ? escapeHtml(t.description) : (t.workout_template_exercises.length + ' exercise' + (t.workout_template_exercises.length !== 1 ? 's' : ''))}</div>
+        <div class="row-meta">Last used ${_relativeAge(t._lastUsed)}</div>
       </div>
       <div class="row-right">
         <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${t.workout_template_exercises.length} ex</span>

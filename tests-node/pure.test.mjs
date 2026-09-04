@@ -214,3 +214,25 @@ describe('programme scheduling — _programWorkoutsByDate (extracted 2026-08-30)
     sameShape(get('_programWorkoutsByDate')({ start_date: 'nonsense' }, {}), {})
   })
 })
+
+describe('_relativeAge — the Library "last used" line', () => {
+  const days = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000)
+
+  test('reads as plain English at each scale', () => {
+    const f = get('_relativeAge')
+    assert.equal(f(days(0)), 'today')
+    assert.equal(f(days(1)), 'yesterday')
+    assert.equal(f(days(3)), '3 days ago')
+    assert.equal(f(days(14)), '2 weeks ago')
+    assert.equal(f(days(70)), '2 months ago')
+  })
+
+  test('returns a dash rather than "NaN days ago" for a missing date', () => {
+    // A template with no date should not print junk into the row. This is the falsy-zero class's
+    // cousin: the value is absent, not zero, and must be handled explicitly.
+    const f = get('_relativeAge')
+    assert.equal(f(null), '—')
+    assert.equal(f(undefined), '—')
+    assert.equal(f(new Date('not a date')), '—')
+  })
+})
