@@ -548,8 +548,8 @@ async function renderWorkoutLibrary(el) {
       <button class="tab-btn active" id="wt-tab-templates" onclick="switchWorkoutTab('templates')">Templates</button>
       <button class="tab-btn" id="wt-tab-exercises" onclick="switchWorkoutTab('exercises')">Exercise Library</button>
     </div>
-      <input id="wt-search" class="form-input" type="search" placeholder="Search sessions"
-             oninput="filterTemplates(this.value)" style="margin-bottom:12px">
+    <input id="wt-search" class="field-input" type="search" placeholder="Search sessions…"
+           autocomplete="off" oninput="filterTemplates(this.value)" style="margin-bottom:14px">
     <div id="workout-tab-content"></div>
   `
   await renderWorkoutTemplates(document.getElementById('workout-tab-content'))
@@ -828,6 +828,10 @@ function switchWorkoutTab(tab) {
   document.getElementById('wt-tab-templates').classList.toggle('active', tab === 'templates')
   document.getElementById('wt-tab-exercises').classList.toggle('active', tab === 'exercises')
   const el = document.getElementById('workout-tab-content')
+  // The search box lives outside #workout-tab-content so it survives the re-render, which also means
+  // it would otherwise sit above the Exercise Library saying "Search sessions" and filtering nothing.
+  const search = document.getElementById('wt-search')
+  if (search) search.style.display = tab === 'templates' ? '' : 'none'
   if (tab === 'templates') renderWorkoutTemplates(el)
   else renderExerciseLibrary(el)
 }
@@ -932,6 +936,13 @@ async function renderWorkoutTemplates(el) {
   // keeps checks.sh rule 9i's empty-state count flat — see this task's Step 6.
   el.innerHTML = `<div class="list">${templates.map(templateRow).join('')}</div>
     <div id="wt-no-matches" style="display:none;padding:24px;text-align:center;color:var(--text-muted)">No sessions match that search.</div>`
+
+  // Re-apply whatever is typed. The search input is rendered ONCE by renderWorkoutLibrary and lives
+  // OUTSIDE this container, so it survives a re-render that rebuilds every row -- leaving a term in
+  // the box above an unfiltered list. Doing it here rather than in switchWorkoutTab covers every
+  // caller, including the first paint.
+  const term = document.getElementById('wt-search')?.value
+  if (term) filterTemplates(term)
 }
 
 async function renderExerciseLibrary(el) {

@@ -149,4 +149,61 @@ test.describe('Library orders by last used (2026-09-04)', () => {
     expect(r.restored, 'clearing the box must restore every row').toBe(r.before)
     expect(r.cleanup, 'both fixtures must be deleted, and the delete seen').toBe(2)
   })
+
+  // Both halves of this test are for bugs found in review, not in use. The search input is rendered
+  // once by renderWorkoutLibrary and lives OUTSIDE #workout-tab-content, which is what lets it keep
+  // its value across a re-render -- and is also what let it sit above the Exercise Library saying
+  // "Search sessions".
+  test('a re-render keeps the active search applied, and the box is hidden on the Exercise Library tab', async ({ page }) => {
+    await loginAsPT(page)
+
+    const r = await page.evaluate(async () => {
+      const stamp = Date.now()
+      const keep = `[E2E] findme ${stamp}`
+      const hide = `[E2E] other ${stamp}`
+      const out = { built: false, total: 0, afterRerender: 0, onExercises: null, backOnTemplates: null, cleanup: 0 }
+
+      const mk = async (name) => (await db.from('workout_templates')
+        .insert({ coach_id: currentUser.id, client_id: null, program_id: null,
+                  name, is_personal: currentProfile?.role === 'solo' })
+        .select('id').single()).data?.id || null
+      const a = await mk(keep)
+      const b = await mk(hide)
+      if (!a || !b) return out
+      out.built = true
+
+      const host = document.createElement('div'); host.id = 'workout-tab-content'
+      const search = document.createElement('input'); search.id = 'wt-search'
+      const tabT = document.createElement('button'); tabT.id = 'wt-tab-templates'
+      const tabE = document.createElement('button'); tabE.id = 'wt-tab-exercises'
+      document.body.append(host, search, tabT, tabE)
+
+      try {
+        // A term is already in the box when the list is rebuilt -- the tab round-trip case.
+        search.value = 'findme'
+        await renderWorkoutTemplates(host)
+        const rows = [...host.querySelectorAll('.list-row')]
+        out.total = rows.length
+        out.afterRerender = rows.filter(r2 => r2.style.display !== 'none').length
+
+        switchWorkoutTab('exercises')
+        out.onExercises = search.style.display
+        switchWorkoutTab('templates')
+        out.backOnTemplates = search.style.display
+      } finally {
+        host.remove(); search.remove(); tabT.remove(); tabE.remove()
+        const { data: gone } = await db.from('workout_templates')
+          .delete().in('id', [a, b]).eq('coach_id', currentUser.id).select('id')
+        out.cleanup = (gone || []).length
+      }
+      return out
+    })
+
+    expect(r.built, 'both fixtures must exist or this test asserts nothing').toBe(true)
+    expect(r.total, 'both fixtures must be rendered or the filter assertion is vacuous').toBeGreaterThanOrEqual(2)
+    expect(r.afterRerender, 'a re-render must re-apply the term still sitting in the search box').toBe(1)
+    expect(r.onExercises, 'the "Search sessions" box must be hidden on the Exercise Library tab').toBe('none')
+    expect(r.backOnTemplates, 'and shown again on the Templates tab').toBe('')
+    expect(r.cleanup, 'both fixtures must be deleted, and the delete seen').toBe(2)
+  })
 })
