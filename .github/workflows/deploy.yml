@@ -5,6 +5,10 @@ on:
     branches: [master]
   push:
     branches: [master]
+  # Manual trigger. Needed to verify a configuration change without inventing a commit — adding the
+  # test-account secrets, for instance, only takes effect on the NEXT run, and `gh workflow run`
+  # returns HTTP 422 without this. Also the only way to re-run the checks against master on demand.
+  workflow_dispatch:
 
 permissions:
   contents: read

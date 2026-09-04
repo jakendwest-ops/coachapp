@@ -52,6 +52,60 @@ async function assertPreviewServer (base) {
   }
 }
 
+// Refuse to start a LOCAL run while CI is running the same tests against the same account.
+//
+// THE PROBLEM. Every test — local and CI — drives ONE live Supabase account. 54 of 97 spec files use
+// FIXED fixture names rather than timestamped ones, and four cleanups delete by name PREFIX. Two
+// overlapping runs therefore reap each other's live fixtures, and the result is a scatter of
+// unrelated-looking failures on both sides with no hint of the real cause. That is the worst shape a
+// failure can take here: it looks exactly like a regression.
+//
+// WHY NOT A SEPARATE CI ACCOUNT, which was the obvious idea. Measured 2026-09-04: the suite has 66
+// skip-guards, and 14 spec files require the master-account setup (`window._soloClientId`); others
+// need "a client with a programme assigned", "a standalone template", "a client to use as a victim".
+// A fresh account satisfies none of that, so CI would go GREEN having silently skipped a large part of
+// the suite — the reports-success-while-doing-nothing shape, installed deliberately. Replicating the
+// account state is exactly the hidden shared-fixture dependency that left 242 rows of debris behind
+// once already.
+//
+// WHY THIS DIRECTION ONLY. Jake pushes, so he knows CI is about to start; the dangerous case is
+// starting a local run while a push's CI is still going. That is the case this catches. CI is not
+// given the reverse check because it cannot see his laptop, and pretending otherwise would be a
+// mechanism that only appears to work.
+//
+// FAILS OPEN. No `gh`, not logged in, no network, any error at all — the run proceeds with a warning.
+// Refusing to run the tests because a convenience check could not reach GitHub would be a far worse
+// bug than the collision it prevents.
+async function assertNoOverlappingCiRun () {
+  if (process.env.CI || process.env.NO_CI_CHECK) return
+  const { execFile } = require('child_process')
+  const { promisify } = require('util')
+  const run = promisify(execFile)
+
+  let inProgress = []
+  try {
+    const { stdout } = await run('gh',
+      ['run', 'list', '--limit', '5', '--json', 'status,displayTitle,databaseId'],
+      { timeout: 8000 })
+    inProgress = JSON.parse(stdout).filter(r => r.status === 'in_progress' || r.status === 'queued')
+  } catch (err) {
+    console.log(`  [ci-overlap] could not check GitHub (${String(err.message).split('\n')[0].slice(0, 60)}) — continuing.`)
+    return
+  }
+
+  if (!inProgress.length) return
+
+  const list = inProgress.map(r => `      #${r.databaseId}  ${r.displayTitle}`).join('\n')
+  throw new Error(
+    `\n\nA CI RUN IS IN PROGRESS ON THE SAME TEST ACCOUNT\n\n` +
+    `This is NOT a test failure — nothing has run yet.\n\n${list}\n\n` +
+    `Both runs drive one live Supabase account, and 54 of 97 specs use fixed fixture names, so they\n` +
+    `would delete each other's rows and fail in ways that look like regressions.\n\n` +
+    `Wait for it to finish (the smoke gate takes about 4 minutes), or set NO_CI_CHECK=1 to override\n` +
+    `if you know the CI run is not touching the browser tests.\n`
+  )
+}
+
 // One real form login per role, captured here so the 462 login call sites in tests/ can inject it
 // instead of re-typing credentials. See tests/session-store.js for the measurement that motivated it
 // and for why every failure path falls back to the form rather than failing the run.
@@ -88,6 +142,9 @@ async function captureSessions (base) {
 
 module.exports = async () => {
   const base = process.env.BASE_URL || DEFAULT_BASE
+  // FIRST, before the server check and before any login: this is the cheapest refusal available and
+  // the only one that costs nothing when it declines to act.
+  await assertNoOverlappingCiRun()
   await assertPreviewServer(base)
   // NO_SESSION_REUSE=1 forces every spec back onto the form login. Kept as an escape hatch for
   // diagnosing a suspected session-reuse problem without editing any file.

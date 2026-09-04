@@ -527,7 +527,13 @@ else
     fail "check-preview-server self-test FAILED -- the suite's server precondition can no longer be trusted, so a dead or wrong server would again be reported as failing tests."
   fi
   echo "Running Playwright smoke tests..."
-  if npx playwright test tests/runner.spec.js tests/solo-account.spec.js --reporter=line 2>&1; then
+  # NO_CI_CHECK: tests/global-setup.js refuses a LOCAL run while a CI run is in progress, because both
+  # drive one live Supabase account. That protection is for an ad-hoc `npm test`, NOT for this gate.
+  # Blocking a PUSH because CI is still busy with the previous push would be a false refusal on the most
+  # ordinary workflow there is — push, spot something, push again — and the natural response would be to
+  # bypass the entire gate with --no-verify. A gate that tempts you past it is worse than the collision
+  # it prevents.
+  if NO_CI_CHECK=1 npx playwright test tests/runner.spec.js tests/solo-account.spec.js --reporter=line 2>&1; then
     echo "  Playwright: passed"
   else
     echo ""
