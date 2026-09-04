@@ -34,6 +34,7 @@
 
 import { readFileSync } from 'node:fs'
 import { readBaseline } from './lib/baseline.mjs'
+import { blankComments } from './lib/comments.mjs'
 
 const files = process.argv.slice(2)
 if (!files.length) {
@@ -78,60 +79,6 @@ const KEYWORDS = new Set([
 const HANDLER_ATTR =
   /\bon(click|change|input|submit|keyup|keydown|keypress|blur|focus|mouseenter|mouseleave|touchstart|touchend|touchmove|error|load)\s*=\s*(["'])([\s\S]*?)\2/gi
 
-/**
- * Blank out comments, preserving every other byte and all offsets so line numbers stay exact.
- *
- * Tracks string, template-literal and regex-literal state, because the naive version is worse than
- * useless here: `//` appears inside every https:// URL in the source, and a regex like /['"]/ would
- * open a phantom string that swallows the rest of the file. The regex-vs-division call uses the
- * standard "what was the last meaningful character" heuristic -- a `/` right after ( , = : [ ! & | ?
- * { } ; or an operator starts a regex; after an identifier or `)` it is division.
- *
- * Strings and template literals are SKIPPED, not blanked: the handler attributes this file is looking
- * for live inside template literals, so blanking them would leave nothing to scan.
- */
-function blankComments (src) {
-  const out = src.split('')
-  const n = src.length
-  let i = 0
-  let prev = ''
-  while (i < n) {
-    const c = src[i]
-    const c2 = src[i + 1]
-    if (c === '/' && c2 === '/') {
-      while (i < n && src[i] !== '\n') { out[i] = ' '; i++ }
-      continue
-    }
-    if (c === '/' && c2 === '*') {
-      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) { if (src[i] !== '\n') out[i] = ' '; i++ }
-      if (i < n) { out[i] = ' '; out[i + 1] = ' '; i += 2 }
-      continue
-    }
-    if (c === "'" || c === '"' || c === '`') {
-      i++
-      while (i < n) {
-        if (src[i] === '\\') { i += 2; continue }
-        if (src[i] === c) { i++; break }
-        i++
-      }
-      prev = c
-      continue
-    }
-    if (c === '/' && /[(,=:[!&|?{};+\-*%~^\n]/.test(prev || '\n')) {
-      i++
-      while (i < n) {
-        if (src[i] === '\\') { i += 2; continue }
-        if (src[i] === '[') { while (i < n && src[i] !== ']') { if (src[i] === '\\') i++; i++ } }
-        if (src[i] === '/' || src[i] === '\n') { i++; break }
-        i++
-      }
-      continue
-    }
-    if (!/\s/.test(c)) prev = c
-    i++
-  }
-  return out.join('')
-}
 
 const declared = new Set()
 const sources = new Map()

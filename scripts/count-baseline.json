@@ -6,20 +6,21 @@
     "style-literal pattern was duplicated six times, one copy drifted, and the generator could then",
     "write a baseline the counter disagreed with -- failing the very commit meant to lower it.",
     "A count RISING fails the push. A count FALLING prints a note asking for this file to be lowered;",
-    "leaving it high turns a ratchet into a permit."
+    "leaving it high turns a ratchet into a permit.",
+    "Counts are measured with COMMENTS STRIPPED (scripts/lib/comments.mjs) since 2026-09-04 -- a comment mentioning a pattern is documentation, not an occurrence. Baselines were re-measured in that same commit, which is why three of them dropped."
   ],
   "counts": {
     "empty-state markup": {
       "pattern": "\\bempty-state\\b",
       "scope": "js",
-      "count": 36,
-      "why": "36 hand-rolled empty states. Phase 6 replaces them with one _emptyState(msg) builder; until then this stops a 37th being written."
+      "count": 35,
+      "why": "35 hand-rolled empty states (counted with comments stripped). Phase 6 replaces them with one _emptyState(msg) builder; until then this stops a 36th being written."
     },
     "Loading ellipsis": {
       "pattern": "Loading…",
       "scope": "js",
-      "count": 25,
-      "why": "25 copies of the same loading string. Same story as empty-state: a _loading() builder in Phase 6."
+      "count": 23,
+      "why": "23 copies of the same loading string (comments stripped). Same story as empty-state: a _loading() builder in Phase 6."
     },
     "toLocaleDateString(": {
       "pattern": "toLocaleDateString\\(",
@@ -30,8 +31,8 @@
     "role === 'solo'": {
       "pattern": "role === 'solo'",
       "scope": "js",
-      "count": 41,
-      "why": "The solo role test, inlined 41 times. Every one is a place a future _isSolo() change would have to be repeated -- and solo scoping is this project's most-shipped bug class (four separate coach_id/solo bugs). Phase 3 adds _isSolo()."
+      "count": 38,
+      "why": "The solo role test, inlined 38 times in CODE (comments stripped). Every one is a place a future _isSolo() change would have to be repeated -- and solo scoping is this project's most-shipped bug class (four separate coach_id/solo bugs). Phase 3 adds _isSolo()."
     },
     "typeof shield": {
       "pattern": "typeof\\s+[A-Za-z_$][\\w$]*\\s*!==\\s*'undefined'",

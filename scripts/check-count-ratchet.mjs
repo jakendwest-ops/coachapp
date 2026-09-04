@@ -21,6 +21,7 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
+import { blankComments } from './lib/comments.mjs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -59,7 +60,12 @@ for (const [name, spec] of Object.entries(baseline.counts)) {
   const re = new RegExp(spec.pattern, 'g')
   let actual = 0
   for (const f of files) {
-    const src = readFileSync(join(REPO, f), 'utf8').replace(/^﻿/, '')
+    // COMMENTS ARE NOT CODE. On 2026-09-04 this ratchet refused a commit because a newly written code
+    // comment happened to contain the literal loading string — documentation counted as a hand-rolled
+    // loading state. That is the FOURTH time a checker in this repo has counted a comment as code, so
+    // the stripper is shared (scripts/lib/comments.mjs) rather than reinvented a fifth time. Every
+    // baseline was re-measured against stripped source in the same commit.
+    const src = blankComments(readFileSync(join(REPO, f), 'utf8').replace(/^﻿/, ''))
     actual += (src.match(re) || []).length
   }
   results.push({ name, spec, actual, files: files.length })
