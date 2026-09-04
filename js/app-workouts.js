@@ -549,6 +549,7 @@ async function renderWorkoutLibrary(el) {
       <button class="tab-btn" id="wt-tab-exercises" onclick="switchWorkoutTab('exercises')">Exercise Library</button>
     </div>
     <input id="wt-search" class="field-input" type="search" placeholder="Search sessions…"
+           value="${escapeAttr(_wtSearchTerm)}"
            autocomplete="off" oninput="filterTemplates(this.value)" style="margin-bottom:14px">
     <div id="workout-tab-content"></div>
   `
@@ -854,7 +855,13 @@ function _relativeAge(d) {
 // Filters the ALREADY-RENDERED rows. No query, no re-render: every row is in the DOM, so this is a
 // show/hide pass and stays instant as you type. Re-fetching per keystroke would put the page's open
 // "feels slow" complaint straight back.
+// Survives leaving the page. The spec names find-one-to-edit as this page's whole purpose, and that
+// round trip is search -> open -> edit -> back, which goes through navigate('library') and rebuilds
+// the input from scratch. The term is never hidden state: the box always renders showing it.
+let _wtSearchTerm = ''
+
 function filterTemplates(term) {
+  _wtSearchTerm = term || ''
   const q = (term || '').trim().toLowerCase()
   const host = document.getElementById('workout-tab-content')
   if (!host) return
@@ -882,11 +889,20 @@ async function renderWorkoutTemplates(el) {
   // correctly elsewhere (the phase day-slot assign picker, app-programs.js).
   // TWO queries, not one per template. The Library page already carries an open "feels slow"
   // complaint, so the trained dates are fetched as ONE bounded batch and reduced in memory — never a
-  // lookup per row. .limit(500) bounds the cost; older logs cannot change which sessions are recent.
-  const [{ data: templates, error }, { data: recentLogs }] = await Promise.all([
-    db.from('workout_templates').select('*, workout_template_exercises(id), updated_at').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo').order('name').limit(100),
-    db.from('workout_logs').select('template_id, date').eq('coach_id', currentUser.id).not('template_id', 'is', null).order('date', { ascending: false }).limit(500)
-  ])
+  // lookup per row.
+  //
+  // .order('updated_at') and NOT .order('name'): the list is sorted by recency, so ordering the
+  // FETCH alphabetically would let .limit(100) cut rows alphabetically out of a recency ranking —
+  // on an account with ~993 historical orphan templates, the most recently used session could be
+  // excluded outright because its name starts with a late letter. This also finally uses the
+  // (coach_id, updated_at desc) index the migration added. Residual limit: a session edited long ago
+  // but TRAINED recently can still fall outside the 100. Accepted — closing it needs a server-side
+  // merge of the two dates, which PostgREST cannot express without an RPC.
+  const { data: templates, error } = await db.from('workout_templates')
+    .select('*, workout_template_exercises(id), updated_at')
+    .eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null)
+    .is('generated_from_phase_id', null).eq('is_personal', currentProfile?.role === 'solo')
+    .order('updated_at', { ascending: false }).limit(100)
 
   if (error) { log.error('renderWorkoutTemplates', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
@@ -895,6 +911,21 @@ async function renderWorkoutTemplates(el) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No standalone templates</div><div class="empty-text">Create one below, or if it's part of a phased plan, add it via Programs → phase view.</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
     return
   }
+
+  // The trained dates, scoped to the templates actually on screen. This runs AFTER the template
+  // query rather than beside it, deliberately: an unscoped "500 newest logs for this coach" window
+  // is filled by whichever logs are newest across EVERY client, and on a combined PT+solo account
+  // (solo shares the coach's auth.uid()) a personal template can be crowded out of the window by
+  // client sessions that could never match it — the label would silently fall back to the edit date.
+  // Scoping by id makes every fetched row relevant and lets the query use the template_id index, so
+  // the extra round trip buys correctness rather than costing it. Still one batch, never per row.
+  const { data: recentLogs, error: logsError } = await db.from('workout_logs')
+    .select('template_id, date').in('template_id', templates.map(t => t.id))
+    .order('date', { ascending: false }).limit(500)
+
+  // A failed lookup must not masquerade as "never trained". Every row would quietly fall back to its
+  // edit date and the page would look entirely correct — the failure mode this codebase keeps hitting.
+  if (logsError) log.error('renderWorkoutTemplates', 'trained dates unavailable — rows fall back to edit dates', logsError)
 
   // Newest log per template. recentLogs is already newest-first, so the FIRST time a template_id is
   // seen is its most recent training — no comparison needed.

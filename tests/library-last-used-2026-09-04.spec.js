@@ -206,4 +206,72 @@ test.describe('Library orders by last used (2026-09-04)', () => {
     expect(r.backOnTemplates, 'and shown again on the Templates tab').toBe('')
     expect(r.cleanup, 'both fixtures must be deleted, and the delete seen').toBe(2)
   })
+
+  // The TRAINED half of "last used" had no test at all until now, and that is a dangerous gap by
+  // design: edit dates carry the label for every row, so if the trained half were wholly dead —
+  // wrong scoping, the T00:00:00 parse, the comparator, an RLS refusal — every other test here would
+  // still be green and the page would still look right. Task 1 (the runner recording template_id)
+  // exists only to feed this half.
+  //
+  // Named so the assertion cannot pass by accident: alphabetically "aaa edited" comes FIRST, and it
+  // is also the more recently EDITED of the two. Only the trained date can put "zzz trained" on top.
+  test('a session trained recently outranks one edited more recently', async ({ page }) => {
+    await loginAsPT(page)
+
+    const r = await page.evaluate(async () => {
+      const stamp = Date.now()
+      const trainedName = `[E2E] zzz trained ${stamp}`
+      const editedName = `[E2E] aaa edited ${stamp}`
+      const today = new Date().toISOString().split('T')[0]
+      const out = { built: false, order: [], trainedRowSays: null, cleanup: {} }
+
+      const { data: client } = await db.from('clients')
+        .insert({ coach_id: currentUser.id, full_name: `[E2E] lastused ${stamp}` }).select('id').single()
+      const mk = async (name, updatedAt) => (await db.from('workout_templates')
+        .insert({ coach_id: currentUser.id, client_id: null, program_id: null, name,
+                  is_personal: currentProfile?.role === 'solo', updated_at: updatedAt })
+        .select('id').single()).data?.id || null
+      // Explicit updated_at survives the INSERT: the column carries a DEFAULT, which yields to a
+      // supplied value. Probed against the real database on 2026-09-04.
+      const trainedId = await mk(trainedName, '2020-01-01T00:00:00Z')
+      const editedId = await mk(editedName, '2021-01-01T00:00:00Z')
+      if (!client?.id || !trainedId || !editedId) return out
+
+      const { data: logRow } = await db.from('workout_logs')
+        .insert({ coach_id: currentUser.id, client_id: client.id, name: trainedName,
+                  date: today, template_id: trainedId }).select('id').single()
+      if (!logRow?.id) return out
+      out.built = true
+
+      try {
+        const host = document.createElement('div')
+        host.id = 'workout-tab-content'
+        document.body.appendChild(host)
+        await renderWorkoutTemplates(host)
+        const rows = [...host.querySelectorAll('.list-row')]
+          .filter(row => row.querySelector('.row-name')?.textContent.includes(String(stamp)))
+        out.order = rows.map(row => row.querySelector('.row-name')?.textContent)
+        out.trainedRowSays = rows.find(row => row.querySelector('.row-name')?.textContent === trainedName)
+          ?.querySelector('.row-meta')?.textContent ?? null
+        host.remove()
+      } finally {
+        const { data: lGone } = await db.from('workout_logs')
+          .delete().eq('id', logRow.id).eq('coach_id', currentUser.id).select('id')
+        const { data: tGone } = await db.from('workout_templates')
+          .delete().in('id', [trainedId, editedId]).eq('coach_id', currentUser.id).select('id')
+        const { data: cGone } = await db.from('clients')
+          .delete().eq('id', client.id).eq('coach_id', currentUser.id).select('id')
+        out.cleanup = { log: (lGone || []).length, templates: (tGone || []).length, client: (cGone || []).length }
+      }
+      return out
+    })
+
+    expect(r.built, 'the fixtures must exist or this test asserts nothing').toBe(true)
+    expect(r.order.length, 'both fixture templates must be rendered').toBe(2)
+    expect(r.order[0], 'a session trained today must outrank one edited a year later').toContain('zzz trained')
+    expect(r.trainedRowSays, 'and its row must report the TRAINED date, not the 2020 edit date').toBe('Last used today')
+    expect(r.cleanup.log, 'the fixture log must be deleted, and the delete seen').toBe(1)
+    expect(r.cleanup.templates, 'both fixture templates must be deleted, and the delete seen').toBe(2)
+    expect(r.cleanup.client, 'the fixture client must be deleted, and the delete seen').toBe(1)
+  })
 })
