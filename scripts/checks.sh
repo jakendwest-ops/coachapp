@@ -259,11 +259,37 @@ fi
 # every [E2E] row on the test account, sat in tests/ on 2026-09-02 after "rm -f" and a clean
 # `git status --short`. Playwright has no testIgnore, so anything present WILL run in the next full
 # suite. This rule looks at the FILESYSTEM, not git, because git is the thing that cannot see them.
-echo "Checking for stray probe specs on disk..."
-STRAYS=$(ls tests/zz-*.spec.js tests/_adhoc*.spec.js 2>/dev/null)
+#
+# WIDENED 2026-09-04. The rule only ever looked in tests/, and on that day a clean `git status` was
+# hiding SEVEN probe files elsewhere: js/tmp-own.js, js/tmp-ownership-probe.js, js/tmp2.js, zz-b.js,
+# zz-plain.js, zz-tmp-ownership.js and a migrate.sql containing the single character "x". They were
+# throwaways from testing the guardrails hook the previous day and had sat there for 24 hours.
+# A rule that checks one directory for a class of mistake that is not confined to one directory is
+# most of a rule.
+echo "Checking for stray probe files on disk..."
+STRAYS=$(ls tests/zz-*.spec.js tests/_adhoc*.spec.js zz-* _adhoc* js/zz-* js/tmp-* js/tmp[0-9]*.js 2>/dev/null)
 if [ -n "$STRAYS" ]; then
   echo "$STRAYS" | sed 's/^/    /'
-  fail "stray probe spec(s) on disk -- these are gitignored, git status cannot see them, and Playwright will run them. Delete before pushing."
+  fail "stray probe file(s) on disk -- gitignored or simply unstaged, so git status will not warn you. Delete before pushing."
+fi
+
+# -- 5c. Every .js in js/ must be LOADED by index.html --
+# The blind spot that let three tmp-*.js files sit in js/ unnoticed. Every checker added in Phase 1
+# -- 9g handler targets, 9h references, 9i ratchets, 9j single-source, and near-dup -- reads its file
+# list from index.html's script order, deliberately, so the list can never drift from what the browser
+# actually loads. The cost of that choice is that a .js file in js/ which index.html does NOT load is
+# invisible to every single one of them: unparsed, unscanned, and easy to mistake for real code.
+echo "Checking for orphaned js/ files..."
+ORPHANS=$(node -e '
+const fs = require("fs")
+const html = fs.readFileSync("index.html", "utf8").replace(/^﻿/, "")
+const loaded = new Set([...html.matchAll(/<script\s+src="js\/([a-zA-Z0-9._-]+\.js)\?v=\d+"/g)].map(m => m[1]))
+const orphans = fs.readdirSync("js").filter(f => f.endsWith(".js") && !loaded.has(f))
+if (orphans.length) console.log(orphans.join("\n"))
+')
+if [ -n "$ORPHANS" ]; then
+  echo "$ORPHANS" | sed 's/^/    /'
+  fail "js/ file(s) not loaded by index.html -- invisible to every static check, which all read the script order. Delete it, or add its <script> tag."
 fi
 # -- 6. set_type in inserts --
 echo "Checking for set_type in inserts..."
