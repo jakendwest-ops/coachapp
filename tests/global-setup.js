@@ -12,6 +12,12 @@
 // This runs after `webServer` has started (or reused) the server, so by the time we get here a
 // failure means the server is genuinely wrong — not merely slow to boot.
 
+// globalSetup runs in its own Node process and does NOT inherit whatever tests/helpers.js loads.
+// Without this the credentials are undefined here, captureSession returns false for all three roles,
+// and every spec quietly falls back to the form login -- the speed-up would be claimed and not
+// delivered. Caught on the first probe run, which reported "captured 0/3" rather than staying silent.
+require('dotenv').config()
+
 const DEFAULT_BASE = 'http://localhost:3001'
 
 async function assertPreviewServer (base) {
@@ -46,8 +52,39 @@ async function assertPreviewServer (base) {
   }
 }
 
+// One real form login per role, captured here so the 462 login call sites in tests/ can inject it
+// instead of re-typing credentials. See tests/session-store.js for the measurement that motivated it
+// and for why every failure path falls back to the form rather than failing the run.
+async function captureSessions (base) {
+  const { chromium } = require('@playwright/test')
+  const { captureSession } = require('./session-store')
+
+  const roles = [
+    ['pt', process.env.PT_EMAIL, process.env.PT_PASSWORD],
+    ['client', process.env.CLIENT_EMAIL, process.env.CLIENT_PASSWORD],
+    ['pt2', process.env.PT2_EMAIL, process.env.PT2_PASSWORD]
+  ]
+
+  const browser = await chromium.launch()
+  try {
+    const got = []
+    for (const [role, email, password] of roles) {
+      if (await captureSession(browser, base, role, email, password)) got.push(role)
+    }
+    // Said out loud on every run. A capture that silently produced nothing would restore the old
+    // per-spec cost while the commit message claimed a speed-up.
+    console.log(`  [session-store] captured ${got.length}/${roles.length} role sessions: ${got.join(', ') || '(none — every spec will form-login)'}`)
+  } finally {
+    await browser.close()
+  }
+}
+
 module.exports = async () => {
-  await assertPreviewServer(process.env.BASE_URL || DEFAULT_BASE)
+  const base = process.env.BASE_URL || DEFAULT_BASE
+  await assertPreviewServer(base)
+  // NO_SESSION_REUSE=1 forces every spec back onto the form login. Kept as an escape hatch for
+  // diagnosing a suspected session-reuse problem without editing any file.
+  if (!process.env.NO_SESSION_REUSE) await captureSessions(base)
 }
 
 // Exported so scripts/check-preview-server.selftest.mjs can prove this check is capable of FAILING.

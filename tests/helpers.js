@@ -20,43 +20,64 @@ async function loginAs(page, email, password) {
   await page.waitForSelector('#app-shell', { state: 'visible', timeout: 15000 })
 }
 
+// Every login below tries the captured session first and falls back to the real form. The signature,
+// the end state and the heading each one waits for are UNCHANGED — a spec cannot tell which path ran,
+// which is the point: 462 call sites keep working untouched.
+//
+// See tests/session-store.js for the measurement (53.6% of a run was form logins) and for why the
+// fallback exists. Set NO_SESSION_REUSE=1 to force every login back onto the form.
+const { injectSession } = require('./session-store')
+
+const ptReady = (page) => page.waitForSelector('h1:has-text("Welcome back")', { timeout: 15000 })
+
 async function loginAsPT(page) {
-  // Set _activeView before app loads so it always starts in coach mode
-  // (a previous test may have left _activeView=solo in localStorage)
+  // _activeView must be set BEFORE the app boots so it always starts in coach mode — a previous test
+  // may have left _activeView=solo in localStorage. Injection writes it in the same evaluate() as the
+  // session, before the reload, so both paths reach the app the same way.
+  if (await injectSession(page, 'pt', ptReady, { _activeView: 'coach' })) return
+
   await page.goto('/')
   await page.evaluate(() => localStorage.setItem('_activeView', 'coach'))
   await loginAs(page, PT_EMAIL, PT_PASSWORD)
   // #app-shell is visible before loadUserInfo finishes rendering the dashboard.
   // Wait for the PT dashboard h1 — only renders after loadUserInfo completes.
-  await page.waitForSelector('h1:has-text("Welcome back")', { timeout: 15000 })
+  await ptReady(page)
 }
 
+const clientReady = (page) => page.waitForSelector('h1:has-text("Hi,")', { timeout: 15000 })
+
 async function loginAsClient(page) {
+  if (await injectSession(page, 'client', clientReady)) return
+
   await loginAs(page, CLIENT_EMAIL, CLIENT_PASSWORD)
   // #app-shell is visible before renderClientDashboard finishes (it shows a "Loading…"
   // placeholder first, then swaps in the real dashboard once several parallel Supabase
   // fetches resolve) — same race loginAsPT already guards against below. Without this,
   // a test's first click (e.g. on [data-page="workouts"]) can land before the client
   // dashboard/nav has finished rendering and get silently overwritten.
-  await page.waitForSelector('h1:has-text("Hi,")', { timeout: 15000 })
+  await clientReady(page)
 }
 
 // Logs in as the SECOND coach — a different auth.uid(), a different tenant entirely. Used by the RLS
 // audit to prove coach B cannot read/write coach A's rows. Deliberately does NOT wait for a specific
 // dashboard heading: this account owns no data, so it lands on an empty coach dashboard, and the RLS
 // probes talk to `db` directly rather than through the UI anyway.
+// Wait for the session + profile to be loaded, not for any particular render.
+// NOTE the bare identifiers: `currentUser`/`currentProfile` are top-level `let` declarations in a
+// classic script, so they live in the global DECLARATIVE record and are NOT mirrored onto
+// `window` (les-024). `window.currentUser` is permanently undefined; the bare name resolves.
+const pt2Ready = (page) => page.waitForFunction(
+  () => typeof currentUser !== 'undefined' && !!currentUser?.id && typeof currentProfile !== 'undefined' && !!currentProfile,
+  { timeout: 15000 }
+)
+
 async function loginAsPT2(page) {
+  if (await injectSession(page, 'pt2', pt2Ready, { _activeView: 'coach' })) return
+
   await page.goto('/')
   await page.evaluate(() => localStorage.setItem('_activeView', 'coach'))
   await loginAs(page, PT2_EMAIL, PT2_PASSWORD)
-  // Wait for the session + profile to be loaded, not for any particular render.
-  // NOTE the bare identifiers: `currentUser`/`currentProfile` are top-level `let` declarations in a
-  // classic script, so they live in the global DECLARATIVE record and are NOT mirrored onto
-  // `window` (les-024). `window.currentUser` is permanently undefined; the bare name resolves.
-  await page.waitForFunction(
-    () => typeof currentUser !== 'undefined' && !!currentUser?.id && typeof currentProfile !== 'undefined' && !!currentProfile,
-    { timeout: 15000 }
-  )
+  await pt2Ready(page)
 }
 
 // Clicks whichever match of `selectors` is actually visible right now.
@@ -137,5 +158,33 @@ async function logTableSet(page, { weight = '60', reps = '10' } = {}) {
   await page.locator('#workout-runner button[onclick="toggleTableSet(0)"]').click()
   return true
 }
+
+// ---- LOGIN MEASUREMENT SEAM ----
+// Set LOGIN_STATS=<path> and every login appends "<helper> <ms>" to that file. Unset (the normal
+// case) __wrap returns the function untouched, so this costs literally nothing.
+//
+// Kept rather than deleted after the Phase 2 measurement, because the alternative is re-instrumenting
+// by hand every time someone wants to know whether a change helped -- and this project's rule is that
+// a performance claim needs a measurement, not an estimate. The numbers in tests/session-store.js
+// came from here and can be reproduced with one env var.
+//
+// Appends one line per login rather than keeping an in-memory counter: Playwright can restart a
+// worker mid-run, and an overwritten JSON counter would silently discard everything before it.
+const __loginLog = process.env.LOGIN_STATS
+function __wrap (name, fn) {
+  if (!__loginLog) return fn
+  return async function (...args) {
+    const t0 = Date.now()
+    try {
+      return await fn.apply(this, args)
+    } finally {
+      require('fs').appendFileSync(__loginLog, `${name} ${Date.now() - t0}\n`)
+    }
+  }
+}
+loginAsPT = __wrap('loginAsPT', loginAsPT)
+loginAsClient = __wrap('loginAsClient', loginAsClient)
+loginAsPT2 = __wrap('loginAsPT2', loginAsPT2)
+// ---- END INSTRUMENT ----
 
 module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible }
