@@ -40,6 +40,13 @@ const REVIEW_MARKER = join(homedir(), '.claude', 'state', 'review-ran')
 
 const version = process.argv[2]
 const doPush = process.argv.includes('--push')
+// --record runs the expensive verification and writes the receipt, WITHOUT tagging. It exists for a
+// real ordering problem: release notes must state the suite result, but the suite is what the gate
+// runs at tag time — so writing honest notes means either guessing the numbers or throwing away a
+// 30-minute run. With --record you verify first, read the real numbers, write the notes (docs/ does
+// not change the code fingerprint), then tag reusing the receipt. It is not a bypass: it runs
+// exactly the same checks.sh and full suite, and writes exactly the same receipt.
+const recordOnly = process.argv.includes('--record')
 
 let failed = 0
 const fail = (what, why, how) => {
@@ -80,7 +87,9 @@ if (localTags.includes(version)) {
 // 2. Clean tree ---------------------------------------------------------------------------------
 // A dirty tree means the tag would point at a commit that does not contain what you just tested.
 const dirty = git('status', '--porcelain')
-if (dirty) {
+if (recordOnly && dirty) {
+  pass('working tree dirty — allowed under --record')
+} else if (dirty) {
   fail('working tree is not clean', `uncommitted changes:\n      ${dirty.split('\n').join('\n      ')}`,
     'commit or revert them — the tag must describe a commit, not a desk')
 } else {
@@ -97,11 +106,15 @@ if (branch !== 'master') {
 
 const head = git('rev-parse', 'HEAD')
 
+// The gates from here to the short-circuit describe the RELEASE, not the code. --record is run
+// before the notes exist and often with a dirty tree, so it verifies the code and skips these.
 // 4. Release notes must exist AND say something -------------------------------------------------
 // The notes are the scope record — what this release contains, what it deliberately carries, and the
 // evidence it was tested. A release with no notes is a tag nobody can interpret in six weeks.
 const notesPath = `docs/releases/${version}.md`
-if (!existsSync(notesPath)) {
+if (recordOnly) {
+  pass('release-shape gates skipped (--record verifies code, not the release)')
+} else if (!existsSync(notesPath)) {
   fail(`no release notes at ${notesPath}`, 'a release must say what it contains.',
     `copy docs/releases/TEMPLATE.md to ${notesPath} and fill it in`)
 } else {
@@ -122,7 +135,9 @@ if (!existsSync(notesPath)) {
 // Not "a review happened at some point" — a review of THIS code. The marker is written by the
 // multi-agent-review skill (its Step 4).
 const lastCommitAt = Number(git('log', '-1', '--format=%ct')) * 1000
-if (!existsSync(REVIEW_MARKER)) {
+if (recordOnly) {
+  // silent: the review gate belongs to tagging, not to verifying code
+} else if (!existsSync(REVIEW_MARKER)) {
   fail('no review marker', `${REVIEW_MARKER} does not exist.`,
     'run the multi-agent-review skill, which writes it')
 } else if (statSync(REVIEW_MARKER).mtimeMs < lastCommitAt) {
@@ -185,6 +200,16 @@ console.log(`${'─'.repeat(60)}`)
 if (failed) {
   console.log(`\n  ${failed} gate(s) failed — ${version} NOT tagged.\n`)
   process.exit(1)
+}
+
+if (recordOnly) {
+  console.log(`
+  Receipt written. The code is verified; nothing was tagged.`)
+  console.log(`  Now write docs/releases/${version}.md with the numbers above, then run:
+`)
+  console.log(`    node scripts/release.mjs ${version}
+`)
+  process.exit(0)
 }
 
 git('tag', '-a', version, '-m', `Release ${version}`)
