@@ -549,7 +549,7 @@ async function renderWorkoutLibrary(el) {
       <button class="tab-btn" id="wt-tab-exercises" onclick="switchWorkoutTab('exercises')">Exercise Library</button>
     </div>
     <input id="wt-search" class="field-input" type="search" placeholder="Search sessions…"
-           value="${escapeAttr(_wtSearchTerm)}"
+           value="${escapeHtml(_wtSearchTerm)}"
            autocomplete="off" oninput="filterTemplates(this.value)" style="margin-bottom:14px">
     <div id="workout-tab-content"></div>
   `
