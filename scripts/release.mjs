@@ -91,9 +91,17 @@ if (recordOnly && dirty) {
   // npm test runs the WORKING TREE; the receipt fingerprints HEAD. If uncommitted CODE is in play,
   // reverting it afterwards restores HEAD's fingerprint and the receipt then vouches for code the
   // suite never ran against. Docs may be dirty — they are outside the fingerprint by design.
-  const dirtyCode = dirty.split(String.fromCharCode(10))
-    .map(l => l.slice(3).trim()).filter(Boolean)
-    .filter(f => CODE_PATHS.some(cp => f === cp || f.startsWith(cp + '/')))
+  // Ask git which CODE paths differ, rather than parsing `status --porcelain` ourselves. The first
+  // version did parse it, and a re-review broke it two ways: git QUOTES paths containing spaces, so
+  // slice(3) left a leading quote and the prefix match failed; and a rename FROM outside CODE_PATHS
+  // INTO one was never seen at all. Both let the receipt vouch for HEAD while real uncommitted code
+  // existed — reintroducing the exact bug this check was added to close. -z removes the quoting
+  // entirely, and letting git do the path matching removes the parsing.
+  const zsplit = (s) => s.split('\0').filter(Boolean)
+  const dirtyCode = [...new Set([
+    ...zsplit(git('diff', '--name-only', '-z', 'HEAD', '--', ...CODE_PATHS)),
+    ...zsplit(git('ls-files', '--others', '--exclude-standard', '-z', '--', ...CODE_PATHS))
+  ])]
   if (dirtyCode.length) {
     fail('--record with uncommitted CODE changes',
       'the suite would test the working tree while the receipt describes HEAD: ' + dirtyCode.join(', '),

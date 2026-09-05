@@ -95,10 +95,22 @@ if (!email || !password) {
 // Guard 2, made explicit. RLS confines this script to whatever account PT_EMAIL names; nothing
 // previously checked that it names a TEST account. If .env were ever pointed at a real coach, every
 // other guard still passes and the name prefix becomes the only thing between this and real data.
-if (DELETE && !/e2e|test/i.test(email)) {
+// Token-anchored, not a bare substring. `/e2e|test/i` was the first version and a re-review pointed
+// out it matches any real address that merely CONTAINS the letters — a "TestFit Gym" domain, or a
+// surname like Testerman — which is a false sense of assurance rather than a check. This wants the
+// marker to be its own dot/plus/underscore/hyphen-delimited token in the local part.
+//
+// It is a BACKSTOP, not identity. The real protection is RLS plus the name prefix; this exists so a
+// mis-set .env cannot quietly turn a test tool loose on a live account. REAP_ALLOW_ANY_ACCOUNT=1 is
+// the deliberate override, so an unusual-but-legitimate test address is not a dead end.
+const localPart = email.split('@')[0] || ''
+const looksLikeTestAccount = /(^|[.+_-])(e2e|test)([.+_-]|$)/i.test(localPart)
+if (DELETE && !looksLikeTestAccount && !process.env.REAP_ALLOW_ANY_ACCOUNT) {
   console.error('Refusing to delete: PT_EMAIL does not look like a test account.')
-  console.error('RLS scopes this script to that account, so pointing it at a real one would leave the')
-  console.error('name prefix as the ONLY protection. Use a test account, or run the dry run.')
+  console.error(`  local part: ${localPart}`)
+  console.error('RLS scopes this script to whatever account .env names, so pointing it at a real one')
+  console.error('would leave the name prefix as the ONLY protection left. Use a test account, run the')
+  console.error('dry run, or set REAP_ALLOW_ANY_ACCOUNT=1 if you are certain.')
   process.exit(1)
 }
 

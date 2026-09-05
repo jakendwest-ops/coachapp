@@ -169,6 +169,10 @@ async function reapDebris () {
 }
 
 module.exports = async () => {
+  // Cleared FIRST. The flag is set at the end of a successful setup and read by global-teardown; in a
+  // long-lived process (npm run test:ui) a stale '1' from an earlier successful run would otherwise
+  // survive into a later run whose setup fails, and the teardown would scan anyway.
+  delete process.env.COACHAPP_SETUP_COMPLETE
   const base = process.env.BASE_URL || DEFAULT_BASE
   // FIRST, before the server check and before any login: this is the cheapest refusal available and
   // the only one that costs nothing when it declines to act.
