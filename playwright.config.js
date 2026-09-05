@@ -47,6 +47,9 @@ module.exports = defineConfig({
   // Asserts the server is serving CoachApp specifically, not merely returning 200. Runs after
   // webServer, so a failure here means the server is wrong rather than slow.
   globalSetup: require.resolve('./tests/global-setup.js'),
+  // Reports how many [E2E] fixture rows the run left behind. Report-only — see the file for why it
+  // does not fail the run yet.
+  globalTeardown: require.resolve('./tests/global-teardown.js'),
 
   fullyParallel: false,      // auth state must be sequential
   workers: 1,                // one worker — prevents Supabase contention between test files

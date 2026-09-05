@@ -17,7 +17,7 @@ test.describe('B — assigning a program with no phases yet fails loud, not sile
 
     const res = await page.evaluate(async () => {
       const soloId = window._soloClientId
-      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: true, name: '[TEST] Zero Phase' }).select('id').single()
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: true, name: '[E2E] Zero Phase' }).select('id').single()
 
       let toastMsg = null, toastKind = null
       const origToast = window.showToast
@@ -42,7 +42,7 @@ test.describe('B — assigning a program with no phases yet fails loud, not sile
 
     const res = await page.evaluate(async () => {
       const soloId = window._soloClientId
-      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: true, name: '[TEST] Zero Phase Assign' }).select('id').single()
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: true, name: '[E2E] Zero Phase Assign' }).select('id').single()
 
       const toasts = []
       const origToast = window.showToast

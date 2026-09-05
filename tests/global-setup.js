@@ -140,12 +140,48 @@ async function captureSessions (base) {
   }
 }
 
+// Reap leftover [E2E] fixture rows BEFORE anything runs, so every suite starts from a known floor.
+//
+// THE LOOP THIS BREAKS, measured 2026-09-05. 52 of 99 specs insert rows; only 13 have an
+// afterEach/afterAll. The other 39 clean up inline, so cleanup runs ONLY IF THE TEST PASSES —
+// a failing test leaves debris, debris makes later tests fail, and those failures leave more.
+// Concretely: ledger-fixes-2026-08-02 creates '[E2E] Zero-Set Session' with a fixed name and date
+// and had built up FOURTEEN identical rows, so its own assertion about "the" session was a coin
+// flip. It was producing the debris that broke it. 39 rows were reaped the day this was added.
+//
+// WHY HERE AND NOT IN A SPEC. There used to be a zz-cleanup-e2e.spec.js doing this, which meant it
+// ran MID-SUITE and could reap rows a live test was still using. globalSetup runs before any test
+// exists, so nothing of this run is ever in scope.
+//
+// SKIPPED IN CI ON PURPOSE. The reaper's age cutoff is what protects a long-running local suite,
+// and CI cannot see Jake's laptop — assertNoOverlappingCiRun only guards the other direction. CI
+// runs two spec files against this account; the debris it leaves is not worth the risk of reaping
+// out from under a local run.
+//
+// FAILS OPEN. Refusing to run the tests because a cleanup helper could not reach the database would
+// be a far worse bug than the debris it prevents. It says so on the line, every run.
+async function reapDebris () {
+  if (process.env.CI || process.env.NO_REAP) return
+  const { execFile } = require('child_process')
+  const { promisify } = require('util')
+  const run = promisify(execFile)
+  try {
+    const { stdout } = await run('node', ['scripts/reap-e2e-debris.mjs', '--delete'], { timeout: 120000 })
+    const last = stdout.trim().split(String.fromCharCode(10)).map(l => l.trim()).filter(Boolean).pop() || '(no output)'
+    console.log(`  [reap] ${last}`)
+  } catch (err) {
+    console.log(`  [reap] SKIPPED — ${String(err.message).split(String.fromCharCode(10))[0].slice(0, 90)}`)
+  }
+}
+
 module.exports = async () => {
   const base = process.env.BASE_URL || DEFAULT_BASE
   // FIRST, before the server check and before any login: this is the cheapest refusal available and
   // the only one that costs nothing when it declines to act.
   await assertNoOverlappingCiRun()
   await assertPreviewServer(base)
+  // After the overlap refusal, before any fixture exists.
+  await reapDebris()
   // NO_SESSION_REUSE=1 forces every spec back onto the form login. Kept as an escape hatch for
   // diagnosing a suspected session-reuse problem without editing any file.
   if (!process.env.NO_SESSION_REUSE) await captureSessions(base)

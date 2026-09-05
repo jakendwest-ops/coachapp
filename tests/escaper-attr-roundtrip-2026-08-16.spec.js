@@ -20,7 +20,7 @@ const { test, expect } = require('./fixtures')
 const { loginAsPT } = require('./helpers')
 
 // Every character escapeAttr mangles, in one name.
-const NASTY = `E2E Farmer's \\Back "Squat" ${Date.now()}`
+const NASTY = `[E2E] Farmer's \\Back "Squat" ${Date.now()}`
 
 test.describe('escapeAttr → escapeHtml in plain attributes', () => {
   test('an exercise name with a quote and a backslash survives edit-and-save, twice', async ({ page }) => {

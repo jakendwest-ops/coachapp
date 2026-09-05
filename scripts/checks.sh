@@ -417,6 +417,29 @@ fi
 if ! node scripts/check-handler-targets.mjs index.html $FILES; then
   fail "an inline handler names a function that does not exist -- see the lines above."
 fi
+# -- 9l. Every spec that CREATES rows must tag them, so leftovers can be reaped ---------------
+# Measured 2026-09-05: 52 of 99 specs insert rows, but only 13 have an afterEach/afterAll hook. The
+# other 39 clean up inline, so cleanup runs ONLY IF THE TEST PASSES. A failing test leaves debris,
+# debris makes later tests fail, and those failures leave more debris. Traced concretely that day:
+# ledger-fixes-2026-08-02 creates '[E2E] Zero-Set Session' with a FIXED name and date, cleans up by
+# captured id inside a .catch(() => {}), and had accumulated FOURTEEN identical rows -- so its own
+# assertion about "the" session had become a coin flip. It was both producer and victim.
+#
+# scripts/reap-e2e-debris.mjs breaks that loop, but it can only delete rows it can RECOGNISE. An
+# untagged fixture is invisible to it forever, so without this rule the reaper reports "clean" while
+# debris accumulates -- reporting success while doing nothing, the most-shipped bug class here.
+#
+# Measured before being given teeth: 2 violations on 2026-09-05, both fixed in the same commit, so
+# this ships pinned at ZERO rather than at a baseline that permits the current mess.
+echo "Checking fixture tagging in specs..."
+if ! node scripts/check-fixture-tagging.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-fixture-tagging.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-fixture-tagging self-test FAILED -- the fixture-tag gate can no longer be trusted."
+fi
+if ! node scripts/check-fixture-tagging.mjs tests/*.spec.js; then
+  fail "a spec creates rows it never tags -- they cannot be reaped and will accumulate in the live database."
+fi
+
 # -- 9h. Cross-module references must resolve, and must not read a const/let declared LATER --
 # Nine files share one global scope with no module system, loaded in a fixed order from index.html.
 # Twenty bindings cross file boundaries. Nothing in this repo could check either half until now:
