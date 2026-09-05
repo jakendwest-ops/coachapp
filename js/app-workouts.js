@@ -919,8 +919,16 @@ async function renderWorkoutTemplates(el) {
   // client sessions that could never match it — the label would silently fall back to the edit date.
   // Scoping by id makes every fetched row relevant and lets the query use the template_id index, so
   // the extra round trip buys correctness rather than costing it. Still one batch, never per row.
+  // .eq('coach_id') is REDUNDANT beside the id list — the ids come from the templates query above,
+  // which is already anchored to this coach, and RLS scopes the SELECT to coach_id = auth.uid()
+  // anyway. Kept deliberately: this table had a confirmed-exploitable RLS gap as recently as
+  // 2026-07-30 (scripts/fix-workout-logs-insert-policy-2026-07-30.sql), so the ownership anchor does
+  // not rest on the policy alone. Safe for solo: solo logs carry coach_id = currentUser.id, because
+  // saveRunnerSession derives it as `clientRecord.coach_id || currentUser.id` and solo's clients row
+  // has coach_id NULL.
   const { data: recentLogs, error: logsError } = await db.from('workout_logs')
-    .select('template_id, date').in('template_id', templates.map(t => t.id))
+    .select('template_id, date').eq('coach_id', currentUser.id)
+    .in('template_id', templates.map(t => t.id))
     .order('date', { ascending: false }).limit(500)
 
   // A failed lookup must not masquerade as "never trained". Every row would quietly fall back to its

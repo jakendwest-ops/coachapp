@@ -274,4 +274,77 @@ test.describe('Library orders by last used (2026-09-04)', () => {
     expect(r.cleanup.templates, 'both fixture templates must be deleted, and the delete seen').toBe(2)
     expect(r.cleanup.client, 'the fixture client must be deleted, and the delete seen').toBe(1)
   })
+
+  // EVERY other test in this file runs as a COACH: loginAsPT forces _activeView:'coach' before the
+  // app boots (helpers.js:37,40). But this feature was specified for the PERSONAL (solo) view -- so
+  // without this test the branch the owner actually uses ships untested, on a codebase carrying four
+  // separate shipped bugs of the coach/solo divergence shape. Found by the pre-push review.
+  //
+  // Two things only this test covers: the is_personal===true arm of the template query, and whether
+  // a solo user's own training logs actually join back to their personal templates.
+  test('solo: a personal session trained recently outranks one edited more recently', async ({ page }) => {
+    await loginAsPT(page)
+
+    // loadUserInfo is async. Poll rather than sleep -- waitForTimeout is on the count ratchet, and a
+    // fixed sleep is the flake this suite has been bitten by before.
+    const soloClientId = await page.evaluate(async () => {
+      for (let i = 0; i < 50 && !window._soloClientId; i++) await new Promise(r => setTimeout(r, 100))
+      return window._soloClientId || null
+    })
+    test.skip(!soloClientId, 'this account has no solo client record — nothing to assert')
+
+    const r = await page.evaluate(async (clientId) => {
+      const out = { role: null, built: false, order: [], trainedRowSays: null, cleanup: {} }
+      await switchView('solo')
+      for (let i = 0; i < 50 && currentProfile?.role !== 'solo'; i++) await new Promise(r2 => setTimeout(r2, 100))
+      out.role = currentProfile?.role || null
+      if (out.role !== 'solo') return out
+
+      const stamp = Date.now()
+      const trainedName = `[E2E] zzz solo trained ${stamp}`
+      const editedName = `[E2E] aaa solo edited ${stamp}`
+      const mk = async (name, updatedAt) => (await db.from('workout_templates')
+        .insert({ coach_id: currentUser.id, client_id: null, program_id: null, name,
+                  is_personal: true, updated_at: updatedAt })
+        .select('id').single()).data?.id || null
+      const trainedId = await mk(trainedName, '2020-01-01T00:00:00Z')
+      const editedId = await mk(editedName, '2021-01-01T00:00:00Z')
+      if (!trainedId || !editedId) return out
+
+      const { data: logRow } = await db.from('workout_logs')
+        .insert({ coach_id: currentUser.id, client_id: clientId, name: trainedName,
+                  date: new Date().toISOString().split('T')[0], template_id: trainedId })
+        .select('id').single()
+      if (!logRow?.id) return out
+      out.built = true
+
+      try {
+        const host = document.createElement('div')
+        host.id = 'workout-tab-content'
+        document.body.appendChild(host)
+        await renderWorkoutTemplates(host)
+        const rows = [...host.querySelectorAll('.list-row')]
+          .filter(row => row.querySelector('.row-name')?.textContent.includes(String(stamp)))
+        out.order = rows.map(row => row.querySelector('.row-name')?.textContent)
+        out.trainedRowSays = rows.find(row => row.querySelector('.row-name')?.textContent === trainedName)
+          ?.querySelector('.row-meta')?.textContent ?? null
+        host.remove()
+      } finally {
+        const { data: lGone } = await db.from('workout_logs')
+          .delete().eq('id', logRow.id).eq('coach_id', currentUser.id).select('id')
+        const { data: tGone } = await db.from('workout_templates')
+          .delete().in('id', [trainedId, editedId]).eq('coach_id', currentUser.id).select('id')
+        out.cleanup = { log: (lGone || []).length, templates: (tGone || []).length }
+      }
+      return out
+    }, soloClientId)
+
+    expect(r.role, 'the view must actually have switched, or this tests the coach path again').toBe('solo')
+    expect(r.built, 'the fixtures must exist or this test asserts nothing').toBe(true)
+    expect(r.order.length, 'both personal templates must be listed — proves the is_personal=true arm works').toBe(2)
+    expect(r.order[0], 'a personal session trained today must outrank one edited a year later').toContain('zzz solo trained')
+    expect(r.trainedRowSays, "and a solo user's own log must join back to their personal template").toBe('Last used today')
+    expect(r.cleanup.log, 'the fixture log must be deleted, and the delete seen').toBe(1)
+    expect(r.cleanup.templates, 'both fixture templates must be deleted, and the delete seen').toBe(2)
+  })
 })
