@@ -6,19 +6,35 @@
 //
 // WHY. Measured 2026-09-05: 52 of 99 specs insert rows, but only 13 have an afterEach/afterAll hook.
 // The other 39 clean up inline, so cleanup runs only when the test PASSES — a failing test leaves
-// debris, debris makes later tests fail, and those failures leave more debris. The reaper
-// (scripts/reap-e2e-debris.mjs) breaks that loop, but it can only find rows it can RECOGNISE. An
-// untagged fixture is invisible to it forever.
+// debris, debris makes later tests fail, and those failures leave more. scripts/reap-e2e-debris.mjs
+// breaks the loop, but it can only delete rows it can RECOGNISE. An untagged fixture is invisible to
+// it forever.
 //
-// So this rule is what keeps the reaper honest. Without it the reaper reports "clean" while untagged
-// debris accumulates — a check that reports success while doing nothing, which is this project's
-// single most-shipped bug class.
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// WHAT THIS CAN AND CANNOT PROVE. Read this before trusting it.
 //
-// The tag is a NAME PREFIX because that is what survives the failure mode that matters: a test that
-// dies before capturing an id can still have its rows found by name.
+// It proves: a spec that inserts rows mentions the tag SOMEWHERE IN ITS CODE. That is a real filter —
+// it catches a spec written with no tagging discipline at all, which is how the two violations found
+// on 2026-09-05 got in.
+//
+// It does NOT prove every individual insert is tagged. A file with two inserts, one tagged and one
+// not, passes. That hole is deliberate rather than lazy: fixture names routinely flow through
+// variables (`const tag = `[E2E] thing ${Date.now()}`` … `name: tag`), so a checker demanding the
+// literal inside each `.insert(...)` argument would flag correct code constantly — and a checker that
+// refuses correct code is one that gets switched off. This project has that scar.
+//
+// The mechanism that catches the residue is not static at all: tests/global-teardown.js reports how
+// many tagged rows each run actually leaked, which is ground truth rather than inference. If that
+// number stops matching what the specs claim, the gap is there.
+//
+// The one hole that IS closed here: a tag appearing only inside a COMMENT no longer satisfies the
+// check. Comments are blanked first, via the same helper check-handler-targets and check-count-ratchet
+// use — an "// we used to use [E2E] tags" line would otherwise wave a wholly untagged spec through,
+// verified 2026-09-05 against the first version of this file.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
 import { readFileSync } from 'node:fs'
+import { blankComments } from './lib/comments.mjs'
 
 // One prefix. Variants like [E2E-RLS] and [E2E-PP] are fine — they start with it — which is why this
 // is a prefix test and not an equality test.
@@ -34,10 +50,11 @@ const violations = []
 for (const f of files) {
   let src
   try { src = readFileSync(f, 'utf8') } catch { continue }
-  // A BOM would make a naive ^-anchored scan miss line 1; read-and-strip, same as the other checkers.
+  // A BOM would make a naive ^-anchored scan miss line 1; strip on read, same as the other checkers.
   if (src.charCodeAt(0) === 0xFEFF) src = src.slice(1)
-  if (!src.includes('.insert(')) continue
-  if (!src.includes(TAG)) violations.push(f)
+  const code = blankComments(src)
+  if (!code.includes('.insert(')) continue
+  if (!code.includes(TAG)) violations.push(f)
 }
 
 if (violations.length) {
@@ -46,9 +63,10 @@ if (violations.length) {
   console.log(`
     Rows a spec creates must carry "${TAG}" in a name/title/full_name, or
     scripts/reap-e2e-debris.mjs can never find them and they accumulate in the live database
-    forever. Prefix the fixture name — e.g. name: \`${TAG}] my fixture \${Date.now()}\`.`)
+    forever. Prefix the fixture name — e.g. name: \`${TAG}] my fixture \${Date.now()}\`.
+    A tag inside a comment does not count.`)
   process.exit(1)
 }
 
-console.log(`  ${files.length} specs scanned; every spec that inserts rows tags them "${TAG}…".`)
+console.log(`  ${files.length} specs scanned; every spec that inserts rows tags them "${TAG}…" in code.`)
 process.exit(0)

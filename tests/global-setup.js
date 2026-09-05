@@ -162,16 +162,10 @@ async function captureSessions (base) {
 // be a far worse bug than the debris it prevents. It says so on the line, every run.
 async function reapDebris () {
   if (process.env.CI || process.env.NO_REAP) return
-  const { execFile } = require('child_process')
-  const { promisify } = require('util')
-  const run = promisify(execFile)
-  try {
-    const { stdout } = await run('node', ['scripts/reap-e2e-debris.mjs', '--delete'], { timeout: 120000 })
-    const last = stdout.trim().split(String.fromCharCode(10)).map(l => l.trim()).filter(Boolean).pop() || '(no output)'
-    console.log(`  [reap] ${last}`)
-  } catch (err) {
-    console.log(`  [reap] SKIPPED — ${String(err.message).split(String.fromCharCode(10))[0].slice(0, 90)}`)
-  }
+  const { runReaper } = require('./reap-helper')
+  const r = await runReaper({ del: true })
+  if (r.ok) console.log(`  [reap] ${r.verdict}`)
+  else console.log(`  [reap] SKIPPED — ${r.error}`)
 }
 
 module.exports = async () => {
@@ -185,6 +179,11 @@ module.exports = async () => {
   // NO_SESSION_REUSE=1 forces every spec back onto the form login. Kept as an escape hatch for
   // diagnosing a suspected session-reuse problem without editing any file.
   if (!process.env.NO_SESSION_REUSE) await captureSessions(base)
+  // Playwright queues globalTeardown BEFORE awaiting globalSetup, so the teardown runs even when the
+  // checks above THROW (verified against playwright/lib/runner/index.js). Without this flag, an
+  // aborted run — server down, or the CI-overlap refusal — would still pay a Supabase sign-in and a
+  // seven-table scan before exiting, after the real cause had already been reported.
+  process.env.COACHAPP_SETUP_COMPLETE = '1'
 }
 
 // Exported so scripts/check-preview-server.selftest.mjs can prove this check is capable of FAILING.

@@ -88,7 +88,19 @@ if (localTags.includes(version)) {
 // A dirty tree means the tag would point at a commit that does not contain what you just tested.
 const dirty = git('status', '--porcelain')
 if (recordOnly && dirty) {
-  pass('working tree dirty — allowed under --record')
+  // npm test runs the WORKING TREE; the receipt fingerprints HEAD. If uncommitted CODE is in play,
+  // reverting it afterwards restores HEAD's fingerprint and the receipt then vouches for code the
+  // suite never ran against. Docs may be dirty — they are outside the fingerprint by design.
+  const dirtyCode = dirty.split(String.fromCharCode(10))
+    .map(l => l.slice(3).trim()).filter(Boolean)
+    .filter(f => CODE_PATHS.some(cp => f === cp || f.startsWith(cp + '/')))
+  if (dirtyCode.length) {
+    fail('--record with uncommitted CODE changes',
+      'the suite would test the working tree while the receipt describes HEAD: ' + dirtyCode.join(', '),
+      'commit them first, so the receipt and the tested code are the same thing')
+  } else {
+    pass('tree dirty only outside the code fingerprint — allowed under --record')
+  }
 } else if (dirty) {
   fail('working tree is not clean', `uncommitted changes:\n      ${dirty.split('\n').join('\n      ')}`,
     'commit or revert them — the tag must describe a commit, not a desk')
@@ -119,7 +131,12 @@ if (recordOnly) {
     `copy docs/releases/TEMPLATE.md to ${notesPath} and fill it in`)
 } else {
   const notes = readFileSync(notesPath, 'utf8')
-  const unfilled = notes.match(/<[A-Z][A-Z _-]+>/g)     // <SCOPE>, <WHAT SHIPPED> … template holes
+    // Was /<[A-Z][A-Z _-]+>/ and caught 8 of the template's 17 placeholders — every SUBSTANTIVE
+    // prose section (Scope, What shipped, Verification, Rollback) contains lowercase or punctuation
+    // and slipped through, so a 1540-character document of pure boilerplate passed both this and the
+    // length floor. Verified 2026-09-05 by construction. The `s` flag matters: several placeholders
+    // wrap across lines. Checked for false positives against the real v2026.09.1 notes: zero.
+    const unfilled = notes.match(/<[A-Z][^>]{2,}>/gs)
   if (unfilled) {
     fail(`${notesPath} still has template placeholders`, `unfilled: ${[...new Set(unfilled)].join(', ')}`,
       'fill them in — an unfilled template is worse than no notes, it looks done')

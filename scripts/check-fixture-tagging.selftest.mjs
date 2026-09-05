@@ -51,6 +51,29 @@ try {
   // 5. MUST FAIL: one bad file among good ones still fails. A per-file pass that loses the overall
   //    verdict is how a batch check goes green with a violation in it.
   check('one violation among many still fails', run(tagged, untagged, readonly), 1)
+
+  // 6. MUST FAIL: the tag appears ONLY in a comment. The first version of this checker was a raw
+  //    whole-file substring test and waved this through — verified 2026-09-05 by constructing it.
+  //    A historical "// we used to use [E2E] tags" line would have satisfied the gate while the spec
+  //    leaked untaggable rows forever.
+  const commentOnly = write('comment-only.spec.js',
+    `// this spec used to use [E2E] tags, historically
+     test('x', async () => { await db.from('clients').insert({ full_name: 'Bob' }) })`)
+  check('a tag only inside a comment does NOT satisfy the check', run(commentOnly), 1)
+
+  // 7. MUST FAIL: a block comment, not just a line comment.
+  const blockComment = write('block-comment.spec.js',
+    `/* [E2E] was the old convention */
+     test('x', async () => { await db.from('clients').insert({ full_name: 'Bob' }) })`)
+  check('a tag only inside a block comment does NOT satisfy the check', run(blockComment), 1)
+
+  // 8. MUST PASS: a tag in real code, with an unrelated comment present. Guards the fix against
+  //    over-correcting — blanking comments must not blank the code beside them.
+  const both = write('both.spec.js',
+    `// a comment that mentions nothing
+     const tag = '[E2E] thing'
+     test('x', async () => { await db.from('clients').insert({ full_name: tag }) })`)
+  check('a tag in code still passes when comments are present', run(both), 0)
 } finally {
   rmSync(dir, { recursive: true, force: true })
 }
@@ -59,4 +82,4 @@ if (failures) {
   console.log(`\n  check-fixture-tagging self-test: ${failures} case(s) FAILED — the checker cannot be trusted.\n`)
   process.exit(1)
 }
-console.log('  check-fixture-tagging self-test: all 5 cases behaved correctly.')
+console.log('  check-fixture-tagging self-test: all 8 cases behaved correctly.')

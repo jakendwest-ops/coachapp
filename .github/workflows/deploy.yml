@@ -50,6 +50,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # A tag can be pushed at any commit, and the deploy job trusts it. The full-suite, review-marker
+      # and release-notes gates all live in scripts/release.mjs, which CI never runs — so a tag pushed
+      # by any other route would ship having passed only checks.sh. This is the one link CI can verify
+      # by itself: a release tag must point at a commit that carries its own release notes. It does not
+      # prove the suite ran; it does prove the release went through the documented path.
+      - name: A release tag must carry its own notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          f="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ ! -f "$f" ]; then
+            echo "::error::$f is missing. A release tag must point at a commit containing its release notes."
+            echo "Cut releases with: node scripts/release.mjs ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "$f present."
+
       - name: Run checks
         env:
           # On a push-triggered run, origin/master IS the commit just pushed, so diffing against it is

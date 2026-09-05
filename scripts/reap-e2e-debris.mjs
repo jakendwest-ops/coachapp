@@ -5,25 +5,33 @@
 //   node scripts/reap-e2e-debris.mjs            → DRY RUN. Counts only. Deletes nothing.
 //   node scripts/reap-e2e-debris.mjs --delete   → actually deletes.
 //
-// THE PROBLEM THIS SOLVES, measured 2026-09-05. 52 of 99 spec files insert rows, but only 13 have
-// an afterEach/afterAll hook — the other 39 clean up inline, at the end of the test body. So cleanup
+// THE PROBLEM THIS SOLVES, measured 2026-09-05. 52 of 99 spec files insert rows, but only 13 have an
+// afterEach/afterAll hook — the other 39 clean up inline, at the end of the test body. So cleanup
 // runs only when the test PASSES. A failing test leaves debris; debris makes later tests fail; those
 // failures leave more debris. It is a feedback loop, which is why flakiness "returns across unrelated
 // files", gets worse deep into a long run, and disappears when a spec is run in isolation. One
-// incident left 242 rows behind.
+// incident left 242 rows behind; 39 were reaped the day this was written.
 //
-// FOUR INDEPENDENT SAFETY GUARDS, because this deletes from PRODUCTION:
+// SAFETY GUARDS, because this deletes from PRODUCTION:
 //   1. Dry run by default. It cannot delete unless you pass --delete.
 //   2. It signs in as the E2E TEST ACCOUNT and deletes through PostgREST, so RLS applies. It is
-//      incapable of touching a row that account does not own — this is the strongest guard and the
-//      reason it does not use a service-role key.
+//      incapable of touching a row that account does not own. This is the strongest guard and the
+//      reason it does not use a service-role key. Since 2026-09-05 it also ASSERTS the account looks
+//      like a test account before deleting — guard 2 was previously resting on an unchecked
+//      assumption about what PT_EMAIL happens to contain.
 //   3. Name prefix. Only rows whose name/title/full_name starts with '[E2E' or '[TEST]'.
 //   4. Age cutoff (default 2h). A row this run just created is never in scope.
 //
-// AND ONE PRECONDITION IT RELIES ON: no other run may be in flight. That is already enforced —
-// tests/global-setup.js refuses to start while a CI run is going, and a lock file prevents two local
-// Playwright runs. Prefix-reaping would be genuinely dangerous without those; see the comment in
-// global-setup.js about two runs deleting each other's fixtures.
+// WHAT PROTECTS AGAINST A CONCURRENT RUN — stated accurately, because the first version of this
+// comment was wrong and a reviewer caught it. There is NO lock file in this repo. Two protections
+// exist and neither is complete:
+//   - tests/global-setup.js refuses to start a local run while a CI run is in flight. One direction
+//     only; CI cannot see this machine.
+//   - A Claude Code hook outside the repo (~/.claude/state/playwright-running.lock) refuses a second
+//     Playwright run started through the agent harness. It does NOT stop a human typing
+//     `npx playwright test` twice in two terminals.
+// So: do not run two suites at once. The age cutoff is what limits the damage if you do, which is
+// also why REAP_AGE_HOURS=0 (used by the teardown REPORT) must never be combined with --delete.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
 import { readFileSync } from 'node:fs'
@@ -34,12 +42,15 @@ dotenv.config()
 
 const DELETE = process.argv.includes('--delete')
 const AGE_HOURS = Number(process.env.REAP_AGE_HOURS ?? 2)
+const PAGE = 1000
+
 // MEASURED 2026-09-05, do not shorten this to '[E2E]'. The suite does not use one tag: 308 uses of
 // '[E2E]', plus per-spec variants '[E2E-RLS]', '[E2E-PP]', '[E2E-PB]', '[E2E-2BJ]', and one file
-// (ledger-fixes-2026-07-29) using '[TEST]'. A reaper matching '[E2E]' exactly reports those tables
-// CLEAN while their debris sits there — the reports-success-while-doing-nothing shape, inside the
-// tool built to prevent it. '[E2E' as a prefix covers the whole family; [ and ] are literal in SQL
-// LIKE (only % and _ are wildcards), so no escaping is needed.
+// (ledger-fixes-2026-07-29) that used '[TEST]'. A reaper matching '[E2E]' exactly reports those
+// tables CLEAN while their debris sits there — the reports-success-while-doing-nothing shape, inside
+// the tool built to prevent it. '[E2E' as a prefix covers the whole family; [ and ] are literal in
+// SQL LIKE (only % and _ are wildcards), so no escaping is needed. '[TEST]' is kept even though the
+// convention has moved on, because rows carrying it may still exist in the database.
 const PREFIXES = ['[E2E', '[TEST]']
 
 // Child-before-parent. Deleting a client cascades, but doing the leaf tables first keeps the counts
@@ -53,6 +64,14 @@ const TARGETS = [
   ['events', 'title'],
   ['clients', 'full_name']
 ]
+
+// Deleting a tagged client CASCADES to everything keyed on its client_id, and those rows are NOT
+// re-checked against the tag or the age cutoff — an untagged row created minutes ago goes with it.
+// RLS still confines that to this account's own tenant, so it cannot reach another coach's data, but
+// a destructive tool whose preview understates its blast radius is exactly what this repo punishes.
+// So: before deleting any client, count what the cascade will take, and print it.
+const CASCADES_FROM_CLIENT = ['workout_logs', 'weight_logs', 'performance_logs', 'goals', 'events',
+                              'client_1rms', 'client_programs', 'client_check_ins']
 
 // The URL and anon key are read out of the shipped client source rather than duplicated here. They
 // are public by construction — the app is a static site and every visitor has them — and a second
@@ -73,6 +92,16 @@ if (!email || !password) {
   process.exit(1)
 }
 
+// Guard 2, made explicit. RLS confines this script to whatever account PT_EMAIL names; nothing
+// previously checked that it names a TEST account. If .env were ever pointed at a real coach, every
+// other guard still passes and the name prefix becomes the only thing between this and real data.
+if (DELETE && !/e2e|test/i.test(email)) {
+  console.error('Refusing to delete: PT_EMAIL does not look like a test account.')
+  console.error('RLS scopes this script to that account, so pointing it at a real one would leave the')
+  console.error('name prefix as the ONLY protection. Use a test account, or run the dry run.')
+  process.exit(1)
+}
+
 const db = createClient(url, key)
 const { data: auth, error: authErr } = await db.auth.signInWithPassword({ email, password })
 if (authErr || !auth?.user) {
@@ -87,20 +116,26 @@ console.log('─'.repeat(76))
 
 let total = 0
 let failedTables = 0
+let capped = false
 
 for (const [table, col] of TARGETS) {
-  // created_at is not guaranteed on every table. Ask for it, and fall back to prefix-only scoping if
-  // the column does not exist — never silently skip the table, which would hide debris.
   // One query per prefix, merged. Cheaper to read than an .or() with bracket-laden values in it.
-  let rows = [], error = null, aged = true
+  let rows = []
+  let error = null
+  let aged = true
   for (const prefix of PREFIXES) {
+    // created_at is not guaranteed on every table. Ask for it, and fall back to prefix-only scoping
+    // if the column does not exist — never silently skip the table, which would hide debris.
     let res = await db.from(table)
-      .select(`id, ${col}, created_at`).like(col, `${prefix}%`).lt('created_at', cutoff).limit(1000)
+      .select(`id, ${col}, created_at`).like(col, `${prefix}%`).lt('created_at', cutoff).limit(PAGE)
     if (res.error && /created_at/.test(res.error.message || '')) {
       aged = false
-      res = await db.from(table).select(`id, ${col}`).like(col, `${prefix}%`).limit(1000)
+      res = await db.from(table).select(`id, ${col}`).like(col, `${prefix}%`).limit(PAGE)
     }
     if (res.error) { error = res.error; break }
+    // A full page means there may be more that this run will neither report nor delete. Say so —
+    // otherwise a later "clean" reads as "there is nothing left" while a backlog quietly remains.
+    if ((res.data || []).length === PAGE) capped = true
     rows.push(...(res.data || []))
   }
 
@@ -122,6 +157,25 @@ for (const [table, col] of TARGETS) {
   for (const r of rows.slice(0, 3)) console.log(`      e.g. ${r[col]}`)
   if (n > 3) console.log(`      … and ${n - 3} more`)
 
+  // The blast radius a name-prefix filter cannot see.
+  if (table === 'clients') {
+    const ids = rows.map(r => r.id)
+    let cascadeTotal = 0
+    for (const child of CASCADES_FROM_CLIENT) {
+      const { count, error: cErr } = await db.from(child)
+        .select('id', { count: 'exact', head: true }).in('client_id', ids)
+      if (cErr) {
+        console.log(`      cascade: ${child} unreadable (${cErr.message})`)
+        failedTables++
+        continue
+      }
+      if (count) { console.log(`      cascade: ${String(count).padStart(4)} ${child}`); cascadeTotal += count }
+    }
+    if (cascadeTotal) {
+      console.log(`      ^ ${cascadeTotal} row(s) go with these clients by FK cascade, REGARDLESS of tag or age`)
+    }
+  }
+
   if (DELETE) {
     // .select() on the delete, then count: an RLS-refused delete resolves as { data: [], error: null },
     // so without the rowcount this would report success while removing nothing.
@@ -133,6 +187,10 @@ for (const [table, col] of TARGETS) {
 }
 
 console.log('─'.repeat(76))
+if (capped) {
+  console.log(`  NOTE: a query returned a full page of ${PAGE} rows. There may be more than is reported`)
+  console.log(`  here — re-run until this note stops appearing.`)
+}
 if (!total) {
   console.log('  No debris found.\n')
 } else if (DELETE) {
