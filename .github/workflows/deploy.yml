@@ -1,10 +1,20 @@
 name: Check & Deploy
 
+# RELEASE CYCLE, adopted 2026-09-05. Pushing to master NO LONGER DEPLOYS.
+#
+# Every push to master still runs the checks, so master stays continuously verified — but the deploy
+# job now fires only on a `v*` tag. Live therefore reflects the last TAG, not the last commit, and
+# shipping is a deliberate act: `node scripts/release.mjs <version>` and push the tag it creates.
+#
+# Why the gate is here and not in a document: before this, a release was whatever happened to be on
+# master, and "don't push that yet" was a thing to remember rather than a thing that refuses. This
+# project's own measured rule is that written rules do not reduce errors — only checks that refuse do.
 on:
   pull_request:
     branches: [master]
   push:
     branches: [master]
+    tags: ['v*']
   # Manual trigger. Needed to verify a configuration change without inventing a commit — adding the
   # test-account secrets, for instance, only takes effect on the NEXT run, and `gh workflow run`
   # returns HTTP 422 without this. Also the only way to re-run the checks against master on demand.
@@ -45,7 +55,10 @@ jobs:
           # On a push-triggered run, origin/master IS the commit just pushed, so diffing against it is
           # always empty and rule 3 would report a pass on every push. github.event.before is the true
           # previous commit.
-          CB_BASE: ${{ github.event.before }}
+          # Only meaningful for a BRANCH push. On a tag push github.event.before is all-zeros, which
+          # would make rule 3 diff against a commit that does not exist; '' makes checks.sh use its
+          # own default base instead.
+          CB_BASE: ${{ github.event_name == 'push' && github.ref_type == 'branch' && github.event.before || '' }}
         run: sh scripts/checks.sh
 
   e2e:
@@ -127,7 +140,9 @@ jobs:
     # never been measured. Blocking every deploy on an unmeasured gate is how a gate gets bypassed.
     # Give it teeth once CI has a track record -- measure first, same as every other rule here.
     needs: check
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    # TAGS ONLY, as of 2026-09-05. A push to master runs the checks and stops here; it does not ship.
+    # To deploy, create a release tag with scripts/release.mjs and push it.
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
