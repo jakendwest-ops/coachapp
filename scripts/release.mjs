@@ -166,7 +166,20 @@ if (recordOnly) {
 // diff before every single release. Same structural mistake as the receipt fingerprint, fixed the
 // same way and for the same reason — a gate that cannot be satisfied honestly is one people route
 // around. A docs commit cannot introduce the defects a review looks for.
-const lastCommitAt = Number(git('log', '-1', '--format=%ct', '--', ...CODE_PATHS) || 0) * 1000
+//
+// But NOT the same path list. CODE_PATHS answers "could this change a test outcome"; a review also
+// cares about things no test exercises. Found by review 2026-09-06: `.github/workflows/deploy.yml`
+// (the deploy pipeline itself — secrets, gates, what ships) and `supabase/functions/` (a privileged
+// service-role Edge Function) were both excluded, so changing either after the last review would
+// have satisfied this gate silently. They are exactly the code CLAUDE.md says must be reviewed.
+const REVIEW_PATHS = [...CODE_PATHS, '.github', 'supabase']
+const lastCodeCommit = git('log', '-1', '--format=%ct', '--', ...REVIEW_PATHS)
+// FAIL CLOSED. An empty result means no commit touched any review path. That cannot happen today —
+// all of them have history — but `Number('') || 0` would silently mean epoch 1970, and every real
+// marker mtime is newer than that, so this check would become incapable of failing the moment
+// someone adds a path with no history yet. A gate that cannot fail is the bug this repo ships most
+// often. Treating "unknown" as "now" forces a review instead of quietly vouching for one.
+const lastCommitAt = lastCodeCommit ? Number(lastCodeCommit) * 1000 : Date.now()
 if (recordOnly) {
   // silent: the review gate belongs to tagging, not to verifying code
 } else if (!existsSync(REVIEW_MARKER)) {
