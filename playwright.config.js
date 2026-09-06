@@ -31,6 +31,15 @@ function previewServerCommand () {
 
 module.exports = defineConfig({
   testDir: './tests',
+  // Throwaway probes can NEVER be collected into a run, even if they reappear.
+  //
+  // zz-*.spec.js is gitignored, so git cannot restore one — but this repo lives inside OneDrive, and
+  // on 2026-09-06 two probe files came back three times after being deleted and verified gone. That is
+  // not a tidiness problem: `tests/zz-cleanup-e2e.spec.js` was a DESTRUCTIVE one-off that reaped every
+  // [E2E] row, and it returned the same way once before. checks.sh already fails on a stray probe, but
+  // that only helps if the gate runs before the suite does; this closes the window where a resurrected
+  // file is simply picked up and executed.
+  testIgnore: ['**/zz-*.spec.js', '**/_adhoc*.spec.js'],
 
   // Before 2026-08-29 there was no webServer block, so `npm test` and the pre-push gate both
   // depended on a server someone had started out of band. When it was absent the suite produced

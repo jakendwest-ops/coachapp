@@ -2828,6 +2828,58 @@ async function _continueAfterClientCopy(templateId, doIt) {
 // _checkClientPlanPropagation forward its own (possibly pre-await-snapshotted) ctx through rather than
 // this function re-reading window._templateCtx fresh; the other caller (_continueAfterClientCopy)
 // omits it and correctly falls back to whatever is live.
+// How many sessions in the SAME SCOPE share this name but are NOT linked to it.
+//
+// Measured against Jake's real data 2026-09-06: 18 of his session names have copies split across
+// separate families, because family_id landed on 2026-08-14 and his library predates it — worst case
+// 13 sessions called "Upper Body STR" across SIX families. Propagation matches by family, so the
+// prompt was offering to update a fraction while saying nothing about the rest.
+//
+// Counted from rows the caller has ALREADY fetched — no extra round trip — and scoped to what the
+// prompt itself operates on, so the number means "of the sessions this prompt could have touched,
+// this many it will not".
+//
+// Excludes the targets by ID rather than by name, deliberately: a periodization week clone is named
+// "<base> — W2" and IS linked. Counting it as unlinked because the name differs would be the same
+// name-matching mistake family_id was introduced to fix.
+function _unlinkedSameNameCount (rows, idOf, templateId, name, targets) {
+  const linked = new Set([...(targets || []), templateId])
+  return [...new Set((rows || [])
+    .filter(r => !linked.has(idOf(r)) && (r.workout_templates?.name || '') === name)
+    .map(idOf))].length
+}
+
+// Extracted so the wording can be tested without mounting a modal. This dialogue authorises a write to
+// sessions the user cannot see, so what it claims has to be exactly what happens — the file already
+// carries two scars from this one: a hardcoded "only the exercise you changed" that became a lie when
+// renames started flowing through, and an XSS that shipped because a name was interpolated into an
+// HTML comment.
+function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, isRename = false, op = null }) {
+  const detail = isRename
+    ? 'Only the name and description will be applied — a week marker like "— W2" is kept.'
+    : op === 'reorder'
+      ? 'Only the ORDER changes. Exercises a copy has that this one does not stay exactly where they are.'
+      : 'Only the exercise you changed will be applied.'
+  const action = isRename ? `Rename all ${count + 1}`
+    : op === 'reorder' ? `Reorder all ${count + 1}`
+    : `Update all ${count + 1} copies`
+  const one = unlinked === 1
+  return `
+      <div class="modal">
+        <div class="modal-header">
+          <h2 class="modal-title">Apply to other sessions?</h2>
+          <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
+        </div>
+        <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 ${unlinked ? '12px' : '20px'}">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}. ${detail}</p>
+        ${unlinked ? `<p style="font-size:var(--text-base, 13px);line-height:1.6;margin:0 0 20px;color:var(--text-muted)"><strong>${unlinked}</strong> other session${one ? '' : 's'} here share${one ? 's' : ''} this name but ${one ? 'is' : 'are'} not linked to this one, so ${one ? 'it' : 'they'} will not change.</p>` : ''}
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
+          <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">${action}</button>
+        </div>
+      </div>
+    `
+}
+
 async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride) {
   const ctx = ctxOverride || window._templateCtx
 
@@ -2849,29 +2901,11 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride)
   // comment and the img executed on innerHTML — with the Supabase session token sitting in
   // localStorage. One line below, the same value was correctly escaped. NEVER interpolate into an HTML
   // comment; and prefer `//` comments outside the string, since an HTML comment ships to the DOM anyway.
-  const _showPropagateModal = (name, count, label) => {
+  const _showPropagateModal = (name, count, label, unlinked = 0) => {
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.id = 'propagate-modal'
-    overlay.innerHTML = `
-      <div class="modal">
-        <div class="modal-header">
-          <h2 class="modal-title">Apply to other sessions?</h2>
-          <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
-        </div>
-        <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}. ${
-          isRename
-            ? 'Only the name and description will be applied — a week marker like "— W2" is kept.'
-            : change?.op === 'reorder'
-              ? 'Only the ORDER changes. Exercises a copy has that this one does not stay exactly where they are.'
-              : 'Only the exercise you changed will be applied.'
-        }</p>
-        <div class="modal-footer">
-          <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
-          <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">${isRename ? `Rename all ${count + 1}` : change?.op === 'reorder' ? `Reorder all ${count + 1}` : `Update all ${count + 1} copies`}</button>
-        </div>
-      </div>
-    `
+    overlay.innerHTML = _propagateModalHtml({ templateId, name, count, label, unlinked, isRename, op: change?.op })
     mountModal(overlay)
   }
 
@@ -2904,10 +2938,19 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride)
       .select('workout_template_id, workout_templates(id, name, family_id)')
       .eq('client_program_id', ctx.clientProgramId)
     const targets = _targets(siblings || [], r => r.workout_template_id)
-    if (!targets.length) return openTemplate(templateId, ctx)
+    const unlinked = _unlinkedSameNameCount(siblings || [], r => r.workout_template_id, templateId, tmpl.name, targets)
+    // NO TARGETS USED TO MEAN SILENCE, and silence reads as "there was nothing to do". When sessions
+    // share the name but not the family — the normal case for anything built before 2026-08-14 —
+    // saying nothing is how "the copies don't actually update" goes unnoticed for weeks. The name is
+    // deliberately NOT interpolated here: showToast takes plain text, and this file has already
+    // shipped one XSS from putting a session name somewhere that did not escape it.
+    if (!targets.length) {
+      if (unlinked) showToast(`${unlinked} other session${unlinked === 1 ? '' : 's'} share this name but ${unlinked === 1 ? 'is' : 'are'} not linked — not changed`, 'warn')
+      return openTemplate(templateId, ctx)
+    }
     window._propagateTargets = targets
     window._propagateChange = change
-    _showPropagateModal(tmpl.name, targets.length, `${ctx.clientName || 'this client'}'s plan`)
+    _showPropagateModal(tmpl.name, targets.length, `${ctx.clientName || 'this client'}'s plan`, unlinked)
     return
   }
 
@@ -2927,10 +2970,14 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride)
     // _resolveEditableTemplateId's fork didn't run (e.g. edited with no phaseWorkoutId context) —
     // that's a pre-existing edge case, not one this check needs to warn about separately.
     const targets = _targets(pws || [], r => r.template_id)
-    if (!targets.length) return openTemplate(templateId, ctx)
+    const unlinked = _unlinkedSameNameCount(pws || [], r => r.template_id, templateId, tmpl.name, targets)
+    if (!targets.length) {
+      if (unlinked) showToast(`${unlinked} other session${unlinked === 1 ? '' : 's'} share this name but ${unlinked === 1 ? 'is' : 'are'} not linked — not changed`, 'warn')
+      return openTemplate(templateId, ctx)
+    }
     window._propagateTargets = targets
     window._propagateChange = change
-    _showPropagateModal(tmpl.name, targets.length, 'this program')
+    _showPropagateModal(tmpl.name, targets.length, 'this program', unlinked)
     return
   }
 
