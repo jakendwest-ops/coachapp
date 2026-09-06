@@ -1238,6 +1238,34 @@ document.addEventListener('wheel', (e) => {
   if (t && t.type === 'number' && t === document.activeElement) t.blur()
 }, { passive: true })
 
+// Tapping a prefilled number should let you overtype it, not make you delete it first.
+//
+// Measured 2026-09-06: 143 numeric inputs across the app (58 in the builder, 35 in the runner) and
+// ZERO onfocus handlers anywhere. So editing a set that already said 60 meant tapping in, getting a
+// cursor, and backspacing it out — one-handed, mid-session, with a bar loaded. Proved before fixing:
+// clicking a field holding "60" and typing "80" gave "6080".
+//
+// ONE listener, not 143 attributes, for the same reason the wheel guard above is one listener: every
+// numeric input added later inherits it without anyone remembering. A rule spread over 143 sites is a
+// rule that decays — measured in this repo, where ~185 written rules coexist with 51 mechanisms and
+// the errors happen where only the rules are.
+//
+// SCOPED DELIBERATELY TIGHT. Only type="number" and inputmode numeric/decimal — the 143 counted. Text
+// fields are APPENDED to, not replaced: you add a word to an exercise name, and you refine a search
+// rather than retyping it. Hijacking either would be a regression, so the spec asserts both are left
+// alone. An empty field is skipped: there is nothing to select, and it keeps this a no-op on the
+// common case of typing into a fresh row.
+document.addEventListener('focusin', (e) => {
+  const t = e.target
+  if (!t || t.tagName !== 'INPUT' || !t.value) return
+  const numeric = t.type === 'number' || /^(numeric|decimal)$/.test(t.getAttribute('inputmode') || '')
+  if (!numeric) return
+  // select() rather than setSelectionRange(): a type="number" input throws on the latter in Chrome.
+  // Wrapped because an element being torn down mid-focus can throw, and losing focus over a
+  // convenience would be worse than the convenience is worth.
+  try { t.select() } catch { /* focus still lands; nothing downstream depends on the selection */ }
+})
+
 // Browser back/forward — re-render without pushing another history entry
 window.addEventListener('popstate', e => {
   // navigate() already refuses while the consent gate is up, but refusing alone would let Back walk
