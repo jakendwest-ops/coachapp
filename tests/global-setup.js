@@ -188,6 +188,10 @@ module.exports = async () => {
   // aborted run — server down, or the CI-overlap refusal — would still pay a Supabase sign-in and a
   // seven-table scan before exiting, after the real cause had already been reported.
   process.env.COACHAPP_SETUP_COMPLETE = '1'
+  // Start of the clock the teardown reads. See global-teardown.js for why a run's DURATION is worth
+  // reporting: on 2026-09-06 the same commit produced 55 failures on a loaded machine and 0 on an idle
+  // one, and the only thing that told them apart was diffing commits for forty minutes.
+  process.env.COACHAPP_RUN_STARTED = String(Date.now())
 }
 
 // Exported so scripts/check-preview-server.selftest.mjs can prove this check is capable of FAILING.

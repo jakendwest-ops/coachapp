@@ -23,6 +23,16 @@ module.exports = async () => {
   // been reported and a sign-in plus a seven-table scan would just delay the exit.
   if (process.env.COACHAPP_SETUP_COMPLETE !== '1') return
 
+  // Printed FIRST, before the debris lines, because if this run failed it is the thing that decides
+  // whether to trust the failures at all.
+  try {
+    const { reportRunDuration } = require('./run-duration')
+    const line = reportRunDuration()
+    if (line) console.log(`  [duration] ${line}`)
+  } catch (e) {
+    console.log(`  [duration] unavailable — ${String(e.message).split(String.fromCharCode(10))[0].slice(0, 80)}`)
+  }
+
   const { runReaper } = require('./reap-helper')
   const r = await runReaper({ ageHours: 0 })
 
