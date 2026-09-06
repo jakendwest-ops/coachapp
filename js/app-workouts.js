@@ -1329,6 +1329,14 @@ async function openTemplate(id, ctx = {}) {
   // Reordering within the SAME template must not cancel: that settle is the repaint this navigation
   // would otherwise duplicate.
   if (_reorderSettle.timer && _reorderSettle.templateId !== id) _cancelReorderSettle()
+  // Which template the editor is CURRENTLY showing. A queued reorder compares against this to notice
+  // that the ground moved under it — see moveTemplateExercise's stale-capture guard.
+  //
+  // On `window`, like _templateCtx and _lastExerciseChange beside it, rather than a module-local let:
+  // a module-local is invisible to a test that stubs openTemplate, which made the guard untestable —
+  // and an untestable guard is one nobody can prove fires. That exact shape (stubbing away the thing
+  // under test) is what let the first fork bug survive a review round.
+  window._openTemplateId = id
   window._templateCtx = {
     backTo: ctx.backTo || null,
     backLabel: ctx.backLabel || 'Templates',
@@ -1594,6 +1602,21 @@ async function moveTemplateExercise(templateId, exId, dir) {
   let resolvedId = templateId
 
   _reorderChain = _reorderChain.then(async () => {
+    // THE GROUND MOVED UNDER THIS TAP. Release review found the fork fix only covered taps arriving
+    // AFTER the repaint, not ones queued DURING it: a second tap fired while tap 1 was still awaiting
+    // _resolveEditableTemplateId captured its ids from the pre-fork onclick attributes, and by the time
+    // it ran the slot had been repointed — so it resolved the OLD master, passed ownership (same coach
+    // owns it), and wrote to the orphaned copy.
+    //
+    // Aborting is the correct outcome, not a compromise: a fork repaints the list, which wipes this
+    // tap's optimistic move anyway and re-renders from the database. Carrying on would write a swap
+    // computed from ids that are no longer on screen. The tap is lost; nothing is corrupted; the list
+    // shows the truth.
+    if (window._openTemplateId && window._openTemplateId !== templateId) {
+      log.warn('moveTemplateExercise', 'template changed under a queued reorder — dropping it', { was: templateId, now: window._openTemplateId })
+      return
+    }
+
     const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, exId)
     resolvedId = targetId
     // Anchoring the two swap updates on template_id (below) stops a write landing on a row in someone

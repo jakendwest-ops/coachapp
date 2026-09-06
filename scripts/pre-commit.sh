@@ -54,7 +54,9 @@ if git diff --cached --name-only | grep -qE '^(js/|index\.html)'; then
     echo "  [WARN] check-escaping.mjs could not run (exit $ESC) -- committing anyway; checks.sh still gates the push."
   fi
 
-  node scripts/check-handler-targets.mjs index.html $FILES > /dev/null 2>&1
+  # NOT redirected to /dev/null: when this blocks, the reason has to be visible. Silencing it meant a
+  # block showed a generic message with no indication of which handler or which file.
+  node scripts/check-handler-targets.mjs index.html $FILES
   HND=$?
   if [ $HND -eq 1 ]; then
     echo ""

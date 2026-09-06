@@ -195,6 +195,65 @@ test.describe('Reorder is instant, and asks about copies once (2026-09-06)', () 
     expect(r.openedImmediately[0], 'and it must repaint the CLONE, never the id the buttons still carry').toBe('clone-1')
   })
 
+  // A tap QUEUED DURING a fork must be dropped, not written with stale ids.
+  //
+  // The fork fix above covers taps that arrive after the repaint. Release review found the narrower
+  // window it missed: a second tap fired while the first is still awaiting _resolveEditableTemplateId
+  // captured its ids from the pre-fork buttons, and by the time it ran the slot had been repointed —
+  // so it resolved the OLD master, passed ownership because the same coach owns it, and wrote to the
+  // orphaned copy. Exactly the rapid double-tap this whole feature encourages.
+  test('a reorder queued while the template forks is dropped, not written to the old master', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(`(async () => {
+      ${buildList(['Squat', 'Bench', 'Row'])}
+      const rows = [
+        { id: 'q1', order_index: 0, exercise_name: 'Squat' },
+        { id: 'q2', order_index: 1, exercise_name: 'Bench' },
+        { id: 'q3', order_index: 2, exercise_name: 'Row' }
+      ]
+      const saved = { openTemplate: window.openTemplate, check: window._checkClientPlanPropagation,
+        resolveEditable: window._resolveEditableTemplateId, resolveOwner: window._resolveTemplateOwnerCoachId,
+        verify: window._verifyTemplateOwnership, from: db.from.bind(db) }
+      const writes = []
+      let resolveCalls = 0
+      // The stub records which template is on screen — the ONE behaviour of the real openTemplate that
+      // this guard depends on. Stubbing it away entirely is what made the first version of this test
+      // pass a guard that never fired.
+      window._openTemplateId = 'shared'
+      window.openTemplate = async (id) => { window._openTemplateId = id }
+      window._checkClientPlanPropagation = async () => {}
+      window._resolveTemplateOwnerCoachId = async () => 'c1'
+      window._verifyTemplateOwnership = async () => true
+      window._resolveEditableTemplateId = async () => { resolveCalls++; return { templateId: 'clone-9', exerciseId: 'q2' } }
+      db.from = (tbl) => {
+        if (tbl !== 'workout_template_exercises') return saved.from(tbl)
+        return {
+          select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: rows, error: null }) }) }),
+          update: () => ({ eq (c, v) { if (c === 'template_id') writes.push(v); return this },
+                           select: () => Promise.resolve({ data: [{ id: 'x' }], error: null }) })
+        }
+      }
+      try {
+        // Tap 1 forks 'shared' -> 'clone-9'. The real openTemplate is stubbed, so simulate the one
+        // thing it does that matters here: recording which template is now on screen.
+        await moveTemplateExercise('shared', 'e2', -1)
+        const afterFirst = writes.length
+        // Tap 2 was captured against the PRE-fork id, as a real queued tap would be.
+        await moveTemplateExercise('shared', 'e3', -1)
+        return { afterFirst, total: writes.length, wroteTo: [...new Set(writes)], resolveCalls }
+      } finally {
+        Object.assign(window, { openTemplate: saved.openTemplate, _checkClientPlanPropagation: saved.check,
+          _resolveEditableTemplateId: saved.resolveEditable, _resolveTemplateOwnerCoachId: saved.resolveOwner,
+          _verifyTemplateOwnership: saved.verify })
+        db.from = saved.from
+        document.getElementById('tpl-ex-list')?.remove()
+      }
+    })()`)
+    expect(r.afterFirst, 'the first tap writes its swap').toBe(2)
+    expect(r.wroteTo, 'and every write must target the CLONE, never the id the buttons still carried').toEqual(['clone-9'])
+    expect(r.total, 'the second tap, captured pre-fork, must be dropped rather than written').toBe(2)
+  })
+
   test('seven rapid moves ask about duplicate sessions ONCE, not seven times', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(`(async () => {

@@ -86,7 +86,13 @@ const sources = new Map()
 for (const f of files) {
   // BOM-stripped: three of the nine modules open with a `function` on line 1 behind a BOM, and a
   // ^-anchored scan misses every declaration in them otherwise.
-  const raw = readFileSync(f, 'utf8').replace(/^﻿/, '')
+  // Skip a file that is not there, exactly as check-escaping.mjs does. Without this an ENOENT threw
+  // and node exited 1 — the same code the pre-commit hook treats as "a real finding" — so deleting or
+  // renaming one of the nine modules would BLOCK a legitimate commit under a misleading "handler does
+  // not exist" message. The header of this very file anticipates consolidation phases that delete
+  // modules by design. Found by release review, 2026-09-06.
+  let raw
+  try { raw = readFileSync(f, 'utf8').replace(/^﻿/, '') } catch { continue }
   const code = blankComments(raw)
   sources.set(f, code)
   for (const m of code.matchAll(/^(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/gm)) declared.add(m[1])
