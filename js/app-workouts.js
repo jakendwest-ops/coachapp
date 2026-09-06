@@ -1697,7 +1697,7 @@ function renderTemplateSets(containerId, type) {
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
   // Rendered from here, not from the modal's own markup, because this function is the single choke
   // point EVERY type change already flows through: mount, the <select>'s onchange, toggleTsSet,
-  // setTsEffort, copyPrevTemplateSet and set add/delete. Hanging it off any one of those would leave
+  // setTsEffort, and set copy/add/delete. Hanging it off any one of those would leave
   // the pill showing stale state after the others fired. Placed above the early returns for the
   // interval/cardio branches so those clear it rather than leaving a stranded pill behind.
   const pillHost = document.getElementById(containerId === 'att-sets-container' ? 'att-metric-pills' : 'ett-metric-pills')
@@ -1816,7 +1816,6 @@ function renderTemplateSets(containerId, type) {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--text)">Set ${i+1}</span>
-          ${i > 0 ? `<button type="button" onclick="copyPrevTemplateSet(${i},'${containerId}','${tid}')" style="font-size:var(--text-sm, 11px);font-weight:700;padding:3px 9px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">Copy set ${i} ↑</button>` : ''}
         </div>
         <div style="display:flex;gap:4px">
           ${showToggleRow ? `
@@ -1884,18 +1883,41 @@ function renderTemplateSets(containerId, type) {
       `}
     </div>`
   }).join('') + `
-  <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.push({effortType:'rpe'});renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="margin-top:6px;font-size:var(--text-base, 13px);color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600">+ Add set</button>`
+  <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+    ${_addSetBtn(containerId, tid, 'copy', 'Copy previous set')}
+    ${_addSetBtn(containerId, tid, 'blank', '+ Add new set')}
+  </div>`
 }
 
-function copyPrevTemplateSet(i, containerId, tid) {
+// Two buttons, not one, and none on the rows.
+//
+// Repeating a set used to cost TWO taps: "+ Add set" gave you a blank row, then "Copy set N ↑" on
+// that row filled it. Jake, 2026-09-06: "at the moment you have to click add new set and THEN click
+// copy set n... this eliminates at least 1 click for the user." A four-set exercise therefore cost
+// six taps where three will do, every exercise, every session.
+//
+// The per-row buttons went with it rather than being left alongside — he stripped this editor down
+// on 2026-08-02 ("delete 'BW', 'Assist', 'Repeat'…"), and leaving a copy control on every row while
+// adding another at the bottom would have put the clutter straight back.
+//
+// "+ Add new set" still gives a BLANK row on purpose: a drop set or a back-off set is genuinely
+// different, and starting from someone else's numbers means clearing them first — no input in this
+// app selects on focus, so that is a real cost, not a theoretical one.
+// The handler name stays a LITERAL. The first version built the onclick body from a variable, which
+// took checks.sh's dynamic-handler count from 7 to 8 — a handler assembled at runtime cannot be
+// verified against the declared functions, which is the whole point of that gate. A named function
+// satisfies it and is better code besides: the logic is testable instead of living in a string.
+function addTemplateSet (containerId, tid, mode) {
   flushTemplateSets(containerId)
-  const sets = window._templateSets || []
-  if (i < 1 || i >= sets.length) return
-  const prev = { ...sets[i - 1] }
-  sets[i] = prev
+  const sets = window._templateSets || (window._templateSets = [])
+  const last = sets[sets.length - 1]
+  sets.push(mode === 'copy' && last ? { ...last } : { effortType: 'rpe' })
   renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
 
+function _addSetBtn (containerId, tid, mode, label) {
+  return `<button type="button" onclick="addTemplateSet('${containerId}','${tid}','${mode}')" style="font-size:var(--text-base, 13px);color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;padding:4px 0">${label}</button>`
+}
 
 // runnerCtx = { mode: 'add'|'swap' } — set when opened from the workout runner's
 // Swap/Add exercise buttons. Same modal, same set-target builder, either mode: the runner

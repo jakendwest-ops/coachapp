@@ -2793,6 +2793,17 @@ guardReentry('saveRunnerOneRM')
 // 2. Re-rendering on `oninput` rebuilds container.innerHTML and therefore DESTROYS the focused input —
 //    so a two-digit %1RM could never be typed (focus vanished after the first digit). The re-render is
 //    now on `onchange` (blur/Enter), which is when the derived weight preview actually needs refreshing.
+// Same two buttons as the workout builder's set editor, for the same reason: repeating a set should
+// cost one tap. Named rather than inlined so checks.sh can resolve the handler — see addTemplateSet.
+function addLogSet (bi, mode) {
+  flushLogState()
+  const sets = window._logBlocks?.[bi]?.sets
+  if (!sets) return
+  const last = sets[sets.length - 1]
+  sets.push(mode === 'copy' && last ? { ...last } : {})
+  renderLogExercises()
+}
+
 function renderLogExercises() {
   const container = document.getElementById('ls-exercises')
   if (!container) return
@@ -2906,7 +2917,10 @@ function renderLogExercises() {
             ${colHeaders}
           </div>
           ${setsHtml}
-          <button onclick="flushLogState();window._logBlocks[${bi}].sets.push({});renderLogExercises()" style="margin-top:5px;font-size:var(--text-md, 12px);color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600">+ Add set</button>
+          <div style="display:flex;gap:8px;margin-top:5px;flex-wrap:wrap">
+            <button onclick="addLogSet(${bi},'copy')" style="font-size:var(--text-md, 12px);color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600">Copy previous set</button>
+            <button onclick="addLogSet(${bi},'blank')" style="font-size:var(--text-md, 12px);color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600">+ Add new set</button>
+          </div>
         </div>
       </div>
     `
