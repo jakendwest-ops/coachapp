@@ -207,8 +207,13 @@ if (failed) {
 
 // 6. checks.sh ----------------------------------------------------------------------------------
 try {
-  execSync('sh scripts/checks.sh', { stdio: 'pipe' })
-  pass('checks.sh green')
+  // CI=true tells checks.sh to SKIP its 57-test Playwright smoke gate (it prints a loud warning
+  // instead). Deliberate: this script runs the FULL suite immediately below, of which the smoke gate
+  // is a strict subset. Without this, one `release.mjs` invocation starts Playwright twice — four
+  // wasted minutes, and two Playwright runs inside one command against the single shared test
+  // account, which is the collision this project forbids everywhere else.
+  execSync('sh scripts/checks.sh', { stdio: 'pipe', env: { ...process.env, CI: 'true' } })
+  pass('checks.sh green (its smoke gate skipped — the full suite below supersedes it)')
 } catch {
   fail('checks.sh failed', 'the static gate does not pass.', 'sh scripts/checks.sh')
 }
