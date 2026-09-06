@@ -1320,6 +1320,15 @@ async function saveNewTemplate() {
 guardReentry('saveNewTemplate')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
 async function openTemplate(id, ctx = {}) {
+  // A reorder settle pending on a DIFFERENT template must not survive this navigation. Its timer
+  // fires wherever you are: leave the editor mid-burst and the previous session's "update the
+  // copies?" modal appears over whatever screen you are now on — and its own dismiss buttons call
+  // openTemplate with the CURRENT global context, so dismissing it would repaint the old template
+  // wearing the new screen's back button. Found by review, 2026-09-06.
+  //
+  // Reordering within the SAME template must not cancel: that settle is the repaint this navigation
+  // would otherwise duplicate.
+  if (_reorderSettle.timer && _reorderSettle.templateId !== id) _cancelReorderSettle()
   window._templateCtx = {
     backTo: ctx.backTo || null,
     backLabel: ctx.backLabel || 'Templates',
@@ -1381,7 +1390,7 @@ async function openTemplate(id, ctx = {}) {
           <div class="empty-text">Add exercises to build this template</div>
           <button class="btn-primary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
         </div>
-      ` : `<div class="list">${exercises.map((ex, i) => {
+      ` : `<div class="list" id="tpl-ex-list">${exercises.map((ex, i) => {
         // metric_type is the source of truth; exercise_type alone can't tell an interval block from
         // real cardio — _deriveFromMetricType writes 'cardio' as the legacy exercise_type for BOTH.
         const _mt = ex.metric_type || ex.exercise_type
@@ -1391,12 +1400,12 @@ async function openTemplate(id, ctx = {}) {
           ? [ex.sets ? `${ex.sets} sets` : null, 'Cardio'].filter(Boolean).join(' · ')
           : [ex.sets ? `${ex.sets} sets` : null, ex.reps ? `${escapeHtml(String(ex.reps))} reps` : null, ex.weight_kg ? `${ex.weight_kg}kg` : null].filter(Boolean).join(' · ') || 'No defaults set'
         return `
-        <div class="card" style="margin-bottom:0">
+        <div class="card" style="margin-bottom:0" data-ex-id="${ex.id}" data-ex-name="${escapeHtml(ex.exercise_name)}">
           <div class="card-body" style="padding:12px 16px">
             <div style="display:flex;align-items:center;gap:10px">
               <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
-                <button onclick="moveTemplateExercise('${id}','${ex.id}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
-                <button onclick="moveTemplateExercise('${id}','${ex.id}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
+                <button data-move="-1" onclick="moveTemplateExercise('${id}','${ex.id}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
+                <button data-move="1" onclick="moveTemplateExercise('${id}','${ex.id}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
               </div>
               <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);flex-shrink:0">${i + 1}</div>
               <div style="flex:1;min-width:0">
@@ -1435,6 +1444,14 @@ async function openTemplate(id, ctx = {}) {
 }
 
 function _templateGoBack() {
+  // Leaving the editor by its own back button cancels a pending settle. openTemplate cancels one for
+  // a DIFFERENT template, but that never fires when you leave for a non-template screen — the settle
+  // would then repaint the session you just left, over whatever you are now looking at.
+  //
+  // NOT cancelled on every navigation route (a nav-bar tap still leaves it armed for up to 1500ms).
+  // That residue is deliberate: the settle also runs the propagation check, and silently failing to
+  // sync the duplicate sessions is worse than a late prompt. Recorded rather than hidden.
+  _cancelReorderSettle()
   const ctx = window._templateCtx || {}
   if (ctx.backFn) {
     ctx.backFn()
@@ -1460,65 +1477,208 @@ async function openClientProgramsTab(clientId) {
   if (btn) btn.click()
 }
 
-async function moveTemplateExercise(templateId, exId, dir) {
-  const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, exId)
-  // Anchoring the two swap updates on template_id (below) stops a write landing on a row in someone
-  // else's template, but it never established that THIS template is ours — it only proved both rows
-  // belong to the same parent. Verifying the parent is the other half, and the convention every
-  // sibling in this write family already follows. 2026-08-12 audit; fixed 2026-08-21.
-  const coachId = await _resolveTemplateOwnerCoachId()
-  if (!(await _verifyTemplateOwnership(targetId, coachId))) {
-    log.error('moveTemplateExercise', 'ownership check failed', { templateId: targetId })
-    return
-  }
-  const { data: all } = await db
-    .from('workout_template_exercises')
-    // exercise_name is selected for propagation: a sibling copy has its own row ids, so the resulting
-    // ORDER OF NAMES is the only thing that transfers. A nested explicit column list is an ALLOWLIST —
-    // omitting it here would make change.names an array of undefined, silently.
-    .select('id, order_index, exercise_name')
-    .eq('template_id', targetId)
-    .order('order_index')
-
-  const idx = all.findIndex(e => e.id === targetExId)
+// Swap two rows in the RENDERED list and re-arm the arrows, without going near the network.
+//
+// Returns the resulting order of exercise NAMES — which is exactly what reorder propagation needs,
+// since a sibling copy has its own row ids and the order of names is the only common ground. Returns
+// null when the move is impossible: off either end, or an id that is not on screen.
+function _reorderRowsInDom (exId, dir) {
+  const list = document.getElementById('tpl-ex-list')
+  if (!list) return null
+  const cards = [...list.querySelectorAll('.card')]
+  const idx = cards.findIndex(c => c.dataset.exId === exId)
   const swapIdx = idx + dir
-  if (idx < 0 || swapIdx < 0 || swapIdx >= all.length) return
+  if (idx < 0 || swapIdx < 0 || swapIdx >= cards.length) return null
 
-  // These two updates are a SWAP: they only make sense together. If one lands and the other doesn't,
-  // two exercises end up sharing an order_index and the list then renders in an arbitrary order that
-  // looks like a completely different bug. Repainting over that silently is the worst option.
-  // Both halves anchored on template_id as well as id — the siblings in this write family already do
-  // (see saveEditTemplateExercise / deleteTemplateExercise), and an unanchored update-by-id is the
-  // shape the architecture audit flagged across this file.
-  const [swapA, swapB] = await Promise.all([
-    dbq('moveTemplateExercise:a',
-      db.from('workout_template_exercises').update({ order_index: all[swapIdx].order_index }).eq('id', all[idx].id).eq('template_id', targetId).select('id'),
-      { showUserError: false }),
-    dbq('moveTemplateExercise:b',
-      db.from('workout_template_exercises').update({ order_index: all[idx].order_index }).eq('id', all[swapIdx].id).eq('template_id', targetId).select('id'),
-      { showUserError: false })
-  ])
-  // EITHER half failing must warn. A refusal returns { data: [], error: null }, so the error-only check
-  // missed exactly the case this toast exists for — and a half-applied swap leaves two exercises
-  // sharing an order_index, which then renders in an arbitrary order that looks like a different bug.
-  if (swapA.error || swapB.error || !swapA.data?.length || !swapB.data?.length) {
-    log.error('moveTemplateExercise', 'swap did not fully apply', { a: swapA.data?.length ?? 0, b: swapB.data?.length ?? 0 })
+  if (dir < 0) list.insertBefore(cards[idx], cards[swapIdx])
+  else list.insertBefore(cards[swapIdx], cards[idx])
+
+  // The arrows encode POSITION, so they have to follow the rows. Leave them and the top row keeps a
+  // live up arrow — one more tap and the exercise walks off the end of the list.
+  const after = [...list.querySelectorAll('.card')]
+  after.forEach((c, i) => {
+    const up = c.querySelector('[data-move="-1"]')
+    const down = c.querySelector('[data-move="1"]')
+    for (const [btn, off] of [[up, i === 0], [down, i === after.length - 1]]) {
+      if (!btn) continue
+      btn.disabled = off
+      btn.style.color = off ? 'var(--border)' : 'var(--text-muted)'
+      btn.style.cursor = off ? 'default' : 'pointer'
+    }
+  })
+  return after.map(c => c.dataset.exName || '')
+}
+
+// Reorder SETTLE: one repaint and one propagation check, after the taps stop.
+//
+// The first cut of this skipped the repaint entirely, and a three-angle review found that
+// openTemplate() had been load-bearing for more than pixels. Removing it left THREE things stale:
+//   - the circular position badge baked into each card at render time;
+//   - the template id embedded in every button's onclick — after _resolveEditableTemplateId forks a
+//     shared template, the next tap resolved the OLD id, which no longer forks, and the write landed
+//     on the orphaned master instead of the copy on screen;
+//   - the propagation context, since a stale timer could fire against a different template entirely.
+//
+// Repainting ONCE when the burst settles keeps every guarantee the per-tap repaint gave while costing
+// one repaint instead of seven. The optimistic DOM move is still what makes it feel instant.
+//
+// The timer records WHICH template it belongs to, and openTemplate cancels a pending settle for a
+// different one — otherwise leaving the editor mid-burst pops the old session's "update the copies?"
+// modal over whatever screen you are now on.
+// Long enough to swallow a burst of taps, short enough that the repaint feels like part of the same
+// action. setTimeout with an undefined delay fires on the next tick — which is exactly what happened
+// when an edit removed this constant without replacing it, and the test caught it as a repaint
+// landing DURING the tap.
+const REORDER_SETTLE_DELAY_MS = 1500
+let _reorderSettle = { timer: null, templateId: null }
+
+function _cancelReorderSettle () {
+  clearTimeout(_reorderSettle.timer)
+  _reorderSettle = { timer: null, templateId: null }
+}
+
+function _scheduleReorderSettle (targetId, ctx, names) {
+  clearTimeout(_reorderSettle.timer)
+  // Last one wins: `names` is the order as it now stands, so an intermediate arrangement mid-burst is
+  // never what gets propagated.
+  const change = { op: 'reorder', names }
+  window._lastExerciseChange = change
+  const timer = setTimeout(async () => {
+    _reorderSettle = { timer: null, templateId: null }
+    try {
+      // Repaint FIRST: it refreshes the badges and the ids the next tap will resolve against.
+      await openTemplate(targetId, ctx)
+      await _checkClientPlanPropagation(targetId, ctx, change)
+    } catch (err) {
+      log.error('_scheduleReorderSettle', 'settle failed', err)
+      showToast('Reordered — syncing to assigned plans failed, refresh to check', 'warn')
+    }
+  }, REORDER_SETTLE_DELAY_MS)
+  _reorderSettle = { timer, templateId: targetId }
+}
+
+// Persistence is SERIALISED. The DOM moves immediately, so a fast tapper can fire the next move
+// before the previous pair of updates has landed — and each move reads order_index values back from
+// the database to compute its swap. Without a queue the second read can see pre-swap state and write
+// an order that undoes the first. Chaining costs nothing the user can feel: the list has already
+// moved by then.
+let _reorderChain = Promise.resolve()
+
+async function moveTemplateExercise(templateId, exId, dir) {
+  // MOVE THE ROWS FIRST. This is the whole change: the list responds to the tap, and everything
+  // expensive happens behind it. Before, each tap awaited an ownership check, a fetch, two updates
+  // and then openTemplate() — a full re-fetch and repaint of the session — so moving an exercise from
+  // eighth to first meant seven round trips you had to wait out one at a time.
+  // Two different nulls, and conflating them broke the ownership test. _reorderRowsInDom returns null
+  // both when the move is out of bounds AND when the list simply is not rendered. Returning on either
+  // made the ownership check unreachable whenever the DOM was absent — a guard that depends on
+  // something being painted is not a guard. So: only an out-of-bounds move stops here; a missing list
+  // just means there is no optimistic UI to update, and the write still runs and is still verified.
+  const listOnScreen = !!document.getElementById('tpl-ex-list')
+  const names = _reorderRowsInDom(exId, dir)
+  if (listOnScreen && !names) return   // genuinely off either end
+
+  // Snapshot before any await: window._templateCtx is a single global slot and a fast navigation to
+  // another client's plan would otherwise have this save propagate against the wrong context. Same
+  // hazard _afterTemplateExerciseSave documents, and it still applies now the work is deferred.
+  const ctxSnapshot = window._templateCtx
+  // REPAIR BY RELOADING, not by undoing. `_reorderRowsInDom(exId, -dir)` was a one-hop swap with
+  // whatever happens to be adjacent NOW — and in a burst, later taps have already moved the
+  // neighbours, so undo restored an order matching neither what was asked for nor what was stored.
+  // Two reviewers found the same thing independently. A reload is the only repair that is correct
+  // regardless of how many taps are in flight, and a failed reorder is rare enough to afford one.
+  const repair = (id) => { _cancelReorderSettle(); return openTemplate(id, ctxSnapshot) }
+  // The catch below runs OUTSIDE the resolved scope, so it needs the resolved id kept somewhere it
+  // can see. Repairing with the pre-fork id would repaint the orphaned master rather than the clone
+  // now assigned to the slot — found by the scoped re-review.
+  let resolvedId = templateId
+
+  _reorderChain = _reorderChain.then(async () => {
+    const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, exId)
+    resolvedId = targetId
+    // Anchoring the two swap updates on template_id (below) stops a write landing on a row in someone
+    // else's template, but it never established that THIS template is ours — it only proved both rows
+    // belong to the same parent. Verifying the parent is the other half, and the convention every
+    // sibling in this write family already follows. 2026-08-12 audit; fixed 2026-08-21.
+    const coachId = await _resolveTemplateOwnerCoachId()
+    if (!(await _verifyTemplateOwnership(targetId, coachId))) {
+      log.error('moveTemplateExercise', 'ownership check failed', { templateId: targetId })
+      showToast('Could not reorder that session', 'error')
+      return repair(templateId)   // the row already moved on screen; the DOM is now a lie
+    }
+
+    const { data: all } = await db
+      .from('workout_template_exercises')
+      // exercise_name is selected for propagation: a sibling copy has its own row ids, so the resulting
+      // ORDER OF NAMES is the only thing that transfers. A nested explicit column list is an ALLOWLIST —
+      // omitting it here would make change.names an array of undefined, silently.
+      .select('id, order_index, exercise_name')
+      .eq('template_id', targetId)
+      .order('order_index')
+
+    const idx = (all || []).findIndex(e => e.id === targetExId)
+    const swapIdx = idx + dir
+    // The row exists on screen but not where the database says: something else changed it. Reload
+    // rather than guess.
+    if (idx < 0 || swapIdx < 0 || swapIdx >= (all || []).length) return repair(targetId)
+
+    // These two updates are a SWAP: they only make sense together. If one lands and the other doesn't,
+    // two exercises end up sharing an order_index and the list then renders in an arbitrary order that
+    // looks like a completely different bug. Repainting over that silently is the worst option.
+    // Both halves anchored on template_id as well as id — the siblings in this write family already do
+    // (see saveEditTemplateExercise / deleteTemplateExercise), and an unanchored update-by-id is the
+    // shape the architecture audit flagged across this file.
+    const [swapA, swapB] = await Promise.all([
+      dbq('moveTemplateExercise:a',
+        db.from('workout_template_exercises').update({ order_index: all[swapIdx].order_index }).eq('id', all[idx].id).eq('template_id', targetId).select('id'),
+        { showUserError: false }),
+      dbq('moveTemplateExercise:b',
+        db.from('workout_template_exercises').update({ order_index: all[idx].order_index }).eq('id', all[swapIdx].id).eq('template_id', targetId).select('id'),
+        { showUserError: false })
+    ])
+    // EITHER half failing must warn. A refusal returns { data: [], error: null }, so the error-only check
+    // missed exactly the case this toast exists for — and a half-applied swap leaves two exercises
+    // sharing an order_index, which then renders in an arbitrary order that looks like a different bug.
+    // Here the screen has ALREADY moved, so a full reload is the only honest repair: it is the one path
+    // that guarantees what you see matches what was stored.
+    if (swapA.error || swapB.error || !swapA.data?.length || !swapB.data?.length) {
+      log.error('moveTemplateExercise', 'swap did not fully apply', { a: swapA.data?.length ?? 0, b: swapB.data?.length ?? 0 })
+      showToast('Could not reorder — reload before editing this workout further', 'error')
+      // Cancel the pending settle too: it carries `names` from a burst whose writes did NOT all land,
+      // so letting it fire would propagate an order the database never held.
+      return repair(targetId)
+    }
+
+    // Reordering is wired to propagation (2026-08-19). It was cause 2 of Jake's 2026-08-14 report —
+    // "when adding amending/updating a session within a program ... I should be asked whether I want to
+    // update all duplicated sessions". Debounced since 2026-09-06 so a burst of taps asks once.
+    // With no list on screen there were no DOM names to capture, so derive them from what was just
+    // written — the same array the pre-2026-09-06 code used.
+    const reordered = [...all]
+    ;[reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]]
+    const finalNames = names || reordered.map(r => r.exercise_name)
+
+    // A FORK MUST REPAINT NOW, not at settle. _resolveEditableTemplateId can clone a shared template
+    // and repoint the phase slot at the clone; every button on screen still carries the PRE-fork id.
+    // Waiting 1500ms leaves every remaining tap in the burst resolving that stale id — which no longer
+    // forks, passes its own ownership check (same coach owns the master), and silently writes to the
+    // orphaned master instead of the copy being looked at. The re-review traced this end to end after
+    // the first fix attempt did not close it. Forks happen once per shared template, so this costs one
+    // repaint on a rare path to remove a data-integrity bug on a common one.
+    if (targetId !== templateId) await openTemplate(targetId, ctxSnapshot)
+
+    _scheduleReorderSettle(targetId, ctxSnapshot, finalNames)
+  }).catch(err => {
+    // A rejection must not poison the chain for every later move — and it must not leave the screen
+    // showing a move that never happened. A thrown error (a dropped connection mid-set, which is the
+    // normal case in a gym) previously logged and did nothing else: the rows stayed moved, unwritten
+    // and unverified, with no signal at all. Found by review; no test had covered this path.
+    log.error('moveTemplateExercise', 'reorder failed', err)
     showToast('Could not reorder — reload before editing this workout further', 'error')
-    return openTemplate(targetId, window._templateCtx)
-  }
+    return repair(resolvedId)
+  })
 
-  // Reordering is now wired to propagation (2026-08-19). It was cause 2 of Jake's 2026-08-14 report —
-  // "when adding amending/updating a session within a program ... I should be asked whether I want to
-  // update all duplicated sessions" — and the only one of the four causes still open after the rename
-  // half was fixed. Same shape as its siblings: capture the change, hand off to
-  // _afterTemplateExerciseSave, which re-renders AND runs the propagation check.
-  //
-  // The change carries the resulting ORDER OF NAMES rather than the two swapped ids, because a target
-  // copy has its own row ids — only the names are common ground. See _propagateReorderToTemplates.
-  const reordered = [...all]
-  ;[reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]]
-  window._lastExerciseChange = { op: 'reorder', names: reordered.map(r => r.exercise_name) }
-  await _afterTemplateExerciseSave(targetId)
+  await _reorderChain
 }
 
 // ─── TEMPLATE SET HELPERS ─────────────────────────────────────────────────────

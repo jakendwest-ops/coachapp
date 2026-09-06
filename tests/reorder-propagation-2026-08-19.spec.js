@@ -113,14 +113,24 @@ test.describe('Reorder propagation', () => {
   test('moveTemplateExercise captures a reorder change and hands off to propagation', async ({ page }) => {
     await loginAsPT(page)
     // The wiring half. It was absent entirely, which is what made the prompt unreachable.
+    // UPDATED 2026-09-06. The capture moved into _scheduleReorderSettle when reorder propagation
+    // was debounced into a SETTLE (one repaint + one propagation check) — a burst of taps must ask
+    // about duplicate sessions once, not once per tap. The
+    // guarantee this test exists for is unchanged (a reorder still reaches propagation carrying
+    // names); only the route changed, so the assertions follow it rather than being deleted. The
+    // BEHAVIOUR is covered directly in reorder-instant-2026-09-06.spec.js, which fails if the
+    // propagation check never runs at all.
     const src = await page.evaluate(() => moveTemplateExercise.toString())
-    expect(src, 'must capture the change like its siblings do').toContain('_lastExerciseChange')
-    expect(src, "and it must be a 'reorder' op").toMatch(/op:\s*'reorder'/)
-    expect(src, 'must hand off to the propagation entry point').toContain('_afterTemplateExerciseSave')
-    // Names, not ids: a sibling copy has its own row ids, so only names transfer.
-    expect(src, 'the change must carry names').toMatch(/names:/)
+    expect(src, 'must hand off to the propagation entry point').toContain('_scheduleReorderSettle')
     // And the select must actually fetch the names, or they would all be undefined, silently.
     expect(src).toContain('exercise_name')
+
+    const helper = await page.evaluate(() => _scheduleReorderSettle.toString())
+    expect(helper, 'must capture the change like its siblings do').toContain('_lastExerciseChange')
+    expect(helper, "and it must be a 'reorder' op").toMatch(/op:\s*'reorder'/)
+    // Names, not ids: a sibling copy has its own row ids, so only names transfer.
+    expect(helper, 'the change must carry names').toMatch(/names/)
+    expect(helper, 'and it must actually reach the propagation check').toContain('_checkClientPlanPropagation')
   })
 
   test('the dispatcher routes reorder to its own handler', async ({ page }) => {
