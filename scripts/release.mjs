@@ -156,10 +156,17 @@ if (recordOnly) {
   }
 }
 
-// 5. A review must have run AFTER the newest commit being released ------------------------------
+// 5. A review must have run AFTER the newest CODE commit being released -------------------------
 // Not "a review happened at some point" — a review of THIS code. The marker is written by the
 // multi-agent-review skill (its Step 4).
-const lastCommitAt = Number(git('log', '-1', '--format=%ct')) * 1000
+//
+// CODE commits, not all commits. The first version compared against the last commit of any kind and
+// was unsatisfiable by construction: release notes must exist before the tag, so writing them always
+// creates a docs commit AFTER the review, and the gate then demanded a review of a documentation
+// diff before every single release. Same structural mistake as the receipt fingerprint, fixed the
+// same way and for the same reason — a gate that cannot be satisfied honestly is one people route
+// around. A docs commit cannot introduce the defects a review looks for.
+const lastCommitAt = Number(git('log', '-1', '--format=%ct', '--', ...CODE_PATHS) || 0) * 1000
 if (recordOnly) {
   // silent: the review gate belongs to tagging, not to verifying code
 } else if (!existsSync(REVIEW_MARKER)) {
