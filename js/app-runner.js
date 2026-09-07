@@ -479,6 +479,16 @@ function toggleTableSet(rowIdx) {
   }
 }
 
+function _runnerFocusFirstInput() {
+  // R2 (2026-09-07): the pre-first-set footer is a real control now — tapping it drops you into the
+  // first field that still needs a value rather than leaving you to find the row yourself.
+  const inputs = document.querySelectorAll('#workout-runner input[type="number"], #workout-runner input[inputmode="numeric"], #workout-runner input[inputmode="decimal"]')
+  for (const el of inputs) {
+    if (!el.value) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus(); return }
+  }
+  inputs[0]?.focus()
+}
+
 function addTableRow() {
   const ex = _runner.exercises[_runner.exIdx]
   _ensureTableRows(ex)
@@ -687,7 +697,17 @@ function renderStrengthTable(ex) {
       oninput="${bind}"
       style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done ? 'var(--border)' : 'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
   }
-  const inDone = (i, row) => `<button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}" style="width:44px;height:44px;flex-shrink:0;border-radius:8px;border:${row.done?'none':'2px solid #9ca3af'};font-size:18px;font-weight:800;cursor:pointer;background:${row.done?'var(--success)':'#fff'};color:${row.done?'#fff':'transparent'}">✓</button>`
+  // Incomplete state used to render a transparent ✓ inside a bare grey box — invisible, though it is
+  // the primary action of the screen. Now: a faint but visible tick on a --surface-2 fill, and on the
+  // CURRENT set's row an accent border + accent tick so "tap here next" is unmistakable (R1, 2026-09-07).
+  const inDone = (i, row, isCurrent) => {
+    const state = row.done
+      ? 'border:none;background:var(--success);color:#fff'
+      : isCurrent
+        ? 'border:2px solid var(--accent);background:var(--surface-2);color:var(--accent)'
+        : 'border:1.5px solid var(--border);background:var(--surface-2);color:var(--text-muted)'
+    return `<button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}" style="width:44px;height:44px;flex-shrink:0;border-radius:var(--radius-sm, 8px);font-size:var(--text-2xl, 18px);font-weight:800;cursor:pointer;${state}">✓</button>`
+  }
   // Deliberately SMALLER than the 44x44 complete-set tick above: the destructive action must not be the
   // easier target mid-set. Jake asked twice (2026-07-13, 2026-07-23). aria-label carries the full meaning
   // for screen readers, so the shrunk visual label costs nothing there.
@@ -724,7 +744,7 @@ function renderStrengthTable(ex) {
       return `${cardOpen}<div style="display:flex;align-items:flex-start;gap:6px">
         ${inSetNum(i, isCurrent)}
         <div style="flex:1;min-width:0">${side('L','leftWeight','leftReps')}${side('R','rightWeight','rightReps')}</div>
-        ${inDone(i, row)}${inDel(i)}
+        ${inDone(i, row, isCurrent)}${inDel(i)}
       </div></div>`
     }
 
@@ -733,7 +753,7 @@ function renderStrengthTable(ex) {
         ${inSetNum(i, isCurrent)}
         ${inCell(i, row, 'duration', { mode:'numeric', ph:'0:00', fmt:true })}
         ${ex.bodyweight ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>` : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:window._unitPrefs.weight, unit:'weight' })}
-        ${inDone(i, row)}${inDel(i)}
+        ${inDone(i, row, isCurrent)}${inDel(i)}
       </div></div>`
     }
 
@@ -756,20 +776,22 @@ function renderStrengthTable(ex) {
         ${inSetNum(i, isCurrent)}
         ${inCell(i, row, f, { mode:'decimal', step:'0.01', ph, unit: mt === 'jump_height' ? 'jumpHeight' : null })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph: jPh })}
-        ${inDone(i, row)}${inDel(i)}
+        ${inDone(i, row, isCurrent)}${inDel(i)}
       </div></div>`
     }
 
     // weight_reps (default) — behaviour unchanged incl. ghost placeholders (les 2026-07-11: no pre-fill).
-    const wPlaceholder = oneRMPh || (prev?.weight_kg != null ? weightToPref(prev.weight_kg) : '') || '—'
-    const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || '—'
+    // Fall back to the unit / "reps" rather than a bare em-dash (R3, 2026-09-07): an empty field
+    // showing "—" reads as disabled. Ghost values from last session / %1RM still win when present.
+    const wPlaceholder = oneRMPh || (prev?.weight_kg != null ? weightToPref(prev.weight_kg) : '') || window._unitPrefs.weight
+    const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || 'reps'
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${ex.bodyweight
           ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>`
           : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder, unit:'weight' })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
-        ${inDone(i, row)}${inDel(i)}
+        ${inDone(i, row, isCurrent)}${inDel(i)}
       </div></div>`
   }).join('')
 
@@ -841,9 +863,9 @@ function renderRunner() {
           <span id="wr-rest-chip-countdown" style="font-size:var(--text-base, 13px);font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;flex-shrink:0">${_runner._restPendingFire ? 'Done' : fmtRestCountdown(_runner.restRemaining)}</span>
           <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_runner._restPendingFire ? 'Rest done — tap to continue' : 'Resting ' + escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '') + ' — tap to return'}</span>
         </div>` : ''}
-        <div style="display:flex;gap:14px;margin-top:8px">
-          <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="border:none;background:none;padding:0;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">⇄ Swap exercise</button>
-          <button id="wr-add-btn" onclick="showExercisePicker('add')" style="border:none;background:none;padding:0;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">+ Add exercise</button>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="flex:1;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 10px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">⇄ Swap exercise</button>
+          <button id="wr-add-btn" onclick="showExercisePicker('add')" style="flex:1;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 10px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">+ Add exercise</button>
         </div>
         ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:var(--radius-sm, 8px);font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);line-height:1.5">${escapeHtml(_runner.templateDesc)}</div>` : ''}
       </div>
@@ -911,7 +933,7 @@ function renderRunner() {
         ${isTable ? `
           ${ex.loggedSets.length > 0
             ? `<button onclick="skipToNextExercise()" style="width:100%;height:52px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:#fff;font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer">${isLast?'Finish 🏁':'Next exercise →'}</button>`
-            : `<div style="text-align:center;padding:14px;font-size:var(--text-md, 12px);color:var(--text-muted)">Check off a set to continue</div>`}
+            : `<button onclick="_runnerFocusFirstInput()" style="width:100%;height:52px;border:1px dashed var(--border);border-radius:var(--radius, 10px);background:var(--surface-2);color:var(--text-muted);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">↑ Log a set to continue</button>`}
         ` : _runner._restInterval && _runner._restForExIdx === _runner.exIdx ? `
           <div style="padding:14px;text-align:center;border-radius:var(--radius, 10px);background:var(--surface-2)">
             <div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text-muted)">Resting — inputs available after rest</div>

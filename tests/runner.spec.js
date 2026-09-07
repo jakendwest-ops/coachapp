@@ -402,6 +402,39 @@ test.describe('Workout runner (client)', () => {
     expect(row0.reps).toBe('')
   })
 
+  test('runner polish (2026-09-07): visible set tick, unit placeholders, tappable pre-first-set footer', async ({ page }) => {
+    await wk.start()
+    await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
+    const found = await page.evaluate(() => {
+      const idx = _runner.exercises.findIndex(e => typeof _isPlainStrengthExercise === 'function' && _isPlainStrengthExercise(e))
+      if (idx === -1) return false
+      runnerJumpTo(idx)
+      return true
+    })
+    if (!found) return // no plain-strength exercise in this template
+
+    // R1 — the incomplete set-complete tick is a VISIBLE control, not a transparent glyph.
+    const tickColour = await page.locator('#workout-runner button[onclick="toggleTableSet(0)"]')
+      .evaluate(el => getComputedStyle(el).color)
+    expect(tickColour).not.toBe('rgba(0, 0, 0, 0)')
+    expect(tickColour).not.toBe('transparent')
+
+    // R3 — an empty field hints the unit / "reps", never a bare em-dash (which reads as disabled).
+    const phs = await page.evaluate(() => {
+      const w = document.querySelector('#workout-runner input[oninput*="tableRows[0].weight"]')
+      const r = document.querySelector('#workout-runner input[oninput*="tableRows[0].reps"]')
+      return { w: w?.getAttribute('placeholder'), r: r?.getAttribute('placeholder') }
+    })
+    expect(phs.w).not.toBe('—')
+    expect(phs.r).toBe('reps')
+
+    // R2 — before any set is logged the footer is a real button that drops focus into the first field.
+    const footer = page.locator('#workout-runner button', { hasText: 'Log a set to continue' })
+    await expect(footer).toBeVisible()
+    await footer.click()
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('INPUT')
+  })
+
   test('ticking a set with no reps entered warns instead of silently doing nothing (2026-07-11)', async ({ page }) => {
     // Rows no longer pre-fill, so an untouched row is empty and this guard is hit routinely rather
     // than never — a silent no-op would read as a broken button to someone mid-set.
