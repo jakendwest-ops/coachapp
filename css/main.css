@@ -776,9 +776,14 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 /* Mobile view switcher — hidden by default, only shown on mobile via JS when master account */
 #mobile-view-switcher { display: none !important; }
 /* ...and hidden again whenever a modal is open (both are position:fixed at z-index:200, so the
-   pill otherwise sits on top of a bottom-sheet modal's content — surfaced by the B1 Manage menu,
-   2026-09-07, but it affected every modal for a master account on mobile). */
-.app-shell:has(.modal-overlay[style*="flex"]) #mobile-view-switcher { display: none !important; }
+   pill otherwise sat on top of a bottom-sheet modal's content — every modal, for a master account
+   on mobile; surfaced by the B1 Manage menu, 2026-09-07). Keyed on `body`, not `.app-shell`,
+   because mountModal appends its overlays to document.body (a SIBLING of #app-shell). The two
+   static overlays render style="display:none" and toggle to display:flex; the mountModal ones
+   carry no display in their inline style and are only in the DOM while shown. So the match is
+   "a .modal-overlay whose inline style does NOT say display:none" (both space spellings, since the
+   CSSOM re-serialises `display:none` -> `display: none` once JS has toggled it once). */
+body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"])) #mobile-view-switcher { display: none !important; }
 
 @media (max-width: 900px) {
   .sidebar { display: none; }
