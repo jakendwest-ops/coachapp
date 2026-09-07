@@ -35,6 +35,16 @@ async function assignWorkoutToDay(page, day, templateId) {
   await page.waitForSelector('#workout-picker-modal', { state: 'detached', timeout: 5000 })
 }
 
+// B1 (2026-09-07): Edit / Copy to Library / Copy to coaching / Move to Personal / Delete moved off
+// the program header into a "⋯ Manage" popover. Opens it and clicks one action by its exact label
+// ("Edit name and description" | "Copy workouts to Library" | "Copy to coaching programs" |
+// "Move to Personal" | "Delete program").
+async function programManage(page, label) {
+  await page.click('button:has-text("Manage")')
+  await page.waitForSelector('#program-manage-modal', { state: 'visible', timeout: 4000 })
+  await page.click(`#program-manage-modal button:text-is("${label}")`)
+}
+
 // ONE shared sweep for every UI-created program fixture in this file (2026-08-20).
 //
 // These tests build a program through the UI and tidy up with a trailing `Delete` click at the end of
@@ -92,7 +102,7 @@ test.describe('Program periodization', () => {
     await expect(page.locator('[id^="phase-workouts-"] .pwk-slot-name').first()).toBeVisible({ timeout: 8000 })
 
     // Configure periodization on the phase
-    await page.click('button:has-text("Configure")')
+    await page.click('button:has-text("Add periodization")')
     await expect(page.locator('#periodization-modal')).toBeVisible({ timeout: 4000 })
     await page.click('#periodization-modal button:has-text("Linear")')
     await expect(page.locator('#pz-start')).toBeVisible({ timeout: 4000 })
@@ -100,7 +110,8 @@ test.describe('Program periodization', () => {
     await page.fill('#pz-end', '85')
     await page.click('#periodization-modal .modal-footer button:has-text("Save")')
     await page.waitForSelector('#periodization-modal', { state: 'detached', timeout: 4000 })
-    await expect(page.locator('text=Periodization:').locator('..').locator('text=Linear')).toBeVisible({ timeout: 4000 })
+    // The status now shows as a chip in the phase header ("3 weeks · Linear 65→85%"), not a slab.
+    await expect(page.getByText(/Linear 65.85%/)).toBeVisible({ timeout: 4000 })
 
     // Generate weeks 2-3 from the Week 1 base
     page.once('dialog', d => d.accept())
@@ -110,7 +121,7 @@ test.describe('Program periodization', () => {
 
     // Cleanup — delete the throwaway program
     page.once('dialog', d => d.accept())
-    await page.click('button:has-text("Delete")')
+    await programManage(page, 'Delete program')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -126,7 +137,7 @@ test.describe('Program periodization', () => {
     await page.click('#pf-save-btn')
     await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
 
-    await page.click('button:has-text("Configure")')
+    await page.click('button:has-text("Add periodization")')
     await expect(page.locator('#periodization-modal')).toBeVisible({ timeout: 4000 })
     await page.click('#periodization-modal button:has-text("Undulating")')
     await expect(page.locator('#pz-tier-heavy-pct')).toBeVisible({ timeout: 4000 })
@@ -135,11 +146,36 @@ test.describe('Program periodization', () => {
 
     await page.click('#periodization-modal .modal-footer button:has-text("Cancel")')
     await page.waitForSelector('#periodization-modal', { state: 'detached', timeout: 4000 })
-    // Not saved — phase still shows None
-    await expect(page.locator('text=Periodization:').locator('..').locator('text=None')).toBeVisible({ timeout: 4000 })
+    // Not saved — the phase still has no periodization (button still invites you to ADD it, and no
+    // "Generate weeks" appears).
+    await expect(page.locator('button:has-text("Add periodization")')).toBeVisible({ timeout: 4000 })
+    await expect(page.locator('button:has-text("Edit periodization")')).toHaveCount(0)
+    await expect(page.locator('button:has-text("Generate weeks")')).toHaveCount(0)
 
     page.once('dialog', d => d.accept())
-    await page.click('button:has-text("Delete")')
+    await programManage(page, 'Delete program')
+    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+  })
+
+  test('B1 (2026-09-07): the ⋯ Manage menu holds the secondary actions and closes cleanly', async ({ page }) => {
+    await page.click('button:has-text("New program")')
+    await page.fill('#pm-name', '[E2E] Periodization Test') // in the afterEach sweep list
+    await page.click('#pm-save-btn')
+    await page.waitForSelector('button:has-text("Manage")', { timeout: 8000 })
+
+    // The header row is now just the primary action + Manage — no ragged 5-button block.
+    await expect(page.locator('button:has-text("Assign to client")')).toBeVisible()
+
+    await page.click('button:has-text("Manage")')
+    await expect(page.locator('#program-manage-modal')).toBeVisible({ timeout: 4000 })
+    for (const label of ['Edit name and description', 'Copy workouts to Library', 'Delete program']) {
+      await expect(page.locator(`#program-manage-modal button:text-is("${label}")`)).toBeVisible()
+    }
+    await page.click('#program-manage-modal .btn-icon')
+    await expect(page.locator('#program-manage-modal')).toBeHidden({ timeout: 4000 })
+
+    page.once('dialog', d => d.accept())
+    await programManage(page, 'Delete program')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 })
@@ -190,7 +226,7 @@ test.describe('Inline assign grid', () => {
     await closeDayPicker(page)
 
     page.once('dialog', d => d.accept())
-    await page.click('button:has-text("Delete")')
+    await programManage(page, 'Delete program')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -227,7 +263,7 @@ test.describe('Inline assign grid', () => {
     expect(rowCount).toBe(1)
 
     page.once('dialog', d => d.accept())
-    await page.click('button:has-text("Delete")')
+    await programManage(page, 'Delete program')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -260,7 +296,7 @@ test.describe('Inline assign grid', () => {
       if (data?.length) await db.from('workout_templates').delete().in('id', data.map(t => t.id))
     })
     page.once('dialog', d => d.accept())
-    await page.click('button:has-text("Delete")')
+    await programManage(page, 'Delete program')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -546,7 +582,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     expect(week2Rows[0].template_id).toBe(week1.template_id)
 
     page.once('dialog', d => d.accept())
-    await page.click('button:has-text("Delete")')
+    await programManage(page, 'Delete program')
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -752,8 +788,8 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       await page.reload()
       await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
       await page.click('text=[E2E] Delete Block Test')
-      await page.waitForSelector('button:has-text("Delete")', { timeout: 8000 })
-      await page.click('button:has-text("Delete")')
+      await page.waitForSelector('button:has-text("Manage")', { timeout: 8000 })
+      await programManage(page, 'Delete program')
       await expect(page.locator('#app-toast')).toContainText(client.name, { timeout: 4000 })
     } finally {
       await page.evaluate(async ({ programId, clientId }) => {

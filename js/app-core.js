@@ -394,7 +394,10 @@ async function _saveUnitPrefs(weight, jumpHeight, cardioDistance) {
 // mechanism — this app has no anchored-popover precedent, and a small centered modal gives the same
 // "tap icon, get a compact panel" feel with zero new CSS.
 function _quickPrefsIconHtml() {
-  return `<button onclick="_openQuickPrefsPopover()" title="Preferences" style="width:36px;height:36px;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);background:var(--surface);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:var(--text-xl, 16px)">⚙</button>`
+  // Labelled, not a bare ⚙ (B4, 2026-09-07): an unmarked gear in a page header reads as "settings for
+  // this page" when it actually opens unit + capture preferences. Shared by the runner, programs and
+  // workouts headers.
+  return `<button onclick="_openQuickPrefsPopover()" title="Unit preferences" aria-label="Unit preferences" style="height:36px;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);background:var(--surface);cursor:pointer;display:inline-flex;align-items:center;gap:5px;flex-shrink:0;padding:0 10px;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted);white-space:nowrap"><span style="font-size:var(--text-lg, 14px);line-height:1">⚙</span>Units</button>`
 }
 
 function _openQuickPrefsPopover(prefill = null) {

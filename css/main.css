@@ -775,6 +775,10 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 /* ─── Responsive ─────────────────────────────────────────────────────────────── */
 /* Mobile view switcher — hidden by default, only shown on mobile via JS when master account */
 #mobile-view-switcher { display: none !important; }
+/* ...and hidden again whenever a modal is open (both are position:fixed at z-index:200, so the
+   pill otherwise sits on top of a bottom-sheet modal's content — surfaced by the B1 Manage menu,
+   2026-09-07, but it affected every modal for a master account on mobile). */
+.app-shell:has(.modal-overlay[style*="flex"]) #mobile-view-switcher { display: none !important; }
 
 @media (max-width: 900px) {
   .sidebar { display: none; }
@@ -832,7 +836,16 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 @media (min-width:768px) {
   .pwk-days { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px; align-items:start; }
 }
+/* B2 (2026-09-07): a training week is 7 days — once there's room, show 7 columns rather than
+   whatever auto-fit lands on (it was breaking to 5 + an orphaned Sat/Sun on a desktop canvas). */
+@media (min-width:900px) {
+  .pwk-days { grid-template-columns:repeat(7, minmax(0, 1fr)); }
+}
 .pwk-day { border:1px solid var(--border); border-radius:10px; padding:8px; background:var(--surface); }
+/* B3 (2026-09-07): an EMPTY day is just a label + an add affordance — drop the card chrome so a
+   7-day week of mostly rest days isn't a long scroll of empty boxes. */
+.pwk-day.is-empty { border-color:transparent; background:transparent; padding:4px 8px; }
+.pwk-day.is-empty .pwk-add { min-height:34px; border-style:dashed; }
 .pwk-dow { font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--text-muted); margin-bottom:6px; }
 .pwk-slot { border:1px solid var(--border); border-radius:8px; background:var(--bg); margin-bottom:6px; overflow:hidden; }
 .pwk-slot-head { display:flex; align-items:center; gap:6px; padding:7px 8px; cursor:pointer; }

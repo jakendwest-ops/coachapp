@@ -1096,6 +1096,20 @@ async function _buildProgramTemplatePool(templates) {
   }).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 }
 
+// B5 (2026-09-07): the periodization TYPE, as a short label for the phase-header chip. Returns null
+// when a phase has no periodization set, so the chip simply doesn't render (was a full-width "None"
+// slab). The Configure / Generate actions moved to a compact button row below the header.
+function _periodizationLabel(ph) {
+  const c = ph.periodization_config
+  if (ph.periodization_type === 'linear') {
+    return `Linear${c?.startPct != null && c?.endPct != null ? ` ${c.startPct}→${c.endPct}%` : ''}`
+  }
+  if (ph.periodization_type === 'undulating') {
+    return `Undulating${c?.tiers ? ` (${['heavy', 'moderate', 'light'].filter(t => c.tiers[t]?.pct != null).map(t => c.tiers[t].pct + '%').join('/')})` : ''}`
+  }
+  return null
+}
+
 async function openProgram(programId) {
   const el = document.getElementById('main-content')
   log.info('openProgram', 'loading', { programId })
@@ -1136,13 +1150,8 @@ async function openProgram(programId) {
       ${program.description ? `<p style="color:var(--text-muted);font-size:var(--text-lg, 14px)">${escapeHtml(program.description)}</p>` : ''}
       <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:4px">${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} total</p>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn btn-secondary" onclick="showEditProgramModal('${program.id}','${escapeAttr(program.name)}','${escapeAttr((program.description||''))}')">Edit</button>
         ${_assignBtnHtml(program)}
-        <button class="btn btn-secondary" onclick="copyProgramWorkoutsToLibrary('${program.id}')" title="Copy every workout in this program into your reusable Library">Copy workouts to Library</button>
-        ${program.is_personal
-          ? `<button class="btn btn-secondary" onclick="copyProgramToCoaching('${program.id}')" title="Make a coaching copy of this personal program that you can assign to clients">Copy to coaching programs</button>`
-          : (window._soloClientId && currentProfile?.role !== 'solo' ? `<button class="btn btn-secondary" onclick="moveProgramToPersonal('${program.id}')" title="Move this program into your Personal view — it will no longer be assignable to clients">Move to Personal</button>` : '')}
-        <button class="btn btn-danger" onclick="deleteProgram('${program.id}')">Delete</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('program-manage-modal').style.display='flex'">⋯ Manage</button>
       </div>
     </div>
 
@@ -1161,25 +1170,15 @@ async function openProgram(programId) {
                 <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-size:var(--text-base, 13px);font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i + 1}</div>
                 <div style="flex:1">
                   <div style="font-weight:600;font-size:var(--legacy-text-15, 15px)">${escapeHtml(ph.name)}</div>
-                  <div style="font-size:var(--text-md, 12px);color:var(--text-muted)">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}</div>
+                  <div style="font-size:var(--text-md, 12px);color:var(--text-muted)">${ph.duration_weeks} week${ph.duration_weeks !== 1 ? 's' : ''}${(() => { const l = _periodizationLabel(ph); return l ? ` · <span style="font-weight:700;color:var(--text)">${l}</span>` : '' })()}</div>
                 </div>
                 <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditPhaseForm('${program.id}','${ph.id}','${escapeAttr(ph.name)}',${ph.duration_weeks},${ph.order_index})">Edit</button>
                 <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="deletePhase('${program.id}','${ph.id}')">Remove</button>
               </div>
               ${ph.duration_weeks > 1 ? `
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:8px 12px;margin-bottom:10px">
-                <div style="font-size:var(--text-md, 12px)">
-                  <span style="font-weight:600;color:var(--text-muted)">Periodization:</span>
-                  <span style="font-weight:700;margin-left:4px">${ph.periodization_type === 'linear'
-                    ? `Linear${ph.periodization_config?.startPct != null && ph.periodization_config?.endPct != null ? ` (${ph.periodization_config.startPct}→${ph.periodization_config.endPct}%)` : ''}`
-                    : ph.periodization_type === 'undulating'
-                    ? `Undulating${ph.periodization_config?.tiers ? ` (${['heavy','moderate','light'].filter(t=>ph.periodization_config.tiers[t]?.pct != null).map(t=>ph.periodization_config.tiers[t].pct+'%').join('/')})` : ''}`
-                    : 'None'}</span>
-                </div>
-                <div style="display:flex;gap:6px">
-                  <button class="btn-secondary" style="font-size:var(--text-sm, 11px);padding:3px 9px" onclick="showPeriodizationModal('${ph.id}','${program.id}')">Configure</button>
-                  ${ph.periodization_type ? `<button class="btn-primary" style="font-size:var(--text-sm, 11px);padding:3px 9px" onclick="generatePhasePeriodization('${ph.id}','${program.id}')">Generate weeks</button>` : ''}
-                </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                <button class="btn-secondary" style="font-size:var(--text-sm, 11px);padding:4px 10px" onclick="showPeriodizationModal('${ph.id}','${program.id}')">${ph.periodization_type ? 'Edit periodization' : 'Add periodization'}</button>
+                ${ph.periodization_type ? `<button class="btn-primary" style="font-size:var(--text-sm, 11px);padding:4px 10px" onclick="generatePhasePeriodization('${ph.id}','${program.id}')">Generate weeks</button>` : ''}
               </div>` : ''}
               <div id="phase-workouts-${ph.id}"><div style="color:var(--text-muted);font-size:var(--text-md, 12px)">Loading workouts…</div></div>
             </div>
@@ -1228,6 +1227,27 @@ async function openProgram(programId) {
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-secondary" onclick="closeProgramModal()">Cancel</button>
           <button class="btn btn-primary" id="pm-save-btn" onclick="saveProgram('${program.id}')">Save changes</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manage program menu (B1, 2026-09-07) — the secondary actions that used to be a ragged
+         5-button row above "Phases". The one primary (Assign / Add to my plan) stays out here.
+         modal-fullscreen-mobile so the action list sits at the top, clear of the floating
+         mobile view-switcher pill. -->
+    <div id="program-manage-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+      <div class="modal modal-fullscreen-mobile" style="overflow-y:auto">
+        <div class="modal-header">
+          <h2 class="modal-title">Manage program</h2>
+          <button class="btn-icon" onclick="document.getElementById('program-manage-modal').style.display='none'">✕</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-secondary" onclick="document.getElementById('program-manage-modal').style.display='none';showEditProgramModal('${program.id}','${escapeAttr(program.name)}','${escapeAttr((program.description||''))}')">Edit name and description</button>
+          <button class="btn btn-secondary" onclick="copyProgramWorkoutsToLibrary('${program.id}')" title="Copy every workout in this program into your reusable Library">Copy workouts to Library</button>
+          ${program.is_personal
+            ? `<button class="btn btn-secondary" onclick="copyProgramToCoaching('${program.id}')" title="Make a coaching copy you can assign to clients">Copy to coaching programs</button>`
+            : (window._soloClientId && currentProfile?.role !== 'solo' ? `<button class="btn btn-secondary" onclick="moveProgramToPersonal('${program.id}')" title="Move into your Personal view — no longer assignable to clients">Move to Personal</button>` : '')}
+          <button class="btn btn-danger" onclick="deleteProgram('${program.id}')">Delete program</button>
         </div>
       </div>
     </div>`
@@ -2263,7 +2283,7 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
         const multi = daySessions.length > 1
         const canAdd = daySessions.length < 2
         const nextSessionOrder = daySessions.length + 1
-        return `<div class="pwk-day">
+        return `<div class="pwk-day${daySessions.length ? '' : ' is-empty'}">
           <div class="pwk-dow">${label}</div>
           ${daySessions.map(pw => slotHtml(pw, multi)).join('')}
           ${canAdd ? `<button class="pwk-add pwg-add" data-phase="${phase.id}" data-day="${dayNum}" data-session="${nextSessionOrder}" data-week="${weekNum}" onclick="_openWorkoutPicker('${phase.id}',${dayNum},${nextSessionOrder},${weekNum})">+ Add workout…</button>` : ''}
