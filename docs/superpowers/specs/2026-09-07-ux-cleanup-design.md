@@ -219,14 +219,19 @@ its own ledger row.
 
 No open questions remain. Ready to build.
 
-## Sequencing
+## Sequencing / progress
 
-| Commit | Scope | Cache-bust |
-|---|---|---|
-| 1 | Runner — R1–R5 | `app-runner` |
-| 2 | Builder — B1–B5 | `app-programs`, `app-core` (B4), `css` |
-| 3 | Progress — P1–P4 | `app-progress`, `css` |
-| 4 | Dashboards — D2–D4 | `app-dashboard`, `app-core` (D2), `css` |
+| Commit | Scope | Cache-bust | Status |
+|---|---|---|---|
+| 1 | Runner — R1–R5 | `app-runner` | ✅ `1598622` + `885fb0f` (review tweak). Not pushed. |
+| 2 | Builder — B1–B5 | `app-programs`, `app-core` (B4), `css` | ✅ `6190ab1` + `8bcbb92` (review fix). Not pushed. |
+| 3 | Progress — P1–P4 | `app-progress`, `css` | ⬜ next |
+| 4 | Dashboards — D2–D4 | `app-dashboard`, `app-core` (D2), `css` | ⬜ |
 
 Each commit: smoke green → `/feature-audit` + `/mobile-check` → `/multi-agent-review` (diff) → push.
 `/playwright` full suite before the release tag that ships the set.
+
+**Commit 2 review note (2026-09-07):** the 3-agent diff review found the B1–B5 change clean; the
+one item — a `:has()` selector for hiding the mobile view-switcher under a modal — was scoped too
+narrowly (`.app-shell:has` can't see `mountModal`'s body-level overlays). Fixed in `8bcbb92`:
+`body:has(.modal-overlay:not([style*="display:none"])...)`, verified across static + dynamic modals.
