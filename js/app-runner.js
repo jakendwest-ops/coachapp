@@ -484,7 +484,9 @@ function _runnerFocusFirstInput() {
   // first field that still needs a value rather than leaving you to find the row yourself.
   const inputs = document.querySelectorAll('#workout-runner input[type="number"], #workout-runner input[inputmode="numeric"], #workout-runner input[inputmode="decimal"]')
   for (const el of inputs) {
-    if (!el.value) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus(); return }
+    // 'nearest', not 'center': in the pre-first-set state the first field is usually already on
+    // screen, and 'center' would yank it to the middle for no reason.
+    if (!el.value) { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); el.focus(); return }
   }
   inputs[0]?.focus()
 }
