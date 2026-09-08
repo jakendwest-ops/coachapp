@@ -158,6 +158,70 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('#progress-tab-content button:has-text("Progressions")')).toHaveCount(0)
   })
 
+  test('P1-P4 (2026-09-07): range is a select on the toolbar, pill rows scroll, 1RM date/estimate collapse', async ({ page }) => {
+    // renderProgress is async through its sub-renders — returning the promise makes page.evaluate
+    // await the whole chain, so no fixed sleep is needed before the assertions.
+    const render = () => page.evaluate(() => renderProgress(document.getElementById('main-content')))
+
+    // P1 — the trend range is a <select> on the Performance toolbar, shown only for "Per exercise",
+    //      and it drives window._trendState.range.
+    await page.evaluate(() => { window._perfTab = 'Per exercise'; window._progressTab = 'Performance' })
+    await render()
+    await expect(page.locator('#perf-range')).toBeVisible()
+    await expect(page.locator('#trend-range-row')).toHaveCount(0)     // the old pill row is gone
+    await page.selectOption('#perf-range', '3M')
+    expect(await page.evaluate(() => window._trendState.range)).toBe('3M')
+    await page.evaluate(() => { window._perfTab = 'Per session' })
+    await page.evaluate(() => renderPerformance(document.getElementById('progress-tab-content')))
+    await expect(page.locator('#perf-range')).toHaveCount(0)          // not meaningful on Per session
+
+    // P2 — the top Progress tabs are a no-wrap scroll row; the active one is scrolled into view.
+    await page.evaluate(() => { window._progressTab = 'Performance' })
+    await render()
+    const p2 = await page.evaluate(() => {
+      const row = document.querySelector('.chip-row')
+      const active = document.querySelector('.chip-row .chip[aria-selected="true"]')
+      const r = active.getBoundingClientRect()
+      return { nowrap: getComputedStyle(row).flexWrap === 'nowrap', activeText: active.textContent.trim(), inView: r.left >= -1 && r.right <= window.innerWidth + 1 }
+    })
+    expect(p2.nowrap).toBe(true)
+    expect(p2.activeText).toBe('Performance')
+    expect(p2.inView).toBe(true)
+
+    // P4 — a 1RM row's date + estimate controls are hidden until the value input is focused.
+    await page.evaluate(() => { window._progressTab = 'Personal Bests' })
+    await render()
+    await expect(page.locator('#orm-more-0')).toBeHidden()
+    await expect(page.locator('#orm-more-1')).toBeHidden()
+    await page.locator('#orm-0').focus()
+    await expect(page.locator('#orm-more-0')).toBeVisible()
+    await expect(page.locator('#orm-more-1')).toBeHidden()            // only the focused row expands
+    // the hidden date input still carries today's default — which is what saveOneRMGrid reads
+    expect(await page.locator('#orm-date-1').inputValue()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  test('P3 (2026-09-07): Body Weight collapses the goals editor to a one-line summary once both are set', async ({ page }) => {
+    const cid = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id, starting_weight_kg, goal_weight_kg').eq('user_id', currentUser.id)
+      window.__wgPrev = { s: data[0].starting_weight_kg, g: data[0].goal_weight_kg }
+      await db.from('clients').update({ starting_weight_kg: 90, goal_weight_kg: 82 }).eq('id', data[0].id)
+      return data[0].id
+    })
+    try {
+      await page.evaluate(() => { window._progressTab = 'Body Weight' })
+      await page.evaluate(() => renderProgress(document.getElementById('main-content')))
+      await expect(page.getByText(/Start\s+90/).first()).toBeVisible()   // the summary line
+      await expect(page.locator('#wg-editor')).toBeHidden()              // full editor collapsed
+      await page.locator('button:has-text("Edit")').first().click()
+      await expect(page.locator('#wg-editor')).toBeVisible()
+      await expect(page.locator('#wg-starting')).toBeVisible()
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('clients').update({ starting_weight_kg: window.__wgPrev.s, goal_weight_kg: window.__wgPrev.g }).eq('id', id)
+      }, cid)
+    }
+  })
+
   test('Performance > Per exercise search filters the trend-card list without a DB re-fetch (live-filter logic)', async ({ page }) => {
     const result = await page.evaluate(() => {
       window._trendCache = [

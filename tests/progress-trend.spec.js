@@ -255,9 +255,10 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Per exercise'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(1200)
 
-    await expect(page.locator('#trend-range-row')).toBeVisible()
+    // P1 (2026-09-07): the 1M–All range moved from a pill row to a <select> on the Performance toolbar.
+    await expect(page.locator('#perf-range')).toBeVisible()
     await expect(page.getByText(tag + ' Bench', { exact: true })).toBeVisible() // the card header span
-    await page.click('#trend-range-row button[data-range="3M"]') // range switch must not crash
+    await page.selectOption('#perf-range', '3M') // range switch must not crash
     await page.waitForTimeout(300)
 
     // cleanup (own fixture, runs regardless of assertion outcome above via a fresh evaluate)

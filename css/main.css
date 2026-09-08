@@ -836,6 +836,19 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .week-tab:hover:not([aria-selected="true"]) { border-color:var(--accent); color:var(--text); }
 .week-tab:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
+/* Progress-page pill rows (P2, 2026-09-07): one no-wrap row that scrolls sideways rather than
+   wrapping 2+2 at phone width. Shared by the top Progress tabs and the Performance sub-tabs.
+   Same active/idle colours as .week-tab. */
+.chip-row { display:flex; gap:8px; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.chip-row::-webkit-scrollbar { display:none; }
+.chip {
+  flex:0 0 auto; padding:8px 16px; border:none; border-radius:var(--radius-xl, 20px);
+  font-size:var(--text-base, 13px); font-weight:600; cursor:pointer; white-space:nowrap;
+  background:var(--surface-2); color:var(--text-muted);
+}
+.chip[aria-selected="true"] { background:var(--accent); color:white; }
+.chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
 /* Builder: days stack vertically on mobile, flow into columns on a wide screen. */
 .pwk-days { display:flex; flex-direction:column; gap:8px; }
 @media (min-width:768px) {

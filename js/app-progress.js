@@ -144,6 +144,14 @@ function _toggleOneRMEstimate(i) {
   if (!open) document.getElementById(`orm-estw-${i}`)?.focus()
 }
 
+// P4 (2026-09-07): reveal a lift's date + estimate controls once you focus its value input. Stays
+// open for the rest of the render — collapsing on blur would hide the date field the instant you
+// reached for it.
+function _revealOneRMRow(i) {
+  const more = document.getElementById(`orm-more-${i}`)
+  if (more) more.style.display = 'block'
+}
+
 // Writes the estimate straight into the row's own value input, so there is exactly ONE number the
 // Save-all path reads — the estimate is an input aid, never a second source of truth.
 function _applyOneRMEstimate(i) {
@@ -236,10 +244,15 @@ async function renderClient1RMs(clientId, el) {
                re-triggers auto-zoom-on-focus. Same reasoning as every other inline input here. -->
           <input class="field-input" id="orm-${i}" type="number" step="0.5" inputmode="decimal"
                  ${weightInputAttrs(latest ? latest.one_rm_kg : null, orig)} data-orig="${escapeHtml(orig)}" placeholder="—"
+                 onfocus="_revealOneRMRow(${i})"
                  style="width:82px;text-align:center;font-size:var(--text-xl, 16px);flex-shrink:0">
           <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);width:20px;flex-shrink:0">${escapeHtml(unit)}</span>
           ${latest ? `<button onclick="delete1RM('${latest.id}','${clientId}')" title="Delete" style="width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:var(--text-lg, 14px);line-height:1;cursor:pointer;color:var(--text-muted)">×</button>` : `<span style="width:26px;flex-shrink:0"></span>`}
         </div>
+        <!-- P4 (2026-09-07): date + estimate crowd the row at 390px and are only needed while you're
+             actually entering a value — hidden until the value input is focused. The date input
+             keeps its default (today) even while hidden, which is what saveOneRMGrid reads. -->
+        <div id="orm-more-${i}" style="display:none">
         <div style="display:flex;align-items:center;gap:8px;padding:0 0 9px 0;margin-top:-4px;font-size:var(--text-sm, 11px);flex-wrap:wrap">
           <span style="color:var(--text-muted)">Dated</span>
           <input class="field-input" id="orm-date-${i}" type="date" value="${escapeHtml(today)}"
@@ -254,6 +267,7 @@ async function renderClient1RMs(clientId, el) {
           <input class="field-input" id="orm-estr-${i}" type="number" inputmode="numeric" placeholder="reps"
                  oninput="_applyOneRMEstimate(${i})" style="width:64px;text-align:center;font-size:var(--text-xl, 16px);padding:3px 6px">
           <span id="orm-estout-${i}" style="color:var(--text-muted);font-weight:600"></span>
+        </div>
         </div>
         ${history.length ? `
         <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 0 9px 0;margin-top:-2px">
@@ -1379,17 +1393,16 @@ async function renderProgress(el) {
 
   el.innerHTML = `
     <div class="page-header"><h1 class="page-title">My Progress</h1></div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+    <div class="chip-row" style="margin-bottom:20px">
       ${tabs.map(t => `
-        <button onclick="window._progressTab='${t}';renderProgress(document.getElementById('main-content'))"
-          style="padding:8px 16px;border:none;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;
-                 background:${t===activeTab?'var(--accent)':'var(--surface-2)'};
-                 color:${t===activeTab?'#fff':'var(--text-muted)'}">
-          ${t}
-        </button>`).join('')}
+        <button class="chip" aria-selected="${t === activeTab}"
+          onclick="window._progressTab='${t}';renderProgress(document.getElementById('main-content'))">${t}</button>`).join('')}
     </div>
     <div id="progress-tab-content"><div class="loading-state">Coming soon</div></div>
   `
+  // A no-wrap scroll row can leave the active tab off-screen (e.g. Performance, last of four) — pull
+  // it into view. block:'nearest' keeps this from nudging the page vertically.
+  el.querySelector('.chip-row .chip[aria-selected="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' })
 
   if (activeTab === 'Body Weight')    await renderProgressWeight(document.getElementById('progress-tab-content'))
   if (activeTab === 'Benchmarks')     await renderProgressPBs(document.getElementById('progress-tab-content'))
@@ -1428,18 +1441,29 @@ async function renderPerformance(el) {
   let subTab = window._perfTab || 'Per exercise'
   if (['1RMs', 'Progressions', 'Recent sessions'].includes(subTab)) window._perfTab = subTab = subTab === 'Recent sessions' ? 'Per session' : 'Per exercise'
 
+  // The trend range (1M–All) applies ONLY to "Per exercise" — Per session / Per program don't read
+  // window._trendState.range. It used to be its own pill ROW inside renderProgressStrength; P1
+  // (2026-09-07) folds it into this toolbar as a compact <select> so the Performance tab is one
+  // control row + a search box, not three stacked pill rows.
+  window._trendState = window._trendState || { range: 'All', metricByEx: {} }
+  const rangeSelect = subTab === 'Per exercise'
+    ? `<select class="field-input" id="perf-range" onchange="_setTrendRange(this.value)" style="width:auto;flex-shrink:0;padding:6px 28px 6px 10px">
+         ${Object.keys(_TREND_RANGES).map(r => `<option value="${r}" ${r === window._trendState.range ? 'selected' : ''}>${r}</option>`).join('')}
+       </select>`
+    : ''
+
   el.innerHTML = `
-    <div style="display:flex;gap:6px;margin-bottom:16px">
-      ${['Per exercise', 'Per session', 'Per program'].map(t => `
-        <button onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))"
-          style="padding:6px 16px;border:none;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;
-                 background:${t===subTab?'var(--accent)':'var(--surface-2)'};
-                 color:${t===subTab?'#fff':'var(--text-muted)'}">
-          ${t}
-        </button>`).join('')}
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <div class="chip-row" style="flex:1">
+        ${['Per exercise', 'Per session', 'Per program'].map(t => `
+          <button class="chip" aria-selected="${t === subTab}"
+            onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))">${t}</button>`).join('')}
+      </div>
+      ${rangeSelect}
     </div>
     <div id="perf-sub-content"></div>
   `
+  el.querySelector('.chip-row .chip[aria-selected="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' })
 
   const subEl = document.getElementById('perf-sub-content')
   if (subTab === 'Per session') {
@@ -1697,10 +1721,11 @@ async function renderProgressWeight(el) {
         <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
       </div>
     </div>`
-  const goalsCard = `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:16px">
-      <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
-      <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
+  // P3 (2026-09-07): once both goals are set, this leads with the DATA (tiles + chart), not the
+  // editor. The card collapses to a one-line "Start X → Goal Y · Edit" summary; the full editor is
+  // still there, hidden, revealed by the Edit button. When either value is missing it stays a full
+  // card — then it's a genuine setup prompt.
+  const goalsFields = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
           <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Starting weight (${window._unitPrefs.weight})</label>
@@ -1712,8 +1737,21 @@ async function renderProgressWeight(el) {
         </div>
       </div>
       <p id="wg-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
-      <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>
-    </div>`
+      <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>`
+  const goalsCard = (startingWeightKg != null && goalWeightKg != null)
+    ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+         <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Start <span style="font-weight:700;color:var(--text)">${fmtWeight(startingWeightKg, { spaced: true })}</span> &rarr; Goal <span style="font-weight:700;color:var(--text)">${fmtWeight(goalWeightKg, { spaced: true })}</span></span>
+         <button onclick="this.parentElement.style.display='none';document.getElementById('wg-editor').style.display='block'" style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--accent);background:none;border:none;cursor:pointer;padding:4px 6px">Edit</button>
+       </div>
+       <div id="wg-editor" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:16px">
+         <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:14px">Weight goals</div>
+         ${goalsFields}
+       </div>`
+    : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:16px">
+         <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
+         <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
+         ${goalsFields}
+       </div>`
   if (!logs?.length) { el.innerHTML = addWeightBtn + goalsCard + '<div class="empty-state"><p>No weight logs yet. Tap + Log weight to add your first entry.</p></div>'; return }
   const latest = logs[logs.length - 1]
   const first  = logs[0]
@@ -2239,15 +2277,9 @@ async function renderProgressStrength(el) {
   if (!exercises.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>'; return }
   window._trendCache = exercises
   window._trendState = window._trendState || { range: 'All', metricByEx: {} }
+  // The 1M–All range selector moved to renderPerformance's toolbar (a <select>) — P1, 2026-09-07.
   el.innerHTML = `
     <input class="field-input" id="perf-ex-search" placeholder="Search exercises…" style="margin-bottom:12px" autocomplete="off" oninput="_renderPerfExerciseList(this.value)">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px" id="trend-range-row">
-      ${Object.keys(_TREND_RANGES).map(r => `
-        <button onclick="_setTrendRange('${r}')" data-range="${r}"
-          style="padding:5px 12px;border:none;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;
-                 background:${r===window._trendState.range?'var(--accent)':'var(--surface-2)'};
-                 color:${r===window._trendState.range?'#fff':'var(--text-muted)'}">${r}</button>`).join('')}
-    </div>
     <div id="perf-ex-list"></div>`
   _renderPerfExerciseList('')
 }
