@@ -153,10 +153,11 @@ test.describe('Ledger fixes 2026-07-23', () => {
   test('Discard confirms before destroying real work, but the shared teardown itself stays silent', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(() => ({
-      wrapperConfirms: /if \(!confirm\(/.test((typeof confirmDiscardRunner === 'function' ? confirmDiscardRunner : () => {}).toString()),
+      // window.confirm() was replaced by the awaited confirmDialog() DOM modal on 2026-09-08.
+      wrapperConfirms: /!\(?\s*await confirmDialog\(|!confirm\(/.test((typeof confirmDiscardRunner === 'function' ? confirmDiscardRunner : () => {}).toString()),
       // the shared teardown must NOT confirm — confirmEndRunner's empty-session branch and the
       // post-save cleanup both call it directly and must never see a prompt
-      teardownIsSilent: !/confirm\(/.test(discardRunner.toString()),
+      teardownIsSilent: !/\bconfirm(Dialog)?\(/.test(discardRunner.toString()),
       // and the actual button must go through the confirming wrapper, not the bare function
       buttonUsesWrapper: /onclick="confirmDiscardRunner\(\)"/.test(showRunnerFinish.toString()),
     }))

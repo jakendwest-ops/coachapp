@@ -571,13 +571,25 @@ function mountModal(node) {
 // 2026-09-08). This renders the same .modal-overlay every other dialog here uses and resolves
 // true/false. `danger:true` for destructive actions colours the confirm button red.
 //
-// Backdrop tap and the ✕/Cancel button all resolve false — the safe default for a guard.
+// Backdrop tap and the ✕/Cancel button all resolve false — the safe default for a guard. So does the
+// overlay being torn down by anything else (a second confirmDialog, navigate()'s .modal-overlay
+// sweep): otherwise the awaiting caller hangs forever (review, 2026-09-08).
 function confirmDialog(message, { title = 'Please confirm', confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false } = {}) {
+  // A confirm already on screen means a prior caller is still awaiting — resolve it false first so its
+  // frame unwinds rather than leaking.
+  document.getElementById('confirm-dialog')?.dispatchEvent(new CustomEvent('confirm-superseded'))
   return new Promise(resolve => {
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.id = 'confirm-dialog'
-    const settle = (val) => { overlay.remove(); resolve(val) }
+    // Sits above the runner's own z-index:300 fullscreen layer when one is up — same fix as
+    // _openQuickPrefsPopover / the runner 1RM sheet. Without it the discard confirm renders behind
+    // the opaque finish screen and is unclickable.
+    if (document.getElementById('workout-runner')) overlay.style.zIndex = '1000'
+    let done = false
+    const settle = (val) => { if (done) return; done = true; obs.disconnect(); overlay.remove(); resolve(val) }
+    const obs = new MutationObserver(() => { if (!overlay.isConnected) settle(false) })
+    overlay.addEventListener('confirm-superseded', () => settle(false))
     overlay.addEventListener('click', e => { if (e.target === overlay) settle(false) })
     overlay.innerHTML = `
       <div class="modal" style="max-width:400px">
@@ -595,6 +607,7 @@ function confirmDialog(message, { title = 'Please confirm', confirmLabel = 'Conf
       b.addEventListener('click', () => settle(b.dataset.confirm === 'yes'))
     })
     mountModal(overlay)
+    obs.observe(document.body, { childList: true })
     overlay.querySelector('[data-confirm="yes"]').focus()
   })
 }

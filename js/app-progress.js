@@ -983,10 +983,13 @@ async function renderClientWeight(clientId, el) {
 }
 
 async function sendClientInvite(clientId, email) {
+  // Capture the button BEFORE the await: confirmDialog yields, so by the time this resumes
+  // `event` is the confirm-dialog's own click (or cleared), not this button's. (Review, 2026-09-08.)
+  const btn = event?.target
   if (!(await confirmDialog(`Send invite email to ${email}?`, { title: 'Send invite?', confirmLabel: 'Send invite' }))) return
 
   log.info('sendClientInvite', 'sending invite', { clientId })
-  const btn = event.target
+  if (!btn) return
   btn.disabled = true
   btn.textContent = 'Sending…'
 
@@ -3060,6 +3063,9 @@ async function saveSettingsProfile() {
 let _soloInviteRevertTimer = null
 
 async function inviteSoloUser() {
+  // Before the await — see sendClientInvite. confirmDialog yields, so `event` afterwards is the
+  // dialog's click, not this button's. (Review, 2026-09-08.)
+  const btn     = event?.target
   const nameEl  = document.getElementById('solo-invite-name')
   const emailEl = document.getElementById('solo-invite-email')
   const msg     = document.getElementById('solo-invite-msg')
@@ -3070,7 +3076,7 @@ async function inviteSoloUser() {
   if (msg) msg.textContent = ''
 
   log.info('inviteSoloUser', 'sending solo invite')
-  const btn = event.target
+  if (!btn) return
   clearTimeout(_soloInviteRevertTimer)
   btn.disabled = true
   btn.textContent = 'Sending…'

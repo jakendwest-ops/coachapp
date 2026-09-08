@@ -2433,7 +2433,9 @@ async function duplicatePhaseWeekTimes(phaseId, sourceWeek, n) {
     made++; lastWeek = r.targetWeek; clientFails += r.clientCopyFailures || 0
     if (r.extendedTo) extendedTo = r.extendedTo
   }
-  if (window._openProgramId) openProgram(window._openProgramId)
+  // openProgram only when the phase grew (its duration + the "N weeks total" header changed) —
+  // otherwise the lighter grid reload, same split duplicatePhaseWeek uses for its own single copy.
+  if (extendedTo && window._openProgramId) openProgram(window._openProgramId)
   else loadAllPhaseWorkouts([{ id: phaseId }])
   if (!made) { showToast('Could not duplicate that week', 'error'); return }
   const range = made === 1 ? `Week ${lastWeek}` : `Weeks ${lastWeek - made + 1}–${lastWeek}`
