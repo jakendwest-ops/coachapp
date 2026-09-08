@@ -223,10 +223,10 @@ No open questions remain. Ready to build.
 
 | Commit | Scope | Cache-bust | Status |
 |---|---|---|---|
-| 1 | Runner — R1–R5 | `app-runner` | ✅ `1598622` + `885fb0f` (review tweak). Not pushed. |
-| 2 | Builder — B1–B5 | `app-programs`, `app-core` (B4), `css` | ✅ `6190ab1` + `8bcbb92` (review fix). Not pushed. |
-| 3 | Progress — P1–P4 | `app-progress`, `css` | ⬜ next |
-| 4 | Dashboards — D2–D4 | `app-dashboard`, `app-core` (D2), `css` | ⬜ |
+| 1 | Runner — R1–R5 | `app-runner` | ✅ `1598622` + `885fb0f`. Pushed (`7de8546`), CI green. Not tagged/live. |
+| 2 | Builder — B1–B5 | `app-programs`, `app-core` (B4), `css` | ✅ `6190ab1` + `8bcbb92`. Pushed, CI green. Not tagged/live. |
+| 3 | Progress — P1–P4 | `app-progress`, `css` | ✅ `253398e`. checks.sh green, 3-agent review clean. Not pushed. |
+| 4 | Dashboards — D2–D4 | `app-dashboard`, `app-core` (D2), `css` | ⬜ next |
 
 Each commit: smoke green → `/feature-audit` + `/mobile-check` → `/multi-agent-review` (diff) → push.
 `/playwright` full suite before the release tag that ships the set.
