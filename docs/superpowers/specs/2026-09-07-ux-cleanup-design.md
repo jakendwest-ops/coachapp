@@ -226,10 +226,15 @@ No open questions remain. Ready to build.
 | 1 | Runner — R1–R5 | `app-runner` | ✅ `1598622` + `885fb0f`. Pushed (`7de8546`), CI green. Not tagged/live. |
 | 2 | Builder — B1–B5 | `app-programs`, `app-core` (B4), `css` | ✅ `6190ab1` + `8bcbb92`. Pushed, CI green. Not tagged/live. |
 | 3 | Progress — P1–P4 | `app-progress`, `css` | ✅ `253398e`. checks.sh green, 3-agent review clean. Not pushed. |
-| 4 | Dashboards — D2–D4 | `app-dashboard`, `app-core` (D2), `app-workouts` (D3), `css` | 🔨 built — `app-core` v29, `app-dashboard` v19, `app-workouts` v101, `css` v16. checks.sh green. Awaiting review + commit. |
+| 4 | Dashboards — D2–D4 | `app-dashboard`, `app-core` (D2), `app-workouts` (D3), `css` | ✅ `8cba8e8`. `app-core` v29, `app-dashboard` v19, `app-workouts` v101, `css` v16. checks.sh green, mobile-checked 375+320. Not pushed. |
 
 Each commit: smoke green → `/feature-audit` + `/mobile-check` → `/multi-agent-review` (diff) → push.
 `/playwright` full suite before the release tag that ships the set.
+
+**All four areas built.** Commits 3 (`253398e`) and 4 (`8cba8e8`) are local — not on `origin/master`.
+`/multi-agent-review` (diff) still owed for commit 4 before the push; the inline A/B/C review (in the
+build notes below) found it clean. Full `npm test` + `docs/releases/v2026.09.3.md` + `/deploy-check`
+still owed before the release tag that ships the set.
 
 **Commit 2 review note (2026-09-07):** the 3-agent diff review found the B1–B5 change clean; the
 one item — a `:has()` selector for hiding the mobile view-switcher under a modal — was scoped too
