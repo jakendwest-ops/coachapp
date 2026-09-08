@@ -570,6 +570,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
 
     await expect(page.locator('button:has-text("Duplicate week")')).toBeVisible({ timeout: 4000 })
     await page.click('button:has-text("Duplicate week")')
+    await page.click('#dup-week-modal button:has-text("1×")')
     await expect(page.locator('.week-tab[data-week="2"]')).toBeVisible({ timeout: 8000 })
 
     const weeks = await page.evaluate(async (phaseId) => {
@@ -952,6 +953,7 @@ test.describe('Copy program workouts to Library + duplicate-week auto-extend (20
       const dupBtn = page.locator('button:has-text("Duplicate week")').first()
       await expect(dupBtn).toBeVisible({ timeout: 8000 })
       await dupBtn.click()
+      await page.click('#dup-week-modal button:has-text("1×")')
       await expect(page.locator('text=phase extended to 2 weeks')).toBeVisible({ timeout: 8000 })
 
       const after = await page.evaluate(async ({ phaseId }) => {
@@ -966,6 +968,41 @@ test.describe('Copy program workouts to Library + duplicate-week auto-extend (20
         await db.from('programs').delete().eq('id', programId)
         await db.from('workout_templates').delete().eq('id', templateId)
       }, setup)
+    }
+  })
+
+  test('"Duplicate week" ×N makes N copies of the source week in one go (2026-09-08)', async ({ page }) => {
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] DupN Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] DupN Session' }).select('id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 })
+      return { programId: prog.id, phaseId: phase.id, templateId: tmpl.id }
+    })
+    try {
+      await page.evaluate(async (programId) => { await openProgram(programId) }, setup.programId)
+      await page.waitForSelector('h1:has-text("[E2E] DupN Program")', { timeout: 8000 })
+
+      await page.locator('button:has-text("Duplicate week")').first().click()
+      await expect(page.locator('#dup-week-modal')).toBeVisible()
+      await page.click('#dup-week-modal button:has-text("3×")')
+      await expect(page.locator('.week-tab[data-week="4"]')).toBeVisible({ timeout: 10000 })
+
+      const after = await page.evaluate(async ({ phaseId }) => {
+        const { data: ph } = await db.from('program_phases').select('duration_weeks').eq('id', phaseId).single()
+        const { data: pws } = await db.from('program_phase_workouts').select('week_number, template_id').eq('phase_id', phaseId)
+        return { durationWeeks: ph.duration_weeks, weeks: [...new Set((pws || []).map(p => p.week_number))].sort((a, b) => a - b), tids: [...new Set((pws || []).map(p => p.template_id))] }
+      }, setup)
+      expect(after.durationWeeks).toBe(4)                   // 1 + 3 copies
+      expect(after.weeks).toEqual([1, 2, 3, 4])
+      expect(after.tids).toEqual([setup.templateId])        // every copy still points at the source template
+    } finally {
+      const cleaned = await page.evaluate(async ({ programId, templateId }) => {
+        const p = await db.from('programs').delete().eq('id', programId).select('id')
+        const t = await db.from('workout_templates').delete().eq('id', templateId).select('id')
+        return { programs: p.data?.length ?? 0, templates: t.data?.length ?? 0 }
+      }, setup)
+      expect(cleaned.programs, '[E2E] DupN Program row must be gone after the test').toBe(1)
     }
   })
 

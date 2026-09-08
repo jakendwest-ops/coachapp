@@ -2274,7 +2274,7 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
 
   return `
     <div class="pwk-weekhead">
-      ${sessions.length ? `<button class="btn-secondary" style="font-size:var(--text-sm, 11px);padding:3px 9px" onclick="duplicatePhaseWeek('${phase.id}',${weekNum})">Duplicate week</button>` : ''}
+      ${sessions.length ? `<button class="btn-secondary" style="font-size:var(--text-sm, 11px);padding:3px 9px" onclick="showDuplicateWeekModal('${phase.id}',${weekNum})">Duplicate week</button>` : ''}
       ${sessions.length ? `<button class="btn-secondary" style="font-size:var(--text-sm, 11px);padding:3px 9px;color:var(--danger, #ef4444)" onclick="deletePhaseWeek('${phase.id}',${weekNum})">Delete week</button>` : ''}
     </div>
     <div class="pwk-days">
@@ -2314,13 +2314,15 @@ function _editPhaseWorkout(templateId, phaseWorkoutId) {
 // duration_weeks) as real, independent program_phase_workouts rows — not a display-only repeat.
 // Cheap by design: new rows point at the SAME template_id as the source week; they only become
 // independent workouts once someone actually edits one (see _resolveEditableTemplateId in app-workouts.js).
-async function duplicatePhaseWeek(phaseId, sourceWeek) {
+// `quiet` suppresses the success toast and the re-render — set by duplicatePhaseWeekTimes for every
+// iteration so an N-copy run shows ONE toast and repaints ONCE at the end, not N times.
+async function duplicatePhaseWeek(phaseId, sourceWeek, { quiet = false } = {}) {
   // window._openProgramId is passed as the expected program because this function later keys its
   // client-copy fan-out on it (the client_programs read and the cpw inserts). Verifying the phase and
   // then writing against an unasserted second id is the exact shape these helpers exist to close — it
   // does not stop being that shape because the second id came from window state instead of a
   // parameter. A null _openProgramId skips the assertion, so this cannot refuse a legitimate user.
-  if (!(await _verifyPhaseOwnership('duplicatePhaseWeek', phaseId, window._openProgramId || null))) { showToast('Could not duplicate that week', 'error'); return }
+  if (!(await _verifyPhaseOwnership('duplicatePhaseWeek', phaseId, window._openProgramId || null))) { showToast('Could not duplicate that week', 'error'); return false }
   let clientCopyFailures = 0
   const phase = (window._openProgramPhases || []).find(p => p.id === phaseId)
   const durationWeeks = phase?.duration_weeks || 1
@@ -2330,14 +2332,14 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
   const targetWeek = maxWeek + 1
 
   const { data: sourceRows, error } = await db.from('program_phase_workouts').select('*').eq('phase_id', phaseId).eq('week_number', sourceWeek)
-  if (error || !sourceRows?.length) { showToast('Could not load that week', 'error'); return }
+  if (error || !sourceRows?.length) { showToast('Could not load that week', 'error'); return false }
 
   const inserts = sourceRows.map(r => ({
     phase_id: phaseId, day_of_week: r.day_of_week, day_label: r.day_label,
     session_order: r.session_order, template_id: r.template_id, week_number: targetWeek, tier: r.tier || null
   }))
   const { data: insertedPws, error: insErr } = await db.from('program_phase_workouts').insert(inserts).select('id, day_of_week, session_order')
-  if (insErr) { log.error('duplicatePhaseWeek', 'insert failed', insErr); showToast('Could not duplicate week', 'error'); return }
+  if (insErr) { log.error('duplicatePhaseWeek', 'insert failed', insErr); showToast('Could not duplicate week', 'error'); return false }
 
   // "Repeat this week" should just work. This used to bail with "no more weeks to fill" when the
   // phase was already full (and the button was hidden outright on a 1-week phase), forcing the user
@@ -2398,20 +2400,67 @@ async function duplicatePhaseWeek(phaseId, sourceWeek) {
   // The coach's own master week DID save, so this is a partial success, not a failure — it reports as
   // such and then falls through to exactly the same re-render below. Returning early here instead would
   // skip the extended-phase redraw and leave the header showing the old week count.
-  if (clientCopyFailures) {
-    showToast(`Week ${sourceWeek} duplicated, but ${clientCopyFailures} client plan${clientCopyFailures === 1 ? '' : 's'} did not update — reassign the program`, 'error')
-  } else {
-    showToast(extendedTo
-      ? `Week ${sourceWeek} duplicated to Week ${targetWeek} — phase extended to ${extendedTo} week${extendedTo === 1 ? '' : 's'}`
-      : `Week ${sourceWeek} duplicated to Week ${targetWeek}`, 'success')
-  }
-  // Full re-render (not just loadAllPhaseWorkouts) — when the phase was extended, its duration and
-  // the program's "N weeks total" header both changed, and only openProgram redraws those.
   // Land on the week we just created (the tab render reads this on reload).
   window._builderActiveWeek = window._builderActiveWeek || {}
   window._builderActiveWeek[phaseId] = targetWeek
-  if (extendedTo && window._openProgramId) openProgram(window._openProgramId)
+
+  if (!quiet) {
+    if (clientCopyFailures) {
+      showToast(`Week ${sourceWeek} duplicated, but ${clientCopyFailures} client plan${clientCopyFailures === 1 ? '' : 's'} did not update — reassign the program`, 'error')
+    } else {
+      showToast(extendedTo
+        ? `Week ${sourceWeek} duplicated to Week ${targetWeek} — phase extended to ${extendedTo} week${extendedTo === 1 ? '' : 's'}`
+        : `Week ${sourceWeek} duplicated to Week ${targetWeek}`, 'success')
+    }
+    // Full re-render (not just loadAllPhaseWorkouts) — when the phase was extended, its duration and
+    // the program's "N weeks total" header both changed, and only openProgram redraws those.
+    if (extendedTo && window._openProgramId) openProgram(window._openProgramId)
+    else loadAllPhaseWorkouts([{ id: phaseId }])
+  }
+  return { ok: true, targetWeek, extendedTo, clientCopyFailures }
+}
+
+// "Duplicate week ×N" (Jake, 2026-09-08 — "reduce the amount of clicks"). Loops the single-week
+// duplicate quietly and then repaints + toasts once. Each copy is taken from the SAME source week,
+// not from the previous copy.
+async function duplicatePhaseWeekTimes(phaseId, sourceWeek, n) {
+  closeModal('dup-week-modal')
+  n = Math.max(1, Math.min(12, parseInt(n, 10) || 1))
+  let made = 0, lastWeek = null, clientFails = 0, extendedTo = null
+  for (let i = 0; i < n; i++) {
+    const r = await duplicatePhaseWeek(phaseId, sourceWeek, { quiet: true })
+    if (!r || !r.ok) break
+    made++; lastWeek = r.targetWeek; clientFails += r.clientCopyFailures || 0
+    if (r.extendedTo) extendedTo = r.extendedTo
+  }
+  if (window._openProgramId) openProgram(window._openProgramId)
   else loadAllPhaseWorkouts([{ id: phaseId }])
+  if (!made) { showToast('Could not duplicate that week', 'error'); return }
+  const range = made === 1 ? `Week ${lastWeek}` : `Weeks ${lastWeek - made + 1}–${lastWeek}`
+  const ext = extendedTo ? ` — phase extended to ${extendedTo} weeks` : ''
+  if (clientFails) showToast(`${range} added, but ${clientFails} client plan${clientFails === 1 ? '' : 's'} did not fully update — reassign the program`, 'error')
+  else if (made < n) showToast(`Added ${made} of ${n} copies (${range}) — stopped early`, 'warn')
+  else showToast(`Week ${sourceWeek} duplicated ${made === 1 ? '' : made + '× '}→ ${range}${ext}`, 'success')
+}
+guardReentry('duplicatePhaseWeekTimes')
+
+// The little "how many copies?" sheet the Duplicate-week button opens.
+function showDuplicateWeekModal(phaseId, sourceWeek) {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'dup-week-modal'
+  overlay.onclick = e => { if (e.target === overlay) closeModal('dup-week-modal') }
+  const chip = (c) => `<button class="btn btn-secondary" style="flex:1;min-height:44px" onclick="duplicatePhaseWeekTimes('${phaseId}',${sourceWeek},${c})">${c}×</button>`
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:340px">
+      <div class="modal-header">
+        <h2 class="modal-title">Duplicate Week ${sourceWeek}</h2>
+        <button class="modal-close" onclick="closeModal('dup-week-modal')">✕</button>
+      </div>
+      <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:0 0 14px">Adds copies of Week ${sourceWeek} to the end of the phase, extending it as needed.</p>
+      <div style="display:flex;gap:8px">${[1, 2, 3, 4].map(chip).join('')}</div>
+    </div>`
+  mountModal(overlay)
 }
 guardReentry('duplicatePhaseWeek')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
