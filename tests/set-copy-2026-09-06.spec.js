@@ -42,6 +42,26 @@ test.describe('Set editor: one tap to repeat a set (2026-09-06)', () => {
     expect(r.fnGone, 'copyPrevTemplateSet had exactly one caller (that button) — dead code once it goes').toBe(true)
   })
 
+  test('the two add-set buttons read as buttons, not text links (2026-09-08)', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(`(() => {
+      ${MOUNT}
+      window._templateSets = [{ effortType: 'rpe' }]
+      renderTemplateSets('att-sets-container', 'weight_reps')
+      const btns = [...document.getElementById('att-sets-container').querySelectorAll('button')]
+        .filter(b => /Copy previous set|Add new set/.test(b.textContent))
+      return btns.map(b => {
+        const cs = getComputedStyle(b)
+        return { borderStyle: cs.borderTopStyle, borderWidth: cs.borderTopWidth }
+      })
+    })()`)
+    expect(r.length, 'both bottom buttons render').toBe(2)
+    for (const b of r) {
+      expect(b.borderStyle, 'a real outline button, not border:none like the old text link').not.toBe('none')
+      expect(parseFloat(b.borderWidth)).toBeGreaterThan(0)
+    }
+  })
+
   test('"Copy previous set" adds a row already carrying the previous row\'s numbers', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(`(() => {

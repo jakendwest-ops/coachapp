@@ -435,6 +435,35 @@ test.describe('Workout runner (client)', () => {
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('INPUT')
   })
 
+  test('runner polish (2026-09-08): reps tally is hidden until a set is logged; rest chip names the exercise clearly', async ({ page }) => {
+    await wk.start()
+    await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
+
+    // #2 — "This exercise: 0 reps · last time N" is noise before you've started. Hidden at 0,
+    // appears once real reps are logged.
+    const tally = await page.evaluate(() => ({
+      atZero: _renderRepsTallyHtml({ tableRows: [], loggedSets: [] }),
+      withReps: _renderRepsTallyHtml({ loggedSets: [{ reps: 5 }, { reps: 4 }] }),
+    }))
+    expect(tally.atZero, 'reps tally must be empty before any set is logged').toBe('')
+    expect(tally.withReps).toContain('9 reps')
+
+    // #1 — the cross-exercise rest chip names the exercise it belongs to without the ambiguous
+    // "Resting <name>" phrasing.
+    const chipText = await page.evaluate(() => {
+      if (!_runner || _runner.exercises.length < 2) return null
+      _runner._restForExIdx = 0
+      _runner.restRemaining = 45
+      _runner.exIdx = 1
+      renderRunner()
+      return document.querySelector('#workout-runner [id="wr-rest-chip-countdown"]')?.parentElement?.textContent?.trim() || ''
+    })
+    if (chipText !== null) {
+      expect(chipText).toContain('Rest for')
+      expect(chipText).not.toContain('Resting ')
+    }
+  })
+
   test('ticking a set with no reps entered warns instead of silently doing nothing (2026-07-11)', async ({ page }) => {
     // Rows no longer pre-fill, so an untouched row is empty and this guard is hit routinely rather
     // than never — a silent no-op would read as a broken button to someone mid-set.

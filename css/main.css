@@ -908,13 +908,29 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
   min-height: 44px;
   display: flex;
   align-items: center;
-  font-size: 12px;
+  justify-content: space-between;
+  font-size: var(--text-md, 12px);
   font-weight: 700;
   color: var(--accent);
   user-select: none;
 }
 .ts-more > summary::-webkit-details-marker { display: none; }   /* Safari keeps its own triangle */
 .ts-more > summary::marker { content: ''; }
+/* Disclosure chevron — every native marker is stripped above, so "+ More targets" otherwise reads
+   as an add-button, not something that expands (Jake, 2026-09-08). Border-drawn so it costs the
+   style-literal ratchet nothing. */
+.ts-more > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  margin-left: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translateY(-1px);
+  transition: transform 0.15s ease;
+}
+.ts-more[open] > summary::after { transform: rotate(-135deg) translateY(1px); }
 .ts-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .ts-more[open] > summary { border-bottom: 1px solid var(--border); }
 

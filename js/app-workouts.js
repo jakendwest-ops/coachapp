@@ -2103,7 +2103,7 @@ function addTemplateSet (containerId, tid, mode) {
 }
 
 function _addSetBtn (containerId, tid, mode, label) {
-  return `<button type="button" onclick="addTemplateSet('${containerId}','${tid}','${mode}')" style="font-size:var(--text-base, 13px);color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;padding:4px 0">${label}</button>`
+  return `<button type="button" onclick="addTemplateSet('${containerId}','${tid}','${mode}')" style="min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 12px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">${label}</button>`
 }
 
 // runnerCtx = { mode: 'add'|'swap' } — set when opened from the workout runner's

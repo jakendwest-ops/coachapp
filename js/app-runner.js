@@ -531,7 +531,9 @@ function _previousRepsTotal(ex) {
 function _renderRepsTallyHtml(ex) {
   const curTotal = _currentRepsTotal(ex)
   const prevTotal = _previousRepsTotal(ex)
-  if (!curTotal && prevTotal == null) return ''
+  // Only once at least one set is logged. "0 reps · last time 21" before you've started is noise —
+  // it's a "beating last session?" gauge, and there's nothing to gauge yet (Jake, 2026-09-08).
+  if (!curTotal) return ''
   const beat = prevTotal != null && curTotal > prevTotal
   return `<div style="margin-top:8px;padding:8px 10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);display:flex;justify-content:space-between;align-items:center">
     <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">This exercise</span>
@@ -863,7 +865,7 @@ function renderRunner() {
         ${_runner.restRemaining != null && _runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx ? `
         <div onclick="runnerJumpTo(${_runner._restForExIdx})" style="display:flex;align-items:center;gap:8px;margin-top:8px;min-height:44px;padding:10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);border:1px solid var(--accent);cursor:pointer;box-sizing:border-box">
           <span id="wr-rest-chip-countdown" style="font-size:var(--text-base, 13px);font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;flex-shrink:0">${_runner._restPendingFire ? 'Done' : fmtRestCountdown(_runner.restRemaining)}</span>
-          <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_runner._restPendingFire ? 'Rest done — tap to continue' : 'Resting ' + escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '') + ' — tap to return'}</span>
+          <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_runner._restPendingFire ? 'Rest done — tap to go back' : 'Rest for ' + escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '') + ' — tap to go back'}</span>
         </div>` : ''}
         <div style="display:flex;gap:8px;margin-top:10px">
           <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="flex:1;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 10px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">⇄ Swap exercise</button>
@@ -2942,8 +2944,8 @@ function renderLogExercises() {
           </div>
           ${setsHtml}
           <div style="display:flex;gap:8px;margin-top:5px;flex-wrap:wrap">
-            <button onclick="addLogSet(${bi},'copy')" style="font-size:var(--text-md, 12px);color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600">Copy previous set</button>
-            <button onclick="addLogSet(${bi},'blank')" style="font-size:var(--text-md, 12px);color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600">+ Add new set</button>
+            <button onclick="addLogSet(${bi},'copy')" style="min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 12px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">Copy previous set</button>
+            <button onclick="addLogSet(${bi},'blank')" style="min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 12px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">+ Add new set</button>
           </div>
         </div>
       </div>

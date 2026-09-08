@@ -107,4 +107,37 @@ test.describe('Builder metric_type picker — save persistence', () => {
     expect(r.legacyInput).toBe(true)            // legacy paceKm still editable/clearable
     expect(r.legacyAutoOpen).toBe(true)         // and surfaced, not buried
   })
+
+  // 2026-09-08 — every native disclosure marker is stripped in CSS, so "+ More targets" read as an
+  // add-button. A CSS ::after chevron now signals it expands, and rotates on open.
+  test('"+ More targets" shows a disclosure chevron that rotates when open', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      window._templateSets = [{ effortType: 'rpe' }]
+      renderTemplateSets('att-sets-container', 'weight_reps')
+      const summary = document.querySelector('.ts-more > summary')
+      if (!summary) return { built: false }
+      const after = getComputedStyle(summary, '::after')
+      // A generated ::after box that actually takes up space = a visible chevron. (Not asserting on
+      // computed `transform` — it resolves to "none" in some headless/compositing contexts even when
+      // the rotation paints fine.)
+      const hasMarker = after.content !== 'none' && parseFloat(after.width) > 0 && parseFloat(after.height) > 0
+      // The rotation lives in a separate [open] rule — assert the rule exists and differs.
+      let closedRule = null, openRule = null
+      for (const sh of document.styleSheets) {
+        let rules
+        try { rules = sh.cssRules } catch { continue }
+        for (const r of rules) {
+          if (r.selectorText === '.ts-more > summary::after') closedRule = r.style.transform
+          if (r.selectorText === '.ts-more[open] > summary::after') openRule = r.style.transform
+        }
+      }
+      return { built: true, hasMarker, rotates: !!closedRule && !!openRule && closedRule !== openRule }
+    })
+    expect(r.built, 'the weight_reps branch renders a "+ More targets" disclosure').toBe(true)
+    expect(r.hasMarker, 'the summary has a ::after chevron').toBe(true)
+    expect(r.rotates, 'the chevron transform changes between closed and open').toBe(true)
+  })
 })
