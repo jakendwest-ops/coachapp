@@ -22,14 +22,14 @@ test.describe('client-scoped writes verify the clientId', () => {
       const captured = []
       const orig = log.error
       log.error = (fn, msg, meta) => { captured.push(fn + '|' + msg); return orig(fn, msg, meta) }
-      const origConfirm = window.confirm
-      window.confirm = () => true              // deletes prompt first; we are testing the guard behind it
+      const origConfirm = window.confirmDialog
+      window.confirmDialog = () => Promise.resolve(true)   // deletes prompt first; we are testing the guard behind it
       try {
         await savePerformanceLog(foreign)
         await deletePerfLog('00000000-0000-0000-0000-0000000000fb', foreign)
         await deleteWeightLog('00000000-0000-0000-0000-0000000000fb', foreign)
         await delete1RM('00000000-0000-0000-0000-0000000000fb', foreign)
-      } finally { log.error = orig; window.confirm = origConfirm }
+      } finally { log.error = orig; window.confirmDialog = origConfirm }
       return captured
     }, FOREIGN_CLIENT)
 

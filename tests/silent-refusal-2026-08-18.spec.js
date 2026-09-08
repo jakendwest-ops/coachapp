@@ -54,16 +54,16 @@ test.describe('A refused write must not report success', () => {
         return { delete: () => chain }
       }
       let navigated = false, toast = ''
-      const origBack = window.backToClientWorkouts, origToast = window.showToast, origConfirm = window.confirm
+      const origBack = window.backToClientWorkouts, origToast = window.showToast, origConfirm = window.confirmDialog
       window.backToClientWorkouts = () => { navigated = true }
       window.showToast = (m) => { toast = m }
-      window.confirm = () => true
+      window.confirmDialog = () => Promise.resolve(true)
       try {
         await deleteWorkoutLog('00000000-0000-0000-0000-000000000000', 'c1')
         return { navigated, toast }
       } finally {
         db.from = orig; window.backToClientWorkouts = origBack
-        window.showToast = origToast; window.confirm = origConfirm
+        window.showToast = origToast; window.confirmDialog = origConfirm
       }
     })
     // Navigating away IS the false success — it tells the user the session is gone.
@@ -89,16 +89,16 @@ test.describe('A refused write must not report success', () => {
         return { delete: () => chain }
       }
       let refreshed = false, toast = ''
-      const origRefresh = window._refresh1RMs, origToast = window.showToast, origConfirm = window.confirm
+      const origRefresh = window._refresh1RMs, origToast = window.showToast, origConfirm = window.confirmDialog
       window._refresh1RMs = () => { refreshed = true }
       window.showToast = (m) => { toast = m }
-      window.confirm = () => true
+      window.confirmDialog = () => Promise.resolve(true)
       try {
         await delete1RM('00000000-0000-0000-0000-000000000000', 'c1')
         return { refreshed, toast }
       } finally {
         db.from = orig; window._refresh1RMs = origRefresh
-        window.showToast = origToast; window.confirm = origConfirm
+        window.showToast = origToast; window.confirmDialog = origConfirm
       }
     })
     expect(r.toast.toLowerCase()).toContain('could not be deleted')

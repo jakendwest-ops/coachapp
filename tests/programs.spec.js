@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, clickVisible, acceptConfirm } = require('./helpers')
 
 // The day-slot workout picker became a tap-row modal on 2026-07-11, replacing the native <select>
 // (an <option> can only hold plain text, which is why three same-named workouts were impossible to
@@ -114,14 +114,14 @@ test.describe('Program periodization', () => {
     await expect(page.getByText(/Linear 65.85%/)).toBeVisible({ timeout: 4000 })
 
     // Generate weeks 2-3 from the Week 1 base
-    page.once('dialog', d => d.accept())
     await page.click('button:has-text("Generate weeks")')
+    await acceptConfirm(page)
     await expect(page.locator('.week-tab[data-week="2"]')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('.week-tab[data-week="3"]')).toBeVisible({ timeout: 10000 })
 
     // Cleanup — delete the throwaway program
-    page.once('dialog', d => d.accept())
     await programManage(page, 'Delete program')
+    await acceptConfirm(page)
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -152,8 +152,8 @@ test.describe('Program periodization', () => {
     await expect(page.locator('button:has-text("Edit periodization")')).toHaveCount(0)
     await expect(page.locator('button:has-text("Generate weeks")')).toHaveCount(0)
 
-    page.once('dialog', d => d.accept())
     await programManage(page, 'Delete program')
+    await acceptConfirm(page)
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -174,8 +174,8 @@ test.describe('Program periodization', () => {
     await page.click('#program-manage-modal .btn-icon')
     await expect(page.locator('#program-manage-modal')).toBeHidden({ timeout: 4000 })
 
-    page.once('dialog', d => d.accept())
     await programManage(page, 'Delete program')
+    await acceptConfirm(page)
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 })
@@ -225,8 +225,8 @@ test.describe('Inline assign grid', () => {
     await expect(page.locator(CREATE_ROW)).toBeVisible()
     await closeDayPicker(page)
 
-    page.once('dialog', d => d.accept())
     await programManage(page, 'Delete program')
+    await acceptConfirm(page)
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -262,8 +262,8 @@ test.describe('Inline assign grid', () => {
     }, phaseId)
     expect(rowCount).toBe(1)
 
-    page.once('dialog', d => d.accept())
     await programManage(page, 'Delete program')
+    await acceptConfirm(page)
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -295,8 +295,8 @@ test.describe('Inline assign grid', () => {
       const { data } = await db.from('workout_templates').select('id').eq('name', '[E2E] Grid Created Template')
       if (data?.length) await db.from('workout_templates').delete().in('id', data.map(t => t.id))
     })
-    page.once('dialog', d => d.accept())
     await programManage(page, 'Delete program')
+    await acceptConfirm(page)
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -581,8 +581,8 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     expect(week2Rows.length).toBe(1)
     expect(week2Rows[0].template_id).toBe(week1.template_id)
 
-    page.once('dialog', d => d.accept())
     await programManage(page, 'Delete program')
+    await acceptConfirm(page)
     await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
   })
 
@@ -820,8 +820,9 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       await page.waitForSelector('.week-tab[data-week="3"]', { timeout: 8000 })
       await expect(page.locator('button:has-text("Delete week")').first()).toBeVisible({ timeout: 4000 })
 
-      page.once('dialog', d => d.accept())
-      await page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 2), setup)
+      const _delWk = page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 2), setup)
+      await acceptConfirm(page)
+      await _delWk
       await page.waitForTimeout(1000)
 
       const result = await page.evaluate(async ({ phaseId }) => {
@@ -866,8 +867,9 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     })
 
     try {
-      page.once('dialog', d => d.accept())
-      await page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 1), setup)
+      const _delWk = page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 1), setup)
+      await acceptConfirm(page)
+      await _delWk
       await page.waitForTimeout(800)
 
       const stillExists = await page.evaluate(async (sharedTemplateId) => {
@@ -901,8 +903,9 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     })
 
     try {
-      page.once('dialog', d => d.accept())
-      await page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 2), setup)
+      const _delWk = page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 2), setup)
+      await acceptConfirm(page)
+      await _delWk
       await page.waitForTimeout(800)
 
       const result = await page.evaluate(async ({ phaseId, templateId }) => {
@@ -1036,7 +1039,7 @@ test.describe('Copy program workouts to Library + duplicate-week auto-extend (20
     try {
       // Regenerating prunes week 2+ first — which must NOT take Week 1's still-referenced template with it.
       await page.evaluate(async ({ phaseId, programId }) => {
-        window.confirm = () => true
+        window.confirmDialog = () => Promise.resolve(true)
         await generatePhasePeriodization(phaseId, programId)
       }, setup)
       await page.waitForTimeout(1500)

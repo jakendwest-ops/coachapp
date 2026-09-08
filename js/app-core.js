@@ -563,6 +563,42 @@ function mountModal(node) {
   document.body.appendChild(node)
 }
 
+// Promise-based replacement for window.confirm().
+//
+// window.confirm() is silently suppressed in embedded/automation browser contexts and some installed
+// PWAs — the dialog never appears and the call returns false — so every `if (!confirm(...)) return`
+// guard permanently cancels its own action with no signal (Jake hit this on Discard and Delete week,
+// 2026-09-08). This renders the same .modal-overlay every other dialog here uses and resolves
+// true/false. `danger:true` for destructive actions colours the confirm button red.
+//
+// Backdrop tap and the ✕/Cancel button all resolve false — the safe default for a guard.
+function confirmDialog(message, { title = 'Please confirm', confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false } = {}) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div')
+    overlay.className = 'modal-overlay'
+    overlay.id = 'confirm-dialog'
+    const settle = (val) => { overlay.remove(); resolve(val) }
+    overlay.addEventListener('click', e => { if (e.target === overlay) settle(false) })
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:400px">
+        <div class="modal-header">
+          <h2 class="modal-title">${escapeHtml(title)}</h2>
+          <button class="modal-close" data-confirm="no">✕</button>
+        </div>
+        <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px;white-space:pre-line">${escapeHtml(message)}</p>
+        <div class="modal-footer">
+          <button class="btn-secondary" data-confirm="no">${escapeHtml(cancelLabel)}</button>
+          <button class="${danger ? 'btn-danger' : 'btn-primary'}" data-confirm="yes">${escapeHtml(confirmLabel)}</button>
+        </div>
+      </div>`
+    overlay.querySelectorAll('[data-confirm]').forEach(b => {
+      b.addEventListener('click', () => settle(b.dataset.confirm === 'yes'))
+    })
+    mountModal(overlay)
+    overlay.querySelector('[data-confirm="yes"]').focus()
+  })
+}
+
 function showAuth() {
   // Drop the consent gate if it is still mounted. It is position:fixed, so a session that dies while
   // it is up (token-refresh failure, sign-out in another tab) would leave it painted over the login

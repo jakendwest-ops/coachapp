@@ -200,11 +200,11 @@ test.describe('Session identity — family_id', () => {
         })
 
         window._openProgramId = prog.id
-        // The generator asks for confirmation before rebuilding weeks 2+. Stubbed rather than driven
-        // through Playwright's dialog handler because the confirm fires inside this evaluate.
-        const realConfirm = window.confirm
-        window.confirm = () => true
-        try { await generatePhasePeriodization(phase.id, prog.id) } finally { window.confirm = realConfirm }
+        // The generator asks for confirmation (confirmDialog, a DOM modal) before rebuilding weeks 2+.
+        // Stubbed rather than clicked because the call fires inside this evaluate.
+        const realConfirmDialog = window.confirmDialog
+        window.confirmDialog = () => Promise.resolve(true)
+        try { await generatePhasePeriodization(phase.id, prog.id) } finally { window.confirmDialog = realConfirmDialog }
         await new Promise(r2 => setTimeout(r2, 2000))
 
         // Every template now attached to this phase's slots, weeks 2+.
@@ -325,9 +325,9 @@ test.describe('Session identity — family_id', () => {
         })
         // REAL periodization — the clones and their family_id come from shipped code, not from the test.
         window._openProgramId = prog.id
-        const realConfirm = window.confirm
-        window.confirm = () => true
-        try { await generatePhasePeriodization(phase.id, prog.id) } finally { window.confirm = realConfirm }
+        const realConfirm = window.confirmDialog
+        window.confirmDialog = () => Promise.resolve(true)
+        try { await generatePhasePeriodization(phase.id, prog.id) } finally { window.confirmDialog = realConfirm }
         await new Promise(r => setTimeout(r, 2000))
         const { data: pws } = await db.from('program_phase_workouts')
           .select('week_number, template_id, workout_templates(id, name)').eq('phase_id', phase.id)

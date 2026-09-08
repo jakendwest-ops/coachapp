@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible, waitForVisible } = require('./helpers')
+const { loginAsPT, clickVisible, waitForVisible, acceptConfirm, declineConfirm } = require('./helpers')
 
 // The Personal/PT program boundary (2026-07-13).
 //
@@ -253,8 +253,9 @@ test.describe('Personal / PT program boundary', () => {
       // Detach the client, accept the confirm, retry.
       await page.evaluate(async (cpId) => { await db.from('client_programs').delete().eq('id', cpId) }, real.clientProgramId)
       real.clientProgramId = null
-      page.once('dialog', d => d.accept())
-      await page.evaluate(id => moveProgramToPersonal(id), fx.programId)
+      const _mv = page.evaluate(id => moveProgramToPersonal(id), fx.programId)
+      await acceptConfirm(page)
+      await _mv
       await page.waitForTimeout(800)
 
       flag = await page.evaluate(async (id) => (await db.from('programs').select('is_personal').eq('id', id).single()).data?.is_personal, fx.programId)
@@ -269,8 +270,9 @@ test.describe('Personal / PT program boundary', () => {
     let fx
     try {
       fx = await plantProgram(page, { name: `${TAG} Bridge Source`, isPersonal: true })
-      page.once('dialog', d => d.accept())
-      await page.evaluate(id => copyProgramToCoaching(id), fx.programId)
+      const _cp = page.evaluate(id => copyProgramToCoaching(id), fx.programId)
+      await acceptConfirm(page)
+      await _cp
       await page.waitForTimeout(2500)
 
       const copy = await page.evaluate(async (tag) => {
@@ -327,15 +329,17 @@ test.describe('Personal / PT program boundary', () => {
 
       // 1. DECLINING the restart must change nothing.
       await mountModal()
-      page.once('dialog', d => d.dismiss())
-      await page.evaluate(({ programId, clientId }) => saveAssignProgramToClient(programId, clientId), { programId: fx.programId, clientId: real.clientId })
+      const _asg1 = page.evaluate(({ programId, clientId }) => saveAssignProgramToClient(programId, clientId), { programId: fx.programId, clientId: real.clientId })
+      await declineConfirm(page)
+      await _asg1
       await page.waitForTimeout(800)
       expect(await countAssignments(), 'declining the restart must not create a second assignment').toBe(1)
 
       // 2. ACCEPTING must REPLACE it — still exactly one row, never two.
       await mountModal()
-      page.once('dialog', d => d.accept())
-      await page.evaluate(({ programId, clientId }) => saveAssignProgramToClient(programId, clientId), { programId: fx.programId, clientId: real.clientId })
+      const _asg2 = page.evaluate(({ programId, clientId }) => saveAssignProgramToClient(programId, clientId), { programId: fx.programId, clientId: real.clientId })
+      await acceptConfirm(page)
+      await _asg2
       await page.waitForTimeout(2500)
       expect(await countAssignments(), 'restarting must REPLACE the assignment, never stack a second one').toBe(1)
 

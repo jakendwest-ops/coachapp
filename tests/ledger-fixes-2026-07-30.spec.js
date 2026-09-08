@@ -357,9 +357,9 @@ test.describe('exercises table writes — anchored by coach_id, an unrelated coa
       })
 
       await loginAsPT2(pt2Page)
-      // deleteExercise() itself calls confirm() — stub it before calling, so the real function path
-      // (not a bypassed/short-circuited one) runs unattended.
-      await pt2Page.evaluate(() => { window.confirm = () => true })
+      // deleteExercise() itself calls confirmDialog() — stub it before calling, so the real function
+      // path (not a bypassed/short-circuited one) runs unattended.
+      await pt2Page.evaluate(() => { window.confirmDialog = () => Promise.resolve(true) })
       await pt2Page.evaluate(async (id) => {
         await toggleExerciseArchived(id, true)
         await _rememberExerciseMetricType(id, 'cardio')
@@ -438,7 +438,7 @@ test.describe('deleteEvent/deleteGoal — anchored by created_by, an unrelated c
       })
 
       await loginAsPT2(pt2Page)
-      await pt2Page.evaluate(() => { window.confirm = () => true })
+      await pt2Page.evaluate(() => { window.confirmDialog = () => Promise.resolve(true) })
       await pt2Page.evaluate(async (id) => { await deleteEvent(id) }, eventId)
 
       const stillThere = await ptPage.evaluate(async (id) => (await db.from('events').select('id').eq('id', id).maybeSingle()).data, eventId)
@@ -471,7 +471,7 @@ test.describe('deleteEvent/deleteGoal — anchored by created_by, an unrelated c
       goalId = owned.goalId
 
       await loginAsPT2(pt2Page)
-      await pt2Page.evaluate(() => { window.confirm = () => true })
+      await pt2Page.evaluate(() => { window.confirmDialog = () => Promise.resolve(true) })
       await pt2Page.evaluate(async (id) => { await deleteGoal(id, null) }, goalId)
 
       const stillThere = await ptPage.evaluate(async (id) => (await db.from('goals').select('id').eq('id', id).maybeSingle()).data, goalId)

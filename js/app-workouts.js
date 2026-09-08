@@ -1218,7 +1218,7 @@ async function saveEditExercise(id) {
 }
 
 async function deleteExercise(id) {
-  if (!confirm('Delete this exercise? This only works if it has never been used in a template, log, or 1RM entry — use Archive instead for exercises with history.')) return
+  if (!(await confirmDialog('Delete this exercise? This only works if it has never been used in a template, log, or 1RM entry — use Archive instead for exercises with history.', { title: 'Delete exercise?', confirmLabel: 'Delete', danger: true }))) return
   log.info('deleteExercise', 'deleting exercise', { id })
   // Rowcount check, matching delete1RM / deletePerfLog / deleteWeightLog (app-progress.js). The FK
   // violation below is caught because it returns an error; a POLICY-refused delete does not — it
@@ -3462,7 +3462,7 @@ async function saveEditTemplate(id) {
 }
 
 async function deleteTemplate(id) {
-  if (!confirm('Delete this template? This cannot be undone.')) return
+  if (!(await confirmDialog('Delete this template? This cannot be undone.', { title: 'Delete template?', confirmLabel: 'Delete', danger: true }))) return
   const coachId = await _resolveTemplateOwnerCoachId()
   log.info('deleteTemplate', 'deleting template', { id })
   const { data, error } = await db.from('workout_templates').delete().eq('id', id).eq('coach_id', coachId).select()

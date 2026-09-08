@@ -71,7 +71,7 @@ test.describe('Periodization clones preserve metric_type (2026-08-09)', () => {
     }, TAG)
 
     await page.evaluate(async ({ phaseId, programId }) => {
-      window.confirm = () => true
+      window.confirmDialog = () => Promise.resolve(true)
       await generatePhasePeriodization(phaseId, programId)
     }, setup)
     await page.waitForTimeout(2000)

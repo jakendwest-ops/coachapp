@@ -110,11 +110,11 @@ test.describe('A user-initiated delete must not report success on zero rows', ()
         const toasts = []
         const realToast = window.showToast
         window.showToast = (msg, kind) => toasts.push({ msg, kind })
-        const realConfirm = window.confirm
-        window.confirm = () => true
+        const realConfirm = window.confirmDialog
+        window.confirmDialog = () => Promise.resolve(true)
         try { await deleteEvent(i.eventId) } catch (e) { /* surfaced via toasts below */ }
         finally {
-          window.confirm = realConfirm
+          window.confirmDialog = realConfirm
           window.showToast = realToast
           currentUser = { ...currentUser, id: realUid }
         }

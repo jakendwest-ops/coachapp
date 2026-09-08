@@ -424,7 +424,7 @@ async function save1RM(clientId, existingId = null) {
 }
 
 async function delete1RM(id, clientId) {
-  if (!confirm('Delete this 1RM?')) return
+  if (!(await confirmDialog('Delete this 1RM?', { title: 'Delete 1RM?', confirmLabel: 'Delete', danger: true }))) return
   if (!(await _verifyClientAccess('delete1RM', clientId))) return
   // Rowcount check, matching its two siblings deletePerfLog and deleteWeightLog. Without it a refused
   // delete simply re-rendered with the row still sitting there, which reads as "the button is broken".
@@ -741,7 +741,7 @@ async function savePerformanceLog(clientId) {
 }
 
 async function deletePerfLog(id, clientId) {
-  if (!confirm('Delete this record?')) return
+  if (!(await confirmDialog('Delete this record?', { title: 'Delete record?', confirmLabel: 'Delete', danger: true }))) return
   if (!(await _verifyClientAccess('deletePerfLog', clientId))) return
   log.info('deletePerfLog', 'deleting performance record', { id })
   // .select() + rowcount, not just an error check: a policy-blocked delete returns
@@ -983,7 +983,7 @@ async function renderClientWeight(clientId, el) {
 }
 
 async function sendClientInvite(clientId, email) {
-  if (!confirm(`Send invite email to ${email}?`)) return
+  if (!(await confirmDialog(`Send invite email to ${email}?`, { title: 'Send invite?', confirmLabel: 'Send invite' }))) return
 
   log.info('sendClientInvite', 'sending invite', { clientId })
   const btn = event.target
@@ -1076,7 +1076,7 @@ async function saveWeightGoals(clientId) {
 }
 
 async function deleteWeightLog(id, clientId) {
-  if (!confirm('Delete this entry?')) return
+  if (!(await confirmDialog('Delete this entry?', { title: 'Delete entry?', confirmLabel: 'Delete', danger: true }))) return
   if (!(await _verifyClientAccess('deleteWeightLog', clientId))) return
   log.info('deleteWeightLog', 'deleting weight entry', { id })
   // Anchored on client_id too — the guard above verified clientId, so the write must be keyed on
@@ -3066,7 +3066,7 @@ async function inviteSoloUser() {
   const name    = nameEl?.value.trim()
   const email   = emailEl?.value.trim()
   if (!name || !email) { if (msg) msg.textContent = 'Name and email are both required.'; return }
-  if (!confirm(`Send a personal-account invite to ${email}?`)) return
+  if (!(await confirmDialog(`Send a personal-account invite to ${email}?`, { title: 'Send invite?', confirmLabel: 'Send invite' }))) return
   if (msg) msg.textContent = ''
 
   log.info('inviteSoloUser', 'sending solo invite')

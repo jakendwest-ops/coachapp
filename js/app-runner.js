@@ -2377,8 +2377,8 @@ function confirmEndRunner() {
 // which sits directly beside Save. That is the one tap that can destroy real unsaved work with a
 // single accidental press; every other caller (confirmEndRunner's empty-session branch, and the
 // post-save teardown in saveRunnerSession) has nothing left to lose and must stay silent.
-function confirmDiscardRunner() {
-  if (!confirm('Discard this workout? Everything logged will be lost — this cannot be undone.')) return
+async function confirmDiscardRunner() {
+  if (!(await confirmDialog('Discard this workout? Everything logged will be lost — this cannot be undone.', { title: 'Discard workout?', confirmLabel: 'Discard', danger: true }))) return
   discardRunner()
 }
 
@@ -3428,7 +3428,7 @@ async function deleteWorkoutLog(logId, clientId) {
   // Same reasoning as saveCoachNotes: the button is no longer rendered for a client, but the function
   // is callable from the console and the delete anchored on `id` alone.
   if (currentProfile?.role === 'client') { log.warn('deleteWorkoutLog', 'blocked: clients cannot delete sessions'); return }
-  if (!confirm('Delete this session? This cannot be undone.')) return
+  if (!(await confirmDialog('Delete this session? This cannot be undone.', { title: 'Delete session?', confirmLabel: 'Delete', danger: true }))) return
   log.info('deleteWorkoutLog', 'deleting session', { logId })
   // Worse than the notes case: without the rowcount check this navigated AWAY as though the session
   // were gone, so the row reappearing on the next render read as a separate bug entirely.

@@ -38,7 +38,7 @@ test.describe('Invite a personal user — Settings card', () => {
       currentUser.email = 'jakendwest@gmail.com'
       await navigate('settings')
       await new Promise(res => setTimeout(res, 500))
-      window.confirm = () => true
+      window.confirmDialog = () => Promise.resolve(true)
       document.getElementById('solo-invite-name').value = ''
       document.getElementById('solo-invite-email').value = ''
       // No real click needed here — the empty-field guard returns before touching `event`.
@@ -57,7 +57,7 @@ test.describe('Invite a personal user — Settings card', () => {
       currentUser.email = 'jakendwest@gmail.com'
       await navigate('settings')
       await new Promise(res => setTimeout(res, 500))
-      window.confirm = () => true
+      window.confirmDialog = () => Promise.resolve(true)
       document.getElementById('solo-invite-name').value = 'Test Friend'
       document.getElementById('solo-invite-email').value = 'test-friend@example.com'
     })
@@ -80,7 +80,7 @@ test.describe('Invite a personal user — Settings card', () => {
       currentUser.email = 'jakendwest@gmail.com'
       await navigate('settings')
       await new Promise(res => setTimeout(res, 500))
-      window.confirm = () => true
+      window.confirmDialog = () => Promise.resolve(true)
       document.getElementById('solo-invite-name').value = 'Test Friend'
       document.getElementById('solo-invite-email').value = 'test-friend@example.com'
     })
@@ -115,7 +115,7 @@ test.describe('Invite a personal user — Settings card', () => {
       currentUser.email = 'jakendwest@gmail.com'
       await navigate('settings')
       await new Promise(res => setTimeout(res, 500))
-      window.confirm = () => true
+      window.confirmDialog = () => Promise.resolve(true)
     })
 
     await page.fill('#solo-invite-name', 'First Friend')
@@ -144,7 +144,7 @@ test.describe('Invite a personal user — Settings card', () => {
       currentUser.email = 'jakendwest@gmail.com'
       await navigate('settings')
       await new Promise(res => setTimeout(res, 500))
-      window.confirm = () => true
+      window.confirmDialog = () => Promise.resolve(true)
     })
     // Trip the validation message first.
     await page.evaluate(() => inviteSoloUser())

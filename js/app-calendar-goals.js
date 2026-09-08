@@ -321,7 +321,7 @@ function showClientDayDetail(dateStr) {
 }
 
 async function deleteEvent(id) {
-  if (!confirm('Delete this event?')) return
+  if (!(await confirmDialog('Delete this event?', { title: 'Delete event?', confirmLabel: 'Delete', danger: true }))) return
   log.info('deleteEvent', 'deleting event', { eventId: id })
   // Rowcount check, matching delete1RM / deletePerfLog / deleteWeightLog (app-progress.js). Without
   // it a REFUSED delete re-renders with the row still sitting there, which reads as "the button is
@@ -1112,7 +1112,7 @@ async function saveEditGoal(goalId, clientId) {
 }
 
 async function deleteGoal(goalId, clientId) {
-  if (!confirm('Delete this goal and all its milestones and check-ins? This cannot be undone.')) return
+  if (!(await confirmDialog('Delete this goal and all its milestones and check-ins? This cannot be undone.', { title: 'Delete goal?', confirmLabel: 'Delete', danger: true }))) return
   log.info('deleteGoal', 'deleting goal', { goalId })
   // Rowcount check, matching delete1RM / deletePerfLog / deleteWeightLog (app-progress.js). The
   // confirm promises "this cannot be undone" and deletes milestones and check-ins too, so a silent

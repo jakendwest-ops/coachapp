@@ -25,8 +25,8 @@ test.describe('Deleting a programme sweeps its week-clones (2026-09-04)', () => 
       const tag = `[E2E] orphan probe ${Date.now()}`
       const out = { generated: 0, cloneIds: [], survivors: null, programGone: null }
 
-      const origConfirm = window.confirm
-      window.confirm = () => true                     // both flows are confirm-gated
+      const origConfirm = window.confirmDialog
+      window.confirmDialog = () => Promise.resolve(true)   // both flows are confirm-gated
       try {
         const { data: prog } = await db.from('programs')
           .insert({ coach_id: currentUser.id, name: tag }).select('id').single()
@@ -76,7 +76,7 @@ test.describe('Deleting a programme sweeps its week-clones (2026-09-04)', () => 
         }
         await db.from('workout_templates').delete().eq('coach_id', currentUser.id).eq('name', tag).select('id')
       } finally {
-        window.confirm = origConfirm
+        window.confirmDialog = origConfirm
         window._openProgramId = null
       }
       return out

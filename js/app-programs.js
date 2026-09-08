@@ -446,7 +446,7 @@ async function saveAssignProgram(clientId) {
   if (existing?.error) { errorEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
   if (existing) {
     const started = existing.start_date ? ` (started ${existing.start_date})` : ''
-    if (!confirm(`That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`)) { _release(); return }
+    if (!(await confirmDialog(`That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`, { title: 'Restart program?', confirmLabel: 'Restart', danger: true }))) { _release(); return }
     if (!await _removeAssignmentAndClones(existing.id, 'restarted')) { errorEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
   }
 
@@ -758,7 +758,7 @@ async function _saveMissingOneRMEntries(clientId) {
 }
 
 async function unassignProgram(clientId, assignmentId) {
-  if (!confirm('Remove this program from the client?')) return
+  if (!(await confirmDialog('Remove this program from the client?', { title: 'Remove program?', confirmLabel: 'Remove', danger: true }))) return
   if (!(await _verifyAssignmentAccess('unassignProgram', assignmentId))) { showToast('Could not remove the program', 'error'); return }
   // Was a bare delete of the client_programs row. Its client_program_workouts cascade away, but the
   // client-owned template clones they pointed at do NOT (the FK runs the other way), so every
@@ -885,9 +885,10 @@ async function saveAssignProgramToClient(programId, soloClientId) {
   if (existing?.error) { errEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
   if (existing) {
     const started = existing.start_date ? ` (started ${existing.start_date})` : ''
-    const ok = confirm(soloClientId
+    const ok = await confirmDialog(soloClientId
       ? `This program is already in your plan${started}.\n\nRestart it from the new start date? Your logged sessions are kept — only the plan itself is rebuilt.`
-      : `That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`)
+      : `That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`,
+      { title: 'Restart program?', confirmLabel: 'Restart', danger: true })
     if (!ok) { _release(); return }
     if (!await _removeAssignmentAndClones(existing.id, 'restarted')) { errEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
   }
@@ -1378,7 +1379,7 @@ async function moveProgramToPersonal(programId) {
     showToast(`Assigned to ${names || `${realClients.length} client${realClients.length === 1 ? '' : 's'}`} — a program a client is training on can't be personal. Remove them first.`, 'warn', 6000)
     return
   }
-  if (!confirm('Move this program to your Personal view? It will no longer appear in your PT programs and can no longer be assigned to clients.')) return
+  if (!(await confirmDialog('Move this program to your Personal view? It will no longer appear in your PT programs and can no longer be assigned to clients.', { title: 'Move to Personal?', confirmLabel: 'Move' }))) return
 
   log.info('moveProgramToPersonal', 'moving', { programId })
   // .select() is not optional here: PostgREST returns error:null for an UPDATE that matches ZERO
@@ -1421,7 +1422,7 @@ async function copyProgramToCoaching(programId) {
     return
   }
 
-  if (!confirm(`Create a coaching copy of "${src.name}"? The copy can be assigned to clients; this personal program stays untouched.`)) return
+  if (!(await confirmDialog(`Create a coaching copy of "${src.name}"? The copy can be assigned to clients; this personal program stays untouched.`, { title: 'Copy to coaching?', confirmLabel: 'Create copy' }))) return
   log.info('copyProgramToCoaching', 'copying', { programId })
   showToast('Copying…', 'info', 2000)
 
@@ -1530,7 +1531,7 @@ async function deleteProgram(programId) {
     return
   }
 
-  if (!confirm('Delete this program, its phases, and its workout templates? This cannot be undone.')) return
+  if (!(await confirmDialog('Delete this program, its phases, and its workout templates? This cannot be undone.', { title: 'Delete program?', confirmLabel: 'Delete', danger: true }))) return
   log.info('deleteProgram', 'deleting', { programId })
 
   // The only remaining assignment at this point (if any) is the user's own solo self-assignment.
@@ -1647,7 +1648,7 @@ async function savePhase(programId) {
 }
 
 async function deletePhase(programId, phaseId) {
-  if (!confirm('Remove this phase?')) return
+  if (!(await confirmDialog('Remove this phase?', { title: 'Remove phase?', confirmLabel: 'Remove', danger: true }))) return
   log.info('deletePhase', 'deleting', { phaseId })
   // Ahead of everything: this function deletes client copies and sweeps templates before it ever
   // touches the phase row, so a check placed at the phase delete would refuse only the last write.
@@ -1846,7 +1847,7 @@ async function generatePhasePeriodization(phaseId, programId) {
     .eq('phase_id', phaseId).eq('week_number', 1)
   if (bwErr || !baseWorkouts?.length) { showToast('Add Week 1 sessions before generating', 'error'); return }
 
-  if (!confirm(`Generate weeks 2–${phase.duration_weeks} from Week 1? This deletes any existing Week 2+ content for this phase — periodization-generated OR manually added/duplicated — and rebuilds it from Week 1.`)) return
+  if (!(await confirmDialog(`Generate weeks 2–${phase.duration_weeks} from Week 1? This deletes any existing Week 2+ content for this phase — periodization-generated OR manually added/duplicated — and rebuilds it from Week 1.`, { title: 'Generate weeks?', confirmLabel: 'Generate', danger: true }))) return
 
   // Idempotent regeneration — clear any weeks generated by a previous run (or manually built via
   // "Duplicate week"/the add-workout grid) first: master rows + any already-propagated client copies.
@@ -2422,7 +2423,7 @@ guardReentry('duplicatePhaseWeek')  // double-press duplicates; see tests/reentr
 // or generated_from_phase_id match), since a slot can reference a shared standalone template the
 // coach reuses elsewhere; deleting this week must not destroy that.
 async function deletePhaseWeek(phaseId, weekNumber) {
-  if (!confirm(`Delete Week ${weekNumber}? This removes every session in this week and cannot be undone. Later weeks will shift down.`)) return
+  if (!(await confirmDialog(`Delete Week ${weekNumber}? This removes every session in this week and cannot be undone. Later weeks will shift down.`, { title: `Delete Week ${weekNumber}?`, confirmLabel: 'Delete', danger: true }))) return
   // Same reason as duplicatePhaseWeek: _deleteClientCopiesForSlots and _deleteOwnedUnreferencedTemplates
   // below are both keyed on window._openProgramId.
   if (!(await _verifyPhaseOwnership('deletePhaseWeek', phaseId, window._openProgramId || null))) { showToast('Could not delete that week', 'error'); return }

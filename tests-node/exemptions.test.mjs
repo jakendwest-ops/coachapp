@@ -105,16 +105,21 @@ function insertCalls (fn) {
   return hits
 }
 
-/** Position of the first `confirm(...)` the function itself performs, or Infinity. */
+/** Position of the first `confirm(...)` / `confirmDialog(...)` the function itself performs, or Infinity.
+ *  window.confirm() was replaced by the promise-based confirmDialog() (js/app-core.js) on 2026-09-08 —
+ *  which is ALWAYS `await`ed, so it is categorically not a synchronous re-entry barrier. Both names are
+ *  matched so the "confirm-gated" reasoning still detects the call site if anyone ever writes that
+ *  exemption reason again; the `confirmAt < awaitAt` assertion below then correctly refuses it. */
 function firstConfirmPos (fn) {
   const ranges = nestedRanges(fn)
   let pos = Infinity
   walk.full(fn.body, (n) => {
     if (n.type !== 'CallExpression' || !own(ranges, n)) return
     const c = n.callee
-    const isConfirm = (c.type === 'Identifier' && c.name === 'confirm') ||
-      (c.type === 'MemberExpression' && !c.computed && c.property.name === 'confirm')
-    if (isConfirm) pos = Math.min(pos, n.start)
+    const name = c.type === 'Identifier' ? c.name
+      : (c.type === 'MemberExpression' && !c.computed && c.property.type === 'Identifier') ? c.property.name
+      : null
+    if (name === 'confirm' || name === 'confirmDialog') pos = Math.min(pos, n.start)
   })
   return pos
 }
@@ -167,22 +172,26 @@ describe('FROZEN_UNGUARDED — every exemption states a reason that is actually 
     // control instead of a "there must be at least one" denominator — that would have forced a
     // fictional exemption back onto the list just to keep a counter happy.
     //
-    // The function still exists and still has its confirm() after three awaits, so it remains a
+    // The function still exists and still confirms after three awaits (window.confirm was replaced by
+    // the awaited confirmDialog() on 2026-09-08 — firstConfirmPos matches both), so it remains a
     // perfect positive: if this stops reporting confirm-after-await, the detector is broken.
     const fn = fns.get('generatePhasePeriodization')
     assert.ok(fn, 'the control function must exist')
     const confirmAt = firstConfirmPos(fn.node)
     const awaitAt = firstAwaitPos(fn.node)
-    assert.notEqual(confirmAt, Infinity, 'the control must contain a confirm() for this to mean anything')
+    assert.notEqual(confirmAt, Infinity, 'the control must contain a confirm()/confirmDialog() for this to mean anything')
     assert.notEqual(awaitAt, Infinity, 'the control must contain an await for this to mean anything')
     assert.ok(awaitAt < confirmAt,
-      'generatePhasePeriodization should still show its confirm() AFTER its first await — if this ' +
+      'generatePhasePeriodization should still show its confirm AFTER its first await — if this ' +
       'flipped, either the function was restructured (good, and this control should move) or the ' +
       'position detector is broken (bad, and every confirm-gated exemption is now unchecked)')
   })
 
   test('"confirm()-gated" exemptions really confirm BEFORE their first await', () => {
-    const gated = [...frozen].filter(([, r]) => /confirm\(\)/.test(r))
+    // NOTE (2026-09-08): window.confirm() was replaced by the awaited confirmDialog(). An awaited
+    // dialog can NEVER precede its own await, so no new exemption should ever claim "confirm-gated" —
+    // and if one does, the confirmAt < awaitAt assertion below refuses it. The category stays empty.
+    const gated = [...frozen].filter(([, r]) => /confirm(\(\)|Dialog)/.test(r))
     for (const [name, reason] of gated) {
       const fn = fns.get(name)
       const confirmAt = firstConfirmPos(fn.node)

@@ -23,9 +23,10 @@ const { loginAsPT } = require('./helpers')
 const PREFIX = '[E2E] BuilderHappy'
 const tag = () => `${PREFIX} ${Date.now()}-${Math.floor(Math.random() * 1e4)}`
 
-// Every gated delete path calls confirm(). Auto-accepting is what makes the happy path the
-// happy path; a test that declines would be testing the confirm dialog, not the gate.
-const acceptConfirms = page => page.evaluate(() => { window.confirm = () => true })
+// Every gated delete path calls confirmDialog() (js/app-core.js, the DOM-modal replacement for
+// window.confirm). Auto-resolving it true is what makes the happy path the happy path; a test that
+// declines would be testing the dialog, not the gate.
+const acceptConfirms = page => page.evaluate(() => { window.confirmDialog = () => Promise.resolve(true) })
 
 async function sweep (page) {
   await page.evaluate(async (p) => {

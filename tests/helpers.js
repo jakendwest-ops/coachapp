@@ -127,6 +127,16 @@ async function soloNav(page, dest) {
   await clickVisible(page, `[data-page="${dest}"]`)
 }
 
+// window.confirm() was replaced by a DOM modal (confirmDialog, js/app-core.js) — it's suppressed in
+// embedded/PWA contexts, so page.on('dialog') never fires and never did anything useful for a real
+// user. Call these AFTER the action that opens the confirm; the modal id is stable.
+async function acceptConfirm(page) {
+  await page.locator('#confirm-dialog .modal-footer [data-confirm="yes"]').click({ timeout: 6000 })
+}
+async function declineConfirm(page) {
+  await page.locator('#confirm-dialog .modal-footer [data-confirm="no"]').click({ timeout: 6000 })
+}
+
 // PT2's steady state (across the whole suite) is "owns nothing" — see tests/onboarding.spec.js's
 // documented convention. Deletes, in FK-safe order, everything _seedStarterContent can create for
 // PT2: program_phase_workouts → program_phases → programs, then workout_template_exercises →
@@ -201,4 +211,4 @@ loginAsClient = __wrap('loginAsClient', loginAsClient)
 loginAsPT2 = __wrap('loginAsPT2', loginAsPT2)
 // ---- END INSTRUMENT ----
 
-module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible, soloNav }
+module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible, soloNav, acceptConfirm, declineConfirm }
