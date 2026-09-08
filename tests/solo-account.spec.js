@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, clickVisible, soloNav } = require('./helpers')
 
 // Solo/Personal account tests require Jake's master account (_soloClientId must be set).
 // The E2E PT test account (coachapp.e2e.pt@gmail.com) has no solo client record,
@@ -32,22 +32,33 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('[data-page="clients"]')).not.toBeVisible()
   })
 
-  test('solo nav shows Dashboard, Workouts, Library, Programs, Calendar, Progress', async ({ page }) => {
+  test('solo mobile bottom bar is the 4 primary items + More; Library/Calendar/Settings live in the sheet (D2, 2026-09-07)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     // .bottom-nav-item, not the ambiguous bare [data-page] (which also matches the desktop
     // sidebar copy) -- this suite runs at the real 390px mobile viewport, where only the
     // bottom nav is ever actually shown, so its item is the single unambiguous match.
     await expect(page.locator('.bottom-nav-item[data-page="solo-dashboard"]')).toBeVisible()
     await expect(page.locator('.bottom-nav-item[data-page="workouts"]')).toBeVisible()
-    await expect(page.locator('.bottom-nav-item[data-page="library"]')).toBeVisible()
     await expect(page.locator('.bottom-nav-item[data-page="programs"]')).toBeVisible()
-    await expect(page.locator('.bottom-nav-item[data-page="calendar"]')).toBeVisible()
     await expect(page.locator('.bottom-nav-item[data-page="progress"]')).toBeVisible()
+    await expect(page.locator('.bottom-nav-item[data-page="__more__"]')).toBeVisible()
+    // The three overflow destinations are NOT in the bottom bar any more...
+    await expect(page.locator('.bottom-nav-item[data-page="library"]')).toHaveCount(0)
+    await expect(page.locator('.bottom-nav-item[data-page="calendar"]')).toHaveCount(0)
+    await expect(page.locator('.bottom-nav-item[data-page="settings"]')).toHaveCount(0)
+    // ...they're one tap away in the More sheet.
+    await page.click('.bottom-nav-item[data-page="__more__"]')
+    await page.waitForSelector('#more-sheet-modal', { state: 'visible' })
+    await expect(page.locator('#more-sheet-modal button:has-text("Library")')).toBeVisible()
+    await expect(page.locator('#more-sheet-modal button:has-text("Calendar")')).toBeVisible()
+    await expect(page.locator('#more-sheet-modal button:has-text("Settings")')).toBeVisible()
+    // The desktop sidebar copy still carries all seven (CSS-hidden here, but in the DOM).
+    await expect(page.locator('.nav-item[data-page="library"]')).toHaveCount(1)
   })
 
   test('solo can reach the Library nav item and see Templates/Exercise Library tabs (2026-07-11)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await clickVisible(page, '[data-page="library"]')
+    await soloNav(page, 'library')
     await page.waitForTimeout(1000)
     await expect(page.locator('h1')).toContainText('Library', { timeout: 8000 })
     await expect(page.locator('#wt-tab-templates')).toBeVisible()
@@ -83,7 +94,7 @@ test.describe('Solo / Personal account', () => {
 
   test('solo Calendar page loads', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await clickVisible(page, '[data-page="calendar"]')
+    await soloNav(page, 'calendar')
     await expect(page.locator('h1')).toContainText('Calendar', { timeout: 8000 })
   })
 
@@ -216,7 +227,7 @@ test.describe('Solo / Personal account', () => {
 
       await page.evaluate(() => switchView('solo'))
       await page.waitForTimeout(800)
-      await clickVisible(page, '[data-page="library"]')
+      await soloNav(page, 'library')
       await page.waitForTimeout(1000)
       await expect(page.locator('text=[E2E] Personal-Only Template')).toBeVisible({ timeout: 5000 })
       await expect(page.locator('text=[E2E] PT-Only Template')).not.toBeVisible()

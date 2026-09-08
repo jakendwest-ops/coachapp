@@ -226,7 +226,7 @@ No open questions remain. Ready to build.
 | 1 | Runner — R1–R5 | `app-runner` | ✅ `1598622` + `885fb0f`. Pushed (`7de8546`), CI green. Not tagged/live. |
 | 2 | Builder — B1–B5 | `app-programs`, `app-core` (B4), `css` | ✅ `6190ab1` + `8bcbb92`. Pushed, CI green. Not tagged/live. |
 | 3 | Progress — P1–P4 | `app-progress`, `css` | ✅ `253398e`. checks.sh green, 3-agent review clean. Not pushed. |
-| 4 | Dashboards — D2–D4 | `app-dashboard`, `app-core` (D2), `css` | ⬜ next |
+| 4 | Dashboards — D2–D4 | `app-dashboard`, `app-core` (D2), `app-workouts` (D3), `css` | 🔨 built — `app-core` v29, `app-dashboard` v19, `app-workouts` v101, `css` v16. checks.sh green. Awaiting review + commit. |
 
 Each commit: smoke green → `/feature-audit` + `/mobile-check` → `/multi-agent-review` (diff) → push.
 `/playwright` full suite before the release tag that ships the set.
@@ -235,3 +235,26 @@ Each commit: smoke green → `/feature-audit` + `/mobile-check` → `/multi-agen
 one item — a `:has()` selector for hiding the mobile view-switcher under a modal — was scoped too
 narrowly (`.app-shell:has` can't see `mountModal`'s body-level overlays). Fixed in `8bcbb92`:
 `body:has(.modal-overlay:not([style*="display:none"])...)`, verified across static + dynamic modals.
+
+**Commit 4 build notes (2026-09-08):**
+- **D2** — `_NAV_BOTTOM.solo` (derived from `_NAV_ITEMS.solo`) is the mobile bottom-bar list:
+  Dashboard / Workouts / Programs / Progress / **More**. `_openMoreSheet()` is a plain centred
+  `.modal` (not `modal-fullscreen-mobile`) holding Library / Calendar / Settings. The nav click
+  delegate routes `data-page="__more__"` to the sheet; `navigate()` lights the More tab while on any
+  of its three pages. Desktop sidebar unchanged (all 7). Verified at 375 + 320px.
+- **D2 knock-on** — the mobile bottom sheet visibly collided with the fixed `.bottom-nav` (nav showed
+  through the sheet's lower edge; the B1 Manage menu has the same issue). Extended the commit-2
+  `body:has(.modal-overlay…)` rule to also hide `.bottom-nav`, not just `#mobile-view-switcher` — a
+  modal is modal. `navigate()`/`closeModal()` both drop the overlay so the nav returns on close.
+- **D3** — applied to the client dashboard **and** the solo dashboard (`_soloTileRecent`) **and** the
+  client Workouts history (`app-workouts.js`), for consistency — the spec named the first and third.
+  Dashboards over-fetch `limit(15)`; Workouts kept its existing `limit(20)`. Removed two dead vars
+  (`sessionsThisWeek` / `weekAgoStr2`) in `renderClientDashboard` — computed, never rendered.
+- **D4** — deleted the `.pt-stats` 2-col override entirely (base rule is already `repeat(3,…)`), so
+  it's 3-up at every width. At 320px "Sessions this week" wraps to 3 lines but stays symmetric; a
+  2-col fallback there would just reintroduce the 2+1 orphan D4 removes. Kept 3-up.
+- **Housekeeping** — deleted a stray gitignored `tests/_debug-runner.spec.js` (prior session's
+  throwaway probe) that was inflating the `waitForTimeout` count ratchet by 3.
+- **Tests** — `soloNav()` helper added (`tests/helpers.js`); 3 solo-account nav tests + 1 E2E step
+  rewired through the More sheet; the nav-items test rewritten for the 5-item bar. `checks.sh` green
+  (57 Playwright smoke pass incl. the solo suite).

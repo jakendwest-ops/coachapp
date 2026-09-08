@@ -113,6 +113,20 @@ async function waitForVisible(page, selectors, options = {}) {
   return page.waitForSelector(list.map(s => `${s}:visible`).join(', '), options)
 }
 
+// Navigates the SOLO mobile nav (D2, 2026-09-07). The bottom bar is five items —
+// Dashboard / Workouts / Programs / Progress + a "More" sheet. Library / Calendar / Settings only
+// exist in that sheet on mobile (the desktop sidebar still lists all seven), so a plain
+// clickVisible('[data-page="library"]') would only match the CSS-hidden sidebar copy and time out.
+async function soloNav(page, dest) {
+  if (['library', 'calendar', 'settings'].includes(dest)) {
+    await page.click('.bottom-nav-item[data-page="__more__"]')
+    await page.waitForSelector('#more-sheet-modal', { state: 'visible' })
+    await page.click(`#more-sheet-modal button:has-text("${dest[0].toUpperCase()}${dest.slice(1)}")`)
+    return
+  }
+  await clickVisible(page, `[data-page="${dest}"]`)
+}
+
 // PT2's steady state (across the whole suite) is "owns nothing" — see tests/onboarding.spec.js's
 // documented convention. Deletes, in FK-safe order, everything _seedStarterContent can create for
 // PT2: program_phase_workouts → program_phases → programs, then workout_template_exercises →
@@ -187,4 +201,4 @@ loginAsClient = __wrap('loginAsClient', loginAsClient)
 loginAsPT2 = __wrap('loginAsPT2', loginAsPT2)
 // ---- END INSTRUMENT ----
 
-module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible }
+module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible, soloNav }

@@ -639,9 +639,13 @@ async function renderClientWorkoutsPage(el) {
   if (!clientId) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
 
   const [{ data: logs }, { data: cpAssignments }] = await Promise.all([
-    db.from('workout_logs').select('id, name, date').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
+    db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
     db.from('client_programs').select('id, start_date, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
   ])
+
+  // D3 (2026-09-07): drop 0-exercise logs (abandoned starts / test probes) from the history list,
+  // same filter the client + solo dashboards apply to their "recent sessions".
+  const loggedLogs = (logs || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
 
   let cpwMap = {}
   const activeAssignment = cpAssignments?.[0]
@@ -798,7 +802,7 @@ async function renderClientWorkoutsPage(el) {
       `
     })()}
 
-    ${!(logs?.length) ? `
+    ${!loggedLogs.length ? `
       <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Recent sessions</div>
       <div class="empty-state">
         <div class="empty-icon">📋</div>
@@ -813,7 +817,7 @@ async function renderClientWorkoutsPage(el) {
       </button>
       <div id="client-session-history" style="display:none">
         <div class="list" id="client-session-list">
-          ${logs.slice(0, 5).map(l => `
+          ${loggedLogs.slice(0, 5).map(l => `
             <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${l.id}','${clientId}')">
               <div style="width:36px;height:36px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:var(--text-xl, 16px)">✓</div>
               <div class="row-info">

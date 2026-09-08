@@ -297,7 +297,7 @@ async function renderClientDashboard(el) {
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
     db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
     db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
-    db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
+    db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(15),
     db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
   ])
 
@@ -350,9 +350,12 @@ async function renderClientDashboard(el) {
 
   if (!isSudo) firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
 
-  // This week stats
-  const weekAgoStr2 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  const sessionsThisWeek = (recentSessions || []).filter(s => s.date >= weekAgoStr2).length
+  // D3 (2026-09-07): the runner/save path can leave a 0-exercise workout_log (an abandoned start,
+  // or a test probe) — those were showing as "probe · 0 exercises" rows here. Over-fetch and drop
+  // the empties for display only. Whether the source should stop creating them is a separate
+  // ledger row, not this pass.
+  const loggedSessions = (recentSessions || []).filter(s => (s.workout_log_exercises?.length || 0) > 0).slice(0, 5)
+
   const lastCheckIn = checkIns?.[0] || null
   const daysSinceCheckIn = lastCheckIn ? Math.floor((Date.now() - new Date(lastCheckIn.created_at)) / 86400000) : null
   const checkInDue = daysSinceCheckIn === null || daysSinceCheckIn >= 7
@@ -482,9 +485,9 @@ async function renderClientDashboard(el) {
             <h2 class="card-title">Recent sessions</h2>
             <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="startWorkoutRunner('${clientId}')">▶ Start</button>
           </div>
-          ${!recentSessions?.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No sessions logged yet.</p>` : `
+          ${!loggedSessions.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No sessions logged yet.</p>` : `
           <div class="list">
-            ${recentSessions.map(s => {
+            ${loggedSessions.map(s => {
               const dateStr = new Date(s.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
               const exCount = s.workout_log_exercises?.length || 0
               return `
@@ -729,7 +732,8 @@ function _soloTileNextUp(upcoming, todayStr) {
 }
 
 function _soloTileRecent(recentSessions, clientId) {
-  const rows = (recentSessions || []).slice(0, 3)
+  // D3 (2026-09-07): skip 0-exercise logs (abandoned starts / test probes) — same as the client dash.
+  const rows = (recentSessions || []).filter(s => (s.workout_log_exercises?.length || 0) > 0).slice(0, 3)
   if (!rows.length) {
     return `<div class="dashboard-card solo-tile" onclick="navigate('workouts')">
       <div class="card-header"><h2 class="card-title">Recent sessions</h2></div>
@@ -854,7 +858,7 @@ async function renderSoloDashboard(el) {
     // collapses onto week 1's sessions; without id the clone lookup below cannot run. Both were
     // absent here while the calendar and workouts queries had them.
     db.from('client_programs').select('id, start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
-    db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
+    db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(15),
   ])
 
   // Second round-trip, only when a programme exists. Deliberately NOT a nested embed on the query

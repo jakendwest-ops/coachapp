@@ -896,6 +896,7 @@ const _NAV_ICONS = {
   programs:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
   settings:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
   progress:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
+  __more__:         `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>`,
 }
 
 const _NAV_ITEMS = {
@@ -925,6 +926,18 @@ const _NAV_ITEMS = {
   ],
 }
 
+// Solo has seven destinations — too many for a phone bottom bar (coach shows six, client five). On
+// mobile the bottom bar shows four primary ones plus a "More" sheet holding the rest (D2,
+// 2026-09-07). The desktop sidebar is unchanged and still lists all seven. Derived from _NAV_ITEMS
+// so labels can't drift; only the split lives here.
+const _NAV_MORE_SOLO = ['library', 'calendar', 'settings']
+const _NAV_BOTTOM = {
+  solo: [
+    ..._NAV_ITEMS.solo.filter(i => !_NAV_MORE_SOLO.includes(i.page)),
+    { page: '__more__', label: 'More' },
+  ],
+}
+
 function renderNav(role) {
   const items = _NAV_ITEMS[role] || _NAV_ITEMS.coach
   const sidebarNav = document.querySelector('.sidebar-nav')
@@ -936,11 +949,37 @@ function renderNav(role) {
       </a>`).join('')
   }
   if (bottomNav) {
-    bottomNav.innerHTML = items.map(({ page, label }) => `
+    const bottomItems = _NAV_BOTTOM[role] || items
+    bottomNav.innerHTML = bottomItems.map(({ page, label }) => `
       <a href="#" class="bottom-nav-item${currentPage === page ? ' active' : ''}" data-page="${page}">
         ${_NAV_ICONS[page] || ''}<span>${label}</span>
       </a>`).join('')
   }
+}
+
+// The solo bottom bar's "More" tab (D2, 2026-09-07). Body-level via mountModal so it sits above the
+// bottom nav and the floating mobile view-switcher pill, same as every other modal here. navigate()
+// tears down .modal-overlay on its own, so the row handlers just call it. A plain centred .modal
+// (like _openQuickPrefsPopover) rather than modal-fullscreen-mobile: only three short items, and a
+// bottom-flush sheet would tuck its last row under the fixed bottom nav.
+function _openMoreSheet() {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'more-sheet-modal'
+  overlay.onclick = e => { if (e.target === overlay) closeModal('more-sheet-modal') }
+  const rows = _NAV_MORE_SOLO.map(pg => {
+    const label = (_NAV_ITEMS.solo.find(i => i.page === pg) || {}).label || pg
+    return `<button class="btn btn-secondary" onclick="navigate('${pg}')">${label}</button>`
+  }).join('')
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:340px">
+      <div class="modal-header">
+        <h2 class="modal-title">More</h2>
+        <button class="modal-close" onclick="closeModal('more-sheet-modal')">✕</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
+    </div>`
+  mountModal(overlay)
 }
 
 function applyRoleUI() {
@@ -1085,6 +1124,9 @@ function navigate(page, _historyOp = 'push') {
   document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.page === page)
   })
+  // Solo's bottom-bar "More" tab owns Library / Calendar / Settings — light it while on one of them.
+  document.querySelector('.bottom-nav-item[data-page="__more__"]')
+    ?.classList.toggle('active', _NAV_MORE_SOLO.includes(page))
 
   // Scoped to THIS navigation. `currentPage` was set to `page` a few lines above, so a render
   // dispatched here paints freely until some later navigate() moves currentPage on.
@@ -1286,7 +1328,10 @@ window.addEventListener('popstate', e => {
   const nav = document.querySelector(`.${id === 'sidebar-nav' ? 'sidebar' : 'bottom-nav'}`)
   if (nav) nav.addEventListener('click', e => {
     const item = e.target.closest('.nav-item, .bottom-nav-item')
-    if (item?.dataset.page) { e.preventDefault(); navigate(item.dataset.page) }
+    if (!item?.dataset.page) return
+    e.preventDefault()
+    if (item.dataset.page === '__more__') _openMoreSheet()
+    else navigate(item.dataset.page)
   })
 })
 
