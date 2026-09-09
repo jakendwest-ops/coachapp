@@ -1115,6 +1115,7 @@ async function openProgram(programId) {
   const el = document.getElementById('main-content')
   log.info('openProgram', 'loading', { programId })
   el.innerHTML = '<div class="loading-state">Loading…</div>'
+  window._builderOpenSlot = {}   // start every builder visit with no slot pre-opened
 
   const { data: program, error } = await db.from('programs').select('id, name, description, created_at, is_personal, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)').eq('id', programId).single()
 
@@ -2221,7 +2222,7 @@ async function loadAllPhaseWorkouts(phases) {
 function _selectBuilderWeek(phaseId, week) {
   window._builderActiveWeek = window._builderActiveWeek || {}
   window._builderActiveWeek[phaseId] = week
-  window._builderOpenSlot = null   // a slot open in the week you're leaving shouldn't linger
+  if (window._builderOpenSlot) window._builderOpenSlot[phaseId] = null   // a slot open in the week you're leaving shouldn't linger
   const d = window._builderWeekData?.[phaseId]
   const container = document.getElementById('phase-week-' + phaseId)
   if (d && container) container.innerHTML = renderPhaseWeekGrid(d.phase, week, d.byWeek[week] || [])
@@ -2240,14 +2241,16 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
   const byDay = {}
   sessions.forEach(pw => { (byDay[pw.day_of_week] = byDay[pw.day_of_week] || []).push(pw) })
 
-  const openId = window._builderOpenSlot
+  // Keyed per-phase: openProgram renders every phase's grid at once, so a single global id would
+  // leave a stale panel open in phase A when you opened one in phase B (only B re-renders). Review.
+  const openId = window._builderOpenSlot?.[phase.id] || null
   // A slotted workout in the grid is just its head — tapping it opens a full-width preview panel
   // BELOW the grid (2026-09-09). The old inline expand crammed 6 exercises + prescriptions + 3
   // action buttons into a ~130px day column, with the other six columns sitting empty beside it.
   const slotHtml = (pw, multi) => {
     const name = pw.workout_templates?.name || 'Unknown'
     return `<div class="pwk-slot${pw.id === openId ? ' is-open' : ''}">
-      <div class="pwk-slot-head" role="button" tabindex="0" onclick="_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})}">
+      <div class="pwk-slot-head" data-pw="${pw.id}" role="button" tabindex="0" onclick="_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})}">
         ${pw.tier ? `<span class="pwk-tier" style="color:${tierColor[pw.tier]}">${pw.tier[0].toUpperCase()}</span>` : ''}
         ${multi ? `<span class="pwk-ampm">${pw.session_order === 2 ? 'PM' : 'AM'}</span>` : ''}
         <span class="pwk-slot-name">${escapeHtml(name)}</span>
@@ -2277,8 +2280,8 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
       <div class="pwk-slot-actions">
         <button class="pwk-act edit" onclick="_editPhaseWorkout('${pw.template_id}','${pw.id}')">✎ Edit workout</button>
         <button class="pwk-act remove" onclick="removePhaseWorkout('${pw.id}','${phase.id}')">✕ Remove</button>
-        <button class="pwk-act" style="color:var(--text-muted)" onclick="saveTemplateToLibrary('${pw.template_id}',this)" title="Make this workout reusable in any program">Save to Library</button>
       </div>
+      <button class="pwk-act" style="width:100%;margin-top:6px;color:var(--text-muted)" onclick="saveTemplateToLibrary('${pw.template_id}',this)" title="Make this workout reusable in any program">Save to Library</button>
     </div>`
   }
 
@@ -2308,10 +2311,15 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
 // re-renders the week grid from the cached data (no refetch) — the open slot's id lives on window
 // so it survives that re-render and any later loadAllPhaseWorkouts.
 function _toggleBuilderSlot(pwId, phaseId, weekNum) {
-  window._builderOpenSlot = window._builderOpenSlot === pwId ? null : pwId
+  window._builderOpenSlot = window._builderOpenSlot || {}
+  window._builderOpenSlot[phaseId] = window._builderOpenSlot[phaseId] === pwId ? null : pwId
   const d = window._builderWeekData?.[phaseId]
   const container = document.getElementById('phase-week-' + phaseId)
-  if (d && container) container.innerHTML = renderPhaseWeekGrid(d.phase, weekNum, d.byWeek[weekNum] || [])
+  if (d && container) {
+    container.innerHTML = renderPhaseWeekGrid(d.phase, weekNum, d.byWeek[weekNum] || [])
+    // Re-render blows away the focused element — put keyboard focus back on the slot just toggled.
+    container.querySelector(`.pwk-slot-head[data-pw="${pwId}"]`)?.focus()
+  }
 }
 
 // Edit a program-slotted workout: hand off to the full template editor with the program back-context —
