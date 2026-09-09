@@ -448,19 +448,28 @@ test.describe('Workout runner (client)', () => {
     expect(tally.atZero, 'reps tally must be empty before any set is logged').toBe('')
     expect(tally.withReps).toContain('9 reps')
 
-    // #1 — the cross-exercise rest chip names the exercise it belongs to without the ambiguous
-    // "Resting <name>" phrasing.
-    const chipText = await page.evaluate(() => {
+    // #1 — the cross-exercise rest chip reads "<exercise> — <countdown> rest left · tap to return"
+    // (2026-09-09: countdown merged into the sentence, "Rest for"/"Resting <name>" phrasings dropped).
+    const chip = await page.evaluate(() => {
       if (!_runner || _runner.exercises.length < 2) return null
       _runner._restForExIdx = 0
       _runner.restRemaining = 45
       _runner.exIdx = 1
       renderRunner()
-      return document.querySelector('#workout-runner [id="wr-rest-chip-countdown"]')?.parentElement?.textContent?.trim() || ''
+      const cd = document.querySelector('#workout-runner [id="wr-rest-chip-countdown"]')
+      return {
+        text: cd?.parentElement?.textContent?.trim() || '',
+        countdownInSentence: !!cd && cd.parentElement?.textContent?.includes('rest left'),
+        name: _runner.exercises[0].name,
+      }
     })
-    if (chipText !== null) {
-      expect(chipText).toContain('Rest for')
-      expect(chipText).not.toContain('Resting ')
+    if (chip !== null) {
+      expect(chip.text).toContain(chip.name)
+      expect(chip.text).toContain('rest left')
+      expect(chip.text).toContain('tap to return')
+      expect(chip.text).not.toContain('Resting ')
+      expect(chip.text).not.toContain('Rest for')
+      expect(chip.countdownInSentence, 'the live countdown span sits inside the sentence').toBe(true)
     }
   })
 

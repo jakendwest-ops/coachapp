@@ -2070,7 +2070,7 @@ function renderTemplateSets(containerId, type) {
       `}
     </div>`
   }).join('') + `
-  <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+  <div style="display:flex;gap:8px;margin-top:8px;justify-content:center">
     ${_addSetBtn(containerId, tid, 'copy', 'Copy previous set')}
     ${_addSetBtn(containerId, tid, 'blank', '+ Add new set')}
   </div>`
@@ -2103,7 +2103,7 @@ function addTemplateSet (containerId, tid, mode) {
 }
 
 function _addSetBtn (containerId, tid, mode, label) {
-  return `<button type="button" onclick="addTemplateSet('${containerId}','${tid}','${mode}')" style="min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 12px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">${label}</button>`
+  return `<button type="button" onclick="addTemplateSet('${containerId}','${tid}','${mode}')" style="flex:1 1 0;max-width:180px;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 12px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">${label}</button>`
 }
 
 // runnerCtx = { mode: 'add'|'swap' } — set when opened from the workout runner's

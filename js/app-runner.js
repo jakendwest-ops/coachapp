@@ -864,8 +864,7 @@ function renderRunner() {
         ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${escapeHtml(e.name||'Exercise '+(i+1))}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
         ${_runner.restRemaining != null && _runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx ? `
         <div onclick="runnerJumpTo(${_runner._restForExIdx})" style="display:flex;align-items:center;gap:8px;margin-top:8px;min-height:44px;padding:10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);border:1px solid var(--accent);cursor:pointer;box-sizing:border-box">
-          <span id="wr-rest-chip-countdown" style="font-size:var(--text-base, 13px);font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;flex-shrink:0">${_runner._restPendingFire ? 'Done' : fmtRestCountdown(_runner.restRemaining)}</span>
-          <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_runner._restPendingFire ? 'Rest done — tap to go back' : 'Rest for ' + escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '') + ' — tap to go back'}</span>
+          <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '')} — ${_runner._restPendingFire ? 'rest done' : `<span id="wr-rest-chip-countdown" style="font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums">${fmtRestCountdown(_runner.restRemaining)}</span> rest left`} · tap to return</span>
         </div>` : ''}
         <div style="display:flex;gap:8px;margin-top:10px">
           <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="flex:1;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 10px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">⇄ Swap exercise</button>
@@ -2943,9 +2942,9 @@ function renderLogExercises() {
             ${colHeaders}
           </div>
           ${setsHtml}
-          <div style="display:flex;gap:8px;margin-top:5px;flex-wrap:wrap">
-            <button onclick="addLogSet(${bi},'copy')" style="min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 12px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">Copy previous set</button>
-            <button onclick="addLogSet(${bi},'blank')" style="min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 12px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">+ Add new set</button>
+          <div style="display:flex;gap:8px;margin-top:8px;justify-content:center">
+            <button onclick="addLogSet(${bi},'copy')" style="flex:1 1 0;max-width:180px;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 12px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">Copy previous set</button>
+            <button onclick="addLogSet(${bi},'blank')" style="flex:1 1 0;max-width:180px;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 12px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">+ Add new set</button>
           </div>
         </div>
       </div>

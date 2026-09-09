@@ -56,6 +56,10 @@ test.describe('solo dashboard tiles', () => {
       expect(m, `every tile must carry a navigate() target, got: ${t}`).toBeTruthy()
       expect(solo, `${m[1]} is not a page a solo user may reach`).toContain(m[1])
     })
+    // 2026-09-09: the Weight tile must NAME its Progress tab — _progressTab persists within an SPA
+    // session, so without this it lands on whichever tab was last open.
+    expect(r.targets[0], 'the Weight tile lands on Body Weight, not "wherever you were"')
+      .toContain("_progressTab='Body Weight'")
   })
 
   // ── 2. Real navigation, not just an attribute ─────────────────────────────────

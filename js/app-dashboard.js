@@ -680,7 +680,7 @@ function _soloTileWeight(weights, todayStr) {
   const latest = weights?.[0] ?? null
   const prev = weights?.[1] ?? null
   if (!latest) {
-    return `<div class="dashboard-card solo-tile" onclick="navigate('progress')">
+    return `<div class="dashboard-card solo-tile" onclick="window._progressTab='Body Weight';navigate('progress')">
       <div class="card-header"><h2 class="card-title">Weight</h2></div>
       <p class="solo-tile-empty">No weigh-ins yet. Tap to log one.</p>
     </div>`
@@ -703,7 +703,9 @@ function _soloTileWeight(weights, todayStr) {
     deltaHtml = `<span class="solo-tile-delta">${arrow} ${flat ? 'no change' : fmtWeight(Math.abs(diffKg), { spaced: true, decimals: 1 })}</span>
       <span class="solo-tile-sub">since ${_dashFormatDate(prev.date)}</span>`
   }
-  return `<div class="dashboard-card solo-tile" onclick="navigate('progress')">
+  // Name the tab: _progressTab is a plain global that persists within an SPA session, so without this
+  // the Weight tile lands on whichever Progress tab was last open (Jake, 2026-09-09).
+  return `<div class="dashboard-card solo-tile" onclick="window._progressTab='Body Weight';navigate('progress')">
     <div class="card-header"><h2 class="card-title">Weight</h2></div>
     <div class="solo-tile-figure">${weightToPref(latest.weight_kg)}<span class="solo-tile-unit">${window._unitPrefs.weight}</span></div>
     <div class="solo-tile-line">${deltaHtml}</div>
@@ -950,7 +952,7 @@ async function renderSoloDashboard(el) {
               <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
               <span style="font-size:var(--text-lg, 14px);font-weight:700">${pb.value} <span class="solo-tile-sub">${escapeHtml(pb.unit || '')}</span></span>
             </div>`).join('')}
-          ${pbs.length > 4 ? `<p class="solo-tile-sub" style="margin-top:8px;cursor:pointer" onclick="navigate('progress')">+${pbs.length - 4} more in Progress → Benchmarks</p>` : ''}
+          ${pbs.length > 4 ? `<p class="solo-tile-sub" style="margin-top:8px;cursor:pointer" onclick="window._progressTab='Benchmarks';navigate('progress')">+${pbs.length - 4} more in Progress → Benchmarks</p>` : ''}
           <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
             ${_pbFormHtml(clientId)}
           </div>
