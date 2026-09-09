@@ -879,7 +879,13 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .pwk-ampm { font-size:8px; font-weight:800; color:var(--accent); flex-shrink:0; }
 .pwk-slot-name { flex:1; min-width:0; font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .pwk-chev { width:13px; height:13px; flex-shrink:0; color:var(--text-muted); transition:transform .2s; }
-.pwk-slot-body { padding:0 8px 8px; }
+.pwk-slot.is-open { border-color:var(--accent); }
+.pwk-slot.is-open .pwk-chev { transform:rotate(180deg); }
+/* Full-width preview panel under the day grid (2026-09-09) — replaces the inline .pwk-slot-body,
+   which squeezed a whole workout into one 1/7-width day column. */
+.pwk-detail { border:1px solid var(--accent); border-radius:var(--radius-md, 10px); background:var(--surface); padding:10px 12px; margin-top:8px; }
+.pwk-detail-head { display:flex; align-items:center; justify-content:space-between; font-size:var(--text-base, 13px); font-weight:700; margin-bottom:2px; }
+.pwk-detail-x { color:var(--text-muted); font-size:var(--text-lg, 14px); line-height:1; padding:2px 6px; flex-shrink:0; }
 .pwk-ex { display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-top:1px solid var(--border); font-size:12px; }
 .pwk-ex .s { color:var(--text-muted); font-size:11px; flex-shrink:0; font-variant-numeric:tabular-nums; }
 /* The prescription line under an exercise name in a builder slot (2026-07-22) — the actual

@@ -52,15 +52,16 @@ test.describe('Week-tabs redesign', () => {
       await expect(page.locator('.week-tab[data-week="2"]')).toHaveAttribute('aria-selected', 'true')
       await expect(page.locator('.week-tab[data-week="1"]')).toHaveAttribute('aria-selected', 'false')
 
-      // A workout slot opens inline (exercises) with Edit / Remove — no slider
+      // A workout slot opens a full-width preview panel below the grid with Edit / Remove — no slider
       await page.locator('.pwk-slot-head').first().click()
-      await expect(page.locator('.pwk-ex').first()).toBeVisible({ timeout: 4000 })
+      await expect(page.locator('.pwk-detail')).toBeVisible({ timeout: 4000 })
+      await expect(page.locator('.pwk-detail .pwk-ex').first()).toBeVisible({ timeout: 4000 })
       await expect(page.locator('.pwk-act.edit').first()).toBeVisible()
       await expect(page.locator('.pwk-act.remove').first()).toBeVisible()
       await expect(page.locator('#session-detail-panel')).toHaveCount(0)
 
       // Restored per-workout "Save to Library" — copies just this workout into the standalone Library
-      const saveBtn = page.locator('.pwk-slot-body button', { hasText: 'Save to Library' }).first()
+      const saveBtn = page.locator('.pwk-detail button', { hasText: 'Save to Library' }).first()
       await expect(saveBtn).toBeVisible()
       await saveBtn.click()
       await expect(page.locator('#app-toast')).toContainText(/Library/i, { timeout: 6000 })

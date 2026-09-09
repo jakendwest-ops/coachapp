@@ -2221,6 +2221,7 @@ async function loadAllPhaseWorkouts(phases) {
 function _selectBuilderWeek(phaseId, week) {
   window._builderActiveWeek = window._builderActiveWeek || {}
   window._builderActiveWeek[phaseId] = week
+  window._builderOpenSlot = null   // a slot open in the week you're leaving shouldn't linger
   const d = window._builderWeekData?.[phaseId]
   const container = document.getElementById('phase-week-' + phaseId)
   if (d && container) container.innerHTML = renderPhaseWeekGrid(d.phase, week, d.byWeek[week] || [])
@@ -2239,9 +2240,25 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
   const byDay = {}
   sessions.forEach(pw => { (byDay[pw.day_of_week] = byDay[pw.day_of_week] || []).push(pw) })
 
-  // A slotted workout: tap the head to reveal its exercises inline + Edit / Remove (no slider —
-  // matches the read Workouts page). Exercises come from the embed extended in loadAllPhaseWorkouts.
+  const openId = window._builderOpenSlot
+  // A slotted workout in the grid is just its head — tapping it opens a full-width preview panel
+  // BELOW the grid (2026-09-09). The old inline expand crammed 6 exercises + prescriptions + 3
+  // action buttons into a ~130px day column, with the other six columns sitting empty beside it.
   const slotHtml = (pw, multi) => {
+    const name = pw.workout_templates?.name || 'Unknown'
+    return `<div class="pwk-slot${pw.id === openId ? ' is-open' : ''}">
+      <div class="pwk-slot-head" role="button" tabindex="0" onclick="_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})}">
+        ${pw.tier ? `<span class="pwk-tier" style="color:${tierColor[pw.tier]}">${pw.tier[0].toUpperCase()}</span>` : ''}
+        ${multi ? `<span class="pwk-ampm">${pw.session_order === 2 ? 'PM' : 'AM'}</span>` : ''}
+        <span class="pwk-slot-name">${escapeHtml(name)}</span>
+        <svg class="pwk-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </div>`
+  }
+
+  // The open slot's exercise preview + Edit / Remove / Save to Library, full-width under the grid.
+  const openPw = sessions.find(pw => pw.id === openId)
+  const detailHtml = (pw) => {
     const name = pw.workout_templates?.name || 'Unknown'
     const exs = [...(pw.workout_templates?.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
     const exHtml = exs.length
@@ -2254,20 +2271,13 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
           return `<div class="pwk-ex"><div style="flex:1;min-width:0"><span>${escapeHtml(ex.exercise_name)}</span>${presc ? `<div class="pwk-presc">${escapeHtml(presc)}</div>` : ''}</div><span class="s">${_setCount} set${_setCount !== 1 ? 's' : ''}</span></div>`
         }).join('')
       : '<div class="pwk-ex" style="color:var(--text-muted)">No exercises yet</div>'
-    return `<div class="pwk-slot">
-      <div class="pwk-slot-head" role="button" tabindex="0" onclick="_toggleBuilderSlot('${pw.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();_toggleBuilderSlot('${pw.id}')}">
-        ${pw.tier ? `<span class="pwk-tier" style="color:${tierColor[pw.tier]}">${pw.tier[0].toUpperCase()}</span>` : ''}
-        ${multi ? `<span class="pwk-ampm">${pw.session_order === 2 ? 'PM' : 'AM'}</span>` : ''}
-        <span class="pwk-slot-name">${escapeHtml(name)}</span>
-        <svg id="pwk-chev-${pw.id}" class="pwk-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="pwk-slot-body" id="pwk-body-${pw.id}" style="display:none">
-        ${exHtml}
-        <div class="pwk-slot-actions">
-          <button class="pwk-act edit" onclick="_editPhaseWorkout('${pw.template_id}','${pw.id}')">✎ Edit workout</button>
-          <button class="pwk-act remove" onclick="removePhaseWorkout('${pw.id}','${phase.id}')">✕ Remove</button>
-        </div>
-        <button class="pwk-act" style="width:100%;margin-top:6px;color:var(--text-muted)" onclick="saveTemplateToLibrary('${pw.template_id}',this)" title="Make this workout reusable in any program">Save to Library</button>
+    return `<div class="pwk-detail">
+      <div class="pwk-detail-head"><span>${escapeHtml(name)}</span><button class="pwk-detail-x" onclick="_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})" aria-label="Close">✕</button></div>
+      ${exHtml}
+      <div class="pwk-slot-actions">
+        <button class="pwk-act edit" onclick="_editPhaseWorkout('${pw.template_id}','${pw.id}')">✎ Edit workout</button>
+        <button class="pwk-act remove" onclick="removePhaseWorkout('${pw.id}','${phase.id}')">✕ Remove</button>
+        <button class="pwk-act" style="color:var(--text-muted)" onclick="saveTemplateToLibrary('${pw.template_id}',this)" title="Make this workout reusable in any program">Save to Library</button>
       </div>
     </div>`
   }
@@ -2290,17 +2300,18 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
           ${canAdd ? `<button class="pwk-add pwg-add" data-phase="${phase.id}" data-day="${dayNum}" data-session="${nextSessionOrder}" data-week="${weekNum}" onclick="_openWorkoutPicker('${phase.id}',${dayNum},${nextSessionOrder},${weekNum})">+ Add workout…</button>` : ''}
         </div>`
       }).join('')}
-    </div>`
+    </div>
+    ${openPw ? detailHtml(openPw) : ''}`
 }
 
-// Expand/collapse a builder workout slot to preview its exercises + Edit/Remove actions.
-function _toggleBuilderSlot(pwId) {
-  const body = document.getElementById('pwk-body-' + pwId)
-  const chev = document.getElementById('pwk-chev-' + pwId)
-  if (!body) return
-  const open = body.style.display !== 'none'
-  body.style.display = open ? 'none' : 'block'
-  if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)'
+// Open/close a builder workout slot's full-width preview panel (below the day grid). Toggling
+// re-renders the week grid from the cached data (no refetch) — the open slot's id lives on window
+// so it survives that re-render and any later loadAllPhaseWorkouts.
+function _toggleBuilderSlot(pwId, phaseId, weekNum) {
+  window._builderOpenSlot = window._builderOpenSlot === pwId ? null : pwId
+  const d = window._builderWeekData?.[phaseId]
+  const container = document.getElementById('phase-week-' + phaseId)
+  if (d && container) container.innerHTML = renderPhaseWeekGrid(d.phase, weekNum, d.byWeek[weekNum] || [])
 }
 
 // Edit a program-slotted workout: hand off to the full template editor with the program back-context —

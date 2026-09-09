@@ -1896,7 +1896,7 @@ function renderTemplateSets(containerId, type) {
       ? _togPill('Unilateral (per side)', type === 'unilateral', `toggleUnilateralType('${containerId}')`)
       : ''
   }
-  const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
+  const row = (label, right) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">${label}</span><div style="display:flex;align-items:center;gap:6px">${right}</div></div>`
   // 16px, not smaller -- an inline font-size beats the global input{font-size:16px} rule (css/main.css),
   // and below 16px iOS Safari re-triggers the auto-zoom-on-focus the pinch-to-zoom fix was paired
   // against (2026-08-01). Same reasoning at every other inline input/select font-size in this codebase.
@@ -1999,8 +1999,8 @@ function renderTemplateSets(containerId, type) {
     const et = s.effortType || 'rpe'
     const tog = _togPill
     const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'var(--border)'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'var(--text-muted)'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
-    return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+    return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--text)">Set ${i+1}</span>
         </div>
@@ -2189,7 +2189,7 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
   // layer, so opened from the runner this needs to sit above it (matches session-detail-panel, 1000).
   if (isRunner) overlay.style.zIndex = '1000'
   overlay.innerHTML = `
-    <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto">
+    <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto">
       <div class="modal-header">
         <h2 class="modal-title">${title}</h2>
         <button class="modal-close" onclick="closeModal('${modalId}')">✕</button>
@@ -2220,15 +2220,15 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
         <div id="att-metric-pills" style="display:flex;gap:6px;margin-top:8px"></div>
       </div>
 
-      <div style="margin:16px 0 10px;font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Set targets</div>
+      <div style="margin:10px 0 6px;font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Set targets</div>
       <div id="att-sets-container"></div>
 
-      <div class="field" style="margin-top:14px">
+      <div class="field" style="margin-top:10px">
         <label class="field-label">Notes / coaching cues</label>
         <textarea class="field-input" id="att-notes" placeholder="e.g. Pause 1s at bottom, 3s eccentric" rows="2" style="resize:vertical">${escapeHtml(existingNotes || '')}</textarea>
       </div>
       <div class="field">
-        <label class="field-label">Superset group <span style="font-weight:400;color:var(--text-muted)">(optional — enter same letter, e.g. A, to link exercises)</span></label>
+        <label class="field-label">Superset group <span style="font-weight:400;color:var(--text-muted)">(same letter links exercises)</span></label>
         <input class="field-input" id="att-superset" placeholder="e.g. A" maxlength="3" style="width:80px" value="${escapeHtml(existingSuperset || '')}">
       </div>
       <p class="modal-error" id="att-error"></p>
