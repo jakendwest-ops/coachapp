@@ -8,6 +8,14 @@
 // Now there are two buttons at the bottom and none on the rows: "Copy previous set" adds a filled
 // row, "+ Add new set" adds a blank one. One tap either way.
 //
+// 2026-09-11 walkthrough — a per-row control came BACK, for a different job. Jake had edited Set 1
+// of an exercise that already had 3-4 sets (typed earlier, or from "Copy previous set") and had no
+// fast way to push that edit into the sets below it — only delete-and-recopy from the bottom, one
+// tap per set removed. The new `copyPrevTsSet` button (Set 2+, a small "↑" beside the "Set N" label,
+// not a labelled pill in the AMRAP/BW/× row) syncs ONE existing set to match the one above it. It
+// does not reopen the "two clicks to add a set" problem this file's other tests guard — those bottom
+// buttons, and the "+ Add new set" / "Copy previous set" split, are untouched.
+//
 // These drive the editor through the DOM rather than through the set objects, because the whole
 // point is what the person tapping actually gets — and because the set-object keys differ per metric
 // type, so asserting on them would test the wrong layer.
@@ -26,20 +34,58 @@ const MOUNT = `
 `
 
 test.describe('Set editor: one tap to repeat a set (2026-09-06)', () => {
-  test('the per-row "Copy set N" button is gone, and so is the function behind it', async ({ page }) => {
+  test('the OLD per-row "Copy set N" pill (in the AMRAP/BW/x row) is gone, and so is the function behind it', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(`(() => {
       ${MOUNT}
       window._templateSets = [{ effortType: 'rpe' }, { effortType: 'rpe' }, { effortType: 'rpe' }]
       renderTemplateSets('att-sets-container', 'weight_reps')
-      const html = document.getElementById('att-sets-container').innerHTML
       return {
-        perRowCopy: /Copy set \\d/.test(html),
+        // The 2026-09-06 pill read "Copy set N" as its own VISIBLE button label. Today's
+        // replacement (copyPrevTsSet, tested below) is an unlabelled "↑" icon beside "Set N" —
+        // its aria-label/title carry "Copy set N" for a screen reader/tooltip, which is why this
+        // checks rendered textContent (what a person tapping actually sees), not raw innerHTML.
+        oldPillText: [...document.querySelectorAll('#att-sets-container button')].some(b => /Copy set \\d/.test(b.textContent)),
         fnGone: typeof copyPrevTemplateSet === 'undefined'
       }
     })()`)
-    expect(r.perRowCopy, 'with 3 sets there were 2 per-row copy buttons; they are replaced by one at the bottom').toBe(false)
-    expect(r.fnGone, 'copyPrevTemplateSet had exactly one caller (that button) — dead code once it goes').toBe(true)
+    expect(r.oldPillText, 'the 2026-09-06 labelled pill must not have come back').toBe(false)
+    expect(r.fnGone, 'copyPrevTemplateSet had exactly one caller (that pill) — dead code once it goes').toBe(true)
+  })
+
+  test('a per-row "copy set above" control exists on Set 2+ (not Set 1) and syncs that set to the one above it (2026-09-11)', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(`(() => {
+      ${MOUNT}
+      window._templateSets = [{ effortType: 'rpe' }, { effortType: 'rpe' }]
+      renderTemplateSets('att-sets-container', 'weight_reps')
+
+      const w0 = document.getElementById('ts-weight-0')
+      const r0 = document.getElementById('ts-rmin-0')
+      if (!w0 || !r0) return { built: false }
+      w0.value = '60'; r0.value = '8'
+
+      const set1HasNoCopyBtn = !document.querySelector('[onclick^="copyPrevTsSet(0,"]')
+      const copyBtn = document.querySelector('[onclick^="copyPrevTsSet(1,"]')
+      if (!copyBtn) return { built: true, set1HasNoCopyBtn, copyBtn: false }
+      copyBtn.click()
+
+      return {
+        built: true,
+        set1HasNoCopyBtn,
+        copyBtn: true,
+        weight1: document.getElementById('ts-weight-1')?.value ?? null,
+        reps1: document.getElementById('ts-rmin-1')?.value ?? null,
+        // the source row must survive the round trip
+        weight0: document.getElementById('ts-weight-0')?.value ?? null
+      }
+    })()`)
+    expect(r.built, 'the editor must render its weight/reps inputs or this test asserts nothing').toBe(true)
+    expect(r.set1HasNoCopyBtn, 'Set 1 has nothing above it, so it gets no copy button').toBe(true)
+    expect(r.copyBtn, 'Set 2 must have a "copy set above" button').toBe(true)
+    expect(r.weight1, 'Set 2 now matches Set 1\'s weight').toBe('60')
+    expect(r.reps1, 'Set 2 now matches Set 1\'s reps').toBe('8')
+    expect(r.weight0, 'and the row it copied from is untouched').toBe('60')
   })
 
   test('the two add-set buttons read as buttons, not text links (2026-09-08)', async ({ page }) => {
