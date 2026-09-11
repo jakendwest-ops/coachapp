@@ -2260,7 +2260,6 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
   }
 
   // The open slot's exercise preview + Edit / Remove / Save to Library, full-width under the grid.
-  const openPw = sessions.find(pw => pw.id === openId)
   const detailHtml = (pw) => {
     const name = pw.workout_templates?.name || 'Unknown'
     const exs = [...(pw.workout_templates?.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
@@ -2297,14 +2296,23 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
         const multi = daySessions.length > 1
         const canAdd = daySessions.length < 2
         const nextSessionOrder = daySessions.length + 1
+        // The open slot's own detail panel is a SIBLING of .pwk-day (not nested inside it), placed in
+        // source order right after the day that owns it — not once at the end of every day, which is
+        // where it used to land regardless of which day was tapped (2026-09-11 walkthrough: "needs to
+        // open under the section in which it was clicked"). On mobile (.pwk-days is a flex column)
+        // that source position IS the display position, so it now opens right under its own day.
+        // Desktop (.pwk-days is a 7-col grid from 768px) still wants the full-width-below-the-week
+        // panel from 2026-09-09 — so .pwk-detail there gets `order` pushed after every .pwk-day (which
+        // all keep the default order) and `grid-column:1/-1`, which forces grid auto-placement onto a
+        // fresh full-width row after the week regardless of source position. See css/main.css.
+        const openHere = daySessions.find(pw => pw.id === openId)
         return `<div class="pwk-day${daySessions.length ? '' : ' is-empty'}">
           <div class="pwk-dow">${label}</div>
           ${daySessions.map(pw => slotHtml(pw, multi)).join('')}
           ${canAdd ? `<button class="pwk-add pwg-add" data-phase="${phase.id}" data-day="${dayNum}" data-session="${nextSessionOrder}" data-week="${weekNum}" onclick="_openWorkoutPicker('${phase.id}',${dayNum},${nextSessionOrder},${weekNum})">+ Add workout…</button>` : ''}
-        </div>`
+        </div>${openHere ? detailHtml(openHere) : ''}`
       }).join('')}
-    </div>
-    ${openPw ? detailHtml(openPw) : ''}`
+    </div>`
 }
 
 // Open/close a builder workout slot's full-width preview panel (below the day grid). Toggling

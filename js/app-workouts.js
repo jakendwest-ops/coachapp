@@ -2009,6 +2009,7 @@ function renderTemplateSets(containerId, type) {
             ${showAmrap ? tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`) : ''}
             ${showBodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
           ` : ''}
+          ${i > 0 ? `<button type="button" onclick="copyPrevTsSet(${i},'${containerId}')" aria-label="Copy set ${i} into set ${i+1}" title="Copy set ${i}" style="width:26px;height:26px;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--text-base, 13px);line-height:1">↑</button>` : ''}
           <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--legacy-text-15, 15px);line-height:1">×</button>
         </div>
       </div>
@@ -2094,6 +2095,22 @@ function renderTemplateSets(containerId, type) {
 // took checks.sh's dynamic-handler count from 7 to 8 — a handler assembled at runtime cannot be
 // verified against the declared functions, which is the whole point of that gate. A named function
 // satisfies it and is better code besides: the logic is testable instead of living in a string.
+// Syncs an EXISTING set to match the one directly above it — different from the two buttons below,
+// which only ever add a new set. Jake, 2026-09-11 walkthrough: after editing Set 1 he had no fast
+// way to push that change into Sets 2-4, which the exercise already had (typed with the OLD values,
+// or from an earlier "Copy previous set" tap) — only delete-and-recopy from the bottom, one tap per
+// set removed. Per-row buttons were deliberately stripped from this editor on 2026-08-02/09-06 (see
+// the note above addTemplateSet), so this one stays the same 26x26 footprint as the × next to it
+// rather than a labelled pill, to solve the resync case without reopening that clutter.
+function copyPrevTsSet(i, containerId) {
+  flushTemplateSets(containerId)
+  const sets = window._templateSets || []
+  if (!sets[i - 1]) return
+  sets[i] = { ...sets[i - 1] }
+  const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
+  renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
+}
+
 function addTemplateSet (containerId, tid, mode) {
   flushTemplateSets(containerId)
   const sets = window._templateSets || (window._templateSets = [])

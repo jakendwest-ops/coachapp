@@ -884,6 +884,15 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 /* Full-width preview panel under the day grid (2026-09-09) — replaces the inline .pwk-slot-body,
    which squeezed a whole workout into one 1/7-width day column. */
 .pwk-detail { border:1px solid var(--accent); border-radius:var(--radius-md, 10px); background:var(--surface); padding:10px 12px; margin-top:8px; }
+/* .pwk-detail now sits in source order right after the .pwk-day that opened it (js/app-programs.js),
+   so on mobile (.pwk-days is a flex column) it naturally renders directly under its own day (2026-09-11
+   walkthrough fix). On the >=768px grid, `order` pushes it after every .pwk-day (all default order 0)
+   and grid-column spans the full row — auto-placement then always gives it a fresh full-width row
+   after the whole week, regardless of which day it belongs to: the 2026-09-09 desktop behaviour,
+   unchanged. */
+@media (min-width:768px) {
+  .pwk-detail { order:999; grid-column:1 / -1; }
+}
 .pwk-detail-head { display:flex; align-items:center; justify-content:space-between; font-size:var(--text-base, 13px); font-weight:700; margin-bottom:2px; }
 .pwk-detail-x { color:var(--text-muted); font-size:var(--text-lg, 14px); line-height:1; padding:2px 6px; flex-shrink:0; }
 .pwk-ex { display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-top:1px solid var(--border); font-size:12px; }

@@ -803,16 +803,22 @@ function renderStrengthTable(ex) {
   let header
   const weightLabel = window._unitPrefs.weight === 'lb' ? 'Lb' : 'Kg'
   const jumpHeightLabel = window._unitPrefs.jumpHeight === 'in' ? 'Height (in)' : 'Height (cm)'
+  // The row's trailing ✓ (44px) always renders, but the × delete button (32px + 8px margin-left,
+  // see inDel above) only renders when there's more than one set — and the header never reserved a
+  // matching spot for it. With one delete button in play, every row had one more flex item than the
+  // header, so the two flex:1 cells sat narrower than the labels above them (2026-09-11 walkthrough:
+  // "column headers are not centre aligned to the columns they represent").
+  const delSpacer = ex.tableRows.length > 1 ? `<span style="width:40px;flex-shrink:0"></span>` : ''
   if (mt === 'unilateral') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(`L / R · ${weightLabel.toLowerCase()} × reps`)}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(`L / R · ${weightLabel.toLowerCase()} × reps`)}<span style="width:44px"></span>${delSpacer}</div>`
   } else if (mt === 'timed_hold') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : weightLabel)}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : weightLabel)}<span style="width:44px"></span>${delSpacer}</div>`
   } else if (mt === 'jump_height') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(jumpHeightLabel)}${th('Jumps')}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(jumpHeightLabel)}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
   } else if (mt === 'jump_distance') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}${th('Jumps')}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
   } else {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}<span style="width:44px"></span></div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}<span style="width:44px"></span>${delSpacer}</div>`
   }
   // Reps tally only makes sense for rep-based types.
   const tally = (mt === 'weight_reps' || mt === 'unilateral') ? _renderRepsTallyHtml(ex) : ''
@@ -852,7 +858,7 @@ function renderRunner() {
               <span style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}</span>
               <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
-            <div style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word">${escapeHtml(ex.name)||'Exercise name'}</div>
+            <div style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
             ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
             ${nextEx ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
           </div>
@@ -861,7 +867,12 @@ function renderRunner() {
             <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:var(--radius-sm, 8px);background:var(--danger, #ef4444);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
           </div>
         </div>
-        ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:3px;margin-top:10px">${_runner.exercises.map((e,i)=>`<div onclick="runnerJumpTo(${i})" title="${escapeHtml(e.name||'Exercise '+(i+1))}" style="flex:1;height:8px;border-radius:4px;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--border)'};cursor:pointer"></div>`).join('')}</div>` : ''}
+        <!-- Numbered squares, not the old thin touching bar (2026-09-11 walkthrough: on a 6+ exercise
+             workout the bar's segments got thin enough to misclick a neighbour). Fixed-size and
+             gapped so a tap always lands cleanly, and they scroll rather than shrink on a long
+             workout — segment width used to shrink with exercise count, worst exactly when precision
+             mattered most. Number = the exercise's order, per Jake's own suggestion. -->
+        ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px">${_runner.exercises.map((e,i)=>`<button type="button" onclick="runnerJumpTo(${i})" title="${escapeHtml(e.name||'Exercise '+(i+1))}" style="flex-shrink:0;width:40px;height:40px;border-radius:var(--radius-sm, 8px);border:none;display:flex;align-items:center;justify-content:center;font-size:var(--text-base, 13px);font-weight:800;cursor:pointer;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--surface-2)'};color:${i<=_runner.exIdx?'#fff':'var(--text-muted)'}">${i+1}</button>`).join('')}</div>` : ''}
         ${_runner.restRemaining != null && _runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx ? `
         <div onclick="runnerJumpTo(${_runner._restForExIdx})" style="display:flex;align-items:center;gap:8px;margin-top:8px;min-height:44px;padding:10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);border:1px solid var(--accent);cursor:pointer;box-sizing:border-box">
           <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '')} — ${_runner._restPendingFire ? 'rest done' : `<span id="wr-rest-chip-countdown" style="font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums">${fmtRestCountdown(_runner.restRemaining)}</span> rest left`} · tap to return</span>
