@@ -1446,7 +1446,10 @@ async function openTemplate(id, ctx = {}) {
                   return `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--accent);margin-top:3px;font-style:italic">${escapeHtml(ex.notes)}</div>`
                 })()}
               </div>
-              <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;flex-shrink:0" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
+              <div style="display:flex;gap:6px;flex-shrink:0">
+                <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
+                <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="confirmRemoveTemplateExercise('${ex.id}','${id}')">Remove</button>
+              </div>
             </div>
           </div>
         </div>`
@@ -2620,6 +2623,16 @@ async function saveEditTemplateExercise(texId, templateId) {
   closeModal('edit-tex-modal')
   window._lastExerciseChange = { op: 'update', matchName: origRow?.exercise_name || picked.name, row: newRow }
   _afterTemplateExerciseSave(targetId)
+}
+
+// The list row's own Remove button (2026-09-11 walkthrough: "add the delete/remove button here
+// instead of inside the exercise itself") skips the "open Edit first" step that used to be the only
+// way in — which was also the only friction standing between a tap and an unrecoverable delete. The
+// modal's own Remove button (inside showEditTemplateExerciseModal) stays unguarded on purpose, out of
+// scope here; this wrapper only guards the new direct path.
+async function confirmRemoveTemplateExercise(texId, templateId) {
+  if (!(await confirmDialog('Remove this exercise from the workout?', { title: 'Remove exercise?', confirmLabel: 'Remove', danger: true }))) return
+  deleteTemplateExercise(texId, templateId)
 }
 
 async function deleteTemplateExercise(texId, templateId) {
