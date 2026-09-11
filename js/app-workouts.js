@@ -2003,13 +2003,13 @@ function renderTemplateSets(containerId, type) {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--text)">Set ${i+1}</span>
+          ${i > 0 ? `<button type="button" onclick="copyPrevTsSet(${i},'${containerId}')" aria-label="Copy set ${i} into set ${i+1}" title="Copy set ${i}" style="width:22px;height:22px;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--text-sm, 11px);line-height:1">↑</button>` : ''}
         </div>
         <div style="display:flex;gap:4px">
           ${showToggleRow ? `
             ${showAmrap ? tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`) : ''}
             ${showBodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
           ` : ''}
-          ${i > 0 ? `<button type="button" onclick="copyPrevTsSet(${i},'${containerId}')" aria-label="Copy set ${i} into set ${i+1}" title="Copy set ${i}" style="width:26px;height:26px;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--text-base, 13px);line-height:1">↑</button>` : ''}
           <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--legacy-text-15, 15px);line-height:1">×</button>
         </div>
       </div>
