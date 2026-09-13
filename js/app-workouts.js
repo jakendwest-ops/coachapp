@@ -3247,7 +3247,7 @@ async function showEditTemplateModal(id) {
         <button class="btn-danger" onclick="deleteTemplate('${id}')">Delete template</button>
         <div style="flex:1"></div>
         <button class="btn-secondary" onclick="closeModal('edit-template-modal')">Cancel</button>
-        <button class="btn-primary" onclick="saveEditTemplate('${id}')">Save</button>
+        <button class="btn-primary" onclick="_stageRenameTemplate()">Save</button>
       </div>
     </div>
   `
@@ -3276,27 +3276,15 @@ async function _verifyTemplateOwnership(templateId, coachId) {
   return !!data
 }
 
-async function saveEditTemplate(id) {
+function _stageRenameTemplate() {
   const errorEl = document.getElementById('et-error')
   const name = document.getElementById('et-name').value.trim()
   if (!name) { errorEl.textContent = 'Name is required'; return }
   const description = document.getElementById('et-desc').value.trim() || null
-  const { templateId: targetId } = await _resolveEditableTemplateId(id)
-  const coachId = await _resolveTemplateOwnerCoachId()
-  log.info('saveEditTemplate', 'updating template', { id: targetId })
-  const { data, error } = await db.from('workout_templates').update({
-    name, description
-  }).eq('id', targetId).eq('coach_id', coachId).select()
-  if (error) { log.error('saveEditTemplate', 'update failed', error); errorEl.textContent = error.message; return }
-  if (!data?.length) { log.error('saveEditTemplate', 'no rows updated — permission denied?', { id: targetId }); errorEl.textContent = 'Save failed — template not found or permission denied.'; return }
-  log.ok('saveEditTemplate', 'template updated', { id: targetId })
+  window._templateDraft.meta = { name, description }
   closeModal('edit-template-modal')
-  // Renaming was NEVER connected to propagation — it ended at a bare openTemplate, so a name change
-  // had to be repeated by hand in every week. Jake, 2026-08-14: "this includes changing an exercise or
-  // chaning the session name ... I have to go and make these edits 1 by 1." Now routed through the same
-  // path an exercise edit takes, carrying its own op so _applyToAllSessions can tell them apart.
-  window._lastExerciseChange = { op: 'rename', name, description }
-  await _afterTemplateExerciseSave(targetId)
+  _renderTemplateExerciseList()
+  _renderSaveWorkoutButton()
 }
 
 async function deleteTemplate(id) {

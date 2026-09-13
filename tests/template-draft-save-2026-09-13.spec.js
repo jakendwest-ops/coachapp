@@ -328,3 +328,33 @@ test.describe('Template draft: staged reorder', () => {
     }
   })
 })
+
+test.describe('Template draft: staged rename', () => {
+  test('_stageRenameTemplate updates the draft meta only, writes nothing to the database', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Stage Rename Before' }).select('id').single()
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      const r = await page.evaluate(`(() => {
+        const mk = (id) => { let e = document.getElementById(id); if (!e) { e = document.createElement('input'); e.id = id; document.body.appendChild(e) }; return e }
+        mk('et-name').value = '[E2E] Stage Rename After'
+        mk('et-desc').value = 'a new description'
+        _stageRenameTemplate()
+        return { meta: window._templateDraft.meta, dirty: _templateDraftIsDirty() }
+      })()`)
+      expect(r.meta).toEqual({ name: '[E2E] Stage Rename After', description: 'a new description' })
+      expect(r.dirty).toBe(true)
+      const dbRow = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_templates').select('name, description').eq('id', id).single()
+        return data
+      }, setup.templateId)
+      expect(dbRow.name).toBe('[E2E] Stage Rename Before')
+      expect(dbRow.description).toBeNull()
+    } finally {
+      await page.evaluate(async (id) => { await db.from('workout_templates').delete().eq('id', id) }, setup.templateId)
+    }
+  })
+})
