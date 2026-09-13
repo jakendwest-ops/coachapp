@@ -246,8 +246,11 @@ All 5 files flagged at the 2026-09-09 deferral are affected, at different depths
   since the modal's own Save now stages rather than writes.
 - **`programs.spec.js`, `personal-programs.spec.js`** — anywhere they add/edit/reorder a template
   exercise and check the database immediately after need the same Save-workout step inserted.
-- **`ledger-fixes-2026-07-23.spec.js`** — flagged from memory, not yet re-confirmed against current
-  content; first task in the implementation plan is reading it fresh to determine actual scope.
+- **`ledger-fixes-2026-07-23.spec.js`** — read fresh during planning (2026-09-13) and confirmed
+  **unrelated**: it covers runner metric-type resolution, the 1RM rep ceiling, PB "best" selection,
+  distance formatting, and the runner's own Discard confirm — nothing touching the template-builder
+  propagation/save flow. The 2026-09-09 deferral note that flagged it as one of the five coupled
+  files was wrong; corrected here rather than carried forward again.
 
 New tests needed (implementation-planning to enumerate precisely):
 - The draft never writes to the database until Save (a spec that adds/edits/reorders, then asserts
@@ -259,8 +262,12 @@ New tests needed (implementation-planning to enumerate precisely):
   prompt per change.
 - Partial-failure recovery: simulate a write failing partway through a batch, confirm the successful
   ones aren't re-applied on retry and the failed ones are.
-- Reorder's old debounce-specific tests are removed along with the subsystem; confirm none of them
-  are secretly covering something else first.
+- Reorder's old debounce-specific tests: confirmed during planning (2026-09-13) that
+  `tests/reorder-instant-2026-09-06.spec.js` has 5 tests, of which 2 (the pure `_reorderRowsInDom`
+  swap/boundary tests) are unaffected and survive; the other 3 test the per-tap-write-plus-debounce
+  behavior directly and are replaced. `tests/reorder-propagation-2026-08-19.spec.js` has 6 tests, of
+  which 5 (driving `_propagateReorderToTemplates` directly) are unaffected; 1 (the wiring test
+  referencing `_scheduleReorderSettle`) is rewritten.
 
 ## Open questions (for implementation planning, not blocking this spec's approval)
 
