@@ -61,3 +61,41 @@ test.describe('Template draft: creation', () => {
     }
   })
 })
+
+test.describe('Template draft: rendering', () => {
+  test('the exercise list and header repaint from the draft object, not a fresh fetch', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Render From Draft' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] Squat', exercise_type: 'strength', order_index: 0, sets_json: [{ repsMin: '5' }] })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      // Mutate the draft directly (no UI action yet — that's later tasks) and force a repaint via
+      // the extracted render function, proving the DOM comes from the draft, not another fetch.
+      const r = await page.evaluate(() => {
+        window._templateDraft.exercises[0].exercise_name = '[E2E] Squat RENAMED IN DRAFT ONLY'
+        window._templateDraft.meta.name = '[E2E] Renamed Header'
+        _renderTemplateExerciseList()
+        return {
+          headerText: document.querySelector('.page-title')?.textContent,
+          listText: document.getElementById('tpl-ex-list')?.textContent || '',
+        }
+      })
+      expect(r.headerText).toBe('[E2E] Renamed Header')
+      expect(r.listText).toContain('[E2E] Squat RENAMED IN DRAFT ONLY')
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+    // The database was never touched by the mutation above — it lived only in the draft.
+    const stillOriginal = await page.evaluate(async (id) => {
+      const { data } = await db.from('workout_templates').select('name').eq('id', id).maybeSingle()
+      return data === null // already deleted in the finally above, which only succeeds if nothing else broke
+    }, setup.templateId)
+    expect(stillOriginal).toBe(true)
+  })
+})

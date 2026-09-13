@@ -1427,68 +1427,85 @@ async function openTemplate(id, ctx = {}) {
       </div>
     </div>
 
-    <div id="template-exercise-list">
-      ${exercises.length === 0 ? `
-        <div class="empty-state">
-          <div class="empty-icon">➕</div>
-          <div class="empty-title">No exercises yet</div>
-          <div class="empty-text">Add exercises to build this template</div>
-          <button class="btn-primary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
-        </div>
-      ` : `<div class="list" id="tpl-ex-list">${exercises.map((ex, i) => {
-        // metric_type is the source of truth; exercise_type alone can't tell an interval block from
-        // real cardio — _deriveFromMetricType writes 'cardio' as the legacy exercise_type for BOTH.
-        const _mt = ex.metric_type || ex.exercise_type
-        const isCardio = _mt === 'cardio'
-        const isInterval = _mt === 'interval'
-        const meta = isCardio
-          ? [ex.sets ? `${ex.sets} sets` : null, 'Cardio'].filter(Boolean).join(' · ')
-          : [ex.sets ? `${ex.sets} sets` : null, ex.reps ? `${escapeHtml(String(ex.reps))} reps` : null, ex.weight_kg ? `${ex.weight_kg}kg` : null].filter(Boolean).join(' · ') || 'No defaults set'
-        return `
-        <div class="card" style="margin-bottom:0" data-ex-id="${ex.id}" data-ex-name="${escapeHtml(ex.exercise_name)}">
-          <div class="card-body" style="padding:12px 16px">
-            <div style="display:flex;align-items:center;gap:10px">
-              <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
-                <button data-move="-1" onclick="moveTemplateExercise('${id}','${ex.id}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
-                <button data-move="1" onclick="moveTemplateExercise('${id}','${ex.id}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
-              </div>
-              <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);flex-shrink:0">${i + 1}</div>
-              <div style="flex:1;min-width:0">
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                  <span style="font-weight:600;font-size:var(--text-lg, 14px)">${escapeHtml(ex.exercise_name)}</span>
-                  ${isCardio ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
-                  ${ex.superset_group ? `<span style="font-size:var(--text-sm, 11px);font-weight:700;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(245,158,11,.15);color:#d97706">SS: ${escapeHtml(ex.superset_group)}</span>` : ''}
-                  ${ex.sets_json?.[0]?.bodyweight ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(16,185,129,.12);color:#059669">BW</span>` : ''}
-                </div>
-                ${ex.sets_json?.length ? (() => {
-                  const rows = ex.sets_json.map((s, si) => {
-                    // Shared with openSessionDetail + the day rows (_fmtSetDetail). Rest is folded
-                    // INTO the string here, which is this surface's existing behaviour.
-                    // Like openSessionDetail, this surface prints its own per-set label, so AMRAP
-                    // replaces "Set N" rather than being repeated inside the summary (markAmrap:false).
-                    const summary = _fmtSetDetail(s, { isCardio, isInterval, includeRest: true, markAmrap: false, isUnilateral: _mt === 'unilateral' })
-                    const setLabel = s.amrap ? 'AMRAP:' : `Set ${si+1}:`
-                    return summary && summary !== '—' ? `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">${setLabel}</span> ${escapeHtml(summary)}</div>` : null
-                  }).filter(Boolean)
-                  return rows.length ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:4px">${rows.join('')}</div>` : `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${meta}</div>`
-                })() : `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${meta}</div>`}
-                ${(() => {
-                  if (!ex.notes) return ''
-                  const m = ex.notes.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
-                  if (m) return `<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px"><span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(99,102,241,.1);color:var(--accent);display:inline-block">${escapeHtml(m[1])}</span>${m[2] ? `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-top:1px;font-style:italic">${escapeHtml(m[2])}</div>` : ''}</div>`
-                  return `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--accent);margin-top:3px;font-style:italic">${escapeHtml(ex.notes)}</div>`
-                })()}
-              </div>
-              <div style="display:flex;gap:6px;flex-shrink:0">
-                <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
-                <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="confirmRemoveTemplateExercise('${ex.id}','${id}')">Remove</button>
-              </div>
-            </div>
-          </div>
-        </div>`
-      }).join('')}</div>`}
-    </div>
+    <div id="template-exercise-list"></div>
   `
+  _renderTemplateExerciseList()
+}
+
+function _renderTemplateExerciseList() {
+  const d = window._templateDraft
+  if (!d) return
+  const headerHost = document.querySelector('.page-header')
+  const listHost = document.getElementById('template-exercise-list')
+  if (!headerHost || !listHost) return
+
+  const titleRow = headerHost.querySelector('.page-title')?.parentElement
+  if (titleRow) {
+    titleRow.querySelector('.page-title').textContent = d.meta.name
+    const subtitle = titleRow.parentElement.querySelector('.page-subtitle')
+    if (d.meta.description) {
+      if (subtitle) subtitle.textContent = d.meta.description
+      else titleRow.parentElement.insertAdjacentHTML('beforeend', `<p class="page-subtitle">${escapeHtml(d.meta.description)}</p>`)
+    } else if (subtitle) {
+      subtitle.remove()
+    }
+  }
+
+  const id = d.templateId
+  const exercises = d.exercises
+  listHost.innerHTML = exercises.length === 0 ? `
+    <div class="empty-state">
+      <div class="empty-icon">➕</div>
+      <div class="empty-title">No exercises yet</div>
+      <div class="empty-text">Add exercises to build this template</div>
+      <button class="btn-primary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
+    </div>
+  ` : `<div class="list" id="tpl-ex-list">${exercises.map((ex, i) => {
+    const _mt = ex.metric_type || ex.exercise_type
+    const isCardio = _mt === 'cardio'
+    const isInterval = _mt === 'interval'
+    const meta = isCardio
+      ? [ex.sets ? `${ex.sets} sets` : null, 'Cardio'].filter(Boolean).join(' · ')
+      : [ex.sets ? `${ex.sets} sets` : null, ex.reps ? `${escapeHtml(String(ex.reps))} reps` : null, ex.weight_kg ? `${ex.weight_kg}kg` : null].filter(Boolean).join(' · ') || 'No defaults set'
+    return `
+    <div class="card" style="margin-bottom:0" data-draft-key="${ex._draftKey}" data-ex-name="${escapeHtml(ex.exercise_name)}">
+      <div class="card-body" style="padding:12px 16px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
+            <button data-move="-1" onclick="moveTemplateExercise('${id}','${ex.id}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
+            <button data-move="1" onclick="moveTemplateExercise('${id}','${ex.id}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
+          </div>
+          <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);flex-shrink:0">${i + 1}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="font-weight:600;font-size:var(--text-lg, 14px)">${escapeHtml(ex.exercise_name)}</span>
+              ${isCardio ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
+              ${ex.superset_group ? `<span style="font-size:var(--text-sm, 11px);font-weight:700;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(245,158,11,.15);color:#d97706">SS: ${escapeHtml(ex.superset_group)}</span>` : ''}
+              ${ex.sets_json?.[0]?.bodyweight ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(16,185,129,.12);color:#059669">BW</span>` : ''}
+            </div>
+            ${ex.sets_json?.length ? (() => {
+              const rows = ex.sets_json.map((s, si) => {
+                const summary = _fmtSetDetail(s, { isCardio, isInterval, includeRest: true, markAmrap: false, isUnilateral: _mt === 'unilateral' })
+                const setLabel = s.amrap ? 'AMRAP:' : `Set ${si+1}:`
+                return summary && summary !== '—' ? `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">${setLabel}</span> ${escapeHtml(summary)}</div>` : null
+              }).filter(Boolean)
+              return rows.length ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:4px">${rows.join('')}</div>` : `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${meta}</div>`
+            })() : `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${meta}</div>`}
+            ${(() => {
+              if (!ex.notes) return ''
+              const m = ex.notes.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
+              if (m) return `<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px"><span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(99,102,241,.1);color:var(--accent);display:inline-block">${escapeHtml(m[1])}</span>${m[2] ? `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-top:1px;font-style:italic">${escapeHtml(m[2])}</div>` : ''}</div>`
+              return `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--accent);margin-top:3px;font-style:italic">${escapeHtml(ex.notes)}</div>`
+            })()}
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
+            <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="confirmRemoveTemplateExercise('${ex.id}','${id}')">Remove</button>
+          </div>
+        </div>
+      </div>
+    </div>`
+  }).join('')}</div>`
 }
 
 function _templateGoBack() {
