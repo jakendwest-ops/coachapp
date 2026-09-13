@@ -105,6 +105,15 @@ test.describe('Template draft: staged exercise mutators', () => {
     const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
     mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
     mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+    // A bare <select> with no <option>s silently refuses any value assignment other than "" —
+    // give it the same options the real Type field renders (js/app-workouts.js ~2280-2288) so
+    // tests can select a non-default metric type and have it actually stick.
+    const attTypeEl = document.getElementById('att-type')
+    if (!attTypeEl.options.length) {
+      ['weight_reps', 'unilateral', 'timed_hold', 'jump_height', 'jump_distance', 'interval'].forEach(v => {
+        const o = document.createElement('option'); o.value = v; attTypeEl.appendChild(o)
+      })
+    }
   `
 
   test('_stageAddExercise appends to the draft and writes nothing to the database', async ({ page }) => {
@@ -205,6 +214,77 @@ test.describe('Template draft: staged exercise mutators', () => {
         await db.from('workout_template_exercises').delete().eq('template_id', id)
         await db.from('workout_templates').delete().eq('id', id)
       }, setup.templateId)
+    }
+  })
+
+  // Task 3 originally dropped the old saveExerciseToTemplate/saveEditTemplateExercise functions'
+  // trailing _rememberExerciseMetricType(...) call — a fire-and-forget convenience that writes the
+  // chosen metric_type back onto the library `exercises` row so the picker defaults to it next time.
+  // These two tests restore proof that the staged mutators still do this, reading the real table back
+  // (not a mock) after a short wait since the call is a `.then()`, never awaited by the caller.
+  test('_stageAddExercise still remembers the chosen metric_type on the library exercise (fire-and-forget)', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Remember Metric Add' }).select('id').single()
+      const { data: ex } = await db.from('exercises').insert({ coach_id: currentUser.id, name: '[E2E] Remember Metric Lift', metric_type: 'weight_reps' }).select('id').single()
+      return { templateId: t.id, exId: ex.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(`(() => {
+        ${mountSetEditor()}
+        window._exerciseDetailPicked = { name: '[E2E] Remember Metric Lift', id: ${JSON.stringify(setup.exId)} }
+        document.getElementById('att-type').value = 'timed_hold'
+        window._templateSets = [{ effortType: 'rpe', repsMin: '8' }]
+        _stageAddExercise()
+      })()`)
+      // _rememberExerciseMetricType is a fire-and-forget .then(), not awaited by _stageAddExercise —
+      // give it a moment to land before reading the library exercise back for real.
+      await new Promise(r => setTimeout(r, 500))
+      const libMetricType = await page.evaluate(async (exId) => {
+        const { data } = await db.from('exercises').select('metric_type').eq('id', exId).single()
+        return data.metric_type
+      }, setup.exId)
+      expect(libMetricType, 'staging an add must still update the library exercise metric_type default').toBe('timed_hold')
+    } finally {
+      await page.evaluate(async ({ templateId, exId }) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', templateId)
+        await db.from('workout_templates').delete().eq('id', templateId)
+        await db.from('exercises').delete().eq('id', exId)
+      }, setup)
+    }
+  })
+
+  test('_stageEditExercise still remembers the chosen metric_type on the library exercise (fire-and-forget)', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Remember Metric Edit' }).select('id').single()
+      const { data: ex } = await db.from('exercises').insert({ coach_id: currentUser.id, name: '[E2E] Remember Metric Lift Edit', metric_type: 'weight_reps' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_id: ex.id, exercise_name: '[E2E] Remember Metric Lift Edit', exercise_type: 'strength', order_index: 0, sets_json: [{ repsMin: '5' }] })
+      return { templateId: t.id, exId: ex.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(`(() => {
+        ${mountSetEditor()}
+        const draftKey = window._templateDraft.exercises[0]._draftKey
+        window._exerciseDetailPicked = { name: '[E2E] Remember Metric Lift Edit', id: ${JSON.stringify(setup.exId)} }
+        document.getElementById('att-type').value = 'interval'
+        window._templateSets = [{ effortType: 'rpe', repsMin: '10' }]
+        _stageEditExercise(draftKey)
+      })()`)
+      await new Promise(r => setTimeout(r, 500))
+      const libMetricType = await page.evaluate(async (exId) => {
+        const { data } = await db.from('exercises').select('metric_type').eq('id', exId).single()
+        return data.metric_type
+      }, setup.exId)
+      expect(libMetricType, 'staging an edit must still update the library exercise metric_type default').toBe('interval')
+    } finally {
+      await page.evaluate(async ({ templateId, exId }) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', templateId)
+        await db.from('workout_templates').delete().eq('id', templateId)
+        await db.from('exercises').delete().eq('id', exId)
+      }, setup)
     }
   })
 })

@@ -2588,6 +2588,7 @@ function _stageAddExercise() {
     notes,
     superset_group: supersetGroup,
   })
+  _rememberExerciseMetricType(picked.id || null, metricType)
   closeModal('add-to-template-modal')
   _renderTemplateExerciseList()
   _renderSaveWorkoutButton()
@@ -2630,6 +2631,7 @@ function _stageEditExercise(draftKey) {
   row.sets_json = cleanSets.length ? cleanSets : null
   row.notes = document.getElementById('att-notes').value.trim() || null
   row.superset_group = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
+  _rememberExerciseMetricType(row.exercise_id, metricType)
   closeModal('edit-tex-modal')
   _renderTemplateExerciseList()
   _renderSaveWorkoutButton()
