@@ -1419,11 +1419,13 @@ async function openTemplate(id, ctx = {}) {
             ? `<button class="btn-primary" onclick="startWorkoutRunner('${_ctx.clientId}','${id}')">▶ Start</button>`
             : ''}
       </div>
+      <div id="save-template-draft-host"></div>
     </div>
 
     <div id="template-exercise-list"></div>
   `
   _renderTemplateExerciseList()
+  _renderSaveWorkoutButton()
 }
 
 function _renderTemplateExerciseList() {
@@ -2464,7 +2466,18 @@ function _stageRemoveExercise(draftKey) {
   _renderSaveWorkoutButton()
 }
 
-function _renderSaveWorkoutButton() { /* filled in by Task 6 */ }
+function _renderSaveWorkoutButton() {
+  const host = document.getElementById('save-template-draft-host')
+  if (!host) return
+  host.innerHTML = _templateDraftIsDirty()
+    ? `<button id="save-template-draft-btn" class="btn-primary" style="margin-top:8px" onclick="saveTemplateDraft()">Save workout</button>`
+    : ''
+}
+
+// Stub -- Task 8 replaces this body with the real diff-and-replay implementation. Exists now only
+// so the button above has a real, declared function to call (a real pre-commit hook,
+// scripts/check-handler-targets.mjs, refuses an onclick naming an undeclared function).
+async function saveTemplateDraft() { /* replaced by Task 8 */ }
 
 // Applies ONE captured exercise change (window._lastExerciseChange) to a set of target templates,
 // matched BY EXERCISE NAME (Jake's choice, 2026-07-12). This replaces the old wholesale

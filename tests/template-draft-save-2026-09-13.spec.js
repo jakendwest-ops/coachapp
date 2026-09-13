@@ -358,3 +358,30 @@ test.describe('Template draft: staged rename', () => {
     }
   })
 })
+
+test.describe('Template draft: Save workout button visibility', () => {
+  test('the Save workout button appears only once the draft is dirty', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Save Button Visibility' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] Only Exercise', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      const before = await page.evaluate(() => !!document.getElementById('save-template-draft-btn'))
+      expect(before, 'no unsaved changes yet, so no Save button').toBe(false)
+      const after = await page.evaluate(() => {
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+        return !!document.getElementById('save-template-draft-btn')
+      })
+      expect(after, 'a staged change must show the Save button').toBe(true)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
