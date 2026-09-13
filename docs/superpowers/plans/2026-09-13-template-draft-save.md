@@ -1575,9 +1575,39 @@ async function _continueAfterClientCopy(templateId, doIt) {
 `window._propagateChange`) at both its "Client plan propagation" and "Master program propagation"
 branches (`js/app-workouts.js:3010-3012` and `:3037-3039`).
 
-`_applyToAllSessions` — find it (`grep -n "async function _applyToAllSessions" js/app-workouts.js`),
-read its body, and change its `_applyChangeToTemplates(window._propagateChange, ...)` call to loop
-`window._propagateChanges` the same way.
+`_applyToAllSessions` — find it (`grep -n "async function _applyToAllSessions" js/app-workouts.js`).
+Its `_applyChangeToTemplates` calls loop `window._propagateChanges` as expected, but its final
+success-toast wording ALSO reads `change.op` directly (three separate branches) — that needs its own
+pluralized handling too, not just the write-loop. Replace the whole function body with:
+
+```js
+async function _applyToAllSessions(sourceTemplateId) {
+  closeModal('propagate-modal')
+  const targetIds = window._propagateTargets || []
+  const changes = window._propagateChanges || window._lastExerciseChanges
+  if (!targetIds.length || !changes?.length) { openTemplate(sourceTemplateId, window._templateCtx); return }
+
+  let applyAllFailures = 0
+  for (const change of changes) applyAllFailures += (await _applyChangeToTemplates(change, targetIds)) || 0
+
+  if (window._templateCtx?.programId) {
+    const copies = await _assignedCopiesForSession(targetIds)
+    for (const change of changes) applyAllFailures += (await _applyChangeToTemplates(change, copies.soloSelfIds)) || 0
+  }
+  if (applyAllFailures) showToast(`${applyAllFailures} assigned session${applyAllFailures === 1 ? '' : 's'} did not pick up this change`, 'error', 6000)
+  else if (changes.length === 1 && changes[0].op === 'rename') showToast(`Renamed ${targetIds.length + 1} copies`, 'success')
+  else if (changes.length === 1 && changes[0].op === 'reorder') showToast(`Reordered ${targetIds.length + 1} copies`, 'success')
+  else showToast(`Updated ${targetIds.length + 1} copies`, 'success')
+
+  log.ok('_applyToAllSessions', `propagated ${changes.length} change(s) to ${targetIds.length} sessions`)
+  openTemplate(sourceTemplateId, window._templateCtx)
+}
+```
+
+This keeps the exact single-rename/single-reorder wording (matching `_propagateModalHtml`'s own
+single-vs-plural split) and generalizes every other case (a single non-rename/reorder change, or
+multiple changes of any kind) to "Updated N copies" — the modal already showed the detailed
+per-op breakdown before the user clicked, so the toast doesn't need to repeat it.
 
 `_propagateModalHtml` (`js/app-workouts.js:2916`) — replace the single-change `detail`/`action`
 logic with a pluralized summary. The signature changes from taking `isRename`/`op` to taking the
