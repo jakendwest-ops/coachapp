@@ -1366,6 +1366,32 @@ async function openTemplate(id, ctx = {}) {
   const exercises = (t.workout_template_exercises || []).sort((a, b) => a.order_index - b.order_index)
   const _ctx = window._templateCtx
 
+  let _draftKeyCounter = 0
+  const _newDraftKey = () => `dk${++_draftKeyCounter}_${Date.now()}`
+
+  const _toDraftRow = (row) => ({
+    _draftKey: _newDraftKey(),
+    id: row.id,
+    exercise_id: row.exercise_id,
+    exercise_name: row.exercise_name,
+    exercise_type: row.exercise_type,
+    metric_type: row.metric_type,
+    order_index: row.order_index,
+    sets: row.sets,
+    sets_json: row.sets_json,
+    notes: row.notes,
+    superset_group: row.superset_group,
+  })
+
+  window._templateDraft = {
+    templateId: id,
+    ctx: _ctx,
+    meta: { name: t.name, description: t.description },
+    metaBaseline: { name: t.name, description: t.description },
+    exercises: exercises.map(_toDraftRow),
+    exercisesBaseline: exercises.map(_toDraftRow),
+  }
+
   el.innerHTML = `
     <a class="back-btn" href="#" onclick="_templateGoBack();return false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
