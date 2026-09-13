@@ -37,6 +37,22 @@ test.describe('Template draft: creation', () => {
       expect(r.separateArrays, 'exercises and exercisesBaseline must not be the same array reference').toBe(true)
       expect(r.meta).toEqual({ name: '[E2E] Draft Model Test', description: null })
       expect(r.separateMeta, 'meta and metaBaseline must not be the same object reference').toBe(true)
+
+      // sets_json must be deep-cloned per draft row, not shared by reference between exercises
+      // and exercisesBaseline. Both arrays are built by mapping the same fetched rows through
+      // _toDraftRow, so a shallow copy would leave a draft-row edit silently corrupting the
+      // "untouched baseline" the whole draft/baseline split exists to guarantee.
+      const indep = await page.evaluate(() => {
+        window._templateDraft.exercises[0].sets_json[0].repsMin = 'MUTATED'
+        return {
+          draftValue: window._templateDraft.exercises[0].sets_json[0].repsMin,
+          baselineValue: window._templateDraft.exercisesBaseline[0].sets_json[0].repsMin,
+          sameArray: window._templateDraft.exercises[0].sets_json === window._templateDraft.exercisesBaseline[0].sets_json,
+        }
+      })
+      expect(indep.draftValue).toBe('MUTATED')
+      expect(indep.baselineValue, 'mutating exercises[0].sets_json in place must not affect exercisesBaseline (sets_json must be deep-cloned, not a shared reference)').toBe('5')
+      expect(indep.sameArray, 'exercises[0].sets_json and exercisesBaseline[0].sets_json must not be the same array reference').toBe(false)
     } finally {
       await page.evaluate(async (id) => {
         await db.from('workout_template_exercises').delete().eq('template_id', id)

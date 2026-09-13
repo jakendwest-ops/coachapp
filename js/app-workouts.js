@@ -1378,7 +1378,12 @@ async function openTemplate(id, ctx = {}) {
     metric_type: row.metric_type,
     order_index: row.order_index,
     sets: row.sets,
-    sets_json: row.sets_json,
+    // Deep-clone sets_json: exercises and exercisesBaseline are both built by mapping
+    // _toDraftRow over the SAME fetched rows, so a shallow copy here would leave both the
+    // draft and the baseline pointing at the exact same array/object. Nothing mutates
+    // sets_json in place today, but a future in-place edit (row.sets_json[0].reps = x)
+    // would silently corrupt the "untouched baseline" this split exists to guarantee.
+    sets_json: row.sets_json ? JSON.parse(JSON.stringify(row.sets_json)) : row.sets_json,
     notes: row.notes,
     superset_group: row.superset_group,
   })
