@@ -47,9 +47,12 @@ codebase convention of large per-concern files, not restructuring it) plus test 
   `tests/builder-metric-type.spec.js`, `tests/cardio-distance-metres.spec.js`,
   `tests/intervals-redesign-2026-07-25.spec.js`, `tests/ledger-fixes-2026-07-30.spec.js`,
   `tests/ownership-anchors-2026-08-21.spec.js`, `tests/stale-set-fields-2026-08-18.spec.js`,
-  `tests/ledger-fixes-2026-08-02.spec.js` (Task 12 — the last 8 found during Task 3, see its ruling
-  note) — insert a Save-workout step before any assertion that checks the database immediately
-  after an edit; two of the 8 need a small additional fix beyond that mechanical swap (see Task 12).
+  `tests/ledger-fixes-2026-08-02.spec.js`, `tests/silent-refusal-2026-08-18.spec.js` (Task 12 — the
+  last 9 found during Tasks 3/4, see their ruling notes) — insert a Save-workout step before any
+  assertion that checks the database immediately after an edit; a few of these need a small
+  additional fix (a stale reentrancy-guard list entry, a swallowed error, two tests whose entire
+  premise no longer exists and get deleted rather than adapted) beyond that mechanical swap — see
+  Task 12.
 - **Modify:** `tests/propagation-honesty-2026-09-06.spec.js` — rewritten for pluralized modal copy.
 - **Create:** `tests/template-draft-save-2026-09-13.spec.js` — the new integration coverage (no
   writes until Save, Discard truly discards, the three-way leave prompt, one combined prompt for
@@ -1342,7 +1345,66 @@ truly-saved database state, which is what makes `_templateDraftIsDirty()` false 
 Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save replay"`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Write and verify an ownership-refusal test**
+
+**Why this step exists.** Task 4's implementer deleted the only test that ever covered a foreign
+(not-owned) template being refused during a reorder (`tests/ownership-anchors-2026-08-21.spec.js`'s
+`moveTemplateExercise refuses a template owned by another coach` — correctly, since
+`_stageReorderExercise` has no per-op ownership check anymore) on the grounds that the GENERAL
+guarantee — ownership is verified once, at Save — belongs here instead of being re-tested per op
+type. This step is that guarantee's actual test; without it, this specific case (a call reaching
+`saveTemplateDraft` for a template the caller doesn't own) has zero coverage anywhere in this plan.
+
+```js
+test('saveTemplateDraft refuses to save a template the current user does not own, at the app layer', async ({ page, browser }) => {
+  const pt2Ctx = await browser.newContext()
+  let foreignTemplateId
+  try {
+    const pt2Page = await pt2Ctx.newPage()
+    await loginAsPT2(pt2Page)
+    foreignTemplateId = await pt2Page.evaluate(async () => {
+      const { data } = await db.from('workout_templates').insert({ coach_id: currentUser.id, name: '[E2E] Foreign Save Target', is_personal: false }).select('id').single()
+      return data.id
+    })
+
+    await loginAsPT(page)
+    const r = await page.evaluate(async (tid) => {
+      // Constructed directly rather than via openTemplate(tid): RLS already refuses the SELECT
+      // openTemplate needs to build a real draft for a template we don't own, so it would never
+      // reach this code path in the first place. This test is specifically for the APP-LEVEL gate
+      // saveTemplateDraft itself owns -- defense in depth, same reasoning the pre-existing
+      // ownership-anchors suite already uses for its other (still-passing) tests.
+      window._templateDraft = {
+        templateId: tid,
+        ctx: {},
+        meta: { name: 'tampered', description: null },
+        metaBaseline: { name: 'original', description: null },
+        exercises: [], exercisesBaseline: [],
+      }
+      let toast = ''
+      const origToast = window.showToast
+      window.showToast = (m) => { toast = m }
+      try {
+        await saveTemplateDraft()
+      } finally { window.showToast = origToast }
+      const { data } = await db.from('workout_templates').select('name').eq('id', tid).maybeSingle()
+      return { toast, nameAfter: data?.name ?? null }
+    }, foreignTemplateId)
+    expect(r.toast.toLowerCase(), 'must refuse with a permission message, not silently no-op').toContain('permission denied')
+    expect(r.nameAfter, 'the foreign template must be completely untouched').toBe('[E2E] Foreign Save Target')
+  } finally {
+    if (foreignTemplateId) {
+      await pt2Ctx.pages()[0].evaluate(async (tid) => { await db.from('workout_templates').delete().eq('id', tid) }, foreignTemplateId)
+    }
+    await pt2Ctx.close()
+  }
+})
+```
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save replay"`
+Expected: PASS (2 tests now)
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add js/app-workouts.js tests/template-draft-save-2026-09-13.spec.js
@@ -1941,6 +2003,13 @@ rather than a new one, since the fix shape is identical: replace the direct old-
 its staged equivalent, then flush to the database with `saveTemplateDraft()` before the assertion
 that follows.
 
+**Second scope correction (2026-09-13, post-Task-4 ruling — see ledger).** Task 4's implementer did
+the same before/after sweep for `moveTemplateExercise` and found 2 more files:
+`tests/ownership-anchors-2026-08-21.spec.js` (already on this task's list above, for a different
+function — it now has TWO broken call sites) and `tests/silent-refusal-2026-08-18.spec.js` (new to
+this list). Both files' `moveTemplateExercise`-specific tests are a different SHAPE of problem than
+the mechanical swap-and-save-step fix below — see the dedicated notes after Step 2.
+
 **Files:**
 - Modify: `tests/session-identity-2026-08-14.spec.js`, `tests/programs.spec.js`,
   `tests/personal-programs.spec.js` (original 3)
@@ -1949,12 +2018,14 @@ that follows.
   `tests/ledger-fixes-2026-07-30.spec.js`, `tests/ownership-anchors-2026-08-21.spec.js`,
   `tests/stale-set-fields-2026-08-18.spec.js`, `tests/ledger-fixes-2026-08-02.spec.js` (8 more,
   found during Task 3)
+- Modify: `tests/silent-refusal-2026-08-18.spec.js` (found during Task 4; `ownership-anchors` above
+  is also touched a second time)
 
 **Interfaces:** none new — this task only makes existing coverage match the new save timing.
 
 - [ ] **Step 1: Read each file's exact current interaction with the template editor**
 
-Run: `grep -n "saveExerciseToTemplate\|saveEditTemplateExercise\|deleteTemplateExercise\|moveTemplateExercise\|saveEditTemplate\b" tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js`
+Run: `grep -n "saveExerciseToTemplate\|saveEditTemplateExercise\|deleteTemplateExercise\|moveTemplateExercise\|saveEditTemplate\b" tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js tests/silent-refusal-2026-08-18.spec.js`
 
 This surfaces every exact call site that needs a `saveTemplateDraft()` step inserted before its
 following database assertion. Because these files are large and the exact surrounding context
@@ -1988,16 +2059,39 @@ touching them:**
   prove firing). Remove that `.catch` when you replace the call with its staged equivalent — the
   test must fail loudly if the behavior it names ever breaks again, not silently pass because
   nothing executed.
+- **`tests/silent-refusal-2026-08-18.spec.js:219` — `'moveTemplateExercise warns when only half the
+  swap lands'`** — DELETE this test, don't adapt it. It exists to prove that when reorder's two
+  separate database writes (one per swapped row) partially land — the first succeeds, the second is
+  refused — the user is warned rather than left with silently corrupted order. Under the staged
+  model, reorder is one in-memory array swap with zero database writes until Save; "two separate
+  writes, one succeeds one doesn't" cannot happen at reorder time anymore, and a save's own partial
+  failure (potentially across ANY op, not reorder specifically) is already covered by Task 10's
+  dedicated partial-failure-recovery test. Keeping this test would mean either forcing a scenario
+  that can't occur through a mock, or quietly testing nothing real.
+- **`tests/ownership-anchors-2026-08-21.spec.js:140` — `'moveTemplateExercise refuses a template
+  owned by another coach, at the app layer'`** — DELETE this test too, same reasoning: it asserts a
+  `log.error('moveTemplateExercise', 'ownership check failed', ...)` call that only existed because
+  the OLD function checked ownership on every single reorder tap. `_stageReorderExercise` has no
+  ownership check at all — by design, ownership is verified exactly ONCE per Save
+  (`saveTemplateDraft`'s `_verifyTemplateOwnership` call, Task 8), not per queued operation. This
+  file's OTHER tests (covering `saveExerciseToTemplate`'s now-also-removed ownership check) are
+  handled by the mechanical swap-and-save-step fix above, same as the other 7 files — only this one
+  reorder-specific test needs deleting rather than adapting.
+  **Note for whoever executes Task 8:** confirm Task 8's own test coverage includes a save refused
+  for a template the current user does not own (its brief, as written, only covers the happy path
+  resolving a template the user legitimately owns) — this deletion removes the only place that
+  guarantee was ever actually tested for the reorder case, and the general (not reorder-specific)
+  version of it should live in Task 8, not be re-invented per op type in Task 12.
 
 - [ ] **Step 3: Run every file from this task together**
 
-Run: `npx playwright test tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js`
-Expected: PASS (11 files)
+Run: `npx playwright test tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js tests/silent-refusal-2026-08-18.spec.js`
+Expected: PASS (12 files)
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js
+git add tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js tests/silent-refusal-2026-08-18.spec.js
 git commit -m "tests: insert Save-workout step where template edits are checked immediately
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
