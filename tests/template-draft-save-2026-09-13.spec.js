@@ -500,3 +500,78 @@ test.describe('Template draft: Save replay', () => {
     }
   })
 })
+
+test.describe('Template draft: combined propagation prompt', () => {
+  test('a Save carrying 3 changes produces ONE propagation prompt describing all 3, not one prompt per change', async ({ page, browser }) => {
+    await loginAsPT(page)
+    const ptCtx = await browser.newContext()
+    const pt2 = await ptCtx.newPage()
+    // (fixture setup mirrors reorder-propagation-2026-08-19.spec.js's family_id pattern: a program
+    // with a phase, and TWO SEPARATE template rows sharing a family_id -- one per week slot -- so the
+    // "other sessions" prompt has something real to offer.
+    //
+    // Deliberately NOT the same template_id reused across both phase_workout slots: that shape
+    // exercises a completely different mechanism (_resolveEditableTemplateId's shared-master
+    // fork-on-edit, triggered whenever a template_id sits in more than one phase_workout row), which
+    // this test is not about and which currently mis-saves when combined with saveTemplateDraft's
+    // batch diff (a real, separate, out-of-scope bug found while writing this test -- see task-9
+    // report). Each template below sits in exactly one slot, so no fork happens and this test stays
+    // isolated to the propagation-array plumbing it exists to prove.
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Combined Prompt Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single()
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, name: '[E2E] Combined Prompt Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      const { data: t2 } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, name: '[E2E] Combined Prompt Session', family_id: t.id }).select('id').single()
+      const { data: pw1 } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 }).select('id, template_id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t2.id, week_number: 2 })
+      return { programId: prog.id, templateId: t.id, templateId2: t2.id, phaseId: phase.id, phaseWorkoutId: pw1.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, phaseWorkoutId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId })
+      }, setup)
+      const r = await page.evaluate(`(async () => {
+        const bKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')._draftKey
+        _stageRemoveExercise(bKey)
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        window._exerciseDetailPicked = { name: '[E2E] C', id: null }
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+
+        const mk2 = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk2('et-name').value = '[E2E] Combined Prompt Session RENAMED'
+        mk2('et-desc', 'textarea').value = ''
+        _stageRenameTemplate()
+
+        await saveTemplateDraft()
+        await new Promise(r => setTimeout(r, 300))
+        return {
+          modalText: document.getElementById('propagate-modal')?.textContent || '',
+          modalCount: document.querySelectorAll('.modal-overlay').length,
+        }
+      })()`)
+      expect(r.modalCount, 'exactly one propagation modal, not three').toBe(1)
+      expect(r.modalText).toContain('3 changes')
+      expect(r.modalText).toMatch(/removed|added|renamed/i)
+    } finally {
+      // Deleted by CAPTURED ID, not by name: the test renames the first template mid-run, and this
+      // repo's established teardown convention (see e.g. session-identity-2026-08-14.spec.js) is to
+      // delete program_phase_workouts / program_phases explicitly rather than assume a cascade.
+      await page.evaluate(async (s) => {
+        await db.from('program_phase_workouts').delete().eq('phase_id', s.phaseId)
+        await db.from('program_phases').delete().eq('id', s.phaseId)
+        await db.from('workout_template_exercises').delete().in('template_id', [s.templateId, s.templateId2])
+        await db.from('workout_templates').delete().in('id', [s.templateId, s.templateId2])
+        await db.from('programs').delete().eq('id', s.programId)
+      }, setup)
+      await ptCtx.close()
+    }
+  })
+})

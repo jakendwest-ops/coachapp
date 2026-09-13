@@ -2733,12 +2733,12 @@ async function _afterTemplateExerciseSave(targetId) {
   }
 }
 
-// ctxOverride/changeOverride let _afterTemplateExerciseSave pass a pre-await snapshot through (see
+// ctxOverride/changesOverride let _afterTemplateExerciseSave pass a pre-await snapshot through (see
 // its comment). The other caller (_continueAfterClientCopy, a later independent modal-button click)
 // omits them, correctly falling back to whatever is live at that fresh moment.
-async function _checkClientPlanPropagation(templateId, ctxOverride, changeOverride) {
+async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverride) {
   const ctx = ctxOverride || window._templateCtx
-  const change = changeOverride !== undefined ? changeOverride : window._lastExerciseChange
+  const changes = changesOverride !== undefined ? changesOverride : window._lastExerciseChanges
 
   // (#2) Sync assigned copies of the edited session — master program edits only (a direct client-plan
   // edit is already editing the client's own copy, so there's nothing downstream to sync).
@@ -2748,10 +2748,12 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changeOverri
   // user's OWN copies (soloSelfIds, synced silently) from real clients' (realClientIds, gated behind
   // the explicit prompt below). Skipping the block removed the prompt AND stopped syncing solo's own
   // self-assigned plan — the only copy a solo user actually trains from. Caught by pre-push review.
-  if (change && ctx?.programId && !ctx.isClientPlan) {
+  if (changes?.length && ctx?.programId && !ctx.isClientPlan) {
     const copies = await _assignedCopiesForSession([templateId])
     let soloPropFailures = 0
-    if (copies.soloSelfIds.length) soloPropFailures = await _applyChangeToTemplates(change, copies.soloSelfIds) || 0
+    if (copies.soloSelfIds.length) {
+      for (const change of changes) soloPropFailures += (await _applyChangeToTemplates(change, copies.soloSelfIds)) || 0
+    }
     // In Personal view, real clients are never a write target (_assignedCopiesForSession leaves
     // realClientIds empty). Say so rather than saying nothing: silently skipping the sync would let
     // the user assume their clients' plans had been updated, which is worse than the bug this fixes.
@@ -2761,13 +2763,13 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changeOverri
       showToast(`Personal edit — ${copies.realClientCount} assigned client${copies.realClientCount === 1 ? "'s plan was" : "s' plans were"} not changed. Switch to PT view to update them.`, 'info', 6000)
     }
     if (copies.realClientIds.length) {
-      window._pendingClientCopyProp = { change, ids: copies.realClientIds }
+      window._pendingClientCopyProp = { changes, ids: copies.realClientIds }
       _showClientCopyPropagateModal(copies.realClientNames, templateId)
       return
     }
   }
 
-  return _checkSiblingPropagation(templateId, ctx, change)
+  return _checkSiblingPropagation(templateId, ctx, changes)
 }
 
 // (#2) prompt shown when real clients have the edited session assigned.
@@ -2796,7 +2798,7 @@ function _showClientCopyPropagateModal(clientNames, templateId) {
 async function _continueAfterClientCopy(templateId, doIt) {
   closeModal('client-copy-modal')
   const p = window._pendingClientCopyProp
-  if (doIt && p) await _applyChangeToTemplates(p.change, p.ids)
+  if (doIt && p) for (const change of p.changes) await _applyChangeToTemplates(change, p.ids)
   window._pendingClientCopyProp = null
   _checkSiblingPropagation(templateId)
 }
@@ -2831,14 +2833,15 @@ function _unlinkedSameNameCount (rows, idOf, templateId, name, targets) {
 // carries two scars from this one: a hardcoded "only the exercise you changed" that became a lie when
 // renames started flowing through, and an XSS that shipped because a name was interpolated into an
 // HTML comment.
-function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, isRename = false, op = null }) {
-  const detail = isRename
-    ? 'Only the name and description will be applied — a week marker like "— W2" is kept.'
-    : op === 'reorder'
-      ? 'Only the ORDER changes. Exercises a copy has that this one does not stay exactly where they are.'
-      : 'Only the exercise you changed will be applied.'
-  const action = isRename ? `Rename all ${count + 1}`
-    : op === 'reorder' ? `Reorder all ${count + 1}`
+function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, changes = [] }) {
+  const OP_LABEL = { add: n => `${n} added`, update: n => `${n} updated`, delete: n => `${n} removed`, rename: () => 'renamed', reorder: () => 'reordered' }
+  const summary = changes.length === 1
+    ? (changes[0].op === 'rename' ? 'Only the name and description will be applied — a week marker like "— W2" is kept.'
+       : changes[0].op === 'reorder' ? 'Only the ORDER changes. Exercises a copy has that this one does not stay exactly where they are.'
+       : 'Only the exercise you changed will be applied.')
+    : `${changes.length} changes: ${changes.map(c => OP_LABEL[c.op] ? OP_LABEL[c.op](c.matchName || '') : c.op).join(' · ')}`
+  const action = changes.length === 1 && changes[0].op === 'rename' ? `Rename all ${count + 1}`
+    : changes.length === 1 && changes[0].op === 'reorder' ? `Reorder all ${count + 1}`
     : `Update all ${count + 1} copies`
   const one = unlinked === 1
   return `
@@ -2847,7 +2850,7 @@ function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, is
           <h2 class="modal-title">Apply to other sessions?</h2>
           <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
         </div>
-        <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 ${unlinked ? '12px' : '20px'}">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}. ${detail}</p>
+        <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 ${unlinked ? '12px' : '20px'}">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}. ${escapeHtml(summary)}</p>
         ${unlinked ? `<p style="font-size:var(--text-base, 13px);line-height:1.6;margin:0 0 20px;color:var(--text-muted)"><strong>${unlinked}</strong> other session${one ? '' : 's'} here share${one ? 's' : ''} this name but ${one ? 'is' : 'are'} not linked to this one, so ${one ? 'it' : 'they'} will not change.</p>` : ''}
         <div class="modal-footer">
           <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
@@ -2857,16 +2860,15 @@ function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, is
     `
 }
 
-async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride) {
+async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride) {
   const ctx = ctxOverride || window._templateCtx
 
   // op-aware wording. The body used to hardcode "Only the exercise you changed will be applied", which
   // became a lie the moment renames started flowing through here — in the one dialogue that has to be
   // trustworthy, because the user is authorising a write to sessions they cannot see.
-  // changeOverride is snapshotted for the same reason ctxOverride is: openTemplate awaits a network
+  // changesOverride is snapshotted for the same reason ctxOverride is: openTemplate awaits a network
   // round-trip, and a fast navigation in that gap overwrites the single global slot.
-  const change = changeOverride !== undefined ? changeOverride : window._lastExerciseChange
-  const isRename = change?.op === 'rename'
+  const changes = changesOverride !== undefined ? changesOverride : window._lastExerciseChanges
   // Wording note (kept OUT of the emitted string — see below): this says "copies of", not "named",
   // because matching is by family_id now and a copy may legitimately carry a different name (a
   // periodization week is "<base> — W2"). Promising "named X" while updating "X — W2" would be a lie
@@ -2882,7 +2884,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride)
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.id = 'propagate-modal'
-    overlay.innerHTML = _propagateModalHtml({ templateId, name, count, label, unlinked, isRename, op: change?.op })
+    overlay.innerHTML = _propagateModalHtml({ templateId, name, count, label, unlinked, changes })
     mountModal(overlay)
   }
 
@@ -2926,7 +2928,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride)
       return openTemplate(templateId, ctx)
     }
     window._propagateTargets = targets
-    window._propagateChange = change
+    window._propagateChanges = changes
     _showPropagateModal(tmpl.name, targets.length, `${ctx.clientName || 'this client'}'s plan`, unlinked)
     return
   }
@@ -2953,7 +2955,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changeOverride)
       return openTemplate(templateId, ctx)
     }
     window._propagateTargets = targets
-    window._propagateChange = change
+    window._propagateChanges = changes
     _showPropagateModal(tmpl.name, targets.length, 'this program', unlinked)
     return
   }
@@ -3061,37 +3063,27 @@ async function _propagateReorderToTemplates(change, targetIds) {
   return failures
 }
 
-// Applies the single captured change to the other copies of this session and to THEIR assigned client
+// Applies the captured changes to the other copies of this session and to THEIR assigned client
 // copies — never a wholesale workout overwrite.
 async function _applyToAllSessions(sourceTemplateId) {
   closeModal('propagate-modal')
   const targetIds = window._propagateTargets || []
-  // The op is stashed WITH the targets when the modal mounts, not re-read live. `op` now selects which
-  // write happens, so a concurrent save during the awaited round-trip could hand a rename to the
-  // exercise path — which matches none of its branches, writes nothing, and logs success. The wording
-  // shown in the modal was already snapshotted for exactly this reason; the branch must match it.
-  const change = window._propagateChange || window._lastExerciseChange
-  if (!targetIds.length || !change) { openTemplate(sourceTemplateId, window._templateCtx); return }
+  const changes = window._propagateChanges || window._lastExerciseChanges
+  if (!targetIds.length || !changes?.length) { openTemplate(sourceTemplateId, window._templateCtx); return }
 
-  // Accumulate across BOTH calls. showToast keeps a single node with no queue, so the second call's
-  // "N sessions did not pick up this change" erases the first's and the two counts never merge — the
-  // user is told about one batch of failures and never the other. Same fix-the-class shape as the
-  // finding that produced this return value in the first place.
-  let applyAllFailures = await _applyChangeToTemplates(change, targetIds) || 0
+  let applyAllFailures = 0
+  for (const change of changes) applyAllFailures += (await _applyChangeToTemplates(change, targetIds)) || 0
 
-  // Master-program siblings: keep the user's OWN (solo) copies of those sessions in sync too. Real
-  // clients' copies are deliberately NOT touched here — writing to a real client's plan only ever
-  // happens through the per-session "Update assigned clients?" confirm in _checkClientPlanPropagation,
-  // so bulk "Update all copies" can never silently change a client's plan without consent.
   if (window._templateCtx?.programId) {
     const copies = await _assignedCopiesForSession(targetIds)
-    applyAllFailures += await _applyChangeToTemplates(change, copies.soloSelfIds) || 0
+    for (const change of changes) applyAllFailures += (await _applyChangeToTemplates(change, copies.soloSelfIds)) || 0
   }
   if (applyAllFailures) showToast(`${applyAllFailures} assigned session${applyAllFailures === 1 ? '' : 's'} did not pick up this change`, 'error', 6000)
-  else if (change.op === 'rename') showToast(`Renamed ${targetIds.length + 1} copies`, 'success')
-  else if (change.op === 'reorder') showToast(`Reordered ${targetIds.length + 1} copies`, 'success')
+  else if (changes.length === 1 && changes[0].op === 'rename') showToast(`Renamed ${targetIds.length + 1} copies`, 'success')
+  else if (changes.length === 1 && changes[0].op === 'reorder') showToast(`Reordered ${targetIds.length + 1} copies`, 'success')
+  else showToast(`Updated ${targetIds.length + 1} copies`, 'success')
 
-  log.ok('_applyToAllSessions', `propagated one ${change.op || 'exercise'} change to ${targetIds.length} sessions`)
+  log.ok('_applyToAllSessions', `propagated ${changes.length} change(s) to ${targetIds.length} sessions`)
   openTemplate(sourceTemplateId, window._templateCtx)
 }
 
