@@ -1323,6 +1323,12 @@ async function saveNewTemplate() {
 }
 guardReentry('saveNewTemplate')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
+// Module-scope, NOT local to openTemplate: _stageAddExercise (js/app-workouts.js) also needs to mint
+// a _draftKey for a row staged after the template was opened, so the counter and the minting function
+// must outlive any single openTemplate() call rather than living in its closure.
+let _draftKeyCounter = 0
+const _newDraftKey = () => `dk${++_draftKeyCounter}_${Date.now()}`
+
 async function openTemplate(id, ctx = {}) {
   // A reorder settle pending on a DIFFERENT template must not survive this navigation. Its timer
   // fires wherever you are: leave the editor mid-burst and the previous session's "update the
@@ -1365,9 +1371,6 @@ async function openTemplate(id, ctx = {}) {
 
   const exercises = (t.workout_template_exercises || []).sort((a, b) => a.order_index - b.order_index)
   const _ctx = window._templateCtx
-
-  let _draftKeyCounter = 0
-  const _newDraftKey = () => `dk${++_draftKeyCounter}_${Date.now()}`
 
   const _toDraftRow = (row) => ({
     _draftKey: _newDraftKey(),
@@ -1499,8 +1502,8 @@ function _renderTemplateExerciseList() {
             })()}
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
-            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
-            <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="confirmRemoveTemplateExercise('${ex.id}','${id}')">Remove</button>
+            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex._draftKey}','${id}')">Edit</button>
+            <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="_stageRemoveExercise('${ex._draftKey}')">Remove</button>
           </div>
         </div>
       </div>
@@ -2245,8 +2248,8 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
   const confirmLabel = editingTexId ? 'Save' : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap' : 'Add') : 'Add exercise')
   const modalId = editingTexId ? 'edit-tex-modal' : 'add-to-template-modal'
   const confirmAction = editingTexId
-    ? `saveEditTemplateExercise('${editingTexId}','${targetId}')`
-    : (isRunner ? `_confirmRunnerExerciseFromModal('${runnerCtx.mode}')` : `saveExerciseToTemplate('${targetId}')`)
+    ? `_stageEditExercise('${editingTexId}')`
+    : (isRunner ? `_confirmRunnerExerciseFromModal('${runnerCtx.mode}')` : `_stageAddExercise()`)
 
   window._exerciseDetailPicked = picked
   window._exerciseDetailReopenCtx = { targetId, runnerCtx, editingTexId, coachId }
@@ -2303,7 +2306,7 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
       </div>
       <p class="modal-error" id="att-error"></p>
       <div class="modal-footer">
-        ${editingTexId ? `<button class="btn-danger" onclick="deleteTemplateExercise('${editingTexId}','${targetId}')">Remove</button><div style="flex:1"></div>` : ''}
+        ${editingTexId ? `<button class="btn-danger" onclick="_stageRemoveExercise('${editingTexId}');closeModal('edit-tex-modal')">Remove</button><div style="flex:1"></div>` : ''}
         <button class="btn-secondary" onclick="closeModal('${modalId}')">Cancel</button>
         <button class="btn-primary" id="att-confirm-btn" data-busy-text="Saving…" onclick="${confirmAction}">${confirmLabel}</button>
       </div>
@@ -2540,173 +2543,111 @@ function _rememberExerciseMetricType(libId, metricType) {
     .then(({ error }) => { if (error) log.error('_rememberExerciseMetricType', 'update failed', error) })
 }
 
-async function saveExerciseToTemplate(templateId) {
-  flushTemplateSets('att-sets-container')
+// Returns true if the draft differs from its baseline — a newly added row (id === null), a removed
+// or reordered row, or a changed field on a row that already existed. Used by the Save-workout button
+// visibility (Task 6) and the leave-guard (Task 10); defined here because the staged mutators below
+// are the first things that can make the draft dirty.
+function _templateDraftIsDirty() {
+  const d = window._templateDraft
+  if (!d) return false
+  if (d.meta.name !== d.metaBaseline.name || d.meta.description !== d.metaBaseline.description) return true
+  if (d.exercises.length !== d.exercisesBaseline.length) return true
+  const byId = new Map(d.exercisesBaseline.map(e => [e.id, e]))
+  const FIELDS = ['exercise_id', 'exercise_name', 'exercise_type', 'metric_type', 'sets', 'sets_json', 'notes', 'superset_group']
+  return d.exercises.some((ex, i) => {
+    if (ex.id === null) return true // a newly added row is always a change
+    const base = byId.get(ex.id)
+    if (!base) return true // shouldn't happen, but a missing baseline counts as changed
+    if (i !== d.exercisesBaseline.indexOf(base)) return true // order moved
+    return FIELDS.some(f => JSON.stringify(ex[f]) !== JSON.stringify(base[f]))
+  })
+}
+
+// Stages a new exercise into window._templateDraft — no database write. The real insert happens once,
+// for every queued change at once, when "Save workout" (Task 6) replays the draft against baseline.
+function _stageAddExercise() {
   const picked = window._exerciseDetailPicked
   const errorEl = document.getElementById('att-error')
   if (!picked?.name) { errorEl.textContent = 'Exercise name is required'; return }
-  const name = picked.name
-  const exerciseId = picked.id || null
+  flushTemplateSets('att-sets-container')
   const metricType = document.getElementById('att-type').value || 'weight_reps'
   const derived = _deriveFromMetricType(metricType)
-  // Read once, before closeModal() removes these nodes — closeModal does a real
-  // document.getElementById(id)?.remove(), so re-reading #att-notes/#att-superset after it ran a
-  // second time (for _lastExerciseChange, below) threw "Cannot read properties of null", which
-  // aborted this function before it ever reached _afterTemplateExerciseSave. The insert itself had
-  // already gone through by that point, so the exercise was really added — it just never appeared
-  // without a manual refresh. Reported live 4 times (2026-07-13, -22, -28, -29) before this was found.
   const notes = document.getElementById('att-notes').value.trim() || null
   const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
-  const { templateId: targetId } = await _resolveEditableTemplateId(templateId)
-  // _resolveEditableTemplateId handles the fork-on-shared-slot case; it does NOT verify ownership.
-  // This write family's own convention (documented at _verifyTemplateOwnership) is that every sibling
-  // anchors AND verifies — saveEditTemplateExercise and deleteTemplateExercise both do. This one and
-  // moveTemplateExercise were the two odd ones out, flagged by the 2026-08-12 architecture audit.
-  // App-level hardening: a live 2-account probe (tests/template-exercise-write-rls-2026-08-10.spec.js)
-  // already confirms RLS refuses a foreign write to this table, so this closes an inconsistency rather
-  // than a live hole — but "RLS will catch it" is the reasoning that leaves a file with no app-level
-  // defence at all, and this file's own comment says so.
-  const coachId = await _resolveTemplateOwnerCoachId()
-  if (!(await _verifyTemplateOwnership(targetId, coachId))) {
-    log.error('saveExerciseToTemplate', 'ownership check failed', { templateId: targetId })
-    errorEl.textContent = 'Save failed — template not found or permission denied.'
-    return
-  }
-  log.info('saveExerciseToTemplate', 'adding exercise to template', { templateId: targetId })
-
-  const { data: existing } = await db
-    .from('workout_template_exercises')
-    .select('order_index')
-    .eq('template_id', targetId)
-    .order('order_index', { ascending: false })
-    .limit(1)
-
-  const nextOrder = existing?.length ? (existing[0].order_index + 1) : 0
-  const sets = window._templateSets || []
-
-  const cleanSets = _cleanTemplateSets(sets, derived, metricType)
-  const { error } = await db.from('workout_template_exercises').insert({
-    template_id:   targetId,
-    exercise_id:   exerciseId || null,
-    exercise_name: name,
+  const cleanSets = _cleanTemplateSets(window._templateSets || [], derived, metricType)
+  window._templateDraft.exercises.push({
+    _draftKey: _newDraftKey(),
+    id: null,
+    exercise_id: picked.id || null,
+    exercise_name: picked.name,
     exercise_type: derived.exercise_type,
-    metric_type:   metricType,
-    order_index:   nextOrder,
-    sets:           cleanSets.length || null,
-    sets_json:      cleanSets.length ? cleanSets : null,
+    metric_type: metricType,
+    order_index: window._templateDraft.exercises.length,
+    sets: cleanSets.length || null,
+    sets_json: cleanSets.length ? cleanSets : null,
     notes,
-    superset_group: supersetGroup
+    superset_group: supersetGroup,
   })
-
-  if (error) { log.error('saveExerciseToTemplate', 'insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveExerciseToTemplate', 'exercise added to template', { templateId: targetId })
-  _rememberExerciseMetricType(exerciseId, metricType)
   closeModal('add-to-template-modal')
-  window._lastExerciseChange = { op: 'add', matchName: name, row: {
-    exercise_id: exerciseId || null, exercise_name: name,
-    exercise_type: derived.exercise_type, metric_type: metricType,
-    sets: cleanSets.length || null, sets_json: cleanSets.length ? cleanSets : null,
-    notes, superset_group: supersetGroup
-  } }
-  _afterTemplateExerciseSave(targetId)
+  _renderTemplateExerciseList()
+  _renderSaveWorkoutButton()
 }
-guardReentry('saveExerciseToTemplate')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
 
-async function showEditTemplateExerciseModal(templateExId, templateId) {
-  const { data: ex } = await db.from('workout_template_exercises').select('*').eq('id', templateExId).single()
-  const { data: tmplRow } = await db.from('workout_templates').select('coach_id').eq('id', templateId).single()
-  const coachId = tmplRow?.coach_id || currentUser.id
+async function showEditTemplateExerciseModal(draftKey, templateId) {
+  const row = window._templateDraft?.exercises?.find(e => e._draftKey === draftKey)
+  if (!row) return
+  const coachId = await _resolveTemplateOwnerCoachId()
   _showExerciseSetsModal({
     targetId: templateId, runnerCtx: null, coachId,
-    picked: { id: ex.exercise_id || null, name: ex.exercise_name },
-    editingTexId: templateExId,
-    existingSets: ex.sets_json?.length ? ex.sets_json : (ex.sets ? Array.from({ length: ex.sets }, () => ({})) : [{}]),
-    existingType: _resolveMetricType(ex.metric_type, ex.exercise_type, ex.sets_json?.[0]),
-    existingNotes: ex.notes || '',
-    existingSuperset: ex.superset_group || ''
+    picked: { id: row.exercise_id || null, name: row.exercise_name },
+    editingTexId: draftKey,
+    existingSets: row.sets_json?.length ? row.sets_json : (row.sets ? Array.from({ length: row.sets }, () => ({})) : [{}]),
+    existingType: _resolveMetricType(row.metric_type, row.exercise_type, row.sets_json?.[0]),
+    existingNotes: row.notes || '',
+    existingSuperset: row.superset_group || ''
   })
 }
 
-async function saveEditTemplateExercise(texId, templateId) {
-  flushTemplateSets('att-sets-container')
+// Stages an edit to the matching draft row by _draftKey — no database write, and the row's real `id`
+// (or null, for a row staged by _stageAddExercise in this same session) is left untouched.
+function _stageEditExercise(draftKey) {
   const errorEl = document.getElementById('att-error')
   const picked = window._exerciseDetailPicked
   if (!picked?.name) { errorEl.textContent = 'Name is required'; return }
-  const sets = window._templateSets || []
-
+  flushTemplateSets('att-sets-container')
   const metricType = document.getElementById('att-type').value || 'weight_reps'
   const derived = _deriveFromMetricType(metricType)
-  // metric_type is the single source of truth; keep each set's legacy flags in sync with it.
+  const sets = window._templateSets || []
   sets.forEach(s => { s.unilateral = derived.unilateral; s.timed = derived.timed })
-  const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
-  const coachId = await _resolveTemplateOwnerCoachId()
-  if (!(await _verifyTemplateOwnership(targetId, coachId))) {
-    log.error('saveEditTemplateExercise', 'ownership check failed', { templateId: targetId })
-    errorEl.textContent = 'Save failed — template not found or permission denied.'
-    return
-  }
-  // Capture the ORIGINAL name before the update — propagation matches the changed exercise by name
-  // across other sessions (Jake's choice, 2026-07-12), and a rename must still find the old row.
-  const { data: origRow } = await db.from('workout_template_exercises').select('exercise_name').eq('id', targetExId).single()
-  // CLEAN before writing. This path used to save the raw window._templateSets while its two siblings
-  // — saveExerciseToTemplate and _confirmRunnerExerciseFromModal — both cleaned, so every metric-type
-  // gate in _cleanTemplateSets was simply skipped when editing. flushTemplateSets deliberately
-  // PRESERVES fields the current type does not render, so anything set under a previous type rode
-  // straight through: an AMRAP flag onto a jump, a target height onto a barbell lift.
   const cleanSets = _cleanTemplateSets(sets, derived, metricType)
-  const newRow = {
-    exercise_id:    picked.id || null,
-    exercise_name: picked.name,
-    exercise_type: derived.exercise_type,
-    metric_type:   metricType,
-    sets:           cleanSets.length || null,
-    sets_json:      cleanSets.length ? cleanSets : null,
-    notes:          document.getElementById('att-notes').value.trim() || null,
-    superset_group: document.getElementById('att-superset')?.value.trim().toUpperCase() || null
-  }
-  log.info('saveEditTemplateExercise', 'updating template exercise', { texId: targetExId })
-  const { data: updated, error } = await db.from('workout_template_exercises').update(newRow).eq('id', targetExId).eq('template_id', targetId).select()
-  if (error) { log.error('saveEditTemplateExercise', 'update failed', error); errorEl.textContent = error.message; return }
-  if (!updated?.length) { log.error('saveEditTemplateExercise', 'no rows updated — permission denied?', { texId: targetExId }); errorEl.textContent = 'Save failed — template not found or permission denied.'; return }
-  log.ok('saveEditTemplateExercise', 'template exercise updated', { texId: targetExId })
-  _rememberExerciseMetricType(picked.id || null, metricType)
+  const row = window._templateDraft.exercises.find(e => e._draftKey === draftKey)
+  if (!row) { errorEl.textContent = 'This exercise is no longer in the workout.'; return }
+  row.exercise_id = picked.id || null
+  row.exercise_name = picked.name
+  row.exercise_type = derived.exercise_type
+  row.metric_type = metricType
+  row.sets = cleanSets.length || null
+  row.sets_json = cleanSets.length ? cleanSets : null
+  row.notes = document.getElementById('att-notes').value.trim() || null
+  row.superset_group = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   closeModal('edit-tex-modal')
-  window._lastExerciseChange = { op: 'update', matchName: origRow?.exercise_name || picked.name, row: newRow }
-  _afterTemplateExerciseSave(targetId)
+  _renderTemplateExerciseList()
+  _renderSaveWorkoutButton()
 }
 
-// The list row's own Remove button (2026-09-11 walkthrough: "add the delete/remove button here
-// instead of inside the exercise itself") skips the "open Edit first" step that used to be the only
-// way in — which was also the only friction standing between a tap and an unrecoverable delete. The
-// modal's own Remove button (inside showEditTemplateExerciseModal) stays unguarded on purpose, out of
-// scope here; this wrapper only guards the new direct path.
-async function confirmRemoveTemplateExercise(texId, templateId) {
-  if (!(await confirmDialog('Remove this exercise from the workout?', { title: 'Remove exercise?', confirmLabel: 'Remove', danger: true }))) return
-  deleteTemplateExercise(texId, templateId)
+// Replaces the row-level confirmRemoveTemplateExercise + deleteTemplateExercise pair with a single
+// staged removal — no database write, and no confirm dialog: per the spec's "Confirm dialogs that
+// move," Discard (Task 11) is the bigger undo that makes a per-row confirm redundant once nothing is
+// written until Save.
+function _stageRemoveExercise(draftKey) {
+  const d = window._templateDraft
+  d.exercises = d.exercises.filter(e => e._draftKey !== draftKey)
+  d.exercises.forEach((e, i) => { e.order_index = i })
+  _renderTemplateExerciseList()
+  _renderSaveWorkoutButton()
 }
 
-async function deleteTemplateExercise(texId, templateId) {
-  const { templateId: targetId, exerciseId: targetExId } = await _resolveEditableTemplateId(templateId, texId)
-  const coachId = await _resolveTemplateOwnerCoachId()
-  if (!(await _verifyTemplateOwnership(targetId, coachId))) {
-    log.error('deleteTemplateExercise', 'ownership check failed', { templateId: targetId })
-    return
-  }
-  // Capture the name before deleting so the change can propagate by name to other sessions.
-  const { data: delRow } = await db.from('workout_template_exercises').select('exercise_name').eq('id', targetExId).single()
-  log.info('deleteTemplateExercise', 'removing exercise from template', { texId: targetExId, templateId: targetId })
-  const { data: deleted, error } = await db.from('workout_template_exercises').delete().eq('id', targetExId).eq('template_id', targetId).select()
-  if (error) { log.error('deleteTemplateExercise', 'delete failed', error); return }
-  if (!deleted?.length) { log.error('deleteTemplateExercise', 'no rows deleted — permission denied or already gone', { texId: targetExId }); return }
-  log.ok('deleteTemplateExercise', 'exercise removed', { texId: targetExId })
-  closeModal('edit-tex-modal')
-  // If the pre-delete name fetch failed, DON'T propagate: a stale window._lastExerciseChange from a
-  // previous edit would otherwise be replayed and silently applied to assigned copies. Clear it and
-  // just reopen.
-  if (!delRow?.exercise_name) { window._lastExerciseChange = null; return openTemplate(targetId, window._templateCtx) }
-  window._lastExerciseChange = { op: 'delete', matchName: delRow.exercise_name, row: null }
-  _afterTemplateExerciseSave(targetId)
-}
+function _renderSaveWorkoutButton() { /* filled in by Task 6 */ }
 
 // Applies ONE captured exercise change (window._lastExerciseChange) to a set of target templates,
 // matched BY EXERCISE NAME (Jake's choice, 2026-07-12). This replaces the old wholesale
