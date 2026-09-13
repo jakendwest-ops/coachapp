@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, loginAsPT2 } = require('./helpers')
 
 test.describe('Template draft: creation', () => {
   test('opening a template builds window._templateDraft as an editable copy, untouched baseline kept separately', async ({ page }) => {
@@ -382,6 +382,121 @@ test.describe('Template draft: Save workout button visibility', () => {
         await db.from('workout_template_exercises').delete().eq('template_id', id)
         await db.from('workout_templates').delete().eq('id', id)
       }, setup.templateId)
+    }
+  })
+})
+
+test.describe('Template draft: Save replay', () => {
+  test('saveTemplateDraft resolves the editable template ID exactly once, then applies every queued change against it', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Save Replay' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      const r = await page.evaluate(`(async () => {
+        // Stage 2 different kinds of change: delete B, and add a new one (C). NOTE: removing the
+        // only other row does not itself register as a "reorder" -- _diffTemplateDraft (Task 7,
+        // unchanged here) compares the SURVIVING pre-existing rows' relative order, and with only
+        // one survivor (A) left on both sides there is nothing to permute, so diff.reorder stays
+        // null and no reorder entry is pushed. Verified empirically against the real diff engine
+        // during Task 8's implementation -- this scenario exercises delete + insert, not reorder.
+        const bKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')._draftKey
+        _stageRemoveExercise(bKey)
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        window._exerciseDetailPicked = { name: '[E2E] C', id: null }
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+
+        // Stub the propagation entry point so this test proves the WRITE half only -- Task 9 proves
+        // the propagation half.
+        let propagationCalledWith = null
+        window._checkClientPlanPropagation = async (id, ctx, changes) => { propagationCalledWith = changes }
+
+        let resolveCalls = 0
+        const realResolve = window._resolveEditableTemplateId
+        window._resolveEditableTemplateId = async (...args) => { resolveCalls++; return realResolve(...args) }
+
+        await saveTemplateDraft()
+        return { resolveCalls, propagationCalledWith, dirtyAfter: _templateDraftIsDirty() }
+      })()`)
+      expect(r.resolveCalls, '_resolveEditableTemplateId must run exactly once per Save, never once per queued change').toBe(1)
+      expect(r.propagationCalledWith.length, 'the two staged changes (delete + insert) must produce two entries in the combined change list').toBe(2)
+      expect(r.dirtyAfter, 'after a successful Save the draft is clean again').toBe(false)
+
+      const dbRows = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id).order('order_index')
+        return data.map(r => r.exercise_name)
+      }, setup.templateId)
+      expect(dbRows).toEqual(['[E2E] A', '[E2E] C'])
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+
+  test('saveTemplateDraft refuses to save a template the current user does not own, at the app layer', async ({ page, browser }) => {
+    const pt2Ctx = await browser.newContext()
+    let foreignTemplateId
+    try {
+      const pt2Page = await pt2Ctx.newPage()
+      await loginAsPT2(pt2Page)
+      foreignTemplateId = await pt2Page.evaluate(async () => {
+        const { data } = await db.from('workout_templates').insert({ coach_id: currentUser.id, name: '[E2E] Foreign Save Target', is_personal: false }).select('id').single()
+        return data.id
+      })
+
+      await loginAsPT(page)
+      const r = await page.evaluate(async (tid) => {
+        // Constructed directly rather than via openTemplate(tid): RLS already refuses the SELECT
+        // openTemplate needs to build a real draft for a template we don't own, so it would never
+        // reach this code path in the first place. This test is specifically for the APP-LEVEL gate
+        // saveTemplateDraft itself owns -- defense in depth, same reasoning the pre-existing
+        // ownership-anchors suite already uses for its other (still-passing) tests.
+        window._templateDraft = {
+          templateId: tid,
+          ctx: {},
+          meta: { name: 'tampered', description: null },
+          metaBaseline: { name: 'original', description: null },
+          exercises: [], exercisesBaseline: [],
+        }
+        let toast = ''
+        const origToast = window.showToast
+        window.showToast = (m) => { toast = m }
+        try {
+          await saveTemplateDraft()
+        } finally { window.showToast = origToast }
+        return { toast }
+      }, foreignTemplateId)
+      expect(r.toast.toLowerCase(), 'must refuse with a permission message, not silently no-op').toContain('permission denied')
+
+      // "Untouched" is checked from PT2's OWN session, not PT1's: PT1's session cannot SELECT a row it
+      // does not own at all (RLS filters it out entirely, returning null) -- verified empirically while
+      // implementing this task, and already documented as the reason tests/ownership-anchors-2026-08-21
+      // .spec.js's own equivalent check settles for the app-level error message alone ("Asked from PT2's
+      // perspective would be ideal, but PT cannot read PT2's rows; a null/empty read here is therefore
+      // consistent with both 'refused' and 'invisible'"). Here we DO have PT2's own page in scope, so we
+      // use it for a strictly stronger proof than that established pattern settled for.
+      const nameAfter = await pt2Ctx.pages()[0].evaluate(async (tid) => {
+        const { data } = await db.from('workout_templates').select('name').eq('id', tid).maybeSingle()
+        return data?.name ?? null
+      }, foreignTemplateId)
+      expect(nameAfter, 'the foreign template must be completely untouched').toBe('[E2E] Foreign Save Target')
+    } finally {
+      if (foreignTemplateId) {
+        await pt2Ctx.pages()[0].evaluate(async (tid) => { await db.from('workout_templates').delete().eq('id', tid) }, foreignTemplateId)
+      }
+      await pt2Ctx.close()
     }
   })
 })

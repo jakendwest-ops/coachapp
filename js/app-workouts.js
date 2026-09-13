@@ -2510,10 +2510,73 @@ function _renderSaveWorkoutButton() {
     : ''
 }
 
-// Stub -- Task 8 replaces this body with the real diff-and-replay implementation. Exists now only
-// so the button above has a real, declared function to call (a real pre-commit hook,
-// scripts/check-handler-targets.mjs, refuses an onclick naming an undeclared function).
-async function saveTemplateDraft() { /* replaced by Task 8 */ }
+async function saveTemplateDraft() {
+  const d = window._templateDraft
+  if (!d || !_templateDraftIsDirty()) return
+
+  // Resolve the real write target EXACTLY ONCE for this whole batch. Calling
+  // _resolveEditableTemplateId per queued change would risk forking a SECOND clone of a still-shared
+  // template on the second call, orphaning the first -- see Global Constraints.
+  const { templateId: targetId } = await _resolveEditableTemplateId(d.templateId)
+  const coachId = await _resolveTemplateOwnerCoachId()
+  if (!(await _verifyTemplateOwnership(targetId, coachId))) {
+    showToast('Save failed — template not found or permission denied.', 'warn')
+    return
+  }
+
+  const diff = _diffTemplateDraft(d)
+  const changes = []
+  let failedAt = null
+
+  for (const id of diff.toDelete) {
+    const { data, error } = await db.from('workout_template_exercises').delete().eq('id', id).eq('template_id', targetId).select()
+    if (error || !data?.length) { failedAt = { step: 'delete', id }; break }
+    changes.push({ op: 'delete', matchName: d.exercisesBaseline.find(e => e.id === id)?.exercise_name, row: null })
+  }
+
+  if (!failedAt) for (const u of diff.toUpdate) {
+    const { row } = u
+    const patch = { exercise_id: row.exercise_id, exercise_name: row.exercise_name, exercise_type: row.exercise_type, metric_type: row.metric_type, sets: row.sets, sets_json: row.sets_json, notes: row.notes, superset_group: row.superset_group }
+    const { data, error } = await db.from('workout_template_exercises').update(patch).eq('id', u.id).eq('template_id', targetId).select()
+    if (error || !data?.length) { failedAt = { step: 'update', id: u.id }; break }
+    const origName = d.exercisesBaseline.find(e => e.id === u.id)?.exercise_name
+    changes.push({ op: 'update', matchName: origName || row.exercise_name, row: patch })
+  }
+
+  if (!failedAt) for (const row of diff.toInsert) {
+    const { exercise_id, exercise_name, exercise_type, metric_type, sets, sets_json, notes, superset_group } = row
+    const { data: existing } = await db.from('workout_template_exercises').select('order_index').eq('template_id', targetId).order('order_index', { ascending: false }).limit(1)
+    const nextOrder = existing?.length ? (existing[0].order_index + 1) : 0
+    const insertRow = { template_id: targetId, exercise_id, exercise_name, exercise_type, metric_type, order_index: nextOrder, sets, sets_json, notes, superset_group }
+    const { error } = await db.from('workout_template_exercises').insert(insertRow)
+    if (error) { failedAt = { step: 'insert', name: exercise_name }; break }
+    changes.push({ op: 'add', matchName: exercise_name, row: insertRow })
+  }
+
+  if (!failedAt && diff.reorder) {
+    const failures = await _propagateReorderToTemplates(diff.reorder, [targetId])
+    if (failures) { failedAt = { step: 'reorder' } }
+    else changes.push({ op: 'reorder', names: diff.reorder.names })
+  }
+
+  if (!failedAt && diff.rename) {
+    const { data, error } = await db.from('workout_templates').update(diff.rename).eq('id', targetId).eq('coach_id', coachId).select()
+    if (error || !data?.length) { failedAt = { step: 'rename' } }
+    else changes.push({ op: 'rename', ...diff.rename })
+  }
+
+  if (failedAt) {
+    // Partial-failure recovery is Task 10; for now, surface the failure and stop rather than silently
+    // continuing or pretending everything saved.
+    log.error('saveTemplateDraft', 'batch save failed partway through', failedAt)
+    showToast(`Save failed at "${failedAt.step}" — some changes may not have saved. Refresh to check.`, 'warn')
+    return
+  }
+
+  window._lastExerciseChanges = changes
+  await openTemplate(targetId, d.ctx)
+  if (changes.length) await _checkClientPlanPropagation(targetId, d.ctx, changes)
+}
 
 // Applies ONE captured exercise change (window._lastExerciseChange) to a set of target templates,
 // matched BY EXERCISE NAME (Jake's choice, 2026-07-12). This replaces the old wholesale
