@@ -285,8 +285,8 @@ function _renderTemplateExerciseList() {
       <div class="card-body" style="padding:12px 16px">
         <div style="display:flex;align-items:center;gap:10px">
           <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
-            <button data-move="-1" onclick="_stageReorderExercise('${ex._draftKey}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
-            <button data-move="1" onclick="_stageReorderExercise('${ex._draftKey}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
+            <button data-move="-1" onclick="moveTemplateExercise('${id}','${ex.id}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
+            <button data-move="1" onclick="moveTemplateExercise('${id}','${ex.id}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
           </div>
           <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);flex-shrink:0">${i + 1}</div>
           <div style="flex:1;min-width:0">
@@ -312,8 +312,8 @@ function _renderTemplateExerciseList() {
             })()}
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
-            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex._draftKey}','${id}')">Edit</button>
-            <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="_stageRemoveExercise('${ex._draftKey}')">Remove</button>
+            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
+            <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="confirmRemoveTemplateExercise('${ex.id}','${id}')">Remove</button>
           </div>
         </div>
       </div>
@@ -332,9 +332,22 @@ the initial `el.innerHTML` assignment:
   _renderTemplateExerciseList()
 ```
 
-Note: `showEditTemplateExerciseModal`'s signature changes from `(texId, templateId)` to
-`(draftKey, templateId)` here — Task 3 updates its body to match; this task only updates the call
-site in the render.
+**Ruling (2026-09-13, post-dispatch correction — see ledger):** the render function's Edit/Remove/▲▼
+buttons call the EXISTING functions with their EXISTING arguments —
+`showEditTemplateExerciseModal('${ex.id}','${id}')`, `confirmRemoveTemplateExercise('${ex.id}','${id}')`,
+`moveTemplateExercise('${id}','${ex.id}',±1)` — NOT the new staged functions, and NOT `ex._draftKey`.
+Two independent reasons converged on this: (1) `scripts/check-handler-targets.mjs`, a real pre-commit
+hook, statically scans every `on*="..."` attribute in the files staged for a commit and refuses one
+that names a function not yet declared anywhere in that file set — `_stageReorderExercise`/
+`_stageRemoveExercise` don't exist until Tasks 4/3, so this task's original code (calling them early)
+could never actually be committed. (2) Independently of the hook, `showEditTemplateExerciseModal`
+still has its OLD signature at this point in the plan (expecting a real database id as its first
+argument) — passing `ex._draftKey` there would be a real, silent functional bug for anyone clicking
+Edit between this task landing and Task 3 landing (the old body fetches by `.eq('id', texId)`, which
+would find nothing for a draftKey string), invisible to every test this task or its verification
+files run. Task 3 (introduces `_stageRemoveExercise`, changes `showEditTemplateExerciseModal`'s
+signature) and Task 4 (introduces `_stageReorderExercise`) each update these render call sites AS
+PART OF their own diffs — see the added notes in their Files/Steps sections below.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -362,7 +375,13 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `js/app-workouts.js` — `saveExerciseToTemplate` (2495-2564), `saveEditTemplateExercise`
   (2582-2628), `deleteTemplateExercise` (2625-2646), `showEditTemplateExerciseModal` (2567-2581,
-  and its callers)
+  and its callers), **and `_renderTemplateExerciseList()`'s Edit/Remove buttons (Task 2)** — change
+  `onclick="showEditTemplateExerciseModal('${ex.id}','${id}')"` to
+  `onclick="showEditTemplateExerciseModal('${ex._draftKey}','${id}')"` and
+  `onclick="confirmRemoveTemplateExercise('${ex.id}','${id}')"` to
+  `onclick="_stageRemoveExercise('${ex._draftKey}')"` — Task 2 deliberately left these calling the
+  OLD functions with the OLD (real-id) arguments, since neither the new staged function nor the new
+  signature existed yet at that point (see the ruling note at the end of Task 2).
 - Test: `tests/template-draft-save-2026-09-13.spec.js`
 
 **Interfaces:**
@@ -638,6 +657,11 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Modify: `js/app-workouts.js:1335` (the `openTemplate` cross-template settle-cancel check — removed,
   see Global Constraints / the fork-race note below)
 - Modify: `js/app-workouts.js:1471` (`_templateGoBack`'s `_cancelReorderSettle()` call — removed)
+- Modify: **`_renderTemplateExerciseList()`'s ▲/▼ buttons (Task 2)** — change
+  `onclick="moveTemplateExercise('${id}','${ex.id}',-1)"` to
+  `onclick="_stageReorderExercise('${ex._draftKey}',-1)"`, and the `,1)"` down-arrow equivalent —
+  Task 2 deliberately left these calling the old immediate-write function, since `_stageReorderExercise`
+  didn't exist yet at that point (see the ruling note at the end of Task 2).
 - Modify: `tests/reorder-instant-2026-09-06.spec.js`
 - Modify: `tests/reorder-propagation-2026-08-19.spec.js`
 
