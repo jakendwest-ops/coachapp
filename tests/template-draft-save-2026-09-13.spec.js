@@ -288,3 +288,43 @@ test.describe('Template draft: staged exercise mutators', () => {
     }
   })
 })
+
+test.describe('Template draft: staged reorder', () => {
+  test('_stageReorderExercise swaps the draft order and writes nothing to the database', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Stage Reorder' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+        { template_id: t.id, exercise_name: '[E2E] C', exercise_type: 'strength', order_index: 2 },
+      ])
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      const r = await page.evaluate(() => {
+        const bKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')._draftKey
+        _stageReorderExercise(bKey, -1) // B moves up, ahead of A
+        return {
+          names: window._templateDraft.exercises.map(e => e.exercise_name),
+          indexes: window._templateDraft.exercises.map(e => e.order_index),
+          dirty: _templateDraftIsDirty(),
+        }
+      })
+      expect(r.names).toEqual(['[E2E] B', '[E2E] A', '[E2E] C'])
+      expect(r.indexes, 'order_index in the draft must reflect the new positions').toEqual([0, 1, 2])
+      expect(r.dirty).toBe(true)
+      const dbOrder = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name, order_index').eq('template_id', id).order('order_index')
+        return data.map(r => r.exercise_name)
+      }, setup.templateId)
+      expect(dbOrder, 'the database order must be untouched').toEqual(['[E2E] A', '[E2E] B', '[E2E] C'])
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
