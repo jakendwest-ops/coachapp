@@ -43,8 +43,13 @@ codebase convention of large per-concern files, not restructuring it) plus test 
 - **Modify:** `tests/reorder-propagation-2026-08-19.spec.js` — one test (the wiring test) rewritten;
   the five permutation tests survive unchanged (they drive `_propagateReorderToTemplates` directly).
 - **Modify:** `tests/session-identity-2026-08-14.spec.js`, `tests/programs.spec.js`,
-  `tests/personal-programs.spec.js` — insert a Save-workout step before any assertion that checks
-  the database immediately after an edit.
+  `tests/personal-programs.spec.js`, `tests/reentry-guard-2026-08-28.spec.js`,
+  `tests/builder-metric-type.spec.js`, `tests/cardio-distance-metres.spec.js`,
+  `tests/intervals-redesign-2026-07-25.spec.js`, `tests/ledger-fixes-2026-07-30.spec.js`,
+  `tests/ownership-anchors-2026-08-21.spec.js`, `tests/stale-set-fields-2026-08-18.spec.js`,
+  `tests/ledger-fixes-2026-08-02.spec.js` (Task 12 — the last 8 found during Task 3, see its ruling
+  note) — insert a Save-workout step before any assertion that checks the database immediately
+  after an edit; two of the 8 need a small additional fix beyond that mechanical swap (see Task 12).
 - **Modify:** `tests/propagation-honesty-2026-09-06.spec.js` — rewritten for pluralized modal copy.
 - **Create:** `tests/template-draft-save-2026-09-13.spec.js` — the new integration coverage (no
   writes until Save, Discard truly discards, the three-way leave prompt, one combined prompt for
@@ -1924,16 +1929,32 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 12: Update `session-identity-2026-08-14.spec.js`, `programs.spec.js`, `personal-programs.spec.js`
+### Task 12: Update every test file calling a renamed/removed staging function directly
+
+**Scope correction (2026-09-13, post-Task-3 ruling — see ledger).** Task 3's implementer did a full
+before/after verification sweep (not speculation) and found this task's original 3-file list was
+incomplete: 8 MORE files call `saveExerciseToTemplate`/`saveEditTemplateExercise`/
+`deleteTemplateExercise` directly by name and break the instant those functions are removed — a gap
+in this plan's original pre-flight scan (which checked `js/` callers and a specific set of test
+files, but never grepped the whole `tests/` directory for these three names). Folded into this task
+rather than a new one, since the fix shape is identical: replace the direct old-function call with
+its staged equivalent, then flush to the database with `saveTemplateDraft()` before the assertion
+that follows.
 
 **Files:**
-- Modify: `tests/session-identity-2026-08-14.spec.js`, `tests/programs.spec.js`, `tests/personal-programs.spec.js`
+- Modify: `tests/session-identity-2026-08-14.spec.js`, `tests/programs.spec.js`,
+  `tests/personal-programs.spec.js` (original 3)
+- Modify: `tests/reentry-guard-2026-08-28.spec.js`, `tests/builder-metric-type.spec.js`,
+  `tests/cardio-distance-metres.spec.js`, `tests/intervals-redesign-2026-07-25.spec.js`,
+  `tests/ledger-fixes-2026-07-30.spec.js`, `tests/ownership-anchors-2026-08-21.spec.js`,
+  `tests/stale-set-fields-2026-08-18.spec.js`, `tests/ledger-fixes-2026-08-02.spec.js` (8 more,
+  found during Task 3)
 
 **Interfaces:** none new — this task only makes existing coverage match the new save timing.
 
 - [ ] **Step 1: Read each file's exact current interaction with the template editor**
 
-Run: `grep -n "saveExerciseToTemplate\|saveEditTemplateExercise\|deleteTemplateExercise\|moveTemplateExercise\|saveEditTemplate\b" tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js`
+Run: `grep -n "saveExerciseToTemplate\|saveEditTemplateExercise\|deleteTemplateExercise\|moveTemplateExercise\|saveEditTemplate\b" tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js`
 
 This surfaces every exact call site that needs a `saveTemplateDraft()` step inserted before its
 following database assertion. Because these files are large and the exact surrounding context
@@ -1950,15 +1971,33 @@ database assertion. Where a site drives the UI through real clicks (not `page.ev
 directly), locate and click the new "Save workout" button (`#save-template-draft-btn`, Task 6)
 instead.
 
-- [ ] **Step 3: Run all three files**
+**Two of the 8 newly-found files need more than the mechanical swap above — read these before
+touching them:**
 
-Run: `npx playwright test tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js`
-Expected: PASS
+- **`tests/reentry-guard-2026-08-28.spec.js`** — its `MUST_BE_GUARDED` list asserts
+  `'saveExerciseToTemplate'` is registered behind the reentrancy guard (`guardReentry(...)`), a
+  protection against a double-tap racing two `select-max-order_index-then-insert` database calls.
+  The staged mutators are synchronous, in-memory, single-threaded JS — there is no equivalent race
+  to guard against (Task 3's implementer deliberately did not wrap them in `guardReentry`, and
+  correctly did not invent one — see its self-review). Remove `'saveExerciseToTemplate'` from
+  `MUST_BE_GUARDED` (and add nothing in its place) rather than trying to make a staged mutator
+  satisfy a guard it has no reason to need.
+- **`tests/ledger-fixes-2026-08-02.spec.js`** — wraps its old-function calls in `.catch(() => {})`,
+  which is currently swallowing the `ReferenceError` from the now-missing function and letting the
+  test stay green for the wrong reason (nothing ran, rather than the ownership check it claims to
+  prove firing). Remove that `.catch` when you replace the call with its staged equivalent — the
+  test must fail loudly if the behavior it names ever breaks again, not silently pass because
+  nothing executed.
+
+- [ ] **Step 3: Run every file from this task together**
+
+Run: `npx playwright test tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js`
+Expected: PASS (11 files)
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js
+git add tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js
 git commit -m "tests: insert Save-workout step where template edits are checked immediately
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
@@ -2006,8 +2045,9 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Partial-failure recovery → Task 10. ✓
 - Leave-with-unsaved-changes three-way prompt → Task 11. ✓
 - Test impact: `propagation-honesty-2026-09-06` (Task 9), `session-identity-2026-08-14` /
-  `programs.spec.js` / `personal-programs.spec.js` (Task 12), `reorder-instant-2026-09-06` /
-  `reorder-propagation-2026-08-19` (Task 4). ✓
+  `programs.spec.js` / `personal-programs.spec.js` + 8 more found during Task 3 (Task 12, expanded
+  2026-09-13 — see its ruling note), `reorder-instant-2026-09-06` / `reorder-propagation-2026-08-19`
+  (Task 4). ✓
 - `ledger-fixes-2026-07-23.spec.js` confirmed unrelated, no task touches it, correction noted in File
   Structure. ✓
 - Database changes: none — no task adds a migration. ✓
