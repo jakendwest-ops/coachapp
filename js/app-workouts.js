@@ -1379,12 +1379,14 @@ async function openTemplate(id, ctx = {}) {
 
     <div class="page-header">
       <div>
-        <h1 class="page-title">${escapeHtml(t.name)}</h1>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <h1 class="page-title">${escapeHtml(t.name)}</h1>
+          <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;flex-shrink:0" onclick="showEditTemplateModal('${id}')">Edit</button>
+        </div>
         ${t.description ? `<p class="page-subtitle">${escapeHtml(t.description)}</p>` : ''}
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${_quickPrefsIconHtml()}
-        <button class="btn-secondary" onclick="showEditTemplateModal('${id}')">Edit</button>
         <button class="btn-secondary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
         ${currentProfile?.role === 'solo' && window._soloClientId
           ? `<button class="btn-primary" onclick="startWorkoutRunner('${window._soloClientId}','${id}')">▶ Start</button>`

@@ -216,7 +216,7 @@ async function renderClient1RMs(clientId, el) {
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <h3 style="margin:0;font-size:var(--text-xl, 16px);font-weight:700">1 Rep Maxes</h3>
+      <h3 style="margin:0;font-size:var(--text-xl, 16px);font-weight:700">My Personal Bests</h3>
       <button class="btn-primary" style="font-size:var(--text-base, 13px);padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add lift</button>
     </div>
     <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:14px">Edit any value and press Save all. Each save keeps your previous number as history.</div>
@@ -1705,7 +1705,7 @@ async function renderProgressWeight(el) {
   // node (#client-weight-form) that existed on the Dashboard pages — never on this Progress page
   // it's actually clicked from. Silent no-op, same bug shape as the "Log PB" fix earlier this
   // session. Adding the form here (same markup as app-dashboard.js) makes the button real.
-  const addWeightBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Body weight log</span><button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log weight</button></div>
+  const addWeightBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Body weight log</span><button class="btn-primary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log weight</button></div>
     <div id="client-weight-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div><label class="form-label">Date</label><input type="date" id="cwf-date" class="form-input" value="${new Date().toISOString().split('T')[0]}"></div>
@@ -2103,6 +2103,21 @@ const _fmtBlockRange = b => {
   return `${d(b.start)} – ${b.open ? 'now' : d(b.end)}`
 }
 
+// Which exercise NAMES belong in the "Per program" picker for the block(s) currently selected.
+// Jake, 2026-09-13: the dropdown offered every exercise ever logged, so "16 weeks STR" (no Box Jump
+// in it) still let you "compare" an exercise that program never touched — the comparison below
+// already handles that gracefully ("no sessions logged in this window"), but the list itself
+// shouldn't have offered it. A block IS a date range (see _ptsInBlock above), so "belongs to this
+// programme" here means "has at least one point inside it" — the same test the comparison itself
+// runs, not a separate parse of the programme's own template definitions.
+const _exerciseNamesInBlocks = (exercises, blocks, keys) => {
+  const windows = (keys || []).filter(Boolean).map(k => blocks.find(b => b.key === k)).filter(Boolean)
+  const inScope = windows.length
+    ? (exercises || []).filter(ex => windows.some(b => _ptsInBlock(_metricPointsFor(ex).points, b).length))
+    : (exercises || [])
+  return [...new Set(inScope.map(e => e.name))].sort((x, y) => x.localeCompare(y))
+}
+
 async function renderProgressPerProgram(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading programmes…</div>'
   // Own token, mirroring _perfExerciseToken — a master account switching Client/Personal mid-fetch
@@ -2137,7 +2152,7 @@ async function renderProgressPerProgram(clientId, el) {
   // `''` is what the "Compare with…" option sets when the user deliberately turns comparison OFF.
   // No block key equals '', so a bare `.some()` check would undo that choice on every re-render.
   if (st.b !== '' && !blocks.some(b => b.key === st.b)) st.b = blocks[1]?.key || ''
-  const names = [...new Set(exercises.map(e => e.name))].sort((x, y) => x.localeCompare(y))
+  const names = _exerciseNamesInBlocks(exercises, blocks, [st.a, st.b])
   if (!names.includes(st.ex)) st.ex = names[0] || ''
 
   const opt = (b, sel) => _blockOptionHtml(b, sel)
@@ -2165,6 +2180,18 @@ async function renderProgressPerProgram(clientId, el) {
 function _setBlockState(key, value) {
   window._blockState = window._blockState || {}
   window._blockState[key] = value
+  // Changing WHICH block(s) are being compared changes which exercises belong in the picker (see
+  // _exerciseNamesInBlocks above) — re-filter its options rather than leaving the exercise list from
+  // whichever block(s) were selected when the page first rendered.
+  if (key === 'a' || key === 'b') {
+    const exSel = document.getElementById('blk-ex')
+    if (exSel) {
+      const st = window._blockState
+      const names = _exerciseNamesInBlocks(window._blockExCache, window._blockCache, [st.a, st.b])
+      if (!names.includes(st.ex)) st.ex = names[0] || ''
+      exSel.innerHTML = _exerciseOptionsHtml(names, st.ex)
+    }
+  }
   _renderBlockComparison()
 }
 
