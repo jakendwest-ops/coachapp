@@ -933,11 +933,23 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
   the `_renderSaveWorkoutButton` placeholder from Task 3
 - Test: `tests/template-draft-save-2026-09-13.spec.js`
 
+**Ruling (2026-09-13, post-dispatch correction — see ledger).** The original text below said "do
+not stub `saveTemplateDraft`" — wrong, and it's what got this task BLOCKED: the same real
+pre-commit hook that blocked Tasks 2 and 4 (`scripts/check-handler-targets.mjs`) refuses a commit
+whose onclick names an undeclared function, and `saveTemplateDraft` doesn't exist until Task 8.
+Unlike Tasks 2/4, there is no OLD function to fall back on here — "Save workout" is new. The fix is
+a stub: `async function saveTemplateDraft() { /* replaced by Task 8 */ }`. This is not a new pattern
+for this plan — it is the exact same placeholder-then-real-implementation shape already used for
+`_renderSaveWorkoutButton` itself (a real Task 3 placeholder that THIS task replaces), just one call
+deeper. Task 8 replaces the stub body with the real implementation in the same place this task
+defines it.
+
 **Interfaces:**
 - Produces: a real `_renderSaveWorkoutButton()` that shows/hides a "Save workout" button based on
-  `_templateDraftIsDirty()`. Its `onclick` calls `saveTemplateDraft()` — not implemented until Task
-  8, so this task's button is wired but inert (clicking it does nothing observable yet); that's
-  intentional per bite-sized tasks, and Step 1's test only checks visibility, not the click.
+  `_templateDraftIsDirty()`. Its `onclick` calls `saveTemplateDraft()` — a STUB this task defines
+  (see ruling above), replaced by Task 8's real implementation. This task's button is wired but
+  inert (clicking it does nothing observable yet, since the stub is a no-op); that's intentional per
+  bite-sized tasks, and Step 1's test only checks visibility, not the click.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -994,6 +1006,11 @@ function _renderSaveWorkoutButton() {
     ? `<button id="save-template-draft-btn" class="btn-primary" style="margin-top:8px" onclick="saveTemplateDraft()">Save workout</button>`
     : ''
 }
+
+// Stub -- Task 8 replaces this body with the real diff-and-replay implementation. Exists now only
+// so the button above has a real, declared function to call (a real pre-commit hook,
+// scripts/check-handler-targets.mjs, refuses an onclick naming an undeclared function).
+async function saveTemplateDraft() { /* replaced by Task 8 */ }
 ```
 
 Call `_renderSaveWorkoutButton()` once at the end of `openTemplate` (after `_renderTemplateExerciseList()`)
@@ -1188,7 +1205,9 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Test: `tests/template-draft-save-2026-09-13.spec.js`
 
 **Interfaces:**
-- Produces: `saveTemplateDraft()` — the real "Save workout" handler.
+- Produces: `saveTemplateDraft()` — the real "Save workout" handler. Task 6 already declared this as
+  a no-op stub (`async function saveTemplateDraft() { /* replaced by Task 8 */ }`) so its own button
+  had a real function to call; this task REPLACES that stub's body, it does not add a new function.
 - Consumes: `_diffTemplateDraft` (Task 7), `_resolveEditableTemplateId`, `_resolveTemplateOwnerCoachId`,
   `_verifyTemplateOwnership` (all pre-existing, unchanged), and the core write logic factored out of
   `saveExerciseToTemplate`/`saveEditTemplateExercise`/`deleteTemplateExercise`/`saveEditTemplate` in
@@ -1260,9 +1279,16 @@ test.describe('Template draft: Save replay', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save replay"`
-Expected: FAIL — `saveTemplateDraft` is not defined.
+Expected: FAIL — NOT "not defined" (Task 6 already declared `saveTemplateDraft` as a no-op stub, so
+it exists). Instead the test's own assertions fail — e.g. `resolveCalls` stays `0` and
+`propagationCalledWith` stays `null`, because the stub does nothing.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [ ] **Step 3: Replace Task 6's stub with the real implementation**
+
+Find `async function saveTemplateDraft() { /* replaced by Task 8 */ }` (Task 6) and replace its
+ENTIRE body with the real implementation below — this edits the existing declaration in place, it
+does not add a second `saveTemplateDraft` function anywhere else in the file (a duplicate top-level
+function is exactly the class of defect this project's review explicitly watches for).
 
 ```js
 async function saveTemplateDraft() {
