@@ -2380,6 +2380,42 @@ function _templateDraftIsDirty() {
   })
 }
 
+// Computes what changed between a staged draft and its baseline, as the set of operations Task 8's
+// save-and-replay needs: rows to delete (gone from the draft), rows to insert (id === null, carrying
+// their fields but no id), rows to update (pre-existing id, a changed field, keyed by that real id),
+// a reorder (the surviving pre-existing rows' relative sequence moved — inserts/deletes don't count,
+// since they have no baseline position to compare against), and a rename (meta differs from its
+// baseline). Pure: takes the draft as a plain argument rather than reading window._templateDraft, so
+// it is callable identically from tests-node/template-draft-diff.test.mjs and from a real browser
+// session.
+function _diffTemplateDraft(draft) {
+  const baselineById = new Map(draft.exercisesBaseline.map(e => [e.id, e]))
+  const draftIds = new Set(draft.exercises.map(e => e.id).filter(id => id !== null))
+
+  const toDelete = draft.exercisesBaseline.filter(e => !draftIds.has(e.id)).map(e => e.id)
+
+  const toInsert = draft.exercises.filter(e => e.id === null).map(e => ({ ...e }))
+
+  const FIELDS = ['exercise_id', 'exercise_name', 'exercise_type', 'metric_type', 'sets', 'sets_json', 'notes', 'superset_group']
+  const toUpdate = draft.exercises
+    .filter(e => e.id !== null)
+    .filter(e => FIELDS.some(f => JSON.stringify(e[f]) !== JSON.stringify(baselineById.get(e.id)?.[f])))
+    .map(e => ({ id: e.id, row: e }))
+
+  // Order compares the SURVIVING pre-existing rows' relative sequence, ignoring newly-inserted rows
+  // (which have no baseline position to compare against) and deleted ones (already gone).
+  const survivingDraftOrder = draft.exercises.filter(e => e.id !== null).map(e => e.id)
+  const survivingBaselineOrder = draft.exercisesBaseline.filter(e => draftIds.has(e.id)).map(e => e.id)
+  const orderChanged = JSON.stringify(survivingDraftOrder) !== JSON.stringify(survivingBaselineOrder)
+  const reorder = orderChanged ? { names: draft.exercises.map(e => e.exercise_name) } : null
+
+  const rename = (draft.meta.name !== draft.metaBaseline.name || draft.meta.description !== draft.metaBaseline.description)
+    ? { name: draft.meta.name, description: draft.meta.description }
+    : null
+
+  return { toDelete, toInsert, toUpdate, reorder, rename }
+}
+
 // Stages a new exercise into window._templateDraft — no database write. The real insert happens once,
 // for every queued change at once, when "Save workout" (Task 6) replays the draft against baseline.
 function _stageAddExercise() {
