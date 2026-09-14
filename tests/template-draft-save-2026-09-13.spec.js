@@ -784,3 +784,170 @@ test.describe('Template draft: partial-failure recovery', () => {
     }
   })
 })
+
+test.describe('Template draft: leaving with unsaved changes', () => {
+  const mountBackFn = () => page.evaluate(() => {
+    window._leftCount = 0
+    window._templateCtx = window._templateCtx || {}
+    window._templateCtx.backFn = () => { window._leftCount++ }
+  })
+
+  test('leaving with a clean draft navigates straight away, no prompt', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Leave Clean' }).select('id').single()
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => { window._templateCtx.backFn = () => { window._leftCount = (window._leftCount || 0) + 1 } })
+      // Fire-and-continue, not await-to-completion: _templateGoBack is async and, when the draft is
+      // dirty, awaits _confirmLeaveTemplateDraft() -- a promise that only resolves once a dialog
+      // button is clicked. `() => _templateGoBack()` returns THAT pending promise as its own result,
+      // and page.evaluate() awaits any promise a page function returns before resolving on the Node
+      // side -- so `await page.evaluate(() => _templateGoBack())` would block the test here forever,
+      // since the click that would resolve it is the test's OWN next step, never reached while this
+      // await is still pending. Confirmed empirically: the captured failure screenshot showed the
+      // fully-rendered three-button dialog sitting on screen while the test timed out waiting on this
+      // line. A bare block body discards the inner promise and returns synchronously -- correct here
+      // because everything up to the first internal `await` (the dirty check, and for a dirty draft,
+      // building+mounting the dialog) runs synchronously; only what happens AFTER a button click is
+      // deferred, which is exactly what this test drives from Node afterwards.
+      await page.evaluate(() => { _templateGoBack() })
+      const r = await page.evaluate(() => ({ left: window._leftCount, promptShown: !!document.getElementById('confirm-dialog') }))
+      expect(r.left).toBe(1)
+      expect(r.promptShown).toBe(false)
+    } finally {
+      await page.evaluate(async (id) => { await db.from('workout_templates').delete().eq('id', id) }, setup.templateId)
+    }
+  })
+
+  test('leaving with unsaved changes shows the three-way prompt; Keep editing does nothing', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Leave Dirty Keep' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] X', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._templateCtx.backFn = () => { window._leftCount = (window._leftCount || 0) + 1 }
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+      })
+      // Fire-and-continue, not await-to-completion: _templateGoBack is async and, when the draft is
+      // dirty, awaits _confirmLeaveTemplateDraft() -- a promise that only resolves once a dialog
+      // button is clicked. `() => _templateGoBack()` returns THAT pending promise as its own result,
+      // and page.evaluate() awaits any promise a page function returns before resolving on the Node
+      // side -- so `await page.evaluate(() => _templateGoBack())` would block the test here forever,
+      // since the click that would resolve it is the test's OWN next step, never reached while this
+      // await is still pending. Confirmed empirically: the captured failure screenshot showed the
+      // fully-rendered three-button dialog sitting on screen while the test timed out waiting on this
+      // line. A bare block body discards the inner promise and returns synchronously -- correct here
+      // because everything up to the first internal `await` (the dirty check, and for a dirty draft,
+      // building+mounting the dialog) runs synchronously; only what happens AFTER a button click is
+      // deferred, which is exactly what this test drives from Node afterwards.
+      await page.evaluate(() => { _templateGoBack() })
+      const promptShown = await page.evaluate(() => document.getElementById('confirm-dialog')?.textContent || '')
+      expect(promptShown).toMatch(/unsaved/i)
+      // Keep editing = dismiss, no navigation
+      await page.locator('#confirm-dialog button', { hasText: /keep editing/i }).click()
+      const r = await page.evaluate(() => ({ left: window._leftCount || 0, stillDirty: _templateDraftIsDirty() }))
+      expect(r.left).toBe(0)
+      expect(r.stillDirty, 'the staged removal must still be there').toBe(true)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+
+  test('Discard changes throws the draft away and navigates', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Leave Discard' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] Y', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._templateCtx.backFn = () => { window._leftCount = (window._leftCount || 0) + 1 }
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+      })
+      // Fire-and-continue, not await-to-completion: _templateGoBack is async and, when the draft is
+      // dirty, awaits _confirmLeaveTemplateDraft() -- a promise that only resolves once a dialog
+      // button is clicked. `() => _templateGoBack()` returns THAT pending promise as its own result,
+      // and page.evaluate() awaits any promise a page function returns before resolving on the Node
+      // side -- so `await page.evaluate(() => _templateGoBack())` would block the test here forever,
+      // since the click that would resolve it is the test's OWN next step, never reached while this
+      // await is still pending. Confirmed empirically: the captured failure screenshot showed the
+      // fully-rendered three-button dialog sitting on screen while the test timed out waiting on this
+      // line. A bare block body discards the inner promise and returns synchronously -- correct here
+      // because everything up to the first internal `await` (the dirty check, and for a dirty draft,
+      // building+mounting the dialog) runs synchronously; only what happens AFTER a button click is
+      // deferred, which is exactly what this test drives from Node afterwards.
+      await page.evaluate(() => { _templateGoBack() })
+      await page.locator('#confirm-dialog button', { hasText: /discard/i }).click()
+      const r = await page.evaluate(() => ({ left: window._leftCount || 0 }))
+      expect(r.left).toBe(1)
+      const dbRows = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('id').eq('template_id', id)
+        return data.length
+      }, setup.templateId)
+      expect(dbRows, 'discard must not have written anything -- the exercise was never removed for real').toBe(1)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+
+  test('Save workout replays the draft, then navigates once Save completes', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Leave Save' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] Z', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._templateCtx.backFn = () => { window._leftCount = (window._leftCount || 0) + 1 }
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+      })
+      // Fire-and-continue, not await-to-completion: _templateGoBack is async and, when the draft is
+      // dirty, awaits _confirmLeaveTemplateDraft() -- a promise that only resolves once a dialog
+      // button is clicked. `() => _templateGoBack()` returns THAT pending promise as its own result,
+      // and page.evaluate() awaits any promise a page function returns before resolving on the Node
+      // side -- so `await page.evaluate(() => _templateGoBack())` would block the test here forever,
+      // since the click that would resolve it is the test's OWN next step, never reached while this
+      // await is still pending. Confirmed empirically: the captured failure screenshot showed the
+      // fully-rendered three-button dialog sitting on screen while the test timed out waiting on this
+      // line. A bare block body discards the inner promise and returns synchronously -- correct here
+      // because everything up to the first internal `await` (the dirty check, and for a dirty draft,
+      // building+mounting the dialog) runs synchronously; only what happens AFTER a button click is
+      // deferred, which is exactly what this test drives from Node afterwards.
+      await page.evaluate(() => { _templateGoBack() })
+      await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
+      await page.waitForTimeout(500)
+      const r = await page.evaluate(() => ({ left: window._leftCount || 0 }))
+      expect(r.left).toBe(1)
+      const dbRows = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('id').eq('template_id', id)
+        return data.length
+      }, setup.templateId)
+      expect(dbRows, 'Save from the leave-prompt must have actually committed the removal').toBe(0)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})

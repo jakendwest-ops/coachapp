@@ -612,6 +612,46 @@ function confirmDialog(message, { title = 'Please confirm', confirmLabel = 'Conf
   })
 }
 
+// Three-way leave-guard for the template builder (Task 11): Save workout / Discard changes / Keep
+// editing. Purpose-built rather than a third confirmDialog() option -- this is the only caller that
+// needs a third button, and confirmDialog's two-button shape (Cancel/Confirm) is used everywhere else
+// as-is. Reuses confirmDialog's exact visual language (.modal-overlay/.modal structure).
+function _confirmLeaveTemplateDraft() {
+  return new Promise((resolve) => {
+    document.getElementById('confirm-dialog')?.dispatchEvent(new CustomEvent('confirm-superseded'))
+    const overlay = document.createElement('div')
+    overlay.className = 'modal-overlay'
+    overlay.id = 'confirm-dialog'
+    if (document.getElementById('workout-runner')) overlay.style.zIndex = '1000'
+    let done = false
+    const settle = (val) => { if (done) return; done = true; obs.disconnect(); overlay.remove(); resolve(val) }
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:400px">
+        <div class="modal-header">
+          <h2 class="modal-title">Unsaved changes</h2>
+          <button class="modal-close" data-confirm="no">✕</button>
+        </div>
+        <p style="white-space:pre-line">You have unsaved changes to this workout.</p>
+        <div class="modal-footer" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-secondary" data-confirm="no">Keep editing</button>
+          <button class="btn-danger" data-confirm="discard">Discard changes</button>
+          <button class="btn-primary" data-confirm="save">Save workout</button>
+        </div>
+      </div>`
+    // Two elements share data-confirm="no" (the ✕ close button and "Keep editing") -- querySelectorAll
+    // already covers both, so a separate querySelector(...).addEventListener(...) line here would
+    // double-attach a listener to whichever one matches first. settle()'s own `done` guard makes a
+    // double-fire harmless, but there's no reason to write the redundant line in the first place.
+    overlay.querySelectorAll('[data-confirm="no"]').forEach(b => b.addEventListener('click', () => settle('keep')))
+    overlay.querySelector('[data-confirm="discard"]').addEventListener('click', () => settle('discard'))
+    overlay.querySelector('[data-confirm="save"]').addEventListener('click', () => settle('save'))
+    const obs = new MutationObserver(() => { if (!overlay.isConnected) settle('keep') })
+    overlay.addEventListener('confirm-superseded', () => settle('keep'))
+    mountModal(overlay)
+    obs.observe(document.body, { childList: true })
+  })
+}
+
 function showAuth() {
   // Drop the consent gate if it is still mounted. It is position:fixed, so a session that dies while
   // it is up (token-refresh failure, sign-out in another tab) would leave it painted over the login

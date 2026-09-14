@@ -1507,7 +1507,22 @@ function _renderTemplateExerciseList() {
   }).join('')}</div>`
 }
 
-function _templateGoBack() {
+async function _templateGoBack() {
+  if (_templateDraftIsDirty()) {
+    const choice = await _confirmLeaveTemplateDraft()
+    if (choice === 'keep') return
+    if (choice === 'discard') {
+      const d = window._templateDraft
+      // _toDraftRow, not a bare {...e} spread: exercisesBaseline's rows already carry every field
+      // _toDraftRow expects (they were themselves produced by it), and reusing it here deep-clones
+      // sets_json and mints a fresh _draftKey per row -- a bare shallow spread would leave the reset
+      // exercises pointing at the SAME sets_json array/object as exercisesBaseline, reintroducing the
+      // exact aliasing landmine Task 1's review already found and fixed once for the draft/baseline
+      // split (a future in-place edit on one would silently corrupt the other).
+      window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(_toDraftRow), meta: { ...d.metaBaseline } }
+    }
+    if (choice === 'save') await saveTemplateDraft()
+  }
   const ctx = window._templateCtx || {}
   if (ctx.backFn) {
     ctx.backFn()
