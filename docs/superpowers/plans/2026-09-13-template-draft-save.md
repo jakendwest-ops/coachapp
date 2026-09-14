@@ -2280,7 +2280,10 @@ function _confirmLeaveTemplateDraft() {
           <button class="btn-primary" data-confirm="save">Save workout</button>
         </div>
       </div>`
-    overlay.querySelector('[data-confirm="no"]')?.addEventListener('click', () => settle('keep'))
+    // Two elements share data-confirm="no" (the ✕ close button and "Keep editing") -- querySelectorAll
+    // already covers both, so a separate querySelector(...).addEventListener(...) line here would
+    // double-attach a listener to whichever one matches first. settle()'s own `done` guard makes a
+    // double-fire harmless, but there's no reason to write the redundant line in the first place.
     overlay.querySelectorAll('[data-confirm="no"]').forEach(b => b.addEventListener('click', () => settle('keep')))
     overlay.querySelector('[data-confirm="discard"]').addEventListener('click', () => settle('discard'))
     overlay.querySelector('[data-confirm="save"]').addEventListener('click', () => settle('save'))
@@ -2301,7 +2304,13 @@ async function _templateGoBack() {
     if (choice === 'keep') return
     if (choice === 'discard') {
       const d = window._templateDraft
-      window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(e => ({ ...e })), meta: { ...d.metaBaseline } }
+      // _toDraftRow, not a bare {...e} spread: exercisesBaseline's rows already carry every field
+      // _toDraftRow expects (they were themselves produced by it), and reusing it here deep-clones
+      // sets_json and mints a fresh _draftKey per row -- a bare shallow spread would leave the reset
+      // exercises pointing at the SAME sets_json array/object as exercisesBaseline, reintroducing the
+      // exact aliasing landmine Task 1's review already found and fixed once for the draft/baseline
+      // split (a future in-place edit on one would silently corrupt the other).
+      window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(_toDraftRow), meta: { ...d.metaBaseline } }
     }
     if (choice === 'save') await saveTemplateDraft()
   }
