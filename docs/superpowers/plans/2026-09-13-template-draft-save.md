@@ -2538,6 +2538,102 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 13a: Fix two tests left stale by earlier tasks' already-approved refactors
+
+**Why this task exists (controller-inserted, not in the original plan).** Task 13's first attempt
+ran the full 523-test suite for the first time and found 2 genuine, plan-caused failures beyond the
+already-known `checks.sh` debt — both are test-staleness gaps, NOT behavior regressions (verified by
+reading the actual current source, not assumed):
+
+1. **`tests/day-row-prescriptions.spec.js`'s `templateCardEscapes` check** greps
+   `openTemplate.toString()` for the literal pattern `${escapeHtml(summary)}`, to prove a
+   `_fmtSetDetail`-formatted set summary is escaped before it reaches `innerHTML` (a stored-XSS class
+   this file exists to catch, per its own 2026-07-23 history). Task 2 (already reviewed and approved,
+   long before this) extracted the exercise-list rendering out of `openTemplate` into its own
+   function, `_renderTemplateExerciseList` — the `${escapeHtml(summary)}` line genuinely still exists
+   (confirmed: `js/app-workouts.js:1489`), it just lives in `_renderTemplateExerciseList` now, not in
+   `openTemplate`. The escaping itself was never dropped; only the test's target function is stale.
+2. **`tests/delete-rowcount-2026-08-27.spec.js`'s self-check count** (`toBeGreaterThanOrEqual(13)`)
+   asserts its own scan is capable of finding something, pinned at 13 `delete<Thing>` functions
+   discovered in this project's history. Task 3 (already reviewed and approved) removed
+   `deleteTemplateExercise` entirely, converting it to the staged `_stageRemoveExercise` (zero direct
+   database deletes until Save) — confirmed via a direct grep of the scan's own regex
+   (`^async function delete[A-Z1-9][A-Za-z0-9]*`) across `js/*.js`: exactly 12 matches now, not 13.
+   The count needs to track reality, not a historical snapshot.
+
+Both are one-line-plus-comment fixes with no design judgment involved — the underlying properties
+each test protects (escaping before innerHTML; every user-initiated delete checks its rowcount) are
+still genuinely true and still genuinely tested, just pointed at the current, correct target.
+
+**Files:**
+- Modify: `tests/day-row-prescriptions.spec.js`
+- Modify: `tests/delete-rowcount-2026-08-27.spec.js`
+
+**Interfaces:** none — test-only, no app code changes.
+
+- [ ] **Step 1: Confirm both currently fail for exactly the stated reason**
+
+Run: `npx playwright test tests/day-row-prescriptions.spec.js -g "every consumer of _fmtSetDetail"`
+Expected: FAIL — `r.templateCardEscapes` is `false`.
+
+Run: `npx playwright test tests/delete-rowcount-2026-08-27.spec.js -g "every user-initiated delete pairs"`
+Expected: FAIL — `Expected: >= 13, Received: 12`.
+
+- [ ] **Step 2: Fix `day-row-prescriptions.spec.js`**
+
+Change the `templateCardEscapes` line (currently ~line 194's test body, inside `page.evaluate`) from:
+
+```js
+templateCardEscapes: /\$\{escapeHtml\(summary\)\}/.test(openTemplate.toString()),
+```
+
+to:
+
+```js
+// 2026-09-13 (template-draft-save): this escape now lives in _renderTemplateExerciseList, which
+// Task 2 of that plan extracted out of openTemplate — the escaping itself never moved or weakened,
+// only which function's source literally contains it.
+templateCardEscapes: /\$\{escapeHtml\(summary\)\}/.test(_renderTemplateExerciseList.toString()),
+```
+
+- [ ] **Step 3: Fix `delete-rowcount-2026-08-27.spec.js`**
+
+Change the comment and count from:
+
+```js
+    // "all 0 of them are fine" is a switched-off checker. Thirteen exist today, 4 exempt.
+    expect(found, 'the scan found NO delete<Thing> functions — it is inspecting nothing')
+      .toBeGreaterThanOrEqual(13)
+```
+
+to:
+
+```js
+    // "all 0 of them are fine" is a switched-off checker. Twelve exist today, 4 exempt.
+    // (Was 13 until 2026-09-13: deleteTemplateExercise was removed by the template-draft-save plan,
+    // converted to the staged _stageRemoveExercise — zero direct database deletes until "Save
+    // workout" replays the batch, so there is no longer a per-tap delete to check here at all.)
+    expect(found, 'the scan found NO delete<Thing> functions — it is inspecting nothing')
+      .toBeGreaterThanOrEqual(12)
+```
+
+- [ ] **Step 4: Run both files to verify they pass**
+
+Run: `npx playwright test tests/day-row-prescriptions.spec.js tests/delete-rowcount-2026-08-27.spec.js tests/delete-rowcount-programs-2026-09-04.spec.js`
+Expected: PASS (the third file is included as a same-family sanity check, not because it needed a
+change — confirm it wasn't already broken by something related).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/day-row-prescriptions.spec.js tests/delete-rowcount-2026-08-27.spec.js
+git commit -m "tests: point 2 stale source-scanning checks at their current target
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 13: Cache-bust and full-suite verification
 
 **Files:**
