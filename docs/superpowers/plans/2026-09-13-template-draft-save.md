@@ -2452,6 +2452,92 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 12b: Guard saveTemplateDraft against double-tap re-entry
+
+**Why this task exists (controller-inserted, not in the original plan).** Task 12's implementer
+found that `saveTemplateDraft` — now the ONE remaining database-write path for every staged
+template change (add/edit/delete/reorder/rename) — has no `guardReentry` registration and no
+synchronous busy-disable. `tests/reentry-guard-2026-08-28.spec.js`'s own ratchet test (which scans
+the real shipped source for exactly this) already flags it as a new, unguarded inserter, left
+correctly red rather than silently added to `FROZEN_UNGUARDED` with an invented justification.
+
+The risk is real, not hypothetical: `saveTemplateDraft`'s docblock already warns that
+`_resolveEditableTemplateId` must be called EXACTLY ONCE per Save because calling it twice risks
+double-forking a shared template and orphaning the first clone. A fast double-click on
+`#save-template-draft-btn` (the button's `onclick="saveTemplateDraft()"` has no guard at all) fires
+the WHOLE function twice concurrently — exactly the scenario that comment warns about, plus a
+second, independent risk: two concurrent calls both diffing the SAME still-staged
+`window._templateDraft` (nothing marks it "being saved") and both replaying their own delete/
+update/insert loops, which can double-insert a newly-staged exercise. This is precisely the bug
+class ("if you press the button more than once it duplicates the exercise several times", the
+report this whole reentry-guard file traces back to) this file exists to catch — now covering the
+entire staged batch instead of one exercise.
+
+**Files:**
+- Modify: `js/app-workouts.js` — add `guardReentry('saveTemplateDraft')` beneath the function's
+  declaration (find via `grep -n "^async function saveTemplateDraft"`), mirroring its 13 existing
+  siblings (`grep -n "guardReentry(" js/*.js` to see the exact pattern each one follows —
+  `guardReentry('name')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js`).
+- Modify: `tests/reentry-guard-2026-08-28.spec.js` — add `'saveTemplateDraft'` to `MUST_BE_GUARDED`
+  (matching how every other guarded write path is explicitly named there, not just implicitly
+  covered by the general unguarded/frozen scan), and remove/update the NOTE comment block (currently
+  ~lines 226-236, search for "NOTE, not papered over") that documents this gap as deliberately left
+  red — once the guard is real, that comment describes a fixed problem, not a live one.
+
+**Interfaces:** none new — `guardReentry` and `saveTemplateDraft` both already exist; this only
+registers the former for the latter.
+
+- [ ] **Step 1: Confirm the ratchet test currently fails for exactly this reason**
+
+Run: `npx playwright test tests/reentry-guard-2026-08-28.spec.js -g "every inserter is either guarded"`
+Expected: FAIL — `unguarded` contains `'saveTemplateDraft'`, which is not in `frozen`.
+
+- [ ] **Step 2: Add the guard**
+
+In `js/app-workouts.js`, immediately beneath `async function saveTemplateDraft() { ... }`'s closing
+brace, add:
+
+```js
+guardReentry('saveTemplateDraft')  // double-press could double-fork a shared template and double-write every staged change; see tests/reentry-guard-2026-08-28.spec.js
+```
+
+- [ ] **Step 3: Update the test file**
+
+In `tests/reentry-guard-2026-08-28.spec.js`:
+1. Add `'saveTemplateDraft',` to the `MUST_BE_GUARDED` array, with a comment in the same style as
+   its neighbors, e.g.:
+   ```js
+   'saveTemplateDraft', // double-press could double-fork a shared template and double-write every staged change
+   ```
+2. Remove the "NOTE, not papered over: saveTemplateDraft() itself..." comment block (the one
+   documenting this exact gap as deliberately left red) — replace it with a short note that the gap
+   was closed by this task, referencing it by name so a future reader has the history without the
+   stale "still broken" framing.
+
+- [ ] **Step 4: Run the ratchet test and the full reentry-guard file to verify both pass**
+
+Run: `npx playwright test tests/reentry-guard-2026-08-28.spec.js`
+Expected: PASS (all tests in the file, including the ratchet)
+
+- [ ] **Step 5: Run the full template-draft-save test surface to confirm no regression**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js`
+Expected: PASS — `guardReentry` wraps `saveTemplateDraft` transparently (it still runs the same
+body, just refuses a concurrent second call and returns `undefined` instead); every existing test
+calls it once at a time, so none should be affected. If any test unexpectedly fails, that is a real
+signal worth investigating before assuming it's unrelated flake — do not wave it away.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add js/app-workouts.js tests/reentry-guard-2026-08-28.spec.js
+git commit -m "template builder: guard saveTemplateDraft against double-tap re-entry
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 13: Cache-bust and full-suite verification
 
 **Files:**
