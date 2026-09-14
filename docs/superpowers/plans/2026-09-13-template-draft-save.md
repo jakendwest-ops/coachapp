@@ -2634,6 +2634,91 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 13b: Replace a fixed sleep with a real completion wait
+
+**Why this task exists (controller-inserted, not in the original plan).** `checks.sh`'s
+`waitForTimeout(` count ratchet compares this branch against `origin/master` and found exactly one
+new occurrence (124 vs baseline 123) — `tests/template-draft-save-2026-09-13.spec.js:938`, inside
+Task 11's own "Save workout replays the draft, then navigates once Save completes" test. Task 11's
+own review already flagged this exact line as a Minor, deferred finding ("worth flagging given
+CLAUDE.md/MEMORY's stated preference for awaiting real completion over sleeps where practical") —
+it is now a real, concrete pre-push gate failure, not just a style note, so it gets fixed rather
+than deferred again.
+
+**The problem:** after clicking "Save" in the leave-confirmation dialog, the test has no direct
+signal from Playwright's own click() for when the async chain it triggers (`saveTemplateDraft()`
+then `ctx.backFn()`, inside `_templateGoBack`) actually finishes — `click()` only waits for the DOM
+event dispatch, not for the async handler it triggers to complete. The fixed `waitForTimeout(500)`
+is a guess at how long that takes; it is either too short (flaky) or too long (slow), the exact
+anti-pattern this project's own memory documents.
+
+**The fix:** poll for the real completion signal the test already reads elsewhere in the same file
+(`window._leftCount` becoming `1`, set by the `backFn` the test itself installs) instead of guessing
+at a fixed delay.
+
+**Files:**
+- Modify: `tests/template-draft-save-2026-09-13.spec.js`
+
+**Interfaces:** none — test-only, no app code changes.
+
+- [ ] **Step 1: Confirm the current test passes (this is a refactor, not a bug fix — there is no RED step)**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save workout replays"`
+Expected: PASS (the test is already correct; only its wait mechanism changes).
+
+- [ ] **Step 2: Replace the fixed sleep with a poll**
+
+Change (currently ~lines 936-940):
+
+```js
+      await page.evaluate(() => { _templateGoBack() })
+      await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
+      await page.waitForTimeout(500)
+      const r = await page.evaluate(() => ({ left: window._leftCount || 0 }))
+      expect(r.left).toBe(1)
+```
+
+to:
+
+```js
+      await page.evaluate(() => { _templateGoBack() })
+      await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
+      // Wait for the real completion signal instead of guessing a fixed delay: _templateGoBack
+      // awaits saveTemplateDraft() fully before calling ctx.backFn() (which sets _leftCount), so
+      // once this reaches 1 the save has genuinely finished, not just the click event dispatched.
+      // waitForFunction, not expect.poll: matches this codebase's own established pattern for
+      // "wait for a window global to reach a value" (see tests/helpers.js:69,
+      // tests/ledger-fixes-2026-08-01.spec.js:69, tests/runner.spec.js:29 for precedent).
+      await page.waitForFunction(() => window._leftCount === 1, null, { timeout: 10000 })
+      const r = await page.evaluate(() => ({ left: window._leftCount || 0 }))
+      expect(r.left).toBe(1)
+```
+
+(The `expect(r.left).toBe(1)` line stays — `waitForFunction` only waits for the condition, it
+doesn't assert; keeping the explicit assertion matches this file's own style everywhere else and
+gives a clearer failure message than a bare timeout would.)
+
+- [ ] **Step 3: Run the test to verify it still passes**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save workout replays"`
+Expected: PASS
+
+- [ ] **Step 4: Run the full file to confirm no regression**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js`
+Expected: PASS (all tests, matching the count from Task 13a's own full-file run)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/template-draft-save-2026-09-13.spec.js
+git commit -m "tests: poll for real Save-then-navigate completion instead of a fixed sleep
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 13: Cache-bust and full-suite verification
 
 **Files:**
