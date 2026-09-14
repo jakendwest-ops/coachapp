@@ -2652,6 +2652,7 @@ async function saveTemplateDraft() {
   await openTemplate(targetId, d.ctx)
   if (changes.length) await _checkClientPlanPropagation(targetId, d.ctx, changes)
 }
+guardReentry('saveTemplateDraft')  // double-press could double-fork a shared template and double-write every staged change; see tests/reentry-guard-2026-08-28.spec.js
 
 // Applies ONE captured exercise change (window._lastExerciseChange) to a set of target templates,
 // matched BY EXERCISE NAME (Jake's choice, 2026-07-12). This replaces the old wholesale

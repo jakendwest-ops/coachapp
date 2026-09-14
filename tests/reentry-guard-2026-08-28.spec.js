@@ -99,7 +99,11 @@ const MUST_BE_GUARDED = [
   //    Their shared exemption ("torn down on success") described what happens AFTER the awaits.
   'saveWorkoutSession',       // double-tap = TWO workout_logs rows plus their exercises and sets
   'saveRunnerOneRM',          // double-tap = two identical client_1rms rows; modal .remove() is after
-  '_savePostSessionOneRM'     // same; the psorm-row-N .remove() is after both awaits
+  '_savePostSessionOneRM',    // same; the psorm-row-N .remove() is after both awaits
+
+  // ── Added by Task 12b (2026-09-13), closing the gap Task 12 correctly left red: the ONE remaining
+  //    database-write path for every staged template change, with no guard of its own.
+  'saveTemplateDraft',        // double-press could double-fork a shared template and double-write every staged change
 
   // NOT added: launchRunner. It IS guarded (app-runner.js), but it inserts nothing, so it is invisible
   // to the enumeration below and listing it here would assert membership of a set it is not in. That
@@ -223,17 +227,11 @@ test.describe('A double-pressed write must not insert twice', () => {
   // through a mock — same reasoning as the moveTemplateExercise deletions in
   // tests/silent-refusal-2026-08-18.spec.js and tests/ownership-anchors-2026-08-21.spec.js.
   //
-  // NOTE, not papered over: saveTemplateDraft() itself — now the ONE remaining database-write path
-  // for every staged template change — is NOT registered with guardReentry and has no synchronous
-  // `.disabled = true` guard of its own. A rapid double-click on #save-template-draft-btn before the
-  // first call's first `await` resolves is not provably blocked, which is the same class of bug this
-  // whole file exists to catch, and now covers the ENTIRE staged batch rather than one exercise. The
-  // scan below (`every inserter is either guarded or on the frozen list`) correctly flags
-  // 'saveTemplateDraft' as a new unguarded inserter that is neither in MUST_BE_GUARDED nor
-  // FROZEN_UNGUARDED — left red deliberately rather than added to FROZEN_UNGUARDED with an invented
-  // justification. Fixing it needs an app-code change (`guardReentry('saveTemplateDraft')` beneath
-  // its declaration in js/app-workouts.js, mirroring its 9 existing siblings), which is out of scope
-  // for Task 12 (test-files only) — see task-12-report.md.
+  // saveTemplateDraft() — the ONE remaining database-write path for every staged template change —
+  // was left deliberately red here by Task 12 (test-files only in scope; the app-code fix was out of
+  // scope) rather than papered over with an invented FROZEN_UNGUARDED justification. Task 12b
+  // (2026-09-13) closed the gap for real: `guardReentry('saveTemplateDraft')` now sits beneath its
+  // declaration in js/app-workouts.js, and 'saveTemplateDraft' is listed in MUST_BE_GUARDED above.
 
   // The two properties of the MECHANISM itself, with no network and no real write path involved —
   // so a failure here points at guardReentry, not at any one caller.
