@@ -1329,6 +1329,28 @@ guardReentry('saveNewTemplate')  // double-press duplicates; see tests/reentry-g
 let _draftKeyCounter = 0
 const _newDraftKey = () => `dk${++_draftKeyCounter}_${Date.now()}`
 
+// Same reasoning as _newDraftKey above, and module-scope for the same reason: saveTemplateDraft's
+// partial-failure recovery (Task 10) also needs to turn a freshly re-fetched row into a draft row
+// OUTSIDE any single openTemplate() call, so this can't stay local to openTemplate's closure either.
+const _toDraftRow = (row) => ({
+  _draftKey: _newDraftKey(),
+  id: row.id,
+  exercise_id: row.exercise_id,
+  exercise_name: row.exercise_name,
+  exercise_type: row.exercise_type,
+  metric_type: row.metric_type,
+  order_index: row.order_index,
+  sets: row.sets,
+  // Deep-clone sets_json: exercises and exercisesBaseline are both built by mapping
+  // _toDraftRow over the SAME fetched rows, so a shallow copy here would leave both the
+  // draft and the baseline pointing at the exact same array/object. Nothing mutates
+  // sets_json in place today, but a future in-place edit (row.sets_json[0].reps = x)
+  // would silently corrupt the "untouched baseline" this split exists to guarantee.
+  sets_json: row.sets_json ? JSON.parse(JSON.stringify(row.sets_json)) : row.sets_json,
+  notes: row.notes,
+  superset_group: row.superset_group,
+})
+
 async function openTemplate(id, ctx = {}) {
   // Which template the editor is CURRENTLY showing. A queued reorder compares against this to notice
   // that the ground moved under it — see moveTemplateExercise's stale-capture guard.
@@ -1362,25 +1384,6 @@ async function openTemplate(id, ctx = {}) {
 
   const exercises = (t.workout_template_exercises || []).sort((a, b) => a.order_index - b.order_index)
   const _ctx = window._templateCtx
-
-  const _toDraftRow = (row) => ({
-    _draftKey: _newDraftKey(),
-    id: row.id,
-    exercise_id: row.exercise_id,
-    exercise_name: row.exercise_name,
-    exercise_type: row.exercise_type,
-    metric_type: row.metric_type,
-    order_index: row.order_index,
-    sets: row.sets,
-    // Deep-clone sets_json: exercises and exercisesBaseline are both built by mapping
-    // _toDraftRow over the SAME fetched rows, so a shallow copy here would leave both the
-    // draft and the baseline pointing at the exact same array/object. Nothing mutates
-    // sets_json in place today, but a future in-place edit (row.sets_json[0].reps = x)
-    // would silently corrupt the "untouched baseline" this split exists to guarantee.
-    sets_json: row.sets_json ? JSON.parse(JSON.stringify(row.sets_json)) : row.sets_json,
-    notes: row.notes,
-    superset_group: row.superset_group,
-  })
 
   window._templateDraft = {
     templateId: id,
@@ -2567,10 +2570,66 @@ async function saveTemplateDraft() {
   }
 
   if (failedAt) {
-    // Partial-failure recovery is Task 10; for now, surface the failure and stop rather than silently
-    // continuing or pretending everything saved.
     log.error('saveTemplateDraft', 'batch save failed partway through', failedAt)
-    showToast(`Save failed at "${failedAt.step}" — some changes may not have saved. Refresh to check.`, 'warn')
+    // Re-fetch the REAL state -- some of the batch already committed for real -- and fold in only
+    // the changes that had not yet been reached, so a retry never re-applies what already landed.
+    const succeededCount = changes.length
+    const { data: freshT } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('id', targetId).single()
+    if (freshT) {
+      const freshExercises = (freshT.workout_template_exercises || []).sort((a, b) => a.order_index - b.order_index)
+      window._templateDraft = {
+        templateId: targetId,
+        ctx: d.ctx,
+        meta: { name: freshT.name, description: freshT.description },
+        metaBaseline: { name: freshT.name, description: freshT.description },
+        exercises: freshExercises.map(_toDraftRow),
+        exercisesBaseline: freshExercises.map(_toDraftRow),
+      }
+
+      // Re-stage exactly the portion of THIS batch that never reached the database. `changes` is
+      // appended to in the SAME delete->update->insert->reorder->rename order the loops above run
+      // in, and only after each individual write succeeds -- so a per-op COUNT of `changes` tells us
+      // precisely how far each step got, regardless of which step is the one that actually failed.
+      // Deliberately NOT matched by exercise_name (a tempting shortcut): names are not guaranteed
+      // unique within a template, so a name-keyed match can silently mis-attribute which of two
+      // same-named rows already succeeded and skip re-staging the one that's actually still pending.
+      // reorder/rename are single all-or-nothing steps -- `changes` carries an entry for one only if
+      // it fully completed, so their re-stage condition is presence, not a count.
+      const deleteDone = changes.filter(c => c.op === 'delete').length
+      const updateDone = changes.filter(c => c.op === 'update').length
+      const insertDone = changes.filter(c => c.op === 'add').length
+      const reorderDone = changes.some(c => c.op === 'reorder')
+      const renameDone = changes.some(c => c.op === 'rename')
+
+      const pendingDeleteIds = diff.toDelete.slice(deleteDone)
+      window._templateDraft.exercises = window._templateDraft.exercises.filter(e => !pendingDeleteIds.includes(e.id))
+
+      for (const u of diff.toUpdate.slice(updateDone)) {
+        const row = window._templateDraft.exercises.find(e => e.id === u.id)
+        if (row) Object.assign(row, u.row)
+      }
+
+      for (const row of diff.toInsert.slice(insertDone)) {
+        window._templateDraft.exercises.push({ ...row, _draftKey: _newDraftKey(), id: null })
+      }
+
+      // Best-effort: re-apply the originally staged final order for whichever exercises are still
+      // present after the above. Not perfectly reconcilable in every pathological case (e.g. an item
+      // the reorder referenced was ALSO deleted for real before the failure), but every ordinary
+      // single-failure scenario -- the only kind Save can currently produce -- resolves correctly.
+      if (diff.reorder && !reorderDone) {
+        const order = diff.reorder.names
+        window._templateDraft.exercises.sort((a, b) => order.indexOf(a.exercise_name) - order.indexOf(b.exercise_name))
+      }
+
+      if (diff.rename && !renameDone) {
+        window._templateDraft.meta = { ...diff.rename }
+      }
+
+      _renderTemplateExerciseList()
+      _renderSaveWorkoutButton()
+    }
+    showToast(`${succeededCount} change${succeededCount === 1 ? '' : 's'} saved, ${failedAt.step} failed — try Save again`, 'warn')
     return
   }
 

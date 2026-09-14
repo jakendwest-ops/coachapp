@@ -625,3 +625,127 @@ test.describe('Template draft: Save across a shared-master fork', () => {
     }
   })
 })
+
+test.describe('Template draft: partial-failure recovery', () => {
+  test('when a batch save fails partway through, successful changes are not re-applied and the failed ones remain staged', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Partial Failure' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      const r = await page.evaluate(`(async () => {
+        // Delete A (will succeed), then stage an insert that the stub below makes fail.
+        const aKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] A')._draftKey
+        _stageRemoveExercise(aKey)
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        window._exerciseDetailPicked = { name: '[E2E] Will Fail', id: null }
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+
+        const realFrom = db.from.bind(db)
+        db.from = (tbl) => {
+          if (tbl !== 'workout_template_exercises') return realFrom(tbl)
+          const real = realFrom(tbl)
+          return { ...real, insert: () => Promise.resolve({ error: { message: 'simulated failure' } }), select: real.select.bind(real), update: real.update.bind(real), delete: real.delete.bind(real) }
+        }
+        let toastMsg = null
+        window.showToast = (msg) => { toastMsg = msg }
+        try {
+          await saveTemplateDraft()
+        } finally {
+          db.from = realFrom
+        }
+        return {
+          toastMsg,
+          stillDirty: _templateDraftIsDirty(),
+          draftHasFailedInsert: window._templateDraft.exercises.some(e => e.exercise_name === '[E2E] Will Fail'),
+        }
+      })()`)
+      expect(r.toastMsg, 'the user must be told something failed').toBeTruthy()
+      expect(r.stillDirty, 'the failed change must still be staged for another attempt').toBe(true)
+      expect(r.draftHasFailedInsert).toBe(true)
+
+      const dbNames = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id)
+        return data.map(r => r.exercise_name)
+      }, setup.templateId)
+      expect(dbNames, 'the successful delete must have actually committed').toEqual(['[E2E] B'])
+      expect(dbNames).not.toContain('[E2E] Will Fail')
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+
+test.describe('Template draft: partial-failure recovery', () => {
+  test('a rename staged alongside a change that fails earlier in the batch is not silently discarded', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Rename Survives Failure' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+      ])
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      const r = await page.evaluate(`(async () => {
+        // Stage a rename AND an exercise add that the stub below makes fail. The insert loop runs
+        // (and fails) BEFORE the rename step ever gets reached.
+        const mk2 = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk2('et-name').value = '[E2E] Renamed After Failure'
+        mk2('et-desc', 'textarea')
+        _stageRenameTemplate()
+
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        window._exerciseDetailPicked = { name: '[E2E] Will Fail', id: null }
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+
+        const realFrom = db.from.bind(db)
+        db.from = (tbl) => {
+          if (tbl !== 'workout_template_exercises') return realFrom(tbl)
+          const real = realFrom(tbl)
+          return { ...real, insert: () => Promise.resolve({ error: { message: 'simulated failure' } }), select: real.select.bind(real), update: real.update.bind(real), delete: real.delete.bind(real) }
+        }
+        try {
+          await saveTemplateDraft()
+        } finally {
+          db.from = realFrom
+        }
+        return {
+          stillDirty: _templateDraftIsDirty(),
+          draftName: window._templateDraft.meta.name,
+        }
+      })()`)
+      expect(r.stillDirty, 'the un-applied rename must still be staged').toBe(true)
+      expect(r.draftName, 'the rename must survive a failure in an EARLIER step of the same batch, not be silently discarded').toBe('[E2E] Renamed After Failure')
+
+      const dbName = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_templates').select('name').eq('id', id).single()
+        return data.name
+      }, setup.templateId)
+      expect(dbName, 'the rename must NOT have reached the database yet -- the insert failed first, so rename never ran').toBe('[E2E] Rename Survives Failure')
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
