@@ -1858,6 +1858,13 @@ test.describe('Template draft: partial-failure recovery', () => {
         window._templateSets = [{ effortType: 'rpe' }]
         _stageAddExercise()
 
+        // Captured BEFORE the save so a post-save comparison can prove a genuine rebuild happened --
+        // B is untouched by anything staged in this test, so it's the ideal "survivor" to track. A
+        // no-op failure branch (the old "log and stop" behavior) would leave this identical; only a
+        // real re-fetch-and-rebuild produces a fresh _draftKey for it (see the assertions below for
+        // why this distinction is the actual point of this test).
+        const bKeyBefore = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')._draftKey
+
         const realFrom = db.from.bind(db)
         db.from = (tbl) => {
           if (tbl !== 'workout_template_exercises') return realFrom(tbl)
@@ -1875,11 +1882,23 @@ test.describe('Template draft: partial-failure recovery', () => {
           toastMsg,
           stillDirty: _templateDraftIsDirty(),
           draftHasFailedInsert: window._templateDraft.exercises.some(e => e.exercise_name === '[E2E] Will Fail'),
+          bKeyAfter: window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')?._draftKey,
+          baselineHasA: window._templateDraft.exercisesBaseline.some(e => e.exercise_name === '[E2E] A'),
         }
       })()`)
       expect(r.toastMsg, 'the user must be told something failed').toBeTruthy()
       expect(r.stillDirty, 'the failed change must still be staged for another attempt').toBe(true)
       expect(r.draftHasFailedInsert).toBe(true)
+      // These two assertions are the ones that actually distinguish "correctly recovered" from "did
+      // nothing" -- the three assertions above also pass against the OLD "log and stop" branch,
+      // because that branch never touches window._templateDraft at all, so the pre-save staged state
+      // trivially satisfies them whether or not any recovery logic ran. A changed _draftKey can only
+      // happen if _toDraftRow ran again (i.e. a real rebuild happened); baselineHasA being false can
+      // only happen if the rebuild used FRESH post-delete database state -- which is the actual bug
+      // this task exists to prevent (a stale baseline would make a retry re-attempt A's already-
+      // succeeded delete, which would then fail since A no longer exists to delete).
+      expect(r.bKeyAfter, 'the draft must be rebuilt from a fresh fetch, not merely left untouched by a no-op failure branch').not.toBe(bKeyBefore)
+      expect(r.baselineHasA, 'the baseline must be refreshed from the real post-delete database state, or a retry would try to delete A a second time and fail').toBe(false)
 
       const dbNames = await page.evaluate(async (id) => {
         const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id)
@@ -1941,6 +1960,16 @@ test.describe('Template draft: partial-failure recovery', () => {
         window._templateSets = [{ effortType: 'rpe' }]
         _stageAddExercise()
 
+        // Captured BEFORE the save, same reasoning as the sibling test: A is the only pre-existing
+        // exercise and is untouched by anything staged here, so a changed _draftKey after the failed
+        // save can only mean _toDraftRow genuinely ran again (a real rebuild), not that a no-op
+        // failure branch simply left the pre-save staged state alone. Nothing in this test's scenario
+        // gets WRITTEN to the database (the insert fails before the rename step is ever reached), so
+        // this is the one signal available here that distinguishes "correct recovery" from "did
+        // nothing" -- draftName/stillDirty alone would pass unchanged against the OLD "log and stop"
+        // branch too, since it never touches window._templateDraft.
+        const aKeyBefore = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] A')._draftKey
+
         const realFrom = db.from.bind(db)
         db.from = (tbl) => {
           if (tbl !== 'workout_template_exercises') return realFrom(tbl)
@@ -1955,10 +1984,14 @@ test.describe('Template draft: partial-failure recovery', () => {
         return {
           stillDirty: _templateDraftIsDirty(),
           draftName: window._templateDraft.meta.name,
+          aKeyAfter: window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] A')?._draftKey,
         }
       })()`)
       expect(r.stillDirty, 'the un-applied rename must still be staged').toBe(true)
       expect(r.draftName, 'the rename must survive a failure in an EARLIER step of the same batch, not be silently discarded').toBe('[E2E] Renamed After Failure')
+      // The decisive assertion for THIS test (see the comment above aKeyBefore for why draftName/
+      // stillDirty alone can't tell "correct recovery" apart from "did nothing" here).
+      expect(r.aKeyAfter, 'the draft must be rebuilt from a fresh fetch, not merely left untouched by a no-op failure branch').not.toBe(aKeyBefore)
 
       const dbName = await page.evaluate(async (id) => {
         const { data } = await db.from('workout_templates').select('name').eq('id', id).single()
