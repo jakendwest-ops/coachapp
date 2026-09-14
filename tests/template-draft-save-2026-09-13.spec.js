@@ -935,7 +935,13 @@ test.describe('Template draft: leaving with unsaved changes', () => {
       // deferred, which is exactly what this test drives from Node afterwards.
       await page.evaluate(() => { _templateGoBack() })
       await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
-      await page.waitForTimeout(500)
+      // Wait for the real completion signal instead of guessing a fixed delay: _templateGoBack
+      // awaits saveTemplateDraft() fully before calling ctx.backFn() (which sets _leftCount), so
+      // once this reaches 1 the save has genuinely finished, not just the click event dispatched.
+      // waitForFunction, not expect.poll: matches this codebase's own established pattern for
+      // "wait for a window global to reach a value" (see tests/helpers.js:69,
+      // tests/ledger-fixes-2026-08-01.spec.js:69, tests/runner.spec.js:29 for precedent).
+      await page.waitForFunction(() => window._leftCount === 1, null, { timeout: 10000 })
       const r = await page.evaluate(() => ({ left: window._leftCount || 0 }))
       expect(r.left).toBe(1)
       const dbRows = await page.evaluate(async (id) => {
