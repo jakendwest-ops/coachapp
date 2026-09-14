@@ -216,40 +216,15 @@ test.describe('A refused write must not report success', () => {
       'the clone exercises must be reaped too, anchored on the clone').toBe(true)
   })
 
-  test('moveTemplateExercise warns when only half the swap lands', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(async () => {
-      const orig = db.from.bind(db)
-      let call = 0
-      db.from = (t) => {
-        // 2026-08-21: moveTemplateExercise now calls _verifyTemplateOwnership before doing anything,
-        // which reads workout_templates. Without this branch that read falls through to the real DB,
-        // finds no row for the fabricated id 't1', and the function returns at its ownership guard —
-        // so the half-applied-swap path this test exists to cover is never reached. Satisfying the new
-        // precondition is the correct fix; moving the guard later would defeat the guard.
-        if (t === 'workout_templates') {
-          return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 't1' }, error: null }) }) }) }) }
-        }
-        if (t !== 'workout_template_exercises') return orig(t)
-        const rows = { data: [{ id: 'a', order_index: 0 }, { id: 'b', order_index: 1 }], error: null }
-        return {
-          select: () => ({ eq: () => ({ order: () => Promise.resolve(rows) }) }),
-          // First write lands, second is refused — the half-applied swap.
-          update: () => { const mine = call++; const res = mine === 0 ? { data: [{ id: 'x' }], error: null } : { data: [], error: null }
-            const chain = { eq: () => chain, select: () => Promise.resolve(res) }; return chain },
-        }
-      }
-      let toast = ''
-      const origToast = window.showToast, origOpen = window.openTemplate
-      window.showToast = (m) => { toast = m }
-      window.openTemplate = () => {}
-      window._templateCtx = {}
-      try {
-        await moveTemplateExercise('t1', 'a', 1)
-        return { toast }
-      } finally { db.from = orig; window.showToast = origToast; window.openTemplate = origOpen }
-    })
-    // Two exercises sharing an order_index render in an arbitrary order that looks like a different bug.
-    expect(r.toast.toLowerCase()).toContain('could not reorder')
-  })
+  // 'moveTemplateExercise warns when only half the swap lands' DELETED 2026-09-13 (Task 12,
+  // template-draft-save), not adapted. It proved that when reorder's two separate database writes
+  // (one per swapped row) partially land — the first succeeds, the second is refused — the user is
+  // warned rather than left with silently corrupted order. Under the staged model, reorder
+  // (_stageReorderExercise) is one in-memory array swap with ZERO database writes until Save; "two
+  // separate writes, one succeeds one doesn't" cannot happen at reorder time any more — there is only
+  // ever one write, saveTemplateDraft's single _propagateReorderToTemplates call for the WHOLE queued
+  // reorder, and a save's own partial failure (potentially across ANY staged op, not reorder
+  // specifically) is already covered by Task 10's dedicated partial-failure-recovery test. Keeping
+  // this test would mean either forcing a scenario that can no longer occur through a mock, or
+  // quietly testing nothing real.
 })

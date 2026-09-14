@@ -82,7 +82,12 @@ const FROZEN_UNGUARDED = {
 // Phase-1 members: guarded in this commit. Named here so the test states the intended set rather
 // than inferring it, and so removing a guard fails loudly.
 const MUST_BE_GUARDED = [
-  'saveExerciseToTemplate',   // the reported bug
+  // 'saveExerciseToTemplate' removed 2026-09-13 (Task 12, template-draft-save): the function itself
+  // is gone. Tasks 3/5 replaced it with _stageAddExercise — a synchronous, in-memory, single-threaded
+  // push onto window._templateDraft.exercises, with no database write and therefore no
+  // select-max-order-then-insert race left to guard against. Nothing takes its place in this list;
+  // see Task 3's self-review for why inventing a guard here would be guarding a race that no longer
+  // exists.
   'saveNewTemplate',          // double-tap = two templates AND two day slots (fix_session_order.cjs)
   'saveNewExercise',          // duplicates land in the picker Jake is already complaining about
   '_quickAssignPhaseWorkout', // check-then-insert on a day slot
@@ -208,61 +213,27 @@ test.describe('A double-pressed write must not insert twice', () => {
     expect(registered.length, 'no guardReentry registrations found at all').toBeGreaterThanOrEqual(7)
   })
 
-  // THE BUG ITSELF, deterministic — no throttling, no timing, no flake.
-  test('two concurrent saveExerciseToTemplate calls insert exactly ONE exercise', async ({ page }) => {
-    await loginAsPT(page)
-    let ids = null
-    try {
-      ids = await page.evaluate(async () => {
-        const tag = '[E2E] reentry ' + Date.now()
-        const { data: t, error } = await db.from('workout_templates')
-          .insert({ coach_id: currentUser.id, name: tag, is_personal: false }).select('id').single()
-        if (error) return { fatal: error.message }
-        return { templateId: t.id, tag }
-      })
-      expect(ids.fatal, 'fixture template must have been created').toBeUndefined()
-
-      const out = await page.evaluate(async i => {
-        // Drive the REAL save path twice concurrently — exactly what a double-tap produces.
-        window._exerciseDetailPicked = { name: i.tag + ' Lift', id: null, metric_type: 'weight_reps' }
-        window._templateSets = [{ repsMin: '8', weight: '60' }]
-        window._templateCtx = {}
-        const mk = (id, tag2 = 'div') => {
-          let e = document.getElementById(id)
-          if (!e) { e = document.createElement(tag2); e.id = id; document.body.appendChild(e) }
-          return e
-        }
-        // The REAL inputs saveExerciseToTemplate reads unguarded: att-type (.value), att-notes
-        // (.value.trim()), att-superset (optional-chained). Omitting them makes the function throw
-        // BEFORE the insert — which is how the first version of this test went red for the wrong
-        // reason and looked like it had reproduced the duplicate when it had reproduced nothing.
-        mk('att-error', 'p'); mk('add-to-template-modal'); mk('att-sets-container')
-        const sel = mk('att-type', 'select'); sel.innerHTML = '<option value="weight_reps">w</option>'
-        sel.value = 'weight_reps'
-        mk('att-notes', 'textarea').value = ''
-        mk('att-superset', 'input').value = ''
-        await Promise.all([
-          saveExerciseToTemplate(i.templateId).catch(e => e),
-          saveExerciseToTemplate(i.templateId).catch(e => e)
-        ])
-        await new Promise(r => setTimeout(r, 1500))
-        const { data: rows } = await db.from('workout_template_exercises')
-          .select('id, exercise_name').eq('template_id', i.templateId)
-        return { rows: rows || [] }
-      }, ids)
-
-      // Exactly one — and it must be the RIGHT one, so a guard that swallows BOTH calls also fails.
-      expect(out.rows.length,
-        'THE BUG: a double press inserted the exercise more than once').toBe(1)
-      expect(out.rows[0].exercise_name, 'the surviving row must be the exercise that was added')
-        .toBe(ids.tag + ' Lift')
-    } finally {
-      if (ids && ids.templateId) await page.evaluate(async i => {
-        await db.from('workout_template_exercises').delete().eq('template_id', i.templateId)
-        await db.from('workout_templates').delete().eq('id', i.templateId)
-      }, ids)
-    }
-  })
+  // 'two concurrent saveExerciseToTemplate calls insert exactly ONE exercise' DELETED 2026-09-13
+  // (Task 12, template-draft-save). It drove the REAL save path — a select-max-order-then-insert
+  // against the database — twice concurrently and proved the guard collapsed them to one row. That
+  // save path no longer exists: Tasks 3/5 replaced saveExerciseToTemplate with _stageAddExercise, a
+  // synchronous in-memory push with zero database writes until "Save workout" (saveTemplateDraft)
+  // replays the whole staged batch at once. There is no longer a select-then-insert race at ADD time
+  // to reproduce here, so keeping this test would mean forcing a scenario that can no longer occur
+  // through a mock — same reasoning as the moveTemplateExercise deletions in
+  // tests/silent-refusal-2026-08-18.spec.js and tests/ownership-anchors-2026-08-21.spec.js.
+  //
+  // NOTE, not papered over: saveTemplateDraft() itself — now the ONE remaining database-write path
+  // for every staged template change — is NOT registered with guardReentry and has no synchronous
+  // `.disabled = true` guard of its own. A rapid double-click on #save-template-draft-btn before the
+  // first call's first `await` resolves is not provably blocked, which is the same class of bug this
+  // whole file exists to catch, and now covers the ENTIRE staged batch rather than one exercise. The
+  // scan below (`every inserter is either guarded or on the frozen list`) correctly flags
+  // 'saveTemplateDraft' as a new unguarded inserter that is neither in MUST_BE_GUARDED nor
+  // FROZEN_UNGUARDED — left red deliberately rather than added to FROZEN_UNGUARDED with an invented
+  // justification. Fixing it needs an app-code change (`guardReentry('saveTemplateDraft')` beneath
+  // its declaration in js/app-workouts.js, mirroring its 9 existing siblings), which is out of scope
+  // for Task 12 (test-files only) — see task-12-report.md.
 
   // The two properties of the MECHANISM itself, with no network and no real write path involved —
   // so a failure here points at guardReentry, not at any one caller.

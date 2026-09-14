@@ -5,14 +5,21 @@ const { loginAsPT, loginAsPT2, clickVisible } = require('./helpers')
 // causes. Each test is red-first verified against the pre-fix code before landing.
 
 test.describe('A3-cont — add-exercise still silently required a manual refresh', () => {
-  test('saveExerciseToTemplate re-renders the list without throwing after closeModal', async ({ page }) => {
+  test('_stageAddExercise re-renders the list without throwing after closeModal', async ({ page }) => {
     // The 2026-07-29 fix (_afterTemplateExerciseSave) addressed the propagation chain being
-    // fire-and-forget, but never reached — saveExerciseToTemplate itself closed the modal (which
+    // fire-and-forget, but never reached — the OLD saveExerciseToTemplate closed the modal (which
     // really removes #att-notes/#att-superset from the DOM), then re-read those same two fields a
     // second time to build window._lastExerciseChange.row. That threw "Cannot read properties of
     // null (reading 'value')", aborting the function before _afterTemplateExerciseSave ever ran —
     // the insert had already gone through by then, so the exercise really was added, it just never
     // repainted without a manual refresh. Jake re-reported this exact repro live, 2026-07-30.
+    //
+    // 2026-09-13 (Task 12, template-draft-save): saveExerciseToTemplate no longer exists.
+    // _stageAddExercise (Tasks 3/5) reads att-notes/att-superset BEFORE calling closeModal, and does
+    // a synchronous in-memory push with no fire-and-forget propagation chain at all, so the specific
+    // crash this test pins cannot recur through this code path structurally. Still worth keeping: it
+    // proves the staged add really shows up without a manual refresh, and (via saveTemplateDraft)
+    // still really persists.
     await loginAsPT(page)
     await clickVisible(page, '[data-page="workouts"]')
     await page.waitForSelector('.list-row', { timeout: 15000 })
@@ -33,11 +40,11 @@ test.describe('A3-cont — add-exercise still silently required a manual refresh
 
       let threw = null
       try {
-        // saveExerciseToTemplate's OWN promise resolves before its fire-and-forget
-        // _afterTemplateExerciseSave call finishes (same shape as the real onclick handler, which
-        // never awaits it either) — the re-render lands a moment after this returns, so the check
-        // below polls rather than reading the DOM synchronously.
-        await saveExerciseToTemplate(tmpl.id)
+        // _stageAddExercise is synchronous and re-renders #template-exercise-list itself before
+        // returning — no fire-and-forget chain left to race. saveTemplateDraft then flushes the
+        // staged add to the database, matching what a real "Add exercise" -> "Save workout" does.
+        _stageAddExercise()
+        await saveTemplateDraft()
       } catch (err) {
         threw = err.message
       }

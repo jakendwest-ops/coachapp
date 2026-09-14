@@ -16,6 +16,14 @@ const { loginAsPT, loginAsPT2 } = require('./helpers')
 // The distinction matters for how these tests are written: they drive the real shipped functions
 // against a template owned by ANOTHER coach and assert the function bails at its own guard, before it
 // ever reaches Supabase.
+//
+// 2026-09-13 (Task 12, template-draft-save): both write paths are now staged (Tasks 3/4), and the
+// ownership check moved from "at every write" to "once, at saveTemplateDraft". saveExerciseToTemplate
+// no longer exists — its test below now drives _stageAddExercise + saveTemplateDraft and asserts the
+// SAME refusal, via saveTemplateDraft's own _verifyTemplateOwnership. moveTemplateExercise's own test
+// is DELETED, not adapted (see the comment above it) — the per-reorder ownership check it pinned no
+// longer exists by design; the general "Save refuses a template the user does not own" guarantee is
+// now Task 8's responsibility (saveTemplateDraft's own dedicated test), not re-tested per op type here.
 test.describe('saveExerciseToTemplate / moveTemplateExercise verify template ownership', () => {
   let foreignTemplateId = null
   const tag = '[E2E] Foreign Anchor Probe ' + Date.now()
@@ -38,7 +46,7 @@ test.describe('saveExerciseToTemplate / moveTemplateExercise verify template own
     } finally { await ctx.close().catch(() => {}) }
   })
 
-  test('saveExerciseToTemplate refuses a template owned by another coach, at the app layer', async ({ browser }) => {
+  test('_stageAddExercise + saveTemplateDraft refuses a template owned by another coach, at the app layer', async ({ browser }) => {
     const pt2Ctx = await browser.newContext()
     const ptCtx = await browser.newContext()
     try {
@@ -54,22 +62,41 @@ test.describe('saveExerciseToTemplate / moveTemplateExercise verify template own
       const ptPage = await ptCtx.newPage()
       await loginAsPT(ptPage)
       const result = await ptPage.evaluate(async (tid) => {
-        // Mount only the DOM the function reads, mirroring the builder modal.
+        // openTemplate cannot be used to reach this template: it SELECTs the row with `.single()`,
+        // and PT's RLS-scoped read of PT2's row comes back as zero rows (confirmed empirically via a
+        // maybeSingle() probe against this exact fixture — {data: null, error: null}, not a readable
+        // row). So window._templateDraft is built by hand here, standing in for what openTemplate
+        // would have produced had the read succeeded — the same synthetic-state technique the sibling
+        // test above (_resolveEditableTemplateId) already uses via a stubbed db.from. Everything past
+        // that point is the REAL shipped function: _stageAddExercise (a real staged push) and
+        // saveTemplateDraft (real _resolveEditableTemplateId / _resolveTemplateOwnerCoachId /
+        // _verifyTemplateOwnership calls, hitting real Supabase, refused by the same RLS-invisibility
+        // the probe demonstrated).
+        window._templateDraft = {
+          templateId: tid, ctx: {},
+          meta: { name: '[E2E] Should Never Land Template', description: null },
+          metaBaseline: { name: '[E2E] Should Never Land Template', description: null },
+          exercises: [], exercisesBaseline: [],
+        }
+        window._templateCtx = {}
         const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) } return e }
         mk('att-error', 'div'); mk('att-notes'); mk('att-superset'); mk('att-sets-container', 'div')
+        mk('add-to-template-modal', 'div')
         const sel = mk('att-type', 'select'); sel.innerHTML = '<option value="weight_reps">w</option>'; sel.value = 'weight_reps'
         window._exerciseDetailPicked = { name: '[E2E] Should Never Land', id: null }
         window._templateSets = [{ repsMin: '5' }]
 
-        await saveExerciseToTemplate(tid)
+        _stageAddExercise() // staging itself has no ownership check by design — see reentry-guard note
+        document.getElementById('app-toast')?.remove()
+        await saveTemplateDraft()
 
         // Did anything actually land? Asked from PT2's perspective would be ideal, but PT cannot read
         // PT2's rows; a null/empty read here is therefore consistent with both "refused" and "invisible".
-        // The load-bearing assertion is the app-level error message.
-        return { err: document.getElementById('att-error').textContent }
+        // The load-bearing assertion is the app-level toast from saveTemplateDraft's own guard.
+        return { toast: document.getElementById('app-toast')?.textContent || null }
       }, foreignTemplateId)
 
-      expect(result.err, 'the app must refuse at its own guard, not rely on RLS to refuse for it')
+      expect(result.toast, 'the app must refuse at its own guard, not rely on RLS to refuse for it')
         .toContain('permission denied')
     } finally {
       await ptCtx.close().catch(() => {})
@@ -137,39 +164,16 @@ test.describe('saveExerciseToTemplate / moveTemplateExercise verify template own
     expect(r.out.templateId, 'the caller gets the original id back, unchanged').toBe('FOREIGN')
   })
 
-  test('moveTemplateExercise refuses a template owned by another coach, at the app layer', async ({ browser }) => {
-    const pt2Ctx = await browser.newContext()
-    const ptCtx = await browser.newContext()
-    try {
-      const pt2Page = await pt2Ctx.newPage()
-      await loginAsPT2(pt2Page)
-      foreignTemplateId = await pt2Page.evaluate(async (name) => {
-        const { data } = await db.from('workout_templates')
-          .insert({ coach_id: currentUser.id, name, is_personal: false }).select('id').single()
-        return data?.id || null
-      }, tag)
-      expect(foreignTemplateId).not.toBeNull()
-
-      const ptPage = await ptCtx.newPage()
-      await loginAsPT(ptPage)
-      const result = await ptPage.evaluate(async (tid) => {
-        // moveTemplateExercise has no error element — it is a drag-reorder. Its refusal is a log.error,
-        // so capture that rather than re-typing the guard's logic in the test (a test that re-states
-        // the source is decorative; this project has shipped three of those).
-        const seen = []
-        const orig = log.error
-        log.error = (fn, msg, meta) => { seen.push(fn + '|' + msg); return orig(fn, msg, meta) }
-        try {
-          await moveTemplateExercise(tid, '00000000-0000-0000-0000-000000000001', 1)
-        } finally { log.error = orig }
-        return { seen }
-      }, foreignTemplateId)
-
-      expect(result.seen.join(','), 'moveTemplateExercise must log an ownership refusal and return')
-        .toContain('moveTemplateExercise|ownership check failed')
-    } finally {
-      await ptCtx.close().catch(() => {})
-      await pt2Ctx.close().catch(() => {})
-    }
-  })
+  // 'moveTemplateExercise refuses a template owned by another coach, at the app layer' DELETED
+  // 2026-09-13 (Task 12, template-draft-save), not adapted. It asserted a
+  // log.error('moveTemplateExercise', 'ownership check failed', ...) call that only existed because
+  // the OLD moveTemplateExercise checked ownership on every single reorder tap. Its replacement,
+  // _stageReorderExercise, has no ownership check at all, by design — ownership is now verified
+  // exactly ONCE per Save (saveTemplateDraft's _verifyTemplateOwnership call, Task 8), not per queued
+  // operation, matching how _stageAddExercise/_stageEditExercise/_stageRemoveExercise/
+  // _stageRenameTemplate all work too (see this test file's own remaining test above, which now
+  // exercises that shared Save-time guard for the add case). The general "Save refuses a template the
+  // current user does not own" guarantee is tested once, in Task 8's own coverage for
+  // saveTemplateDraft — confirmed present and passing review — rather than re-invented per op type
+  // here.
 })

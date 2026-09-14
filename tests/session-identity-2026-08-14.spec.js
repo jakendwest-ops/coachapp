@@ -75,12 +75,16 @@ test.describe('Session identity — family_id', () => {
 
       // Drive the REAL save path, with the real modal DOM the function reads.
       const prompted = await page.evaluate(async s => {
-        window._templateCtx = { programId: s.progId }
+        // openTemplate populates window._templateDraft (and window._templateCtx) — the staged
+        // rename path (_stageRenameTemplate) has no templateId argument of its own; it writes into
+        // whatever template is currently open, so it must be opened first.
+        await openTemplate(s.baseId, { programId: s.progId })
         const mk = (id, tag2 = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(tag2); e.id = id; document.body.appendChild(e) } return e }
         mk('et-name').value = s.tag + ' Renamed'
         mk('et-desc').value = 'new desc'
         mk('et-error', 'p'); mk('edit-template-modal', 'div')
-        await saveEditTemplate(s.baseId)
+        _stageRenameTemplate()
+        await saveTemplateDraft()
         // Give the propagation chain (which awaits openTemplate) time to land.
         await new Promise(r => setTimeout(r, 1200))
         return {
@@ -144,13 +148,14 @@ test.describe('Session identity — family_id', () => {
       ids = setup
 
       const after = await page.evaluate(async s => {
-        window._templateCtx = { programId: s.progId }
+        await openTemplate(s.w1Id, { programId: s.progId })
         const mk = (id, t2 = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t2); e.id = id; document.body.appendChild(e) } return e }
         // Exactly what the prefilled box gives you: the CURRENT name, edited in place.
         mk('et-name').value = s.tag + ' Strength - week 1'
         mk('et-desc').value = ''
         mk('et-error', 'p'); mk('edit-template-modal', 'div')
-        await saveEditTemplate(s.w1Id)
+        _stageRenameTemplate()
+        await saveTemplateDraft()
         await new Promise(r => setTimeout(r, 1200))
         await _applyToAllSessions(s.w1Id)
         await new Promise(r => setTimeout(r, 1200))
@@ -293,7 +298,8 @@ test.describe('Session identity — family_id', () => {
   // The two tests above each cover HALF of his scenario, and nothing joined them:
   //   * 'generated week clones inherit ...' runs the REAL generator, but never renames anything.
   //   * 'renaming a session offers ...' renames, but HAND-SETS family_id on its fixture and calls
-  //     saveEditTemplate() against stubbed DOM (mk('et-name'), mk('edit-template-modal')).
+  //     _stageRenameTemplate() + saveTemplateDraft() against stubbed DOM (mk('et-name'),
+  //     mk('edit-template-modal')).
   // So "the real generator produces the clones, THEN renaming the base offers the prompt" — which is
   // literally what Jake does — was never asserted end to end. Two green halves are not a green whole:
   // that is exactly the 'adjacent flow' the closure rule refuses as evidence, and I had started to
@@ -354,6 +360,11 @@ test.describe('Session identity — family_id', () => {
       // Real user actions on the real modal.
       await page.fill('#edit-template-modal #et-name', setup.tag + ' Renamed')
       await page.click('#edit-template-modal .modal-footer .btn-primary')
+
+      // The rename is staged in-memory only at this point (_stageRenameTemplate) — click the real
+      // "Save workout" button to flush it to the database and fire the propagation check.
+      await page.waitForSelector('#save-template-draft-btn', { timeout: 10000 })
+      await page.click('#save-template-draft-btn')
 
       // THE ASSERTION: the prompt actually appears for a REAL periodized phase.
       await page.waitForSelector('#propagate-modal', { timeout: 15000 })

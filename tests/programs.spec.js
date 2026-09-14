@@ -612,6 +612,14 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     await page.click('#edit-template-modal button:has-text("Save")')
     await page.waitForSelector('#edit-template-modal', { state: 'detached', timeout: 8000 })
 
+    // The rename is staged in-memory only at this point — click the real "Save workout" button to
+    // flush it to the database, which is also what triggers the fork-on-edit clone for a template
+    // shared across multiple slots. Wait for the button itself to detach (re-rendered away once the
+    // draft is no longer dirty) rather than a fixed sleep, so this doesn't race the save.
+    await page.waitForSelector('#save-template-draft-btn', { timeout: 8000 })
+    await page.click('#save-template-draft-btn')
+    await page.waitForSelector('#save-template-draft-btn', { state: 'detached', timeout: 8000 })
+
     const rows = await page.evaluate(async ({ mondayPwId, tuesdayPwId }) => {
       const { data: mon } = await db.from('program_phase_workouts').select('template_id').eq('id', mondayPwId).single()
       const { data: tue } = await db.from('program_phase_workouts').select('template_id').eq('id', tuesdayPwId).single()
@@ -748,7 +756,9 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       // then invoke the button's handler. ctx has no programId, so the client-copy sync branch is skipped.
       window._templateCtx = {}
       window._propagateTargets = [tgt]
-      window._lastExerciseChange = { op: 'update', matchName: '[E2E] Bench', row: { exercise_id: null, exercise_name: '[E2E] Bench', exercise_type: 'strength', sets: 5, sets_json: null, notes: 'new', superset_group: null } }
+      // _applyToAllSessions reads the PLURAL window._lastExerciseChanges (an array) now — the
+      // propagation chain was generalized to carry a batch of staged changes, not one.
+      window._lastExerciseChanges = [{ op: 'update', matchName: '[E2E] Bench', row: { exercise_id: null, exercise_name: '[E2E] Bench', exercise_type: 'strength', sets: 5, sets_json: null, notes: 'new', superset_group: null } }]
       await _applyToAllSessions(src)
     }, setup)
 

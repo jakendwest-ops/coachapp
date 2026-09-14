@@ -116,12 +116,18 @@ test.describe('Stale set fields must not survive a type change', () => {
     // The gate is only useful if the edit path calls it. Asserting the source directly because the
     // full save requires a real template, ownership resolution and a live write — and the bug was
     // precisely that this one line was absent while its siblings had it.
-    const src = await page.evaluate(() => saveEditTemplateExercise.toString())
-    expect(src, 'saveEditTemplateExercise must call _cleanTemplateSets').toContain('_cleanTemplateSets')
-    expect(src, 'and must write the cleaned array, not the raw one').toMatch(/sets_json:\s*cleanSets/)
+    //
+    // 2026-09-13 (Task 12, template-draft-save): saveEditTemplateExercise no longer exists —
+    // _stageEditExercise (Task 3/5) is its staged replacement, and it now assigns onto the staged
+    // draft row (`row.sets_json = ...`, `row.sets = ...`) rather than building an object literal for
+    // a direct .update() call, so the regexes below match the current assignment shape, not the old
+    // object-literal one.
+    const src = await page.evaluate(() => _stageEditExercise.toString())
+    expect(src, '_stageEditExercise must call _cleanTemplateSets').toContain('_cleanTemplateSets')
+    expect(src, 'and must write the cleaned array, not the raw one').toMatch(/row\.sets_json\s*=\s*cleanSets/)
     // The one desync that would genuinely corrupt data: `sets` counting the RAW array while
     // `sets_json` holds the cleaned one. _cleanTemplateSets is a bare map today so lengths agree, but
     // nothing enforces that — assert both read from the same array.
-    expect(src, 'the count must come from the same array as the payload').toMatch(/sets:\s*cleanSets\.length/)
+    expect(src, 'the count must come from the same array as the payload').toMatch(/row\.sets\s*=\s*cleanSets\.length/)
   })
 })
