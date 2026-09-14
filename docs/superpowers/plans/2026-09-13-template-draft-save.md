@@ -2746,6 +2746,619 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 14: Final whole-branch review fixes
+
+**Why this task exists.** The final whole-branch review (dispatched on the most capable available
+model, covering all 32 commits base-to-head) found 4 Critical and 5 Important findings that no
+individual task's diff-scoped review could have seen, because each is a composite behavior spanning
+functions multiple different tasks touched separately. The controller independently re-verified the
+most severe and surprising claims directly against the live source (not taken on faith) before
+writing this task. **Ready to merge: No** was the review's verdict; this task is what makes it Yes.
+
+Every fix below is written out in full — transcribe it exactly. This is corrective work on a branch
+about to ship, not exploratory work: do not redesign, do not "improve while you're in there," and do
+not skip the verification step for any single fix on the grounds that another one looks similar.
+
+**Files:**
+- Modify: `js/app-workouts.js` (C1, C2, C3, C4, I1, I2, I3, I4, I5, the `_reorderRowsInDom` cleanup)
+- Modify: `js/app-core.js` (C3's `navigate()` wrapper)
+- Modify: `tests/template-draft-save-2026-09-13.spec.js` (new tests for C1-C4)
+- Modify: `tests/reorder-instant-2026-09-06.spec.js` (delete the 2 tests exercising dead
+  `_reorderRowsInDom`)
+- Modify: `tests/ledger-fixes-2026-07-29.spec.js` (delete the 2 tests exercising dead
+  `_afterTemplateExerciseSave`)
+
+---
+
+#### C1 — `showAddExerciseToTemplateModal` forks the template independently of Save
+
+**The bug:** opening the "+ Add exercise" picker on a template shared across 2+ phase-workout slots
+calls `_resolveEditableTemplateId(templateId)` (`js/app-workouts.js`, inside
+`showAddExerciseToTemplateModal`'s non-runner branch) — a REAL database write (clone + repoint) —
+the instant the picker opens, completely independent of staging or Save. `_stageAddExercise()` never
+reads the resolved `targetId` at all; it pushes onto `window._templateDraft`, which is still keyed to
+the PRE-fork template id. When the user later taps **Save workout**, `saveTemplateDraft` calls
+`_resolveEditableTemplateId` a SECOND time — violating the Global Constraint that it run at most once
+per Save — and because the slot now points at the clone from the FIRST call, the second call's own
+repoint fails, and every staged change gets written to the ORIGINAL (still-shared) template instead
+of the slot the coach was actually editing.
+
+**Verified directly against the live source before writing this task:** `showAddExerciseToTemplateModal`'s
+non-runner branch (`js/app-workouts.js:2055-2059`) does call `_resolveEditableTemplateId(templateId)`;
+`_stageAddExercise()` (`:2439-2466`) takes no arguments and never reads `targetId`; the sibling
+`showEditTemplateExerciseModal` (`:2468-2474`) already does this correctly — no fork call, just
+`_resolveTemplateOwnerCoachId()` for the coachId and `templateId` passed straight through as
+`targetId` — confirming the fix below matches an already-established, already-correct pattern rather
+than inventing a new one.
+
+**Fix:** in `showAddExerciseToTemplateModal`, replace the non-runner branch of `ctxPromise` (currently
+the `Promise.all([_resolveEditableTemplateId(templateId), db.from('workout_templates')...])` block)
+with:
+
+```js
+    // No _resolveEditableTemplateId call here, deliberately: staging writes nothing to the
+    // database, so there is nothing yet to isolate by forking. saveTemplateDraft is the ONLY place
+    // that call may run (Global Constraint: exactly once per Save) -- calling it here too forked
+    // the template the moment the picker opened, before anything was staged or saved, leaving
+    // Save's own later resolve targeting a DIFFERENT (already-forked) template than this picker
+    // session staged an exercise into. Matches showEditTemplateExerciseModal's already-correct
+    // pattern: pass templateId straight through, resolve coachId via the same role-based helper.
+    const coachId = await _resolveTemplateOwnerCoachId()
+    return { coachId, targetId: templateId }
+```
+
+(This removes the `Promise.all` and both queries inside it, replacing them with the one
+`_resolveTemplateOwnerCoachId()` call. The `isRunner` branch above it is unchanged.)
+
+- [ ] **Step 1: Write the failing test**
+
+```js
+test.describe('Template draft: picker does not fork independently of Save', () => {
+  test('opening + Add exercise on a shared template does not fork or repoint until Save', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] C1 Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single()
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, name: '[E2E] C1 Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 })
+      const { data: pw1 } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 }).select('id, template_id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 2 })
+      return { programId: prog.id, templateId: t.id, phaseWorkoutId: pw1.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, phaseWorkoutId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId })
+      }, setup)
+      // Open the picker (this used to fork on its own) but do NOT stage or save anything yet.
+      await page.evaluate(() => { showAddExerciseToTemplateModal(window._templateDraft.templateId) })
+      await page.waitForTimeout(300)
+      const afterOpen = await page.evaluate(async (id) => {
+        const { data } = await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+        return data.template_id
+      }, setup.phaseWorkoutId)
+      expect(afterOpen, 'opening the picker must not fork or repoint the slot').toBe(setup.templateId)
+
+      // Now stage and save for real -- THIS is where the fork should happen, exactly once.
+      await page.evaluate(() => {
+        window._exerciseDetailPicked = { name: '[E2E] New', id: null }
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+      })
+      await page.evaluate(() => saveTemplateDraft())
+      const afterSave = await page.evaluate(async (id) => {
+        const { data } = await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+        return data.template_id
+      }, setup.phaseWorkoutId)
+      expect(afterSave, 'week 1 must now point at a forked template').not.toBe(setup.templateId)
+      const forkedRows = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id)
+        return data.map(r => r.exercise_name).sort()
+      }, afterSave)
+      expect(forkedRows, 'the staged add must land on the FORKED template, not be lost to the original').toEqual(['[E2E] A', '[E2E] New'])
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('programs').delete().eq('id', id)
+        await db.from('workout_templates').delete().eq('name', '[E2E] C1 Session').eq('coach_id', currentUser.id)
+      }, setup.programId)
+      document.getElementById('add-to-template-modal')?.remove()
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run to verify it fails** — `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "picker does not fork"` — expect FAIL (`afterOpen` will already have changed, since the picker's own open forks it today).
+- [ ] **Step 3: Apply the fix above, run again to verify it passes.**
+
+---
+
+#### C2 — Saving from the leave-prompt navigates regardless of outcome
+
+**The bug:** `_templateGoBack`'s `if (choice === 'save') await saveTemplateDraft()` doesn't check what
+happened. `saveTemplateDraft` never returns a status (every path — success, ownership refusal, batch
+failure — ends with an implicit `undefined` return), so a failed or refused save still falls through
+to navigation, abandoning a still-dirty, retry-ready draft on a screen the user just left. Separately,
+`saveTemplateDraft`'s own propagation call (`_checkClientPlanPropagation`) only *mounts* a modal and
+returns — it does not wait for the user to answer it — so navigating right after leaves
+`navigate()`'s own `.modal-overlay` sweep to tear down a propagation prompt (assigned-client sync or
+sibling-session sync) before the user ever saw it, silently skipping both.
+
+**Fix, part A — give `saveTemplateDraft` a real return value.** In `saveTemplateDraft`:
+- Change `if (!d || !_templateDraftIsDirty()) return` to `if (!d || !_templateDraftIsDirty()) return 'ok'`.
+- Change the ownership-refusal branch's `return` (after the `showToast('Save failed — template not found or permission denied.', 'warn')` line) to `return 'refused'`.
+- Change the `if (failedAt) { ... return }` block's final `return` to `return 'failed'`.
+- Add `return 'ok'` as the function's final line (after the existing `if (changes.length) await _checkClientPlanPropagation(...)` line).
+
+**Fix, part B — wait for propagation to actually be answered before navigating.** Add this new
+function near `_templateGoBack` in `js/app-workouts.js`:
+
+```js
+// Waits for whichever propagation modal saveTemplateDraft's own chain may have just mounted
+// (_showClientCopyPropagateModal / _showPropagateModal) to be dismissed, so a caller that
+// navigates right after Save doesn't have navigate()'s own modal-overlay sweep silently tear the
+// prompt down before the user ever answers it. Purely additive: does not change either modal's own
+// dismiss handlers, just waits from the outside for both known overlay ids to be gone -- same
+// MutationObserver technique _confirmLeaveTemplateDraft already uses for the identical problem.
+function _waitForPropagationModalsToClear(timeoutMs = 120000) {
+  const stillOpen = () => document.getElementById('client-copy-modal') || document.getElementById('propagate-modal')
+  if (!stillOpen()) return Promise.resolve()
+  return new Promise((resolve) => {
+    let done = false
+    const finish = () => { if (done) return; done = true; obs.disconnect(); clearTimeout(t); resolve() }
+    const obs = new MutationObserver(() => { if (!stillOpen()) finish() })
+    obs.observe(document.body, { childList: true })
+    const t = setTimeout(finish, timeoutMs)
+  })
+}
+```
+
+**Fix, part C — use both in `_templateGoBack`.** Change:
+
+```js
+    if (choice === 'save') await saveTemplateDraft()
+```
+
+to:
+
+```js
+    if (choice === 'save') {
+      const result = await saveTemplateDraft()
+      if (result !== 'ok') return
+      await _waitForPropagationModalsToClear()
+    }
+```
+
+- [ ] **Step 1: Write the failing test** (a save that partially fails from the leave-prompt must NOT navigate):
+
+```js
+test.describe('Template draft: leave-prompt Save respects the outcome', () => {
+  test('a failed Save from the leave-prompt does not navigate away from the still-dirty draft', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] C2 Leave Fail' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] X', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._templateCtx.backFn = () => { window._leftCount = (window._leftCount || 0) + 1 }
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+      })
+      await page.evaluate(() => { _templateGoBack() })
+      await page.evaluate(() => {
+        const realFrom = db.from.bind(db)
+        window.__c2stub = () => { db.from = realFrom }
+        db.from = (tbl) => {
+          if (tbl !== 'workout_template_exercises') return realFrom(tbl)
+          const real = realFrom(tbl)
+          return { ...real, delete: () => ({ eq: () => ({ eq: () => ({ select: () => Promise.resolve({ data: [], error: null }) }) }) }) }
+        }
+      })
+      await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
+      await page.waitForFunction(() => document.getElementById('confirm-dialog') === null || !!window._templateDraft, null, { timeout: 10000 })
+      await page.waitForTimeout(300)
+      const r = await page.evaluate(() => {
+        window.__c2stub?.()
+        return { left: window._leftCount || 0, stillDirty: _templateDraftIsDirty() }
+      })
+      expect(r.left, 'a failed save must NOT navigate away').toBe(0)
+      expect(r.stillDirty, 'the failed change must still be staged').toBe(true)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+- [ ] **Step 3: Confirm the existing "Save workout replays the draft, then navigates once Save completes"
+  test (Task 11) still passes** — it exercises the success path (`result === 'ok'`, no propagation
+  modal since the template has `program_id: null`), so it must be completely unaffected.
+
+---
+
+#### C3 — Every exit route except the back button silently discards staged work
+
+**The bug:** `_templateDraftIsDirty()` is consulted in exactly one navigation-gating place in the
+whole codebase — `_templateGoBack`. `navigate()` (`js/app-core.js`), which every other exit route
+funnels through (nav-tab taps, browser Back/popstate, `switchView`), has no dirty check at all, and
+`window._templateDraft` is never cleared on teardown, so a stale dirty draft also outlives the screen.
+Verified: `grep -n "_templateDraftIsDirty(" js/*.js` shows it called only inside `_templateGoBack`, the
+Save-button renderer, and `saveTemplateDraft`'s own guard — never from `navigate()` or anywhere else.
+
+**Fix:** rename the entire existing body of `navigate()` (`js/app-core.js`, currently starting
+`function navigate(page, _historyOp = 'push') {` through its closing brace) to `_navigateNow`, keeping
+every line inside it byte-for-byte identical — this is a pure rename of the function, not a rewrite.
+Then add this new `navigate` in its place:
+
+```js
+function navigate(page, _historyOp = 'push') {
+  // Unsaved-changes guard for the template builder. _templateDraftIsDirty() safely returns false
+  // when window._templateDraft is null/undefined, so this is a no-op for the other 99% of
+  // navigate() calls -- every existing caller throughout the app is unaffected and continues to
+  // call navigate() fire-and-forget, exactly as before. This covers every exit route
+  // _templateGoBack does NOT: nav-tab taps, browser Back/popstate, switchView. _templateGoBack's
+  // own dirty check already covers its own 3 branches (backFn/openClientProgramsTab/navigate) and
+  // leaves the draft clean before ever reaching here, so this never double-prompts.
+  if (_templateDraftIsDirty()) {
+    _confirmLeaveTemplateDraft().then(async (choice) => {
+      if (choice === 'keep') return
+      if (choice === 'discard') {
+        const d = window._templateDraft
+        window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(_toDraftRow), meta: { ...d.metaBaseline } }
+      }
+      if (choice === 'save') {
+        const result = await saveTemplateDraft()
+        if (result !== 'ok') return
+        await _waitForPropagationModalsToClear()
+      }
+      navigate(page, _historyOp)
+    })
+    return
+  }
+  window._templateDraft = null
+  _navigateNow(page, _historyOp)
+}
+```
+
+`_confirmLeaveTemplateDraft`, `_toDraftRow`, `saveTemplateDraft`, and `_waitForPropagationModalsToClear`
+(added in C2) are all already module-scope/global in this file's build, callable from `app-core.js`
+exactly as every other cross-module reference in this codebase already works (this file is loaded as
+one classic-script namespace, not ES modules — confirmed by the existing cross-module reference
+checker in `scripts/checks.sh`, which already tolerates and tracks this pattern).
+
+- [ ] **Step 1: Write the failing test**
+
+```js
+test.describe('Template draft: nav-away routes other than the back button are guarded too', () => {
+  test('navigate() away from a dirty draft prompts, and Keep editing stays put with the draft intact', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] C3 Nav Guard' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] Y', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+      })
+      // Simulate a nav-tab tap / browser Back -- NOT _templateGoBack.
+      await page.evaluate(() => { navigate('workouts') })
+      const promptShown = await page.evaluate(() => document.getElementById('confirm-dialog')?.textContent || '')
+      expect(promptShown, 'a plain navigate() away from a dirty draft must prompt, not silently discard').toMatch(/unsaved/i)
+      await page.locator('#confirm-dialog button', { hasText: /keep editing/i }).click()
+      const r = await page.evaluate(() => ({ page: currentPage, stillDirty: _templateDraftIsDirty() }))
+      expect(r.page, 'Keep editing must not have navigated').not.toBe('workouts')
+      expect(r.stillDirty, 'the staged removal must still be there').toBe(true)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+- [ ] **Step 3: Confirm every OTHER existing test in the full suite that calls `navigate(...)` directly
+  (not through `_templateGoBack`) still passes** — this is a behavior change to a function called from
+  dozens of places, so the full-suite run in Task 13's own verification step (already run once) must
+  be re-run in full after this task, not assumed safe from the targeted test alone.
+
+---
+
+#### C4 — Repositioning a newly-added exercise before Save is silently reverted
+
+**The bug:** `_diffTemplateDraft`'s reorder detection only compares the SURVIVING pre-existing rows'
+relative order — a newly-inserted row (`id: null`) has no baseline position to compare against, so
+its intended position is invisible to `diff.reorder`. The insert loop in `saveTemplateDraft` always
+appends new rows at `max(order_index) + 1`, regardless of where the user actually dropped them in the
+draft. Reproduced by hand-tracing `_diffTemplateDraft` against baseline `[A, B]`, draft
+`[NEW, A, B]`: `reorder: null`, `toInsert: [NEW]` — the insert lands at the END, not the front, with
+no error and no toast.
+
+**Fix:** in `saveTemplateDraft`, immediately after the existing `if (!failedAt && diff.reorder) { ... }`
+block, add:
+
+```js
+  // A newly-inserted exercise has no baseline position to compare against, so
+  // _diffTemplateDraft's reorder detection (survivors only) never sees where the user actually
+  // dropped it -- the insert loop above always appends it last. Sync the target template's OWN
+  // row order to the draft's current full sequence whenever an insert happened AND diff.reorder
+  // itself didn't already fire (when it did fire, diff.reorder.names is already the draft's full
+  // sequence including the new row's correct position, so a second call here would be redundant).
+  // This does not add a synthetic 'reorder' entry to `changes` -- sibling/client-copy propagation
+  // of the new exercise is already handled by its own 'add' entry; this only corrects the target
+  // template's own row order.
+  if (!failedAt && diff.toInsert.length && !diff.reorder) {
+    const orderFailures = await _propagateReorderToTemplates({ names: d.exercises.map(e => e.exercise_name) }, [targetId])
+    if (orderFailures) { failedAt = { step: 'reorder' } }
+  }
+```
+
+- [ ] **Step 1: Write the failing test**
+
+```js
+test.describe('Template draft: a new exercise keeps its dropped position on Save', () => {
+  test('adding an exercise then moving it before Save lands it in the correct final position', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] C4 Position' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._exerciseDetailPicked = { name: '[E2E] New', id: null }
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+        // Move the new (last) row to the front.
+        const key = window._templateDraft.exercises[window._templateDraft.exercises.length - 1]._draftKey
+        _stageReorderExercise(key, -1)
+        _stageReorderExercise(key, -1)
+      })
+      await page.evaluate(() => saveTemplateDraft())
+      const dbOrder = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id).order('order_index')
+        return data.map(r => r.exercise_name)
+      }, setup.templateId)
+      expect(dbOrder, 'the new exercise must save at the position it was dropped, not appended at the end').toEqual(['[E2E] New', '[E2E] A', '[E2E] B'])
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+```
+
+Note: check `_stageReorderExercise`'s exact signature (`grep -n "^function _stageReorderExercise" js/app-workouts.js`) before writing this test for real — it takes a draftKey and a direction; adjust the two calls above if its real signature differs from `(key, -1)`.
+
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I1 — Partial-failure recovery doesn't remap ids across a fork
+
+Task 9b threads `exerciseIdMap` into the delete/update WRITES; Task 10's recovery block does not —
+`pendingDeleteIds` and the `find(e => e.id === u.id)` update-lookup compare pre-fork ids against rows
+re-fetched from the post-fork template, so nothing matches and the pending item is silently dropped
+from the rebuilt draft instead of being re-staged.
+
+**Fix**, in `saveTemplateDraft`'s recovery block:
+
+```js
+      const pendingDeleteIds = diff.toDelete.slice(deleteDone).map(remapId)
+      window._templateDraft.exercises = window._templateDraft.exercises.filter(e => !pendingDeleteIds.includes(e.id))
+
+      for (const u of diff.toUpdate.slice(updateDone)) {
+        const row = window._templateDraft.exercises.find(e => e.id === remapId(u.id))
+        if (row) Object.assign(row, u.row)
+      }
+```
+
+(Only the id used to filter/find changes — `.map(remapId)` on the first line, `remapId(u.id)` on the
+second. Everything else in the recovery block is unchanged.)
+
+- [ ] **Step 1: Write the failing test** — combine the fork setup from C1's test with a stubbed
+  failure partway through the batch (same DB-stub technique as C2's test), on a template referenced
+  by 2+ `program_phase_workouts` rows, staging a delete alongside the failing operation. Assert that
+  after the failure, `window._templateDraft.exercises` no longer contains the (real, still-existing)
+  deleted row — i.e., the delete is correctly recognized as "already succeeded" or "still pending"
+  using the POST-fork id space, not silently dropped either way.
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I2 — The Edit-template modal prefills from the database, not the draft
+
+`showEditTemplateModal` still does `select('*').eq('id', id)`; its sibling
+`showEditTemplateExerciseModal` was correctly converted to read from the draft. Reopening **Edit**
+after staging a rename shows the OLD name, and tapping its own Save reverts the staged rename.
+
+**Fix**, in `showEditTemplateModal`:
+
+```js
+async function showEditTemplateModal(id) {
+  const d = window._templateDraft
+  let meta
+  if (d && d.templateId === id) {
+    meta = d.meta
+  } else {
+    const { data: t } = await db.from('workout_templates').select('*').eq('id', id).single()
+    meta = t
+  }
+  const overlay = document.createElement('div')
+```
+
+(Then replace every remaining `t.name`/`t.description` reference in this function's template literal
+with `meta.name`/`meta.description`.)
+
+- [ ] **Step 1: Write the failing test** — stage a rename via `_stageRenameTemplate()`, call
+  `showEditTemplateModal(id)` again, assert `#et-name`'s value is the STAGED name, not the original.
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I3 — The client-copy propagation prompt was never pluralized
+
+`_showClientCopyPropagateModal` still says "Apply your change to their copies too?" regardless of how
+many changes are actually staged — the one dialogue that authorizes writing into a real client's plan.
+No existing test asserts this literal string (confirmed: `grep -rn "Apply your change to their
+copies|client-copy-modal" tests/` — the only hit is a historical comment in
+`tests/personal-programs.spec.js`, and the actual assertion there checks the modal's presence/absence,
+not its text) — safe to change.
+
+**Fix:** change `_showClientCopyPropagateModal(clientNames, templateId)` to
+`_showClientCopyPropagateModal(clientNames, templateId, changes)`, and inside it, replace the fixed
+`Apply your change to their copies too?` sentence with a pluralized summary:
+
+```js
+function _showClientCopyPropagateModal(clientNames, templateId, changes) {
+  const names = clientNames.length <= 3 ? clientNames.join(', ') : `${clientNames.slice(0, 3).join(', ')} +${clientNames.length - 3} more`
+  const n = clientNames.length
+  // Same OP_LABEL shape _propagateModalHtml (Task 9) uses, duplicated rather than shared: the two
+  // prompts serve different audiences (this one authorizes writing into a REAL CLIENT's plan, that
+  // one a coach's own sibling sessions) and their single-change wording already differs in ways a
+  // shared helper would need to parameterize -- not worth touching _propagateModalHtml's own
+  // already-tested, byte-identical-to-master wording for this fix.
+  const OP_LABEL = { add: c => `${c} added`, update: c => `${c} updated`, delete: c => `${c} removed`, rename: () => 'renamed', reorder: () => 'reordered' }
+  const summary = changes.length === 1
+    ? (changes[0].op === 'rename' ? 'Only the name and description will be applied.'
+       : changes[0].op === 'reorder' ? 'Only the order will be applied.'
+       : 'Only the exercise you changed will be applied.')
+    : `${changes.length} changes: ${changes.map(c => OP_LABEL[c.op] ? OP_LABEL[c.op](c.matchName || '') : c.op).join(' · ')}`
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'client-copy-modal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Update assigned clients?</h2>
+        <button class="modal-close" onclick="_continueAfterClientCopy('${templateId}',false)">✕</button>
+      </div>
+      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px"><strong>${n}</strong> client${n === 1 ? ' has' : 's have'} this workout assigned (${escapeHtml(names)}). ${escapeHtml(summary)}</p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="_continueAfterClientCopy('${templateId}',false)">Not now</button>
+        <button class="btn-primary" onclick="_continueAfterClientCopy('${templateId}',true)">Update their copies</button>
+      </div>
+    </div>
+  `
+  mountModal(overlay)
+}
+```
+
+And update its one call site in `_checkClientPlanPropagation`:
+`_showClientCopyPropagateModal(copies.realClientNames, templateId, changes)`.
+
+- [ ] **Step 1: Write the failing test** — stage 2 changes (e.g. a rename + an exercise edit) on a
+  master-program template with a real assigned client, save, assert `#client-copy-modal`'s text
+  contains `"2 changes"` and does NOT contain the old fixed sentence.
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I4 — Deleting the template while the draft is dirty leaves stale state
+
+`deleteTemplate` ends with `window._templateGoBack()`, which now begins with the dirty check — so
+deleting a template with unsaved changes raises the leave-prompt for a template that no longer
+exists, and "Save workout" from it then fails ownership on the deleted row.
+
+**Fix:** in `deleteTemplate`, immediately before its `window._templateGoBack()` call, add:
+`window._templateDraft = null`.
+
+- [ ] **Step 1: Write the failing test** — stage a change, call `deleteTemplate(id)`, assert no
+  `#confirm-dialog` appears and navigation proceeds normally.
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I5 — Delete `_afterTemplateExerciseSave` (now dead AND type-incompatible)
+
+Already-adjudicated as dead code during Task 9's review; now confirmed additionally type-incompatible
+(it passes the OLD singular `window._lastExerciseChange` into `_checkClientPlanPropagation`'s
+`changesOverride`, which the plural redesign now reads as an array — `changes?.length` would be
+`undefined`, silently skipping the client-copy branch if this were ever revived). Delete the function
+and its 2 tests in `tests/ledger-fixes-2026-07-29.spec.js` (both only reach it through a
+fully-stubbed `_checkClientPlanPropagation`, so neither asserts anything live today).
+
+- [ ] Delete `_afterTemplateExerciseSave` (`js/app-workouts.js`, find via
+  `grep -n "^async function _afterTemplateExerciseSave"`) and its preceding doc-comment.
+- [ ] Delete the 2 tests in `tests/ledger-fixes-2026-07-29.spec.js` that call it directly (find via
+  `grep -n "_afterTemplateExerciseSave" tests/ledger-fixes-2026-07-29.spec.js`), each with a short
+  comment explaining why (dead function, deleted alongside it).
+- [ ] Run the full file to confirm the other tests in it are unaffected.
+
+---
+
+#### Minor cleanup — delete dead `_reorderRowsInDom` and its 2 tests
+
+`_renderTemplateExerciseList` no longer emits `data-ex-id` (the only attribute `_reorderRowsInDom`
+matches on), so this function is unreachable from production, and its 2 surviving unit tests
+(`tests/reorder-instant-2026-09-06.spec.js`) hand-build markup the app never renders — green against
+a function nothing calls and a DOM shape that no longer exists.
+
+- [ ] Delete `_reorderRowsInDom` (`js/app-workouts.js`, find via
+  `grep -n "^function _reorderRowsInDom"`).
+- [ ] Delete its 2 tests in `tests/reorder-instant-2026-09-06.spec.js` (find via
+  `grep -n "_reorderRowsInDom" tests/reorder-instant-2026-09-06.spec.js`), and update that file's
+  header comment / `describe` title if they still describe the deleted per-tap-write + debounce
+  design (check for stale references, e.g. to `moveTemplateExercise` or the settle-delay subsystem).
+- [ ] Run the full file to confirm the other tests in it are unaffected.
+
+---
+
+**Deferred, not fixed in this task (recorded, not silently dropped):**
+- The Save-button-host flex-layout interaction with `.page-header` — verify visually at a real mobile
+  viewport (390×844) as part of this task's own verification pass (Step, below); fix only if the
+  visual check actually shows a problem, don't guess at CSS blind.
+- `_confirmLeaveTemplateDraft`'s missing backdrop-click handler / focus management / font-styling
+  divergence from `confirmDialog` — real UX polish, not a correctness bug: the dialog still works,
+  it just doesn't close on a backdrop tap. Left for a follow-up pass.
+- `FIELDS` array duplication, `Object.assign` copying `_draftKey`/`id`/`order_index` in the recovery
+  path, the handful of stale doc-comments naming deleted functions, `_propagateReorderToTemplates`'s
+  reused-toast-wording nit, `_showExerciseSetsModal`'s shallow `existingSets` copy, and
+  `ledger-fixes-2026-07-30.spec.js`'s overstated "still really persists" comment — all cosmetic or
+  already-inherited from earlier, already-approved tasks; genuinely not worth the risk of touching
+  more surface area than necessary on a branch about to ship tonight.
+
+- [ ] **Final step: run the full suite (`npm test`) and `node --test tests-node/*.test.mjs` again in
+  full** — this task touches `navigate()`, a function called from dozens of places across the whole
+  app, so Task 13's own full-suite pass must be re-run after these fixes, not assumed still valid.
+  Also do a quick visual check of the template builder's header at 390×844 (mobile viewport) to
+  settle the deferred flex-layout question above.
+
+- [ ] **Commit:**
+
+```bash
+git add js/app-workouts.js js/app-core.js tests/template-draft-save-2026-09-13.spec.js tests/reorder-instant-2026-09-06.spec.js tests/ledger-fixes-2026-07-29.spec.js
+git commit -m "template builder: fix 4 critical + 5 important findings from final branch review
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
