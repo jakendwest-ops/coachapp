@@ -1897,14 +1897,96 @@ test.describe('Template draft: partial-failure recovery', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 1b: Write a second failing test — a rename staged alongside a failing change is not silently dropped**
+
+**Why this test exists (controller-added, not in the original brief).** The obvious implementation of
+this task's re-staging logic matches "already applied" changes against `diff.toDelete`/`toUpdate`/
+`toInsert` by exercise NAME. That has two real gaps: exercise names are not guaranteed unique within
+a template (two rows can share a name), so name-matching can silently mis-attribute which items
+already succeeded; and `diff.reorder`/`diff.rename` are separate, all-or-nothing steps that a
+name-keyed loop never revisits at all — if a save batch fails at an EARLIER step (delete/update/
+insert), a staged rename or reorder that never got a chance to run is simply discarded when the draft
+is rebuilt from the fresh (unrenamed) database state, with no toast or signal that specifically the
+rename was lost. This is exactly the "edit looks staged but never saved" failure shape this project's
+own history treats as its worst bug class. Step 3 below is written to avoid both gaps; this test
+proves the higher-likelihood one (a rename combined with an exercise edit in the same Save is a very
+ordinary real workflow).
+
+```js
+test.describe('Template draft: partial-failure recovery', () => {
+  test('a rename staged alongside a change that fails earlier in the batch is not silently discarded', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Rename Survives Failure' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+      ])
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      const r = await page.evaluate(`(async () => {
+        // Stage a rename AND an exercise add that the stub below makes fail. The insert loop runs
+        // (and fails) BEFORE the rename step ever gets reached.
+        const mk2 = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk2('et-name').value = '[E2E] Renamed After Failure'
+        mk2('et-desc', 'textarea')
+        _stageRenameTemplate()
+
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        window._exerciseDetailPicked = { name: '[E2E] Will Fail', id: null }
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+
+        const realFrom = db.from.bind(db)
+        db.from = (tbl) => {
+          if (tbl !== 'workout_template_exercises') return realFrom(tbl)
+          const real = realFrom(tbl)
+          return { ...real, insert: () => Promise.resolve({ error: { message: 'simulated failure' } }), select: real.select.bind(real), update: real.update.bind(real), delete: real.delete.bind(real) }
+        }
+        try {
+          await saveTemplateDraft()
+        } finally {
+          db.from = realFrom
+        }
+        return {
+          stillDirty: _templateDraftIsDirty(),
+          draftName: window._templateDraft.meta.name,
+        }
+      })()`)
+      expect(r.stillDirty, 'the un-applied rename must still be staged').toBe(true)
+      expect(r.draftName, 'the rename must survive a failure in an EARLIER step of the same batch, not be silently discarded').toBe('[E2E] Renamed After Failure')
+
+      const dbName = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_templates').select('name').eq('id', id).single()
+        return data.name
+      }, setup.templateId)
+      expect(dbName, 'the rename must NOT have reached the database yet -- the insert failed first, so rename never ran').toBe('[E2E] Rename Survives Failure')
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run both tests to verify they fail**
 
 Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "partial-failure recovery"`
-Expected: FAIL — today's failure branch doesn't rebuild the draft, so `stillDirty` reads `false` (the
-old code path doesn't re-fetch, leaving whatever `_templateDraftIsDirty` last computed) or the test
-otherwise doesn't match the expected shape.
+Expected: FAIL (2 tests). Test 1: today's failure branch doesn't rebuild the draft, so `stillDirty`
+reads `false` (the old code path doesn't re-fetch, leaving whatever `_templateDraftIsDirty` last
+computed) or the test otherwise doesn't match the expected shape. Test 2: today's failure branch
+doesn't touch `window._templateDraft` at all on failure, so `draftName` still reads the ORIGINAL
+pre-rename name, not the staged one -- a weaker failure than the fix is meant to prevent (the old
+code doesn't even attempt recovery, so nothing is technically "discarded" yet, but the assertion
+still fails since the draft was never given the chance to correctly reflect the pending rename).
 
-- [ ] **Step 3: Write the minimal implementation**
+- [ ] **Step 3: Write the implementation**
 
 Replace `saveTemplateDraft`'s failure branch (the `if (failedAt) { ... }` block from Task 8) with:
 
@@ -1912,8 +1994,7 @@ Replace `saveTemplateDraft`'s failure branch (the `if (failedAt) { ... }` block 
   if (failedAt) {
     log.error('saveTemplateDraft', 'batch save failed partway through', failedAt)
     // Re-fetch the REAL state -- some of the batch already committed for real -- and fold in only
-    // the changes that had not yet been reached (plus the one that just failed), so a retry never
-    // re-applies what already landed.
+    // the changes that had not yet been reached, so a retry never re-applies what already landed.
     const succeededCount = changes.length
     const { data: freshT } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('id', targetId).single()
     if (freshT) {
@@ -1926,20 +2007,47 @@ Replace `saveTemplateDraft`'s failure branch (the `if (failedAt) { ... }` block 
         exercises: freshExercises.map(_toDraftRow),
         exercisesBaseline: freshExercises.map(_toDraftRow),
       }
-      // Re-stage whatever this batch had not successfully applied yet, so it's still there to retry.
-      // (deletes/updates that hadn't run yet still reference real ids present in the fresh fetch;
-      // inserts that hadn't run yet had no id and are appended fresh.)
-      const doneOps = new Set(changes.map(c => `${c.op}:${c.matchName}`))
-      for (const id of diff.toDelete) if (!doneOps.has(`delete:${d.exercisesBaseline.find(e => e.id === id)?.exercise_name}`)) {
-        window._templateDraft.exercises = window._templateDraft.exercises.filter(e => e.id !== id)
-      }
-      for (const u of diff.toUpdate) if (!doneOps.has(`update:${d.exercisesBaseline.find(e => e.id === u.id)?.exercise_name}`)) {
+
+      // Re-stage exactly the portion of THIS batch that never reached the database. `changes` is
+      // appended to in the SAME delete->update->insert->reorder->rename order the loops above run
+      // in, and only after each individual write succeeds -- so a per-op COUNT of `changes` tells us
+      // precisely how far each step got, regardless of which step is the one that actually failed.
+      // Deliberately NOT matched by exercise_name (a tempting shortcut): names are not guaranteed
+      // unique within a template, so a name-keyed match can silently mis-attribute which of two
+      // same-named rows already succeeded and skip re-staging the one that's actually still pending.
+      // reorder/rename are single all-or-nothing steps -- `changes` carries an entry for one only if
+      // it fully completed, so their re-stage condition is presence, not a count.
+      const deleteDone = changes.filter(c => c.op === 'delete').length
+      const updateDone = changes.filter(c => c.op === 'update').length
+      const insertDone = changes.filter(c => c.op === 'add').length
+      const reorderDone = changes.some(c => c.op === 'reorder')
+      const renameDone = changes.some(c => c.op === 'rename')
+
+      const pendingDeleteIds = diff.toDelete.slice(deleteDone)
+      window._templateDraft.exercises = window._templateDraft.exercises.filter(e => !pendingDeleteIds.includes(e.id))
+
+      for (const u of diff.toUpdate.slice(updateDone)) {
         const row = window._templateDraft.exercises.find(e => e.id === u.id)
         if (row) Object.assign(row, u.row)
       }
-      for (const row of diff.toInsert) if (!doneOps.has(`add:${row.exercise_name}`)) {
+
+      for (const row of diff.toInsert.slice(insertDone)) {
         window._templateDraft.exercises.push({ ...row, _draftKey: _newDraftKey(), id: null })
       }
+
+      // Best-effort: re-apply the originally staged final order for whichever exercises are still
+      // present after the above. Not perfectly reconcilable in every pathological case (e.g. an item
+      // the reorder referenced was ALSO deleted for real before the failure), but every ordinary
+      // single-failure scenario -- the only kind Save can currently produce -- resolves correctly.
+      if (diff.reorder && !reorderDone) {
+        const order = diff.reorder.names
+        window._templateDraft.exercises.sort((a, b) => order.indexOf(a.exercise_name) - order.indexOf(b.exercise_name))
+      }
+
+      if (diff.rename && !renameDone) {
+        window._templateDraft.meta = { ...diff.rename }
+      }
+
       _renderTemplateExerciseList()
       _renderSaveWorkoutButton()
     }
@@ -1948,12 +2056,17 @@ Replace `saveTemplateDraft`'s failure branch (the `if (failedAt) { ... }` block 
   }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run both tests to verify they pass**
 
 Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "partial-failure recovery"`
-Expected: PASS
+Expected: PASS (2 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run the full file to confirm no regression**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js`
+Expected: PASS (all tests from Tasks 1-9b plus these 2)
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add js/app-workouts.js tests/template-draft-save-2026-09-13.spec.js
