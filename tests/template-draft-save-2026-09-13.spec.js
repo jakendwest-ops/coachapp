@@ -575,3 +575,53 @@ test.describe('Template draft: combined propagation prompt', () => {
     }
   })
 })
+
+test.describe('Template draft: Save across a shared-master fork', () => {
+  test('saveTemplateDraft correctly deletes/updates exercises after a fork-on-edit remaps their ids', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Fork Save Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single()
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, name: '[E2E] Fork Save Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      // Same template_id in TWO phase-workout slots -- this is exactly what triggers the fork.
+      const { data: pw1 } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 }).select('id, template_id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 2 })
+      return { programId: prog.id, templateId: t.id, phaseWorkoutId: pw1.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, phaseWorkoutId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId })
+      }, setup)
+      const r = await page.evaluate(`(async () => {
+        const bKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')._draftKey
+        _stageRemoveExercise(bKey)
+        await saveTemplateDraft()
+        return { dirtyAfter: _templateDraftIsDirty() }
+      })()`)
+      expect(r.dirtyAfter, 'the draft must be clean after a successful save, even across a fork').toBe(false)
+
+      // The slot must now point at a NEW (forked) template -- confirm the fork actually happened, so
+      // this test isn't accidentally passing because no fork occurred.
+      const { data: pw } = await page.evaluate(async (id) => {
+        return await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+      }, setup.phaseWorkoutId)
+      const forkedId = pw.template_id
+      expect(forkedId, 'week 1 must now point at a forked (different) template').not.toBe(setup.templateId)
+
+      const dbRows = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id).order('order_index')
+        return data.map(r => r.exercise_name)
+      }, forkedId)
+      expect(dbRows, 'B must be gone from the FORKED template, not just silently unsaved').toEqual(['[E2E] A'])
+    } finally {
+      await page.evaluate(async (s) => {
+        await db.from('programs').delete().eq('id', s.programId)
+        await db.from('workout_templates').delete().eq('name', '[E2E] Fork Save Session').eq('coach_id', currentUser.id)
+      }, setup)
+    }
+  })
+})

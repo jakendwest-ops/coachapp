@@ -2517,7 +2517,8 @@ async function saveTemplateDraft() {
   // Resolve the real write target EXACTLY ONCE for this whole batch. Calling
   // _resolveEditableTemplateId per queued change would risk forking a SECOND clone of a still-shared
   // template on the second call, orphaning the first -- see Global Constraints.
-  const { templateId: targetId } = await _resolveEditableTemplateId(d.templateId)
+  const { templateId: targetId, exerciseIdMap } = await _resolveEditableTemplateId(d.templateId)
+  const remapId = (id) => (exerciseIdMap ? (exerciseIdMap[id] || id) : id)
   const coachId = await _resolveTemplateOwnerCoachId()
   if (!(await _verifyTemplateOwnership(targetId, coachId))) {
     showToast('Save failed — template not found or permission denied.', 'warn')
@@ -2529,7 +2530,7 @@ async function saveTemplateDraft() {
   let failedAt = null
 
   for (const id of diff.toDelete) {
-    const { data, error } = await db.from('workout_template_exercises').delete().eq('id', id).eq('template_id', targetId).select()
+    const { data, error } = await db.from('workout_template_exercises').delete().eq('id', remapId(id)).eq('template_id', targetId).select()
     if (error || !data?.length) { failedAt = { step: 'delete', id }; break }
     changes.push({ op: 'delete', matchName: d.exercisesBaseline.find(e => e.id === id)?.exercise_name, row: null })
   }
@@ -2537,7 +2538,7 @@ async function saveTemplateDraft() {
   if (!failedAt) for (const u of diff.toUpdate) {
     const { row } = u
     const patch = { exercise_id: row.exercise_id, exercise_name: row.exercise_name, exercise_type: row.exercise_type, metric_type: row.metric_type, sets: row.sets, sets_json: row.sets_json, notes: row.notes, superset_group: row.superset_group }
-    const { data, error } = await db.from('workout_template_exercises').update(patch).eq('id', u.id).eq('template_id', targetId).select()
+    const { data, error } = await db.from('workout_template_exercises').update(patch).eq('id', remapId(u.id)).eq('template_id', targetId).select()
     if (error || !data?.length) { failedAt = { step: 'update', id: u.id }; break }
     const origName = d.exercisesBaseline.find(e => e.id === u.id)?.exercise_name
     changes.push({ op: 'update', matchName: origName || row.exercise_name, row: patch })
@@ -3324,7 +3325,7 @@ async function _resolveEditableTemplateId(templateId, exerciseId = null) {
     return { templateId, exerciseId }
   }
   showToast('This workout is used in other slots — your changes now apply only to this one', 'success', 4000)
-  return { templateId: cloned.id, exerciseId: exerciseId ? (cloned.exerciseIdMap[exerciseId] || exerciseId) : exerciseId }
+  return { templateId: cloned.id, exerciseId: exerciseId ? (cloned.exerciseIdMap[exerciseId] || exerciseId) : exerciseId, exerciseIdMap: cloned.exerciseIdMap }
 }
 
 async function showEditTemplateModal(id) {
