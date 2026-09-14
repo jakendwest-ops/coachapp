@@ -73,9 +73,12 @@ test.describe('A user-initiated delete must not report success on zero rows', ()
         }
       })
     }
-    // "all 0 of them are fine" is a switched-off checker. Thirteen exist today, 4 exempt.
+    // "all 0 of them are fine" is a switched-off checker. Twelve exist today, 4 exempt.
+    // (Was 13 until 2026-09-13: deleteTemplateExercise was removed by the template-draft-save plan,
+    // converted to the staged _stageRemoveExercise — zero direct database deletes until "Save
+    // workout" replays the batch, so there is no longer a per-tap delete to check here at all.)
     expect(found, 'the scan found NO delete<Thing> functions — it is inspecting nothing')
-      .toBeGreaterThanOrEqual(13)
+      .toBeGreaterThanOrEqual(12)
     // If an exemption stops matching a real function the list has gone stale and is excusing nothing
     // — or, worse, is silently excusing something it was never meant to.
     expect(exempted, 'every EXEMPT entry must still name a real function').toBe(Object.keys(EXEMPT).length)

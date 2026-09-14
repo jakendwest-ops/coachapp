@@ -185,7 +185,10 @@ test.describe('Set prescription formatting', () => {
         formatterPassesThrough: out.includes(payload),
         // …so assert every interpolation of its output is wrapped in escapeHtml
         sessionDetailEscapes: /\$\{escapeHtml\(detail\)\}/.test(openSessionDetail.toString()),
-        templateCardEscapes: /\$\{escapeHtml\(summary\)\}/.test(openTemplate.toString()),
+        // 2026-09-13 (template-draft-save): this escape now lives in _renderTemplateExerciseList, which
+        // Task 2 of that plan extracted out of openTemplate — the escaping itself never moved or weakened,
+        // only which function's source literally contains it.
+        templateCardEscapes: /\$\{escapeHtml\(summary\)\}/.test(_renderTemplateExerciseList.toString()),
         escapedPayload: escapeHtml(out).includes('&lt;img'),
       }
     })
