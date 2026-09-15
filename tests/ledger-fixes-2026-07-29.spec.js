@@ -68,43 +68,13 @@ test.describe('B — assigning a program with no phases yet fails loud, not sile
   })
 })
 
-test.describe('C1 — propagation context is snapshotted before the async re-render gap', () => {
-  test('_afterTemplateExerciseSave passes an explicit ctx/change snapshot through, immune to a concurrent window._templateCtx overwrite', async ({ page }) => {
-    await loginAsPT(page)
-    await clickVisible(page, '[data-page="workouts"]')
-    await page.waitForSelector('.list-row', { timeout: 15000 })
-
-    const res = await page.evaluate(async () => {
-      const { data: tmpl } = await db.from('workout_templates').select('id')
-        .is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).limit(1).single()
-      if (!tmpl) return { skipped: true }
-
-      window._templateCtx = { clientId: null, programId: 'SNAPSHOT-PROGRAM-ID', isClientPlan: false }
-      window._lastExerciseChange = { op: 'update', matchName: 'irrelevant', row: {} }
-
-      let capturedCtx = null
-      const origPropagate = window._checkClientPlanPropagation
-      window._checkClientPlanPropagation = async (templateId, ctxOverride) => {
-        capturedCtx = ctxOverride
-        // Simulate a concurrent navigation clobbering the global mid-flight — proves the function
-        // is reading the snapshot argument, not re-reading window._templateCtx after this point.
-        window._templateCtx = { clientId: 'someone-elses-client', programId: 'DIFFERENT-PROGRAM', isClientPlan: true }
-      }
-
-      const origOpen = window.openTemplate
-      window.openTemplate = async (id, ctx) => { window._templateCtx = { ...ctx }; return }
-
-      await _afterTemplateExerciseSave(tmpl.id)
-
-      window._checkClientPlanPropagation = origPropagate
-      window.openTemplate = origOpen
-      return { skipped: false, capturedProgramId: capturedCtx?.programId }
-    })
-
-    if (res.skipped) test.skip(true, 'no standalone template available on this account to test against')
-    expect(res.capturedProgramId).toBe('SNAPSHOT-PROGRAM-ID')
-  })
-})
+// 'C1 — propagation context is snapshotted before the async re-render gap' DELETED 2026-09-13
+// (Task 14, I5): its one test exercised _afterTemplateExerciseSave directly, which the staged-draft
+// redesign (Tasks 1-13) made dead code with no remaining callers, and additionally type-incompatible
+// (it fed the OLD singular window._lastExerciseChange into _checkClientPlanPropagation's
+// changesOverride, which the plural redesign now reads as an array). Already adjudicated as dead
+// during Task 9's review; the snapshot-through-a-concurrent-overwrite behavior this test proved is
+// still exercised live via saveTemplateDraft's own explicit ctx/changes pass-through.
 
 test.describe('C2 — mid-rest Add/Swap exercise does not orphan the rest timer', () => {
   test('adding an exercise while resting elsewhere preserves the rest and drops the stale overlay', async ({ page }) => {
@@ -232,42 +202,11 @@ test.describe('A2 — jump exercise last-session data', () => {
   })
 })
 
-test.describe('A3 — add/edit/delete template exercise re-renders even if propagation fails', () => {
-  test('_afterTemplateExerciseSave re-renders immediately and toasts on a propagation failure', async ({ page }) => {
-    await loginAsPT(page)
-    await clickVisible(page, '[data-page="workouts"]')
-    await page.waitForSelector('.list-row', { timeout: 15000 })
-
-    const res = await page.evaluate(async () => {
-      // Grab any real standalone template id this coach owns.
-      const { data: tmpl } = await db.from('workout_templates').select('id')
-        .is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).limit(1).single()
-      if (!tmpl) return { skipped: true }
-
-      let toastMsg = null
-      const origToast = window.showToast
-      window.showToast = (msg) => { toastMsg = msg }
-      const origPropagate = window._checkClientPlanPropagation
-      window._checkClientPlanPropagation = async () => { throw new Error('simulated propagation failure') }
-
-      window._templateCtx = { clientId: null, programId: null }
-      let renderedId = null
-      const origOpen = window.openTemplate
-      window.openTemplate = async (id, ctx) => { renderedId = id; return origOpen(id, ctx) }
-
-      await _afterTemplateExerciseSave(tmpl.id)
-
-      window.showToast = origToast
-      window._checkClientPlanPropagation = origPropagate
-      window.openTemplate = origOpen
-      return { skipped: false, renderedId, tmplId: tmpl.id, toastMsg }
-    })
-
-    if (res.skipped) test.skip(true, 'no standalone template available on this account to test against')
-    expect(res.renderedId).toBe(res.tmplId) // re-rendered regardless of the propagation failure
-    expect(res.toastMsg).toContain('failed') // failure surfaced, not swallowed silently
-  })
-})
+// 'A3 — add/edit/delete template exercise re-renders even if propagation fails' DELETED 2026-09-13
+// (Task 14, I5): its one test exercised _afterTemplateExerciseSave directly, deleted alongside it as
+// dead code (no remaining callers after the staged-draft redesign, Tasks 1-13) -- see the identical
+// note above 'C1 — propagation context...' for the full reasoning. The re-render-regardless-of-
+// propagation-failure behavior this test proved is now saveTemplateDraft's own responsibility.
 
 test.describe('A4 — "Bodyweight" removed as an exercise Category', () => {
   test('add-exercise modal category dropdown has no Bodyweight option', async ({ page }) => {

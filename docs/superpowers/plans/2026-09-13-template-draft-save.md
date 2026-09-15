@@ -43,8 +43,16 @@ codebase convention of large per-concern files, not restructuring it) plus test 
 - **Modify:** `tests/reorder-propagation-2026-08-19.spec.js` — one test (the wiring test) rewritten;
   the five permutation tests survive unchanged (they drive `_propagateReorderToTemplates` directly).
 - **Modify:** `tests/session-identity-2026-08-14.spec.js`, `tests/programs.spec.js`,
-  `tests/personal-programs.spec.js` — insert a Save-workout step before any assertion that checks
-  the database immediately after an edit.
+  `tests/personal-programs.spec.js`, `tests/reentry-guard-2026-08-28.spec.js`,
+  `tests/builder-metric-type.spec.js`, `tests/cardio-distance-metres.spec.js`,
+  `tests/intervals-redesign-2026-07-25.spec.js`, `tests/ledger-fixes-2026-07-30.spec.js`,
+  `tests/ownership-anchors-2026-08-21.spec.js`, `tests/stale-set-fields-2026-08-18.spec.js`,
+  `tests/ledger-fixes-2026-08-02.spec.js`, `tests/silent-refusal-2026-08-18.spec.js` (Task 12 — the
+  last 9 found during Tasks 3/4, see their ruling notes) — insert a Save-workout step before any
+  assertion that checks the database immediately after an edit; a few of these need a small
+  additional fix (a stale reentrancy-guard list entry, a swallowed error, two tests whose entire
+  premise no longer exists and get deleted rather than adapted) beyond that mechanical swap — see
+  Task 12.
 - **Modify:** `tests/propagation-honesty-2026-09-06.spec.js` — rewritten for pluralized modal copy.
 - **Create:** `tests/template-draft-save-2026-09-13.spec.js` — the new integration coverage (no
   writes until Save, Discard truly discards, the three-way leave prompt, one combined prompt for
@@ -285,8 +293,8 @@ function _renderTemplateExerciseList() {
       <div class="card-body" style="padding:12px 16px">
         <div style="display:flex;align-items:center;gap:10px">
           <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
-            <button data-move="-1" onclick="_stageReorderExercise('${ex._draftKey}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
-            <button data-move="1" onclick="_stageReorderExercise('${ex._draftKey}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
+            <button data-move="-1" onclick="moveTemplateExercise('${id}','${ex.id}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
+            <button data-move="1" onclick="moveTemplateExercise('${id}','${ex.id}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
           </div>
           <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);flex-shrink:0">${i + 1}</div>
           <div style="flex:1;min-width:0">
@@ -312,8 +320,8 @@ function _renderTemplateExerciseList() {
             })()}
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
-            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex._draftKey}','${id}')">Edit</button>
-            <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="_stageRemoveExercise('${ex._draftKey}')">Remove</button>
+            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex.id}','${id}')">Edit</button>
+            <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="confirmRemoveTemplateExercise('${ex.id}','${id}')">Remove</button>
           </div>
         </div>
       </div>
@@ -332,9 +340,22 @@ the initial `el.innerHTML` assignment:
   _renderTemplateExerciseList()
 ```
 
-Note: `showEditTemplateExerciseModal`'s signature changes from `(texId, templateId)` to
-`(draftKey, templateId)` here — Task 3 updates its body to match; this task only updates the call
-site in the render.
+**Ruling (2026-09-13, post-dispatch correction — see ledger):** the render function's Edit/Remove/▲▼
+buttons call the EXISTING functions with their EXISTING arguments —
+`showEditTemplateExerciseModal('${ex.id}','${id}')`, `confirmRemoveTemplateExercise('${ex.id}','${id}')`,
+`moveTemplateExercise('${id}','${ex.id}',±1)` — NOT the new staged functions, and NOT `ex._draftKey`.
+Two independent reasons converged on this: (1) `scripts/check-handler-targets.mjs`, a real pre-commit
+hook, statically scans every `on*="..."` attribute in the files staged for a commit and refuses one
+that names a function not yet declared anywhere in that file set — `_stageReorderExercise`/
+`_stageRemoveExercise` don't exist until Tasks 4/3, so this task's original code (calling them early)
+could never actually be committed. (2) Independently of the hook, `showEditTemplateExerciseModal`
+still has its OLD signature at this point in the plan (expecting a real database id as its first
+argument) — passing `ex._draftKey` there would be a real, silent functional bug for anyone clicking
+Edit between this task landing and Task 3 landing (the old body fetches by `.eq('id', texId)`, which
+would find nothing for a draftKey string), invisible to every test this task or its verification
+files run. Task 3 (introduces `_stageRemoveExercise`, changes `showEditTemplateExerciseModal`'s
+signature) and Task 4 (introduces `_stageReorderExercise`) each update these render call sites AS
+PART OF their own diffs — see the added notes in their Files/Steps sections below.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -362,7 +383,13 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `js/app-workouts.js` — `saveExerciseToTemplate` (2495-2564), `saveEditTemplateExercise`
   (2582-2628), `deleteTemplateExercise` (2625-2646), `showEditTemplateExerciseModal` (2567-2581,
-  and its callers)
+  and its callers), **and `_renderTemplateExerciseList()`'s Edit/Remove buttons (Task 2)** — change
+  `onclick="showEditTemplateExerciseModal('${ex.id}','${id}')"` to
+  `onclick="showEditTemplateExerciseModal('${ex._draftKey}','${id}')"` and
+  `onclick="confirmRemoveTemplateExercise('${ex.id}','${id}')"` to
+  `onclick="_stageRemoveExercise('${ex._draftKey}')"` — Task 2 deliberately left these calling the
+  OLD functions with the OLD (real-id) arguments, since neither the new staged function nor the new
+  signature existed yet at that point (see the ruling note at the end of Task 2).
 - Test: `tests/template-draft-save-2026-09-13.spec.js`
 
 **Interfaces:**
@@ -638,6 +665,11 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Modify: `js/app-workouts.js:1335` (the `openTemplate` cross-template settle-cancel check — removed,
   see Global Constraints / the fork-race note below)
 - Modify: `js/app-workouts.js:1471` (`_templateGoBack`'s `_cancelReorderSettle()` call — removed)
+- Modify: **`_renderTemplateExerciseList()`'s ▲/▼ buttons (Task 2)** — change
+  `onclick="moveTemplateExercise('${id}','${ex.id}',-1)"` to
+  `onclick="_stageReorderExercise('${ex._draftKey}',-1)"`, and the `,1)"` down-arrow equivalent —
+  Task 2 deliberately left these calling the old immediate-write function, since `_stageReorderExercise`
+  didn't exist yet at that point (see the ruling note at the end of Task 2).
 - Modify: `tests/reorder-instant-2026-09-06.spec.js`
 - Modify: `tests/reorder-propagation-2026-08-19.spec.js`
 
@@ -901,11 +933,23 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
   the `_renderSaveWorkoutButton` placeholder from Task 3
 - Test: `tests/template-draft-save-2026-09-13.spec.js`
 
+**Ruling (2026-09-13, post-dispatch correction — see ledger).** The original text below said "do
+not stub `saveTemplateDraft`" — wrong, and it's what got this task BLOCKED: the same real
+pre-commit hook that blocked Tasks 2 and 4 (`scripts/check-handler-targets.mjs`) refuses a commit
+whose onclick names an undeclared function, and `saveTemplateDraft` doesn't exist until Task 8.
+Unlike Tasks 2/4, there is no OLD function to fall back on here — "Save workout" is new. The fix is
+a stub: `async function saveTemplateDraft() { /* replaced by Task 8 */ }`. This is not a new pattern
+for this plan — it is the exact same placeholder-then-real-implementation shape already used for
+`_renderSaveWorkoutButton` itself (a real Task 3 placeholder that THIS task replaces), just one call
+deeper. Task 8 replaces the stub body with the real implementation in the same place this task
+defines it.
+
 **Interfaces:**
 - Produces: a real `_renderSaveWorkoutButton()` that shows/hides a "Save workout" button based on
-  `_templateDraftIsDirty()`. Its `onclick` calls `saveTemplateDraft()` — not implemented until Task
-  8, so this task's button is wired but inert (clicking it does nothing observable yet); that's
-  intentional per bite-sized tasks, and Step 1's test only checks visibility, not the click.
+  `_templateDraftIsDirty()`. Its `onclick` calls `saveTemplateDraft()` — a STUB this task defines
+  (see ruling above), replaced by Task 8's real implementation. This task's button is wired but
+  inert (clicking it does nothing observable yet, since the stub is a no-op); that's intentional per
+  bite-sized tasks, and Step 1's test only checks visibility, not the click.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -962,6 +1006,11 @@ function _renderSaveWorkoutButton() {
     ? `<button id="save-template-draft-btn" class="btn-primary" style="margin-top:8px" onclick="saveTemplateDraft()">Save workout</button>`
     : ''
 }
+
+// Stub -- Task 8 replaces this body with the real diff-and-replay implementation. Exists now only
+// so the button above has a real, declared function to call (a real pre-commit hook,
+// scripts/check-handler-targets.mjs, refuses an onclick naming an undeclared function).
+async function saveTemplateDraft() { /* replaced by Task 8 */ }
 ```
 
 Call `_renderSaveWorkoutButton()` once at the end of `openTemplate` (after `_renderTemplateExerciseList()`)
@@ -1156,7 +1205,9 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Test: `tests/template-draft-save-2026-09-13.spec.js`
 
 **Interfaces:**
-- Produces: `saveTemplateDraft()` — the real "Save workout" handler.
+- Produces: `saveTemplateDraft()` — the real "Save workout" handler. Task 6 already declared this as
+  a no-op stub (`async function saveTemplateDraft() { /* replaced by Task 8 */ }`) so its own button
+  had a real function to call; this task REPLACES that stub's body, it does not add a new function.
 - Consumes: `_diffTemplateDraft` (Task 7), `_resolveEditableTemplateId`, `_resolveTemplateOwnerCoachId`,
   `_verifyTemplateOwnership` (all pre-existing, unchanged), and the core write logic factored out of
   `saveExerciseToTemplate`/`saveEditTemplateExercise`/`deleteTemplateExercise`/`saveEditTemplate` in
@@ -1228,9 +1279,16 @@ test.describe('Template draft: Save replay', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save replay"`
-Expected: FAIL — `saveTemplateDraft` is not defined.
+Expected: FAIL — NOT "not defined" (Task 6 already declared `saveTemplateDraft` as a no-op stub, so
+it exists). Instead the test's own assertions fail — e.g. `resolveCalls` stays `0` and
+`propagationCalledWith` stays `null`, because the stub does nothing.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [ ] **Step 3: Replace Task 6's stub with the real implementation**
+
+Find `async function saveTemplateDraft() { /* replaced by Task 8 */ }` (Task 6) and replace its
+ENTIRE body with the real implementation below — this edits the existing declaration in place, it
+does not add a second `saveTemplateDraft` function anywhere else in the file (a duplicate top-level
+function is exactly the class of defect this project's review explicitly watches for).
 
 ```js
 async function saveTemplateDraft() {
@@ -1313,7 +1371,66 @@ truly-saved database state, which is what makes `_templateDraftIsDirty()` false 
 Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save replay"`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Write and verify an ownership-refusal test**
+
+**Why this step exists.** Task 4's implementer deleted the only test that ever covered a foreign
+(not-owned) template being refused during a reorder (`tests/ownership-anchors-2026-08-21.spec.js`'s
+`moveTemplateExercise refuses a template owned by another coach` — correctly, since
+`_stageReorderExercise` has no per-op ownership check anymore) on the grounds that the GENERAL
+guarantee — ownership is verified once, at Save — belongs here instead of being re-tested per op
+type. This step is that guarantee's actual test; without it, this specific case (a call reaching
+`saveTemplateDraft` for a template the caller doesn't own) has zero coverage anywhere in this plan.
+
+```js
+test('saveTemplateDraft refuses to save a template the current user does not own, at the app layer', async ({ page, browser }) => {
+  const pt2Ctx = await browser.newContext()
+  let foreignTemplateId
+  try {
+    const pt2Page = await pt2Ctx.newPage()
+    await loginAsPT2(pt2Page)
+    foreignTemplateId = await pt2Page.evaluate(async () => {
+      const { data } = await db.from('workout_templates').insert({ coach_id: currentUser.id, name: '[E2E] Foreign Save Target', is_personal: false }).select('id').single()
+      return data.id
+    })
+
+    await loginAsPT(page)
+    const r = await page.evaluate(async (tid) => {
+      // Constructed directly rather than via openTemplate(tid): RLS already refuses the SELECT
+      // openTemplate needs to build a real draft for a template we don't own, so it would never
+      // reach this code path in the first place. This test is specifically for the APP-LEVEL gate
+      // saveTemplateDraft itself owns -- defense in depth, same reasoning the pre-existing
+      // ownership-anchors suite already uses for its other (still-passing) tests.
+      window._templateDraft = {
+        templateId: tid,
+        ctx: {},
+        meta: { name: 'tampered', description: null },
+        metaBaseline: { name: 'original', description: null },
+        exercises: [], exercisesBaseline: [],
+      }
+      let toast = ''
+      const origToast = window.showToast
+      window.showToast = (m) => { toast = m }
+      try {
+        await saveTemplateDraft()
+      } finally { window.showToast = origToast }
+      const { data } = await db.from('workout_templates').select('name').eq('id', tid).maybeSingle()
+      return { toast, nameAfter: data?.name ?? null }
+    }, foreignTemplateId)
+    expect(r.toast.toLowerCase(), 'must refuse with a permission message, not silently no-op').toContain('permission denied')
+    expect(r.nameAfter, 'the foreign template must be completely untouched').toBe('[E2E] Foreign Save Target')
+  } finally {
+    if (foreignTemplateId) {
+      await pt2Ctx.pages()[0].evaluate(async (tid) => { await db.from('workout_templates').delete().eq('id', tid) }, foreignTemplateId)
+    }
+    await pt2Ctx.close()
+  }
+})
+```
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save replay"`
+Expected: PASS (2 tests now)
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add js/app-workouts.js tests/template-draft-save-2026-09-13.spec.js
@@ -1458,9 +1575,39 @@ async function _continueAfterClientCopy(templateId, doIt) {
 `window._propagateChange`) at both its "Client plan propagation" and "Master program propagation"
 branches (`js/app-workouts.js:3010-3012` and `:3037-3039`).
 
-`_applyToAllSessions` — find it (`grep -n "async function _applyToAllSessions" js/app-workouts.js`),
-read its body, and change its `_applyChangeToTemplates(window._propagateChange, ...)` call to loop
-`window._propagateChanges` the same way.
+`_applyToAllSessions` — find it (`grep -n "async function _applyToAllSessions" js/app-workouts.js`).
+Its `_applyChangeToTemplates` calls loop `window._propagateChanges` as expected, but its final
+success-toast wording ALSO reads `change.op` directly (three separate branches) — that needs its own
+pluralized handling too, not just the write-loop. Replace the whole function body with:
+
+```js
+async function _applyToAllSessions(sourceTemplateId) {
+  closeModal('propagate-modal')
+  const targetIds = window._propagateTargets || []
+  const changes = window._propagateChanges || window._lastExerciseChanges
+  if (!targetIds.length || !changes?.length) { openTemplate(sourceTemplateId, window._templateCtx); return }
+
+  let applyAllFailures = 0
+  for (const change of changes) applyAllFailures += (await _applyChangeToTemplates(change, targetIds)) || 0
+
+  if (window._templateCtx?.programId) {
+    const copies = await _assignedCopiesForSession(targetIds)
+    for (const change of changes) applyAllFailures += (await _applyChangeToTemplates(change, copies.soloSelfIds)) || 0
+  }
+  if (applyAllFailures) showToast(`${applyAllFailures} assigned session${applyAllFailures === 1 ? '' : 's'} did not pick up this change`, 'error', 6000)
+  else if (changes.length === 1 && changes[0].op === 'rename') showToast(`Renamed ${targetIds.length + 1} copies`, 'success')
+  else if (changes.length === 1 && changes[0].op === 'reorder') showToast(`Reordered ${targetIds.length + 1} copies`, 'success')
+  else showToast(`Updated ${targetIds.length + 1} copies`, 'success')
+
+  log.ok('_applyToAllSessions', `propagated ${changes.length} change(s) to ${targetIds.length} sessions`)
+  openTemplate(sourceTemplateId, window._templateCtx)
+}
+```
+
+This keeps the exact single-rename/single-reorder wording (matching `_propagateModalHtml`'s own
+single-vs-plural split) and generalizes every other case (a single non-rename/reorder change, or
+multiple changes of any kind) to "Updated N copies" — the modal already showed the detailed
+per-op breakdown before the user clicked, so the toast doesn't need to repeat it.
 
 `_propagateModalHtml` (`js/app-workouts.js:2916`) — replace the single-change `detail`/`action`
 logic with a pluralized summary. The signature changes from taking `isRename`/`op` to taking the
@@ -1531,6 +1678,148 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 9b: Fix saveTemplateDraft losing exercise ids across a shared-template fork
+
+**Why this task exists (controller-inserted, not in the original plan).** Task 9's implementer found
+that a template referenced by 2+ `program_phase_workouts` rows (a periodization week, or any shared
+master template) triggers `_resolveEditableTemplateId`'s fork-on-edit, which clones the template's
+exercises into brand-new rows with brand-new ids. `saveTemplateDraft` (Task 8) calls
+`_resolveEditableTemplateId(d.templateId)` with no `exerciseId` argument, so it never receives or
+applies the id remap every OTHER caller of that function already relies on — `diff.toDelete`/
+`diff.toUpdate` still carry the OLD (pre-fork) exercise ids, so every delete/update against the new
+target template matches zero rows and the whole Save aborts on the first delete
+("Save failed at 'delete' — some changes may not have saved. Refresh to check."). Any coach editing a
+shared/periodization session via the new batched Save hits this. Confirmed via a real Playwright run
+against both pre- and post-Task-9 source (the bug predates Task 9; Task 9 did not introduce it).
+
+**Files:**
+- Modify: `js/app-workouts.js` — `_resolveEditableTemplateId` (currently ~line 3259) and
+  `saveTemplateDraft` (currently ~line 2513) — find both by name via grep, these line numbers will
+  have shifted again by the time you read this.
+- Test: `tests/template-draft-save-2026-09-13.spec.js`
+
+**Interfaces:**
+- `_resolveEditableTemplateId(templateId, exerciseId)`'s return shape gains one new field,
+  `exerciseIdMap` — populated (the same `cloned.exerciseIdMap` object `_cloneSharedMasterTemplate`
+  already produces, keyed OLD exercise id → NEW exercise id) only on the successful-fork return path;
+  every other return path implicitly returns `undefined` for it (no other return statement needs to
+  change — destructuring a missing key is `undefined`, which is the correct "no remap needed" value).
+  This does not change behavior for any of the 6 pre-existing callers that only destructure
+  `{ templateId, exerciseId }` — they simply ignore the new field.
+- `saveTemplateDraft` destructures `exerciseIdMap` alongside `templateId` and remaps every exercise id
+  it uses in a `.eq('id', ...)` DB call (never the ids used only for `matchName` lookups against
+  `d.exercisesBaseline`, which must stay in the OLD/pre-fork id space to find the right baseline row).
+
+- [ ] **Step 1: Write the failing test**
+
+```js
+test.describe('Template draft: Save across a shared-master fork', () => {
+  test('saveTemplateDraft correctly deletes/updates exercises after a fork-on-edit remaps their ids', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] Fork Save Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single()
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, name: '[E2E] Fork Save Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      // Same template_id in TWO phase-workout slots -- this is exactly what triggers the fork.
+      const { data: pw1 } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 }).select('id, template_id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 2 })
+      return { programId: prog.id, templateId: t.id, phaseWorkoutId: pw1.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, phaseWorkoutId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId })
+      }, setup)
+      const r = await page.evaluate(`(async () => {
+        const bKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')._draftKey
+        _stageRemoveExercise(bKey)
+        await saveTemplateDraft()
+        return { dirtyAfter: _templateDraftIsDirty() }
+      })()`)
+      expect(r.dirtyAfter, 'the draft must be clean after a successful save, even across a fork').toBe(false)
+
+      // The slot must now point at a NEW (forked) template -- confirm the fork actually happened, so
+      // this test isn't accidentally passing because no fork occurred.
+      const { data: pw } = await page.evaluate(async (id) => {
+        return await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+      }, setup.phaseWorkoutId)
+      const forkedId = pw.data.template_id
+      expect(forkedId, 'week 1 must now point at a forked (different) template').not.toBe(setup.templateId)
+
+      const dbRows = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id).order('order_index')
+        return data.map(r => r.exercise_name)
+      }, forkedId)
+      expect(dbRows, 'B must be gone from the FORKED template, not just silently unsaved').toEqual(['[E2E] A'])
+    } finally {
+      await page.evaluate(async (s) => {
+        await db.from('programs').delete().eq('id', s.programId)
+        await db.from('workout_templates').delete().eq('name', '[E2E] Fork Save Session').eq('coach_id', currentUser.id)
+      }, setup)
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "shared-master fork"`
+Expected: FAIL — `dirtyAfter` stays `true` (the save aborts), or the DB assertion fails because B is
+still present (the delete matched zero rows against the wrong, pre-fork id).
+
+- [ ] **Step 3: Fix `_resolveEditableTemplateId` and `saveTemplateDraft`**
+
+In `_resolveEditableTemplateId`, find the successful-fork return (the line that reads
+`return { templateId: cloned.id, exerciseId: exerciseId ? (cloned.exerciseIdMap[exerciseId] || exerciseId) : exerciseId }`)
+and add the map itself to the returned object:
+
+```js
+return { templateId: cloned.id, exerciseId: exerciseId ? (cloned.exerciseIdMap[exerciseId] || exerciseId) : exerciseId, exerciseIdMap: cloned.exerciseIdMap }
+```
+
+In `saveTemplateDraft`, destructure the new field and remap every exercise id used in a DB `.eq('id', ...)`
+call (the delete loop's `id` and the update loop's `u.id`) — but NOT the ids used to look up
+`matchName` from `d.exercisesBaseline`, which must stay in the pre-fork id space:
+
+```js
+const { templateId: targetId, exerciseIdMap } = await _resolveEditableTemplateId(d.templateId)
+const remapId = (id) => (exerciseIdMap ? (exerciseIdMap[id] || id) : id)
+```
+
+Then change the delete loop's write call from `.eq('id', id)` to `.eq('id', remapId(id))` (the
+`matchName` lookup two lines later, `d.exercisesBaseline.find(e => e.id === id)`, keeps using the
+un-remapped `id`), and the update loop's write call from `.eq('id', u.id)` to
+`.eq('id', remapId(u.id))` (its own `matchName` lookup, `d.exercisesBaseline.find(e => e.id === u.id)`,
+also keeps using the un-remapped `u.id`).
+
+`diff.reorder`/`diff.rename` need no change — reorder is matched by exercise NAME
+(`_propagateReorderToTemplates`), not id, and rename touches only `workout_templates`, not its
+exercises.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "shared-master fork"`
+Expected: PASS
+
+- [ ] **Step 5: Run the full Save-replay test surface to confirm no regression**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js`
+Expected: PASS (all tests from Tasks 1-9 plus this new one)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add js/app-workouts.js tests/template-draft-save-2026-09-13.spec.js
+git commit -m "template builder: saveTemplateDraft remaps exercise ids across a shared-template fork
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 10: Partial-failure recovery
 
 **Files:**
@@ -1569,6 +1858,13 @@ test.describe('Template draft: partial-failure recovery', () => {
         window._templateSets = [{ effortType: 'rpe' }]
         _stageAddExercise()
 
+        // Captured BEFORE the save so a post-save comparison can prove a genuine rebuild happened --
+        // B is untouched by anything staged in this test, so it's the ideal "survivor" to track. A
+        // no-op failure branch (the old "log and stop" behavior) would leave this identical; only a
+        // real re-fetch-and-rebuild produces a fresh _draftKey for it (see the assertions below for
+        // why this distinction is the actual point of this test).
+        const bKeyBefore = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')._draftKey
+
         const realFrom = db.from.bind(db)
         db.from = (tbl) => {
           if (tbl !== 'workout_template_exercises') return realFrom(tbl)
@@ -1586,11 +1882,23 @@ test.describe('Template draft: partial-failure recovery', () => {
           toastMsg,
           stillDirty: _templateDraftIsDirty(),
           draftHasFailedInsert: window._templateDraft.exercises.some(e => e.exercise_name === '[E2E] Will Fail'),
+          bKeyAfter: window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')?._draftKey,
+          baselineHasA: window._templateDraft.exercisesBaseline.some(e => e.exercise_name === '[E2E] A'),
         }
       })()`)
       expect(r.toastMsg, 'the user must be told something failed').toBeTruthy()
       expect(r.stillDirty, 'the failed change must still be staged for another attempt').toBe(true)
       expect(r.draftHasFailedInsert).toBe(true)
+      // These two assertions are the ones that actually distinguish "correctly recovered" from "did
+      // nothing" -- the three assertions above also pass against the OLD "log and stop" branch,
+      // because that branch never touches window._templateDraft at all, so the pre-save staged state
+      // trivially satisfies them whether or not any recovery logic ran. A changed _draftKey can only
+      // happen if _toDraftRow ran again (i.e. a real rebuild happened); baselineHasA being false can
+      // only happen if the rebuild used FRESH post-delete database state -- which is the actual bug
+      // this task exists to prevent (a stale baseline would make a retry re-attempt A's already-
+      // succeeded delete, which would then fail since A no longer exists to delete).
+      expect(r.bKeyAfter, 'the draft must be rebuilt from a fresh fetch, not merely left untouched by a no-op failure branch').not.toBe(bKeyBefore)
+      expect(r.baselineHasA, 'the baseline must be refreshed from the real post-delete database state, or a retry would try to delete A a second time and fail').toBe(false)
 
       const dbNames = await page.evaluate(async (id) => {
         const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id)
@@ -1608,14 +1916,110 @@ test.describe('Template draft: partial-failure recovery', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 1b: Write a second failing test — a rename staged alongside a failing change is not silently dropped**
+
+**Why this test exists (controller-added, not in the original brief).** The obvious implementation of
+this task's re-staging logic matches "already applied" changes against `diff.toDelete`/`toUpdate`/
+`toInsert` by exercise NAME. That has two real gaps: exercise names are not guaranteed unique within
+a template (two rows can share a name), so name-matching can silently mis-attribute which items
+already succeeded; and `diff.reorder`/`diff.rename` are separate, all-or-nothing steps that a
+name-keyed loop never revisits at all — if a save batch fails at an EARLIER step (delete/update/
+insert), a staged rename or reorder that never got a chance to run is simply discarded when the draft
+is rebuilt from the fresh (unrenamed) database state, with no toast or signal that specifically the
+rename was lost. This is exactly the "edit looks staged but never saved" failure shape this project's
+own history treats as its worst bug class. Step 3 below is written to avoid both gaps; this test
+proves the higher-likelihood one (a rename combined with an exercise edit in the same Save is a very
+ordinary real workflow).
+
+```js
+test.describe('Template draft: partial-failure recovery', () => {
+  test('a rename staged alongside a change that fails earlier in the batch is not silently discarded', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Rename Survives Failure' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+      ])
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      const r = await page.evaluate(`(async () => {
+        // Stage a rename AND an exercise add that the stub below makes fail. The insert loop runs
+        // (and fails) BEFORE the rename step ever gets reached.
+        const mk2 = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk2('et-name').value = '[E2E] Renamed After Failure'
+        mk2('et-desc', 'textarea')
+        _stageRenameTemplate()
+
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        window._exerciseDetailPicked = { name: '[E2E] Will Fail', id: null }
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+
+        // Captured BEFORE the save, same reasoning as the sibling test: A is the only pre-existing
+        // exercise and is untouched by anything staged here, so a changed _draftKey after the failed
+        // save can only mean _toDraftRow genuinely ran again (a real rebuild), not that a no-op
+        // failure branch simply left the pre-save staged state alone. Nothing in this test's scenario
+        // gets WRITTEN to the database (the insert fails before the rename step is ever reached), so
+        // this is the one signal available here that distinguishes "correct recovery" from "did
+        // nothing" -- draftName/stillDirty alone would pass unchanged against the OLD "log and stop"
+        // branch too, since it never touches window._templateDraft.
+        const aKeyBefore = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] A')._draftKey
+
+        const realFrom = db.from.bind(db)
+        db.from = (tbl) => {
+          if (tbl !== 'workout_template_exercises') return realFrom(tbl)
+          const real = realFrom(tbl)
+          return { ...real, insert: () => Promise.resolve({ error: { message: 'simulated failure' } }), select: real.select.bind(real), update: real.update.bind(real), delete: real.delete.bind(real) }
+        }
+        try {
+          await saveTemplateDraft()
+        } finally {
+          db.from = realFrom
+        }
+        return {
+          stillDirty: _templateDraftIsDirty(),
+          draftName: window._templateDraft.meta.name,
+          aKeyAfter: window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] A')?._draftKey,
+        }
+      })()`)
+      expect(r.stillDirty, 'the un-applied rename must still be staged').toBe(true)
+      expect(r.draftName, 'the rename must survive a failure in an EARLIER step of the same batch, not be silently discarded').toBe('[E2E] Renamed After Failure')
+      // The decisive assertion for THIS test (see the comment above aKeyBefore for why draftName/
+      // stillDirty alone can't tell "correct recovery" apart from "did nothing" here).
+      expect(r.aKeyAfter, 'the draft must be rebuilt from a fresh fetch, not merely left untouched by a no-op failure branch').not.toBe(aKeyBefore)
+
+      const dbName = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_templates').select('name').eq('id', id).single()
+        return data.name
+      }, setup.templateId)
+      expect(dbName, 'the rename must NOT have reached the database yet -- the insert failed first, so rename never ran').toBe('[E2E] Rename Survives Failure')
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run both tests to verify they fail**
 
 Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "partial-failure recovery"`
-Expected: FAIL — today's failure branch doesn't rebuild the draft, so `stillDirty` reads `false` (the
-old code path doesn't re-fetch, leaving whatever `_templateDraftIsDirty` last computed) or the test
-otherwise doesn't match the expected shape.
+Expected: FAIL (2 tests). Test 1: today's failure branch doesn't rebuild the draft, so `stillDirty`
+reads `false` (the old code path doesn't re-fetch, leaving whatever `_templateDraftIsDirty` last
+computed) or the test otherwise doesn't match the expected shape. Test 2: today's failure branch
+doesn't touch `window._templateDraft` at all on failure, so `draftName` still reads the ORIGINAL
+pre-rename name, not the staged one -- a weaker failure than the fix is meant to prevent (the old
+code doesn't even attempt recovery, so nothing is technically "discarded" yet, but the assertion
+still fails since the draft was never given the chance to correctly reflect the pending rename).
 
-- [ ] **Step 3: Write the minimal implementation**
+- [ ] **Step 3: Write the implementation**
 
 Replace `saveTemplateDraft`'s failure branch (the `if (failedAt) { ... }` block from Task 8) with:
 
@@ -1623,8 +2027,7 @@ Replace `saveTemplateDraft`'s failure branch (the `if (failedAt) { ... }` block 
   if (failedAt) {
     log.error('saveTemplateDraft', 'batch save failed partway through', failedAt)
     // Re-fetch the REAL state -- some of the batch already committed for real -- and fold in only
-    // the changes that had not yet been reached (plus the one that just failed), so a retry never
-    // re-applies what already landed.
+    // the changes that had not yet been reached, so a retry never re-applies what already landed.
     const succeededCount = changes.length
     const { data: freshT } = await db.from('workout_templates').select('*, workout_template_exercises(*)').eq('id', targetId).single()
     if (freshT) {
@@ -1637,20 +2040,47 @@ Replace `saveTemplateDraft`'s failure branch (the `if (failedAt) { ... }` block 
         exercises: freshExercises.map(_toDraftRow),
         exercisesBaseline: freshExercises.map(_toDraftRow),
       }
-      // Re-stage whatever this batch had not successfully applied yet, so it's still there to retry.
-      // (deletes/updates that hadn't run yet still reference real ids present in the fresh fetch;
-      // inserts that hadn't run yet had no id and are appended fresh.)
-      const doneOps = new Set(changes.map(c => `${c.op}:${c.matchName}`))
-      for (const id of diff.toDelete) if (!doneOps.has(`delete:${d.exercisesBaseline.find(e => e.id === id)?.exercise_name}`)) {
-        window._templateDraft.exercises = window._templateDraft.exercises.filter(e => e.id !== id)
-      }
-      for (const u of diff.toUpdate) if (!doneOps.has(`update:${d.exercisesBaseline.find(e => e.id === u.id)?.exercise_name}`)) {
+
+      // Re-stage exactly the portion of THIS batch that never reached the database. `changes` is
+      // appended to in the SAME delete->update->insert->reorder->rename order the loops above run
+      // in, and only after each individual write succeeds -- so a per-op COUNT of `changes` tells us
+      // precisely how far each step got, regardless of which step is the one that actually failed.
+      // Deliberately NOT matched by exercise_name (a tempting shortcut): names are not guaranteed
+      // unique within a template, so a name-keyed match can silently mis-attribute which of two
+      // same-named rows already succeeded and skip re-staging the one that's actually still pending.
+      // reorder/rename are single all-or-nothing steps -- `changes` carries an entry for one only if
+      // it fully completed, so their re-stage condition is presence, not a count.
+      const deleteDone = changes.filter(c => c.op === 'delete').length
+      const updateDone = changes.filter(c => c.op === 'update').length
+      const insertDone = changes.filter(c => c.op === 'add').length
+      const reorderDone = changes.some(c => c.op === 'reorder')
+      const renameDone = changes.some(c => c.op === 'rename')
+
+      const pendingDeleteIds = diff.toDelete.slice(deleteDone)
+      window._templateDraft.exercises = window._templateDraft.exercises.filter(e => !pendingDeleteIds.includes(e.id))
+
+      for (const u of diff.toUpdate.slice(updateDone)) {
         const row = window._templateDraft.exercises.find(e => e.id === u.id)
         if (row) Object.assign(row, u.row)
       }
-      for (const row of diff.toInsert) if (!doneOps.has(`add:${row.exercise_name}`)) {
+
+      for (const row of diff.toInsert.slice(insertDone)) {
         window._templateDraft.exercises.push({ ...row, _draftKey: _newDraftKey(), id: null })
       }
+
+      // Best-effort: re-apply the originally staged final order for whichever exercises are still
+      // present after the above. Not perfectly reconcilable in every pathological case (e.g. an item
+      // the reorder referenced was ALSO deleted for real before the failure), but every ordinary
+      // single-failure scenario -- the only kind Save can currently produce -- resolves correctly.
+      if (diff.reorder && !reorderDone) {
+        const order = diff.reorder.names
+        window._templateDraft.exercises.sort((a, b) => order.indexOf(a.exercise_name) - order.indexOf(b.exercise_name))
+      }
+
+      if (diff.rename && !renameDone) {
+        window._templateDraft.meta = { ...diff.rename }
+      }
+
       _renderTemplateExerciseList()
       _renderSaveWorkoutButton()
     }
@@ -1659,12 +2089,17 @@ Replace `saveTemplateDraft`'s failure branch (the `if (failedAt) { ... }` block 
   }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run both tests to verify they pass**
 
 Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "partial-failure recovery"`
-Expected: PASS
+Expected: PASS (2 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run the full file to confirm no regression**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js`
+Expected: PASS (all tests from Tasks 1-9b plus these 2)
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add js/app-workouts.js tests/template-draft-save-2026-09-13.spec.js
@@ -1845,7 +2280,10 @@ function _confirmLeaveTemplateDraft() {
           <button class="btn-primary" data-confirm="save">Save workout</button>
         </div>
       </div>`
-    overlay.querySelector('[data-confirm="no"]')?.addEventListener('click', () => settle('keep'))
+    // Two elements share data-confirm="no" (the ✕ close button and "Keep editing") -- querySelectorAll
+    // already covers both, so a separate querySelector(...).addEventListener(...) line here would
+    // double-attach a listener to whichever one matches first. settle()'s own `done` guard makes a
+    // double-fire harmless, but there's no reason to write the redundant line in the first place.
     overlay.querySelectorAll('[data-confirm="no"]').forEach(b => b.addEventListener('click', () => settle('keep')))
     overlay.querySelector('[data-confirm="discard"]').addEventListener('click', () => settle('discard'))
     overlay.querySelector('[data-confirm="save"]').addEventListener('click', () => settle('save'))
@@ -1866,7 +2304,13 @@ async function _templateGoBack() {
     if (choice === 'keep') return
     if (choice === 'discard') {
       const d = window._templateDraft
-      window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(e => ({ ...e })), meta: { ...d.metaBaseline } }
+      // _toDraftRow, not a bare {...e} spread: exercisesBaseline's rows already carry every field
+      // _toDraftRow expects (they were themselves produced by it), and reusing it here deep-clones
+      // sets_json and mints a fresh _draftKey per row -- a bare shallow spread would leave the reset
+      // exercises pointing at the SAME sets_json array/object as exercisesBaseline, reintroducing the
+      // exact aliasing landmine Task 1's review already found and fixed once for the draft/baseline
+      // split (a future in-place edit on one would silently corrupt the other).
+      window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(_toDraftRow), meta: { ...d.metaBaseline } }
     }
     if (choice === 'save') await saveTemplateDraft()
   }
@@ -1900,16 +2344,41 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 12: Update `session-identity-2026-08-14.spec.js`, `programs.spec.js`, `personal-programs.spec.js`
+### Task 12: Update every test file calling a renamed/removed staging function directly
+
+**Scope correction (2026-09-13, post-Task-3 ruling — see ledger).** Task 3's implementer did a full
+before/after verification sweep (not speculation) and found this task's original 3-file list was
+incomplete: 8 MORE files call `saveExerciseToTemplate`/`saveEditTemplateExercise`/
+`deleteTemplateExercise` directly by name and break the instant those functions are removed — a gap
+in this plan's original pre-flight scan (which checked `js/` callers and a specific set of test
+files, but never grepped the whole `tests/` directory for these three names). Folded into this task
+rather than a new one, since the fix shape is identical: replace the direct old-function call with
+its staged equivalent, then flush to the database with `saveTemplateDraft()` before the assertion
+that follows.
+
+**Second scope correction (2026-09-13, post-Task-4 ruling — see ledger).** Task 4's implementer did
+the same before/after sweep for `moveTemplateExercise` and found 2 more files:
+`tests/ownership-anchors-2026-08-21.spec.js` (already on this task's list above, for a different
+function — it now has TWO broken call sites) and `tests/silent-refusal-2026-08-18.spec.js` (new to
+this list). Both files' `moveTemplateExercise`-specific tests are a different SHAPE of problem than
+the mechanical swap-and-save-step fix below — see the dedicated notes after Step 2.
 
 **Files:**
-- Modify: `tests/session-identity-2026-08-14.spec.js`, `tests/programs.spec.js`, `tests/personal-programs.spec.js`
+- Modify: `tests/session-identity-2026-08-14.spec.js`, `tests/programs.spec.js`,
+  `tests/personal-programs.spec.js` (original 3)
+- Modify: `tests/reentry-guard-2026-08-28.spec.js`, `tests/builder-metric-type.spec.js`,
+  `tests/cardio-distance-metres.spec.js`, `tests/intervals-redesign-2026-07-25.spec.js`,
+  `tests/ledger-fixes-2026-07-30.spec.js`, `tests/ownership-anchors-2026-08-21.spec.js`,
+  `tests/stale-set-fields-2026-08-18.spec.js`, `tests/ledger-fixes-2026-08-02.spec.js` (8 more,
+  found during Task 3)
+- Modify: `tests/silent-refusal-2026-08-18.spec.js` (found during Task 4; `ownership-anchors` above
+  is also touched a second time)
 
 **Interfaces:** none new — this task only makes existing coverage match the new save timing.
 
 - [ ] **Step 1: Read each file's exact current interaction with the template editor**
 
-Run: `grep -n "saveExerciseToTemplate\|saveEditTemplateExercise\|deleteTemplateExercise\|moveTemplateExercise\|saveEditTemplate\b" tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js`
+Run: `grep -n "saveExerciseToTemplate\|saveEditTemplateExercise\|deleteTemplateExercise\|moveTemplateExercise\|saveEditTemplate\b" tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js tests/silent-refusal-2026-08-18.spec.js`
 
 This surfaces every exact call site that needs a `saveTemplateDraft()` step inserted before its
 following database assertion. Because these files are large and the exact surrounding context
@@ -1926,16 +2395,324 @@ database assertion. Where a site drives the UI through real clicks (not `page.ev
 directly), locate and click the new "Save workout" button (`#save-template-draft-btn`, Task 6)
 instead.
 
-- [ ] **Step 3: Run all three files**
+**Two of the 8 newly-found files need more than the mechanical swap above — read these before
+touching them:**
 
-Run: `npx playwright test tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js`
-Expected: PASS
+- **`tests/reentry-guard-2026-08-28.spec.js`** — its `MUST_BE_GUARDED` list asserts
+  `'saveExerciseToTemplate'` is registered behind the reentrancy guard (`guardReentry(...)`), a
+  protection against a double-tap racing two `select-max-order_index-then-insert` database calls.
+  The staged mutators are synchronous, in-memory, single-threaded JS — there is no equivalent race
+  to guard against (Task 3's implementer deliberately did not wrap them in `guardReentry`, and
+  correctly did not invent one — see its self-review). Remove `'saveExerciseToTemplate'` from
+  `MUST_BE_GUARDED` (and add nothing in its place) rather than trying to make a staged mutator
+  satisfy a guard it has no reason to need.
+- **`tests/ledger-fixes-2026-08-02.spec.js`** — wraps its old-function calls in `.catch(() => {})`,
+  which is currently swallowing the `ReferenceError` from the now-missing function and letting the
+  test stay green for the wrong reason (nothing ran, rather than the ownership check it claims to
+  prove firing). Remove that `.catch` when you replace the call with its staged equivalent — the
+  test must fail loudly if the behavior it names ever breaks again, not silently pass because
+  nothing executed.
+- **`tests/silent-refusal-2026-08-18.spec.js:219` — `'moveTemplateExercise warns when only half the
+  swap lands'`** — DELETE this test, don't adapt it. It exists to prove that when reorder's two
+  separate database writes (one per swapped row) partially land — the first succeeds, the second is
+  refused — the user is warned rather than left with silently corrupted order. Under the staged
+  model, reorder is one in-memory array swap with zero database writes until Save; "two separate
+  writes, one succeeds one doesn't" cannot happen at reorder time anymore, and a save's own partial
+  failure (potentially across ANY op, not reorder specifically) is already covered by Task 10's
+  dedicated partial-failure-recovery test. Keeping this test would mean either forcing a scenario
+  that can't occur through a mock, or quietly testing nothing real.
+- **`tests/ownership-anchors-2026-08-21.spec.js:140` — `'moveTemplateExercise refuses a template
+  owned by another coach, at the app layer'`** — DELETE this test too, same reasoning: it asserts a
+  `log.error('moveTemplateExercise', 'ownership check failed', ...)` call that only existed because
+  the OLD function checked ownership on every single reorder tap. `_stageReorderExercise` has no
+  ownership check at all — by design, ownership is verified exactly ONCE per Save
+  (`saveTemplateDraft`'s `_verifyTemplateOwnership` call, Task 8), not per queued operation. This
+  file's OTHER tests (covering `saveExerciseToTemplate`'s now-also-removed ownership check) are
+  handled by the mechanical swap-and-save-step fix above, same as the other 7 files — only this one
+  reorder-specific test needs deleting rather than adapting.
+  **Note for whoever executes Task 8:** confirm Task 8's own test coverage includes a save refused
+  for a template the current user does not own (its brief, as written, only covers the happy path
+  resolving a template the user legitimately owns) — this deletion removes the only place that
+  guarantee was ever actually tested for the reorder case, and the general (not reorder-specific)
+  version of it should live in Task 8, not be re-invented per op type in Task 12.
+
+- [ ] **Step 3: Run every file from this task together**
+
+Run: `npx playwright test tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js tests/silent-refusal-2026-08-18.spec.js`
+Expected: PASS (12 files)
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js
+git add tests/session-identity-2026-08-14.spec.js tests/programs.spec.js tests/personal-programs.spec.js tests/reentry-guard-2026-08-28.spec.js tests/builder-metric-type.spec.js tests/cardio-distance-metres.spec.js tests/intervals-redesign-2026-07-25.spec.js tests/ledger-fixes-2026-07-30.spec.js tests/ownership-anchors-2026-08-21.spec.js tests/stale-set-fields-2026-08-18.spec.js tests/ledger-fixes-2026-08-02.spec.js tests/silent-refusal-2026-08-18.spec.js
 git commit -m "tests: insert Save-workout step where template edits are checked immediately
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 12b: Guard saveTemplateDraft against double-tap re-entry
+
+**Why this task exists (controller-inserted, not in the original plan).** Task 12's implementer
+found that `saveTemplateDraft` — now the ONE remaining database-write path for every staged
+template change (add/edit/delete/reorder/rename) — has no `guardReentry` registration and no
+synchronous busy-disable. `tests/reentry-guard-2026-08-28.spec.js`'s own ratchet test (which scans
+the real shipped source for exactly this) already flags it as a new, unguarded inserter, left
+correctly red rather than silently added to `FROZEN_UNGUARDED` with an invented justification.
+
+The risk is real, not hypothetical: `saveTemplateDraft`'s docblock already warns that
+`_resolveEditableTemplateId` must be called EXACTLY ONCE per Save because calling it twice risks
+double-forking a shared template and orphaning the first clone. A fast double-click on
+`#save-template-draft-btn` (the button's `onclick="saveTemplateDraft()"` has no guard at all) fires
+the WHOLE function twice concurrently — exactly the scenario that comment warns about, plus a
+second, independent risk: two concurrent calls both diffing the SAME still-staged
+`window._templateDraft` (nothing marks it "being saved") and both replaying their own delete/
+update/insert loops, which can double-insert a newly-staged exercise. This is precisely the bug
+class ("if you press the button more than once it duplicates the exercise several times", the
+report this whole reentry-guard file traces back to) this file exists to catch — now covering the
+entire staged batch instead of one exercise.
+
+**Files:**
+- Modify: `js/app-workouts.js` — add `guardReentry('saveTemplateDraft')` beneath the function's
+  declaration (find via `grep -n "^async function saveTemplateDraft"`), mirroring its 13 existing
+  siblings (`grep -n "guardReentry(" js/*.js` to see the exact pattern each one follows —
+  `guardReentry('name')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js`).
+- Modify: `tests/reentry-guard-2026-08-28.spec.js` — add `'saveTemplateDraft'` to `MUST_BE_GUARDED`
+  (matching how every other guarded write path is explicitly named there, not just implicitly
+  covered by the general unguarded/frozen scan), and remove/update the NOTE comment block (currently
+  ~lines 226-236, search for "NOTE, not papered over") that documents this gap as deliberately left
+  red — once the guard is real, that comment describes a fixed problem, not a live one.
+
+**Interfaces:** none new — `guardReentry` and `saveTemplateDraft` both already exist; this only
+registers the former for the latter.
+
+- [ ] **Step 1: Confirm the ratchet test currently fails for exactly this reason**
+
+Run: `npx playwright test tests/reentry-guard-2026-08-28.spec.js -g "every inserter is either guarded"`
+Expected: FAIL — `unguarded` contains `'saveTemplateDraft'`, which is not in `frozen`.
+
+- [ ] **Step 2: Add the guard**
+
+In `js/app-workouts.js`, immediately beneath `async function saveTemplateDraft() { ... }`'s closing
+brace, add:
+
+```js
+guardReentry('saveTemplateDraft')  // double-press could double-fork a shared template and double-write every staged change; see tests/reentry-guard-2026-08-28.spec.js
+```
+
+- [ ] **Step 3: Update the test file**
+
+In `tests/reentry-guard-2026-08-28.spec.js`:
+1. Add `'saveTemplateDraft',` to the `MUST_BE_GUARDED` array, with a comment in the same style as
+   its neighbors, e.g.:
+   ```js
+   'saveTemplateDraft', // double-press could double-fork a shared template and double-write every staged change
+   ```
+2. Remove the "NOTE, not papered over: saveTemplateDraft() itself..." comment block (the one
+   documenting this exact gap as deliberately left red) — replace it with a short note that the gap
+   was closed by this task, referencing it by name so a future reader has the history without the
+   stale "still broken" framing.
+
+- [ ] **Step 4: Run the ratchet test and the full reentry-guard file to verify both pass**
+
+Run: `npx playwright test tests/reentry-guard-2026-08-28.spec.js`
+Expected: PASS (all tests in the file, including the ratchet)
+
+- [ ] **Step 5: Run the full template-draft-save test surface to confirm no regression**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js`
+Expected: PASS — `guardReentry` wraps `saveTemplateDraft` transparently (it still runs the same
+body, just refuses a concurrent second call and returns `undefined` instead); every existing test
+calls it once at a time, so none should be affected. If any test unexpectedly fails, that is a real
+signal worth investigating before assuming it's unrelated flake — do not wave it away.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add js/app-workouts.js tests/reentry-guard-2026-08-28.spec.js
+git commit -m "template builder: guard saveTemplateDraft against double-tap re-entry
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 13a: Fix two tests left stale by earlier tasks' already-approved refactors
+
+**Why this task exists (controller-inserted, not in the original plan).** Task 13's first attempt
+ran the full 523-test suite for the first time and found 2 genuine, plan-caused failures beyond the
+already-known `checks.sh` debt — both are test-staleness gaps, NOT behavior regressions (verified by
+reading the actual current source, not assumed):
+
+1. **`tests/day-row-prescriptions.spec.js`'s `templateCardEscapes` check** greps
+   `openTemplate.toString()` for the literal pattern `${escapeHtml(summary)}`, to prove a
+   `_fmtSetDetail`-formatted set summary is escaped before it reaches `innerHTML` (a stored-XSS class
+   this file exists to catch, per its own 2026-07-23 history). Task 2 (already reviewed and approved,
+   long before this) extracted the exercise-list rendering out of `openTemplate` into its own
+   function, `_renderTemplateExerciseList` — the `${escapeHtml(summary)}` line genuinely still exists
+   (confirmed: `js/app-workouts.js:1489`), it just lives in `_renderTemplateExerciseList` now, not in
+   `openTemplate`. The escaping itself was never dropped; only the test's target function is stale.
+2. **`tests/delete-rowcount-2026-08-27.spec.js`'s self-check count** (`toBeGreaterThanOrEqual(13)`)
+   asserts its own scan is capable of finding something, pinned at 13 `delete<Thing>` functions
+   discovered in this project's history. Task 3 (already reviewed and approved) removed
+   `deleteTemplateExercise` entirely, converting it to the staged `_stageRemoveExercise` (zero direct
+   database deletes until Save) — confirmed via a direct grep of the scan's own regex
+   (`^async function delete[A-Z1-9][A-Za-z0-9]*`) across `js/*.js`: exactly 12 matches now, not 13.
+   The count needs to track reality, not a historical snapshot.
+
+Both are one-line-plus-comment fixes with no design judgment involved — the underlying properties
+each test protects (escaping before innerHTML; every user-initiated delete checks its rowcount) are
+still genuinely true and still genuinely tested, just pointed at the current, correct target.
+
+**Files:**
+- Modify: `tests/day-row-prescriptions.spec.js`
+- Modify: `tests/delete-rowcount-2026-08-27.spec.js`
+
+**Interfaces:** none — test-only, no app code changes.
+
+- [ ] **Step 1: Confirm both currently fail for exactly the stated reason**
+
+Run: `npx playwright test tests/day-row-prescriptions.spec.js -g "every consumer of _fmtSetDetail"`
+Expected: FAIL — `r.templateCardEscapes` is `false`.
+
+Run: `npx playwright test tests/delete-rowcount-2026-08-27.spec.js -g "every user-initiated delete pairs"`
+Expected: FAIL — `Expected: >= 13, Received: 12`.
+
+- [ ] **Step 2: Fix `day-row-prescriptions.spec.js`**
+
+Change the `templateCardEscapes` line (currently ~line 194's test body, inside `page.evaluate`) from:
+
+```js
+templateCardEscapes: /\$\{escapeHtml\(summary\)\}/.test(openTemplate.toString()),
+```
+
+to:
+
+```js
+// 2026-09-13 (template-draft-save): this escape now lives in _renderTemplateExerciseList, which
+// Task 2 of that plan extracted out of openTemplate — the escaping itself never moved or weakened,
+// only which function's source literally contains it.
+templateCardEscapes: /\$\{escapeHtml\(summary\)\}/.test(_renderTemplateExerciseList.toString()),
+```
+
+- [ ] **Step 3: Fix `delete-rowcount-2026-08-27.spec.js`**
+
+Change the comment and count from:
+
+```js
+    // "all 0 of them are fine" is a switched-off checker. Thirteen exist today, 4 exempt.
+    expect(found, 'the scan found NO delete<Thing> functions — it is inspecting nothing')
+      .toBeGreaterThanOrEqual(13)
+```
+
+to:
+
+```js
+    // "all 0 of them are fine" is a switched-off checker. Twelve exist today, 4 exempt.
+    // (Was 13 until 2026-09-13: deleteTemplateExercise was removed by the template-draft-save plan,
+    // converted to the staged _stageRemoveExercise — zero direct database deletes until "Save
+    // workout" replays the batch, so there is no longer a per-tap delete to check here at all.)
+    expect(found, 'the scan found NO delete<Thing> functions — it is inspecting nothing')
+      .toBeGreaterThanOrEqual(12)
+```
+
+- [ ] **Step 4: Run both files to verify they pass**
+
+Run: `npx playwright test tests/day-row-prescriptions.spec.js tests/delete-rowcount-2026-08-27.spec.js tests/delete-rowcount-programs-2026-09-04.spec.js`
+Expected: PASS (the third file is included as a same-family sanity check, not because it needed a
+change — confirm it wasn't already broken by something related).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/day-row-prescriptions.spec.js tests/delete-rowcount-2026-08-27.spec.js
+git commit -m "tests: point 2 stale source-scanning checks at their current target
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 13b: Replace a fixed sleep with a real completion wait
+
+**Why this task exists (controller-inserted, not in the original plan).** `checks.sh`'s
+`waitForTimeout(` count ratchet compares this branch against `origin/master` and found exactly one
+new occurrence (124 vs baseline 123) — `tests/template-draft-save-2026-09-13.spec.js:938`, inside
+Task 11's own "Save workout replays the draft, then navigates once Save completes" test. Task 11's
+own review already flagged this exact line as a Minor, deferred finding ("worth flagging given
+CLAUDE.md/MEMORY's stated preference for awaiting real completion over sleeps where practical") —
+it is now a real, concrete pre-push gate failure, not just a style note, so it gets fixed rather
+than deferred again.
+
+**The problem:** after clicking "Save" in the leave-confirmation dialog, the test has no direct
+signal from Playwright's own click() for when the async chain it triggers (`saveTemplateDraft()`
+then `ctx.backFn()`, inside `_templateGoBack`) actually finishes — `click()` only waits for the DOM
+event dispatch, not for the async handler it triggers to complete. The fixed `waitForTimeout(500)`
+is a guess at how long that takes; it is either too short (flaky) or too long (slow), the exact
+anti-pattern this project's own memory documents.
+
+**The fix:** poll for the real completion signal the test already reads elsewhere in the same file
+(`window._leftCount` becoming `1`, set by the `backFn` the test itself installs) instead of guessing
+at a fixed delay.
+
+**Files:**
+- Modify: `tests/template-draft-save-2026-09-13.spec.js`
+
+**Interfaces:** none — test-only, no app code changes.
+
+- [ ] **Step 1: Confirm the current test passes (this is a refactor, not a bug fix — there is no RED step)**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save workout replays"`
+Expected: PASS (the test is already correct; only its wait mechanism changes).
+
+- [ ] **Step 2: Replace the fixed sleep with a poll**
+
+Change (currently ~lines 936-940):
+
+```js
+      await page.evaluate(() => { _templateGoBack() })
+      await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
+      await page.waitForTimeout(500)
+      const r = await page.evaluate(() => ({ left: window._leftCount || 0 }))
+      expect(r.left).toBe(1)
+```
+
+to:
+
+```js
+      await page.evaluate(() => { _templateGoBack() })
+      await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
+      // Wait for the real completion signal instead of guessing a fixed delay: _templateGoBack
+      // awaits saveTemplateDraft() fully before calling ctx.backFn() (which sets _leftCount), so
+      // once this reaches 1 the save has genuinely finished, not just the click event dispatched.
+      // waitForFunction, not expect.poll: matches this codebase's own established pattern for
+      // "wait for a window global to reach a value" (see tests/helpers.js:69,
+      // tests/ledger-fixes-2026-08-01.spec.js:69, tests/runner.spec.js:29 for precedent).
+      await page.waitForFunction(() => window._leftCount === 1, null, { timeout: 10000 })
+      const r = await page.evaluate(() => ({ left: window._leftCount || 0 }))
+      expect(r.left).toBe(1)
+```
+
+(The `expect(r.left).toBe(1)` line stays — `waitForFunction` only waits for the condition, it
+doesn't assert; keeping the explicit assertion matches this file's own style everywhere else and
+gives a clearer failure message than a bare timeout would.)
+
+- [ ] **Step 3: Run the test to verify it still passes**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "Save workout replays"`
+Expected: PASS
+
+- [ ] **Step 4: Run the full file to confirm no regression**
+
+Run: `npx playwright test tests/template-draft-save-2026-09-13.spec.js`
+Expected: PASS (all tests, matching the count from Task 13a's own full-file run)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/template-draft-save-2026-09-13.spec.js
+git commit -m "tests: poll for real Save-then-navigate completion instead of a fixed sleep
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
@@ -1969,6 +2746,619 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 14: Final whole-branch review fixes
+
+**Why this task exists.** The final whole-branch review (dispatched on the most capable available
+model, covering all 32 commits base-to-head) found 4 Critical and 5 Important findings that no
+individual task's diff-scoped review could have seen, because each is a composite behavior spanning
+functions multiple different tasks touched separately. The controller independently re-verified the
+most severe and surprising claims directly against the live source (not taken on faith) before
+writing this task. **Ready to merge: No** was the review's verdict; this task is what makes it Yes.
+
+Every fix below is written out in full — transcribe it exactly. This is corrective work on a branch
+about to ship, not exploratory work: do not redesign, do not "improve while you're in there," and do
+not skip the verification step for any single fix on the grounds that another one looks similar.
+
+**Files:**
+- Modify: `js/app-workouts.js` (C1, C2, C3, C4, I1, I2, I3, I4, I5, the `_reorderRowsInDom` cleanup)
+- Modify: `js/app-core.js` (C3's `navigate()` wrapper)
+- Modify: `tests/template-draft-save-2026-09-13.spec.js` (new tests for C1-C4)
+- Modify: `tests/reorder-instant-2026-09-06.spec.js` (delete the 2 tests exercising dead
+  `_reorderRowsInDom`)
+- Modify: `tests/ledger-fixes-2026-07-29.spec.js` (delete the 2 tests exercising dead
+  `_afterTemplateExerciseSave`)
+
+---
+
+#### C1 — `showAddExerciseToTemplateModal` forks the template independently of Save
+
+**The bug:** opening the "+ Add exercise" picker on a template shared across 2+ phase-workout slots
+calls `_resolveEditableTemplateId(templateId)` (`js/app-workouts.js`, inside
+`showAddExerciseToTemplateModal`'s non-runner branch) — a REAL database write (clone + repoint) —
+the instant the picker opens, completely independent of staging or Save. `_stageAddExercise()` never
+reads the resolved `targetId` at all; it pushes onto `window._templateDraft`, which is still keyed to
+the PRE-fork template id. When the user later taps **Save workout**, `saveTemplateDraft` calls
+`_resolveEditableTemplateId` a SECOND time — violating the Global Constraint that it run at most once
+per Save — and because the slot now points at the clone from the FIRST call, the second call's own
+repoint fails, and every staged change gets written to the ORIGINAL (still-shared) template instead
+of the slot the coach was actually editing.
+
+**Verified directly against the live source before writing this task:** `showAddExerciseToTemplateModal`'s
+non-runner branch (`js/app-workouts.js:2055-2059`) does call `_resolveEditableTemplateId(templateId)`;
+`_stageAddExercise()` (`:2439-2466`) takes no arguments and never reads `targetId`; the sibling
+`showEditTemplateExerciseModal` (`:2468-2474`) already does this correctly — no fork call, just
+`_resolveTemplateOwnerCoachId()` for the coachId and `templateId` passed straight through as
+`targetId` — confirming the fix below matches an already-established, already-correct pattern rather
+than inventing a new one.
+
+**Fix:** in `showAddExerciseToTemplateModal`, replace the non-runner branch of `ctxPromise` (currently
+the `Promise.all([_resolveEditableTemplateId(templateId), db.from('workout_templates')...])` block)
+with:
+
+```js
+    // No _resolveEditableTemplateId call here, deliberately: staging writes nothing to the
+    // database, so there is nothing yet to isolate by forking. saveTemplateDraft is the ONLY place
+    // that call may run (Global Constraint: exactly once per Save) -- calling it here too forked
+    // the template the moment the picker opened, before anything was staged or saved, leaving
+    // Save's own later resolve targeting a DIFFERENT (already-forked) template than this picker
+    // session staged an exercise into. Matches showEditTemplateExerciseModal's already-correct
+    // pattern: pass templateId straight through, resolve coachId via the same role-based helper.
+    const coachId = await _resolveTemplateOwnerCoachId()
+    return { coachId, targetId: templateId }
+```
+
+(This removes the `Promise.all` and both queries inside it, replacing them with the one
+`_resolveTemplateOwnerCoachId()` call. The `isRunner` branch above it is unchanged.)
+
+- [ ] **Step 1: Write the failing test**
+
+```js
+test.describe('Template draft: picker does not fork independently of Save', () => {
+  test('opening + Add exercise on a shared template does not fork or repoint until Save', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] C1 Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single()
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, name: '[E2E] C1 Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 })
+      const { data: pw1 } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 }).select('id, template_id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 2 })
+      return { programId: prog.id, templateId: t.id, phaseWorkoutId: pw1.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, phaseWorkoutId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId })
+      }, setup)
+      // Open the picker (this used to fork on its own) but do NOT stage or save anything yet.
+      await page.evaluate(() => { showAddExerciseToTemplateModal(window._templateDraft.templateId) })
+      await page.waitForTimeout(300)
+      const afterOpen = await page.evaluate(async (id) => {
+        const { data } = await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+        return data.template_id
+      }, setup.phaseWorkoutId)
+      expect(afterOpen, 'opening the picker must not fork or repoint the slot').toBe(setup.templateId)
+
+      // Now stage and save for real -- THIS is where the fork should happen, exactly once.
+      await page.evaluate(() => {
+        window._exerciseDetailPicked = { name: '[E2E] New', id: null }
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+      })
+      await page.evaluate(() => saveTemplateDraft())
+      const afterSave = await page.evaluate(async (id) => {
+        const { data } = await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+        return data.template_id
+      }, setup.phaseWorkoutId)
+      expect(afterSave, 'week 1 must now point at a forked template').not.toBe(setup.templateId)
+      const forkedRows = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id)
+        return data.map(r => r.exercise_name).sort()
+      }, afterSave)
+      expect(forkedRows, 'the staged add must land on the FORKED template, not be lost to the original').toEqual(['[E2E] A', '[E2E] New'])
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('programs').delete().eq('id', id)
+        await db.from('workout_templates').delete().eq('name', '[E2E] C1 Session').eq('coach_id', currentUser.id)
+      }, setup.programId)
+      document.getElementById('add-to-template-modal')?.remove()
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run to verify it fails** — `npx playwright test tests/template-draft-save-2026-09-13.spec.js -g "picker does not fork"` — expect FAIL (`afterOpen` will already have changed, since the picker's own open forks it today).
+- [ ] **Step 3: Apply the fix above, run again to verify it passes.**
+
+---
+
+#### C2 — Saving from the leave-prompt navigates regardless of outcome
+
+**The bug:** `_templateGoBack`'s `if (choice === 'save') await saveTemplateDraft()` doesn't check what
+happened. `saveTemplateDraft` never returns a status (every path — success, ownership refusal, batch
+failure — ends with an implicit `undefined` return), so a failed or refused save still falls through
+to navigation, abandoning a still-dirty, retry-ready draft on a screen the user just left. Separately,
+`saveTemplateDraft`'s own propagation call (`_checkClientPlanPropagation`) only *mounts* a modal and
+returns — it does not wait for the user to answer it — so navigating right after leaves
+`navigate()`'s own `.modal-overlay` sweep to tear down a propagation prompt (assigned-client sync or
+sibling-session sync) before the user ever saw it, silently skipping both.
+
+**Fix, part A — give `saveTemplateDraft` a real return value.** In `saveTemplateDraft`:
+- Change `if (!d || !_templateDraftIsDirty()) return` to `if (!d || !_templateDraftIsDirty()) return 'ok'`.
+- Change the ownership-refusal branch's `return` (after the `showToast('Save failed — template not found or permission denied.', 'warn')` line) to `return 'refused'`.
+- Change the `if (failedAt) { ... return }` block's final `return` to `return 'failed'`.
+- Add `return 'ok'` as the function's final line (after the existing `if (changes.length) await _checkClientPlanPropagation(...)` line).
+
+**Fix, part B — wait for propagation to actually be answered before navigating.** Add this new
+function near `_templateGoBack` in `js/app-workouts.js`:
+
+```js
+// Waits for whichever propagation modal saveTemplateDraft's own chain may have just mounted
+// (_showClientCopyPropagateModal / _showPropagateModal) to be dismissed, so a caller that
+// navigates right after Save doesn't have navigate()'s own modal-overlay sweep silently tear the
+// prompt down before the user ever answers it. Purely additive: does not change either modal's own
+// dismiss handlers, just waits from the outside for both known overlay ids to be gone -- same
+// MutationObserver technique _confirmLeaveTemplateDraft already uses for the identical problem.
+function _waitForPropagationModalsToClear(timeoutMs = 120000) {
+  const stillOpen = () => document.getElementById('client-copy-modal') || document.getElementById('propagate-modal')
+  if (!stillOpen()) return Promise.resolve()
+  return new Promise((resolve) => {
+    let done = false
+    const finish = () => { if (done) return; done = true; obs.disconnect(); clearTimeout(t); resolve() }
+    const obs = new MutationObserver(() => { if (!stillOpen()) finish() })
+    obs.observe(document.body, { childList: true })
+    const t = setTimeout(finish, timeoutMs)
+  })
+}
+```
+
+**Fix, part C — use both in `_templateGoBack`.** Change:
+
+```js
+    if (choice === 'save') await saveTemplateDraft()
+```
+
+to:
+
+```js
+    if (choice === 'save') {
+      const result = await saveTemplateDraft()
+      if (result !== 'ok') return
+      await _waitForPropagationModalsToClear()
+    }
+```
+
+- [ ] **Step 1: Write the failing test** (a save that partially fails from the leave-prompt must NOT navigate):
+
+```js
+test.describe('Template draft: leave-prompt Save respects the outcome', () => {
+  test('a failed Save from the leave-prompt does not navigate away from the still-dirty draft', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] C2 Leave Fail' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] X', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._templateCtx.backFn = () => { window._leftCount = (window._leftCount || 0) + 1 }
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+      })
+      await page.evaluate(() => { _templateGoBack() })
+      await page.evaluate(() => {
+        const realFrom = db.from.bind(db)
+        window.__c2stub = () => { db.from = realFrom }
+        db.from = (tbl) => {
+          if (tbl !== 'workout_template_exercises') return realFrom(tbl)
+          const real = realFrom(tbl)
+          return { ...real, delete: () => ({ eq: () => ({ eq: () => ({ select: () => Promise.resolve({ data: [], error: null }) }) }) }) }
+        }
+      })
+      await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
+      await page.waitForFunction(() => document.getElementById('confirm-dialog') === null || !!window._templateDraft, null, { timeout: 10000 })
+      await page.waitForTimeout(300)
+      const r = await page.evaluate(() => {
+        window.__c2stub?.()
+        return { left: window._leftCount || 0, stillDirty: _templateDraftIsDirty() }
+      })
+      expect(r.left, 'a failed save must NOT navigate away').toBe(0)
+      expect(r.stillDirty, 'the failed change must still be staged').toBe(true)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+- [ ] **Step 3: Confirm the existing "Save workout replays the draft, then navigates once Save completes"
+  test (Task 11) still passes** — it exercises the success path (`result === 'ok'`, no propagation
+  modal since the template has `program_id: null`), so it must be completely unaffected.
+
+---
+
+#### C3 — Every exit route except the back button silently discards staged work
+
+**The bug:** `_templateDraftIsDirty()` is consulted in exactly one navigation-gating place in the
+whole codebase — `_templateGoBack`. `navigate()` (`js/app-core.js`), which every other exit route
+funnels through (nav-tab taps, browser Back/popstate, `switchView`), has no dirty check at all, and
+`window._templateDraft` is never cleared on teardown, so a stale dirty draft also outlives the screen.
+Verified: `grep -n "_templateDraftIsDirty(" js/*.js` shows it called only inside `_templateGoBack`, the
+Save-button renderer, and `saveTemplateDraft`'s own guard — never from `navigate()` or anywhere else.
+
+**Fix:** rename the entire existing body of `navigate()` (`js/app-core.js`, currently starting
+`function navigate(page, _historyOp = 'push') {` through its closing brace) to `_navigateNow`, keeping
+every line inside it byte-for-byte identical — this is a pure rename of the function, not a rewrite.
+Then add this new `navigate` in its place:
+
+```js
+function navigate(page, _historyOp = 'push') {
+  // Unsaved-changes guard for the template builder. _templateDraftIsDirty() safely returns false
+  // when window._templateDraft is null/undefined, so this is a no-op for the other 99% of
+  // navigate() calls -- every existing caller throughout the app is unaffected and continues to
+  // call navigate() fire-and-forget, exactly as before. This covers every exit route
+  // _templateGoBack does NOT: nav-tab taps, browser Back/popstate, switchView. _templateGoBack's
+  // own dirty check already covers its own 3 branches (backFn/openClientProgramsTab/navigate) and
+  // leaves the draft clean before ever reaching here, so this never double-prompts.
+  if (_templateDraftIsDirty()) {
+    _confirmLeaveTemplateDraft().then(async (choice) => {
+      if (choice === 'keep') return
+      if (choice === 'discard') {
+        const d = window._templateDraft
+        window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(_toDraftRow), meta: { ...d.metaBaseline } }
+      }
+      if (choice === 'save') {
+        const result = await saveTemplateDraft()
+        if (result !== 'ok') return
+        await _waitForPropagationModalsToClear()
+      }
+      navigate(page, _historyOp)
+    })
+    return
+  }
+  window._templateDraft = null
+  _navigateNow(page, _historyOp)
+}
+```
+
+`_confirmLeaveTemplateDraft`, `_toDraftRow`, `saveTemplateDraft`, and `_waitForPropagationModalsToClear`
+(added in C2) are all already module-scope/global in this file's build, callable from `app-core.js`
+exactly as every other cross-module reference in this codebase already works (this file is loaded as
+one classic-script namespace, not ES modules — confirmed by the existing cross-module reference
+checker in `scripts/checks.sh`, which already tolerates and tracks this pattern).
+
+- [ ] **Step 1: Write the failing test**
+
+```js
+test.describe('Template draft: nav-away routes other than the back button are guarded too', () => {
+  test('navigate() away from a dirty draft prompts, and Keep editing stays put with the draft intact', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] C3 Nav Guard' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] Y', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+      })
+      // Simulate a nav-tab tap / browser Back -- NOT _templateGoBack.
+      await page.evaluate(() => { navigate('workouts') })
+      const promptShown = await page.evaluate(() => document.getElementById('confirm-dialog')?.textContent || '')
+      expect(promptShown, 'a plain navigate() away from a dirty draft must prompt, not silently discard').toMatch(/unsaved/i)
+      await page.locator('#confirm-dialog button', { hasText: /keep editing/i }).click()
+      const r = await page.evaluate(() => ({ page: currentPage, stillDirty: _templateDraftIsDirty() }))
+      expect(r.page, 'Keep editing must not have navigated').not.toBe('workouts')
+      expect(r.stillDirty, 'the staged removal must still be there').toBe(true)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+- [ ] **Step 3: Confirm every OTHER existing test in the full suite that calls `navigate(...)` directly
+  (not through `_templateGoBack`) still passes** — this is a behavior change to a function called from
+  dozens of places, so the full-suite run in Task 13's own verification step (already run once) must
+  be re-run in full after this task, not assumed safe from the targeted test alone.
+
+---
+
+#### C4 — Repositioning a newly-added exercise before Save is silently reverted
+
+**The bug:** `_diffTemplateDraft`'s reorder detection only compares the SURVIVING pre-existing rows'
+relative order — a newly-inserted row (`id: null`) has no baseline position to compare against, so
+its intended position is invisible to `diff.reorder`. The insert loop in `saveTemplateDraft` always
+appends new rows at `max(order_index) + 1`, regardless of where the user actually dropped them in the
+draft. Reproduced by hand-tracing `_diffTemplateDraft` against baseline `[A, B]`, draft
+`[NEW, A, B]`: `reorder: null`, `toInsert: [NEW]` — the insert lands at the END, not the front, with
+no error and no toast.
+
+**Fix:** in `saveTemplateDraft`, immediately after the existing `if (!failedAt && diff.reorder) { ... }`
+block, add:
+
+```js
+  // A newly-inserted exercise has no baseline position to compare against, so
+  // _diffTemplateDraft's reorder detection (survivors only) never sees where the user actually
+  // dropped it -- the insert loop above always appends it last. Sync the target template's OWN
+  // row order to the draft's current full sequence whenever an insert happened AND diff.reorder
+  // itself didn't already fire (when it did fire, diff.reorder.names is already the draft's full
+  // sequence including the new row's correct position, so a second call here would be redundant).
+  // This does not add a synthetic 'reorder' entry to `changes` -- sibling/client-copy propagation
+  // of the new exercise is already handled by its own 'add' entry; this only corrects the target
+  // template's own row order.
+  if (!failedAt && diff.toInsert.length && !diff.reorder) {
+    const orderFailures = await _propagateReorderToTemplates({ names: d.exercises.map(e => e.exercise_name) }, [targetId])
+    if (orderFailures) { failedAt = { step: 'reorder' } }
+  }
+```
+
+- [ ] **Step 1: Write the failing test**
+
+```js
+test.describe('Template draft: a new exercise keeps its dropped position on Save', () => {
+  test('adding an exercise then moving it before Save lands it in the correct final position', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] C4 Position' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._exerciseDetailPicked = { name: '[E2E] New', id: null }
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+        // Move the new (last) row to the front.
+        const key = window._templateDraft.exercises[window._templateDraft.exercises.length - 1]._draftKey
+        _stageReorderExercise(key, -1)
+        _stageReorderExercise(key, -1)
+      })
+      await page.evaluate(() => saveTemplateDraft())
+      const dbOrder = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id).order('order_index')
+        return data.map(r => r.exercise_name)
+      }, setup.templateId)
+      expect(dbOrder, 'the new exercise must save at the position it was dropped, not appended at the end').toEqual(['[E2E] New', '[E2E] A', '[E2E] B'])
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+```
+
+Note: check `_stageReorderExercise`'s exact signature (`grep -n "^function _stageReorderExercise" js/app-workouts.js`) before writing this test for real — it takes a draftKey and a direction; adjust the two calls above if its real signature differs from `(key, -1)`.
+
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I1 — Partial-failure recovery doesn't remap ids across a fork
+
+Task 9b threads `exerciseIdMap` into the delete/update WRITES; Task 10's recovery block does not —
+`pendingDeleteIds` and the `find(e => e.id === u.id)` update-lookup compare pre-fork ids against rows
+re-fetched from the post-fork template, so nothing matches and the pending item is silently dropped
+from the rebuilt draft instead of being re-staged.
+
+**Fix**, in `saveTemplateDraft`'s recovery block:
+
+```js
+      const pendingDeleteIds = diff.toDelete.slice(deleteDone).map(remapId)
+      window._templateDraft.exercises = window._templateDraft.exercises.filter(e => !pendingDeleteIds.includes(e.id))
+
+      for (const u of diff.toUpdate.slice(updateDone)) {
+        const row = window._templateDraft.exercises.find(e => e.id === remapId(u.id))
+        if (row) Object.assign(row, u.row)
+      }
+```
+
+(Only the id used to filter/find changes — `.map(remapId)` on the first line, `remapId(u.id)` on the
+second. Everything else in the recovery block is unchanged.)
+
+- [ ] **Step 1: Write the failing test** — combine the fork setup from C1's test with a stubbed
+  failure partway through the batch (same DB-stub technique as C2's test), on a template referenced
+  by 2+ `program_phase_workouts` rows, staging a delete alongside the failing operation. Assert that
+  after the failure, `window._templateDraft.exercises` no longer contains the (real, still-existing)
+  deleted row — i.e., the delete is correctly recognized as "already succeeded" or "still pending"
+  using the POST-fork id space, not silently dropped either way.
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I2 — The Edit-template modal prefills from the database, not the draft
+
+`showEditTemplateModal` still does `select('*').eq('id', id)`; its sibling
+`showEditTemplateExerciseModal` was correctly converted to read from the draft. Reopening **Edit**
+after staging a rename shows the OLD name, and tapping its own Save reverts the staged rename.
+
+**Fix**, in `showEditTemplateModal`:
+
+```js
+async function showEditTemplateModal(id) {
+  const d = window._templateDraft
+  let meta
+  if (d && d.templateId === id) {
+    meta = d.meta
+  } else {
+    const { data: t } = await db.from('workout_templates').select('*').eq('id', id).single()
+    meta = t
+  }
+  const overlay = document.createElement('div')
+```
+
+(Then replace every remaining `t.name`/`t.description` reference in this function's template literal
+with `meta.name`/`meta.description`.)
+
+- [ ] **Step 1: Write the failing test** — stage a rename via `_stageRenameTemplate()`, call
+  `showEditTemplateModal(id)` again, assert `#et-name`'s value is the STAGED name, not the original.
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I3 — The client-copy propagation prompt was never pluralized
+
+`_showClientCopyPropagateModal` still says "Apply your change to their copies too?" regardless of how
+many changes are actually staged — the one dialogue that authorizes writing into a real client's plan.
+No existing test asserts this literal string (confirmed: `grep -rn "Apply your change to their
+copies|client-copy-modal" tests/` — the only hit is a historical comment in
+`tests/personal-programs.spec.js`, and the actual assertion there checks the modal's presence/absence,
+not its text) — safe to change.
+
+**Fix:** change `_showClientCopyPropagateModal(clientNames, templateId)` to
+`_showClientCopyPropagateModal(clientNames, templateId, changes)`, and inside it, replace the fixed
+`Apply your change to their copies too?` sentence with a pluralized summary:
+
+```js
+function _showClientCopyPropagateModal(clientNames, templateId, changes) {
+  const names = clientNames.length <= 3 ? clientNames.join(', ') : `${clientNames.slice(0, 3).join(', ')} +${clientNames.length - 3} more`
+  const n = clientNames.length
+  // Same OP_LABEL shape _propagateModalHtml (Task 9) uses, duplicated rather than shared: the two
+  // prompts serve different audiences (this one authorizes writing into a REAL CLIENT's plan, that
+  // one a coach's own sibling sessions) and their single-change wording already differs in ways a
+  // shared helper would need to parameterize -- not worth touching _propagateModalHtml's own
+  // already-tested, byte-identical-to-master wording for this fix.
+  const OP_LABEL = { add: c => `${c} added`, update: c => `${c} updated`, delete: c => `${c} removed`, rename: () => 'renamed', reorder: () => 'reordered' }
+  const summary = changes.length === 1
+    ? (changes[0].op === 'rename' ? 'Only the name and description will be applied.'
+       : changes[0].op === 'reorder' ? 'Only the order will be applied.'
+       : 'Only the exercise you changed will be applied.')
+    : `${changes.length} changes: ${changes.map(c => OP_LABEL[c.op] ? OP_LABEL[c.op](c.matchName || '') : c.op).join(' · ')}`
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'client-copy-modal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Update assigned clients?</h2>
+        <button class="modal-close" onclick="_continueAfterClientCopy('${templateId}',false)">✕</button>
+      </div>
+      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px"><strong>${n}</strong> client${n === 1 ? ' has' : 's have'} this workout assigned (${escapeHtml(names)}). ${escapeHtml(summary)}</p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="_continueAfterClientCopy('${templateId}',false)">Not now</button>
+        <button class="btn-primary" onclick="_continueAfterClientCopy('${templateId}',true)">Update their copies</button>
+      </div>
+    </div>
+  `
+  mountModal(overlay)
+}
+```
+
+And update its one call site in `_checkClientPlanPropagation`:
+`_showClientCopyPropagateModal(copies.realClientNames, templateId, changes)`.
+
+- [ ] **Step 1: Write the failing test** — stage 2 changes (e.g. a rename + an exercise edit) on a
+  master-program template with a real assigned client, save, assert `#client-copy-modal`'s text
+  contains `"2 changes"` and does NOT contain the old fixed sentence.
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I4 — Deleting the template while the draft is dirty leaves stale state
+
+`deleteTemplate` ends with `window._templateGoBack()`, which now begins with the dirty check — so
+deleting a template with unsaved changes raises the leave-prompt for a template that no longer
+exists, and "Save workout" from it then fails ownership on the deleted row.
+
+**Fix:** in `deleteTemplate`, immediately before its `window._templateGoBack()` call, add:
+`window._templateDraft = null`.
+
+- [ ] **Step 1: Write the failing test** — stage a change, call `deleteTemplate(id)`, assert no
+  `#confirm-dialog` appears and navigation proceeds normally.
+- [ ] **Step 2: Run to verify it fails, then apply the fix and run again to verify it passes.**
+
+---
+
+#### I5 — Delete `_afterTemplateExerciseSave` (now dead AND type-incompatible)
+
+Already-adjudicated as dead code during Task 9's review; now confirmed additionally type-incompatible
+(it passes the OLD singular `window._lastExerciseChange` into `_checkClientPlanPropagation`'s
+`changesOverride`, which the plural redesign now reads as an array — `changes?.length` would be
+`undefined`, silently skipping the client-copy branch if this were ever revived). Delete the function
+and its 2 tests in `tests/ledger-fixes-2026-07-29.spec.js` (both only reach it through a
+fully-stubbed `_checkClientPlanPropagation`, so neither asserts anything live today).
+
+- [ ] Delete `_afterTemplateExerciseSave` (`js/app-workouts.js`, find via
+  `grep -n "^async function _afterTemplateExerciseSave"`) and its preceding doc-comment.
+- [ ] Delete the 2 tests in `tests/ledger-fixes-2026-07-29.spec.js` that call it directly (find via
+  `grep -n "_afterTemplateExerciseSave" tests/ledger-fixes-2026-07-29.spec.js`), each with a short
+  comment explaining why (dead function, deleted alongside it).
+- [ ] Run the full file to confirm the other tests in it are unaffected.
+
+---
+
+#### Minor cleanup — delete dead `_reorderRowsInDom` and its 2 tests
+
+`_renderTemplateExerciseList` no longer emits `data-ex-id` (the only attribute `_reorderRowsInDom`
+matches on), so this function is unreachable from production, and its 2 surviving unit tests
+(`tests/reorder-instant-2026-09-06.spec.js`) hand-build markup the app never renders — green against
+a function nothing calls and a DOM shape that no longer exists.
+
+- [ ] Delete `_reorderRowsInDom` (`js/app-workouts.js`, find via
+  `grep -n "^function _reorderRowsInDom"`).
+- [ ] Delete its 2 tests in `tests/reorder-instant-2026-09-06.spec.js` (find via
+  `grep -n "_reorderRowsInDom" tests/reorder-instant-2026-09-06.spec.js`), and update that file's
+  header comment / `describe` title if they still describe the deleted per-tap-write + debounce
+  design (check for stale references, e.g. to `moveTemplateExercise` or the settle-delay subsystem).
+- [ ] Run the full file to confirm the other tests in it are unaffected.
+
+---
+
+**Deferred, not fixed in this task (recorded, not silently dropped):**
+- The Save-button-host flex-layout interaction with `.page-header` — verify visually at a real mobile
+  viewport (390×844) as part of this task's own verification pass (Step, below); fix only if the
+  visual check actually shows a problem, don't guess at CSS blind.
+- `_confirmLeaveTemplateDraft`'s missing backdrop-click handler / focus management / font-styling
+  divergence from `confirmDialog` — real UX polish, not a correctness bug: the dialog still works,
+  it just doesn't close on a backdrop tap. Left for a follow-up pass.
+- `FIELDS` array duplication, `Object.assign` copying `_draftKey`/`id`/`order_index` in the recovery
+  path, the handful of stale doc-comments naming deleted functions, `_propagateReorderToTemplates`'s
+  reused-toast-wording nit, `_showExerciseSetsModal`'s shallow `existingSets` copy, and
+  `ledger-fixes-2026-07-30.spec.js`'s overstated "still really persists" comment — all cosmetic or
+  already-inherited from earlier, already-approved tasks; genuinely not worth the risk of touching
+  more surface area than necessary on a branch about to ship tonight.
+
+- [ ] **Final step: run the full suite (`npm test`) and `node --test tests-node/*.test.mjs` again in
+  full** — this task touches `navigate()`, a function called from dozens of places across the whole
+  app, so Task 13's own full-suite pass must be re-run after these fixes, not assumed still valid.
+  Also do a quick visual check of the template builder's header at 390×844 (mobile viewport) to
+  settle the deferred flex-layout question above.
+
+- [ ] **Commit:**
+
+```bash
+git add js/app-workouts.js js/app-core.js tests/template-draft-save-2026-09-13.spec.js tests/reorder-instant-2026-09-06.spec.js tests/ledger-fixes-2026-07-29.spec.js
+git commit -m "template builder: fix 4 critical + 5 important findings from final branch review
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
@@ -1982,8 +3372,9 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Partial-failure recovery → Task 10. ✓
 - Leave-with-unsaved-changes three-way prompt → Task 11. ✓
 - Test impact: `propagation-honesty-2026-09-06` (Task 9), `session-identity-2026-08-14` /
-  `programs.spec.js` / `personal-programs.spec.js` (Task 12), `reorder-instant-2026-09-06` /
-  `reorder-propagation-2026-08-19` (Task 4). ✓
+  `programs.spec.js` / `personal-programs.spec.js` + 8 more found during Task 3 (Task 12, expanded
+  2026-09-13 — see its ruling note), `reorder-instant-2026-09-06` / `reorder-propagation-2026-08-19`
+  (Task 4). ✓
 - `ledger-fixes-2026-07-23.spec.js` confirmed unrelated, no task touches it, correction noted in File
   Structure. ✓
 - Database changes: none — no task adds a migration. ✓

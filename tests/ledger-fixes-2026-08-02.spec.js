@@ -180,12 +180,31 @@ test.describe('saveEditTemplateExercise/deleteTemplateExercise — an unrelated 
       })
 
       await loginAsPT2(pt2Page)
-      // saveEditTemplateExercise(texId, templateId) reads its payload from injected modal DOM/globals,
-      // not from function args -- same minimal-DOM pattern as tests/builder-metric-type.spec.js. Must be
-      // set up so the call actually reaches _verifyTemplateOwnership instead of throwing/bailing earlier
-      // (an earlier draft of this test passed the ids in swapped positions and never exercised the anchor).
-      await pt2Page.evaluate(async ({ templateId, wteId }) => {
+      // 2026-09-13 (Task 12, template-draft-save): saveEditTemplateExercise/deleteTemplateExercise no
+      // longer exist — Tasks 3/5 replaced them with staged, in-memory mutators
+      // (_stageEditExercise/_stageRemoveExercise) that have NO ownership check of their own by
+      // design; ownership is now verified exactly ONCE, inside saveTemplateDraft. openTemplate cannot
+      // be used to reach PT's template here: PT2's RLS-scoped read of PT's row comes back as zero
+      // rows (same empirically-confirmed behavior as tests/ownership-anchors-2026-08-21.spec.js), so
+      // window._templateDraft is built by hand, seeded with the REAL foreign template/row ids,
+      // standing in for what openTemplate would have produced had the read succeeded. Everything past
+      // that point is the real shipped chain, hitting real Supabase.
+      //
+      // The `.catch(() => {})` this replaced was swallowing the ReferenceError from the now-missing
+      // functions and letting this test stay green for the wrong reason (nothing ran, rather than the
+      // ownership check it claims to prove firing) — removed deliberately so a real regression here
+      // fails loudly again.
+      const mkDraft = () => ({
+        templateId: setup.templateId, ctx: {},
+        meta: { name: '[E2E] Anchor-Probe Template', description: null },
+        metaBaseline: { name: '[E2E] Anchor-Probe Template', description: null },
+        exercises: [{ _draftKey: 'probe1', id: setup.wteId, exercise_id: null, exercise_name: '[E2E] Anchor-Probe Exercise', exercise_type: 'strength', metric_type: 'weight_reps', order_index: 0, sets: null, sets_json: null, notes: null, superset_group: null }],
+        exercisesBaseline: [{ _draftKey: 'probe1', id: setup.wteId, exercise_id: null, exercise_name: '[E2E] Anchor-Probe Exercise', exercise_type: 'strength', metric_type: 'weight_reps', order_index: 0, sets: null, sets_json: null, notes: null, superset_group: null }],
+      })
+
+      const editResult = await pt2Page.evaluate(async ({ draft }) => {
         window._templateCtx = {} // _resolveEditableTemplateId becomes a passthrough
+        window._templateDraft = draft
         const mk = (id, tag2 = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(tag2); e.id = id; document.body.appendChild(e) } return e }
         mk('att-type'); mk('att-notes'); mk('att-superset'); mk('att-error')
         document.getElementById('att-type').value = 'weight_reps'
@@ -193,12 +212,22 @@ test.describe('saveEditTemplateExercise/deleteTemplateExercise — an unrelated 
         document.getElementById('att-superset').value = ''
         window._exerciseDetailPicked = { id: null, name: '[E2E] Renamed By PT2' }
         window._templateSets = []
-        await saveEditTemplateExercise(wteId, templateId)
-      }, setup).catch(() => {})
-      await pt2Page.evaluate(async ({ templateId, wteId }) => {
+        _stageEditExercise('probe1') // staging itself has no ownership check by design
+        document.getElementById('app-toast')?.remove()
+        await saveTemplateDraft()
+        return { toast: document.getElementById('app-toast')?.textContent || null }
+      }, { draft: mkDraft() })
+      expect(editResult.toast, 'the app must refuse the staged rename at its own Save-time guard').toContain('permission denied')
+
+      const deleteResult = await pt2Page.evaluate(async ({ draft }) => {
         window._templateCtx = {}
-        await deleteTemplateExercise(wteId, templateId)
-      }, setup).catch(() => {})
+        window._templateDraft = draft
+        _stageRemoveExercise('probe1') // staging itself has no ownership check by design
+        document.getElementById('app-toast')?.remove()
+        await saveTemplateDraft()
+        return { toast: document.getElementById('app-toast')?.textContent || null }
+      }, { draft: mkDraft() })
+      expect(deleteResult.toast, 'the app must refuse the staged delete at its own Save-time guard').toContain('permission denied')
 
       const after = await ptPage.evaluate(async (id) => (await db.from('workout_template_exercises').select('id, exercise_name').eq('id', id).maybeSingle()).data, setup.wteId)
       expect(after?.id, 'deleteTemplateExercise must not have deleted a foreign exercise row').toBe(setup.wteId)

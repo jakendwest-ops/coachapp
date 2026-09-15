@@ -19,287 +19,43 @@
 const { test, expect } = require('./fixtures')
 const { loginAsPT } = require('./helpers')
 
-// A hand-built list matching what openTemplate renders: a container, one card per exercise carrying
-// its id, each with an up and a down button.
-const buildList = (names) => `(() => {
-  const wrap = document.createElement('div')
-  wrap.id = 'tpl-ex-list'
-  wrap.className = 'list'
-  // The const on the next line matters: without it the array literal continues the previous
-  // expression as string-indexing, which yields undefined. Automatic semicolon insertion does not
-  // save you when the following line opens with a bracket. (No backticks in this comment: it lives
-  // inside a template literal, and one would close the string.)
-  const _names = ${JSON.stringify(names)}
-  _names.forEach((n, i, arr) => {
-    const card = document.createElement('div')
-    card.className = 'card'
-    card.dataset.exId = 'e' + (i + 1)
-    card.dataset.exName = n
-    card.innerHTML =
-      '<button data-move="-1"' + (i === 0 ? ' disabled' : '') + '>up</button>' +
-      '<button data-move="1"' + (i === arr.length - 1 ? ' disabled' : '') + '>down</button>' +
-      '<span>' + n + '</span>'
-    wrap.appendChild(card)
-  })
-  document.body.appendChild(wrap)
-  return wrap
-})()`
-
-const readList = `(() => {
-  const wrap = document.getElementById('tpl-ex-list')
-  const cards = [...wrap.querySelectorAll('.card')]
-  return {
-    names: cards.map(c => c.dataset.exName),
-    upDisabled: cards.map(c => c.querySelector('[data-move="-1"]').disabled),
-    downDisabled: cards.map(c => c.querySelector('[data-move="1"]').disabled)
-  }
-})()`
+// buildList/readList (hand-built markup carrying data-ex-id, matching what openTemplate used to
+// render) and the two tests that used them -- '_reorderRowsInDom swaps the rows...' and 'it refuses
+// to move the first row up or the last row down' -- DELETED 2026-09-13 (Task 14, Minor cleanup).
+// _renderTemplateExerciseList no longer emits data-ex-id (rows are matched by data-draft-key now),
+// so _reorderRowsInDom (deleted alongside these tests) was unreachable from production and these
+// tests were green against a DOM shape the app no longer renders. The remaining test below already
+// covers the CURRENT staged-reorder mechanism end to end against real rendered markup.
 
 test.describe('Reorder is instant, and asks about copies once (2026-09-06)', () => {
-  test('_reorderRowsInDom swaps the rows and re-arms the arrows, without touching the network', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(`(() => {
-      ${buildList(['Squat', 'Bench', 'Row'])}
-      // Move 'Bench' (e2) up one.
-      const names = _reorderRowsInDom('e2', -1)
-      const after = ${readList}
-      document.getElementById('tpl-ex-list').remove()
-      return { names, after }
-    })()`)
-    expect(r.names, 'it returns the resulting order, which is what propagation needs').toEqual(['Bench', 'Squat', 'Row'])
-    expect(r.after.names, 'and the DOM matches').toEqual(['Bench', 'Squat', 'Row'])
-    // The arrows must follow the rows, or you can move something off the end of the list.
-    expect(r.after.upDisabled, 'only the first row may have a disabled up arrow').toEqual([true, false, false])
-    expect(r.after.downDisabled, 'only the last row may have a disabled down arrow').toEqual([false, false, true])
-  })
 
-  test('it refuses to move the first row up or the last row down', async ({ page }) => {
+  test('several reorders before Save produce zero database writes and zero propagation checks', async ({ page }) => {
     await loginAsPT(page)
-    const r = await page.evaluate(`(() => {
-      ${buildList(['Squat', 'Bench', 'Row'])}
-      const offTop = _reorderRowsInDom('e1', -1)
-      const offEnd = _reorderRowsInDom('e3', 1)
-      const missing = _reorderRowsInDom('nope', -1)
-      const after = ${readList}
-      document.getElementById('tpl-ex-list').remove()
-      return { offTop, offEnd, missing, after }
-    })()`)
-    expect(r.offTop, 'moving the top row up is a no-op, not a wrap-around').toBe(null)
-    expect(r.offEnd, 'moving the bottom row down is a no-op').toBe(null)
-    expect(r.missing, 'an unknown id is a no-op, not a throw').toBe(null)
-    expect(r.after.names, 'and nothing moved').toEqual(['Squat', 'Bench', 'Row'])
-  })
-
-  test('a reorder does NOT refetch and repaint the whole session', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(`(async () => {
-      ${buildList(['Squat', 'Bench', 'Row'])}
-      const rows = [
-        { id: 'e1', order_index: 0, exercise_name: 'Squat' },
-        { id: 'e2', order_index: 1, exercise_name: 'Bench' },
-        { id: 'e3', order_index: 2, exercise_name: 'Row' }
-      ]
-      const saved = {
-        openTemplate: window.openTemplate,
-        check: window._checkClientPlanPropagation,
-        resolveEditable: window._resolveEditableTemplateId,
-        resolveOwner: window._resolveTemplateOwnerCoachId,
-        verify: window._verifyTemplateOwnership,
-        from: db.from.bind(db)
-      }
-      let opens = 0, checks = 0
-      const writes = []
-      window.openTemplate = async () => { opens++ }
-      window._checkClientPlanPropagation = async () => { checks++ }
-      window._resolveEditableTemplateId = async () => ({ templateId: 't1', exerciseId: 'e2' })
-      window._resolveTemplateOwnerCoachId = async () => 'c1'
-      window._verifyTemplateOwnership = async () => true
-      db.from = (tbl) => {
-        if (tbl !== 'workout_template_exercises') return saved.from(tbl)
-        return {
-          select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: rows, error: null }) }) }),
-          update: (patch) => {
-            const c = { _id: null,
-              eq (col, v) { if (col === 'id') c._id = v; return c },
-              select: () => { writes.push({ id: c._id, to: patch.order_index }); return Promise.resolve({ data: [{ id: c._id }], error: null }) } }
-            return c
-          }
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Reorder Burst' }).select('id').single()
+      await db.from('workout_template_exercises').insert(['A', 'B', 'C', 'D'].map((n, i) => ({ template_id: t.id, exercise_name: '[E2E] ' + n, exercise_type: 'strength', order_index: i })))
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      const r = await page.evaluate(() => {
+        for (const name of ['[E2E] B', '[E2E] C', '[E2E] D']) {
+          const key = window._templateDraft.exercises.find(e => e.exercise_name === name)._draftKey
+          _stageReorderExercise(key, -1)
         }
-      }
-      try {
-        await moveTemplateExercise('t1', 'e2', -1)
-        const immediately = ${readList}
-        return { opens, checks, writes: writes.length, immediately }
-      } finally {
-        Object.assign(window, { openTemplate: saved.openTemplate, _checkClientPlanPropagation: saved.check,
-          _resolveEditableTemplateId: saved.resolveEditable, _resolveTemplateOwnerCoachId: saved.resolveOwner,
-          _verifyTemplateOwnership: saved.verify })
-        db.from = saved.from
-        document.getElementById('tpl-ex-list')?.remove()
-      }
-    })()`)
-    expect(r.opens, 'no repaint DURING the tap — that per-tap refetch is what made this slow').toBe(0)
-    expect(r.writes, 'the swap must still persist immediately: two updates, so nothing is left unsaved').toBe(2)
-    expect(r.immediately.names, 'and the list has already moved by the time the call returns').toEqual(['Bench', 'Squat', 'Row'])
-    expect(r.checks, 'propagation is debounced, so it has NOT run yet').toBe(0)
-  })
-
-  // A FORK must repaint immediately, not at settle.
-  //
-  // _resolveEditableTemplateId can clone a shared template and repoint the phase slot at the clone.
-  // Every button on screen still carries the PRE-fork id, so leaving the repaint until the burst
-  // settles means every remaining tap resolves a stale id — which no longer forks, still passes its
-  // own ownership check because the same coach owns the master, and silently writes to the ORPHANED
-  // master instead of the copy on screen.
-  //
-  // The first fix attempt did not close this, and the scoped re-review noted the existing tests could
-  // not catch it because they stub the resolver to one fixed id. This one varies it.
-  test('a fork repaints straight away, so the next tap cannot write to the orphaned master', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(`(async () => {
-      ${buildList(['Squat', 'Bench', 'Row'])}
-      const rows = [
-        { id: 'f1', order_index: 0, exercise_name: 'Squat' },
-        { id: 'f2', order_index: 1, exercise_name: 'Bench' },
-        { id: 'f3', order_index: 2, exercise_name: 'Row' }
-      ]
-      const saved = { openTemplate: window.openTemplate, check: window._checkClientPlanPropagation,
-        resolveEditable: window._resolveEditableTemplateId, resolveOwner: window._resolveTemplateOwnerCoachId,
-        verify: window._verifyTemplateOwnership, from: db.from.bind(db) }
-      const opened = []
-      window.openTemplate = async (id) => { opened.push(id) }
-      window._checkClientPlanPropagation = async () => {}
-      window._resolveTemplateOwnerCoachId = async () => 'c1'
-      window._verifyTemplateOwnership = async () => true
-      // The fork: asked to edit 'shared', you are handed a CLONE with a different id.
-      window._resolveEditableTemplateId = async () => ({ templateId: 'clone-1', exerciseId: 'f2' })
-      db.from = (tbl) => {
-        if (tbl !== 'workout_template_exercises') return saved.from(tbl)
-        return {
-          select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: rows, error: null }) }) }),
-          update: () => ({ eq () { return this }, select: () => Promise.resolve({ data: [{ id: 'x' }], error: null }) })
-        }
-      }
-      try {
-        await moveTemplateExercise('shared', 'e2', -1)
-        return { openedImmediately: [...opened] }
-      } finally {
-        Object.assign(window, { openTemplate: saved.openTemplate, _checkClientPlanPropagation: saved.check,
-          _resolveEditableTemplateId: saved.resolveEditable, _resolveTemplateOwnerCoachId: saved.resolveOwner,
-          _verifyTemplateOwnership: saved.verify })
-        db.from = saved.from
-        document.getElementById('tpl-ex-list')?.remove()
-      }
-    })()`)
-    expect(r.openedImmediately.length, 'a fork must repaint before the call returns, not 1500ms later').toBe(1)
-    expect(r.openedImmediately[0], 'and it must repaint the CLONE, never the id the buttons still carry').toBe('clone-1')
-  })
-
-  // A tap QUEUED DURING a fork must be dropped, not written with stale ids.
-  //
-  // The fork fix above covers taps that arrive after the repaint. Release review found the narrower
-  // window it missed: a second tap fired while the first is still awaiting _resolveEditableTemplateId
-  // captured its ids from the pre-fork buttons, and by the time it ran the slot had been repointed —
-  // so it resolved the OLD master, passed ownership because the same coach owns it, and wrote to the
-  // orphaned copy. Exactly the rapid double-tap this whole feature encourages.
-  test('a reorder queued while the template forks is dropped, not written to the old master', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(`(async () => {
-      ${buildList(['Squat', 'Bench', 'Row'])}
-      const rows = [
-        { id: 'q1', order_index: 0, exercise_name: 'Squat' },
-        { id: 'q2', order_index: 1, exercise_name: 'Bench' },
-        { id: 'q3', order_index: 2, exercise_name: 'Row' }
-      ]
-      const saved = { openTemplate: window.openTemplate, check: window._checkClientPlanPropagation,
-        resolveEditable: window._resolveEditableTemplateId, resolveOwner: window._resolveTemplateOwnerCoachId,
-        verify: window._verifyTemplateOwnership, from: db.from.bind(db) }
-      const writes = []
-      let resolveCalls = 0
-      // The stub records which template is on screen — the ONE behaviour of the real openTemplate that
-      // this guard depends on. Stubbing it away entirely is what made the first version of this test
-      // pass a guard that never fired.
-      window._openTemplateId = 'shared'
-      window.openTemplate = async (id) => { window._openTemplateId = id }
-      window._checkClientPlanPropagation = async () => {}
-      window._resolveTemplateOwnerCoachId = async () => 'c1'
-      window._verifyTemplateOwnership = async () => true
-      window._resolveEditableTemplateId = async () => { resolveCalls++; return { templateId: 'clone-9', exerciseId: 'q2' } }
-      db.from = (tbl) => {
-        if (tbl !== 'workout_template_exercises') return saved.from(tbl)
-        return {
-          select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: rows, error: null }) }) }),
-          update: () => ({ eq (c, v) { if (c === 'template_id') writes.push(v); return this },
-                           select: () => Promise.resolve({ data: [{ id: 'x' }], error: null }) })
-        }
-      }
-      try {
-        // Tap 1 forks 'shared' -> 'clone-9'. The real openTemplate is stubbed, so simulate the one
-        // thing it does that matters here: recording which template is now on screen.
-        await moveTemplateExercise('shared', 'e2', -1)
-        const afterFirst = writes.length
-        // Tap 2 was captured against the PRE-fork id, as a real queued tap would be.
-        await moveTemplateExercise('shared', 'e3', -1)
-        return { afterFirst, total: writes.length, wroteTo: [...new Set(writes)], resolveCalls }
-      } finally {
-        Object.assign(window, { openTemplate: saved.openTemplate, _checkClientPlanPropagation: saved.check,
-          _resolveEditableTemplateId: saved.resolveEditable, _resolveTemplateOwnerCoachId: saved.resolveOwner,
-          _verifyTemplateOwnership: saved.verify })
-        db.from = saved.from
-        document.getElementById('tpl-ex-list')?.remove()
-      }
-    })()`)
-    expect(r.afterFirst, 'the first tap writes its swap').toBe(2)
-    expect(r.wroteTo, 'and every write must target the CLONE, never the id the buttons still carried').toEqual(['clone-9'])
-    expect(r.total, 'the second tap, captured pre-fork, must be dropped rather than written').toBe(2)
-  })
-
-  test('seven rapid moves ask about duplicate sessions ONCE, not seven times', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(`(async () => {
-      ${buildList(['A', 'B', 'C', 'D'])}
-      const rows = ['A','B','C','D'].map((n, i) => ({ id: 'e' + (i+1), order_index: i, exercise_name: n }))
-      const saved = { openTemplate: window.openTemplate, check: window._checkClientPlanPropagation,
-        resolveEditable: window._resolveEditableTemplateId, resolveOwner: window._resolveTemplateOwnerCoachId,
-        verify: window._verifyTemplateOwnership, from: db.from.bind(db) }
-      let checks = 0, opens = 0
-      let lastChange = null
-      window.openTemplate = async () => { opens++ }
-      window._checkClientPlanPropagation = async (id, ctx, change) => { checks++; lastChange = change }
-      window._resolveTemplateOwnerCoachId = async () => 'c1'
-      window._verifyTemplateOwnership = async () => true
-      db.from = (tbl) => {
-        if (tbl !== 'workout_template_exercises') return saved.from(tbl)
-        return {
-          select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: rows, error: null }) }) }),
-          update: () => ({ eq () { return this }, select: () => Promise.resolve({ data: [{ id: 'x' }], error: null }) })
-        }
-      }
-      try {
-        // Three moves in quick succession, as a person tapping would.
-        for (const id of ['e2', 'e3', 'e4']) {
-          window._resolveEditableTemplateId = async () => ({ templateId: 't1', exerciseId: id })
-          await moveTemplateExercise('t1', id, -1)
-        }
-        const duringBurst = checks
-        const opensDuringBurst = opens
-        await new Promise(res => setTimeout(res, 2200))   // longer than the settle delay
-        return { duringBurst, opensDuringBurst, afterSettling: checks, opensAfterSettling: opens, lastChange }
-      } finally {
-        Object.assign(window, { openTemplate: saved.openTemplate, _checkClientPlanPropagation: saved.check,
-          _resolveEditableTemplateId: saved.resolveEditable, _resolveTemplateOwnerCoachId: saved.resolveOwner,
-          _verifyTemplateOwnership: saved.verify })
-        db.from = saved.from
-        document.getElementById('tpl-ex-list')?.remove()
-      }
-    })()`)
-    expect(r.duringBurst, 'nothing may prompt while the taps are still coming').toBe(0)
-    expect(r.afterSettling, 'and exactly one check runs once they stop — this is the "stop nagging me" fix').toBe(1)
-    // Review found the missing repaint left the position badges and, worse, the template ids in each
-    // button's onclick stale — so after a fork the NEXT tap wrote to the orphaned master. One repaint
-    // on settle restores every guarantee the per-tap repaint gave, at a seventh of the cost.
-    expect(r.opensAfterSettling, 'exactly one repaint once the burst settles, never none').toBe(1)
-    expect(r.lastChange?.op, 'it propagates a reorder').toBe('reorder')
-    expect(r.lastChange?.names?.length, 'carrying the FINAL order, not an intermediate one').toBe(4)
+        return { finalOrder: window._templateDraft.exercises.map(e => e.exercise_name) }
+      })
+      const dbOrder = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id).order('order_index')
+        return data.map(r => r.exercise_name)
+      }, setup.templateId)
+      expect(dbOrder, 'nothing may write to the database before Save, no matter how many reorders happen').toEqual(['[E2E] A', '[E2E] B', '[E2E] C', '[E2E] D'])
+      expect(r.finalOrder.length).toBe(4) // the draft itself did change; asserting the exact permutation isn't this test's job
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
   })
 })

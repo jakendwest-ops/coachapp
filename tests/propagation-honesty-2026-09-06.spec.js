@@ -13,6 +13,15 @@
 // make editing one silently rewrite the other. Worse than doing too little.
 //
 // So the prompt now states both halves — what will change, and what shares the name but will not.
+//
+// Task 9 (2026-09-13): _propagateModalHtml's signature changed from taking a single change's
+// isRename/op flags to taking the whole `changes` array (saveTemplateDraft now batches every staged
+// edit into one Save, so the propagation prompt has to describe all of them at once, not just the
+// last one). Every call site below was updated to the array shape. `changes: [oneChange]` is a
+// DELIBERATE design choice in _propagateModalHtml: a single-element array must render byte-identical
+// wording to the old singular case, so the tests below prove that equivalence explicitly for all
+// three single-change shapes (plain exercise change, rename, reorder) before proving the new
+// multi-change summary.
 
 const { test, expect } = require('./fixtures')
 const { loginAsPT } = require('./helpers')
@@ -52,7 +61,7 @@ test.describe('Propagation prompt tells the whole truth (2026-09-06)', () => {
     const html = await page.evaluate(() => {
       const overlay = _propagateModalHtml({
         templateId: 't1', name: 'Upper Body STR', count: 3, label: 'this program',
-        unlinked: 10, isRename: false, op: 'update'
+        unlinked: 10, changes: [{ op: 'update', matchName: 'Bench Press' }]
       })
       return overlay
     })
@@ -66,9 +75,68 @@ test.describe('Propagation prompt tells the whole truth (2026-09-06)', () => {
     await loginAsPT(page)
     const html = await page.evaluate(() => _propagateModalHtml({
       templateId: 't1', name: '<img src=x onerror=alert(1)>', count: 2, label: 'this program',
-      unlinked: 4, isRename: false, op: 'update'
+      unlinked: 4, changes: [{ op: 'update', matchName: 'Bench Press' }]
     }))
     expect(html, 'the payload must render as text, never as markup').not.toContain('<img src=x')
     expect(html, 'escaped instead').toContain('&lt;img')
+  })
+
+  test.describe('a single-change array renders byte-identical wording to the old singular case (Task 9)', () => {
+    test('a single non-rename/reorder change: the generic "Only the exercise you changed" sentence', async ({ page }) => {
+      await loginAsPT(page)
+      const html = await page.evaluate(() => _propagateModalHtml({
+        templateId: 't1', name: 'Upper Body STR', count: 2, label: 'this program', unlinked: 0,
+        changes: [{ op: 'update', matchName: 'Bench Press' }]
+      }))
+      expect(html, 'a single update/add/delete change keeps the pre-Task-9 wording').toContain('Only the exercise you changed will be applied.')
+      expect(html, 'a single non-rename/reorder change keeps the generic action label').toContain('Update all 3 copies')
+    })
+
+    test('a single rename change: the rename sentence and "Rename all N"', async ({ page }) => {
+      await loginAsPT(page)
+      const html = await page.evaluate(() => _propagateModalHtml({
+        templateId: 't1', name: 'Upper Body STR', count: 2, label: 'this program', unlinked: 0,
+        changes: [{ op: 'rename', name: 'Upper Body STR', description: null }]
+      }))
+      // _propagateModalHtml now runs the whole summary sentence through escapeHtml (Task 9 — summary
+      // can carry user exercise names in the multi-change case, and this file has already shipped one
+      // XSS from an un-escaped interpolation), so the literal quote marks around the week-marker
+      // example come back as &quot; in the raw HTML string this function returns. A browser renders
+      // that back to a literal '"' — this is a raw-string comparison, same convention the "escaped
+      // instead" assertion two tests up already uses.
+      expect(html, 'a single rename change keeps the pre-Task-9 rename sentence').toContain('Only the name and description will be applied — a week marker like &quot;— W2&quot; is kept.')
+      expect(html, 'a single rename change keeps the Rename-specific action label').toContain('Rename all 3')
+    })
+
+    test('a single reorder change: the ORDER sentence and "Reorder all N"', async ({ page }) => {
+      await loginAsPT(page)
+      const html = await page.evaluate(() => _propagateModalHtml({
+        templateId: 't1', name: 'Upper Body STR', count: 2, label: 'this program', unlinked: 0,
+        changes: [{ op: 'reorder', names: ['A', 'B'] }]
+      }))
+      expect(html, 'a single reorder change keeps the pre-Task-9 ORDER sentence').toContain('Only the ORDER changes. Exercises a copy has that this one does not stay exactly where they are.')
+      expect(html, 'a single reorder change keeps the Reorder-specific action label').toContain('Reorder all 3')
+    })
+  })
+
+  test('a multi-change save produces one pluralized summary naming every op, not the singular wording (Task 9)', async ({ page }) => {
+    await loginAsPT(page)
+    const html = await page.evaluate(() => _propagateModalHtml({
+      templateId: 't1', name: 'Upper Body STR', count: 2, label: 'this program', unlinked: 0,
+      changes: [
+        { op: 'delete', matchName: 'Old Row' },
+        { op: 'add', matchName: 'New Curl' },
+        { op: 'rename', name: 'Upper Body STR v2', description: null },
+      ]
+    }))
+    expect(html, 'must say how many changes, not fall back to any singular wording').toContain('3 changes')
+    expect(html, 'must NOT show the single-change sentence when more than one change is staged').not.toContain('Only the exercise you changed will be applied.')
+    expect(html, 'names the delete').toMatch(/Old Row removed/)
+    expect(html, 'names the add').toMatch(/New Curl added/)
+    expect(html, 'names the rename').toMatch(/renamed/)
+    // The action button is always the generic "Update all N copies" once more than one change is
+    // staged — even though one of the staged changes IS a rename — a deliberate Task 9 choice, since
+    // "Rename all" would be a lie about the other two ops riding along in the same Save.
+    expect(html, 'a multi-change save always gets the generic action label, even with a rename among the changes').toContain('Update all 3 copies')
   })
 })

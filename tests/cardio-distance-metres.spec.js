@@ -49,7 +49,9 @@ test.describe('Cardio distance — metres entry, km-legacy compatibility', () =>
         .select('id').single()
 
       try {
-        window._templateCtx = {}
+        // openTemplate populates window._templateDraft (and window._templateCtx) — _stageAddExercise
+        // has no templateId argument of its own; it stages onto whatever template is currently open.
+        await openTemplate(t.id, {})
         const mk = (id, tag2 = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(tag2); e.id = id; document.body.appendChild(e) } return e }
         mk('att-type'); mk('att-notes'); mk('att-superset'); mk('att-error'); mk('add-to-template-modal', 'div')
 
@@ -59,7 +61,8 @@ test.describe('Cardio distance — metres entry, km-legacy compatibility', () =>
         window._exerciseDetailPicked = { id: null, name: tag + ' Row' }
         // 500 metres, entered as metres — NOT 0.5
         window._templateSets = [{ effortType: 'rpe', isDistanceBased: true, distanceM: '500' }]
-        await saveExerciseToTemplate(t.id)
+        _stageAddExercise()
+        await saveTemplateDraft()
 
         const { data } = await db.from('workout_template_exercises')
           .select('exercise_name, metric_type, sets_json').eq('template_id', t.id).single()
@@ -79,11 +82,14 @@ test.describe('Cardio distance — metres entry, km-legacy compatibility', () =>
 
   // Regression, 2026-07-22 — found by the pre-push multi-agent review (Agent A).
   //
-  // saveExerciseToTemplate builds sets_json from an explicit ALLOWLIST (`cleanSets`). That allowlist
-  // has NEVER contained isDistanceBased, pace500Min/Max, hrZoneMin/Max, restHrMax or strokeRateMin/Max
-  // — so every cardio target except duration/distance was silently discarded on the ADD path, while
-  // the EDIT path (saveEditTemplateExercise, which writes sets_json raw) kept them. Two siblings doing
-  // the same job, drifted, failing silently at every layer (les-036 + les-037).
+  // The ADD path (_stageAddExercise, formerly saveExerciseToTemplate) builds sets_json from an
+  // explicit ALLOWLIST (`_cleanTemplateSets`). That allowlist has NEVER contained isDistanceBased,
+  // pace500Min/Max, hrZoneMin/Max, restHrMax or strokeRateMin/Max — so every cardio target except
+  // duration/distance was silently discarded on the ADD path, while the EDIT path
+  // (saveEditTemplateExercise at the time, now _stageEditExercise, which wrote sets_json raw) kept
+  // them. Two siblings doing the same job, drifted, failing silently at every layer (les-036 +
+  // les-037). Both now route through the same _cleanTemplateSets allowlist, but this test still
+  // pins the ADD path specifically — it's the one that silently dropped fields before.
   //
   // It becomes load-bearing today: the runner reads `tgt.isDistanceBased` to decide whether to show
   // the distance branch at all, so a newly-added distance cardio exercise would render as duration and
@@ -99,7 +105,9 @@ test.describe('Cardio distance — metres entry, km-legacy compatibility', () =>
         .insert({ coach_id: currentUser.id, client_id: null, program_id: null, name: tag, is_personal: true })
         .select('id').single()
       try {
-        window._templateCtx = {}
+        // openTemplate populates window._templateDraft (and window._templateCtx) — _stageAddExercise
+        // has no templateId argument of its own; it stages onto whatever template is currently open.
+        await openTemplate(t.id, {})
         const mk = (id, tg = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(tg); e.id = id; document.body.appendChild(e) } return e }
         mk('att-type'); mk('att-notes'); mk('att-superset'); mk('att-error'); mk('add-to-template-modal', 'div')
         document.getElementById('att-type').value = 'cardio'
@@ -112,7 +120,8 @@ test.describe('Cardio distance — metres entry, km-legacy compatibility', () =>
           hrZoneMin: '150', hrZoneMax: '170', restHrMax: '120',
           strokeRateMin: '24', strokeRateMax: '28', restMin: '2:00'
         }]
-        await saveExerciseToTemplate(t.id)
+        _stageAddExercise()
+        await saveTemplateDraft()
         const { data } = await db.from('workout_template_exercises')
           .select('sets_json').eq('template_id', t.id).single()
         return data.sets_json[0]

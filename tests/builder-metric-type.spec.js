@@ -1,12 +1,13 @@
 const { test, expect } = require('@playwright/test')
 const { loginAsPT, clickVisible } = require('./helpers')
 
-// Sub-project ②a: the builder's save path (saveExerciseToTemplate) must persist metric_type and derive
-// the legacy exercise_type + per-set unilateral/timed flags from it, so the current runner keeps working.
-// This drives the REAL save function (not a raw insert) via injected modal state — the same approach the
-// ②b test used for saveRunnerSession — so it actually exercises _deriveFromMetricType + the insert.
+// Sub-project ②a: the builder's save path (_stageAddExercise -> saveTemplateDraft) must persist
+// metric_type and derive the legacy exercise_type + per-set unilateral/timed flags from it, so the
+// current runner keeps working. This drives the REAL staged-save chain (not a raw insert) via
+// injected modal state — the same approach the ②b test used for saveRunnerSession — so it actually
+// exercises _deriveFromMetricType + the insert.
 test.describe('Builder metric_type picker — save persistence', () => {
-  test('saveExerciseToTemplate persists metric_type + derives exercise_type/flags', async ({ page }) => {
+  test('_stageAddExercise + saveTemplateDraft persists metric_type + derives exercise_type/flags', async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, ['#vs-personal', '#mvs-personal'])
     await page.waitForTimeout(1500)
@@ -18,21 +19,23 @@ test.describe('Builder metric_type picker — save persistence', () => {
         .insert({ coach_id: currentUser.id, client_id: null, program_id: null, name: tag, is_personal: true })
         .select('id').single()
 
-      // Minimal DOM the save function reads.
-      window._templateCtx = {} // ensures _resolveEditableTemplateId is a no-op passthrough
+      // openTemplate populates window._templateDraft — _stageAddExercise has no templateId argument
+      // of its own; it stages onto whatever template is currently open.
+      await openTemplate(t.id, {}) // also sets window._templateCtx so _resolveEditableTemplateId is a no-op passthrough
       const mk = (id, tag2 = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(tag2); e.id = id; document.body.appendChild(e) } return e }
       mk('att-type'); mk('att-notes'); mk('att-superset'); mk('att-error'); mk('add-to-template-modal', 'div')
 
-      const saveOne = async (name, metricType) => {
+      const stageOne = (name, metricType) => {
         document.getElementById('att-type').value = metricType
         document.getElementById('att-notes').value = ''
         document.getElementById('att-superset').value = ''
         window._exerciseDetailPicked = { id: null, name }
         window._templateSets = [{ effortType: 'rpe', repsMin: '8', amrap: true }]
-        await saveExerciseToTemplate(t.id)
+        _stageAddExercise()
       }
-      await saveOne(tag + ' Uni', 'unilateral')
-      await saveOne(tag + ' Hold', 'timed_hold')
+      stageOne(tag + ' Uni', 'unilateral')
+      stageOne(tag + ' Hold', 'timed_hold')
+      await saveTemplateDraft()
 
       const { data } = await db.from('workout_template_exercises')
         .select('exercise_name, exercise_type, metric_type, sets_json').eq('template_id', t.id).order('order_index')
@@ -48,9 +51,10 @@ test.describe('Builder metric_type picker — save persistence', () => {
     expect(uni.sets_json[0].unilateral).toBe(true)  // derived onto the set
     expect(uni.sets_json[0].timed).toBe(false)
     // `amrap` was removed 2026-08-11 and RESTORED 2026-08-14, both on Jake's call. This is the only
-    // assertion in the suite that proves the restore end to end -- through saveExerciseToTemplate,
-    // through _cleanTemplateSets' allowlist, into Postgres and back out. The pill can look perfect and
-    // the flag still be dropped here, silently, with no error at any layer (les-036).
+    // assertion in the suite that proves the restore end to end -- through _stageAddExercise,
+    // through _cleanTemplateSets' allowlist, through saveTemplateDraft's insert, into Postgres and
+    // back out. The pill can look perfect and the flag still be dropped here, silently, with no error
+    // at any layer (les-036).
     expect(uni.sets_json[0].amrap).toBe(true)
 
     const hold = rows.find(r => r.exercise_name.endsWith('Hold'))

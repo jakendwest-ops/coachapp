@@ -68,7 +68,9 @@ test.describe('Interval builder (2026-07-25)', () => {
       const { data: t } = await db.from('workout_templates')
         .insert({ coach_id: currentUser.id, client_id: null, program_id: null, name: tag, is_personal: false })
         .select('id').single()
-      window._templateCtx = {}
+      // openTemplate populates window._templateDraft (and window._templateCtx) — _stageAddExercise
+      // has no templateId argument of its own; it stages onto whatever template is currently open.
+      await openTemplate(t.id, {})
       const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
       mk('att-type', 'select'); mk('att-notes'); mk('att-superset'); mk('att-error'); mk('add-to-template-modal', 'div')
       document.getElementById('att-type').innerHTML = '<option value="interval">Interval</option>'
@@ -78,7 +80,8 @@ test.describe('Interval builder (2026-07-25)', () => {
       document.getElementById('att-type').value = 'interval'
       window._exerciseDetailPicked = { id: null, name: tag + ' Row' }
       window._templateSets = [{ countdownSecs: 5, warmupSecs: 0, workSecs: 30, restSecs: 30, sets: 8, recoverySecs: 0, cycles: 1, cooldownSecs: 0 }]
-      await saveExerciseToTemplate(t.id)
+      _stageAddExercise()
+      await saveTemplateDraft()
       const { data } = await db.from('workout_template_exercises')
         .select('exercise_type, metric_type, sets_json').eq('template_id', t.id).single()
       await db.from('workout_template_exercises').delete().eq('template_id', t.id)
