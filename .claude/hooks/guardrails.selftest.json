@@ -1,0 +1,223 @@
+{
+  "_why": "Fixtures live in a JSON file, not inline in a shell command. The guard refused its own test harness twice on 2026-08-22 because the fixture strings sat in the command text (first as quoted args, then in a heredoc body) and no amount of stripping makes a shell string reliably separable into command vs data. Keeping fixtures out of the command entirely removes the whole class.",
+  "pipedRunner": [
+    {
+      "cmd": "npx playwright test 2>&1 | tail -45",
+      "want": "DENY",
+      "why": "the 2026-08-22 incident verbatim"
+    },
+    {
+      "cmd": "npx playwright test --reporter=line > out.txt 2>&1",
+      "want": "ALLOW",
+      "why": "redirect preserves the status"
+    },
+    {
+      "cmd": "bash scripts/checks.sh | grep FAIL",
+      "want": "DENY",
+      "why": "the pre-push gate's status masked by grep"
+    },
+    {
+      "cmd": "git push | tail -20",
+      "want": "DENY",
+      "why": "push status masked"
+    },
+    {
+      "cmd": "git log --oneline | head -5",
+      "want": "ALLOW",
+      "why": "not a runner - ordinary piping must stay free"
+    },
+    {
+      "cmd": "npm test && git push",
+      "want": "ALLOW",
+      "why": "&& does not mask the status"
+    },
+    {
+      "cmd": "npx playwright test",
+      "want": "ALLOW",
+      "why": "unpiped runner"
+    },
+    {
+      "cmd": "grep -rn 'npm test | tail' notes/",
+      "want": "ALLOW",
+      "why": "runner named inside a quoted pattern is data"
+    },
+    {
+      "cmd": "grep -oE '^# -- ' scripts/checks.sh | sed 's/x/y/'",
+      "want": "ALLOW",
+      "why": "READING checks.sh, not running it (3rd false refusal)"
+    },
+    {
+      "cmd": "cat scripts/checks.sh | head -20",
+      "want": "ALLOW",
+      "why": "reading the gate script"
+    },
+    {
+      "cmd": "bash scripts/checks.sh | tail",
+      "want": "DENY",
+      "why": "actually invoking it, status masked"
+    },
+    {
+      "cmd": "./scripts/checks.sh | tail",
+      "want": "DENY",
+      "why": "direct invocation, status masked"
+    },
+    {
+      "cmd": "git push > /tmp/p.out 2>&1; echo EXIT=$?; grep -E 'passed' /tmp/p.out | tail -5",
+      "want": "ALLOW",
+      "why": "pipe is in a SEPARATE command after ; - push status intact (6th false refusal)"
+    },
+    {
+      "cmd": "npx playwright test > /tmp/r.out 2>&1; grep failed /tmp/r.out | head",
+      "want": "ALLOW",
+      "why": "runner redirected, pipe belongs to the grep"
+    },
+    {
+      "cmd": "npx playwright test | tail; echo done",
+      "want": "DENY",
+      "why": "runner and pipe in the SAME segment still gates"
+    },
+    {
+      "cmd": "git status --short | head -12\ngit push -q && echo done",
+      "want": "ALLOW",
+      "why": "NEWLINE-separated: the pipe is on a different LINE from the push (7th false refusal)"
+    },
+    {
+      "cmd": "echo start\nnpx playwright test | tail -5",
+      "want": "DENY",
+      "why": "runner and pipe on the SAME line still gates"
+    }
+  ],
+  "ownershipCommit": [
+    {
+      "staged": "+  await _verifyPhaseOwnership(fn, id)",
+      "marker": null,
+      "session": "S1",
+      "want": "DENY",
+      "why": "ownership code, no review this session"
+    },
+    {
+      "staged": "+  .eq('coach_id', currentUser.id)",
+      "marker": "S1",
+      "session": "S1",
+      "want": "ALLOW",
+      "why": "review ran this session"
+    },
+    {
+      "staged": "+  .eq('coach_id', currentUser.id)",
+      "marker": "S0",
+      "session": "S1",
+      "want": "DENY",
+      "why": "marker is from a previous session"
+    },
+    {
+      "staged": "+  el.textContent = 'Week ' + n",
+      "marker": null,
+      "session": "S1",
+      "want": "ALLOW",
+      "why": "no ownership content"
+    },
+    {
+      "staged": "",
+      "marker": null,
+      "session": "S1",
+      "want": "ALLOW",
+      "why": "nothing staged"
+    },
+    {
+      "staged": "@@ -1,3 +1,4 @@\n   .eq('coach_id', currentUser.id)\n+  echo \"new lint rule\"\n   next line",
+      "marker": null,
+      "session": "S1",
+      "want": "ALLOW",
+      "why": "coach_id only in CONTEXT lines - an edit merely NEAR ownership code (5th false refusal)"
+    },
+    {
+      "staged": "@@ -1,3 +1,3 @@\n-  .eq('coach_id', currentUser.id)\n+  .eq('id', x)",
+      "marker": null,
+      "session": "S1",
+      "want": "ALLOW",
+      "why": "ownership content only on a REMOVED line"
+    },
+    {
+      "staged": "@@ -1,3 +1,4 @@\n   const a = 1\n+  .eq('coach_id', currentUser.id)",
+      "marker": null,
+      "session": "S1",
+      "want": "DENY",
+      "why": "ownership content on an ADDED line still gates"
+    },
+    {
+      "staged": "-  <div style=\"font-size:13px\" onclick=\"openClient('${f.client_id}')\">\n+  <div style=\"font-size:var(--text-base, 13px)\" onclick=\"openClient('${f.client_id}')\">",
+      "marker": null,
+      "session": "S1",
+      "want": "ALLOW",
+      "why": "pure tokenisation on a client_id line - 8th false refusal, 2026-08-22"
+    },
+    {
+      "staged": "-  .eq('coach_id', oldId)\n+  .eq('coach_id', newId)",
+      "marker": null,
+      "session": "S1",
+      "want": "DENY",
+      "why": "REAL ownership change, same token both sides - proves the fix did not weaken it"
+    },
+    {
+      "staged": "+  if (!(await _verifyClientAccess('x', id))) return",
+      "marker": null,
+      "session": "S1",
+      "want": "DENY",
+      "why": "a brand-new ownership line still gates"
+    }
+  ],
+  "stash": [
+    {
+      "cmd": "git stash",
+      "want": "DENY",
+      "why": "bare stash - the incident"
+    },
+    {
+      "cmd": "git stash pop",
+      "want": "DENY",
+      "why": "pop - how the wrong stash was lost"
+    },
+    {
+      "cmd": "git stash list",
+      "want": "ALLOW",
+      "why": "inspecting is fine, mutating is not"
+    },
+    {
+      "cmd": "git stash show -p",
+      "want": "ALLOW",
+      "why": "read-only inspection"
+    },
+    {
+      "cmd": "grep -rn 'git stash' skills/",
+      "want": "ALLOW",
+      "why": "the phrase quoted as data"
+    }
+  ],
+  "throwaway": [
+    {
+      "file": "tests/zz-unipill.spec.js",
+      "want": "DENY",
+      "why": "the REAL debris found on 2026-08-22 (old pattern missed it)"
+    },
+    {
+      "file": "tests/zz-probe-foo.spec.js",
+      "want": "DENY",
+      "why": "the original convention still caught"
+    },
+    {
+      "file": "tests/_tmp-x.js",
+      "want": "DENY",
+      "why": "_tmp- prefix"
+    },
+    {
+      "file": "tests/runner.spec.js",
+      "want": "ALLOW",
+      "why": "a real spec must never be flagged"
+    },
+    {
+      "file": "js/app-programs.js",
+      "want": "ALLOW",
+      "why": "ordinary source"
+    }
+  ]
+}

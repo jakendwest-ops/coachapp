@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:/Program Files/nodejs/node.exe\" \"C:/Users/jaken/.claude/hooks/os-lint.mjs\""
+            "command": "\"C:/Program Files/nodejs/node.exe\" \"C:/Users/jaken/OneDrive/coachapp/.claude/hooks/os-lint.mjs\""
           }
         ]
       }
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:/Program Files/nodejs/node.exe\" \"C:/Users/jaken/.claude/hooks/guardrails.mjs\""
+            "command": "\"C:/Program Files/nodejs/node.exe\" \"C:/Users/jaken/OneDrive/coachapp/.claude/hooks/guardrails.mjs\""
           }
         ]
       }
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:/Program Files/nodejs/node.exe\" \"C:/Users/jaken/.claude/hooks/guardrails.mjs\""
+            "command": "\"C:/Program Files/nodejs/node.exe\" \"C:/Users/jaken/OneDrive/coachapp/.claude/hooks/guardrails.mjs\""
           }
         ]
       }
