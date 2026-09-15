@@ -52,7 +52,16 @@ const env      = (k, d) => process.env[k] || d
 // (LOG.md still exists there, untouched) but STATUS/BUGS/ROADMAP/DATA_MODEL/CRITICAL below now
 // point at the repo. The Vault's own copies are historical, not live — see the transitional caveat
 // in CLAUDE.md for what (if anything) still reads them directly.
-const SKILLS   = env('OSLINT_SKILLS',    `${HOME}/.claude/skills`)
+// Repointed 2026-09-15: skill-scanning checks (dead-tool-refs, dead-file-refs, skills-pii,
+// retired-terms, frontmatter, mandated-dead-tools, module-count) need to see BOTH the generic
+// skills that still live at the user level (sql-safety, multi-agent-review, mobile-check, ...) AND
+// the 3 CoachApp-specific ones now living in this repo (hello-claude, save, run-coachapp) — missing
+// this split after the move would have left those 3 skills silently unscanned by every check in
+// this list, the exact "reports success while doing nothing" class this file exists to catch.
+const SKILLS_DIRS = (process.env.OSLINT_SKILLS || [
+  `${HOME}/.claude/skills`,
+  `${REPO}/.claude/skills`,
+].join(';')).split(';').filter(Boolean)
 const STATUS   = env('OSLINT_STATUS',    `${REPO}/docs/current-sprint.md`)
 const BUGS     = env('OSLINT_BUGS',      `${REPO}/docs/bugs`)
 const LOG      = env('OSLINT_LOG',       `${VAULT}/LOG.md`)
@@ -140,11 +149,18 @@ function measuredCeiling (group, entries, override, inputEnv = []) {
   return { total, sizes, ceiling: Math.round(prev * SIZE_TOLERANCE),
            source: (synthetic ? 'fixture input, ' : '') + `baseline ${prev.toLocaleString()}` }
 }
-const HELLO_SKILL = env('OSLINT_HELLO_SKILL', `${HOME}/.claude/skills/hello-claude/SKILL.md`)
-const SAVE_SKILL  = env('OSLINT_SAVE_SKILL',  `${HOME}/.claude/skills/save/SKILL.md`)
+const HELLO_SKILL = env('OSLINT_HELLO_SKILL', `${REPO}/.claude/skills/hello-claude/SKILL.md`)
+const SAVE_SKILL  = env('OSLINT_SAVE_SKILL',  `${REPO}/.claude/skills/save/SKILL.md`)
 // Documents that state their own update obligation in prose. Each needs a mechanical trigger or the
 // sentence is a promise nothing keeps — see checkDocObligations.
 const DATA_MODEL = env('OSLINT_DATA_MODEL', `${REPO}/docs/schema.md`)
+// Added 2026-09-15 per an external audit's "Quick Win": docs/*.md had zero automated growth
+// monitoring, unlike every other content tier this project has ever measured (STATUS.md/roadmap.md,
+// the ritual skills) — all of which eventually needed a ratchet after growing unboundedly first.
+// Non-recursive by design: readdirSync without recursion naturally excludes docs/archive/ (meant to
+// be large and static) and docs/bugs/ (tracked separately, expected to grow with the ledger) without
+// having to hardcode an exclusion list that could drift from what's actually in those directories.
+const DOCS_DIR = env('OSLINT_DOCS_DIR', `${REPO}/docs`)
 const CRITICAL   = env('OSLINT_CRITICAL',   `${REPO}/docs/critical.md`)
 const SQL_DIR    = env('OSLINT_SQL_DIR',    `${REPO}/scripts`)
 // Overridable ONLY so a detector can be proven RED→GREEN against a fixture; defaults to the real Vault file.
@@ -167,15 +183,18 @@ const ok   = (check, msg) => passed.push({ check, msg })
 
 /** Every SKILL.md on disk, as { name, path, text, lines }. */
 function loadSkills () {
-  if (!existsSync(SKILLS)) return []
-  return readdirSync(SKILLS, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => ({ name: d.name, path: join(SKILLS, d.name, 'SKILL.md') }))
-    .filter(s => existsSync(s.path))
-    .map(s => {
-      const text = readFileSync(s.path, 'utf8')
-      return { ...s, text, lines: text.split(/\r?\n/) }
-    })
+  const out = []
+  for (const dir of SKILLS_DIRS) {
+    if (!existsSync(dir)) continue
+    for (const d of readdirSync(dir, { withFileTypes: true })) {
+      if (!d.isDirectory()) continue
+      const path = join(dir, d.name, 'SKILL.md')
+      if (!existsSync(path)) continue
+      const text = readFileSync(path, 'utf8')
+      out.push({ name: d.name, path, text, lines: text.split(/\r?\n/) })
+    }
+  }
+  return out
 }
 
 /** Walk a skill's lines, skipping any line the author explicitly exempted. */
@@ -395,7 +414,7 @@ function checkMemory () {
 
 function checkCorpora () {
   const empty = []
-  if (!skills.length) empty.push(`skills — ${SKILLS} is missing or has no SKILL.md; SIX checks (dead-tool-refs, dead-file-refs, skills-pii, retired-terms, frontmatter, mandated-dead-tools) are passing on an empty set`)
+  if (!skills.length) empty.push(`skills — none of [${SKILLS_DIRS.join(', ')}] has any SKILL.md; SIX checks (dead-tool-refs, dead-file-refs, skills-pii, retired-terms, frontmatter, mandated-dead-tools) are passing on an empty set`)
   const rows = bugRows()
   if (rows !== null && !rows.length) empty.push(`bugs — ${BUGS} exists but holds no parseable bug files; bug-files/stale-bugs/ledger-drift are passing on an empty set`)
   if (empty.length) {
@@ -548,7 +567,7 @@ function checkSkillPII () {
     }
   })
   if (hits.length) {
-    red('skills-pii', `${hits.length} real identifier(s) hardcoded in ~/.claude/skills — this directory is PUSHED TO GITHUB:\n    ` + hits.join('\n    ')
+    red('skills-pii', `${hits.length} real identifier(s) hardcoded in a skill — both skills dirs are PUSHED TO GITHUB:\n    ` + hits.join('\n    ')
       + '\n    (Use a placeholder, or read the value at runtime. Emails on example.com are exempt.)')
   } else ok('skills-pii', 'no emails or UUIDs hardcoded in any skill')
 }
@@ -1274,6 +1293,10 @@ function runSelfTest () {
       env: { OSLINT_HELLO_SKILL: file('rb-hello.md', 'x'.repeat(600)),
              OSLINT_SAVE_SKILL:  file('rb-save.md',  'y'.repeat(600)),
              OSLINT_RITUAL_BUDGET: '1000' } },
+    { check: 'docs-budget', expect: 'grown past budget',
+      env: { OSLINT_DOCS_DIR: (() => { const d = join(root, 'docsbudget'); mkdirSync(d, { recursive: true })
+               writeFileSync(join(d, 'a.md'), 'x'.repeat(600)); writeFileSync(join(d, 'b.md'), 'y'.repeat(600)); return d })(),
+             OSLINT_DOCS_BUDGET: '1000' } },
     { check: 'masthead-drift', expect: 'understate their own freshness',
       env: { OSLINT_STATUS: file('md-status.md', '# S\n_Last updated: 2026-01-01_\n\nwork landed 2026-06-01 and shipped.\n'),
              OSLINT_ROADMAP: file('md-roadmap.md', '# R\n_Last updated: 2026-06-01_\n\nnothing newer here.\n') } },
@@ -1380,9 +1403,11 @@ function runSelfTest () {
     // (b) Targeted probes: one per group that persists state, driving the exact override path.
     const probe = mkdtempSync(join(tmpdir(), 'oslint-purity-'))
     const tiny = n => { const p = join(probe, n); writeFileSync(p, '# x\n_Last updated: 2026-01-01_\n'); return p }
+    const tinyDir = n => { const d = join(probe, n); mkdirSync(d, { recursive: true }); writeFileSync(join(d, 'x.md'), '# x\n'); return d }
     const cases = [
       ['context-budget', { OSLINT_STATUS: tiny('s.md'), OSLINT_ROADMAP: tiny('r.md') }],
-      ['ritual-budget',  { OSLINT_HELLO_SKILL: tiny('h.md'), OSLINT_SAVE_SKILL: tiny('v.md') }]
+      ['ritual-budget',  { OSLINT_HELLO_SKILL: tiny('h.md'), OSLINT_SAVE_SKILL: tiny('v.md') }],
+      ['docs-budget',    { OSLINT_DOCS_DIR: tinyDir('d') }]
     ]
     for (const [label, fixtureEnv] of cases) {
       try {
@@ -1559,6 +1584,27 @@ function checkRitualBudget () {
   }
 }
 
+function checkDocsBudget () {
+  if (!existsSync(DOCS_DIR)) { warn('docs-budget', `docs dir not found: ${DOCS_DIR}`); return }
+  const files = readdirSync(DOCS_DIR, { withFileTypes: true })
+    .filter(d => d.isFile() && d.name.endsWith('.md'))
+    .map(d => [d.name, join(DOCS_DIR, d.name)])
+  if (!files.length) {
+    warn('docs-budget', `no top-level .md files in ${DOCS_DIR} (archive/ and bugs/ are subdirectories, excluded by design)`)
+    return
+  }
+  const m = measuredCeiling('docs', files, process.env.OSLINT_DOCS_BUDGET ? Number(process.env.OSLINT_DOCS_BUDGET) : 0, ['OSLINT_DOCS_DIR'])
+  const detail = `${files.length} files = ${m.total.toLocaleString()} chars`
+  if (m.total > m.ceiling) {
+    red('docs-budget', `docs/*.md (top-level only — not archive/ or bugs/) have grown past budget: ${detail} (ceiling ${m.ceiling.toLocaleString()}, ${m.source}).\n`
+      + '    These are read routinely (hello-claude Step 2, save Step 3b) — growth here pays the same\n'
+      + "    per-session cost STATUS.md/roadmap.md once did. Move detail to docs/archive/, don't raise\n"
+      + '    the ceiling.')
+  } else {
+    ok('docs-budget', `docs/*.md within budget (${detail}, ceiling ${m.ceiling.toLocaleString()}, ${m.source})`)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 23. Masthead drift — a document whose "_Last updated:_" is older than its own newest content.
 //     One fact (how fresh is this doc?) in two representations, with nothing forcing agreement —
@@ -1687,6 +1733,7 @@ checkDeferredCriticals()
 checkLedgerStatusDrift()
 checkContextBudget()
 checkRitualBudget()
+checkDocsBudget()
 // NOTE, 2026-09-15: checkContinuityBudget's target ("## Continuity block" in STATUS) no longer
 // matches the post-migration structure — STATUS now points at docs/current-sprint.md, which has no
 // such heading (the continuity-log pattern was replaced by docs/decisions.md, event-triggered by
@@ -1786,10 +1833,17 @@ checkHooks()
 // nothing appends new entries there (the repo replaced the Vault as system of record — see
 // coachapp/docs/decisions.md's 2026-09-15 entry), so this check will most likely start reporting all
 // 4 gates as stale within the next several sessions, once the real "last 5" window ages past the
-// migration date. Left wired rather than silently disabled — that transition is a real, honest
-// signal worth seeing, not a false alarm — but flagging now that no replacement mechanism was built
-// for evidencing these gates fired from the repo side. Revisit if/when it starts firing.
-checkGatesFired()
+// migration date. RETIRED 2026-09-15 per an external audit's recommendation: waiting for it to
+// decay into permanent, meaningless RED is worse than retiring it deliberately now. No replacement
+// mechanism was built for evidencing these gates fired from the repo side — that's a real gap, not
+// papered over, just no longer masquerading as a working check.
+// checkGatesFired()
+// NOTE: this means --self-test now reports 'gates-fired' as DECORATIVE (its spec, further down,
+// was left untouched rather than removed — deliberately: touching the self-test's own verification
+// array is treated as a higher-risk edit than commenting out a Run-section call, and this project's
+// own tooling agreed when it refused that exact edit earlier the same session). Read DECORATIVE
+// here as "intentionally retired," not "found broken and ignored" — the comment above is the record
+// of that distinction for whoever reads the self-test output next.
 checkClaudeMd()
 checkStalePredictions()
 

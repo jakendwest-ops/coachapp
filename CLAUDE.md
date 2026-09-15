@@ -14,19 +14,16 @@ decisions, technical debt, and the bug ledger (`docs/bugs/`, migrated wholesale 
 happened, what you remember doing, or an unverified summary carried over in context — if `docs/`
 has an answer, read the file.
 
-**Transitional caveat, real and not yet closed:** the Vault's own tracking machinery
-(`os-lint`, `/hello-claude`, `/save`) is not yet repointed at `docs/` — it still reads/writes the
-Vault's copies. Until that's done (a deliberately separate, careful step — it touches shared
-infrastructure in `~/.claude` that also serves another project, PTHub; see
-`docs/archive/status-continuity-2026-09-08.md` and `docs/decisions.md`), **file new bugs in
-`docs/bugs/` AND tell whoever runs `os-lint` that it's still watching a copy that's no longer being
-updated.** The Vault folder itself has not been deleted — it's retained as a historical archive
-(most of it is now duplicated into `docs/archive/` anyway) pending Jake's own decision on its fate.
-
-**No more naming collision:** `docs/roadmap.md` was rewritten from the Vault's real `roadmap.md`
-2026-09-15 (an earlier version of this file was built on inference, believing the Vault was
-unreachable — it wasn't). The Vault's copies of `roadmap.md`/`STATUS.md`/`CRITICAL.md`/etc. are now
-historical snapshots, not a second live source.
+**Migration complete, 2026-09-15.** `os-lint.mjs`, `guardrails.mjs`, and the `hello-claude`/`save`/
+`run-coachapp` skills now live in this repo (`.claude/hooks/`, `.claude/skills/`), not `~/.claude` —
+CoachApp is self-contained for its own ritual/lint automation. PTHub (the other project that
+previously justified keeping this machinery shared) ended 2026-09-15; its own PTHub-specific
+branches were stripped from the moved hooks at the same time. `claim-check.mjs` and
+`standing-behaviours.mjs` stay in `~/.claude` — confirmed generic, not CoachApp-specific.
+**Not yet verified:** whether a fresh session reliably resolves bare `/save`/"hello claude" to this
+new location — see `docs/decisions.md`'s 2026-09-15 entries for what's confirmed vs. still open.
+The Vault folder itself has not been deleted — retained as a historical archive (most of it is now
+duplicated into `docs/archive/` anyway) pending Jake's own decision on its fate.
 
 ## What this is
 
@@ -167,7 +164,9 @@ it as current. See `docs/handover.md` for how the live docs relate to each other
 its own "Requires Validation" section; treat unmarked claims as checked, marked ones as open.
 
 **Vault (`C:\Users\jaken\Claude\Vault\projects\CoachApp`) — now a historical archive, not live.**
-Retained, not deleted; see the transitional caveat above for what still reads it and why.
+Retained, not deleted; see "Repository source of truth" above for what (if anything) still reads it.
 
-Skills + the `os-lint` health check live in `~/.claude`. Start any real session with `/hello-claude`
-(subject to the transitional caveat above).
+**Skills + hooks (`os-lint`, `guardrails`, `hello-claude`, `save`, `run-coachapp`) live in this
+repo's own `.claude/hooks/` and `.claude/skills/`** — self-contained since 2026-09-15. `claim-check`
+and `standing-behaviours` stay in `~/.claude` (generic, used across other projects too). Start any
+real session with `/hello-claude`.

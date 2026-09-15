@@ -12,27 +12,25 @@ mid-save: the commits were pushed, the kanban was written, and **LOG.md never go
 whole session of work with no record, discovered only by the next session noticing the dates didn't
 line up.
 
-> This said "`TodoWrite` one todo per step" until 2026-08-20. **`TodoWrite` does not exist in this  <!-- LINT-OK: naming the dead tool is the POINT of this note, not a call -->
-> harness**, so this safeguard has never run — and a file survives the exact crash it guards against,
-> which an in-memory todo list would not have anyway. If `ritual-save.md` still has unticked boxes at
-> the next session start, the previous save died mid-way: finish it before anything else.
+> This mandated `TodoWrite` until 2026-08-20 — a tool that doesn't exist in this harness — so this  <!-- LINT-OK: naming the dead tool is the POINT of this note, not a call -->
+> safeguard never ran; a file survives a crash better than an in-memory list would have anyway. If
+> `ritual-save.md` still has unticked boxes at the next session start, the previous save died
+> mid-way: finish it before anything else.
 
 Run every step below in order. Do not skip any.
 
 **Note (golden path, 2026-07-02, updated 2026-09-15):** Bare `/save` now dispatches to THIS skill and nothing else — the framework Vault-OS deposit ritual was renamed to `/vault-save` (`C:\Users\jaken\Claude\.claude\commands\vault-save.md`) to end the name collision. That ritual still owns predictions capture, owner-voice deltas, and the ledger line, and it no longer fires automatically: **read `vault-save.md` before Step 10 and fold its file-writing duties (predictions.jsonl, lessons.jsonl/beliefs.jsonl, voice.md, ledgers/log.md) in — they land in Step 10b's Vault commit, not 10a's repo commit.** If it can't be run, say so explicitly — never skip it silently.
 
-> **🔒 GATE (2026-08-25) — grade before you append.** `hooks/guardrails.mjs` **RULE 6 blocks the
-> Vault `git commit`** if it adds a NEW record to `memory/predictions.jsonl` while any CoachApp
-> prediction past its `verify_by` is still ungraded. Two doors, both open: a commit that only
-> *grades* is never blocked (drain it in as many passes as you like), and grading + appending in the
-> **same** commit passes, because the count is read from the staged file. So the normal shape is:
-> grade the past-due ones as part of this save, then write the new ones. Grade on evidence — Jake
-> confirms, or red→green does — **never to clear the gate**. Why it exists: the backlog regenerates
-> (62→32 in a grading pass on 2026-08-09, back over 100 within two weeks), so draining it without
-> closing the valve just books the next drain. **The 63 already past due on 2026-08-25 are
-> grandfathered** (`state/predictions-baseline.txt`) so this rule could not wall its owner on day one
-> — they stay visible in `os-lint`'s `stale-predictions` RED and still need a real drain; what the
-> gate stops is the backlog REGROWING while that happens.
+> **🔒 GATE (2026-08-25) — grade before you append.** `guardrails.mjs` Rule 6 blocks the Vault commit
+> if it adds a NEW `memory/predictions.jsonl` record while any CoachApp prediction past `verify_by`
+> is still ungraded. Two doors: a grading-only commit is never blocked (drain in as many passes as
+> you like), and grading + appending in the SAME commit passes (count reads from staged content) —
+> so the normal shape is grade the past-due ones, then write the new ones. Grade on evidence, Jake
+> confirms or red→green does, never to clear the gate. Why: the backlog regenerates (62→32 on
+> 2026-08-09, back over 100 within two weeks) — draining without closing the valve just books the
+> next drain. Predictions already past-due when this rule shipped are grandfathered
+> (`state/predictions-baseline.txt`) so it couldn't wall its own owner on day one; they still need a
+> real drain, and stay visible in `os-lint`'s `stale-predictions` RED.
 
 **Note (efficiency, 2026-07-02, updated 2026-09-15):** A save runs many small file writes across two directory trees (the CoachApp repo + the Vault). Batch them: write all repo-side files first (`docs/current-sprint.md`, `docs/roadmap.md` if touched, `docs/decisions.md` if a decision was logged, `docs/bugs/*.md`), verify with *one* pass (e.g. one `git diff` or a couple of `tail` calls in a single Bash call, not a read-after-every-edit), then do Step 10a's commit. Separately, write the Vault-side files (predictions/lessons/voice/ledger) and do Step 10b's commit. Run independent writes within each group in parallel tool calls, not sequential turns. A save should be a handful of tool-call round-trips, not dozens.
 
@@ -73,11 +71,10 @@ See [[feedback-cache-bust]].
 
 ## Step 3 — Update the repo's live docs
 
-**Repointed 2026-09-15 — the repo replaced the Vault as CoachApp's system of record.** See
-`coachapp/CLAUDE.md` and `coachapp/docs/decisions.md`'s 2026-09-15 entry. `STATUS.md` in the Vault is
-now a historical archive; do not write to it. Its role now splits across `docs/current-sprint.md`
-(live state), `docs/technical-debt.md` (known gaps), and `docs/decisions.md` (significant, dated
-decisions — not every session, only genuinely hard-to-reverse ones).
+**The repo replaced the Vault as CoachApp's system of record** (`CLAUDE.md`, `docs/decisions.md`'s
+2026-09-15 entry). `STATUS.md` in the Vault is now historical archive, do not write to it — its role
+splits across `docs/current-sprint.md` (live state), `docs/technical-debt.md` (known gaps), and
+`docs/decisions.md` (significant, dated decisions only — not every session).
 
 ### 3a — Reconcile the bug ledger (`docs/bugs/`, one file per bug)
 
@@ -108,16 +105,14 @@ it (not today).
 If you fixed something this session, it becomes `fixed — awaiting Jake` — **not** removed. It leaves the
 ledger when *he* says so, or when a red→green test proves it. Only Jake may set `deferred`.
 
-> **⚠️ Change the `status:` FIELD, not just the body text.** This failed silently for 17 days under the
-> old table, where the Status cell sat at the far right of a line often 3,000+ characters long and simply
-> got skipped: six rows said `✅ FIXED + LIVE <commit>` in their text and `open` in their cell, inflating
-> the RED count until the genuinely-open bugs were buried. One file per bug makes that *much* harder — the
-> frontmatter is the first five lines — but it does not make it impossible. Writing ✅ into the body is
-> **not** updating the status. `os-lint`'s `ledger-drift` check still exists precisely to catch this.
+> **⚠️ Change the `status:` FIELD, not just the body text.** Under the old table this failed silently
+> for 17 days — six rows said `✅ FIXED + LIVE <commit>` in prose, `open` in their cell. One file per
+> bug makes it harder to repeat but not impossible; writing ✅ into the body is **not** updating the
+> status. `os-lint`'s `ledger-drift` check exists precisely to catch this.
 >
 > **Mechanical step, not a maxim** — after editing the ledger, run:
 > ```bash
-> node C:/Users/jaken/.claude/hooks/os-lint.mjs --report > /tmp/oslint.out 2>&1; grep -E "ledger-drift|stale-bugs" /tmp/oslint.out
+> node C:/Users/jaken/OneDrive/coachapp/.claude/hooks/os-lint.mjs --report > /tmp/oslint.out 2>&1; grep -E "ledger-drift|stale-bugs" /tmp/oslint.out
 > ```
 > (Redirect first, then grep the file — never pipe a runner's own status through grep/tail directly;
 > see `hooks/guardrails.mjs` Rule 1. A self-test run on 2026-09-15 nearly reported a false PASS this
@@ -199,31 +194,36 @@ For each of the following, check if a new entry is needed or an existing one nee
 - Did we learn something about project state (deadlines, decisions, constraints)? → update `project_coachapp.md`
 - Did a to-do get cleared this session? → note it so future sessions don't re-add it
 
-**Skills** (`C:\Users\jaken\.claude\skills\` — the ONLY canonical location; never create skills under any project or worktree `.claude\skills\`, see [[feedback-skill-golden-path]]):
-- Was a new skill created this session? → confirm registered in `C:\Users\jaken\.claude\skills\hello-claude\SKILL.md` (standing behaviours) and has a MEMORY.md entry
+**Skills — two locations, deliberately (repointed 2026-09-15):** `hello-claude`/`save`/`run-coachapp`
+live in THIS repo's `.claude/skills/`. Every other (generic, cross-project) skill still follows the
+pre-existing rule — `C:\Users\jaken\.claude\skills\` is their ONLY canonical location, never a second
+copy under a project's own `.claude\skills\`, see [[feedback-skill-golden-path]] (a real 2026-07-01
+dual-copy incident — the global copy is deleted for the 3 that moved, never kept alongside).
+- Was a new CoachApp skill created this session? → confirm registered in
+  `coachapp/.claude/skills/hello-claude/SKILL.md` (standing behaviours) and has a MEMORY.md entry.
+  A new *generic* skill still registers at the global path above.
 - Was an existing skill found to be wrong or incomplete? → update it now
 - Code review (pre-commit for ownership/RLS, pre-push otherwise) = the `multi-agent-review` skill (a pinned prompt: 3 fixed angles + verifier, plus a weekly full-file mode). If the review angles genuinely need to change, edit that skill deliberately and note it in the LOG — never improvise a different review ad hoc, that reintroduces the rigor-drift/diff-only-blind-spot the pinned skill exists to prevent
-- LLM-wiki ingests: read `wiki/sources.md` (the manifest) and append to `wiki/log.md`. **Never run bare `/ingest`** — that is the framework Vault-OS pipeline, a different thing entirely. (The `/wiki-ingest` skill that used to wrap this was deleted in OS v3: one use in 79 sessions, on the day it was created.)
-- **Back up skills + memory if either changed this session.** `~/.claude` is otherwise local-disk-only (not OneDrive, no cloud sync).
+- LLM-wiki ingests: read `wiki/sources.md` (the manifest) and append to `wiki/log.md`. **Never run bare `/ingest`** — that is the framework Vault-OS pipeline, a different thing entirely.
+- **Back up ~/.claude's generic skills + memory if either changed this session.** `~/.claude` is otherwise local-disk-only (not OneDrive, no cloud sync). CoachApp's own skills/hooks back up as part of the normal CoachApp repo push (Step 10a) — nothing extra needed for those.
 
-  > **🔒 GATE — run `os-lint` BEFORE the push. It must be clean of `skills-pii`.**
+  > **🔒 GATE — run `os-lint` BEFORE any push. It must be clean of `skills-pii`.**
   > ```bash
-  > node "C:/Users/jaken/.claude/hooks/os-lint.mjs" --report
+  > node "C:/Users/jaken/OneDrive/coachapp/.claude/hooks/os-lint.mjs" --report
   > ```
-  > If `skills-pii` is RED, **do not push** — fix it first. This directory goes to GitHub, and until
-  > 2026-07-13 it contained a **real client's full name and her database UUID**, the owner's auth uid and
-  > email, and **live E2E account passwords in plaintext** — for a project whose own CRITICAL.md tracks UK
-  > GDPR special-category data. `checks.sh`'s no-PII gate scans `js/` only. **Nothing had ever scanned
-  > `~/.claude`.** Emails on `example.com` are exempt; real ones are not. Resolve identifiers at runtime.
+  > If `skills-pii` is RED, **do not push** — fix it first. This directory goes to GitHub: until
+  > 2026-07-13 it held a **real client's full name + DB UUID, the owner's auth uid/email, and live
+  > E2E passwords in plaintext**, unscanned (`checks.sh`'s PII gate only ever covered `js/`). Emails
+  > on `example.com` are exempt; real ones are not. Resolve identifiers at runtime.
 
   Then: `cd ~/.claude && git add -A && git commit -m "..." && git push` → private repo
   `jakendwest-ops/claude-config` (branch `main`; an allowlist `.gitignore` tracks only `skills/` + the
   auto-memory dir, so `git add -A` is safe — everything else, incl. `settings.json`, is excluded). Auth via
   `gh`, no token in the URL. See [[claude-config-backup]].
-  **Note (corrected 2026-08-09):** `hooks/` and `state/` **are** in the allowlist now (`!/hooks`, `!/state`),
-  and both `hooks/os-lint.mjs` and `state/last-full-file-review` are tracked — verified with `git ls-files`.
-  The old warning here ("not backed up, widen the allowlist") was stale and has been removed, since a false
-  warning in a ritual is worse than none: it invites a future session to "fix" something already correct.
+  **Note (2026-08-09, example updated 2026-09-15):** `hooks/` and `state/` **are** in the allowlist
+  (`!/hooks`, `!/state`) — `hooks/standing-behaviours.mjs` and `state/last-full-file-review` are
+  tracked, verify with `git ls-files` if in doubt. (`hooks/os-lint.mjs` moved to the CoachApp repo
+  2026-09-15 and is no longer an example of a file that lives here.)
 
 Update `MEMORY.md` index if any files were added or changed.
 
@@ -233,10 +233,16 @@ Update `MEMORY.md` index if any files were added or changed.
 
 Check whether this session introduced anything that needs capturing outside the Vault/STATUS/LOG files:
 
-- **New technical terms or concepts explained to Jake** (e.g. "race condition," "flaky test," "RLS policy," any jargon walked through inline) that aren't yet in the LLM wiki glossary (`C:\Users\jaken\OneDrive\Documents\LLM wiki\wiki\guide-glossary.md`) — add them, using a real example from this session as the worked illustration where possible (matches the existing entries' style).
-- **Roadmap-wiki-sync backstop** — if `roadmap.md` gained or changed an item this session and the standing same-turn sync rule wasn't already applied, mirror it now into `guide-coachapp-roadmap.md` (mermaid stage + "what's next"/"what needs a decision") and the relevant topic page, before this save closes. Don't assume it already happened — verify.
-- **Wiki `log.md`** — confirm an entry exists for this session's work (append if missing, following the existing correction-entry format).
-- **Kanban board "Proposed for Next Session" column** (`C:\Users\jaken\OneDrive\Documents\LLM wiki\wiki\board-coachapp.md`, standing rule since 2026-07-06) — rewrite this column every save. Look at this session's actual work (Step 1's list) plus the board's current "In Progress"/"Up Next"/"Needs Jake" columns, and write a curated 3-5 item shortlist of what to tackle next — not everything open, just what's most ready or most urgent (fully-scoped items first, then anything with an approaching deadline like a beta date, then quick wins newly made buildable this session). Add a one-line "Last generated" note (date + a one-sentence summary of what this session actually shipped, or "no app code shipped — session was X" if it wasn't a build session) so the next session's `/hello-claude` has honest context. This column is read automatically at the start of the next session — see hello-claude Step 6.
+- **New jargon explained to Jake this session** (race condition, RLS policy, etc.) not yet in the LLM
+  wiki glossary (`...\wiki\guide-glossary.md`) — add it, with a real example from this session as the
+  worked illustration, matching existing entries' style.
+- **Roadmap-wiki-sync backstop** — verify (don't assume) that any `roadmap.md` change this session was
+  already mirrored into `guide-coachapp-roadmap.md` + the relevant topic page; do it now if not.
+- **Wiki `log.md`** — confirm an entry exists for this session (append if missing).
+- **Kanban board "Proposed for Next Session" column** (`...\wiki\board-coachapp.md`) — rewrite every
+  save: a curated 3-5 item shortlist (fully-scoped first, then deadline-driven, then new quick wins),
+  not everything open. Add a one-line "Last generated" date + summary. Read automatically at the next
+  session's `/hello-claude` Step 6.
 
 If nothing from this session needs any of the above, say so explicitly rather than skipping silently.
 
@@ -269,10 +275,9 @@ State whether the Playwright suite was run this session:
 
 ## Step 10 — Commit and push — TWO targets now, not one
 
-**Repointed 2026-09-15.** Before this migration, one Vault commit covered everything. Now CoachApp's
-own docs live in the CoachApp repo, while genuinely cross-project state (predictions/lessons/voice/
-ledgers) stays in the Vault. Do both, in this order — the repo commit first, since it's the one that
-actually matters for CoachApp's own history:
+CoachApp's own docs live in the CoachApp repo now; genuinely cross-project state
+(predictions/lessons/voice/ledgers) stays in the Vault. Do both, repo commit first — it's the one
+that matters for CoachApp's own history:
 
 ### 10a — Commit the repo's `docs/` changes
 
@@ -291,7 +296,7 @@ This is an ordinary CoachApp repo commit — it follows the same discipline as a
 (`docs/` isn't app code), but if this session's commits also touched `js/`/`scripts/`, that review
 still applies to THOSE commits, separately, per `CLAUDE.md`.
 
-### 10b — Commit and push the Vault — cross-project state only
+### 10b — Vault commit — cross-project state only
 
 The Vault still holds genuinely cross-project memory (`memory/` — predictions/lessons/beliefs,
 `owner/voice.md`, `ledgers/`) that `vault-save.md`'s duties write to (see the note at the top of

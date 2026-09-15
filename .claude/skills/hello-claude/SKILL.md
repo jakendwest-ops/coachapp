@@ -11,11 +11,9 @@ file as you complete it. An interrupted ritual must be *visibly* unfinished. On 
 `/brainstorming` at Step 6; the steps after it silently never ran, and nothing anywhere noticed.
 A checklist nobody can see is not a checklist.
 
-> This said "`TodoWrite` one todo per step" until 2026-08-20. **`TodoWrite` does not exist in this  <!-- LINT-OK: naming the dead tool is the POINT of this note, not a call -->
-> harness** — so from the day this ritual was written, its own anti-drop safeguard has never once run,
-> and nothing noticed. That is the exact failure the step exists to prevent, committed by the step
-> itself. A file works everywhere and survives a crash; `os-lint`'s `mandated-dead-tools` check now
-> goes RED if any skill mandates a tool the harness does not provide.
+> This mandated `TodoWrite` until 2026-08-20 — a tool that doesn't exist in this harness, so this  <!-- LINT-OK: naming the dead tool is the POINT of this note, not a call -->
+> ritual's own anti-drop safeguard silently never ran from the day it was written. `os-lint`'s
+> `mandated-dead-tools` check now catches this class.
 
 `os-lint` runs on SessionStart and prints anything rotten before you act. If it printed RED, **read it
 first** — it is telling you the machinery itself is broken, which outranks whatever you were about to do.
@@ -30,7 +28,8 @@ background, learns fast, wants the *why* behind every decision.
 - Messages are short, lowercase, direct. Don't pad responses.
 - Silence + continuing = positive feedback. He doesn't say "great job."
 - "both" / "all" / "please add" = execute everything, no follow-up needed.
-- "make a note" = write it to the Vault.
+- "make a note" = write it to `docs/` (decisions.md/technical-debt.md as fits); the Vault only for
+  genuinely cross-project lessons.
 - "are you able to..." = genuine feasibility check, not rhetorical — answer directly.
 - After every significant change: a technical explanation **and** a plain-English one, inline as you build.
 - Ships small, sees it, moves on. He doesn't like long planning phases.
@@ -58,10 +57,9 @@ or it's the wrong app, follow the `run-coachapp` skill. This step blocks until C
 
 ## Step 2 — Read the repo docs
 
-**Repointed 2026-09-15 — the repo (`docs/*.md`) replaced the Vault as CoachApp's system of record.**
-See `coachapp/CLAUDE.md`'s "Repository source of truth" section and `coachapp/docs/decisions.md`'s
-2026-09-15 entry for the full context. Steps below read the repo; only 5-6 still read the Vault
-(genuinely cross-project Claude memory, not CoachApp docs — untouched by this migration).
+**The repo (`docs/*.md`) is CoachApp's system of record** (see `CLAUDE.md`'s "Repository source of
+truth", `docs/decisions.md`'s 2026-09-15 entry). Only 5-6 below still read the Vault — genuinely
+cross-project Claude memory, not CoachApp docs.
 
 1. `coachapp/docs/session-context.md` — priorities/risks/next-actions snapshot, then
    `coachapp/docs/current-sprint.md` — live release-cycle state
@@ -105,13 +103,12 @@ coach's `auth.uid()`, which masks whole categories of failure.
 
 Report findings with line numbers. If clean, say "Code review: clean." **Do not fix — just report.**
 
-**Weekly full-file review — driven by the marker, not by self-assessment.** `os-lint` goes RED when
-`~/.claude/state/last-full-file-review` is missing or >7 days old. When it does: run `multi-agent-review`
-in **full-file mode** against the 2–3 highest-churn modules (whole files, not a diff), then update the
+**Weekly full-file review — driven by the marker, not self-assessment.** `os-lint` goes RED when
+`~/.claude/state/last-full-file-review` is missing or >7 days old. When it does: run
+`multi-agent-review` in **full-file mode** against the 2-3 highest-churn modules, then stamp the
 marker (`node -e "require('fs').writeFileSync('C:/Users/jaken/.claude/state/last-full-file-review', new Date().toISOString())"`).
-The old instruction ("first session of the week") asked the agent to self-assess a condition it had no way
-to check — **it never once fired in 10 days**, which is how 5 unscoped `app-clients.js` queries survived
-~12 diff-only reviews.
+(A self-assessed "first session of the week" version of this never once fired in 10 days — the
+marker replaced it after 5 unscoped `app-clients.js` queries survived ~12 diff-only reviews.)
 
 ## Step 5 — Roadmap cross-check
 
@@ -121,10 +118,10 @@ named-but-unscoped backlog items.
 
 ## Step 6 — Propose the plan
 
-**Start from the kanban board's shortlist** — `C:\Users\jaken\OneDrive\Documents\LLM wiki\wiki\board-coachapp.md`,
-the "Proposed for Next Session" column. The previous session's `/save` wrote it specifically to anchor this
-step. Cross-check against `docs/current-sprint.md`/`docs/roadmap.md` in case something changed outside a
-session, drop anything stale, then propose 2–3 items as a numbered list. Recommend one if the priority is obvious.
+**Start from the kanban board's shortlist** — `...\wiki\board-coachapp.md`'s "Proposed for Next
+Session" column (the previous `/save` wrote it to anchor this step). Cross-check against
+`docs/current-sprint.md`/`docs/roadmap.md` for anything stale, then propose 2-3 items as a numbered
+list, recommending one if the priority is obvious.
 
 ## Step 7 — Surface the bug ledger
 
@@ -140,17 +137,16 @@ Surface every row whose status is `open` or `fixed-awaiting-jake`. Lead with wha
 > Never by inference. Never by "likely the same root cause." Never because Playwright covers an adjacent
 > flow. Never because a robot looked instead of Jake.
 >
-> This step used to say *"Never carry forward a to-do that current evidence resolves"* — the only absolute
-> in the whole closure logic forbade **retention**. It explicitly licensed closing a "Jake must verify this
-> himself" item because a robot looked instead. That is how the slow-Workouts-page report was closed on a
-> guess on 2026-07-06 and re-reported by Jake, still broken, seven days later.
+> This step used to say *"never carry forward a to-do that current evidence resolves"* — the one absolute
+> in the old logic forbade retention, licensing exactly "a robot looked instead of Jake." That closed the
+> slow-Workouts-page report on a guess (2026-07-06); Jake re-reported it, still broken, seven days later.
 >
 > **An empty ledger is not a good outcome. An honest one is.**
 
-_Predictions are no longer a manual ritual step. `os-lint`'s `stale-predictions` check goes RED on any
-CoachApp prediction past its `verify_by` and still ungraded (`outcome:null`) — the same way it surfaces
-stale bug rows. It went 16-deep-overdue as a grep nobody ran; now the hook owns it. When it turns RED,
-grade each true/false with Jake (the closure rule applies) and set `outcome`. Do not re-add a manual step._
+_Predictions aren't a manual ritual step anymore — `os-lint`'s `stale-predictions` check goes RED on
+any CoachApp prediction past `verify_by` and still ungraded, the same way it surfaces stale bugs (it
+went 16-deep-overdue as a grep nobody ran before the hook took it over). When RED, grade each
+true/false with Jake (the closure rule applies) and set `outcome`. Don't re-add a manual step._
 
 ---
 
@@ -235,17 +231,15 @@ module you did not hand-test** — the gate will not do it for you.
 
 **Widening it is harder than it looks — attempted and reverted 2026-08-20.** Three traps, all found by
 `multi-agent-review` on the attempt itself:
-1. **A glob in the playwright args silently no-ops.** Positional args are OR-ed filter regexes, not
-   required paths: `playwright test a.spec.js b.spec.js missing-*.spec.js` exits **0** and just runs
-   a+b. Adding `tests/<prefix>-*.spec.js` to the gate looks like coverage and evaporates on a rename.
-   Verify any new gate line with `--list` and confirm the file COUNT, never the exit code.
-2. **Selecting by filename prefix selects an era, not a category.** `ledger-fixes-*` matched 5 files,
-   none newer than 2026-08-02 — it excluded the spec pinning the very fix that motivated the widening.
-3. **The cross-tenant probes are not cleanup-safe at push frequency.** Several take `plantedId` from
-   the offending session's own `.insert().select()`; if INSERT regresses permissive while SELECT stays
-   restricted, the id comes back null and the `finally` cleanup is skipped — stranding a junk row on a
-   REAL client. Harden those (re-read from the planting session, per `ledger-fixes-2026-08-01.spec.js`)
-   BEFORE putting them in the gate.
+1. **A glob in playwright's positional args silently no-ops** (OR-ed filters, not required paths — a
+   typo'd/renamed pattern just runs fewer files at exit 0). Verify with `--list`, check the file
+   COUNT, never the exit code.
+2. **Filename-prefix selection picks an era, not a category** — `ledger-fixes-*` matched 5 old files
+   and excluded the newer spec that motivated the widening.
+3. **The cross-tenant probes aren't cleanup-safe at push frequency** — several derive their cleanup id
+   from the very INSERT being tested, so a permissive-INSERT regression skips its own cleanup and
+   strands a junk row on a real client. Harden those (`ledger-fixes-2026-08-01.spec.js` shows the fix)
+   before ever putting them in the gate.
 
 **Known blind spot, unfixed:** 16 solo tests are `test.skip`-gated on `soloAvailable`. If
 `window._soloClientId` ever fails to populate — the exact bug class that has shipped four times here —
@@ -290,10 +284,10 @@ When Jake signals wrap-up ("that's it", "let's stop here", "/save"), run `save`.
 **The Iron Law: no fixes without root-cause investigation first.** A guess that happens to work is still a
 guess that got lucky.
 
-- **Attempts 1–2:** go back to the start — re-read the actual error, re-check what changed, re-verify the
-  reproduction — *with the new information the failed attempt revealed.* Don't just try a different guess.
-- **3+ failed attempts: STOP.** This is no longer a debugging problem, it's an architecture problem. Do not
-  attempt fix #4. Surface it to Jake and discuss whether the approach is sound before touching the code again.
+- **Attempts 1-2:** re-read the actual error, re-check what changed, re-verify the reproduction — *with
+  the new information the failed attempt revealed*, not just a different guess.
+- **3+ failed attempts: STOP** — this is now an architecture problem, not a debugging one. Don't attempt
+  fix #4; surface it to Jake and discuss whether the approach is sound first.
 
 **Red flags — if you catch yourself thinking any of these, stop:** "quick fix for now, investigate later" ·
 "just try changing X and see" · "I don't fully understand this but it might work" · "one more attempt" ·
