@@ -19,76 +19,15 @@
 const { test, expect } = require('./fixtures')
 const { loginAsPT } = require('./helpers')
 
-// A hand-built list matching what openTemplate renders: a container, one card per exercise carrying
-// its id, each with an up and a down button.
-const buildList = (names) => `(() => {
-  const wrap = document.createElement('div')
-  wrap.id = 'tpl-ex-list'
-  wrap.className = 'list'
-  // The const on the next line matters: without it the array literal continues the previous
-  // expression as string-indexing, which yields undefined. Automatic semicolon insertion does not
-  // save you when the following line opens with a bracket. (No backticks in this comment: it lives
-  // inside a template literal, and one would close the string.)
-  const _names = ${JSON.stringify(names)}
-  _names.forEach((n, i, arr) => {
-    const card = document.createElement('div')
-    card.className = 'card'
-    card.dataset.exId = 'e' + (i + 1)
-    card.dataset.exName = n
-    card.innerHTML =
-      '<button data-move="-1"' + (i === 0 ? ' disabled' : '') + '>up</button>' +
-      '<button data-move="1"' + (i === arr.length - 1 ? ' disabled' : '') + '>down</button>' +
-      '<span>' + n + '</span>'
-    wrap.appendChild(card)
-  })
-  document.body.appendChild(wrap)
-  return wrap
-})()`
-
-const readList = `(() => {
-  const wrap = document.getElementById('tpl-ex-list')
-  const cards = [...wrap.querySelectorAll('.card')]
-  return {
-    names: cards.map(c => c.dataset.exName),
-    upDisabled: cards.map(c => c.querySelector('[data-move="-1"]').disabled),
-    downDisabled: cards.map(c => c.querySelector('[data-move="1"]').disabled)
-  }
-})()`
+// buildList/readList (hand-built markup carrying data-ex-id, matching what openTemplate used to
+// render) and the two tests that used them -- '_reorderRowsInDom swaps the rows...' and 'it refuses
+// to move the first row up or the last row down' -- DELETED 2026-09-13 (Task 14, Minor cleanup).
+// _renderTemplateExerciseList no longer emits data-ex-id (rows are matched by data-draft-key now),
+// so _reorderRowsInDom (deleted alongside these tests) was unreachable from production and these
+// tests were green against a DOM shape the app no longer renders. The remaining test below already
+// covers the CURRENT staged-reorder mechanism end to end against real rendered markup.
 
 test.describe('Reorder is instant, and asks about copies once (2026-09-06)', () => {
-  test('_reorderRowsInDom swaps the rows and re-arms the arrows, without touching the network', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(`(() => {
-      ${buildList(['Squat', 'Bench', 'Row'])}
-      // Move 'Bench' (e2) up one.
-      const names = _reorderRowsInDom('e2', -1)
-      const after = ${readList}
-      document.getElementById('tpl-ex-list').remove()
-      return { names, after }
-    })()`)
-    expect(r.names, 'it returns the resulting order, which is what propagation needs').toEqual(['Bench', 'Squat', 'Row'])
-    expect(r.after.names, 'and the DOM matches').toEqual(['Bench', 'Squat', 'Row'])
-    // The arrows must follow the rows, or you can move something off the end of the list.
-    expect(r.after.upDisabled, 'only the first row may have a disabled up arrow').toEqual([true, false, false])
-    expect(r.after.downDisabled, 'only the last row may have a disabled down arrow').toEqual([false, false, true])
-  })
-
-  test('it refuses to move the first row up or the last row down', async ({ page }) => {
-    await loginAsPT(page)
-    const r = await page.evaluate(`(() => {
-      ${buildList(['Squat', 'Bench', 'Row'])}
-      const offTop = _reorderRowsInDom('e1', -1)
-      const offEnd = _reorderRowsInDom('e3', 1)
-      const missing = _reorderRowsInDom('nope', -1)
-      const after = ${readList}
-      document.getElementById('tpl-ex-list').remove()
-      return { offTop, offEnd, missing, after }
-    })()`)
-    expect(r.offTop, 'moving the top row up is a no-op, not a wrap-around').toBe(null)
-    expect(r.offEnd, 'moving the bottom row down is a no-op').toBe(null)
-    expect(r.missing, 'an unknown id is a no-op, not a throw').toBe(null)
-    expect(r.after.names, 'and nothing moved').toEqual(['Squat', 'Bench', 'Row'])
-  })
 
   test('several reorders before Save produce zero database writes and zero propagation checks', async ({ page }) => {
     await loginAsPT(page)

@@ -1193,7 +1193,7 @@ function _pageScopedContainer(el, page) {
   })
 }
 
-function navigate(page, _historyOp = 'push') {
+function _navigateNow(page, _historyOp = 'push') {
   // The consent gate is a GATE, not a dialog — it is the one overlay this must not clear.
   // Guarded HERE rather than in each caller because every route into the app funnels through
   // navigate(): popstate (browser Back), switchView, the nav click handlers, and showApp itself.
@@ -1267,6 +1267,34 @@ function navigate(page, _historyOp = 'push') {
     case 'progress':         _catch('progress',         renderProgress);         break
     default: container.innerHTML = '<div class="loading-state">Page not found</div>'
   }
+}
+
+function navigate(page, _historyOp = 'push') {
+  // Unsaved-changes guard for the template builder. _templateDraftIsDirty() safely returns false
+  // when window._templateDraft is null/undefined, so this is a no-op for the other 99% of
+  // navigate() calls -- every existing caller throughout the app is unaffected and continues to
+  // call navigate() fire-and-forget, exactly as before. This covers every exit route
+  // _templateGoBack does NOT: nav-tab taps, browser Back/popstate, switchView. _templateGoBack's
+  // own dirty check already covers its own 3 branches (backFn/openClientProgramsTab/navigate) and
+  // leaves the draft clean before ever reaching here, so this never double-prompts.
+  if (_templateDraftIsDirty()) {
+    _confirmLeaveTemplateDraft().then(async (choice) => {
+      if (choice === 'keep') return
+      if (choice === 'discard') {
+        const d = window._templateDraft
+        window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(_toDraftRow), meta: { ...d.metaBaseline } }
+      }
+      if (choice === 'save') {
+        const result = await saveTemplateDraft()
+        if (result !== 'ok') return
+        await _waitForPropagationModalsToClear()
+      }
+      navigate(page, _historyOp)
+    })
+    return
+  }
+  window._templateDraft = null
+  _navigateNow(page, _historyOp)
 }
 
 // Repaints whichever self-view dashboard the user is ACTUALLY on.

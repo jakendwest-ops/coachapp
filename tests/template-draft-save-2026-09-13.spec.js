@@ -957,3 +957,398 @@ test.describe('Template draft: leaving with unsaved changes', () => {
     }
   })
 })
+
+test.describe('Template draft: picker does not fork independently of Save', () => {
+  test('opening + Add exercise on a shared template does not fork or repoint until Save', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] C1 Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single()
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, name: '[E2E] C1 Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 })
+      const { data: pw1 } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 }).select('id, template_id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 2 })
+      return { programId: prog.id, templateId: t.id, phaseWorkoutId: pw1.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, phaseWorkoutId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId })
+      }, setup)
+      // Open the picker (this used to fork on its own) but do NOT stage or save anything yet.
+      await page.evaluate(() => { showAddExerciseToTemplateModal(window._templateDraft.templateId) })
+      await page.waitForTimeout(300)
+      const afterOpen = await page.evaluate(async (id) => {
+        const { data } = await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+        return data.template_id
+      }, setup.phaseWorkoutId)
+      expect(afterOpen, 'opening the picker must not fork or repoint the slot').toBe(setup.templateId)
+
+      // Now stage and save for real -- THIS is where the fork should happen, exactly once.
+      await page.evaluate(() => {
+        window._exerciseDetailPicked = { name: '[E2E] New', id: null }
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+      })
+      await page.evaluate(() => saveTemplateDraft())
+      const afterSave = await page.evaluate(async (id) => {
+        const { data } = await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+        return data.template_id
+      }, setup.phaseWorkoutId)
+      expect(afterSave, 'week 1 must now point at a forked template').not.toBe(setup.templateId)
+      const forkedRows = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id)
+        return data.map(r => r.exercise_name).sort()
+      }, afterSave)
+      expect(forkedRows, 'the staged add must land on the FORKED template, not be lost to the original').toEqual(['[E2E] A', '[E2E] New'])
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('programs').delete().eq('id', id)
+        await db.from('workout_templates').delete().eq('name', '[E2E] C1 Session').eq('coach_id', currentUser.id)
+      }, setup.programId)
+      // NOTE: wrapped in page.evaluate — `document` is not defined in the Node/test-runner
+      // context this finally block otherwise runs in; the brief's original snippet referenced
+      // it bare, which would throw ReferenceError here and mask the try block's real result.
+      await page.evaluate(() => { document.getElementById('add-to-template-modal')?.remove() })
+    }
+  })
+})
+
+test.describe('Template draft: leave-prompt Save respects the outcome', () => {
+  test('a failed Save from the leave-prompt does not navigate away from the still-dirty draft', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] C2 Leave Fail' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] X', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._templateCtx.backFn = () => { window._leftCount = (window._leftCount || 0) + 1 }
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+      })
+      await page.evaluate(() => { _templateGoBack() })
+      await page.evaluate(() => {
+        const realFrom = db.from.bind(db)
+        window.__c2stub = () => { db.from = realFrom }
+        db.from = (tbl) => {
+          if (tbl !== 'workout_template_exercises') return realFrom(tbl)
+          const real = realFrom(tbl)
+          return { ...real, delete: () => ({ eq: () => ({ eq: () => ({ select: () => Promise.resolve({ data: [], error: null }) }) }) }) }
+        }
+      })
+      await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
+      await page.waitForFunction(() => document.getElementById('confirm-dialog') === null || !!window._templateDraft, null, { timeout: 10000 })
+      await page.waitForTimeout(300)
+      const r = await page.evaluate(() => {
+        window.__c2stub?.()
+        return { left: window._leftCount || 0, stillDirty: _templateDraftIsDirty() }
+      })
+      expect(r.left, 'a failed save must NOT navigate away').toBe(0)
+      expect(r.stillDirty, 'the failed change must still be staged').toBe(true)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+
+test.describe('Template draft: nav-away routes other than the back button are guarded too', () => {
+  test('navigate() away from a dirty draft prompts, and Keep editing stays put with the draft intact', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] C3 Nav Guard' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] Y', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+      })
+      // Simulate a nav-tab tap / browser Back -- NOT _templateGoBack.
+      await page.evaluate(() => { navigate('workouts') })
+      const promptShown = await page.evaluate(() => document.getElementById('confirm-dialog')?.textContent || '')
+      expect(promptShown, 'a plain navigate() away from a dirty draft must prompt, not silently discard').toMatch(/unsaved/i)
+      await page.locator('#confirm-dialog button', { hasText: /keep editing/i }).click()
+      const r = await page.evaluate(() => ({ page: currentPage, stillDirty: _templateDraftIsDirty() }))
+      expect(r.page, 'Keep editing must not have navigated').not.toBe('workouts')
+      expect(r.stillDirty, 'the staged removal must still be there').toBe(true)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+
+test.describe('Template draft: a new exercise keeps its dropped position on Save', () => {
+  test('adding an exercise then moving it before Save lands it in the correct final position', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] C4 Position' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._exerciseDetailPicked = { name: '[E2E] New', id: null }
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+        // Move the new (last) row to the front.
+        const key = window._templateDraft.exercises[window._templateDraft.exercises.length - 1]._draftKey
+        _stageReorderExercise(key, -1)
+        _stageReorderExercise(key, -1)
+      })
+      await page.evaluate(() => saveTemplateDraft())
+      const dbOrder = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id).order('order_index')
+        return data.map(r => r.exercise_name)
+      }, setup.templateId)
+      expect(dbOrder, 'the new exercise must save at the position it was dropped, not appended at the end').toEqual(['[E2E] New', '[E2E] A', '[E2E] B'])
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+
+test.describe('Template draft: partial-failure recovery remaps ids across a fork', () => {
+  test('a pending delete surviving a fork is correctly recognized post-fork, not silently dropped either way', async ({ page }) => {
+    await loginAsPT(page)
+    // Fork setup identical to C1/"Save across a shared-master fork": template_id shared by TWO
+    // phase_workout slots, which is exactly what makes saveTemplateDraft's own
+    // _resolveEditableTemplateId call fork a clone with all-new exercise ids.
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] I1 Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single()
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, name: '[E2E] I1 Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      const { data: pw1 } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 }).select('id, template_id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 2 })
+      return { programId: prog.id, templateId: t.id, phaseWorkoutId: pw1.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, phaseWorkoutId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId })
+      }, setup)
+      const r = await page.evaluate(`(async () => {
+        // Stage BOTH deletes. The stub below lets the first delete call through for real (A
+        // succeeds) and makes the SECOND (B) fail -- so B is "pending" (never actually removed)
+        // at the point saveTemplateDraft's recovery block re-fetches the FORKED template's rows,
+        // which now carry brand-new post-fork ids.
+        const aKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] A')._draftKey
+        const bKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')._draftKey
+        _stageRemoveExercise(aKey)
+        _stageRemoveExercise(bKey)
+
+        let deleteCalls = 0
+        const realFrom = db.from.bind(db)
+        db.from = (tbl) => {
+          if (tbl !== 'workout_template_exercises') return realFrom(tbl)
+          const real = realFrom(tbl)
+          // Rebind every OTHER method explicitly -- a bare {...real} spread does not carry over
+          // insert/select/update at all (they live on the query-builder's prototype, not as the
+          // instance's own enumerable properties), which matters here because the FORK itself
+          // (_cloneSharedMasterTemplate) calls .insert() on this same table before the delete loop
+          // ever runs. Same pattern the existing partial-failure-recovery tests above already use.
+          return {
+            ...real,
+            select: real.select.bind(real),
+            insert: real.insert.bind(real),
+            update: real.update.bind(real),
+            delete: () => {
+              deleteCalls++
+              return deleteCalls === 1
+                ? real.delete()
+                : { eq: () => ({ eq: () => ({ select: () => Promise.resolve({ data: [], error: null }) }) }) }
+            },
+          }
+        }
+        try {
+          await saveTemplateDraft()
+        } finally {
+          db.from = realFrom
+        }
+        return {
+          stillDirty: _templateDraftIsDirty(),
+          exerciseNames: window._templateDraft.exercises.map(e => e.exercise_name),
+        }
+      })()`)
+      expect(r.stillDirty, 'the pending delete must still be staged for another attempt').toBe(true)
+      expect(r.exerciseNames, 'B is real and still exists in the DB (its delete failed) but must NOT reappear in the rebuilt draft -- it is still staged for removal, just in the post-fork id space').not.toContain('[E2E] B')
+
+      // Independently confirm B really does still exist in the DB (the delete genuinely failed,
+      // this isn't passing because B was actually deleted for real).
+      const forkedId = await page.evaluate(async (id) => {
+        const { data } = await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+        return data.template_id
+      }, setup.phaseWorkoutId)
+      const dbNames = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id)
+        return data.map(row => row.exercise_name)
+      }, forkedId)
+      expect(dbNames, 'B must still be a REAL row in the database -- this test is about recognizing a still-pending delete, not about it having actually succeeded').toContain('[E2E] B')
+    } finally {
+      await page.evaluate(async (s) => {
+        await db.from('programs').delete().eq('id', s.programId)
+        await db.from('workout_templates').delete().eq('name', '[E2E] I1 Session').eq('coach_id', currentUser.id)
+      }, setup)
+    }
+  })
+})
+
+test.describe('Template draft: Edit-template modal reads staged state, not the database', () => {
+  test('reopening Edit after staging a rename shows the staged name, not the original database name', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] I2 Original', description: null }).select('id').single()
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('et-name').value = '[E2E] I2 Staged Rename'
+        mk('et-desc', 'textarea').value = ''
+        _stageRenameTemplate()
+        // Remove the orphan staging elements -- otherwise they'd sit ahead of the real modal's own
+        // #et-name/#et-desc in document order (both created via document.body.appendChild), and
+        // getElementById would silently keep resolving to this stale orphan instead of the freshly
+        // mounted modal's field, making the assertion below pass regardless of what showEditTemplateModal
+        // actually renders.
+        document.getElementById('et-name')?.remove()
+        document.getElementById('et-desc')?.remove()
+      })
+      const nameValue = await page.evaluate(async (id) => {
+        document.getElementById('edit-template-modal')?.remove()
+        await showEditTemplateModal(id)
+        return document.getElementById('et-name')?.value
+      }, setup.templateId)
+      expect(nameValue, 'reopening Edit must show the STAGED name, not the original database name').toBe('[E2E] I2 Staged Rename')
+    } finally {
+      await page.evaluate(() => { document.getElementById('edit-template-modal')?.remove() })
+      await page.evaluate(async (id) => {
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})
+
+test.describe('Template draft: client-copy propagation prompt is pluralized', () => {
+  test('staging 2 changes on a master-program template with a real assigned client shows a "2 changes" summary, not the old fixed sentence', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      // Real client fixture, same pattern as tests/ledger-fixes-2026-08-02.spec.js's WTE-Probe test:
+      // a master template in program_phase_workouts, and the real client's OWN clone template
+      // referenced via client_programs/client_program_workouts -- exactly what
+      // _assignedCopiesForSession needs to populate copies.realClientIds/realClientNames.
+      const { data: clientRow } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).limit(1).single()
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] I3 Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      const { data: masterTmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] I3 Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: masterTmpl.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 })
+      const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: masterTmpl.id, week_number: 1 }).select('id').single()
+      const { data: cloneTmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: clientRow.id, name: '[E2E] I3 Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: cloneTmpl.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 })
+      const { data: cp } = await db.from('client_programs').insert({ client_id: clientRow.id, program_id: prog.id }).select('id').single()
+      await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: cloneTmpl.id, week_number: 1 })
+      return { programId: prog.id, phaseId: phase.id, templateId: masterTmpl.id, pwId: pw.id, cloneTmplId: cloneTmpl.id, cpId: cp.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, pwId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId: pwId })
+      }, { templateId: setup.templateId, pwId: setup.pwId, programId: setup.programId })
+      await page.evaluate(() => {
+        // Change 1: remove the pre-existing exercise. Change 2: add a new one.
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key)
+        window._exerciseDetailPicked = { name: '[E2E] New', id: null }
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+      })
+      await page.evaluate(() => saveTemplateDraft())
+      await page.waitForTimeout(400)
+      const modalText = await page.evaluate(() => document.getElementById('client-copy-modal')?.textContent || '')
+      expect(modalText, 'the client-copy prompt must appear for a real assigned client').toBeTruthy()
+      expect(modalText).toContain('2 changes')
+      expect(modalText, 'the old fixed singular sentence must be gone').not.toContain('Apply your change to their copies too?')
+    } finally {
+      await page.evaluate(() => { document.getElementById('client-copy-modal')?.remove() })
+      await page.evaluate(async (s) => {
+        await db.from('client_program_workouts').delete().eq('client_program_id', s.cpId)
+        await db.from('client_programs').delete().eq('id', s.cpId)
+        await db.from('workout_template_exercises').delete().eq('template_id', s.cloneTmplId)
+        await db.from('workout_templates').delete().eq('id', s.cloneTmplId)
+        await db.from('program_phase_workouts').delete().eq('id', s.pwId)
+        await db.from('workout_template_exercises').delete().eq('template_id', s.templateId)
+        await db.from('workout_templates').delete().in('name', ['[E2E] I3 Session']).eq('coach_id', currentUser.id)
+        await db.from('program_phases').delete().eq('id', s.phaseId)
+        await db.from('programs').delete().eq('id', s.programId)
+      }, setup)
+    }
+  })
+})
+
+test.describe('Template draft: deleting a dirty template does not raise a stale leave-prompt', () => {
+  test('deleteTemplate clears the draft so window._templateGoBack does not prompt for a template that no longer exists', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] I4 Delete Dirty' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] Z', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._templateCtx.backFn = () => { window._i4Left = (window._i4Left || 0) + 1 }
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageRemoveExercise(key) // dirty the draft, but never save it
+      })
+      // Fire-and-continue, same reasoning as the C2/leave-prompt tests: deleteTemplate awaits its
+      // own confirmDialog() click before doing anything, so this must not be awaited to completion.
+      await page.evaluate((id) => { deleteTemplate(id) }, setup.templateId)
+      await page.locator('#confirm-dialog button', { hasText: /^delete$/i }).click()
+      await page.waitForTimeout(500)
+      const r = await page.evaluate(() => ({
+        leftCount: window._i4Left || 0,
+        staleConfirmDialogText: document.getElementById('confirm-dialog')?.textContent || '',
+        draftIsNull: window._templateDraft === null,
+      }))
+      expect(r.staleConfirmDialogText, 'deleting a dirty template must not raise a stale "Unsaved changes" prompt for a template that no longer exists').toBe('')
+      expect(r.leftCount, 'navigation must proceed normally after delete, not get stuck behind a stale leave-prompt').toBe(1)
+      expect(r.draftIsNull, 'the draft must be cleared so a later save attempt cannot target the deleted row').toBe(true)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id)
+        await db.from('workout_templates').delete().eq('id', id)
+      }, setup.templateId)
+    }
+  })
+})

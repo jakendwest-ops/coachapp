@@ -702,10 +702,18 @@ test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-br
         // escapeHtml doesn't immediately follow `${t.description`. Verified against the real source.
         rawDescription: templateSrc.includes("t.description || (t.workout_template_exercises.length")
           || templateSrc.includes('`<p class="page-subtitle">${t.description}</p>`')
-          || templateSrc.includes('id="et-desc" rows="2" style="resize:vertical">${t.description || \'\'}</textarea>'),
+          // Task 14 (2026-09-13), I2: showEditTemplateModal now reads `meta.description` (staged
+          // draft when one matches, else the same DB fetch as before) rather than `t.description` --
+          // matches showEditTemplateExerciseModal's already-established draft-aware pattern. The sink
+          // did not move or disappear, just its variable name, so the raw-reintroduction check has to
+          // follow it under the new name or it silently stops covering this exact site.
+          || templateSrc.includes('id="et-desc" rows="2" style="resize:vertical">${t.description || \'\'}</textarea>')
+          || templateSrc.includes('id="et-desc" rows="2" style="resize:vertical">${meta.description || \'\'}</textarea>'),
         escapedGoalTitle: (dashboardSrc.match(/escapeHtml\((?:g|goal)\.title\)/g) || []).length,
         escapedMilestoneTitle: (dashboardSrc.match(/escapeHtml\(m\.title\)/g) || []).length,
-        escapedDescription: (templateSrc.match(/escapeHtml\(t\.description/g) || []).length,
+        // /escapeHtml\((?:t|meta)\.description/ for the same reason -- showEditTemplateModal's
+        // survivor is now escapeHtml(meta.description...), openTemplate's is still escapeHtml(t.description...).
+        escapedDescription: (templateSrc.match(/escapeHtml\((?:t|meta)\.description/g) || []).length,
         neutralised: escapeHtml('<img src=x onerror=alert(1)>').includes('&lt;img'),
       }
     })

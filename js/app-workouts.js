@@ -1521,7 +1521,11 @@ async function _templateGoBack() {
       // split (a future in-place edit on one would silently corrupt the other).
       window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(_toDraftRow), meta: { ...d.metaBaseline } }
     }
-    if (choice === 'save') await saveTemplateDraft()
+    if (choice === 'save') {
+      const result = await saveTemplateDraft()
+      if (result !== 'ok') return
+      await _waitForPropagationModalsToClear()
+    }
   }
   const ctx = window._templateCtx || {}
   if (ctx.backFn) {
@@ -1542,42 +1546,28 @@ async function _templateGoBack() {
   }
 }
 
+// Waits for whichever propagation modal saveTemplateDraft's own chain may have just mounted
+// (_showClientCopyPropagateModal / _showPropagateModal) to be dismissed, so a caller that
+// navigates right after Save doesn't have navigate()'s own modal-overlay sweep silently tear the
+// prompt down before the user ever answers it. Purely additive: does not change either modal's own
+// dismiss handlers, just waits from the outside for both known overlay ids to be gone -- same
+// MutationObserver technique _confirmLeaveTemplateDraft already uses for the identical problem.
+function _waitForPropagationModalsToClear(timeoutMs = 120000) {
+  const stillOpen = () => document.getElementById('client-copy-modal') || document.getElementById('propagate-modal')
+  if (!stillOpen()) return Promise.resolve()
+  return new Promise((resolve) => {
+    let done = false
+    const finish = () => { if (done) return; done = true; obs.disconnect(); clearTimeout(t); resolve() }
+    const obs = new MutationObserver(() => { if (!stillOpen()) finish() })
+    obs.observe(document.body, { childList: true })
+    const t = setTimeout(finish, timeoutMs)
+  })
+}
+
 async function openClientProgramsTab(clientId) {
   await openClient(clientId)
   const btn = document.querySelector('[onclick*="tab-programs"]')
   if (btn) btn.click()
-}
-
-// Swap two rows in the RENDERED list and re-arm the arrows, without going near the network.
-//
-// Returns the resulting order of exercise NAMES — which is exactly what reorder propagation needs,
-// since a sibling copy has its own row ids and the order of names is the only common ground. Returns
-// null when the move is impossible: off either end, or an id that is not on screen.
-function _reorderRowsInDom (exId, dir) {
-  const list = document.getElementById('tpl-ex-list')
-  if (!list) return null
-  const cards = [...list.querySelectorAll('.card')]
-  const idx = cards.findIndex(c => c.dataset.exId === exId)
-  const swapIdx = idx + dir
-  if (idx < 0 || swapIdx < 0 || swapIdx >= cards.length) return null
-
-  if (dir < 0) list.insertBefore(cards[idx], cards[swapIdx])
-  else list.insertBefore(cards[swapIdx], cards[idx])
-
-  // The arrows encode POSITION, so they have to follow the rows. Leave them and the top row keeps a
-  // live up arrow — one more tap and the exercise walks off the end of the list.
-  const after = [...list.querySelectorAll('.card')]
-  after.forEach((c, i) => {
-    const up = c.querySelector('[data-move="-1"]')
-    const down = c.querySelector('[data-move="1"]')
-    for (const [btn, off] of [[up, i === 0], [down, i === after.length - 1]]) {
-      if (!btn) continue
-      btn.disabled = off
-      btn.style.color = off ? 'var(--border)' : 'var(--text-muted)'
-      btn.style.cursor = off ? 'default' : 'pointer'
-    }
-  })
-  return after.map(c => c.dataset.exName || '')
 }
 
 // Stages a reorder into window._templateDraft — no database write. The real persistence happens
@@ -2048,15 +2038,15 @@ async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
       const { data: clientRecord } = await db.from('clients').select('coach_id').eq('id', _runner.clientId).single()
       return { coachId: clientRecord?.coach_id || currentUser.id, targetId: templateId }
     }
-    // PARALLEL, not sequential. coach_id is invariant across the fork: _cloneSharedMasterTemplate
-    // inserts the clone with `coach_id: tmpl.coach_id`, so reading it from the PRE-fork id gives the
-    // same answer as reading it from the clone — and can therefore start immediately rather than
-    // waiting for the resolve.
-    const [resolved, tmplRes] = await Promise.all([
-      _resolveEditableTemplateId(templateId),
-      db.from('workout_templates').select('coach_id').eq('id', templateId).single()
-    ])
-    return { coachId: tmplRes?.data?.coach_id || currentUser.id, targetId: resolved.templateId }
+    // No _resolveEditableTemplateId call here, deliberately: staging writes nothing to the
+    // database, so there is nothing yet to isolate by forking. saveTemplateDraft is the ONLY place
+    // that call may run (Global Constraint: exactly once per Save) -- calling it here too forked
+    // the template the moment the picker opened, before anything was staged or saved, leaving
+    // Save's own later resolve targeting a DIFFERENT (already-forked) template than this picker
+    // session staged an exercise into. Matches showEditTemplateExerciseModal's already-correct
+    // pattern: pass templateId straight through, resolve coachId via the same role-based helper.
+    const coachId = await _resolveTemplateOwnerCoachId()
+    return { coachId, targetId: templateId }
   })()
 
   // Re-enable the runner's buttons once resolution settles, either way. Without the catch here the
@@ -2530,7 +2520,7 @@ function _renderSaveWorkoutButton() {
 
 async function saveTemplateDraft() {
   const d = window._templateDraft
-  if (!d || !_templateDraftIsDirty()) return
+  if (!d || !_templateDraftIsDirty()) return 'ok'
 
   // Resolve the real write target EXACTLY ONCE for this whole batch. Calling
   // _resolveEditableTemplateId per queued change would risk forking a SECOND clone of a still-shared
@@ -2540,7 +2530,7 @@ async function saveTemplateDraft() {
   const coachId = await _resolveTemplateOwnerCoachId()
   if (!(await _verifyTemplateOwnership(targetId, coachId))) {
     showToast('Save failed — template not found or permission denied.', 'warn')
-    return
+    return 'refused'
   }
 
   const diff = _diffTemplateDraft(d)
@@ -2576,6 +2566,20 @@ async function saveTemplateDraft() {
     const failures = await _propagateReorderToTemplates(diff.reorder, [targetId])
     if (failures) { failedAt = { step: 'reorder' } }
     else changes.push({ op: 'reorder', names: diff.reorder.names })
+  }
+
+  // A newly-inserted exercise has no baseline position to compare against, so
+  // _diffTemplateDraft's reorder detection (survivors only) never sees where the user actually
+  // dropped it -- the insert loop above always appends it last. Sync the target template's OWN
+  // row order to the draft's current full sequence whenever an insert happened AND diff.reorder
+  // itself didn't already fire (when it did fire, diff.reorder.names is already the draft's full
+  // sequence including the new row's correct position, so a second call here would be redundant).
+  // This does not add a synthetic 'reorder' entry to `changes` -- sibling/client-copy propagation
+  // of the new exercise is already handled by its own 'add' entry; this only corrects the target
+  // template's own row order.
+  if (!failedAt && diff.toInsert.length && !diff.reorder) {
+    const orderFailures = await _propagateReorderToTemplates({ names: d.exercises.map(e => e.exercise_name) }, [targetId])
+    if (orderFailures) { failedAt = { step: 'reorder' } }
   }
 
   if (!failedAt && diff.rename) {
@@ -2616,11 +2620,11 @@ async function saveTemplateDraft() {
       const reorderDone = changes.some(c => c.op === 'reorder')
       const renameDone = changes.some(c => c.op === 'rename')
 
-      const pendingDeleteIds = diff.toDelete.slice(deleteDone)
+      const pendingDeleteIds = diff.toDelete.slice(deleteDone).map(remapId)
       window._templateDraft.exercises = window._templateDraft.exercises.filter(e => !pendingDeleteIds.includes(e.id))
 
       for (const u of diff.toUpdate.slice(updateDone)) {
-        const row = window._templateDraft.exercises.find(e => e.id === u.id)
+        const row = window._templateDraft.exercises.find(e => e.id === remapId(u.id))
         if (row) Object.assign(row, u.row)
       }
 
@@ -2645,12 +2649,13 @@ async function saveTemplateDraft() {
       _renderSaveWorkoutButton()
     }
     showToast(`${succeededCount} change${succeededCount === 1 ? '' : 's'} saved, ${failedAt.step} failed — try Save again`, 'warn')
-    return
+    return 'failed'
   }
 
   window._lastExerciseChanges = changes
   await openTemplate(targetId, d.ctx)
   if (changes.length) await _checkClientPlanPropagation(targetId, d.ctx, changes)
+  return 'ok'
 }
 guardReentry('saveTemplateDraft')  // double-press could double-fork a shared template and double-write every staged change; see tests/reentry-guard-2026-08-28.spec.js
 
@@ -2777,41 +2782,10 @@ async function _assignedCopiesForSession(masterTemplateIds) {
   return out
 }
 
-// Orchestrates what happens after a program/plan workout is edited (add/edit/delete of an exercise).
-// (#2) First keep already-assigned copies of THIS session in sync so the edit shows on the calendar
-//      without re-assigning: the user's own solo copies update silently; real clients' copies update
-//      only after a confirm. (#3) Then offer to apply the same change to other same-named sessions.
-// Shared by saveExerciseToTemplate/saveEditTemplateExercise/deleteTemplateExercise. Each of those
-// three used to end with a bare, un-awaited, uncaught _checkClientPlanPropagation(targetId) call —
-// re-rendering #template-exercise-list was entirely delegated to that chain's own eventual
-// openTemplate() call, so ANY rejection anywhere inside it (a network blip, an RLS path that
-// behaves differently on a real account than a clean test fixture) silently left the stale
-// pre-edit list on screen with no error, reachable only by a manual reload. Reported live 3 times
-// (2026-07-13, -22, -28) before this was root-caused. Now the re-render is immediate and
-// unconditional; propagation still runs afterward but a failure surfaces a toast instead of
-// vanishing. One helper for all three call sites so they can't drift apart again (2026-07-29).
-async function _afterTemplateExerciseSave(targetId) {
-  // Snapshot BEFORE the await — window._templateCtx/window._lastExerciseChange are single global
-  // slots, and openTemplate() below does a real network round-trip. If the coach navigates to a
-  // DIFFERENT client's plan during that gap (a completely normal fast click), that navigation's own
-  // openTemplate() call overwrites window._templateCtx before this save's propagation check would
-  // otherwise re-read it — causing it to sync/prompt-to-update against the wrong client. Passing an
-  // explicit snapshot through keeps propagation acting on what THIS save actually captured. Found by
-  // multi-agent review, 2026-07-29.
-  const ctxSnapshot = window._templateCtx
-  const changeSnapshot = window._lastExerciseChange
-  await openTemplate(targetId, ctxSnapshot)
-  try {
-    await _checkClientPlanPropagation(targetId, ctxSnapshot, changeSnapshot)
-  } catch (err) {
-    log.error('_afterTemplateExerciseSave', 'propagation failed', err)
-    showToast('Saved — syncing to assigned plans failed, refresh to check', 'warn')
-  }
-}
-
-// ctxOverride/changesOverride let _afterTemplateExerciseSave pass a pre-await snapshot through (see
-// its comment). The other caller (_continueAfterClientCopy, a later independent modal-button click)
-// omits them, correctly falling back to whatever is live at that fresh moment.
+// ctxOverride/changesOverride let a caller pass an explicit snapshot through instead of this
+// function re-reading the live globals (saveTemplateDraft does this, passing d.ctx/changes). The
+// other caller (_continueAfterClientCopy, a later independent modal-button click) omits them,
+// correctly falling back to whatever is live at that fresh moment.
 async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverride) {
   const ctx = ctxOverride || window._templateCtx
   const changes = changesOverride !== undefined ? changesOverride : window._lastExerciseChanges
@@ -2840,7 +2814,7 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverr
     }
     if (copies.realClientIds.length) {
       window._pendingClientCopyProp = { changes, ids: copies.realClientIds }
-      _showClientCopyPropagateModal(copies.realClientNames, templateId)
+      _showClientCopyPropagateModal(copies.realClientNames, templateId, changes)
       return
     }
   }
@@ -2849,9 +2823,20 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverr
 }
 
 // (#2) prompt shown when real clients have the edited session assigned.
-function _showClientCopyPropagateModal(clientNames, templateId) {
+function _showClientCopyPropagateModal(clientNames, templateId, changes) {
   const names = clientNames.length <= 3 ? clientNames.join(', ') : `${clientNames.slice(0, 3).join(', ')} +${clientNames.length - 3} more`
   const n = clientNames.length
+  // Same OP_LABEL shape _propagateModalHtml (Task 9) uses, duplicated rather than shared: the two
+  // prompts serve different audiences (this one authorizes writing into a REAL CLIENT's plan, that
+  // one a coach's own sibling sessions) and their single-change wording already differs in ways a
+  // shared helper would need to parameterize -- not worth touching _propagateModalHtml's own
+  // already-tested, byte-identical-to-master wording for this fix.
+  const OP_LABEL = { add: c => `${c} added`, update: c => `${c} updated`, delete: c => `${c} removed`, rename: () => 'renamed', reorder: () => 'reordered' }
+  const summary = changes.length === 1
+    ? (changes[0].op === 'rename' ? 'Only the name and description will be applied.'
+       : changes[0].op === 'reorder' ? 'Only the order will be applied.'
+       : 'Only the exercise you changed will be applied.')
+    : `${changes.length} changes: ${changes.map(c => OP_LABEL[c.op] ? OP_LABEL[c.op](c.matchName || '') : c.op).join(' · ')}`
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'client-copy-modal'
@@ -2861,7 +2846,7 @@ function _showClientCopyPropagateModal(clientNames, templateId) {
         <h2 class="modal-title">Update assigned clients?</h2>
         <button class="modal-close" onclick="_continueAfterClientCopy('${templateId}',false)">✕</button>
       </div>
-      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px"><strong>${n}</strong> client${n === 1 ? ' has' : 's have'} this workout assigned (${escapeHtml(names)}). Apply your change to their copies too?</p>
+      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px"><strong>${n}</strong> client${n === 1 ? ' has' : 's have'} this workout assigned (${escapeHtml(names)}). ${escapeHtml(summary)}</p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="_continueAfterClientCopy('${templateId}',false)">Not now</button>
         <button class="btn-primary" onclick="_continueAfterClientCopy('${templateId}',true)">Update their copies</button>
@@ -3404,7 +3389,14 @@ async function _resolveEditableTemplateId(templateId, exerciseId = null) {
 }
 
 async function showEditTemplateModal(id) {
-  const { data: t } = await db.from('workout_templates').select('*').eq('id', id).single()
+  const d = window._templateDraft
+  let meta
+  if (d && d.templateId === id) {
+    meta = d.meta
+  } else {
+    const { data: t } = await db.from('workout_templates').select('*').eq('id', id).single()
+    meta = t
+  }
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'edit-template-modal'
@@ -3416,11 +3408,11 @@ async function showEditTemplateModal(id) {
       </div>
       <div class="field">
         <label class="field-label">Name</label>
-        <input class="field-input" id="et-name" value="${escapeHtml(t.name)}">
+        <input class="field-input" id="et-name" value="${escapeHtml(meta.name)}">
       </div>
       <div class="field">
         <label class="field-label">Description</label>
-        <textarea class="field-input" id="et-desc" rows="2" style="resize:vertical">${escapeHtml(t.description || '')}</textarea>
+        <textarea class="field-input" id="et-desc" rows="2" style="resize:vertical">${escapeHtml(meta.description || '')}</textarea>
       </div>
       <p class="modal-error" id="et-error"></p>
       <div class="modal-footer">
@@ -3487,6 +3479,7 @@ async function deleteTemplate(id) {
   // In particular `backTo:'client'` is a SENTINEL, not a page: navigate('client') hits the default
   // "Page not found". _templateGoBack translates it via openClientProgramsTab(); passing it to
   // navigate() (as the first cut of this fix did) is a regression the pre-push review caught.
+  window._templateDraft = null
   window._templateGoBack()
 }
 
