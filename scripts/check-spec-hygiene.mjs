@@ -39,8 +39,13 @@ import { readBaseline } from './lib/baseline.mjs'
 const REPO = process.env.SPEC_REPO || join(dirname(fileURLToPath(import.meta.url)), '..')
 const TESTS = join(REPO, 'tests')
 
-// Pinned AT the 2026-09-04 measurement, never above it.
-const BASELINE = readBaseline('SPEC_HYGIENE_BASELINE', 348)
+// Pinned AT the 2026-09-04 measurement, raised by exactly 1 on 2026-09-15 for a genuine, checked
+// exception: tests/template-draft-save-2026-09-13.spec.js:1188 (`real.delete()`) is a fault-injection
+// mock forwarding to the REAL Supabase builder for its first call only -- the caller under test
+// (saveTemplateDraft) chains its own `.eq().eq().select()` onto the returned builder, so this line is
+// not an unaccounted teardown delete. Every other new occurrence in that file (63 of them) got a real
+// `.select('id')` instead of raising this number.
+const BASELINE = readBaseline('SPEC_HYGIENE_BASELINE', 349)
 
 if (!existsSync(TESTS)) {
   console.log('  no tests/ directory — refusing to report a count against nothing.')
