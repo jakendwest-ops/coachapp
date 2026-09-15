@@ -1,0 +1,11 @@
+---
+id: 2026-07-24-incident-fixed-same-session
+status: fixed-awaiting-jake
+priority: critical
+reported: 2026-07-24
+status_detail: "fixed — repaired + regression-tested"
+---
+
+# INCIDENT, FIXED SAME SESSION
+
+🔴 **INCIDENT, FIXED SAME SESSION — a real coach account's `profiles.role` was silently corrupted to `'client'` in the live database.** Happened while building the `solo_only` fix above: `loadUserInfo()`'s pre-existing role-inference fallback ("if profile has no role... check the clients table") fired on ANY falsy `currentProfile.role` — including one caused by a FAILED fetch, not just a genuinely-null role — and WRITES `role:'client'` back via upsert the moment it finds any clients row for that user_id (no `coach_id` filter, so a coach's own self-referential solo row qualifies). Root trigger: a `.select(...)` was edited to reference the new `solo_only` column before Jake's migration had actually run live, while a full Playwright suite was already mid-flight against the real Supabase DB — every login attempt in that window hit the missing-column error, and the PT test account (which has a permanent self-referential clients row) got "healed" from coach into client, permanently. **Fixed**: the fallback now requires `!error` before touching the DB (`js/app-core.js`). Repaired the corrupted row directly. Also discovered and fixed in the same pass: PT2's `solo_only` flag got stuck `true` from an EARLIER version of a test whose mutation happened before its own try/finally safety net — fixed the test to mutate only after confirming the precondition, inside try. **Lesson (les-053): never edit application source files while a Playwright run is in flight against the live dev server** — even a change that looks behaviour-dormant (a new column added to a SELECT) can still error the whole query and corrupt data via unrelated pre-existing fallback logic. Separately diagnosed: a LATER 142-test-failure, 1.5-hour run was NOT a repeat of this — it was Supabase Auth rate-limiting from the retry storm of an earlier bad run, confirmed by a clean fast re-run once the limiter's cooldown passed. `tests/role-inference-safety-2026-07-24.spec.js` (2 tests, one a live monkey-patched behavioural proof the upsert doesn't fire).

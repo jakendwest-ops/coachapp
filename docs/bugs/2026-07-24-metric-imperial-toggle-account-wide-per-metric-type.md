@@ -1,0 +1,11 @@
+---
+id: 2026-07-24-metric-imperial-toggle-account-wide-per-metric-type
+status: fixed-awaiting-jake
+priority: medium
+reported: 2026-07-24
+status_detail: "fixed — awaiting Jake"
+---
+
+# metric/imperial toggle, account-wide + per-metric-type
+
+✅ **SHIPPED LIVE 2026-07-25 (23a2493) — metric/imperial toggle, account-wide + per-metric-type.** Built exactly to the scope confirmed below: `profiles.weight_unit`/`jump_height_unit`/`cardio_distance_unit`, storage stays canonical, conversion only at display/entry boundaries. Every prescription/entry/history site rewired (builder, runner incl. all 3 parallel 1RM-entry flows, Progress page, program-assignment %1RM checklist, bodyweight forms) + a new Settings "Units" card. Multi-agent review caught 5 real issues pre-push (a missed post-session-1RM modal, 4 sites that dropped forced one-decimal display, a triplicated conversion constant) — all fixed, re-verified green. Red→green `tests/units-2026-07-24.spec.js` (6 tests). Full detail in the top-of-file entry and LOG.md 2026-07-25. **Needs your eyes on the actual numbers** — a known kg weight showing the right lb value, a known cm height showing the right inches, live on your own account. — (orig) **SCOPED 2026-07-24 — metric/imperial: REAL NEED CONFIRMED, per-metric-type not single global toggle.** Asked Jake directly (les-039 — "is there a real user, or is this pre-emptive"): **it's him.** He hits it in the builder wanting to log weight in KG but jump height in INCHES **at the same time** — which itself overturns the 07-23 assumption of "ONE global unit setting" (a binary metric/imperial switch can't express "kg + inches" simultaneously). Revised scope, confirmed with Jake: **account-wide** setting on `profiles` (not personal-view-only — same person types numbers in both coach and solo views) with **independent per-metric-type units**: weight (kg/lb), jump height (cm/in), cardio distance (km/mi) all in scope now; jump distance explicitly deferred — no friction hit there yet, don't build ahead of the pain. Storage stays canonical (kg/cm/metres) regardless — same formatter-boundary principle as before, just parameterized per metric type instead of one binary flag. (orig-orig) Jake, 2026-07-23: chose ONE global unit setting over a per-field toggle — **superseded above**, kept for history.

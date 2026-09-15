@@ -1,14 +1,38 @@
 # CoachApp — project brief for Claude Code
 
-Lean grounding file, auto-loaded every session. **The system of record is the Vault**
-(`C:\Users\jaken\Claude\Vault\projects\CoachApp` — STATUS/LOG/CRITICAL/roadmap). Run `/hello-claude`
-for the full briefing. **If this file and the Vault ever disagree, the Vault wins.** Keep this a
-cheat-sheet, not a second manual — don't grow it into a copy of the Vault.
+Lean grounding file, auto-loaded every session — keep it a cheat-sheet, not a second manual. Don't
+grow this file into a copy of `docs/*.md` or the Vault; point to them instead.
+
+## Repository source of truth
+
+**Resolved 2026-09-15: this repo replaces the Vault.** Jake's explicit decision, ending what had
+been an open question — the repo, not the Vault and not conversational memory, is CoachApp's
+system of record going forward. `docs/*.md` is authoritative for vision, architecture, schema,
+decisions, technical debt, and the bug ledger (`docs/bugs/`, migrated wholesale from the Vault).
+
+**Conversational memory is never authoritative.** Never rely on what a previous session said
+happened, what you remember doing, or an unverified summary carried over in context — if `docs/`
+has an answer, read the file.
+
+**Transitional caveat, real and not yet closed:** the Vault's own tracking machinery
+(`os-lint`, `/hello-claude`, `/save`) is not yet repointed at `docs/` — it still reads/writes the
+Vault's copies. Until that's done (a deliberately separate, careful step — it touches shared
+infrastructure in `~/.claude` that also serves another project, PTHub; see
+`docs/archive/status-continuity-2026-09-08.md` and `docs/decisions.md`), **file new bugs in
+`docs/bugs/` AND tell whoever runs `os-lint` that it's still watching a copy that's no longer being
+updated.** The Vault folder itself has not been deleted — it's retained as a historical archive
+(most of it is now duplicated into `docs/archive/` anyway) pending Jake's own decision on its fate.
+
+**No more naming collision:** `docs/roadmap.md` was rewritten from the Vault's real `roadmap.md`
+2026-09-15 (an earlier version of this file was built on inference, believing the Vault was
+unreachable — it wasn't). The Vault's copies of `roadmap.md`/`STATUS.md`/`CRITICAL.md`/etc. are now
+historical snapshots, not a second live source.
 
 ## What this is
 
 A web app for personal trainers to manage clients and build / assign / track workout programmes.
-Solo-built by Jake — a PT, and the app's primary user. Beta 31 July 2026.
+Solo-built by Jake — a PT, and the app's primary user. Beta 31 July 2026 (possibly stale — see
+`docs/vision.md`'s Requires Validation; not corrected here without Jake's confirmation).
 Live: https://jakendwest-ops.github.io/coachapp
 
 ## Stack — do NOT assume otherwise
@@ -30,7 +54,7 @@ Live: https://jakendwest-ops.github.io/coachapp
 ## The 9 modules (`js/`)
 
 Each has its own `?v=N` cache-bust on its `<script>` tag in `index.html` — **bump the version of any
-module you change**, in the same commit.
+module you change**, in the same commit. Full module map + data layer: `docs/architecture.md`.
 
 - **app-core** — auth, app shell, routing, shared helpers (`escapeHtml`/`escapeAttr`/`mountModal`, the
   `db` client, role + client-record resolution like `_getCurrentClientId`).
@@ -42,6 +66,16 @@ module you change**, in the same commit.
 - **app-runner** — the in-gym workout logger (strength table + wizard, rest timer, session autosave).
 - **app-progress** — My Progress (body weight, personal bests, cardio, charts).
 - **starter-content** — new-coach first-login seed (~40 exercises + a sample workout + a sample programme).
+
+## Session startup
+
+Run `/hello-claude` first — it boots the preview server and scans for bugs. **Note the transitional
+caveat above: it still reads Vault paths, which are now historical snapshots, not live.** For
+anything about current priorities/risks/bugs, prefer:
+
+- `docs/session-context.md` — priorities, risks, immediate next actions (point-in-time snapshot)
+- `docs/current-sprint.md` — the current release cycle's in-flight state
+- `docs/bugs/` — the live bug ledger
 
 ## Rules that must not break (also enforced by hooks — this file only describes them)
 
@@ -57,14 +91,83 @@ module you change**, in the same commit.
   writes the marker that clears it. `checks.sh` (pre-push hook) enforces
   column names, query scoping, cache-bust, PII-in-logs, and duplicate functions on every push.
 - **The pre-push Playwright gate is a SMOKE gate, not the suite** — `runner.spec.js` +
-  `solo-account.spec.js` only, **57 of 523 tests**. Run `npm test` yourself before any push touching a
-  module you have not hand-tested; the gate will not catch it. A spec outside the gate sat RED for 3
-  days across ~4 deploys and nothing noticed. Widening it was tried and reverted on 2026-08-20 (the
-  glob silently no-ops, and the cross-tenant probes aren't cleanup-safe at push frequency) — see LOG.
+  `solo-account.spec.js` only, **~59 of ~757 tests** (grep-based `test(` counts, verified 2026-09-15;
+  supersedes the previously-cited "57 of 523" figure — see `docs/architecture.md` for how this was
+  checked). Run `npm test` yourself before any push touching a module you have not hand-tested; the
+  gate will not catch it. A spec outside the gate sat RED for 3 days across ~4 deploys and nothing
+  noticed. Widening it was tried and reverted on 2026-08-20 (the glob silently no-ops, and the
+  cross-tenant probes aren't cleanup-safe at push frequency) — see LOG and `docs/decisions.md`.
 - **No PII in `log.*` calls** — ids and dates only; never names, emails, weights, or health values.
+
+Development work should also follow `docs/architecture.md` for module boundaries, the data layer,
+and CI/CD — don't re-derive these by re-reading the codebase each session.
+
+## Documentation maintenance
+
+Keep `docs/*.md` current as a side effect of the commit that makes them stale, not as a separate
+pass:
+
+| File | Update when |
+|---|---|
+| `docs/architecture.md` | a module is added/removed/majorly restructured |
+| `docs/roadmap.md` | priorities shift, or a release is cut |
+| `docs/current-sprint.md` | at each release cut (`scripts/release.mjs`) |
+| `docs/session-context.md` | at natural session checkpoints — light touch, not every session |
+| `docs/handover.md` | when enough of the above changes that a fresh reviewer's summary would mislead |
+
+None of the above has an enforced check yet (`docs/technical-debt.md` names this as a real
+maintainability gap) — this table is the convention until one exists. Don't let that become an
+excuse to skip it; the whole point of these files is to not rely on memory.
+
+### Decision logging
+
+Record a decision in `docs/decisions.md` the moment a significant, hard-to-reverse choice is made —
+deploy/release process changes, review-timing changes, stack-level choices, anything a future
+session might otherwise accidentally re-litigate or reverse. One dated entry: what, why, what
+alternative was rejected if relevant. Append-only, reverse-chronological, no per-decision files.
+
+### Technical debt tracking
+
+Live bugs live in `docs/bugs/` (one file per bug, YAML frontmatter — `status`, `priority`,
+`reported`, `status_detail`). **Intake rule:** the moment Jake reports a bug, it becomes a file —
+before investigation starts. **Closure rule:** a Jake-reported item closes only on (a) Jake
+confirming it, or (b) a test that went red before the fix and green after — never by inference,
+never because a commit message claimed it. `docs/technical-debt.md` is for *patterns* (schema gaps,
+test-gate coverage, process decay); `docs/backlog.md` is a periodically-refreshed count snapshot
+over `docs/bugs/`. If a number is going to be repeated in more than one `docs/*.md` file, put it in
+exactly one of them and link to it from the rest — three copies of the same OS-LINT snapshot
+already happened once and needed cleanup, and a stale ledger status (GDPR consent capture marked
+`deferred` for a month after 5 of 6 steps shipped) was caught during the 2026-09-15 migration
+precisely because two places disagreed.
+
+## End-of-session review
+
+Before ending a working session, review what changed and **recommend** (don't silently make)
+updates to:
+
+- `docs/session-context.md` — if priorities/risks shifted
+- `docs/roadmap.md` — if priorities shifted
+- `docs/current-sprint.md` — if a release was cut
+- `docs/decisions.md` — if a significant choice was made
+- `docs/technical-debt.md` — if a debt pattern was introduced, resolved, or newly understood
+- `docs/handover.md` — if enough of the above changed that its summary would now mislead a reviewer
+
+This is separate from, and does not replace, the Vault's own `/save` end-of-session ritual for
+`STATUS.md`/`LOG.md`.
 
 ## Where the real docs live
 
-Vault: `STATUS.md` (live state + bug ledger), `LOG.md` (history), `CRITICAL.md` (infra/security/GDPR),
-`roadmap.md`. Skills + the `os-lint` health check live in `~/.claude`. Start any real session with
-`/hello-claude`.
+**Repo (`docs/*.md`, the source of truth since 2026-09-15):** `vision.md`, `roadmap.md`,
+`schema.md`, `critical.md`, `backlog.md`, `current-sprint.md`, `architecture.md`, `decisions.md`,
+`technical-debt.md`, `session-context.md`, `handover.md`, plus the live bug ledger in `docs/bugs/`
+(227 files as of the migration). `docs/archive/` holds full historical material migrated verbatim
+from the Vault (`LOG.md`, the full pre-migration `STATUS.md`/`roadmap.md`, the 2026-08-12
+architecture audit, and other point-in-time audits) — read it for detail/traceability, don't treat
+it as current. See `docs/handover.md` for how the live docs relate to each other. Every file carries
+its own "Requires Validation" section; treat unmarked claims as checked, marked ones as open.
+
+**Vault (`C:\Users\jaken\Claude\Vault\projects\CoachApp`) — now a historical archive, not live.**
+Retained, not deleted; see the transitional caveat above for what still reads it and why.
+
+Skills + the `os-lint` health check live in `~/.claude`. Start any real session with `/hello-claude`
+(subject to the transitional caveat above).

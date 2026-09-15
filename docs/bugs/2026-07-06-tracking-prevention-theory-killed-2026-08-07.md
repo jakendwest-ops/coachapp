@@ -1,0 +1,11 @@
+---
+id: 2026-07-06-tracking-prevention-theory-killed-2026-08-07
+status: open
+priority: high
+reported: 2026-07-06
+reported_detail: re-measured 2026-08-05
+---
+
+# TRACKING-PREVENTION THEORY KILLED 2026-08-07
+
+**🔴 TRACKING-PREVENTION THEORY KILLED 2026-08-07 — do not re-test it, do not re-propose it.** The 2026-08-05 row below proposed Edge Tracking Prevention as the leading candidate; the 2026-08-07 session tested it properly and found it dead on two independent checks: (1) ran the real repro in actual Microsoft Edge via Playwright `channel:'msedge'` (confirmed real Edge, `Edg/151`) — **zero** Tracking Prevention console messages, because Playwright's automation profile doesn't apply it, meaning this class of bug can never be reproduced from this environment at all, a real limitation now confirmed rather than assumed; (2) Jake ran a diagnostic in his OWN Edge console and returned `localStorage: "OK"`, `sessionTokenInStorage: true` — storage is not blocked, full stop. This specific Workouts-page/template-save pairing is still MEASURED-FAST-BUT-UNEXPLAINED (see below) — but the SAME shape of complaint against the Programs builder (openProgram slowness) WAS root-caused and fixed 2026-08-07 (see the row below this one): an uncapped, un-limited reuse-pool query re-fetched on every page load and every "Back to program" press, sized on Jake's real account at 391ms/391ms-times-however-many-edits-in-one-visit. **Worth re-opening this row with the SAME lens** (an eager, unbounded, repeatedly-re-paid query) rather than any storage/network theory — not yet done, flagged for next pickup. — (prev, 2026-08-05, superseded by the kill above) **Still a slight delay moving to the Workouts page.** ⚠️ **RE-OPENED — originally reported 2026-07-06 and closed on a GUESS** (blamed the unused heavy templates query, then the 2013-template debris). Neither was proven; Jake still feels it with only **1 template** on screen (see console: `renderWorkoutTemplates ✓ loaded 1 templates`). Candidates: sequential awaits in the render chain, the auth/profile bootstrap, or Edge's "Tracking Prevention blocked access to storage" (×12 in his console — may be throttling Supabase's localStorage session reads).

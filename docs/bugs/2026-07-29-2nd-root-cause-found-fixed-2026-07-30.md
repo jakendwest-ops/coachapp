@@ -1,0 +1,13 @@
+---
+id: 2026-07-29-2nd-root-cause-found-fixed-2026-07-30
+status: confirmed
+closed_by: "clause (b) — ledger-fixes-2026-07-29.spec.js + ledger-fixes-2026-07-30.spec.js ran GREEN 2026-08-20 in a serialized 192-test run; red-before is recorded in this file's body. Closed on test evidence, NOT on a Jake confirmation."
+priority: medium
+reported: 2026-07-29
+reported_detail: re-reported 2026-07-30
+status_detail: "fixed — awaiting Jake"
+---
+
+# 2ND ROOT CAUSE FOUND + FIXED 2026-07-30
+
+✅ **2ND ROOT CAUSE FOUND + FIXED 2026-07-30 — the 2026-07-29 fix was real but Jake re-reported the exact same symptom the next session ("full body > runner > depth jump does not show any previous exercise history"), and this time a controlled live experiment (log a real jump set, relaunch, inspect the fetch) proved the fetch→render pipeline itself DOES work end-to-end for ordinary data — so the gap had to be a different filter, not the one fixed 2026-07-29.** Found by the multi-agent review while auditing the SAME session's falsy-zero fix for jump height/distance (below): `fetchRunnerLastSession`'s own set filter — `s.weight_kg || s.reps_achieved || s.height_cm || s.distance_m` — is a truthy check, so a jump set logged with `height_cm: 0` and no `reps_achieved` (reps aren't required to log a jump) is `0 || null || 0 || null` = **excluded entirely**, even though it saved correctly. This is very likely the actual mechanism Jake hit — a Depth Jump set logged at or near 0cm simply vanished from "last session" upstream of the ghost-text render. Fixed with the same `_hasNumVal` helper as the sibling fix. Red→green `tests/ledger-fixes-2026-07-30.spec.js` (A2-cont). **Needs your eyes — please re-check Depth Jump specifically; if it's still not showing after this, the next step is checking your actual data (does the exercise have 20+ more recent sessions logged, pushing it outside the "last 20 logs" fetch window; or a name/exercise_id mismatch) rather than another guess.** — (orig 2026-07-29 fix, real but addressed a different part of the same feature)** — `fetchRunnerLastSession`'s `select()` never included `height_cm`/`distance_m` (only `weight_kg`/`reps_achieved`) — jump sets never write weight_kg, so their last-session data was silently unfetchable regardless of what's in the DB. Same "stale select allowlist" class as les-036. Widened the select + the post-fetch filter + `renderStrengthTable`'s jump ghost-text fallback (previously only ever showed the prescribed target, never fell back to last session the way weight_reps already does). Red→green `tests/ledger-fixes-2026-07-29.spec.js` (A2). — **Previous Depth Jump session history did not appear in the runner during a workout.** Jake, live.

@@ -1,0 +1,11 @@
+---
+id: 2026-08-01-solo-only-accounts-can-never-see-their-seeded-starter-conten
+status: fixed-awaiting-jake
+priority: high
+reported: 2026-08-01
+status_detail: "fixed — awaiting Jake"
+---
+
+# solo_only accounts can never see their seeded starter content
+
+**`solo_only` accounts can never see their seeded starter content — confirmed via direct code trace, not speculative.** Two independent causes: (1) `app-core.js:303` seeds off the raw DB role, but `starter-content.js:84` re-checks the live (by-then-reassigned-to-'solo') role and bails immediately — seeding silently never runs; (2) even if it ran, every seeded artifact is written `is_personal: false`, but a `solo_only` account's reads always filter `is_personal = true` (role is permanently 'solo') — structurally invisible either way. Needs the seeder to know it's seeding for a `solo_only` account and flip `is_personal` accordingly, plus the role-check fix — a real multi-part fix, not a quick patch. Affects the one real `solo_only` account today. — ✅ **CODE-VERIFIED FIXED 2026-08-10 — both original causes are gone.** (1) The role-check race: `app-core.js:408` now gates seeding on the RAW fetched role and accepts a role of either coach OR solo, while `starter-content.js:97` no longer bails on a reassigned role — it accepts `isSoloAccount`, computed at `:96` as (role is solo) OR (role is coach AND `solo_only` is set), AND NOT `window._masterAccount`. That last guard means a master account merely *parked* on the solo view is never mistaken for a native solo account. (2) The hardcoded `is_personal:false`: all three seed writes now use `is_personal: isSoloAccount` (`starter-content.js:106`, `:121`, `:139`), so a solo account's seeded content is written where its own reads can see it. The `solo_only` half of that OR also keeps it correct regardless of whether the SQL migration has been run yet, which the code comments explain. **Still needs Jake's eyes, not closed:** log into the real account and confirm the ~40 exercises, example workout and example program actually appear. Note `starter_seeded` was already true on that account before the migration, so the seeder will not re-run — if it looks empty, the fix is a targeted `UPDATE` flipping that account's existing starter rows to `is_personal:true`, not a re-seed.
