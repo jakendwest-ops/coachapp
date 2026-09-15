@@ -55,8 +55,8 @@ test.describe('Template draft: creation', () => {
       expect(indep.sameArray, 'exercises[0].sets_json and exercisesBaseline[0].sets_json must not be the same array reference').toBe(false)
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -87,8 +87,8 @@ test.describe('Template draft: rendering', () => {
       expect(r.listText).toContain('[E2E] Squat RENAMED IN DRAFT ONLY')
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
     // The database was never touched by the mutation above — it lived only in the draft.
@@ -146,7 +146,7 @@ test.describe('Template draft: staged exercise mutators', () => {
       }, setup.templateId)
       expect(dbRows, 'nothing was written to the database').toBe(0)
     } finally {
-      await page.evaluate(async (id) => { await db.from('workout_templates').delete().eq('id', id) }, setup.templateId)
+      await page.evaluate(async (id) => { await db.from('workout_templates').delete().eq('id', id).select('id') }, setup.templateId)
     }
   })
 
@@ -182,8 +182,8 @@ test.describe('Template draft: staged exercise mutators', () => {
       expect(dbRow, 'the database row must be untouched').toBe('[E2E] Original')
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -211,8 +211,8 @@ test.describe('Template draft: staged exercise mutators', () => {
       expect(dbRows, 'the database row must still exist').toBe(1)
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -248,9 +248,9 @@ test.describe('Template draft: staged exercise mutators', () => {
       expect(libMetricType, 'staging an add must still update the library exercise metric_type default').toBe('timed_hold')
     } finally {
       await page.evaluate(async ({ templateId, exId }) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', templateId)
-        await db.from('workout_templates').delete().eq('id', templateId)
-        await db.from('exercises').delete().eq('id', exId)
+        await db.from('workout_template_exercises').delete().eq('template_id', templateId).select('id')
+        await db.from('workout_templates').delete().eq('id', templateId).select('id')
+        await db.from('exercises').delete().eq('id', exId).select('id')
       }, setup)
     }
   })
@@ -281,9 +281,9 @@ test.describe('Template draft: staged exercise mutators', () => {
       expect(libMetricType, 'staging an edit must still update the library exercise metric_type default').toBe('interval')
     } finally {
       await page.evaluate(async ({ templateId, exId }) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', templateId)
-        await db.from('workout_templates').delete().eq('id', templateId)
-        await db.from('exercises').delete().eq('id', exId)
+        await db.from('workout_template_exercises').delete().eq('template_id', templateId).select('id')
+        await db.from('workout_templates').delete().eq('id', templateId).select('id')
+        await db.from('exercises').delete().eq('id', exId).select('id')
       }, setup)
     }
   })
@@ -322,8 +322,8 @@ test.describe('Template draft: staged reorder', () => {
       expect(dbOrder, 'the database order must be untouched').toEqual(['[E2E] A', '[E2E] B', '[E2E] C'])
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -354,7 +354,7 @@ test.describe('Template draft: staged rename', () => {
       expect(dbRow.name).toBe('[E2E] Stage Rename Before')
       expect(dbRow.description).toBeNull()
     } finally {
-      await page.evaluate(async (id) => { await db.from('workout_templates').delete().eq('id', id) }, setup.templateId)
+      await page.evaluate(async (id) => { await db.from('workout_templates').delete().eq('id', id).select('id') }, setup.templateId)
     }
   })
 })
@@ -379,8 +379,8 @@ test.describe('Template draft: Save workout button visibility', () => {
       expect(after, 'a staged change must show the Save button').toBe(true)
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -439,8 +439,8 @@ test.describe('Template draft: Save replay', () => {
       expect(dbRows).toEqual(['[E2E] A', '[E2E] C'])
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -494,7 +494,7 @@ test.describe('Template draft: Save replay', () => {
       expect(nameAfter, 'the foreign template must be completely untouched').toBe('[E2E] Foreign Save Target')
     } finally {
       if (foreignTemplateId) {
-        await pt2Ctx.pages()[0].evaluate(async (tid) => { await db.from('workout_templates').delete().eq('id', tid) }, foreignTemplateId)
+        await pt2Ctx.pages()[0].evaluate(async (tid) => { await db.from('workout_templates').delete().eq('id', tid).select('id') }, foreignTemplateId)
       }
       await pt2Ctx.close()
     }
@@ -565,11 +565,11 @@ test.describe('Template draft: combined propagation prompt', () => {
       // repo's established teardown convention (see e.g. session-identity-2026-08-14.spec.js) is to
       // delete program_phase_workouts / program_phases explicitly rather than assume a cascade.
       await page.evaluate(async (s) => {
-        await db.from('program_phase_workouts').delete().eq('phase_id', s.phaseId)
-        await db.from('program_phases').delete().eq('id', s.phaseId)
-        await db.from('workout_template_exercises').delete().in('template_id', [s.templateId, s.templateId2])
-        await db.from('workout_templates').delete().in('id', [s.templateId, s.templateId2])
-        await db.from('programs').delete().eq('id', s.programId)
+        await db.from('program_phase_workouts').delete().eq('phase_id', s.phaseId).select('id')
+        await db.from('program_phases').delete().eq('id', s.phaseId).select('id')
+        await db.from('workout_template_exercises').delete().in('template_id', [s.templateId, s.templateId2]).select('id')
+        await db.from('workout_templates').delete().in('id', [s.templateId, s.templateId2]).select('id')
+        await db.from('programs').delete().eq('id', s.programId).select('id')
       }, setup)
       await ptCtx.close()
     }
@@ -619,8 +619,8 @@ test.describe('Template draft: Save across a shared-master fork', () => {
       expect(dbRows, 'B must be gone from the FORKED template, not just silently unsaved').toEqual(['[E2E] A'])
     } finally {
       await page.evaluate(async (s) => {
-        await db.from('programs').delete().eq('id', s.programId)
-        await db.from('workout_templates').delete().eq('name', '[E2E] Fork Save Session').eq('coach_id', currentUser.id)
+        await db.from('programs').delete().eq('id', s.programId).select('id')
+        await db.from('workout_templates').delete().eq('name', '[E2E] Fork Save Session').eq('coach_id', currentUser.id).select('id')
       }, setup)
     }
   })
@@ -702,8 +702,8 @@ test.describe('Template draft: partial-failure recovery', () => {
       expect(dbNames).not.toContain('[E2E] Will Fail')
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -778,8 +778,8 @@ test.describe('Template draft: partial-failure recovery', () => {
       expect(dbName, 'the rename must NOT have reached the database yet -- the insert failed first, so rename never ran').toBe('[E2E] Rename Survives Failure')
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -818,7 +818,7 @@ test.describe('Template draft: leaving with unsaved changes', () => {
       expect(r.left).toBe(1)
       expect(r.promptShown).toBe(false)
     } finally {
-      await page.evaluate(async (id) => { await db.from('workout_templates').delete().eq('id', id) }, setup.templateId)
+      await page.evaluate(async (id) => { await db.from('workout_templates').delete().eq('id', id).select('id') }, setup.templateId)
     }
   })
 
@@ -858,8 +858,8 @@ test.describe('Template draft: leaving with unsaved changes', () => {
       expect(r.stillDirty, 'the staged removal must still be there').toBe(true)
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -901,8 +901,8 @@ test.describe('Template draft: leaving with unsaved changes', () => {
       expect(dbRows, 'discard must not have written anything -- the exercise was never removed for real').toBe(1)
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -951,8 +951,8 @@ test.describe('Template draft: leaving with unsaved changes', () => {
       expect(dbRows, 'Save from the leave-prompt must have actually committed the removal').toBe(0)
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -975,8 +975,9 @@ test.describe('Template draft: picker does not fork independently of Save', () =
         await openTemplate(templateId, { programId, phaseWorkoutId })
       }, setup)
       // Open the picker (this used to fork on its own) but do NOT stage or save anything yet.
-      await page.evaluate(() => { showAddExerciseToTemplateModal(window._templateDraft.templateId) })
-      await page.waitForTimeout(300)
+      // showAddExerciseToTemplateModal is async — return its promise so evaluate() awaits the
+      // whole chain instead of guessing at a fixed sleep.
+      await page.evaluate(() => showAddExerciseToTemplateModal(window._templateDraft.templateId))
       const afterOpen = await page.evaluate(async (id) => {
         const { data } = await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
         return data.template_id
@@ -1006,8 +1007,8 @@ test.describe('Template draft: picker does not fork independently of Save', () =
       expect(forkedRows, 'the staged add must land on the FORKED template, not be lost to the original').toEqual(['[E2E] A', '[E2E] New'])
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('programs').delete().eq('id', id)
-        await db.from('workout_templates').delete().eq('name', '[E2E] C1 Session').eq('coach_id', currentUser.id)
+        await db.from('programs').delete().eq('id', id).select('id')
+        await db.from('workout_templates').delete().eq('name', '[E2E] C1 Session').eq('coach_id', currentUser.id).select('id')
       }, setup.programId)
       // NOTE: wrapped in page.evaluate — `document` is not defined in the Node/test-runner
       // context this finally block otherwise runs in; the brief's original snippet referenced
@@ -1043,8 +1044,10 @@ test.describe('Template draft: leave-prompt Save respects the outcome', () => {
         }
       })
       await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
-      await page.waitForFunction(() => document.getElementById('confirm-dialog') === null || !!window._templateDraft, null, { timeout: 10000 })
-      await page.waitForTimeout(300)
+      // saveTemplateDraft's failed-batch branch calls showToast(...'try Save again') synchronously
+      // right before it returns 'failed' -- polling for that text is a real signal that the save
+      // attempt (and _templateGoBack's `if (result !== 'ok') return`) has already run, not a guess.
+      await page.waitForFunction(() => document.body.textContent.includes('try Save again'))
       const r = await page.evaluate(() => {
         window.__c2stub?.()
         return { left: window._leftCount || 0, stillDirty: _templateDraftIsDirty() }
@@ -1053,8 +1056,8 @@ test.describe('Template draft: leave-prompt Save respects the outcome', () => {
       expect(r.stillDirty, 'the failed change must still be staged').toBe(true)
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -1084,8 +1087,8 @@ test.describe('Template draft: nav-away routes other than the back button are gu
       expect(r.stillDirty, 'the staged removal must still be there').toBe(true)
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -1125,8 +1128,8 @@ test.describe('Template draft: a new exercise keeps its dropped position on Save
       expect(dbOrder, 'the new exercise must save at the position it was dropped, not appended at the end').toEqual(['[E2E] New', '[E2E] A', '[E2E] B'])
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -1213,8 +1216,8 @@ test.describe('Template draft: partial-failure recovery remaps ids across a fork
       expect(dbNames, 'B must still be a REAL row in the database -- this test is about recognizing a still-pending delete, not about it having actually succeeded').toContain('[E2E] B')
     } finally {
       await page.evaluate(async (s) => {
-        await db.from('programs').delete().eq('id', s.programId)
-        await db.from('workout_templates').delete().eq('name', '[E2E] I1 Session').eq('coach_id', currentUser.id)
+        await db.from('programs').delete().eq('id', s.programId).select('id')
+        await db.from('workout_templates').delete().eq('name', '[E2E] I1 Session').eq('coach_id', currentUser.id).select('id')
       }, setup)
     }
   })
@@ -1251,7 +1254,7 @@ test.describe('Template draft: Edit-template modal reads staged state, not the d
     } finally {
       await page.evaluate(() => { document.getElementById('edit-template-modal')?.remove() })
       await page.evaluate(async (id) => {
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })
@@ -1293,8 +1296,10 @@ test.describe('Template draft: client-copy propagation prompt is pluralized', ()
         window._templateSets = [{ effortType: 'rpe' }]
         _stageAddExercise()
       })
+      // saveTemplateDraft awaits _checkClientPlanPropagation, which mounts the modal synchronously
+      // (mountModal is not async) before returning -- the modal is already in the DOM by the time
+      // this evaluate() resolves, no extra wait needed.
       await page.evaluate(() => saveTemplateDraft())
-      await page.waitForTimeout(400)
       const modalText = await page.evaluate(() => document.getElementById('client-copy-modal')?.textContent || '')
       expect(modalText, 'the client-copy prompt must appear for a real assigned client').toBeTruthy()
       expect(modalText).toContain('2 changes')
@@ -1302,15 +1307,15 @@ test.describe('Template draft: client-copy propagation prompt is pluralized', ()
     } finally {
       await page.evaluate(() => { document.getElementById('client-copy-modal')?.remove() })
       await page.evaluate(async (s) => {
-        await db.from('client_program_workouts').delete().eq('client_program_id', s.cpId)
-        await db.from('client_programs').delete().eq('id', s.cpId)
-        await db.from('workout_template_exercises').delete().eq('template_id', s.cloneTmplId)
-        await db.from('workout_templates').delete().eq('id', s.cloneTmplId)
-        await db.from('program_phase_workouts').delete().eq('id', s.pwId)
-        await db.from('workout_template_exercises').delete().eq('template_id', s.templateId)
-        await db.from('workout_templates').delete().in('name', ['[E2E] I3 Session']).eq('coach_id', currentUser.id)
-        await db.from('program_phases').delete().eq('id', s.phaseId)
-        await db.from('programs').delete().eq('id', s.programId)
+        await db.from('client_program_workouts').delete().eq('client_program_id', s.cpId).select('id')
+        await db.from('client_programs').delete().eq('id', s.cpId).select('id')
+        await db.from('workout_template_exercises').delete().eq('template_id', s.cloneTmplId).select('id')
+        await db.from('workout_templates').delete().eq('id', s.cloneTmplId).select('id')
+        await db.from('program_phase_workouts').delete().eq('id', s.pwId).select('id')
+        await db.from('workout_template_exercises').delete().eq('template_id', s.templateId).select('id')
+        await db.from('workout_templates').delete().in('name', ['[E2E] I3 Session']).eq('coach_id', currentUser.id).select('id')
+        await db.from('program_phases').delete().eq('id', s.phaseId).select('id')
+        await db.from('programs').delete().eq('id', s.programId).select('id')
       }, setup)
     }
   })
@@ -1335,7 +1340,9 @@ test.describe('Template draft: deleting a dirty template does not raise a stale 
       // own confirmDialog() click before doing anything, so this must not be awaited to completion.
       await page.evaluate((id) => { deleteTemplate(id) }, setup.templateId)
       await page.locator('#confirm-dialog button', { hasText: /^delete$/i }).click()
-      await page.waitForTimeout(500)
+      // Poll for the real terminal signal (backFn fired) instead of guessing a fixed delay for
+      // deleteTemplate's async delete + _templateGoBack chain to finish.
+      await page.waitForFunction(() => window._i4Left === 1)
       const r = await page.evaluate(() => ({
         leftCount: window._i4Left || 0,
         staleConfirmDialogText: document.getElementById('confirm-dialog')?.textContent || '',
@@ -1346,8 +1353,8 @@ test.describe('Template draft: deleting a dirty template does not raise a stale 
       expect(r.draftIsNull, 'the draft must be cleared so a later save attempt cannot target the deleted row').toBe(true)
     } finally {
       await page.evaluate(async (id) => {
-        await db.from('workout_template_exercises').delete().eq('template_id', id)
-        await db.from('workout_templates').delete().eq('id', id)
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
       }, setup.templateId)
     }
   })

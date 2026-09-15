@@ -1332,24 +1332,29 @@ const _newDraftKey = () => `dk${++_draftKeyCounter}_${Date.now()}`
 // Same reasoning as _newDraftKey above, and module-scope for the same reason: saveTemplateDraft's
 // partial-failure recovery (Task 10) also needs to turn a freshly re-fetched row into a draft row
 // OUTSIDE any single openTemplate() call, so this can't stay local to openTemplate's closure either.
-const _toDraftRow = (row) => ({
-  _draftKey: _newDraftKey(),
-  id: row.id,
-  exercise_id: row.exercise_id,
-  exercise_name: row.exercise_name,
-  exercise_type: row.exercise_type,
-  metric_type: row.metric_type,
-  order_index: row.order_index,
-  sets: row.sets,
-  // Deep-clone sets_json: exercises and exercisesBaseline are both built by mapping
-  // _toDraftRow over the SAME fetched rows, so a shallow copy here would leave both the
-  // draft and the baseline pointing at the exact same array/object. Nothing mutates
-  // sets_json in place today, but a future in-place edit (row.sets_json[0].reps = x)
-  // would silently corrupt the "untouched baseline" this split exists to guarantee.
-  sets_json: row.sets_json ? JSON.parse(JSON.stringify(row.sets_json)) : row.sets_json,
-  notes: row.notes,
-  superset_group: row.superset_group,
-})
+// A `function` declaration, not `const` -- js/app-core.js's navigate() (Task 14, C3 fix) reads
+// this name too, and app-core loads BEFORE app-workouts. A function declaration is safe to name
+// from anywhere; a const/let backward read would throw if ever touched before this script runs.
+function _toDraftRow(row) {
+  return {
+    _draftKey: _newDraftKey(),
+    id: row.id,
+    exercise_id: row.exercise_id,
+    exercise_name: row.exercise_name,
+    exercise_type: row.exercise_type,
+    metric_type: row.metric_type,
+    order_index: row.order_index,
+    sets: row.sets,
+    // Deep-clone sets_json: exercises and exercisesBaseline are both built by mapping
+    // _toDraftRow over the SAME fetched rows, so a shallow copy here would leave both the
+    // draft and the baseline pointing at the exact same array/object. Nothing mutates
+    // sets_json in place today, but a future in-place edit (row.sets_json[0].reps = x)
+    // would silently corrupt the "untouched baseline" this split exists to guarantee.
+    sets_json: row.sets_json ? JSON.parse(JSON.stringify(row.sets_json)) : row.sets_json,
+    notes: row.notes,
+    superset_group: row.superset_group,
+  }
+}
 
 async function openTemplate(id, ctx = {}) {
   // Which template the editor is CURRENTLY showing. A queued reorder compares against this to notice
