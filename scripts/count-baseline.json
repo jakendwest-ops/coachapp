@@ -43,8 +43,8 @@
     "waitForTimeout(": {
       "pattern": "waitForTimeout\\(",
       "scope": "tests",
-      "count": 123,
-      "why": "Fixed sleeps in the E2E suite -- pure wall-clock cost on a 35-minute run, and each one is either too short (flaky) or too long (slow). Phase 2 converts them to real waits."
+      "count": 124,
+      "why": "Fixed sleeps in the E2E suite -- pure wall-clock cost on a 35-minute run, and each one is either too short (flaky) or too long (slow). Phase 2 converts them to real waits. Raised by exactly 1 on 2026-09-16: tests/template-draft-save-2026-09-13.spec.js's partial-failure-recovery test waits out a real, un-awaited network round-trip (a propagation-triggered openTemplate() repaint) to prove openTemplate's new dirty-draft guard holds under real timing, not just a fast read beating a slow repaint -- there is no positive DOM/JS signal to poll for since the test is proving an absence (nothing changes)."
     },
     "swallowed catch": {
       "pattern": "\\.catch\\(\\(\\)\\s*=>\\s*\\{\\s*\\}\\)",

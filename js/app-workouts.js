@@ -1357,6 +1357,22 @@ function _toDraftRow(row) {
 }
 
 async function openTemplate(id, ctx = {}) {
+  // A propagation-triggered repaint for the SAME template must never clobber a draft that's still
+  // genuinely dirty. saveTemplateDraft's own partial-failure recovery re-stages whatever didn't yet
+  // reach the database, and several _checkSiblingPropagation "nothing to propagate" branches call
+  // openTemplate(templateId, ctx) fire-and-forget -- without this guard, that repaint (a real network
+  // round-trip) lands moments later and silently discards the re-staged pending changes, with no
+  // signal to the user that anything was lost (found by the 2026-09-16 scoped re-review). Every
+  // legitimate caller either targets a DIFFERENT id (a fresh navigation) or calls openTemplate only
+  // once the draft is already clean (saveTemplateDraft's own success path resets the baseline before
+  // calling this) -- no caller relies on openTemplate force-discarding a dirty draft for THIS id.
+  if (window._templateDraft?.templateId === id && _templateDraftIsDirty()) {
+    // Silent otherwise looks identical to a dead click if this is ever reached from a user-initiated
+    // open rather than a propagation-triggered repaint (found by the 2026-09-16 scoped re-review).
+    log.warn('openTemplate', 'repaint suppressed -- dirty draft for this id', { id })
+    return
+  }
+
   // Which template the editor is CURRENTLY showing. A queued reorder compares against this to notice
   // that the ground moved under it — see moveTemplateExercise's stale-capture guard.
   //
@@ -2383,15 +2399,21 @@ function _templateDraftIsDirty() {
   if (d.meta.name !== d.metaBaseline.name || d.meta.description !== d.metaBaseline.description) return true
   if (d.exercises.length !== d.exercisesBaseline.length) return true
   const byId = new Map(d.exercisesBaseline.map(e => [e.id, e]))
-  const FIELDS = ['exercise_id', 'exercise_name', 'exercise_type', 'metric_type', 'sets', 'sets_json', 'notes', 'superset_group']
   return d.exercises.some((ex, i) => {
     if (ex.id === null) return true // a newly added row is always a change
     const base = byId.get(ex.id)
     if (!base) return true // shouldn't happen, but a missing baseline counts as changed
     if (i !== d.exercisesBaseline.indexOf(base)) return true // order moved
-    return FIELDS.some(f => JSON.stringify(ex[f]) !== JSON.stringify(base[f]))
+    return TEMPLATE_EXERCISE_FIELDS.some(f => JSON.stringify(ex[f]) !== JSON.stringify(base[f]))
   })
 }
+
+// Shared by _diffTemplateDraft (what changed), _templateDraftIsDirty (whether anything changed), and
+// saveTemplateDraft's partial-failure recovery (which fields to re-apply onto a freshly re-fetched
+// row -- never `id`/`_draftKey`/`order_index`, or a recovery re-stage after a shared-template fork
+// can overwrite a fresh row's real id with a stale pre-fork one; found by the 2026-09-15 whole-branch
+// review).
+const TEMPLATE_EXERCISE_FIELDS = ['exercise_id', 'exercise_name', 'exercise_type', 'metric_type', 'sets', 'sets_json', 'notes', 'superset_group']
 
 // Computes what changed between a staged draft and its baseline, as the set of operations Task 8's
 // save-and-replay needs: rows to delete (gone from the draft), rows to insert (id === null, carrying
@@ -2409,10 +2431,9 @@ function _diffTemplateDraft(draft) {
 
   const toInsert = draft.exercises.filter(e => e.id === null).map(e => ({ ...e }))
 
-  const FIELDS = ['exercise_id', 'exercise_name', 'exercise_type', 'metric_type', 'sets', 'sets_json', 'notes', 'superset_group']
   const toUpdate = draft.exercises
     .filter(e => e.id !== null)
-    .filter(e => FIELDS.some(f => JSON.stringify(e[f]) !== JSON.stringify(baselineById.get(e.id)?.[f])))
+    .filter(e => TEMPLATE_EXERCISE_FIELDS.some(f => JSON.stringify(e[f]) !== JSON.stringify(baselineById.get(e.id)?.[f])))
     .map(e => ({ id: e.id, row: e }))
 
   // Order compares the SURVIVING pre-existing rows' relative sequence, ignoring newly-inserted rows
@@ -2527,6 +2548,13 @@ async function saveTemplateDraft() {
   const d = window._templateDraft
   if (!d || !_templateDraftIsDirty()) return 'ok'
 
+  // Snapshotted HERE, before the first await -- the role this edit is being SAVED under. The batch
+  // writes and propagation below span many awaited round-trips; a same-tab role switch during that
+  // window (a second tap on the view switcher while this Save is still in flight) must not change
+  // which role's propagation rules apply. Threaded through to _checkClientPlanPropagation below
+  // (found by the 2026-09-16 scoped re-review).
+  const savedAsRole = currentProfile?.role
+
   // Resolve the real write target EXACTLY ONCE for this whole batch. Calling
   // _resolveEditableTemplateId per queued change would risk forking a SECOND clone of a still-shared
   // template on the second call, orphaning the first -- see Global Constraints.
@@ -2557,34 +2585,43 @@ async function saveTemplateDraft() {
     changes.push({ op: 'update', matchName: origName || row.exercise_name, row: patch })
   }
 
+  // Selects the real inserted id back (an RLS-refused INSERT resolves as { data: [], error: null } --
+  // indistinguishable from success without this) and patches it onto the LIVE draft row by _draftKey,
+  // so the id is known below for the order write and the success-path baseline reset without
+  // depending on a later re-fetch (found by the 2026-09-15 review: a failed repaint used to leave the
+  // draft looking dirty forever, and a retry would re-insert every staged exercise a second time).
   if (!failedAt) for (const row of diff.toInsert) {
     const { exercise_id, exercise_name, exercise_type, metric_type, sets, sets_json, notes, superset_group } = row
     const { data: existing } = await db.from('workout_template_exercises').select('order_index').eq('template_id', targetId).order('order_index', { ascending: false }).limit(1)
     const nextOrder = existing?.length ? (existing[0].order_index + 1) : 0
     const insertRow = { template_id: targetId, exercise_id, exercise_name, exercise_type, metric_type, order_index: nextOrder, sets, sets_json, notes, superset_group }
-    const { error } = await db.from('workout_template_exercises').insert(insertRow)
-    if (error) { failedAt = { step: 'insert', name: exercise_name }; break }
+    const { data, error } = await db.from('workout_template_exercises').insert(insertRow).select('id')
+    if (error || !data?.length) { failedAt = { step: 'insert', name: exercise_name }; break }
+    const draftRow = d.exercises.find(e => e._draftKey === row._draftKey)
+    if (draftRow) draftRow.id = data[0].id
     changes.push({ op: 'add', matchName: exercise_name, row: insertRow })
   }
 
-  if (!failedAt && diff.reorder) {
-    const failures = await _propagateReorderToTemplates(diff.reorder, [targetId])
-    if (failures) { failedAt = { step: 'reorder' } }
-    else changes.push({ op: 'reorder', names: diff.reorder.names })
-  }
-
-  // A newly-inserted exercise has no baseline position to compare against, so
-  // _diffTemplateDraft's reorder detection (survivors only) never sees where the user actually
-  // dropped it -- the insert loop above always appends it last. Sync the target template's OWN
-  // row order to the draft's current full sequence whenever an insert happened AND diff.reorder
-  // itself didn't already fire (when it did fire, diff.reorder.names is already the draft's full
-  // sequence including the new row's correct position, so a second call here would be redundant).
-  // This does not add a synthetic 'reorder' entry to `changes` -- sibling/client-copy propagation
-  // of the new exercise is already handled by its own 'add' entry; this only corrects the target
-  // template's own row order.
-  if (!failedAt && diff.toInsert.length && !diff.reorder) {
-    const orderFailures = await _propagateReorderToTemplates({ names: d.exercises.map(e => e.exercise_name) }, [targetId])
+  // The edited template's OWN row order is persisted by id, not name -- unlike
+  // _propagateReorderToTemplates (sibling/client copies, where ids genuinely don't transfer and
+  // name-keying is the only option), this template has real, stable ids in hand right here.
+  // Name-keying it too would silently collapse two same-named rows (a warm-up set and a working set
+  // of the same movement) onto one rank and write the wrong order while reporting success (found by
+  // the 2026-09-15 review). Covers both an explicit reorder and the position a newly-inserted
+  // exercise was dropped into (_diffTemplateDraft's reorder detection can't see that -- see the
+  // comment on toInsert there). A synthetic 'reorder' entry goes into `changes` only when
+  // diff.reorder itself fired -- sibling/client-copy propagation of a plain insert is already
+  // handled by its own 'add' entry, unchanged.
+  if (!failedAt && (diff.reorder || diff.toInsert.length)) {
+    // remapId, not the draft's raw ids: a surviving pre-existing row's `id` in d.exercises is still
+    // the PRE-fork id (nothing updates it once staged) -- unremapped, every write below targets a
+    // row on the ORIGINAL template, matches zero rows on the fork, and the whole Save is reported as
+    // a spurious 'reorder' failure after its other writes already committed (found by the scoped
+    // 2026-09-16 re-review of this fix). remapId is a safe no-op for a newly-inserted row's real id,
+    // since that id was never a KEY in exerciseIdMap.
+    const orderFailures = await _persistOwnTemplateOrder(targetId, d.exercises.map(e => remapId(e.id)))
     if (orderFailures) { failedAt = { step: 'reorder' } }
+    else if (diff.reorder) changes.push({ op: 'reorder', names: diff.reorder.names })
   }
 
   if (!failedAt && diff.rename) {
@@ -2628,9 +2665,14 @@ async function saveTemplateDraft() {
       const pendingDeleteIds = diff.toDelete.slice(deleteDone).map(remapId)
       window._templateDraft.exercises = window._templateDraft.exercises.filter(e => !pendingDeleteIds.includes(e.id))
 
+      // Only the STAGED FIELDS, never `id`/`_draftKey`/`order_index` -- `u.row` (from the original
+      // pre-failure diff) can carry the PRE-fork id when a fork happened this Save, and the row found
+      // above is from a FRESH re-fetch and already has the fork's real id. A bare Object.assign
+      // overwrote that back to the stale one, so the next retry deleted the wrong (real) row -- found
+      // by the 2026-09-15 review.
       for (const u of diff.toUpdate.slice(updateDone)) {
         const row = window._templateDraft.exercises.find(e => e.id === remapId(u.id))
-        if (row) Object.assign(row, u.row)
+        if (row) for (const f of TEMPLATE_EXERCISE_FIELDS) row[f] = u.row[f]
       }
 
       for (const row of diff.toInsert.slice(insertDone)) {
@@ -2654,18 +2696,37 @@ async function saveTemplateDraft() {
       _renderSaveWorkoutButton()
     }
     showToast(`${succeededCount} change${succeededCount === 1 ? '' : 's'} saved, ${failedAt.step} failed — try Save again`, 'warn')
+    // Whatever DID succeed before the failure must still reach assigned clients and sibling weeks --
+    // returning early here used to strand it permanently, since a retry's fresh baseline no longer
+    // contains it and so never offers it to propagation again (found by the 2026-09-15 review).
+    // window._lastExerciseChanges is set here too (not only on the success path below) -- a later
+    // "Update assigned clients?" dismissal falls through to it via _checkSiblingPropagation's own
+    // no-override re-entry, and an unset/stale value there would propagate a DIFFERENT save's changes
+    // into sibling sessions (found by the 2026-09-16 scoped re-review).
+    window._lastExerciseChanges = changes
+    if (changes.length) await _checkClientPlanPropagation(targetId, d.ctx, changes, savedAsRole)
     return 'failed'
   }
 
+  // Reset the draft's own baseline directly from what we now know landed -- independent of the
+  // repaint below succeeding, so a failed re-fetch (network blip) can never leave the draft looking
+  // dirty and inviting a retry that would duplicate every insert in this batch (found by the
+  // 2026-09-15 review). openTemplate's own fetch below still runs and, on success, fully supersedes
+  // this with fresher data -- this is only the safety net for when it fails.
+  d.templateId = targetId
+  d.exercisesBaseline = d.exercises.map(_toDraftRow)
+  d.metaBaseline = { ...d.meta }
+
   window._lastExerciseChanges = changes
   await openTemplate(targetId, d.ctx)
-  if (changes.length) await _checkClientPlanPropagation(targetId, d.ctx, changes)
+  if (changes.length) await _checkClientPlanPropagation(targetId, d.ctx, changes, savedAsRole)
   return 'ok'
 }
 guardReentry('saveTemplateDraft')  // double-press could double-fork a shared template and double-write every staged change; see tests/reentry-guard-2026-08-28.spec.js
 
-// Applies ONE captured exercise change (window._lastExerciseChange) to a set of target templates,
-// matched BY EXERCISE NAME (Jake's choice, 2026-07-12). This replaces the old wholesale
+// Applies ONE exercise change (an entry from the `changes` array saveTemplateDraft builds, passed
+// in directly -- not read off a global) to a set of target templates, matched BY EXERCISE NAME
+// (Jake's choice, 2026-07-12). This replaces the old wholesale
 // "delete every exercise, re-insert the source's full list" propagation, which silently wiped any
 // per-session differences in the targets. A target that doesn't contain the changed exercise is
 // left untouched.
@@ -2728,7 +2789,7 @@ async function _propagateExerciseChangeToTemplates(change, targetIds) {
 // solo/personal copies vs. real coached clients' copies. Used to keep assigned plans in sync with a
 // program edit WITHOUT re-assigning (Jake, 2026-07-12). Queries clients directly rather than via a
 // deep nested embed, so an unreadable embed level can't silently misclassify a copy.
-async function _assignedCopiesForSession(masterTemplateIds) {
+async function _assignedCopiesForSession(masterTemplateIds, roleOverride) {
   const out = { soloSelfIds: [], realClientIds: [], realClientNames: [], realClientCount: 0 }
   if (!masterTemplateIds?.length) return out
   const { data: ppws } = await db.from('program_phase_workouts').select('id').in('template_id', masterTemplateIds)
@@ -2773,7 +2834,16 @@ async function _assignedCopiesForSession(masterTemplateIds) {
   // forward, but every PRE-EXISTING program defaults to false, so this guard cannot depend on it).
   // Real-client copies are surfaced as a bare COUNT in solo — enough to warn honestly, with no write
   // target and no name disclosure. Jake, 2026-07-13.
-  const isSolo = currentProfile?.role === 'solo'
+  //
+  // roleOverride, when passed, is the role SAVED UNDER, not whatever is live right now -- this
+  // function runs after several awaited round-trips, and a same-tab role switch during that window
+  // (e.g. a second tap on the view switcher while a Save is still in flight) must not change which
+  // role's propagation rules apply to an edit that was already staged and committed under the
+  // original one (found by the 2026-09-16 scoped re-review; saveTemplateDraft passes its own snapshot
+  // through _checkClientPlanPropagation). Optional and falls back to the live read for every other
+  // caller (_applyToAllSessions doesn't use realClientIds/realClientNames at all, so it's unaffected
+  // either way).
+  const isSolo = (roleOverride !== undefined ? roleOverride : currentProfile?.role) === 'solo'
   ;(clients || []).forEach(cl => {
     const ids = idsByClient[cl.id] || []
     const isSoloSelf = cl.coach_id == null && cl.user_id === currentUser.id
@@ -2787,13 +2857,18 @@ async function _assignedCopiesForSession(masterTemplateIds) {
   return out
 }
 
-// ctxOverride/changesOverride let a caller pass an explicit snapshot through instead of this
-// function re-reading the live globals (saveTemplateDraft does this, passing d.ctx/changes). The
-// other caller (_continueAfterClientCopy, a later independent modal-button click) omits them,
-// correctly falling back to whatever is live at that fresh moment.
-async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverride) {
+// ctxOverride/changesOverride/roleOverride let a caller pass an explicit snapshot through instead of
+// this function re-reading the live globals/state. saveTemplateDraft is the only caller and always
+// passes all three: d.ctx, changes, and the role it was invoked under -- role matters here because
+// this function is reached only after several awaited round-trips (the batch writes, then
+// _assignedCopiesForSession's own four queries), during which a same-tab role switch could otherwise
+// change which role's rules apply to an edit that was already staged and committed under a DIFFERENT
+// one (found by the 2026-09-16 scoped re-review, following the earlier 2026-09-15 fix that reordered
+// switchView but didn't close this async window).
+async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverride, roleOverride) {
   const ctx = ctxOverride || window._templateCtx
   const changes = changesOverride !== undefined ? changesOverride : window._lastExerciseChanges
+  const role = roleOverride !== undefined ? roleOverride : currentProfile?.role
 
   // (#2) Sync assigned copies of the edited session — master program edits only (a direct client-plan
   // edit is already editing the client's own copy, so there's nothing downstream to sync).
@@ -2804,7 +2879,7 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverr
   // the explicit prompt below). Skipping the block removed the prompt AND stopped syncing solo's own
   // self-assigned plan — the only copy a solo user actually trains from. Caught by pre-push review.
   if (changes?.length && ctx?.programId && !ctx.isClientPlan) {
-    const copies = await _assignedCopiesForSession([templateId])
+    const copies = await _assignedCopiesForSession([templateId], role)
     let soloPropFailures = 0
     if (copies.soloSelfIds.length) {
       for (const change of changes) soloPropFailures += (await _applyChangeToTemplates(change, copies.soloSelfIds)) || 0
@@ -2814,7 +2889,7 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverr
     // the user assume their clients' plans had been updated, which is worse than the bug this fixes.
     // `!soloPropFailures`: this info toast would otherwise erase the propagation ERROR toast fired
     // moments earlier (single-node showToast, no queue). A failure outranks an FYI.
-    if (currentProfile?.role === 'solo' && copies.realClientCount && !soloPropFailures) {
+    if (role === 'solo' && copies.realClientCount && !soloPropFailures) {
       showToast(`Personal edit — ${copies.realClientCount} assigned client${copies.realClientCount === 1 ? "'s plan was" : "s' plans were"} not changed. Switch to PT view to update them.`, 'info', 6000)
     }
     if (copies.realClientIds.length) {
@@ -3076,6 +3151,27 @@ async function _applyChangeToTemplates(change, ids) {
   if (change.op === 'rename') return await _propagateRenameToTemplates(change, ids)
   if (change.op === 'reorder') return await _propagateReorderToTemplates(change, ids)
   return await _propagateExerciseChangeToTemplates(change, ids)
+}
+
+// Persists the EDITED template's own final row order by real id, called from saveTemplateDraft.
+// Deliberately NOT _propagateReorderToTemplates below: that function is name-keyed because sibling/
+// client copies don't share ids with the source -- but the template being saved right here DOES have
+// real, stable ids, and name-keying it too silently collapses two same-named rows (a warm-up set and
+// a working set of the same movement) onto one rank, writing the wrong order while reporting success
+// (found by the 2026-09-15 review). `orderedIds` is the draft's current full sequence, already
+// carrying every newly-inserted row's real id (saveTemplateDraft patches those in right after each
+// insert succeeds). Skips a write for any row already at its correct order_index.
+async function _persistOwnTemplateOrder(templateId, orderedIds) {
+  const { data: rows, error } = await db.from('workout_template_exercises').select('id, order_index').eq('template_id', templateId)
+  if (error) { log.error('_persistOwnTemplateOrder', 'fetch failed', { templateId }); return 1 }
+  const current = new Map((rows || []).map(r => [r.id, r.order_index]))
+  for (let i = 0; i < orderedIds.length; i++) {
+    const id = orderedIds[i]
+    if (current.get(id) === i) continue
+    const { data, error: uErr } = await db.from('workout_template_exercises').update({ order_index: i }).eq('id', id).eq('template_id', templateId).select('id')
+    if (uErr || !data?.length) { log.error('_persistOwnTemplateOrder', 'row update wrote nothing', { templateId }); return 1 }
+  }
+  return 0
 }
 
 // Applies a REORDER to sibling copies (2026-08-19).

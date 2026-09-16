@@ -274,9 +274,12 @@ test.describe('Session identity — family_id', () => {
 
       const r = await page.evaluate(async s => {
         window._templateCtx = { programId: s.progId }
-        window._lastExerciseChange = { op: 'update', exerciseName: 'X' }
         window._propagateTargets = null
-        await _checkSiblingPropagation(s.aId, { programId: s.progId }, { op: 'update', exerciseName: 'X' })
+        // changesOverride is an ARRAY (production reads window._lastExerciseChanges, plural) -- a
+        // bare object here happened to work only because this fixture's family_id mismatch returns
+        // before `changes` is ever iterated; a real sibling match would have thrown
+        // "changes.map is not a function" (found by the 2026-09-15 review).
+        await _checkSiblingPropagation(s.aId, { programId: s.progId }, [{ op: 'update', exerciseName: 'X' }])
         await new Promise(r2 => setTimeout(r2, 800))
         return { modalShown: !!document.getElementById('propagate-modal'), targets: window._propagateTargets }
       }, setup)

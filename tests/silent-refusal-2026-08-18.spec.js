@@ -222,9 +222,10 @@ test.describe('A refused write must not report success', () => {
   // warned rather than left with silently corrupted order. Under the staged model, reorder
   // (_stageReorderExercise) is one in-memory array swap with ZERO database writes until Save; "two
   // separate writes, one succeeds one doesn't" cannot happen at reorder time any more — there is only
-  // ever one write, saveTemplateDraft's single _propagateReorderToTemplates call for the WHOLE queued
-  // reorder, and a save's own partial failure (potentially across ANY staged op, not reorder
-  // specifically) is already covered by Task 10's dedicated partial-failure-recovery test. Keeping
-  // this test would mean either forcing a scenario that can no longer occur through a mock, or
-  // quietly testing nothing real.
+  // ever one write, saveTemplateDraft's own single order-persist call for the WHOLE queued reorder
+  // (_persistOwnTemplateOrder as of the 2026-09-16 fix, id-keyed since the target has real ids;
+  // _propagateReorderToTemplates remains name-keyed for sibling/client copies only), and a save's own
+  // partial failure (potentially across ANY staged op, not reorder specifically) is already covered
+  // by Task 10's dedicated partial-failure-recovery test. Keeping this test would mean either forcing
+  // a scenario that can no longer occur through a mock, or quietly testing nothing real.
 })

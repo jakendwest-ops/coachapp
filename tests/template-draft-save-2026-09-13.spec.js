@@ -662,7 +662,9 @@ test.describe('Template draft: partial-failure recovery', () => {
         db.from = (tbl) => {
           if (tbl !== 'workout_template_exercises') return realFrom(tbl)
           const real = realFrom(tbl)
-          return { ...real, insert: () => Promise.resolve({ error: { message: 'simulated failure' } }), select: real.select.bind(real), update: real.update.bind(real), delete: real.delete.bind(real) }
+          // insert() must stay chainable -- saveTemplateDraft now calls .select('id') on it (to
+          // capture the real inserted id; see the 2026-09-15 review) even on the failure path.
+          return { ...real, insert: () => ({ select: () => Promise.resolve({ data: null, error: { message: 'simulated failure' } }) }), select: real.select.bind(real), update: real.update.bind(real), delete: real.delete.bind(real) }
         }
         let toastMsg = null
         window.showToast = (msg) => { toastMsg = msg }
@@ -700,6 +702,22 @@ test.describe('Template draft: partial-failure recovery', () => {
       }, setup.templateId)
       expect(dbNames, 'the successful delete must have actually committed').toEqual(['[E2E] B'])
       expect(dbNames).not.toContain('[E2E] Will Fail')
+
+      // 2026-09-16 review: this standalone template (no programId) has no propagation target, so
+      // saveTemplateDraft's own failure-path _checkClientPlanPropagation call falls through to
+      // _checkSiblingPropagation's final fallback, which fires a bare (un-awaited) openTemplate(...)
+      // -- a real network round-trip that lands AFTER saveTemplateDraft has already returned. Without
+      // openTemplate's own dirty-draft guard, that repaint would silently overwrite the just-rebuilt
+      // recovery draft above, discarding the still-pending "Will Fail" insert with no signal to the
+      // user. Waiting past when that round-trip would have landed and re-checking proves the guard
+      // actually holds, not just that a fast read beat a slow repaint.
+      await page.waitForTimeout(1500)
+      const stillPending = await page.evaluate(() => ({
+        stillDirty: _templateDraftIsDirty(),
+        draftHasFailedInsert: window._templateDraft.exercises.some(e => e.exercise_name === '[E2E] Will Fail'),
+      }))
+      expect(stillPending.stillDirty, "the recovery draft must survive the propagation chain's own delayed repaint").toBe(true)
+      expect(stillPending.draftHasFailedInsert, 'the still-pending insert must not have been silently discarded').toBe(true)
     } finally {
       await page.evaluate(async (id) => {
         await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
@@ -751,7 +769,9 @@ test.describe('Template draft: partial-failure recovery', () => {
         db.from = (tbl) => {
           if (tbl !== 'workout_template_exercises') return realFrom(tbl)
           const real = realFrom(tbl)
-          return { ...real, insert: () => Promise.resolve({ error: { message: 'simulated failure' } }), select: real.select.bind(real), update: real.update.bind(real), delete: real.delete.bind(real) }
+          // insert() must stay chainable -- saveTemplateDraft now calls .select('id') on it (to
+          // capture the real inserted id; see the 2026-09-15 review) even on the failure path.
+          return { ...real, insert: () => ({ select: () => Promise.resolve({ data: null, error: { message: 'simulated failure' } }) }), select: real.select.bind(real), update: real.update.bind(real), delete: real.delete.bind(real) }
         }
         try {
           await saveTemplateDraft()
@@ -1135,6 +1155,47 @@ test.describe('Template draft: a new exercise keeps its dropped position on Save
   })
 })
 
+test.describe('Template draft: reorder with a duplicate exercise name persists by id, not name', () => {
+  // 2026-09-15 review (finding #3): the target template's OWN reorder used to go through the same
+  // name-keyed propagation function used for sibling/client copies (where ids don't transfer and
+  // name-keying is the only option). Two rows sharing a name collapsed onto the same rank, so a
+  // stable sort left them in their ORIGINAL order regardless of the staged swap -- reporting success
+  // while silently writing nothing. The template being saved has real ids in hand, so this must be
+  // id-keyed instead.
+  test('swapping two same-named exercises actually swaps their real rows, not a name-ranked no-op', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] Dup Name Reorder' }).select('id').single()
+      const { data: exs } = await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] Bench Press', exercise_type: 'strength', order_index: 0, notes: 'warm-up set' },
+        { template_id: t.id, exercise_name: '[E2E] Bench Press', exercise_type: 'strength', order_index: 1, notes: 'working set' },
+        { template_id: t.id, exercise_name: '[E2E] Plank', exercise_type: 'strength', order_index: 2 },
+      ]).select('id, notes')
+      return { templateId: t.id, warmupId: exs.find(e => e.notes === 'warm-up set').id, workingId: exs.find(e => e.notes === 'working set').id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        // Swap the two SAME-NAMED rows -- position 0 and 1 -- so the working set now leads.
+        const key = window._templateDraft.exercises[0]._draftKey
+        _stageReorderExercise(key, 1)
+      })
+      await page.evaluate(() => saveTemplateDraft())
+      const dbRows = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('id, notes').eq('template_id', id).order('order_index')
+        return data.map(r => ({ id: r.id, notes: r.notes }))
+      }, setup.templateId)
+      expect(dbRows[0].id, 'the WORKING SET row (not merely "an exercise named Bench Press") must now be first').toBe(setup.workingId)
+      expect(dbRows[1].id, 'the WARM-UP row must now be second').toBe(setup.warmupId)
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
+      }, setup.templateId)
+    }
+  })
+})
+
 test.describe('Template draft: partial-failure recovery remaps ids across a fork', () => {
   test('a pending delete surviving a fork is correctly recognized post-fork, not silently dropped either way', async ({ page }) => {
     await loginAsPT(page)
@@ -1219,6 +1280,139 @@ test.describe('Template draft: partial-failure recovery remaps ids across a fork
         await db.from('programs').delete().eq('id', s.programId).select('id')
         await db.from('workout_templates').delete().eq('name', '[E2E] I1 Session').eq('coach_id', currentUser.id).select('id')
       }, setup)
+    }
+  })
+
+  // 2026-09-15 review (finding #6): recovery used to Object.assign() the WHOLE original staged row
+  // onto the freshly-fetched one, which overwrote the fresh row's real (post-fork) id with the
+  // staged row's PRE-fork id -- so a later retry would delete the wrong (real) exercise. This test
+  // covers the pending-UPDATE case specifically, which the sibling test above (pending delete) does
+  // not exercise.
+  test('a pending update surviving a fork keeps the FRESH post-fork id, not the stale pre-fork one', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: '[E2E] I5 Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single()
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, name: '[E2E] I5 Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert([
+        { template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 },
+        { template_id: t.id, exercise_name: '[E2E] B', exercise_type: 'strength', order_index: 1 },
+      ])
+      const { data: pw1 } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 }).select('id, template_id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 2 })
+      return { programId: prog.id, templateId: t.id, phaseWorkoutId: pw1.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, phaseWorkoutId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId })
+      }, setup)
+      const r = await page.evaluate(`(async () => {
+        // Stage a DELETE on A (staged to fail, first) and an EDIT on B. Delete runs before update in
+        // saveTemplateDraft's own op order, so when it fails, the update loop never even starts --
+        // B's staged update is fully "pending" (updateDone === 0), which is exactly the condition
+        // that makes recovery re-stage it via the buggy Object.assign.
+        const bKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')._draftKey
+        window._templateDraft.exercises.find(e => e._draftKey === bKey).notes = 'staged note'
+        const aKey = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] A')._draftKey
+        _stageRemoveExercise(aKey)
+
+        const realFrom = db.from.bind(db)
+        db.from = (tbl) => {
+          if (tbl !== 'workout_template_exercises') return realFrom(tbl)
+          const real = realFrom(tbl)
+          return {
+            ...real,
+            select: real.select.bind(real),
+            insert: real.insert.bind(real),
+            update: real.update.bind(real),
+            delete: () => ({ eq: () => ({ eq: () => ({ select: () => Promise.resolve({ data: [], error: null }) }) }) }),
+          }
+        }
+        try {
+          await saveTemplateDraft()
+        } finally {
+          db.from = realFrom
+        }
+        const bRow = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] B')
+        return { bId: bRow.id, bNotes: bRow.notes, stillDirty: _templateDraftIsDirty() }
+      })()`)
+      expect(r.stillDirty, 'the pending delete must still be staged for another attempt').toBe(true)
+      expect(r.bNotes, 'the staged field edit must still have been re-applied onto the fresh row').toBe('staged note')
+
+      // The fresh, post-fork database row for B -- what r.bId MUST equal.
+      const forkedId = await page.evaluate(async (id) => {
+        const { data } = await db.from('program_phase_workouts').select('template_id').eq('id', id).single()
+        return data.template_id
+      }, setup.phaseWorkoutId)
+      const realBRow = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('id').eq('template_id', id).eq('exercise_name', '[E2E] B').single()
+        return data
+      }, forkedId)
+      expect(forkedId, 'sanity: the fork must have actually happened for this test to mean anything').not.toBe(setup.templateId)
+      expect(r.bId, "the draft's B row must carry the FORK's real id, not a stale pre-fork one a retry would misapply").toBe(realBRow.id)
+    } finally {
+      await page.evaluate(async (s) => {
+        await db.from('programs').delete().eq('id', s.programId).select('id')
+        await db.from('workout_templates').delete().eq('name', '[E2E] I5 Session').eq('coach_id', currentUser.id).select('id')
+      }, setup)
+    }
+  })
+})
+
+test.describe('Template draft: a failed repaint after a successful Save does not leave the draft dirty', () => {
+  // 2026-09-15 review (finding #1): saveTemplateDraft's success path used to depend entirely on
+  // openTemplate's own re-fetch to reset the draft's baseline. If that re-fetch failed (a network
+  // blip, unrelated to the save itself, which had already committed for real), the draft was left
+  // looking exactly as dirty as before -- inviting a retry that would re-insert every staged
+  // exercise a second time.
+  test('a failed post-save repaint leaves the draft clean, not still dirty -- a retry must not re-insert', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: '[E2E] I6 Repaint Fail' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: t.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 })
+      return { templateId: t.id }
+    })
+    try {
+      await page.evaluate(async (id) => { await openTemplate(id) }, setup.templateId)
+      await page.evaluate(() => {
+        window._exerciseDetailPicked = { name: '[E2E] New', id: null }
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+      })
+      const r = await page.evaluate(async () => {
+        const realOpenTemplate = window.openTemplate
+        // Simulate openTemplate's OWN documented fetch-failure path -- paints an error and returns
+        // without touching window._templateDraft, exactly like a real network failure would.
+        window.openTemplate = async () => { document.getElementById('main-content').innerHTML = '<div class="loading-state">simulated fetch failure</div>' }
+        let result
+        try {
+          result = await saveTemplateDraft()
+        } finally {
+          window.openTemplate = realOpenTemplate
+        }
+        return { result, stillDirty: _templateDraftIsDirty(), exerciseNames: window._templateDraft.exercises.map(e => e.exercise_name) }
+      })
+      expect(r.result, 'the batch itself succeeded -- only the repaint failed').toBe('ok')
+      expect(r.stillDirty, 'the draft must be clean even though the repaint failed, or a retry would re-insert').toBe(false)
+      expect(r.exerciseNames).toEqual(['[E2E] A', '[E2E] New'])
+
+      // Prove no duplicate: if this were still broken, a second saveTemplateDraft() call here would
+      // see (falsely) dirty state and insert a second "[E2E] New" row.
+      await page.evaluate(() => saveTemplateDraft())
+      const dbNames = await page.evaluate(async (id) => {
+        const { data } = await db.from('workout_template_exercises').select('exercise_name').eq('template_id', id)
+        return data.map(r => r.exercise_name).sort()
+      }, setup.templateId)
+      expect(dbNames, 'a retry after the repaint failure must not have re-inserted the same exercise').toEqual(['[E2E] A', '[E2E] New'])
+    } finally {
+      await page.evaluate(async (id) => {
+        await db.from('workout_template_exercises').delete().eq('template_id', id).select('id')
+        await db.from('workout_templates').delete().eq('id', id).select('id')
+      }, setup.templateId)
     }
   })
 })
@@ -1314,6 +1508,87 @@ test.describe('Template draft: client-copy propagation prompt is pluralized', ()
         await db.from('program_phase_workouts').delete().eq('id', s.pwId).select('id')
         await db.from('workout_template_exercises').delete().eq('template_id', s.templateId).select('id')
         await db.from('workout_templates').delete().in('name', ['[E2E] I3 Session']).eq('coach_id', currentUser.id).select('id')
+        await db.from('program_phases').delete().eq('id', s.phaseId).select('id')
+        await db.from('programs').delete().eq('id', s.programId).select('id')
+      }, setup)
+    }
+  })
+})
+
+test.describe('Template draft: a partial-failure Save still propagates whatever succeeded', () => {
+  // 2026-09-15 review (finding #2): a batch that failed partway through used to return 'failed'
+  // WITHOUT ever calling _checkClientPlanPropagation for the changes that HAD already committed for
+  // real. The recovery path's fresh baseline then no longer contains those changes, so a later
+  // successful retry never offers them to propagation either -- permanently stranding a real,
+  // committed write from ever reaching an assigned client's copy.
+  test('an insert that succeeds before a later rename fails still triggers the client-copy prompt', async ({ page }) => {
+    await loginAsPT(page)
+    const setup = await page.evaluate(async () => {
+      const { data: clientRow } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).limit(1).single()
+      const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] I7 Program' }).select('id').single()
+      const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
+      const { data: masterTmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] I7 Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: masterTmpl.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 })
+      const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: masterTmpl.id, week_number: 1 }).select('id').single()
+      const { data: cloneTmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: null, client_id: clientRow.id, name: '[E2E] I7 Session' }).select('id').single()
+      await db.from('workout_template_exercises').insert({ template_id: cloneTmpl.id, exercise_name: '[E2E] A', exercise_type: 'strength', order_index: 0 })
+      const { data: cp } = await db.from('client_programs').insert({ client_id: clientRow.id, program_id: prog.id }).select('id').single()
+      await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: cloneTmpl.id, week_number: 1 })
+      return { programId: prog.id, phaseId: phase.id, templateId: masterTmpl.id, pwId: pw.id, cloneTmplId: cloneTmpl.id, cpId: cp.id }
+    })
+    try {
+      await page.evaluate(async ({ templateId, pwId, programId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId: pwId })
+      }, { templateId: setup.templateId, pwId: setup.pwId, programId: setup.programId })
+      const r = await page.evaluate(async () => {
+        // Stage an ADD (runs, and succeeds for real, BEFORE rename in saveTemplateDraft's own op
+        // order) and a rename (staged to fail). By the time rename fails, the add has already
+        // committed to the database.
+        window._exerciseDetailPicked = { name: '[E2E] New', id: null }
+        const mk = (id, t = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(t); e.id = id; document.body.appendChild(e) }; return e }
+        mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+        mk('att-notes', 'textarea'); mk('att-superset', 'input'); mk('att-error', 'span')
+        document.getElementById('att-type').value = 'weight_reps'
+        window._templateSets = [{ effortType: 'rpe' }]
+        _stageAddExercise()
+        mk('et-name').value = '[E2E] I7 Renamed'
+        mk('et-desc', 'textarea')
+        _stageRenameTemplate()
+        document.getElementById('et-name')?.remove()
+        document.getElementById('et-desc')?.remove()
+
+        const realFrom = db.from.bind(db)
+        db.from = (tbl) => {
+          if (tbl !== 'workout_templates') return realFrom(tbl)
+          const real = realFrom(tbl)
+          return {
+            ...real,
+            select: real.select.bind(real),
+            insert: real.insert.bind(real),
+            update: () => ({ eq: () => ({ eq: () => ({ select: () => Promise.resolve({ data: [], error: null }) }) }) }),
+          }
+        }
+        let result
+        try {
+          result = await saveTemplateDraft()
+        } finally {
+          db.from = realFrom
+        }
+        return { result, modalText: document.getElementById('client-copy-modal')?.textContent || '' }
+      })
+      expect(r.result, 'the rename must have failed as staged').toBe('failed')
+      expect(r.modalText, 'the insert that DID succeed must still have been offered to the real client -- a partial failure must not strand it').toBeTruthy()
+      expect(r.modalText).toContain('Update assigned clients?')
+    } finally {
+      await page.evaluate(() => { document.getElementById('client-copy-modal')?.remove() })
+      await page.evaluate(async (s) => {
+        await db.from('client_program_workouts').delete().eq('client_program_id', s.cpId).select('id')
+        await db.from('client_programs').delete().eq('id', s.cpId).select('id')
+        await db.from('workout_template_exercises').delete().eq('template_id', s.cloneTmplId).select('id')
+        await db.from('workout_templates').delete().eq('id', s.cloneTmplId).select('id')
+        await db.from('program_phase_workouts').delete().eq('id', s.pwId).select('id')
+        await db.from('workout_template_exercises').delete().eq('template_id', s.templateId).select('id')
+        await db.from('workout_templates').delete().in('name', ['[E2E] I7 Session']).eq('coach_id', currentUser.id).select('id')
         await db.from('program_phases').delete().eq('id', s.phaseId).select('id')
         await db.from('programs').delete().eq('id', s.programId).select('id')
       }, setup)

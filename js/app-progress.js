@@ -216,7 +216,7 @@ async function renderClient1RMs(clientId, el) {
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <h3 style="margin:0;font-size:var(--text-xl, 16px);font-weight:700">My Personal Bests</h3>
+      <h3 style="margin:0;font-size:var(--text-xl, 16px);font-weight:700">${el.id === 'pb-1rms-section' ? 'My Personal Bests' : 'Personal Bests'}</h3>
       <button class="btn-primary" style="font-size:var(--text-base, 13px);padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add lift</button>
     </div>
     <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:14px">Edit any value and press Save all. Each save keeps your previous number as history.</div>

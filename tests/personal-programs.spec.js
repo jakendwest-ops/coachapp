@@ -151,14 +151,17 @@ test.describe('Personal / PT program boundary', () => {
       await page.evaluate(() => switchView('solo'))
       await page.waitForTimeout(800)
 
-      // Drive the real orchestration path — the function that produced Jake's dialog.
+      // Drive the real orchestration path — the function that produced Jake's dialog. Passed
+      // directly as ctxOverride/changesOverride (the shape saveTemplateDraft itself now calls with)
+      // rather than through the old singular window._lastExerciseChange global, which production no
+      // longer reads -- setting it left this test silently vacuous (found by the 2026-09-15 review).
       await page.evaluate(async ({ templateId, programId, ppwId, tag }) => {
-        window._templateCtx = { programId, phaseWorkoutId: ppwId, isClientPlan: false, backLabel: 'Program' }
-        window._lastExerciseChange = {
+        const ctx = { programId, phaseWorkoutId: ppwId, isClientPlan: false, backLabel: 'Program' }
+        const changes = [{
           op: 'update', matchName: `${tag} Back Squat`,
           row: { exercise_name: `${tag} Back Squat`, exercise_type: 'strength', order_index: 0, sets_json: [{ repsMin: '99', repsMax: '99' }] }
-        }
-        await _checkClientPlanPropagation(templateId)
+        }]
+        await _checkClientPlanPropagation(templateId, ctx, changes)
       }, { templateId: fx.templateId, programId: fx.programId, ppwId: fx.ppwId, tag: TAG })
       await page.waitForTimeout(700)
 
@@ -171,6 +174,71 @@ test.describe('Personal / PT program boundary', () => {
       }, real.cloneId)
       expect(clientSets?.[0]?.repsMin, "a personal edit must not reach a real client's plan").toBe('5')
     } finally {
+      await removeSoloRecord(page, solo)
+      await cleanup(page, fx, real)
+    }
+  })
+
+  // 2026-09-15 review (finding, all three review angles independently): switchView used to flip
+  // currentProfile.role BEFORE checking whether a template draft was dirty, then route through
+  // navigate()'s own dirty guard as an afterthought. A Save triggered by that guard ran under the
+  // NEW role, not the one the edit was actually staged under -- a coach-view edit saved via a
+  // switch-to-Personal tap could run propagation with role already 'solo', silently skipping a real
+  // client who should have been offered the update. switchView must resolve the dirty draft (and any
+  // Save it triggers) BEFORE flipping role, exactly like this test proves.
+  test('switching view with a dirty coach-view draft saves under the ORIGINAL role, not the new one', async ({ page }) => {
+    const solo = await plantSoloRecord(page)
+    test.skip(!!solo.error, `could not plant solo record: ${solo.error}`)
+    let fx, real
+    try {
+      fx = await plantProgram(page, { name: `${TAG} Switch Mid-Edit`, isPersonal: false })
+      real = await attachRealClient(page, fx)
+      test.skip(!!real.skip, real.skip)
+
+      // switchView completes its role flip synchronously when the draft isn't dirty (no async gap
+      // to await here) -- by the time this evaluate() call returns, currentProfile.role is already
+      // 'coach'.
+      await page.evaluate(() => switchView('coach'))
+      await page.evaluate(async ({ templateId, programId, ppwId }) => {
+        await openTemplate(templateId, { programId, phaseWorkoutId: ppwId })
+      }, { templateId: fx.templateId, programId: fx.programId, ppwId: fx.ppwId })
+      await page.evaluate(() => {
+        window._templateDraft.exercises[0].sets_json = [{ repsMin: '3', repsMax: '3' }]
+      })
+
+      // The switch must intercept the dirty draft BEFORE touching currentProfile.role -- if it
+      // doesn't, this resolves with role already 'solo' and no prompt.
+      await page.evaluate(() => { switchView('solo') })
+      await page.locator('#confirm-dialog button', { hasText: /^save/i }).click()
+      await page.waitForSelector('#client-copy-modal', { timeout: 10000 })
+
+      const roleDuringModal = await page.evaluate(() => currentProfile?.role)
+      expect(roleDuringModal, 'the "Update assigned clients?" prompt appearing at all proves propagation ran under the ORIGINAL coach role -- a solo role at this point would have suppressed it silently').toBe('coach')
+
+      const modalText = await page.evaluate(() => document.getElementById('client-copy-modal')?.textContent || '')
+      expect(modalText, "the real client must be NAMED, not just some non-empty prompt -- this is the write path Personal view must never reach BY ACCIDENT, but this edit was genuinely staged and saved while still in coach view").toContain(real.clientName)
+
+      // Click "Update their copies" for real, and prove the write actually lands -- not just that
+      // the modal appeared. expect.poll, not page.waitForFunction: Playwright's waitForFunction
+      // poller checks `result !== false` against whatever a single predicate call returns
+      // synchronously -- an ASYNC predicate returns a Promise (always truthy), so it fulfills on
+      // the FIRST tick and never actually retries. It would have passed here only by the same
+      // lucky-timing race this test was written to eliminate (found by the 2026-09-16 scoped
+      // re-review, proven empirically against this repo's own Playwright version). expect.poll
+      // genuinely awaits an async callback and retries until it matches.
+      await page.locator('#client-copy-modal button', { hasText: /^update their copies$/i }).click()
+      await expect.poll(async () => page.evaluate(async (cloneId) => {
+        const { data } = await db.from('workout_template_exercises').select('sets_json').eq('template_id', cloneId)
+        return data?.[0]?.sets_json?.[0]?.repsMin ?? null
+      }, real.cloneId), { timeout: 10000, message: "the real client's copy must actually receive the update this modal promised" }).toBe('3')
+
+      // The view switch itself must still complete once the draft is resolved -- this isn't a
+      // guard that got stuck refusing the legitimate switch, it just had to wait its turn.
+      await page.waitForFunction(() => currentProfile?.role === 'solo', null, { timeout: 10000 })
+      const finalRole = await page.evaluate(() => currentProfile?.role)
+      expect(finalRole, 'the switch to Personal view must complete after the save resolves').toBe('solo')
+    } finally {
+      await page.evaluate(() => { document.getElementById('client-copy-modal')?.remove() })
       await removeSoloRecord(page, solo)
       await cleanup(page, fx, real)
     }

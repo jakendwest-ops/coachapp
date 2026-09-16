@@ -1104,6 +1104,31 @@ function switchView(view) {
   // This is the owner's own account shape, which is precisely the account the gate most needs to hold.
   if (document.getElementById('consent-gate-modal')) return
   if (!window._masterAccount) return
+  // Check the template-draft dirty state and resolve it BEFORE flipping role -- not after. A
+  // staged edit's client-copy propagation reads currentProfile.role live (Personal view must never
+  // even name a real client, let alone write to their plan); flipping role first and only THEN
+  // routing through navigate()'s own dirty guard meant a Save triggered by this switch could run
+  // under the NEW role instead of the one the edit was actually made under -- a Personal-view edit
+  // saved after switching to PT could offer to write into a real client's plan, or the reverse could
+  // silently skip a real client that should have been offered the update (found by the 2026-09-15
+  // review, independently in all three review angles). Mirrors navigate()'s own proven-terminating
+  // shape: recurse into switchView() once the draft is confirmed clean/resolved.
+  if (_templateDraftIsDirty()) {
+    _confirmLeaveTemplateDraft().then(async (choice) => {
+      if (choice === 'keep') return
+      if (choice === 'discard') {
+        const d = window._templateDraft
+        window._templateDraft = { ...d, exercises: d.exercisesBaseline.map(_toDraftRow), meta: { ...d.metaBaseline } }
+      }
+      if (choice === 'save') {
+        const result = await saveTemplateDraft()
+        if (result !== 'ok') return
+        await _waitForPropagationModalsToClear()
+      }
+      switchView(view)
+    })
+    return
+  }
   currentProfile = { ...currentProfile, role: view }
   localStorage.setItem('_activeView', view)
   updateViewSwitcherButtons(view)
@@ -1274,9 +1299,11 @@ function navigate(page, _historyOp = 'push') {
   // when window._templateDraft is null/undefined, so this is a no-op for the other 99% of
   // navigate() calls -- every existing caller throughout the app is unaffected and continues to
   // call navigate() fire-and-forget, exactly as before. This covers every exit route
-  // _templateGoBack does NOT: nav-tab taps, browser Back/popstate, switchView. _templateGoBack's
-  // own dirty check already covers its own 3 branches (backFn/openClientProgramsTab/navigate) and
-  // leaves the draft clean before ever reaching here, so this never double-prompts.
+  // _templateGoBack does NOT: nav-tab taps and browser Back/popstate. switchView() now runs its own
+  // copy of this same check BEFORE flipping role (see its comment for why), so by the time it calls
+  // navigate() the draft is already clean and this is a no-op for that path too -- never a
+  // double-prompt. _templateGoBack's own dirty check already covers its own 3 branches
+  // (backFn/openClientProgramsTab/navigate) and leaves the draft clean before ever reaching here.
   if (_templateDraftIsDirty()) {
     _confirmLeaveTemplateDraft().then(async (choice) => {
       if (choice === 'keep') return
