@@ -53,14 +53,25 @@ decaying, independent of anything found by this analysis:
 
 - The weekly full-file `multi-agent-review` pass last ran 9 days ago (threshold: 7).
 - 88 previously-made predictions are past their verify-by date and still ungraded.
-- A mandatory `deploy-check` gate has no trace in `LOG.md` across the last 5 sessions — "it ran
-  once in July" is not evidence it still runs.
+- A mandatory `deploy-check` gate has no trace in `LOG.md` across the last 5 sessions.
 - 43 reported bugs have sat open for 7+ days (see [backlog.md](backlog.md) for the full breakdown);
   the oldest is 72 days old as of this snapshot.
 
 This matters here specifically because it's direct, current evidence that the *existing* Vault-based
 tracking system is itself accumulating debt — which is close to the actual motivation for building
 this in-repo documentation set in the first place.
+
+**Update 2026-09-16 (uncommitted — see git status):**
+
+- 5 bug rows closed via rule (b), hand-checked against real spec content. See [backlog.md](backlog.md).
+- `deploy-check`/`feature-audit`/`mobile-check` now stamp a `state/last-<skill>-run` marker
+  (mirrors `full-file-review`), toward replacing `gates-fired`'s lost evidence. No staleness check
+  reads it yet — these gates are event-triggered, not periodic; needs measurement first.
+- Finished the skills migration — see [decisions.md](decisions.md).
+- **New, unfixed:** `predictions.jsonl` has 7 duplicate `id` values, 3 pairing a graded record with
+  a still-overdue one (`pth-034`, `pth-090`, `pth-109`) — ambiguous for Rule 6's id-keyed logic.
+  Blocked tonight (path outside declared working dirs, Jake unavailable to review); needs his pass.
+- The 88 ungraded predictions are otherwise untouched — most need Jake's own read, not code evidence.
 
 ## Minor hygiene debt
 

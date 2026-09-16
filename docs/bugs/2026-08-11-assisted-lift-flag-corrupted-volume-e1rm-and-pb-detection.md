@@ -1,8 +1,10 @@
 ---
 id: 2026-08-11-assisted-lift-flag-corrupted-volume-e1rm-and-pb-detection
-status: fixed-awaiting-jake
+status: closed
 priority: critical
 reported: 2026-08-11
+closed_by: tests/assisted-lift-removed-2026-08-11.spec.js
+status_detail: "CLOSED 2026-09-15 via closure rule (b): tests/assisted-lift-removed-2026-08-11.spec.js asserts _cleanTemplateSets drops assisted/assistWeight even when handed them explicitly — the exact removal this critical row required, and a real live scan already confirmed zero historical sets carried the flag, so no data repair was owed."
 ---
 
 # The assisted-lift flag was unreachable AND sign-flipped logged weight

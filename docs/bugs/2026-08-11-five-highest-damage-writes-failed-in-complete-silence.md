@@ -1,8 +1,10 @@
 ---
 id: 2026-08-11-five-highest-damage-writes-failed-in-complete-silence
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-08-11
+closed_by: tests/silent-write-failures-2026-08-11.spec.js
+status_detail: "CLOSED 2026-09-15 via closure rule (b): tests/silent-write-failures-2026-08-11.spec.js's header comment enumerates all 5 named functions verbatim and its tests exercise them (including _cloneTemplateForClient's empty-workout-on-failed-insert case). Matches the row's own 'Pinned by' citation."
 ---
 
 # The five highest-damage writes failed in complete silence

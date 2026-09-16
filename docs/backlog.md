@@ -1,35 +1,33 @@
 # Backlog Snapshot
 
 **The live bug ledger is now [`docs/bugs/`](bugs/)** — one markdown file per bug, migrated wholesale
-from the Vault 2026-09-15 as part of retiring the Vault as CoachApp's system of record. This file is
-a snapshot/index over it, not a live query — the counts below will drift as bugs get filed/closed.
+from the Vault 2026-09-15. This file is a snapshot/index over it, not a live query — counts below
+will drift as bugs get filed/closed.
 
-**Transitional caveat:** the `os-lint` health-check hook that tracks staleness/counts is still
-wired to the Vault's copy of `bugs/`, not `docs/bugs/`, until the hook is repointed (a separate,
-deliberately-gated step — see [decisions.md](decisions.md)'s open item on the Vault migration).
-Until that happens, file new bugs in **both** places or expect `os-lint`'s numbers to silently stop
-matching this file — that exact two-copies-drift failure mode is why this note exists.
+**Resolved 2026-09-15:** `os-lint`'s `BUGS` path now points at `docs/bugs/`. Verified: its open-bug
+count (43) matches this file's count below. **File new bugs here only.**
 
 **Bug intake/closure rule** (migrated from the Vault's `STATUS.md`, verbatim in spirit): the moment
 Jake reports a bug, it becomes a file in `docs/bugs/` — before investigation starts, not at
 session-end. Each file is `bugs/NNN-slug.md` with YAML frontmatter (`status`, `priority`,
 `reported`, `status_detail`) plus the full original description as the body. **A Jake-reported item
 closes only on (a) Jake confirming it, or (b) a test that went red before the fix and green after**
-— never by inference, never because a commit message claimed it. `status: fixed-awaiting-jake` is a
-relabel when a fix ships, not a close.
+— never by inference, never because a commit message claimed it. `fixed-awaiting-jake` is a relabel,
+not a close.
 
-**Snapshot taken:** 2026-09-15, directly counted from the 227 files' `status:`/`priority:`
-frontmatter (verified via a direct grep count in this session, not carried over from an earlier
-estimate).
+**Snapshot:** 2026-09-15, counted from frontmatter. **2026-09-16:** hand-checked all 18
+`closure-candidates` rows against real spec content. 5 closed (genuine rule-(b) evidence); 8 left
+open on purpose (row text reserves closure for Jake); 1 left open with a note (real fix, no
+asserting spec); 4 citations were false-positive matches. Counts below reflect the 5 closures.
 
 ## Status breakdown (227 total, exact count)
 
 | Status | Count |
 |---|---|
-| fixed-awaiting-jake | 98 |
+| fixed-awaiting-jake | 93 |
 | confirmed | 54 |
 | open | 43 |
-| closed | 20 |
+| closed | 25 |
 | deferred | 12 |
 
 ## Priority breakdown (exact count)
@@ -42,8 +40,9 @@ estimate).
 | critical | 11 |
 | unset | 2 |
 
-**Critical bugs (11) by current status:** 5 fixed-awaiting-jake, 3 confirmed, 2 closed, 1 deferred.
-**None are currently `open`.**
+**Critical bugs (11) by current status:** 4 fixed-awaiting-jake, 3 confirmed, 3 closed, 1 deferred
+(one critical row — the assisted-lift weight-sign-flip bug — closed 2026-09-16 via a genuine
+red-before/green-after test; see below). **None are currently `open`.**
 
 ## The 1 deferred critical
 
@@ -83,7 +82,7 @@ these as directional, not precise:
 - The theme breakdown above is this session's own read of 43 real filenames, not a verified,
   per-bug review of content — a bug filed under one theme may turn out to be more accurately
   described by another once actually read.
-- Whether the 98-item "fixed-awaiting-jake" bucket represents a confirmation-workflow bottleneck or
+- Whether the 93-item "fixed-awaiting-jake" bucket represents a confirmation-workflow bottleneck or
   normal cadence is not established — it's the largest single bucket, which is worth Jake's own
   attention, but no claim is made here about why.
 - The 12 deferred bugs beyond the GDPR one are mostly scope/infra decisions (e.g. a Supabase Pro

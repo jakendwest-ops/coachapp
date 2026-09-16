@@ -14,16 +14,29 @@ decisions, technical debt, and the bug ledger (`docs/bugs/`, migrated wholesale 
 happened, what you remember doing, or an unverified summary carried over in context — if `docs/`
 has an answer, read the file.
 
-**Migration complete, 2026-09-15.** `os-lint.mjs`, `guardrails.mjs`, and the `hello-claude`/`save`/
-`run-coachapp` skills now live in this repo (`.claude/hooks/`, `.claude/skills/`), not `~/.claude` —
-CoachApp is self-contained for its own ritual/lint automation. PTHub (the other project that
-previously justified keeping this machinery shared) ended 2026-09-15; its own PTHub-specific
-branches were stripped from the moved hooks at the same time. `claim-check.mjs` and
-`standing-behaviours.mjs` stay in `~/.claude` — confirmed generic, not CoachApp-specific.
-**Not yet verified:** whether a fresh session reliably resolves bare `/save`/"hello claude" to this
-new location — see `docs/decisions.md`'s 2026-09-15 entries for what's confirmed vs. still open.
-The Vault folder itself has not been deleted — retained as a historical archive (most of it is now
-duplicated into `docs/archive/` anyway) pending Jake's own decision on its fate.
+**Migration complete, 2026-09-15/16.** All 9 skills (`hello-claude`, `save`, `run-coachapp`,
+`deploy-check`, `feature-audit`, `mobile-check`, `multi-agent-review`, `playwright`, `sql-safety`)
+and both hooks (`os-lint.mjs`, `guardrails.mjs`) now live in this repo (`.claude/hooks/`,
+`.claude/skills/`), not `~/.claude` — CoachApp is fully self-contained for its own ritual/lint
+automation. PTHub (the other project that previously justified keeping this machinery shared) ended
+2026-09-15; its own PTHub-specific branches were stripped from the moved hooks at the same time.
+`claim-check.mjs` and `standing-behaviours.mjs` stay in `~/.claude` — confirmed generic, not
+CoachApp-specific. **Not yet verified:** whether a fresh session reliably resolves bare
+`/save`/"hello claude" to this new location — see `docs/decisions.md`'s 2026-09-15 entries for
+what's confirmed vs. still open.
+
+**Correction, 2026-09-16 — the Vault is not uniformly "historical."** The line above and the
+2026-09-15 decision both describe the CoachApp-specific project files (`STATUS.md`, `LOG.md`,
+`bugs/`) that were migrated wholesale into `docs/`. Separately, `Vault/memory/predictions.jsonl`,
+`lessons.jsonl`, and `beliefs.jsonl` are a **different, still-live, cross-project** memory ledger
+(shared with PTHub's own historical entries) that was never part of that migration and isn't
+CoachApp-specific — `guardrails.mjs` Rule 6 actively reads and blocks on `predictions.jsonl` state on
+every commit. The Vault itself is its own git repo (`github.com/jakendwest-ops/vault.git`), so this
+isn't an unversioned-data risk, just a doctrine statement that overreached: "the Vault is retired"
+was true of the project-specific files, not of this cross-project ledger. The Vault folder itself
+has not been deleted — retained as a historical archive for the migrated project files (most of it
+is now duplicated into `docs/archive/` anyway) pending Jake's own decision on its fate; the live
+JSONL ledger is the one part of it that is not archival.
 
 ## What this is
 
@@ -166,7 +179,9 @@ its own "Requires Validation" section; treat unmarked claims as checked, marked 
 **Vault (`C:\Users\jaken\Claude\Vault\projects\CoachApp`) — now a historical archive, not live.**
 Retained, not deleted; see "Repository source of truth" above for what (if anything) still reads it.
 
-**Skills + hooks (`os-lint`, `guardrails`, `hello-claude`, `save`, `run-coachapp`) live in this
-repo's own `.claude/hooks/` and `.claude/skills/`** — self-contained since 2026-09-15. `claim-check`
-and `standing-behaviours` stay in `~/.claude` (generic, used across other projects too). Start any
-real session with `/hello-claude`.
+**All 9 skills and both hooks live in this repo's own `.claude/hooks/` and `.claude/skills/`** —
+fully self-contained since 2026-09-16 (`hello-claude`/`save`/`run-coachapp` moved 2026-09-15;
+`deploy-check`/`feature-audit`/`mobile-check`/`multi-agent-review`/`playwright`/`sql-safety`
+followed 2026-09-16, once PTHub — the other project the shared `~/.claude` location served — had
+ended). `claim-check` and `standing-behaviours` stay in `~/.claude` (generic, used across other
+projects too). Start any real session with `/hello-claude`.

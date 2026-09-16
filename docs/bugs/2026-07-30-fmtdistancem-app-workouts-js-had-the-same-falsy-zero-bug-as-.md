@@ -1,9 +1,10 @@
 ---
 id: 2026-07-30-fmtdistancem-app-workouts-js-had-the-same-falsy-zero-bug-as-
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-07-30
-status_detail: "fixed — awaiting Jake"
+closed_by: tests/ledger-fixes-2026-07-30.spec.js
+status_detail: "CLOSED 2026-09-15 via closure rule (b): tests/ledger-fixes-2026-07-30.spec.js directly asserts fmtDistanceM(0) renders '0 m' (not blank) AND the follow-on _cardioDistanceM(s) > 0 guard regression the row's own text describes. Both halves of this row's fix are covered."
 ---
 
 # fmtDistanceM (app-workouts.js) had the same falsy-zero bug as weight/height

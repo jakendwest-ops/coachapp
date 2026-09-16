@@ -12,6 +12,17 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-16 — Finished the skills migration; narrowed the "Vault is retired" doctrine.** The 6
+remaining skills (`deploy-check`, `feature-audit`, `mobile-check`, `multi-agent-review`,
+`playwright`, `sql-safety`) moved from `~/.claude/skills` into this repo, completing 2026-09-15's
+migration. Also corrected that migration's doctrine: `Vault/memory/predictions.jsonl` and siblings
+are a live, cross-project (CoachApp + PTHub) ledger `guardrails.mjs` Rule 6 depends on every commit —
+never covered by "the repo replaces the Vault." The Vault is its own git repo with a GitHub remote,
+so this was wording overreach, not unversioned data — see CLAUDE.md. *Rejected:* migrating the
+JSONL files here — mixed-project data belongs with cross-project memory, not one product's repo.
+
+---
+
 **2026-09-15 — The repo replaces the Vault as CoachApp's system of record.** Jake's explicit
 decision, resolving a question this documentation set had deliberately left open through several
 earlier passes. `docs/*.md` (including `docs/bugs/`, migrated wholesale) is now authoritative;

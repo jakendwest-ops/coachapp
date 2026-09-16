@@ -1,9 +1,10 @@
 ---
 id: 2026-08-02-builder-set-editor-decluttered-bw-assist-and-repeat-removed
-status: fixed-awaiting-jake
+status: closed
 priority: low
 reported: 2026-08-02
-status_detail: "fixed — awaiting Jake"
+closed_by: tests/ledger-fixes-2026-08-02.spec.js
+status_detail: "CLOSED 2026-09-15 via closure rule (b): tests/ledger-fixes-2026-08-02.spec.js (named in this row's own original fix text) asserts Assist/Repeat controls are gone on a new set, BW still renders as the sole remaining escape hatch, and repeatTemplateSet is dead code — matches the fix exactly."
 ---
 
 # builder set editor decluttered: BW, Assist, and Repeat removed
