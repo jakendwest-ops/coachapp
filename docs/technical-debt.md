@@ -65,8 +65,13 @@ this in-repo documentation set in the first place.
 
 - 5 bug rows closed via rule (b), hand-checked against real spec content. See [backlog.md](backlog.md).
 - `deploy-check`/`feature-audit`/`mobile-check` now stamp a `state/last-<skill>-run` marker
-  (mirrors `full-file-review`), toward replacing `gates-fired`'s lost evidence. No staleness check
-  reads it yet — these gates are event-triggered, not periodic; needs measurement first.
+  (mirrors `full-file-review`), toward replacing `gates-fired`'s lost evidence. **Resolved
+  2026-09-16:** `os-lint.mjs`'s new `checkEventGateEvidence` reads all three now — WARN-only,
+  correlating each marker against release tags (`deploy-check`) or UI-relevant commits
+  (`feature-audit`/`mobile-check`) since the marker's mtime, per this entry's own "needs measurement
+  first." Not yet a blocking gate, deliberately — see `docs/decisions.md`'s 2026-09-16 entry. Same
+  pass also retired `checkContinuityBudget` (its target was already superseded by `docs/decisions.md`,
+  per that check's own in-file comment) — same treatment `checkGatesFired` got on 2026-09-15.
 - Finished the skills migration — see [decisions.md](decisions.md).
 - **New, unfixed:** `predictions.jsonl` has 7 duplicate `id` values, 3 pairing a graded record with
   a still-overdue one (`pth-034`, `pth-090`, `pth-109`) — ambiguous for Rule 6's id-keyed logic.

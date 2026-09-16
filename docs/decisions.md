@@ -12,6 +12,27 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-16 — OS retrospective: retired `checkContinuityBudget`, added measurement-only staleness
+for the three event-triggered gate markers.** `os-lint.mjs`'s `checkContinuityBudget` was retired
+(call commented out, function and self-test fixture left in place — same treatment `checkGatesFired`
+got the day before) because its target, a "## Continuity block" heading, was deliberately superseded
+by `docs/decisions.md` at the 2026-09-15 migration and has not existed since; it had been producing a
+WARN about nothing real on every run. Separately, a new `checkEventGateEvidence` check now reads the
+`state/last-deploy-check-run`/`last-feature-audit-run`/`last-mobile-check-run` markers
+`docs/technical-debt.md` already named as unread, correlating each against release tags or
+UI-relevant commits since the marker's mtime — WARN-only, never RED.
+*Why WARN, not RED:* flipping straight to a blocking gate before counting what it flags on a clean
+tree is the exact mistake `checks.sh` rule 2 made on 2026-08-25 (this file's own entry from that
+date). This is the "measure first" step `technical-debt.md` said was still needed, not the gate itself
+— tightening it to RED is a separate, later decision once real data justifies a threshold.
+*Rejected:* building a `--self-test` fixture for the new check in the same pass — a git-based fixture
+needs a disposable temp repo with real tags/commits (the shape `guardrails.selftest.mjs` already
+uses), which is its own scoped piece of work. Inputs are env-overridable so that fixture can be added
+later without a redesign, matching `checkRule0`'s existing precedent of an overridable-but-unfixtured
+check.
+
+---
+
 **2026-09-16 — Finished the skills migration; narrowed the "Vault is retired" doctrine.** The 6
 remaining skills (`deploy-check`, `feature-audit`, `mobile-check`, `multi-agent-review`,
 `playwright`, `sql-safety`) moved from `~/.claude/skills` into this repo, completing 2026-09-15's

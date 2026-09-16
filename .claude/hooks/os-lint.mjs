@@ -151,6 +151,11 @@ function measuredCeiling (group, entries, override, inputEnv = []) {
 }
 const HELLO_SKILL = env('OSLINT_HELLO_SKILL', `${REPO}/.claude/skills/hello-claude/SKILL.md`)
 const SAVE_SKILL  = env('OSLINT_SAVE_SKILL',  `${REPO}/.claude/skills/save/SKILL.md`)
+// deploy-check/feature-audit/mobile-check each stamp one of these on completion (added 2026-09-15/16,
+// see docs/technical-debt.md's 2026-09-16 update) but nothing reads them yet. See checkEventGateEvidence.
+const DEPLOY_CHECK_MARKER  = env('OSLINT_DEPLOY_CHECK_MARKER',  `${STATE}/last-deploy-check-run`)
+const FEATURE_AUDIT_MARKER = env('OSLINT_FEATURE_AUDIT_MARKER', `${STATE}/last-feature-audit-run`)
+const MOBILE_CHECK_MARKER  = env('OSLINT_MOBILE_CHECK_MARKER',  `${STATE}/last-mobile-check-run`)
 // Documents that state their own update obligation in prose. Each needs a mechanical trigger or the
 // sentence is a promise nothing keeps — see checkDocObligations.
 const DATA_MODEL = env('OSLINT_DATA_MODEL', `${REPO}/docs/schema.md`)
@@ -1709,6 +1714,75 @@ function checkDocObligations () {
   } else ok('doc-obligations', `every obligation-bearing document is current (${checked} checked)`)
 }
 
+// ---------------------------------------------------------------------------
+// 25. Event-gate evidence — deploy-check/feature-audit/mobile-check now stamp a state/last-<skill>-run
+//     marker (docs/technical-debt.md, 2026-09-16 update) but nothing reads it yet: "No staleness check
+//     reads it yet — these gates are event-triggered, not periodic; needs measurement first." This IS
+//     that measurement step, at WARN only — never RED. Flipping straight to a blocking gate before
+//     counting what it flags on a clean tree is the exact mistake checks.sh rule 2 made on 2026-08-25
+//     (docs/decisions.md: "never flip a warn to a blocking fail without first counting what it flags").
+//
+//     "Event-triggered" means these don't run on a fixed cadence like full-file-review; the nearest
+//     mechanical proxy for "something happened that should have triggered one" is git history: a v*
+//     release tag for deploy-check (rare and deliberate, so this half is asserted with more
+//     confidence), a commit touching UI-relevant paths for feature-audit/mobile-check. Fails open on
+//     any git read error or a missing/unreadable repo — a measurement failure must never block a
+//     session, same rule this whole file follows everywhere else.
+//
+//     No --self-test fixture yet, same as checkRule0: a git-based fixture needs a disposable temp repo
+//     with real tags/commits (guardrails.selftest.mjs already does this for a different reason), which
+//     is its own piece of work, not bundled into this pass. Inputs are still env-overridable per this
+//     file's own rule, so that fixture can be added later without a redesign.
+// ---------------------------------------------------------------------------
+function checkEventGateEvidence () {
+  let git
+  try {
+    git = (...args) => execFileSync('git', args, { cwd: REPO, encoding: 'utf8' }).trim()
+    git('rev-parse', '--is-inside-work-tree')
+  } catch { warn('event-gates', 'could not read git history for this repo — skipped'); return }
+
+  const notes = []
+  const markerAge = p => (existsSync(p) ? statSync(p).mtimeMs : 0)
+  const markerLabel = t => (t ? new Date(t).toISOString().slice(0, 10) : 'never')
+
+  // deploy-check vs. release tags — rare, deliberate events, so this one is worded with confidence.
+  try {
+    const raw = git('for-each-ref', 'refs/tags/v*', '--format=%(refname:short) %(creatordate:iso-strict)')
+    const tags = raw.split(/\r?\n/).filter(Boolean).map(l => {
+      const i = l.indexOf(' ')
+      return { tag: l.slice(0, i), time: Date.parse(l.slice(i + 1)) }
+    })
+    const marker = markerAge(DEPLOY_CHECK_MARKER)
+    const unmatched = tags.filter(t => t.time > marker)
+    if (unmatched.length) {
+      const newest = unmatched.reduce((a, b) => (a.time > b.time ? a : b))
+      notes.push(`deploy-check: ${unmatched.length} release tag(s) cut since its last run `
+        + `(marker: ${markerLabel(marker)}), newest ${newest.tag}`)
+    }
+  } catch { /* no tags yet, or this sub-check failed — does not block the other sub-checks */ }
+
+  // feature-audit / mobile-check vs. commits touching UI-relevant paths.
+  for (const [label, markerPath] of [['feature-audit', FEATURE_AUDIT_MARKER], ['mobile-check', MOBILE_CHECK_MARKER]]) {
+    try {
+      const marker = markerAge(markerPath)
+      const args = ['log', '--oneline']
+      if (marker) args.push(`--since=${new Date(marker).toISOString()}`)
+      args.push('--', 'js/', 'css/', 'index.html')
+      const out = git(...args)
+      const n = out ? out.split(/\r?\n/).filter(Boolean).length : 0
+      if (n > 0) notes.push(`${label}: ${n} UI-relevant commit(s) since its last run (marker: ${markerLabel(marker)})`)
+    } catch { /* does not block the other sub-check */ }
+  }
+
+  if (notes.length) {
+    warn('event-gates', notes.join('\n    ')
+      + '\n    Measurement only per docs/technical-debt.md — not yet a gate. See docs/decisions.md\'s\n'
+      + '    2026-08-25 entry for why this starts as a count, not a blocking check.')
+  } else {
+    ok('event-gates', 'no UI-relevant commits or release tags since the last recorded run of each event-triggered gate')
+  }
+}
+
 if (process.argv.includes('--self-test')) runSelfTest()
 
 // ---------------------------------------------------------------------------
@@ -1734,15 +1808,21 @@ checkLedgerStatusDrift()
 checkContextBudget()
 checkRitualBudget()
 checkDocsBudget()
-// NOTE, 2026-09-15: checkContinuityBudget's target ("## Continuity block" in STATUS) no longer
+// NOTE, 2026-09-16: checkContinuityBudget's target ("## Continuity block" in STATUS) no longer
 // matches the post-migration structure — STATUS now points at docs/current-sprint.md, which has no
-// such heading (the continuity-log pattern was replaced by docs/decisions.md, event-triggered by
-// design, not continuously growing). Left wired rather than silently disabled: it will WARN
-// ("no Continuity block heading") each run instead of checking anything real. Not fixed further in
-// this pass — see coachapp/docs/decisions.md's 2026-09-15 entry for the full context.
-checkContinuityBudget()
+// such heading, and the project's own comment above already says the continuity-log pattern was
+// deliberately replaced by docs/decisions.md, not carried forward. That replacement's growth is
+// covered by checkDocsBudget (added 2026-09-15), so there is nothing left for this check to measure —
+// it has produced a WARN about nothing real on every run since the migration. RETIRED 2026-09-16, same
+// treatment as checkGatesFired just above it in this file's history: waiting for a check to decay into
+// permanent, meaningless noise is worse than retiring it deliberately once its target is confirmed
+// gone. Function body and self-test fixture left in place rather than deleted — same reasoning as
+// checkGatesFired's: --self-test will now report 'continuity-budget' as DECORATIVE, and that reads as
+// "intentionally retired," not "found broken and ignored."
+// checkContinuityBudget()
 checkMastheadDrift()
 checkDocObligations()
+checkEventGateEvidence()
 
 // ---------------------------------------------------------------------------
 // Hook self-tests — every guard must still be able to REFUSE
