@@ -5,58 +5,59 @@ run sprints — there is no evidence anywhere in the repo of sprint-based planni
 **tag-gated release cycle** instead (`docs/releases/*.md`, `scripts/release.mjs`,
 [decisions.md](decisions.md)). Everything below describes that cycle, reframed accordingly.
 
-**Snapshot taken:** 2026-09-15, from `git status`, `git log`, `git tag -l`, and `docs/releases/`.
+**Snapshot taken:** 2026-09-17, from `git status`, `git log`, `git tag -l`, and `docs/releases/`.
 This is a point-in-time snapshot and will be stale on next read — re-run those commands rather than
 trusting this file for anything time-sensitive.
 
 ## Last shipped (tagged + deployed)
 
-**`v2026.09.5`**, cut 2026-09-11 — builder panel placement, a per-row set-sync control, a row-level
-Remove button, and three smaller runner UI fixes. 5 confirmed self-contained fixes, no deferrals.
+**`v2026.09.6`**, cut 2026-09-17 — the workout-template builder rebuilt from write-on-every-edit to
+a staged-draft model with an explicit "Save workout" action, plus four smaller fixes from a
+2026-09-13 walkthrough. Full details, including three rounds of multi-agent review and the real
+bugs each round found and fixed (a role-flip timing hazard, a duplicate-insert-on-retry bug, a
+name-keyed reorder corruption with duplicate exercise names, a stranded-partial-failure-propagation
+bug, an id-clobber via `Object.assign`, and a broken async test-polling pattern caught by the third
+review round): [docs/releases/v2026.09.6.md](releases/v2026.09.6.md). Full suite: 675 passed / 0
+failed / 0 flaky. Deploy confirmed live (`app-workouts.js?v=129` served, no console errors).
 
 ## In flight, not yet shipped
 
-A release note for **`v2026.09.6`** exists at `docs/releases/v2026.09.6.md`, dated 2026-09-15, but
-as of this snapshot **it is an untracked file — not committed, and no `v2026.09.6` git tag exists.**
-The release it describes has not shipped. Its stated scope: rebuilding the workout template builder
-from write-on-every-edit to a staged-draft model with an explicit "Save workout" action, plus four
-smaller fixes from a 2026-09-13 walkthrough (weight-log button styling, a tab heading, per-program
-comparison scoping, and an editor button placement change).
+Nothing. The template-builder cycle above is fully shipped and deployed. No release note exists yet
+for a `v2026.09.7`.
 
 ## Recent commit activity (most recent 8, from `git log`)
 
-1. `06461ce` — docs(checks): raise spec-hygiene baseline by 1 for a fault-injection mock, not a real gap
-2. `6cb22ee` — template builder: fix checks.sh debt this branch introduced
-3. `20db166` — Merge branch 'worktree-template-draft-save': template builder staged-edits + Save workout
-4. `bbc19b7` — template builder: fix 4 critical + 5 important findings from final branch review
-5. `4cf863e` — docs(plan): insert Task 14 -- fix findings from the final whole-branch review
-6. `c7050bb` — template builder: cache-bust app-workouts.js for the staged-edits redesign
-7. `1225344` — tests: poll for real Save-then-navigate completion instead of a fixed sleep
-8. `eac4197` — docs(plan): insert Task 13b -- replace a fixed sleep with a real completion wait
+1. `42afabe` — docs(release): fill in v2026.09.6 verification numbers and known issues
+2. `1c40dad` — template builder: fix critical/important findings from the whole-branch + scoped re-reviews
+3. `e8e579c` — chore(os-lint): retire checkContinuityBudget, measure event-gate marker staleness
+4. `a09a6b8` — Close 5 bugs on rule-(b) evidence, finish the skills migration, fix stale docs
+5. `c7de3b3` — Action the AI-operating-system audit's recommendations
+6. `10ff7d8` — Consolidate CoachApp's own hooks/skills into the repo
+7. `17f08f7` — docs: migrate CoachApp's system of record from the Vault into the repo
+8. `06461ce` — docs(checks): raise spec-hygiene baseline by 1 for a fault-injection mock, not a real gap
 
-Reading top to bottom: the template-builder rework merged, then several commits paid down
-`checks.sh`/review debt it introduced — i.e., this cycle is currently in a stabilization tail, not
-new development.
+Reading top to bottom: the template-builder rework (commits further back than #8 above) merged and
+shipped this cycle; in between, a separate, independent effort migrated the system of record from
+the Vault into this repo's own `docs/` and consolidated hooks/skills — unrelated to the template
+builder, done concurrently by a different working session while this one was between turns.
 
-## The Vault's last recorded live state (2026-09-08 save — now superseded by git above)
+## Known process note this cycle
 
-Migrated for completeness, and as a worked example of exactly the staleness problem this migration
-is meant to fix: the Vault's `STATUS.md` recorded LIVE as tag `v2026.09.2` as of its last save
-(2026-09-08) — three tagged releases (`v2026.09.3`, `.4`, `.5`) shipped after that save and were
-never reflected there. **Git, not a hand-updated status file, is the current source of truth for
-what's live** — that's the whole reason this file is now built from `git`/`docs/releases/` directly
-rather than from a narrative status doc.
-
-The 2026-09-08 entry itself, for historical record: a "UX cleanup pass" — 16 items across
-runner/builder/progress/dashboards from a `/superpowers:brainstorming` design, 3 of 4 commits
-shipped (runner, builder, progress), the 4th (dashboards D2-D4) not started. Design tokens landed
-2026-08-23, cutting `js/` style literals from 1,027 to 256.
+Three full rounds of multi-agent review ran on the template-builder fix before it shipped — a
+whole-branch review, a scoped re-review of that review's own fix (which found two further real bugs
+in the fix itself), and a confirmatory re-review of *that* fix (which found one more, in a new test
+rather than production code). None of the three rounds' findings shipped unfixed. Lower-severity
+items from all three rounds were deliberately deferred rather than silently dropped — see
+`v2026.09.6.md`'s "Known issues" section and this cycle's own SDD ledger
+(`.claude/worktrees/template-draft-save/.superpowers/sdd/2026-09-13-template-draft-save/progress.md`,
+not yet cleaned up — see `docs/technical-debt.md`).
 
 ## Requires Validation
 
-- Everything above reflects `git`/filesystem state at 2026-09-15. Re-run `git status`, `git tag -l`,
-  and check `docs/releases/` for anything newer before relying on this for current work.
-- Whether `v2026.09.6` ships as drafted, gets amended, or gets superseded before tagging is unknown
-  — the release note existing is not a commitment that it ships unchanged.
-- The dashboards D2-D4 work (solo bottom-nav restructure, dashboard filtering, PT stat-tile layout)
-  was "not started" as of 2026-09-08 — not re-checked against current commits in this migration.
+- Everything above reflects `git`/filesystem state at 2026-09-17. Re-run `git status`, `git tag -l`,
+  and check `docs/releases/` for anything newer before relying on this file for current work.
+- Two of Jake's own git stashes (`.claude/worktrees/template-draft-save`'s own `stash@{0}`, and
+  `master`'s `stash@{1}` at commit `7aeb3ae`) were found untouched during this cycle's work and were
+  deliberately left alone — never stash/pop on a shared tree. `stash@{1}` in particular may be Jake's
+  own genuine work-in-progress predating this cycle; worth his own look, not something to act on
+  automatically.

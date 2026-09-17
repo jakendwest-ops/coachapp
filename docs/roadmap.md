@@ -73,6 +73,18 @@ exercises), a proper client-detach/cancellation workflow (a client can currently
 their PT via the API with no workflow or PT-side notice), AMRAP/EMOM/circuit dedicated timer modes,
 and a goals overhaul (granular mini-goals/milestones).
 
+**New 2026-09-17, from shipping `v2026.09.6` (the template-builder staged-edits + Save workout
+redesign — see [current-sprint.md](current-sprint.md) and
+[releases/v2026.09.6.md](releases/v2026.09.6.md)):**
+
+- **The equivalent propagation-once-on-Save redesign for program-workout edits** — the
+  2026-09-13 walkthrough's second ask (a confirm prompt when leaving a changed workout back to the
+  phases page, instead of a per-edit propagation interruption). Explicitly out of scope for
+  `v2026.09.6`, which covered only the template builder. Not yet scoped as its own plan.
+- **The same role-flip-before-dirty-check bug class in `app-dashboard.js`'s
+  `sudoAsClient`/`exitSudo`** — found during this release's review but deferred (narrower exposure
+  than the `switchView` case this release fixed; see [technical-debt.md](technical-debt.md)).
+
 ## Requires Validation
 
 - Everything above is dated to the Vault's last save (2026-09-08) and not re-verified against

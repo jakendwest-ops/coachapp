@@ -37,6 +37,31 @@ Migrated as historical record, not re-verified against current code — cross-ch
 [backlog.md](backlog.md)/`docs/bugs/` before treating any of the above as still accurate; several
 may already be superseded by work in more recent release notes (`docs/releases/`).
 
+**New 2026-09-17, from the template-draft-save release's own three review rounds (found, triaged,
+deliberately deferred rather than fixed in that release — full detail in
+[releases/v2026.09.6.md](releases/v2026.09.6.md)'s Known Issues, and this cycle's own SDD ledger at
+`.claude/worktrees/template-draft-save/.superpowers/sdd/2026-09-13-template-draft-save/progress.md`,
+which still needs deleting once its value is fully extracted):**
+
+- `app-dashboard.js`'s `sudoAsClient`/`exitSudo` flip `currentProfile.role` before checking for a
+  dirty template draft — the same shape a `switchView` bug this release fixed had. Narrower exposure
+  (the `'client'` role doesn't trip the same solo-suppression `'solo'` does), and the actual
+  write/disclosure decision is now safe regardless (a separate fix this release made locks that
+  decision to a role snapshot, not a live read) — but the class itself is still open on these two
+  call sites. The fix shape would mirror `switchView`'s own reorder exactly.
+- A propagation-dismissal modal can resolve `_waitForPropagationModalsToClear` on its own DOM
+  removal, before the dismissal handler's own async work (and a possible role flip) has actually
+  finished — so the wrong template's editor can render under the wrong role after dismissing a
+  propagation prompt mid-navigation. Confusing-render regression, not a data-safety one (per the
+  role-snapshot fix above).
+- The template editor's ▶ Start button (and a few other exit routes) still bypass the
+  unsaved-changes prompt entirely — no data is lost, but a staged edit can be silently left staged
+  while the user trains the pre-edit version of the workout.
+- A triplicated leave-guard block (Save/Discard/Keep-editing choice-handling) across `app-core.js`
+  (×2: `navigate()` and `switchView()`) and `app-workouts.js` (`_templateGoBack()`) — three
+  near-identical copies that would benefit from one shared helper, deferred as a refactor-only change
+  with no behavior risk.
+
 ## Test-gate coverage debt
 
 The pre-push gate covers 2 of 105 spec files (`runner.spec.js`, `solo-account.spec.js`). Most
