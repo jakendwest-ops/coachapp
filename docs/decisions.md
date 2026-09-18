@@ -12,6 +12,31 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-17 — Moved `predictions.jsonl` (CoachApp rows) from the Vault into this repo; left
+`lessons.jsonl`/`beliefs.jsonl`/`voice.md` in the Vault.** `docs/predictions.jsonl` now holds the 182
+CoachApp-labelled rows (of 196 total; 12 were PTHub, 2 blank) copied verbatim from
+`Vault/memory/predictions.jsonl`. `guardrails.mjs` RULE 6, `os-lint.mjs`'s `PREDICTIONS`/`checkMemory`,
+`save/SKILL.md` Step 10, and `vault-save.md` (outside this repo, at
+`C:\Users\jaken\Claude\.claude\commands\`) were all repointed so future CoachApp predictions are
+appended here going forward, not back into the Vault file — otherwise the split would have
+reappeared on the next `/vault-save`. RULE 6 also picked up the `inCoachApp` cwd guard RULE 2 already
+carries, closing a latent version of RULE 2's own Fourth false refusal before it could bite.
+*Why now:* this explicitly **reverses part of the 2026-09-16 entry below**, which rejected moving
+these files here because "mixed-project data belongs with cross-project memory." That was true when
+written, for PTHub as much as CoachApp — but PTHub ended 2026-09-15, the same day, so the premise
+expired before the ink dried. Verified before moving: the file held only two project labels ever
+(CoachApp, PTHub) — no third project this would wrongly affect.
+*Rejected:* moving `lessons.jsonl`/`beliefs.jsonl`/`voice.md` too. Unlike predictions, these are
+written by `vault-save.md`'s general, still-multi-project ritual for *any* project's session-end, not
+scoped to one project by a field the way predictions are — copying them into CoachApp's repo would
+have gone stale the moment another project's save appended to the real ones. An earlier pass of this
+same change did copy `lessons.jsonl` in before this was caught; it was reverted before landing.
+*Known issue carried over, not fixed here:* the migrated file still has the 7 duplicate `id` values
+`docs/technical-debt.md` already flags (`pth-034`, `pth-035`, `pth-036`, `pth-090`, `pth-109`, ×2
+each) — untouched, still needs Jake's own pass, not silently resolved by this move.
+
+---
+
 **2026-09-16 — OS retrospective: retired `checkContinuityBudget`, added measurement-only staleness
 for the three event-triggered gate markers.** `os-lint.mjs`'s `checkContinuityBudget` was retired
 (call commented out, function and self-test fixture left in place — same treatment `checkGatesFired`

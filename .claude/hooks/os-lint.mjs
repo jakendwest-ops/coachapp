@@ -168,8 +168,10 @@ const DATA_MODEL = env('OSLINT_DATA_MODEL', `${REPO}/docs/schema.md`)
 const DOCS_DIR = env('OSLINT_DOCS_DIR', `${REPO}/docs`)
 const CRITICAL   = env('OSLINT_CRITICAL',   `${REPO}/docs/critical.md`)
 const SQL_DIR    = env('OSLINT_SQL_DIR',    `${REPO}/scripts`)
-// Overridable ONLY so a detector can be proven RED→GREEN against a fixture; defaults to the real Vault file.
-const PREDICTIONS = process.env.OSLINT_PREDICTIONS || `${HOME}/Claude/Vault/memory/predictions.jsonl`
+// Overridable ONLY so a detector can be proven RED→GREEN against a fixture; defaults to the repo file.
+// REPOINTED 2026-09-17: moved from the Vault into this repo (docs/predictions.jsonl, CoachApp-only
+// rows) — see docs/decisions.md's 2026-09-17 entry and guardrails.mjs RULE 6's comment.
+const PREDICTIONS = process.env.OSLINT_PREDICTIONS || `${REPO}/docs/predictions.jsonl`
 
 const REPORT = process.argv.includes('--report')
 const DAY = 86_400_000
@@ -299,13 +301,17 @@ function checkSelfTestFresh () {
 //     Truth of a memory's CLAIM is not checkable here — that needs a human or a probe. Structure is.
 // ---------------------------------------------------------------------------
 const MEM_DIR   = env('OSLINT_MEM_DIR', `${HOME}/.claude/projects/c--Users-jaken-OneDrive-coachapp/memory`)
+// lessons.jsonl/beliefs.jsonl stay here: `Vault/memory/` is written by the general, cross-project
+// /vault-save ritual (C:\Users\jaken\Claude\.claude\commands\vault-save.md), not something CoachApp
+// owns — moving them into this repo would go stale the moment another project's save appended to the
+// real ones. predictions.jsonl is the one exception (see PREDICTIONS above and checkMemory below).
 const VAULT_MEM = env('OSLINT_VAULT_MEM', `${HOME}/Claude/Vault/memory`)
 const MEM_TYPES = ['user', 'feedback', 'project', 'reference']
 
 /** Link targets that normalise identically are the same intended name. */
 const normName = s => s.toLowerCase().replace(/[_-]/g, '')
 
-// The Vault's LIVE docs — state and plans, which must describe the world as it is now.
+// The repo's LIVE docs — state and plans, which must describe the world as it is now.
 // LOG.md is DELIBERATELY ABSENT and must stay absent: it is a historical record, so a July entry naming
 // a July-era skill or a since-deleted file is CORRECT, not stale. Measured 2026-08-21 before wiring this:
 // LOG.md holds 7 retired-term references, every one of them legitimate history, while roadmap.md holds 2
@@ -347,7 +353,7 @@ function checkLiveDocs () {
   })
   if (!LIVE_DOCS.some(p => read(p) !== null)) { warn('live-docs', `none of the live docs exist: ${LIVE_DOCS.join(', ')}`); return }
   if (hits.length) {
-    red('live-docs', `${hits.length} stale reference(s) in the Vault's LIVE docs (STATUS/roadmap/CRITICAL — NOT LOG, which is history):\n    ` + hits.join('\n    '))
+    red('live-docs', `${hits.length} stale reference(s) in the repo's LIVE docs (STATUS/roadmap/CRITICAL — NOT LOG, which is history):\n    ` + hits.join('\n    '))
   } else ok('live-docs', `STATUS/roadmap/CRITICAL name no retired term and no dead path`)
 }
 
@@ -401,10 +407,16 @@ function checkMemory () {
     for (const l of linked) if (!existsSync(join(MEM_DIR, l))) problems.push(`MEMORY.md points at ${l}, which does not exist`)
   }
 
-  // The Vault's JSONL stores: one malformed line is silently skipped by every reader.
-  for (const j of ['lessons.jsonl', 'beliefs.jsonl', 'predictions.jsonl']) {
-    const raw = read(join(VAULT_MEM, j))
-    if (raw === null) { problems.push(`${VAULT_MEM}/${j} is missing`); continue }
+  // The memory system's JSONL ledgers: one malformed line is silently skipped by every reader.
+  // predictions.jsonl moved from the Vault into this repo 2026-09-17 (CoachApp-only rows; see
+  // docs/decisions.md and guardrails.mjs RULE 6) — lessons.jsonl/beliefs.jsonl stay in the Vault.
+  for (const [j, path] of [
+    ['lessons.jsonl', join(VAULT_MEM, 'lessons.jsonl')],
+    ['beliefs.jsonl', join(VAULT_MEM, 'beliefs.jsonl')],
+    ['predictions.jsonl', PREDICTIONS],
+  ]) {
+    const raw = read(path)
+    if (raw === null) { problems.push(`${path} is missing`); continue }
     raw.split(/\r?\n/).forEach((line, i) => {
       if (!line.trim()) return
       try { JSON.parse(line) } catch { problems.push(`${j}:${i + 1} → unparseable JSON; this record is invisible to every reader`) }
@@ -1215,7 +1227,8 @@ function runSelfTest () {
       env: { OSLINT_MEM_DIR: memDir('m6', Object.fromEntries([memOK('ok')]), memIndex('ok')),
              OSLINT_VAULT_MEM: (() => { const d = join(root, 'vm'); mkdirSync(d, { recursive: true })
                for (const j of ['lessons.jsonl', 'beliefs.jsonl']) writeFileSync(join(d, j), '{}\n')
-               writeFileSync(join(d, 'predictions.jsonl'), '{ this is not json\n'); return d })() } },
+               return d })(),
+             OSLINT_PREDICTIONS: file('bad-predictions.jsonl', '{ this is not json\n') } },
 
     { check: 'corpus', name: 'corpus/skills-empty', expect: 'passing on an empty set',
       env: { OSLINT_SKILLS: join(root, 'nope') } },

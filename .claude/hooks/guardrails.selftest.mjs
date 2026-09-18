@@ -237,18 +237,22 @@ try {
 
   // THE PATH CASE. Every fixture above injects GUARDRAILS_PRED_*, which bypasses git entirely — so
   // all seven passed while the real `git show` was failing with "path is in the index, but not
-  // memory/predictions.jsonl" and the rule could never have fired in actual use. The Vault sits at
-  // Claude/Vault/ inside a repo rooted at Claude/, so the repo-relative path is NOT the cwd-relative
-  // one; the `./` form is what reconciles them. Same lesson as rule 2b: a fixture proves the logic,
-  // only the real repo proves the plumbing.
+  // docs/predictions.jsonl" and the rule could never have fired in actual use. Same lesson as rule
+  // 2b: a fixture proves the logic, only the real repo proves the plumbing.
+  //
+  // REPOINTED 2026-09-17: predictions.jsonl moved from the Vault into this repo at
+  // docs/predictions.jsonl (see guardrails.mjs RULE 6's comment) — this now reads the real CoachApp
+  // repo, not a separate one, so the old Claude/Vault/-vs-Claude/ path-reconciliation concern this
+  // comment used to describe no longer applies; `./` is kept only for consistency with RULE 2/5's
+  // existing `git show :./<path>` form.
   try {
-    const VAULT = 'C:/Users/jaken/Claude/Vault'
-    const show = ref => execFileSync('git', ['show', ref], { cwd: VAULT, encoding: 'utf8', stdio: 'pipe', maxBuffer: 20 * 1024 * 1024 })
-    const head = show('HEAD:./memory/predictions.jsonl')
+    const REAL_REPO = 'c:/Users/jaken/OneDrive/coachapp'
+    const show = ref => execFileSync('git', ['show', ref], { cwd: REAL_REPO, encoding: 'utf8', stdio: 'pipe', maxBuffer: 20 * 1024 * 1024 })
+    const head = show('HEAD:./docs/predictions.jsonl')
     say(head.trim().length > 0 && head.includes('"verify_by"'), 'PATH ',
-      'the real Vault predictions.jsonl actually resolves — the rule is not decorative')
+      'the real docs/predictions.jsonl actually resolves — the rule is not decorative')
   } catch (e) {
-    say(false, 'PATH ', `real Vault path did NOT resolve: ${String(e.message).slice(0, 80)}`)
+    say(false, 'PATH ', `real docs/predictions.jsonl path did NOT resolve: ${String(e.message).slice(0, 80)}`)
   }
 } finally {
   rmSync(dir, { recursive: true, force: true })

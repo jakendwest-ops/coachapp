@@ -162,8 +162,10 @@ updates to:
 - `docs/technical-debt.md` — if a debt pattern was introduced, resolved, or newly understood
 - `docs/handover.md` — if enough of the above changed that its summary would now mislead a reviewer
 
-This is separate from, and does not replace, the Vault's own `/save` end-of-session ritual for
-`STATUS.md`/`LOG.md`.
+This is separate from, and does not replace, the Vault's own `/vault-save` end-of-session ritual
+(renamed from `/save` 2026-07-02, to end a name collision with this repo's own skill) for the
+Vault's own top-level `STATUS.md`/`LOG.md` — general cross-project continuity, not CoachApp's own
+(frozen, historical) `Vault/projects/CoachApp/STATUS.md`.
 
 ## Where the real docs live
 

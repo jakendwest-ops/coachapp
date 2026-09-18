@@ -101,6 +101,8 @@ this in-repo documentation set in the first place.
 - **New, unfixed:** `predictions.jsonl` has 7 duplicate `id` values, 3 pairing a graded record with
   a still-overdue one (`pth-034`, `pth-090`, `pth-109`) — ambiguous for Rule 6's id-keyed logic.
   Blocked tonight (path outside declared working dirs, Jake unavailable to review); needs his pass.
+  **2026-09-17:** the file itself moved from the Vault to `docs/predictions.jsonl` in this repo (see
+  `decisions.md`'s 2026-09-17 entry) — the duplicates moved with it, untouched; still needs Jake.
 - The 88 ungraded predictions are otherwise untouched — most need Jake's own read, not code evidence.
 
 ## Minor hygiene debt

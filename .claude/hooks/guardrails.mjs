@@ -360,24 +360,32 @@ if (/\bgit\s+commit\b/.test(bareCmd)) {
 //      so the backlog can always be drained incrementally, in as many commits as it takes;
 //   2. the ungraded count is read from the STAGED content, not the working tree, so grading and
 //      appending in the SAME commit (which is what /save does) passes as long as the result is clean.
+// REPOINTED 2026-09-17: predictions.jsonl moved from the Vault (a separate repo, cross-project with
+// PTHub) into this repo at docs/predictions.jsonl — PTHub-labelled rows left behind. PTHub ended
+// 2026-09-15 and this file held only two project labels, CoachApp and PTHub (verified before the
+// move), so there was no longer a second live project for this to be "cross-project" WITH. Now reads
+// the same repo RULE 2/5 already do, via the same staged-vs-HEAD pattern, instead of shelling into a
+// separate git repo — and picks up the `inCoachApp` guard RULE 2 already learned it needed (Fourth
+// false refusal, 2026-08-22: a hardcoded repo path fired regardless of which repo the commit was
+// actually in — the exact shape this rule was exposed to before, since a fixed cwd means it only
+// ever compared THIS repo's own index, no matter what command or repo triggered the hook).
+//
 // Scoped to CoachApp's own predictions, matching os-lint's stale-predictions check exactly — one
-// fact, one definition. PTHub ended (2026-09-15) and is no longer tracked here at all — this used
-// to be a `project !== 'PTHub'` exclusion (PTHub was "frozen," a live-but-paused project), which is
-// no longer accurate now that it's over, not paused. Verified before narrowing: predictions.jsonl
-// holds only two project labels, CoachApp and PTHub — no third project this filter would wrongly drop.
-const VAULT = process.env.GUARDRAILS_VAULT || 'C:/Users/jaken/Claude/Vault'
-const PRED_PATH = 'memory/predictions.jsonl'
-if (/\bgit\s+commit\b/.test(bareCmd)) {
-  const readVault = (envVar, gitArgs) => {
+// fact, one definition. The project-label filter below stays even though every remaining row is
+// already CoachApp: it costs nothing, and it is the same guard against a future non-CoachApp row
+// os-lint's check already relies on.
+const PRED_PATH = 'docs/predictions.jsonl'
+if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
+  const readRepo = (envVar, gitArgs) => {
     if (process.env[envVar] !== undefined) return process.env[envVar]
-    try { return execSync(gitArgs, { cwd: VAULT, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }) }
+    try { return execSync(gitArgs, { cwd: REPO, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }) }
     catch { return null }
   }
 
-  const stagedText = readVault('GUARDRAILS_PRED_STAGED', `git show :./${PRED_PATH}`)
-  const headText   = readVault('GUARDRAILS_PRED_HEAD',   `git show HEAD:./${PRED_PATH}`)
+  const stagedText = readRepo('GUARDRAILS_PRED_STAGED', `git show :./${PRED_PATH}`)
+  const headText   = readRepo('GUARDRAILS_PRED_HEAD',   `git show HEAD:./${PRED_PATH}`)
 
-  // Any read failure means this commit is not a Vault predictions commit (or git is unreadable
+  // Any read failure means this commit does not touch predictions.jsonl (or git is unreadable
   // here). Never block on a measurement failure — that is how a guard starts refusing everything.
   if (stagedText !== null && headText !== null && stagedText !== headText) {
     const parse = t => t.split(/\r?\n/).filter(Boolean)

@@ -19,20 +19,20 @@ line up.
 
 Run every step below in order. Do not skip any.
 
-**Note (golden path, 2026-07-02, updated 2026-09-15):** Bare `/save` now dispatches to THIS skill and nothing else — the framework Vault-OS deposit ritual was renamed to `/vault-save` (`C:\Users\jaken\Claude\.claude\commands\vault-save.md`) to end the name collision. That ritual still owns predictions capture, owner-voice deltas, and the ledger line, and it no longer fires automatically: **read `vault-save.md` before Step 10 and fold its file-writing duties (predictions.jsonl, lessons.jsonl/beliefs.jsonl, voice.md, ledgers/log.md) in — they land in Step 10b's Vault commit, not 10a's repo commit.** If it can't be run, say so explicitly — never skip it silently.
+**Note (golden path, 2026-07-02, updated 2026-09-17):** Bare `/save` now dispatches to THIS skill and nothing else — the framework Vault-OS deposit ritual was renamed to `/vault-save` (`C:\Users\jaken\Claude\.claude\commands\vault-save.md`) to end the name collision. That ritual still owns predictions capture, owner-voice deltas, and the ledger line, and it no longer fires automatically: **read `vault-save.md` before Step 10 and fold its file-writing duties in — predictions.jsonl lands in Step 10a's repo commit (moved from the Vault 2026-09-17, CoachApp-only rows; PTHub ended and no longer shares the file), lessons.jsonl/beliefs.jsonl/voice.md/ledgers/log.md land in Step 10b's Vault commit, unchanged.** If it can't be run, say so explicitly — never skip it silently.
 
-> **🔒 GATE (2026-08-25) — grade before you append.** `guardrails.mjs` Rule 6 blocks the Vault commit
-> if it adds a NEW `memory/predictions.jsonl` record while any CoachApp prediction past `verify_by`
-> is still ungraded. Two doors: a grading-only commit is never blocked (drain in as many passes as
-> you like), and grading + appending in the SAME commit passes (count reads from staged content) —
-> so the normal shape is grade the past-due ones, then write the new ones. Grade on evidence, Jake
-> confirms or red→green does, never to clear the gate. Why: the backlog regenerates (62→32 on
-> 2026-08-09, back over 100 within two weeks) — draining without closing the valve just books the
-> next drain. Predictions already past-due when this rule shipped are grandfathered
-> (`state/predictions-baseline.txt`) so it couldn't wall its own owner on day one; they still need a
-> real drain, and stay visible in `os-lint`'s `stale-predictions` RED.
+> **🔒 GATE (2026-08-25, repointed 2026-09-17) — grade before you append.** `guardrails.mjs` Rule 6
+> blocks the CoachApp repo commit (Step 10a) if it adds a NEW `docs/predictions.jsonl` record while
+> any prediction past `verify_by` is still ungraded. Two doors: a grading-only commit is never
+> blocked (drain in as many passes as you like), and grading + appending in the SAME commit passes
+> (count reads from staged content) — so the normal shape is grade the past-due ones, then write the
+> new ones. Grade on evidence, Jake confirms or red→green does, never to clear the gate. Why: the
+> backlog regenerates (62→32 on 2026-08-09, back over 100 within two weeks) — draining without
+> closing the valve just books the next drain. Predictions already past-due when this rule shipped
+> are grandfathered (`state/predictions-baseline.txt`) so it couldn't wall its own owner on day one;
+> they still need a real drain, and stay visible in `os-lint`'s `stale-predictions` RED.
 
-**Note (efficiency, 2026-07-02, updated 2026-09-15):** A save runs many small file writes across two directory trees (the CoachApp repo + the Vault). Batch them: write all repo-side files first (`docs/current-sprint.md`, `docs/roadmap.md` if touched, `docs/decisions.md` if a decision was logged, `docs/bugs/*.md`), verify with *one* pass (e.g. one `git diff` or a couple of `tail` calls in a single Bash call, not a read-after-every-edit), then do Step 10a's commit. Separately, write the Vault-side files (predictions/lessons/voice/ledger) and do Step 10b's commit. Run independent writes within each group in parallel tool calls, not sequential turns. A save should be a handful of tool-call round-trips, not dozens.
+**Note (efficiency, 2026-07-02, updated 2026-09-17):** A save runs many small file writes across two directory trees (the CoachApp repo + the Vault). Batch them: write all repo-side files first (`docs/current-sprint.md`, `docs/roadmap.md` if touched, `docs/decisions.md` if a decision was logged, `docs/predictions.jsonl` from the prediction scan, `docs/bugs/*.md`), verify with *one* pass (e.g. one `git diff` or a couple of `tail` calls in a single Bash call, not a read-after-every-edit), then do Step 10a's commit. Separately, write the Vault-side files (lessons/beliefs/voice/ledger) and do Step 10b's commit. Run independent writes within each group in parallel tool calls, not sequential turns. A save should be a handful of tool-call round-trips, not dozens.
 
 ---
 
@@ -275,14 +275,17 @@ State whether the Playwright suite was run this session:
 
 ## Step 10 — Commit and push — TWO targets now, not one
 
-CoachApp's own docs live in the CoachApp repo now; genuinely cross-project state
-(predictions/lessons/voice/ledgers) stays in the Vault. Do both, repo commit first — it's the one
-that matters for CoachApp's own history:
+CoachApp's own docs live in the CoachApp repo now, and since 2026-09-17 that includes
+`docs/predictions.jsonl` — moved from the Vault because it only ever held CoachApp/PTHub rows and
+PTHub ended, so there's no other project left for it to be "cross-project" with. Genuinely
+cross-project state (lessons/beliefs/voice/ledgers) stays in the Vault. Do both, repo commit first —
+it's the one that matters for CoachApp's own history:
 
 ### 10a — Commit the repo's `docs/` changes
 
-Never run `git commit` here until every `docs/*.md`/`docs/bugs/*.md` file this save touches has been
-written. Never amend a previous commit to fix a missed file — sequence this step last instead.
+Never run `git commit` here until every `docs/*.md`/`docs/predictions.jsonl`/`docs/bugs/*.md` file
+this save touches has been written. Never amend a previous commit to fix a missed file — sequence
+this step last instead.
 
 ```
 cd "C:\Users\jaken\OneDrive\coachapp"
@@ -293,15 +296,19 @@ git push
 
 This is an ordinary CoachApp repo commit — it follows the same discipline as any other push here
 (no `--no-verify`, `checks.sh` still runs). It is NOT gated by the ownership/RLS pre-commit review
-(`docs/` isn't app code), but if this session's commits also touched `js/`/`scripts/`, that review
-still applies to THOSE commits, separately, per `CLAUDE.md`.
+(`docs/` isn't app code), but IS gated by `guardrails.mjs` RULE 6 if `docs/predictions.jsonl` changed
+(see the GATE note above). If this session's commits also touched `js/`/`scripts/`, the ownership/RLS
+review still applies to THOSE commits, separately, per `CLAUDE.md`.
 
 ### 10b — Vault commit — cross-project state only
 
-The Vault still holds genuinely cross-project memory (`memory/` — predictions/lessons/beliefs,
-`owner/voice.md`, `ledgers/`) that `vault-save.md`'s duties write to (see the note at the top of
-this skill) — that part is unchanged and still needs its own commit. **Do not write to
-`projects/CoachApp/` in the Vault anymore** — it's a historical archive now, not a save target.
+The Vault still holds genuinely cross-project memory (`memory/` — lessons/beliefs, `owner/voice.md`,
+`ledgers/`) that `vault-save.md`'s duties write to (see the note at the top of this skill) — that
+part is unchanged and still needs its own commit. `memory/predictions.jsonl` here is now a frozen
+historical snapshot for CoachApp's own history (new CoachApp predictions land in the repo instead,
+per Step 10a) — it may still gain new rows from other projects, which is expected and not a CoachApp
+concern. **Do not write to `projects/CoachApp/` in the Vault anymore** — it's a historical archive
+now, not a save target.
 
 ```
 cd "C:\Users\jaken\Claude\Vault"
