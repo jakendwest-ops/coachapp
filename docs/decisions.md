@@ -12,6 +12,41 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-18 — Full severing: CoachApp reads and writes nothing in the Vault, no exceptions.**
+Jake's explicit, absolute instruction, superseding the 2026-09-17 entry's narrower scope (which kept
+`lessons.jsonl`/`beliefs.jsonl`/`voice.md` in the Vault as "genuinely cross-project"). Cut:
+- `hello-claude/SKILL.md` Step 2 — dropped reading `Vault/memory/lessons.jsonl` (full file) and
+  `Vault/owner/voice.md` (last ~150 lines) at every session start. Also closed the "make a note" →
+  Vault routing option in its Jake-communication-patterns section; a CoachApp session now only ever
+  writes to `docs/`.
+- `os-lint.mjs` `checkMemory` — dropped validating `lessons.jsonl`/`beliefs.jsonl` from the Vault
+  (was a structural JSON-parseability check only, no content read). `PREDICTIONS`-based validation
+  of `docs/predictions.jsonl` is unaffected.
+- `save/SKILL.md` Step 10 — deleted the whole "10b — Vault commit" step. `/save` no longer reads or
+  invokes `vault-save.md` (the general cross-project ritual, outside this repo) at all; predictions
+  already landed in the repo per 2026-09-17, and lessons/beliefs/voice/ledgers are simply no longer
+  CoachApp's concern to write.
+- `os-lint.mjs` — deleted `checkGatesFired` outright (function body, `GATES`/`GATE_WINDOW`/`VAULT`/
+  `LOG` constants, its commented-out call site, and its self-test spec), rather than leaving it as
+  inert dead code the way it had been left since its 2026-09-15 retirement. It was the last piece of
+  live code anywhere in `.claude/` that still named a Vault path, even though nothing called it.
+- `CLAUDE.md` (×2) and `docs/session-context.md` — corrected two references to the old
+  `Vault/projects/CoachApp/` path (a separate Vault-side session archived that folder to
+  `Vault/projects/_archive/CoachApp/` the same day, commit `048ac24` on the vault repo, independently
+  of this change — caught only because Jake surfaced it) and one claim that the Vault held "the
+  fuller live record," false since 2026-09-15 and never corrected until now.
+*Why now, beyond yesterday:* yesterday's entry judged `lessons.jsonl`/`voice.md` as legitimately
+cross-project and left them in place. Jake's read was that ANY Vault pointer from CoachApp — even a
+genuinely shared, non-duplicative one — was still "persistently confusing," and a Vault-side session
+independently finding a stale-looking CoachApp duplicate the same day (see above) is direct evidence
+the confusion runs in both directions, not just the one this repo was checking.
+*Cost, stated plainly:* `lessons.jsonl`'s "past mistakes" job is already covered by this project's
+own Claude memory (CoachApp-specific, no fork risk) — not a net loss. `voice.md` has no repo-native
+replacement; a session drafting external-facing prose in Jake's voice has lost that context until
+something replaces it, and should say so rather than guess.
+
+---
+
 **2026-09-17 — Moved `predictions.jsonl` (CoachApp rows) from the Vault into this repo; left
 `lessons.jsonl`/`beliefs.jsonl`/`voice.md` in the Vault.** `docs/predictions.jsonl` now holds the 182
 CoachApp-labelled rows (of 196 total; 12 were PTHub, 2 blank) copied verbatim from

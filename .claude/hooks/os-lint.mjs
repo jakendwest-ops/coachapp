@@ -37,7 +37,6 @@ import { fileURLToPath } from 'node:url'
 const HOME     = 'C:/Users/jaken'
 const STATE    = `${HOME}/.claude/state`
 const REPO     = `${HOME}/OneDrive/coachapp`
-const VAULT    = `${HOME}/Claude/Vault/projects/CoachApp`
 
 // EVERY input is env-overridable, uniformly. Not a convenience — a requirement.
 // Until 2026-08-21 only 3 of 15 checks had an override, so the other 12 could not be pointed at a
@@ -48,10 +47,10 @@ const VAULT    = `${HOME}/Claude/Vault/projects/CoachApp`
 // drives these overrides to prove each detector goes RED on a corpus that should trip it.
 const env      = (k, d) => process.env[k] || d
 // Repointed 2026-09-15: CoachApp's repo (docs/*.md) replaced the Vault as system of record — see
-// coachapp/CLAUDE.md and coachapp/docs/decisions.md's 2026-09-15 entry. VAULT/LOG stay defined
-// (LOG.md still exists there, untouched) but STATUS/BUGS/ROADMAP/DATA_MODEL/CRITICAL below now
-// point at the repo. The Vault's own copies are historical, not live — see the transitional caveat
-// in CLAUDE.md for what (if anything) still reads them directly.
+// coachapp/CLAUDE.md and coachapp/docs/decisions.md's 2026-09-15 entry. STATUS/BUGS/ROADMAP/
+// DATA_MODEL/CRITICAL below all point at the repo. [2026-09-18: the VAULT/LOG constants that used
+// to sit here, and the checkGatesFired() they fed, were deleted outright rather than left as inert
+// dead weight — see docs/decisions.md's 2026-09-18 entry for why.]
 // Repointed 2026-09-15: skill-scanning checks (dead-tool-refs, dead-file-refs, skills-pii,
 // retired-terms, frontmatter, mandated-dead-tools, module-count) need to see BOTH the generic
 // skills that still live at the user level (sql-safety, multi-agent-review, mobile-check, ...) AND
@@ -64,7 +63,6 @@ const SKILLS_DIRS = (process.env.OSLINT_SKILLS || [
 ].join(';')).split(';').filter(Boolean)
 const STATUS   = env('OSLINT_STATUS',    `${REPO}/docs/current-sprint.md`)
 const BUGS     = env('OSLINT_BUGS',      `${REPO}/docs/bugs`)
-const LOG      = env('OSLINT_LOG',       `${VAULT}/LOG.md`)
 const MARKER   = env('OSLINT_MARKER',    `${STATE}/last-full-file-review`)
 // Repointed 2026-09-15: this file now lives in coachapp/.claude/hooks/ alongside guardrails.mjs —
 // audits its own repo-local hooks dir, not the shared ~/.claude/hooks/ (which now holds only
@@ -301,11 +299,10 @@ function checkSelfTestFresh () {
 //     Truth of a memory's CLAIM is not checkable here — that needs a human or a probe. Structure is.
 // ---------------------------------------------------------------------------
 const MEM_DIR   = env('OSLINT_MEM_DIR', `${HOME}/.claude/projects/c--Users-jaken-OneDrive-coachapp/memory`)
-// lessons.jsonl/beliefs.jsonl stay here: `Vault/memory/` is written by the general, cross-project
-// /vault-save ritual (C:\Users\jaken\Claude\.claude\commands\vault-save.md), not something CoachApp
-// owns — moving them into this repo would go stale the moment another project's save appended to the
-// real ones. predictions.jsonl is the one exception (see PREDICTIONS above and checkMemory below).
-const VAULT_MEM = env('OSLINT_VAULT_MEM', `${HOME}/Claude/Vault/memory`)
+// REMOVED 2026-09-18: this used to also validate Vault/memory/lessons.jsonl and beliefs.jsonl —
+// Jake was explicit that nothing CoachApp-side should read the Vault at all any more, not even a
+// structural JSON-parseability check. lessons.jsonl's "past mistakes" job is already covered by this
+// project's own memory above (MEM_DIR); voice.md has no equivalent and is now simply not read.
 const MEM_TYPES = ['user', 'feedback', 'project', 'reference']
 
 /** Link targets that normalise identically are the same intended name. */
@@ -407,12 +404,12 @@ function checkMemory () {
     for (const l of linked) if (!existsSync(join(MEM_DIR, l))) problems.push(`MEMORY.md points at ${l}, which does not exist`)
   }
 
-  // The memory system's JSONL ledgers: one malformed line is silently skipped by every reader.
+  // The memory system's JSONL ledger(s): one malformed line is silently skipped by every reader.
   // predictions.jsonl moved from the Vault into this repo 2026-09-17 (CoachApp-only rows; see
-  // docs/decisions.md and guardrails.mjs RULE 6) — lessons.jsonl/beliefs.jsonl stay in the Vault.
+  // docs/decisions.md and guardrails.mjs RULE 6). lessons.jsonl/beliefs.jsonl dropped from this
+  // check 2026-09-18 — they stayed Vault-resident, and Jake was explicit that CoachApp should not
+  // read the Vault at all any more, not even to validate JSON well-formedness.
   for (const [j, path] of [
-    ['lessons.jsonl', join(VAULT_MEM, 'lessons.jsonl')],
-    ['beliefs.jsonl', join(VAULT_MEM, 'beliefs.jsonl')],
     ['predictions.jsonl', PREDICTIONS],
   ]) {
     const raw = read(path)
@@ -426,7 +423,7 @@ function checkMemory () {
   if (problems.length) {
     red('memory', `${problems.length} memory-system problem(s):\n    ` + problems.slice(0, 15).join('\n    ')
       + (problems.length > 15 ? `\n    …and ${problems.length - 15} more` : ''))
-  } else ok('memory', `memory system consistent (${files.length} files, ${names.size} named, index + 3 JSONL stores parse)`)
+  } else ok('memory', `memory system consistent (${files.length} files, ${names.size} named, index + predictions.jsonl parses)`)
 }
 
 function checkCorpora () {
@@ -916,33 +913,13 @@ function checkLedgerStatusDrift () {
 }
 
 // ---------------------------------------------------------------------------
-// 9. Gate-never-fired — a mandatory gate with zero evidence in the LOG since it was created
-//    is dead. Fix it or delete it. Do not keep claiming it runs.
-// ---------------------------------------------------------------------------
-const GATES = [
-  // Hyphenated form added 2026-08-21: the skill is literally NAMED `multi-agent-review`, so the pattern
-  // could not match the canonical spelling of the thing it tracks — only the prose variant with a space.
-  { id: 'multi-agent-review', pattern: /multi-agent[- ]review|3-agent review|multi_agent_review/i },
-  { id: 'feature-audit',      pattern: /feature-audit|feature audit/i },
-  { id: 'mobile-check',       pattern: /mobile-check|mobile check|390|480/i },
-  { id: 'deploy-check',       pattern: /deploy-check|\/deploy-check/i }
-  // `full-file-review` was tracked here until OS v3 (2026-08-23) and was REMOVED, not lost.
-  // It is the one gate with a real artifact — state/last-full-file-review, written by the ritual —
-  // and checkFullFileReview() reads it directly on a 7-day window. Tracking the same fact a second
-  // way, by grepping LOG.md prose over a 5-session window, produced exactly the drift this OS already
-  // has a memory about (feedback-two-fields-one-fact): on 2026-08-23 the marker said GREEN (6 days)
-  // while this said RED ("decaying") for the same day. Two detectors, one fact, nothing forcing
-  // agreement — inside the lint whose whole job is detecting decay.
-  // The marker wins because it records the ACT; a prose mention only records that someone wrote
-  // about it. Every other gate here lacks an artifact, which is why they still grep.
-]
-
-// Sessions to look back over. Not 1: a gate that legitimately had nothing to do (no UI change → no
-// mobile-check) would go RED every quiet session, and a check that cries wolf is how alarm fatigue
-// starts — the failure this OS worries about most. Not all-history either (see below). 5 sessions is
-// long enough that any gate still in real use appears, short enough to catch decay within ~a week.
-const GATE_WINDOW = 5
-
+// 9. [REMOVED 2026-09-18] Gate-never-fired used to grep the Vault's LOG.md for evidence that
+//    multi-agent-review/feature-audit/mobile-check/deploy-check had recently run. Already retired
+//    2026-09-15 (LOG.md froze when the repo replaced the Vault, so this would have decayed to
+//    permanent meaningless RED) with its call commented out but the GATES/GATE_WINDOW constants and
+//    checkGatesFired() itself left in place. Deleted outright 2026-09-18: Jake was explicit that
+//    nothing CoachApp-side should still reference the Vault, even inert dead code naming its path.
+//    No replacement mechanism reads these gates from the repo side — see docs/technical-debt.md.
 // ---------------------------------------------------------------------------
 // 9b. Hook wiring — the gap the 2026-08-21 audit found in os-lint ITSELF.
 //     os-lint read zero settings files. So a hook registered with a typo'd path, a hook script on disk
@@ -999,34 +976,6 @@ function checkHooks () {
   if (problems.length) {
     red('hooks', `${problems.length} hook-wiring problem(s) — these fail SILENTLY, which is why nothing noticed:\n    ` + problems.join('\n    '))
   } else ok('hooks', `all registered hooks resolve, and every script in hooks/ is registered (${filesRead} settings file(s))`)
-}
-
-function checkGatesFired () {
-  const log = read(LOG)
-  if (!log) { warn('gates-fired', 'could not read LOG.md'); return }
-
-  // Until 2026-08-21 this tested each pattern against the WHOLE of LOG.md — all 3,054 lines of
-  // project history. One occurrence in July kept it green forever, so the check was structurally
-  // incapable of failing and had been reporting GREEN while gates went unrun. It was the only check
-  // in os-lint that looks at BEHAVIOUR rather than artifacts, and it was decorative.
-  // Jake, 2026-08-21: "how is it possible for the OS to skip steps it has committed to a ritual".
-  // This was a large part of the answer.
-  const entries = log.split(/^## /m).slice(1)          // newest-first; [0] is the latest session
-  if (!entries.length) { warn('gates-fired', 'LOG.md has no "## " session entries to scan'); return }
-  const window = entries.slice(0, GATE_WINDOW).join('\n')
-  const scanned = Math.min(entries.length, GATE_WINDOW)
-
-  const dead = GATES.filter(g => !g.pattern.test(window)).map(g => g.id)
-  const everFired = GATES.filter(g => dead.includes(g.id) && g.pattern.test(log)).map(g => g.id)
-  const neverFired = dead.filter(id => !everFired.includes(id))
-
-  if (dead.length) {
-    const lines = []
-    if (neverFired.length) lines.push(`NEVER fired in all of LOG.md: ${neverFired.join(', ')} — dead. Fix it or delete it.`)
-    if (everFired.length) lines.push(`fired historically but NOT in the last ${scanned} session(s): ${everFired.join(', ')} — decaying.`)
-    red('gates-fired', `${dead.length} mandatory gate(s) have no recent trace in LOG.md:\n    ` + lines.join('\n    ')
-      + `\n    A gate is only real if it keeps running. "It ran once in July" is not evidence it runs now.`)
-  } else ok('gates-fired', `all ${GATES.length} tracked gates fired within the last ${scanned} session(s)`)
 }
 
 // ---------------------------------------------------------------------------
@@ -1225,9 +1174,6 @@ function runSelfTest () {
         memIndex('ok')) } },
     { check: 'memory', name: 'memory/jsonl-unparseable', expect: 'unparseable JSON',
       env: { OSLINT_MEM_DIR: memDir('m6', Object.fromEntries([memOK('ok')]), memIndex('ok')),
-             OSLINT_VAULT_MEM: (() => { const d = join(root, 'vm'); mkdirSync(d, { recursive: true })
-               for (const j of ['lessons.jsonl', 'beliefs.jsonl']) writeFileSync(join(d, j), '{}\n')
-               return d })(),
              OSLINT_PREDICTIONS: file('bad-predictions.jsonl', '{ this is not json\n') } },
 
     { check: 'corpus', name: 'corpus/skills-empty', expect: 'passing on an empty set',
@@ -1288,9 +1234,6 @@ function runSelfTest () {
       env: { OSLINT_SETTINGS: file('hk2.json', '{"hooks":{ not json') } },
     { check: 'hooks', name: 'hooks/unregistered-script', expect: 'registered in NO settings file',
       env: { OSLINT_SETTINGS: file('hk3.json', '{"hooks":{}}') } },
-
-    { check: 'gates-fired', expect: 'no recent trace in LOG.md',
-      env: { OSLINT_LOG: file('log.md', '## 2026-08-21 — nothing\nno gate ran here.\n') } },
     { check: 'claude-md', expect: 'is missing',
       env: { OSLINT_CLAUDE_MD: join(root, 'no-claude-md') } },
     { check: 'stale-predictions', expect: 'past verify_by and still ungraded',
@@ -1826,12 +1769,13 @@ checkDocsBudget()
 // such heading, and the project's own comment above already says the continuity-log pattern was
 // deliberately replaced by docs/decisions.md, not carried forward. That replacement's growth is
 // covered by checkDocsBudget (added 2026-09-15), so there is nothing left for this check to measure —
-// it has produced a WARN about nothing real on every run since the migration. RETIRED 2026-09-16, same
-// treatment as checkGatesFired just above it in this file's history: waiting for a check to decay into
-// permanent, meaningless noise is worse than retiring it deliberately once its target is confirmed
-// gone. Function body and self-test fixture left in place rather than deleted — same reasoning as
-// checkGatesFired's: --self-test will now report 'continuity-budget' as DECORATIVE, and that reads as
-// "intentionally retired," not "found broken and ignored."
+// it has produced a WARN about nothing real on every run since the migration. RETIRED 2026-09-16:
+// waiting for a check to decay into permanent, meaningless noise is worse than retiring it
+// deliberately once its target is confirmed gone. Function body and self-test fixture left in place
+// rather than deleted — this one names no Vault path, so the 2026-09-18 "delete anything Vault-
+// related outright" treatment (see checkGatesFired's deletion, further up this file) doesn't apply;
+// --self-test will report 'continuity-budget' as DECORATIVE, and that reads as "intentionally
+// retired," not "found broken and ignored."
 // checkContinuityBudget()
 checkMastheadDrift()
 checkDocObligations()
@@ -1921,22 +1865,10 @@ function checkRule0 () {
 checkRule0()
 checkHookSelfTests()
 checkHooks()
-// NOTE, 2026-09-15: checkGatesFired reads LOG (still the Vault's LOG.md, unchanged, since that file
-// still exists) for evidence the 4 tracked gates fired in the last 5 session entries. Going forward,
-// nothing appends new entries there (the repo replaced the Vault as system of record — see
-// coachapp/docs/decisions.md's 2026-09-15 entry), so this check will most likely start reporting all
-// 4 gates as stale within the next several sessions, once the real "last 5" window ages past the
-// migration date. RETIRED 2026-09-15 per an external audit's recommendation: waiting for it to
-// decay into permanent, meaningless RED is worse than retiring it deliberately now. No replacement
-// mechanism was built for evidencing these gates fired from the repo side — that's a real gap, not
-// papered over, just no longer masquerading as a working check.
-// checkGatesFired()
-// NOTE: this means --self-test now reports 'gates-fired' as DECORATIVE (its spec, further down,
-// was left untouched rather than removed — deliberately: touching the self-test's own verification
-// array is treated as a higher-risk edit than commenting out a Run-section call, and this project's
-// own tooling agreed when it refused that exact edit earlier the same session). Read DECORATIVE
-// here as "intentionally retired," not "found broken and ignored" — the comment above is the record
-// of that distinction for whoever reads the self-test output next.
+// checkGatesFired retired 2026-09-15 (call commented out), deleted outright 2026-09-18 along with
+// its GATES/GATE_WINDOW/VAULT/LOG constants and self-test spec — see docs/decisions.md's 2026-09-18
+// entry. No replacement mechanism was built for evidencing these gates fired from the repo side —
+// that's a real gap, not papered over, just no longer masquerading as a working check.
 checkClaudeMd()
 checkStalePredictions()
 

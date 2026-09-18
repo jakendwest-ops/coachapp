@@ -21,9 +21,12 @@ and both hooks (`os-lint.mjs`, `guardrails.mjs`) now live in this repo (`.claude
 automation. PTHub (the other project that previously justified keeping this machinery shared) ended
 2026-09-15; its own PTHub-specific branches were stripped from the moved hooks at the same time.
 `claim-check.mjs` and `standing-behaviours.mjs` stay in `~/.claude` — confirmed generic, not
-CoachApp-specific. **Not yet verified:** whether a fresh session reliably resolves bare
-`/save`/"hello claude" to this new location — see `docs/decisions.md`'s 2026-09-15 entries for
-what's confirmed vs. still open.
+CoachApp-specific. **Addressed 2026-09-18, not yet empirically verified:** neither skill asserted a
+working directory before doing anything, so a fresh session could in principle resolve "hello
+claude"/`/save` from wherever its shell happened to start rather than this repo. Both skills now
+open with an explicit `cd "C:\Users\jaken\OneDrive\coachapp"` as their literal first step (Step 0a),
+refusing to proceed if it fails — but this has been added, not yet watched succeed on an actual fresh
+session. Confirm it holds the next time either ritual runs cold.
 
 **Correction, 2026-09-16 — the Vault is not uniformly "historical."** The line above and the
 2026-09-15 decision both describe the CoachApp-specific project files (`STATUS.md`, `LOG.md`,
@@ -165,7 +168,7 @@ updates to:
 This is separate from, and does not replace, the Vault's own `/vault-save` end-of-session ritual
 (renamed from `/save` 2026-07-02, to end a name collision with this repo's own skill) for the
 Vault's own top-level `STATUS.md`/`LOG.md` — general cross-project continuity, not CoachApp's own
-(frozen, historical) `Vault/projects/CoachApp/STATUS.md`.
+(archived, historical) `Vault/projects/_archive/CoachApp/STATUS.md`.
 
 ## Where the real docs live
 
@@ -178,8 +181,13 @@ architecture audit, and other point-in-time audits) — read it for detail/trace
 it as current. See `docs/handover.md` for how the live docs relate to each other. Every file carries
 its own "Requires Validation" section; treat unmarked claims as checked, marked ones as open.
 
-**Vault (`C:\Users\jaken\Claude\Vault\projects\CoachApp`) — now a historical archive, not live.**
-Retained, not deleted; see "Repository source of truth" above for what (if anything) still reads it.
+**Vault — now a historical archive, not live.** Moved 2026-09-18 from
+`Vault\projects\CoachApp` to `Vault\projects\_archive\CoachApp` (a separate Vault-side session's
+own fix, committed there as `048ac24`) specifically so nothing scanning the Vault's live
+`projects/` folders could mistake it for current — it had been sitting un-archived since the
+2026-09-15 migration, describing itself as historical in prose here while still looking live on
+disk there. Retained, not deleted; see "Repository source of truth" above for what (if anything)
+still reads it.
 
 **All 9 skills and both hooks live in this repo's own `.claude/hooks/` and `.claude/skills/`** —
 fully self-contained since 2026-09-16 (`hello-claude`/`save`/`run-coachapp` moved 2026-09-15;

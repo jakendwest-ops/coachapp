@@ -5,7 +5,17 @@ description: Session-start ritual for CoachApp — boots the preview server, rea
 
 # Session start ritual
 
-**Step 0 — before anything else: write the checklist to
+**Step 0a — before anything else, root the session in the repo:**
+```
+cd "C:\Users\jaken\OneDrive\coachapp"
+```
+Every step below assumes this cwd. If it fails (wrong drive, path missing), STOP and tell Jake — do
+not guess at a fallback location or proceed from wherever the shell happened to start. This closes
+the one thing `CLAUDE.md` had flagged since the 2026-09-15 migration as "not yet verified": whether a
+fresh session reliably resolves "hello claude"/`/save` to this repo. It does, but only if this step
+actually runs, every time, before anything else — which is why it comes before even the checklist.
+
+**Step 0b — write the checklist to
 `~/.claude/state/ritual-hello-claude.md`, one `- [ ]` line per step below.** Tick each one off in the
 file as you complete it. An interrupted ritual must be *visibly* unfinished. On 2026-07-13 Jake typed
 `/brainstorming` at Step 6; the steps after it silently never ran, and nothing anywhere noticed.
@@ -28,8 +38,8 @@ background, learns fast, wants the *why* behind every decision.
 - Messages are short, lowercase, direct. Don't pad responses.
 - Silence + continuing = positive feedback. He doesn't say "great job."
 - "both" / "all" / "please add" = execute everything, no follow-up needed.
-- "make a note" = write it to `docs/` (decisions.md/technical-debt.md as fits); the Vault only for
-  genuinely cross-project lessons.
+- "make a note" = write it to `docs/` (decisions.md/technical-debt.md as fits) — repo only, always.
+  Not the Vault: a CoachApp session has no business routing anything there any more.
 - "are you able to..." = genuine feasibility check, not rhetorical — answer directly.
 - After every significant change: a technical explanation **and** a plain-English one, inline as you build.
 - Ships small, sees it, moves on. He doesn't like long planning phases.
@@ -57,9 +67,14 @@ or it's the wrong app, follow the `run-coachapp` skill. This step blocks until C
 
 ## Step 2 — Read the repo docs
 
-**The repo (`docs/*.md`) is CoachApp's system of record** (see `CLAUDE.md`'s "Repository source of
-truth", `docs/decisions.md`'s 2026-09-15 entry). Only 5-6 below still read the Vault — genuinely
-cross-project Claude memory, not CoachApp docs.
+**The repo (`docs/*.md`) is CoachApp's system of record — repo only, no Vault reads.** (See
+`CLAUDE.md`'s "Repository source of truth", `docs/decisions.md`'s 2026-09-15 and 2026-09-18 entries.)
+Items 5-6 below were dropped 2026-09-18 (`Vault/memory/lessons.jsonl`, `Vault/owner/voice.md`) — Jake
+was explicit: nothing CoachApp-side should still point at the Vault. `lessons.jsonl`'s job is already
+covered here by this project's own Claude memory (the feedback entries indexed every session,
+CoachApp-specific, no fork/staleness risk). `voice.md` has no repo-native replacement yet — if a
+session needs to draft external-facing prose in Jake's voice, say so explicitly rather than silently
+guessing at tone.
 
 1. `coachapp/docs/session-context.md` — priorities/risks/next-actions snapshot, then
    `coachapp/docs/current-sprint.md` — live release-cycle state
@@ -69,9 +84,6 @@ cross-project Claude memory, not CoachApp docs.
 3. `coachapp/docs/critical.md` — infra, security constraints, GDPR, security incident timeline
 4. `coachapp/docs/roadmap.md` — current-state summary (full historical detail:
    `coachapp/docs/archive/roadmap-2026-09-08.md`)
-5. `C:\Users\jaken\Claude\Vault\memory\lessons.jsonl` — past mistakes not to repeat (full file)
-6. `C:\Users\jaken\Claude\Vault\owner\voice.md` — **last ~150 lines only** (appends newest-at-bottom). Read
-   in full only when about to draft external-facing prose in Jake's voice.
 
 ## Step 3 — Summarise the last session
 

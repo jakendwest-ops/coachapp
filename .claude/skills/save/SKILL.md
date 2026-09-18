@@ -5,7 +5,16 @@ description: End-of-session ritual. Run when the user says /save or signals they
 
 # End-of-session save
 
-**Step 0 — before anything else: write the checklist to `~/.claude/state/ritual-save.md`, one `- [ ]`
+**Step 0a — before anything else, root the session in the repo:**
+```
+cd "C:\Users\jaken\OneDrive\coachapp"
+```
+Every step below assumes this cwd. If it fails (wrong drive, path missing), STOP and tell Jake — do
+not guess at a fallback location or proceed from wherever the shell happened to start. Same reason as
+`hello-claude`'s Step 0a: this was the one thing `CLAUDE.md` flagged as "not yet verified" since the
+2026-09-15 migration, and it only holds if this runs first, every time.
+
+**Step 0b — write the checklist to `~/.claude/state/ritual-save.md`, one `- [ ]`
 line per step below**, and tick each one off in the file as you finish it. A save that dies mid-way
 (credits, an interrupt) must be *visibly* unfinished. On 2026-07-13 a session ran out of credits
 mid-save: the commits were pushed, the kanban was written, and **LOG.md never got an entry at all** — a
@@ -19,20 +28,32 @@ line up.
 
 Run every step below in order. Do not skip any.
 
-**Note (golden path, 2026-07-02, updated 2026-09-17):** Bare `/save` now dispatches to THIS skill and nothing else — the framework Vault-OS deposit ritual was renamed to `/vault-save` (`C:\Users\jaken\Claude\.claude\commands\vault-save.md`) to end the name collision. That ritual still owns predictions capture, owner-voice deltas, and the ledger line, and it no longer fires automatically: **read `vault-save.md` before Step 10 and fold its file-writing duties in — predictions.jsonl lands in Step 10a's repo commit (moved from the Vault 2026-09-17, CoachApp-only rows; PTHub ended and no longer shares the file), lessons.jsonl/beliefs.jsonl/voice.md/ledgers/log.md land in Step 10b's Vault commit, unchanged.** If it can't be run, say so explicitly — never skip it silently.
+**Note (golden path, 2026-07-02, updated 2026-09-18):** Bare `/save` dispatches to THIS skill and
+nothing else, and is now fully self-contained — it never reads or invokes `vault-save.md`
+(`C:\Users\jaken\Claude\.claude\commands\vault-save.md`) and writes nothing to the Vault. That
+changed 2026-09-18: Jake was explicit that no CoachApp work should point at the Vault any more, so
+predictions capture moved into Step 10 below and owner-voice/ledger duties simply stopped being
+CoachApp's concern — `vault-save.md` still exists and still runs for every other project, just never
+triggered from here.
 
 > **🔒 GATE (2026-08-25, repointed 2026-09-17) — grade before you append.** `guardrails.mjs` Rule 6
-> blocks the CoachApp repo commit (Step 10a) if it adds a NEW `docs/predictions.jsonl` record while
-> any prediction past `verify_by` is still ungraded. Two doors: a grading-only commit is never
-> blocked (drain in as many passes as you like), and grading + appending in the SAME commit passes
-> (count reads from staged content) — so the normal shape is grade the past-due ones, then write the
-> new ones. Grade on evidence, Jake confirms or red→green does, never to clear the gate. Why: the
-> backlog regenerates (62→32 on 2026-08-09, back over 100 within two weeks) — draining without
-> closing the valve just books the next drain. Predictions already past-due when this rule shipped
-> are grandfathered (`state/predictions-baseline.txt`) so it couldn't wall its own owner on day one;
-> they still need a real drain, and stay visible in `os-lint`'s `stale-predictions` RED.
+> blocks the commit in Step 10 if it adds a NEW `docs/predictions.jsonl` record while any prediction
+> past `verify_by` is still ungraded. Two doors: a grading-only commit is never blocked (drain in as
+> many passes as you like), and grading + appending in the SAME commit passes (count reads from
+> staged content) — so the normal shape is grade the past-due ones, then write the new ones. Grade on
+> evidence, Jake confirms or red→green does, never to clear the gate. Why: the backlog regenerates
+> (62→32 on 2026-08-09, back over 100 within two weeks) — draining without closing the valve just
+> books the next drain. Predictions already past-due when this rule shipped are grandfathered
+> (`state/predictions-baseline.txt`) so it couldn't wall its own owner on day one; they still need a
+> real drain, and stay visible in `os-lint`'s `stale-predictions` RED.
 
-**Note (efficiency, 2026-07-02, updated 2026-09-17):** A save runs many small file writes across two directory trees (the CoachApp repo + the Vault). Batch them: write all repo-side files first (`docs/current-sprint.md`, `docs/roadmap.md` if touched, `docs/decisions.md` if a decision was logged, `docs/predictions.jsonl` from the prediction scan, `docs/bugs/*.md`), verify with *one* pass (e.g. one `git diff` or a couple of `tail` calls in a single Bash call, not a read-after-every-edit), then do Step 10a's commit. Separately, write the Vault-side files (lessons/beliefs/voice/ledger) and do Step 10b's commit. Run independent writes within each group in parallel tool calls, not sequential turns. A save should be a handful of tool-call round-trips, not dozens.
+**Note (efficiency, 2026-07-02, updated 2026-09-18):** A save runs many small file writes, all in this
+one repo now. Batch them — write everything first (`docs/current-sprint.md`, `docs/roadmap.md` if
+touched, `docs/decisions.md` if a decision was logged, `docs/predictions.jsonl` from the prediction
+scan, `docs/bugs/*.md`), verify with *one* pass (e.g. one `git diff` or a couple of `tail` calls in a
+single Bash call, not a read-after-every-edit), then do Step 10's commit. Run independent writes in
+parallel tool calls, not sequential turns. A save should be a handful of tool-call round-trips, not
+dozens.
 
 ---
 
@@ -205,7 +226,7 @@ dual-copy incident — the global copy is deleted for the 3 that moved, never ke
 - Was an existing skill found to be wrong or incomplete? → update it now
 - Code review (pre-commit for ownership/RLS, pre-push otherwise) = the `multi-agent-review` skill (a pinned prompt: 3 fixed angles + verifier, plus a weekly full-file mode). If the review angles genuinely need to change, edit that skill deliberately and note it in the LOG — never improvise a different review ad hoc, that reintroduces the rigor-drift/diff-only-blind-spot the pinned skill exists to prevent
 - LLM-wiki ingests: read `wiki/sources.md` (the manifest) and append to `wiki/log.md`. **Never run bare `/ingest`** — that is the framework Vault-OS pipeline, a different thing entirely.
-- **Back up ~/.claude's generic skills + memory if either changed this session.** `~/.claude` is otherwise local-disk-only (not OneDrive, no cloud sync). CoachApp's own skills/hooks back up as part of the normal CoachApp repo push (Step 10a) — nothing extra needed for those.
+- **Back up ~/.claude's generic skills + memory if either changed this session.** `~/.claude` is otherwise local-disk-only (not OneDrive, no cloud sync). CoachApp's own skills/hooks back up as part of the normal CoachApp repo push (Step 10) — nothing extra needed for those.
 
   > **🔒 GATE — run `os-lint` BEFORE any push. It must be clean of `skills-pii`.**
   > ```bash
@@ -231,7 +252,7 @@ Update `MEMORY.md` index if any files were added or changed.
 
 ## Step 7 — Documentation and glossary check
 
-Check whether this session introduced anything that needs capturing outside the Vault/STATUS/LOG files:
+Check whether this session introduced anything that needs capturing outside this repo's `docs/*.md`:
 
 - **New jargon explained to Jake this session** (race condition, RLS policy, etc.) not yet in the LLM
   wiki glossary (`...\wiki\guide-glossary.md`) — add it, with a real example from this session as the
@@ -273,19 +294,12 @@ State whether the Playwright suite was run this session:
 
 ---
 
-## Step 10 — Commit and push — TWO targets now, not one
+## Step 10 — Commit and push — one target: this repo
 
-CoachApp's own docs live in the CoachApp repo now, and since 2026-09-17 that includes
-`docs/predictions.jsonl` — moved from the Vault because it only ever held CoachApp/PTHub rows and
-PTHub ended, so there's no other project left for it to be "cross-project" with. Genuinely
-cross-project state (lessons/beliefs/voice/ledgers) stays in the Vault. Do both, repo commit first —
-it's the one that matters for CoachApp's own history:
-
-### 10a — Commit the repo's `docs/` changes
-
-Never run `git commit` here until every `docs/*.md`/`docs/predictions.jsonl`/`docs/bugs/*.md` file
-this save touches has been written. Never amend a previous commit to fix a missed file — sequence
-this step last instead.
+**Repo only, since 2026-09-18 — no Vault commit any more.** Every save-time write, including
+`docs/predictions.jsonl` (moved from the Vault 2026-09-17), lands here. Never run `git commit` until
+every `docs/*.md`/`docs/predictions.jsonl`/`docs/bugs/*.md` file this save touches has been written.
+Never amend a previous commit to fix a missed file — sequence this step last instead.
 
 ```
 cd "C:\Users\jaken\OneDrive\coachapp"
@@ -300,24 +314,7 @@ This is an ordinary CoachApp repo commit — it follows the same discipline as a
 (see the GATE note above). If this session's commits also touched `js/`/`scripts/`, the ownership/RLS
 review still applies to THOSE commits, separately, per `CLAUDE.md`.
 
-### 10b — Vault commit — cross-project state only
-
-The Vault still holds genuinely cross-project memory (`memory/` — lessons/beliefs, `owner/voice.md`,
-`ledgers/`) that `vault-save.md`'s duties write to (see the note at the top of this skill) — that
-part is unchanged and still needs its own commit. `memory/predictions.jsonl` here is now a frozen
-historical snapshot for CoachApp's own history (new CoachApp predictions land in the repo instead,
-per Step 10a) — it may still gain new rows from other projects, which is expected and not a CoachApp
-concern. **Do not write to `projects/CoachApp/` in the Vault anymore** — it's a historical archive
-now, not a save target.
-
-```
-cd "C:\Users\jaken\Claude\Vault"
-git add memory/ owner/ ledgers/ north-star.md profile.md
-git commit -m "Save vault state (cross-project) — session YYYY-MM-DD"
-git push
-```
-
-If either push fails (no remote, auth issue), flag it to Jake — do not skip silently.
+If the push fails (no remote, auth issue), flag it to Jake — do not skip silently.
 
 ---
 

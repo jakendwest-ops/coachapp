@@ -57,9 +57,9 @@ there, not repeated here.
   [decisions.md](decisions.md), [technical-debt.md](technical-debt.md), [backlog.md](backlog.md),
   [current-sprint.md](current-sprint.md), [handover.md](handover.md)
 - `docs/releases/*.md` — per-release notes, existing and current
-- The Vault (`C:\Users\jaken\Claude\Vault\projects\CoachApp\`) — the fuller live record
-  (`STATUS.md`, `LOG.md`, `CRITICAL.md`, `roadmap.md`, and the 227-file bug ledger); not fully
-  accessible when these docs were written
+- **Not the Vault.** This repo (`docs/*.md`, `docs/bugs/`) has been the fuller live record since
+  2026-09-15 — the Vault's old copy (`Vault\projects\CoachApp\`) was archived to
+  `Vault\projects\_archive\CoachApp\` on 2026-09-18 specifically so nothing would read it as current
 - `/hello-claude` skill — the live session-start ritual; run this, not this file, for anything
   current-as-of-right-now
 
