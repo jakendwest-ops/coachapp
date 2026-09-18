@@ -5,15 +5,9 @@ description: Session-start ritual for CoachApp — boots the preview server, rea
 
 # Session start ritual
 
-**Step 0a — before anything else, root the session in the repo:**
-```
-cd "C:\Users\jaken\OneDrive\coachapp"
-```
-Every step below assumes this cwd. If it fails (wrong drive, path missing), STOP and tell Jake — do
-not guess at a fallback location or proceed from wherever the shell happened to start. This closes
-the one thing `CLAUDE.md` had flagged since the 2026-09-15 migration as "not yet verified": whether a
-fresh session reliably resolves "hello claude"/`/save` to this repo. It does, but only if this step
-actually runs, every time, before anything else — which is why it comes before even the checklist.
+**Step 0a — `cd "C:\Users\jaken\OneDrive\coachapp"` before anything else.** Every step below assumes
+this cwd; STOP and tell Jake if it fails, don't guess a fallback. Closes `CLAUDE.md`'s 2026-09-15
+"not yet verified" gap — only holds if this runs first, every time.
 
 **Step 0b — write the checklist to
 `~/.claude/state/ritual-hello-claude.md`, one `- [ ]` line per step below.** Tick each one off in the
@@ -41,7 +35,6 @@ background, learns fast, wants the *why* behind every decision.
 - "make a note" = write it to `docs/` (decisions.md/technical-debt.md as fits) — repo only, always.
   Not the Vault: a CoachApp session has no business routing anything there any more.
 - "are you able to..." = genuine feasibility check, not rhetorical — answer directly.
-- After every significant change: a technical explanation **and** a plain-English one, inline as you build.
 - Ships small, sees it, moves on. He doesn't like long planning phases.
 - Turns failures into permanent systems — when something breaks badly, a skill or lint check comes out of it.
 - Proactively audits his own tooling for gaps — surface them at session start, don't wait to be asked.

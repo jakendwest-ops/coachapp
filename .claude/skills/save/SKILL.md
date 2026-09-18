@@ -5,14 +5,8 @@ description: End-of-session ritual. Run when the user says /save or signals they
 
 # End-of-session save
 
-**Step 0a — before anything else, root the session in the repo:**
-```
-cd "C:\Users\jaken\OneDrive\coachapp"
-```
-Every step below assumes this cwd. If it fails (wrong drive, path missing), STOP and tell Jake — do
-not guess at a fallback location or proceed from wherever the shell happened to start. Same reason as
-`hello-claude`'s Step 0a: this was the one thing `CLAUDE.md` flagged as "not yet verified" since the
-2026-09-15 migration, and it only holds if this runs first, every time.
+**Step 0a — `cd "C:\Users\jaken\OneDrive\coachapp"` before anything else.** Same as `hello-claude`'s
+Step 0a: every step below assumes this cwd, STOP and tell Jake if it fails.
 
 **Step 0b — write the checklist to `~/.claude/state/ritual-save.md`, one `- [ ]`
 line per step below**, and tick each one off in the file as you finish it. A save that dies mid-way

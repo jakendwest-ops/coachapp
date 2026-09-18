@@ -71,39 +71,23 @@ tried once and reverted (2026-08-20 — see [decisions.md](decisions.md)) for co
 accepted tradeoff rather than an oversight — but it does mean a regression in an ungated spec can
 ship undetected between full-suite runs.
 
-## Process/tracking debt (self-reported by this session's own OS-LINT health check, 2026-09-15)
+## Process/tracking debt
 
-An automated hook run at the start of this session reported the *tracking system itself* is
-decaying, independent of anything found by this analysis:
+The tracking system regularly self-reports its own decay (`os-lint --report` at session start) — the
+live numbers (stale bugs, ungraded predictions, full-file-review age) belong to that report and
+[backlog.md](backlog.md), not repeated here since they go stale within a day. The pattern worth
+recording here, not there: **this is direct, ongoing evidence the tracking system itself accumulates
+debt at roughly the same rate it prevents it** — close to the actual motivation for this whole
+in-repo documentation set.
 
-- The weekly full-file `multi-agent-review` pass last ran 9 days ago (threshold: 7).
-- 88 previously-made predictions are past their verify-by date and still ungraded.
-- A mandatory `deploy-check` gate has no trace in `LOG.md` across the last 5 sessions.
-- 43 reported bugs have sat open for 7+ days (see [backlog.md](backlog.md) for the full breakdown);
-  the oldest is 72 days old as of this snapshot.
+Specific fixes to the mechanism itself are logged in [decisions.md](decisions.md) as they land
+(2026-09-16: `checkEventGateEvidence` added, `checkContinuityBudget` retired; 2026-09-17:
+`predictions.jsonl` moved into the repo; 2026-09-18: full Vault severing, `checkGatesFired` deleted
+outright) — don't duplicate that detail here.
 
-This matters here specifically because it's direct, current evidence that the *existing* Vault-based
-tracking system is itself accumulating debt — which is close to the actual motivation for building
-this in-repo documentation set in the first place.
-
-**Update 2026-09-16 (uncommitted — see git status):**
-
-- 5 bug rows closed via rule (b), hand-checked against real spec content. See [backlog.md](backlog.md).
-- `deploy-check`/`feature-audit`/`mobile-check` now stamp a `state/last-<skill>-run` marker
-  (mirrors `full-file-review`), toward replacing `gates-fired`'s lost evidence. **Resolved
-  2026-09-16:** `os-lint.mjs`'s new `checkEventGateEvidence` reads all three now — WARN-only,
-  correlating each marker against release tags (`deploy-check`) or UI-relevant commits
-  (`feature-audit`/`mobile-check`) since the marker's mtime, per this entry's own "needs measurement
-  first." Not yet a blocking gate, deliberately — see `docs/decisions.md`'s 2026-09-16 entry. Same
-  pass also retired `checkContinuityBudget` (its target was already superseded by `docs/decisions.md`,
-  per that check's own in-file comment) — same treatment `checkGatesFired` got on 2026-09-15.
-- Finished the skills migration — see [decisions.md](decisions.md).
-- **New, unfixed:** `predictions.jsonl` has 7 duplicate `id` values, 3 pairing a graded record with
-  a still-overdue one (`pth-034`, `pth-090`, `pth-109`) — ambiguous for Rule 6's id-keyed logic.
-  Blocked tonight (path outside declared working dirs, Jake unavailable to review); needs his pass.
-  **2026-09-17:** the file itself moved from the Vault to `docs/predictions.jsonl` in this repo (see
-  `decisions.md`'s 2026-09-17 entry) — the duplicates moved with it, untouched; still needs Jake.
-- The 88 ungraded predictions are otherwise untouched — most need Jake's own read, not code evidence.
+**New, unfixed:** `docs/predictions.jsonl` has 7 duplicate `id` values, 3 pairing a graded record
+with a still-overdue one (`pth-034`, `pth-090`, `pth-109`) — ambiguous for Rule 6's id-keyed logic.
+Needs Jake's own pass; not something code evidence can resolve.
 
 ## Minor hygiene debt
 
@@ -112,11 +96,8 @@ mostly already covered by `.gitignore` patterns. Low priority, noted for complet
 
 ## Requires Validation
 
-- Whether the 98-item "fixed-awaiting-jake" bucket in the bug ledger (see
-  [backlog.md](backlog.md)) represents a genuine confirmation-workflow bottleneck is not
-  established — flagged as worth Jake's attention, not asserted as a problem.
-- All OS-LINT figures above are a point-in-time snapshot from this session's start
-  (2026-09-15) and will already be somewhat stale — re-run the hook (or `/hello-claude`) rather
-  than trusting these numbers for current triage.
+- Whether the "fixed-awaiting-jake" bucket in the bug ledger (see [backlog.md](backlog.md))
+  represents a genuine confirmation-workflow bottleneck is not established — flagged as worth
+  Jake's attention, not asserted as a problem.
 - The live Supabase schema has not been independently verified against the 20 migration files —
   see [architecture.md](architecture.md).
