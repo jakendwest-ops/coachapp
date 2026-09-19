@@ -235,10 +235,10 @@ dual-copy incident — the global copy is deleted for the 3 that moved, never ke
   `jakendwest-ops/claude-config` (branch `main`; an allowlist `.gitignore` tracks only `skills/` + the
   auto-memory dir, so `git add -A` is safe — everything else, incl. `settings.json`, is excluded). Auth via
   `gh`, no token in the URL. See [[claude-config-backup]].
-  **Note (2026-08-09, example updated 2026-09-15):** `hooks/` and `state/` **are** in the allowlist
-  (`!/hooks`, `!/state`) — `hooks/standing-behaviours.mjs` and `state/last-full-file-review` are
-  tracked, verify with `git ls-files` if in doubt. (`hooks/os-lint.mjs` moved to the CoachApp repo
-  2026-09-15 and is no longer an example of a file that lives here.)
+  **Note (2026-08-09, updated 2026-09-19):** `hooks/` and `state/` **are** in the allowlist
+  (`!/hooks`, `!/state`) — `hooks/standing-behaviours.mjs` and the three `state/*-baseline.*` ratchet
+  files are tracked. Every other `state/` file is a per-run marker, git-ignored on purpose (so a
+  `git status` here should be clean); verify with `git ls-files` if in doubt.
 
 Update `MEMORY.md` index if any files were added or changed.
 
