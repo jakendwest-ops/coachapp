@@ -660,9 +660,15 @@ function checkFullFileReview () {
       + '    how 5 unscoped app-clients.js queries survived ~12 reviews. Run: Skill(multi-agent-review) in full-file mode.')
     return
   }
-  const age = Math.floor((now - statSync(MARKER).mtimeMs) / DAY)
+  // Same marker shape as the three event-gate markers (2026-09-18, see readEventMarker): {ranAt,
+  // sessionId, summary} JSON, with a bare-string marker still read by file mtime. The age is dated by
+  // ranAt when present. The summary is only ever SHOWN here, never required — this is a periodic RED
+  // gate, and warning on a missing summary would make a legitimately-stamped older marker noisy for
+  // a week; the value is that a real result appears in the banner and a bare re-stamp looks different.
+  const m = readEventMarker(MARKER)
+  const age = Math.floor((now - m.time) / DAY)
   if (age > 7) red('full-file-review', `the weekly FULL-FILE review last ran ${age} days ago (>7). Run multi-agent-review in full-file mode.`)
-  else ok('full-file-review', `full-file review ran ${age} day(s) ago`)
+  else ok('full-file-review', `full-file review ran ${age} day(s) ago` + (m.summary ? ` — "${m.summary}"` : ''))
 }
 
 // ---------------------------------------------------------------------------
@@ -835,6 +841,40 @@ function checkClosureCandidates () {
 }
 
 // ---------------------------------------------------------------------------
+// 8b3. Confirmation queue — the triage digest. Added 2026-09-18, per that night's own
+//      three-audits-in-one-session finding: `fixed-awaiting-jake` (93 rows as of tonight) has NO
+//      per-item surfacing anywhere in this file — `checkStaleBugs` only ever counts `status: open`,
+//      and `checkClosureCandidates` only surfaces the narrow subset (13 rows) that happen to name-match
+//      a real spec. The other 80-ish just sit in an aggregate count in backlog.md, un-triaged, un-aged,
+//      indistinguishable from each other. The bottleneck this OS's own retrospectives kept naming
+//      (bugs/predictions/closure-candidates are one queue — Jake's confirmation throughput — wearing
+//      three names) was never actually the detector; it was that nobody had a short, ordered list to
+//      start from. This is that list: oldest-first, capped, so it stays a worklist and not a wall.
+//
+//      WARN, not RED, matching closure-candidates' own reasoning: there are already REDs, and a nag
+//      that never shrinks trains you to ignore it. This shrinks as rows close.
+// ---------------------------------------------------------------------------
+function checkConfirmationQueue () {
+  const rows = bugRows()
+  if (rows === null) return                         // checkStaleBugs already warned
+
+  const queue = rows
+    .filter(r => !r.malformed && r.status === 'fixed-awaiting-jake' && r.reported)
+    .map(r => ({ ...r, age: Math.floor((now - Date.parse(r.reported)) / DAY) }))
+    .sort((a, b) => b.age - a.age)
+
+  if (!queue.length) { ok('confirmation-queue', 'no fixed-awaiting-jake rows'); return }
+
+  const shown = queue.slice(0, 8)
+  const more = queue.length > shown.length ? `\n    …and ${queue.length - shown.length} more — the full count lives in backlog.md, not repeated here` : ''
+  warn('confirmation-queue',
+    `${queue.length} row(s) sit fixed-awaiting-jake — oldest ${shown.length} first, as a starting point:\n    ` +
+    shown.map(r => `${r.age}d old — reported ${r.reported} — ${r.file}`).join('\n    ') + more +
+    '\n    Each needs Jake\'s own confirmation or a red→green test to close — this list does not' +
+    '\n    close anything, it just picks where to start rather than facing the whole pile at once.')
+}
+
+// ---------------------------------------------------------------------------
 // 8c. Deferred CRITICALS — the memory hole. Added OS v3, 2026-08-24.
 //     `deferred` means "Jake decided not now". It does NOT mean "resolved", but it removes the row
 //     from every view: checkStaleBugs only counts `open`, so a scan for open+critical rows returns
@@ -976,6 +1016,59 @@ function checkHooks () {
   if (problems.length) {
     red('hooks', `${problems.length} hook-wiring problem(s) — these fail SILENTLY, which is why nothing noticed:\n    ` + problems.join('\n    '))
   } else ok('hooks', `all registered hooks resolve, and every script in hooks/ is registered (${filesRead} settings file(s))`)
+}
+
+// ---------------------------------------------------------------------------
+// 9c. No Vault pointers — the invariant 2026-09-15..18's three rounds of manual severing were
+//     protecting, made checkable. Added 2026-09-18 (strategic review, top-three change #3).
+//
+//     The Vault/repo boundary took three separate passes to close by hand — 2026-09-15 (migration),
+//     2026-09-17 (predictions.jsonl), 2026-09-18 (full severing, twice over) — and nothing prevented
+//     the fourth from being needed: a future session re-adding a Vault path to a live hook or skill
+//     would go unnoticed until something misread it. This is that guard, and per this project's own
+//     2026-08-25 rule it was MEASURED before being wired in: on the real tree, this pattern flags
+//     zero live pointers and exactly one `//` explanatory comment (correctly exempt), and it matches
+//     every live pointer removed 2026-09-18 (`${HOME}/Claude/Vault/memory/…`, `cd "…\Claude\Vault"`).
+//
+//     Matches `Claude/Vault` — the parent-qualified filesystem path — NOT the bare word "Vault" or the
+//     relative form `Vault/memory/…`. Prose and decision-record comments routinely say those; a real
+//     path reference is the qualified form, which is what every actual pointer used. Lines that are
+//     pure `//` comments are exempt in .mjs files (explaining why something was removed is not
+//     pointing at it); in SKILL.md files the existing `LINT-OK` escape hatch applies, same as every
+//     other skill-scanning check in this file.
+//
+//     WARN, not RED — new checks ship non-blocking until measured over time (2026-08-25).
+// ---------------------------------------------------------------------------
+const VAULT_PATH_RE = /Claude[/\\]+Vault/
+function checkNoVaultPointers () {
+  const hits = []
+
+  // Hooks: code lines only — a line whose first non-space characters are `//` is a comment.
+  if (existsSync(HOOKS_DIR)) {
+    for (const f of readdirSync(HOOKS_DIR)) {
+      if (!/\.mjs$/i.test(f) || /\.selftest\.mjs$/i.test(f)) continue
+      const text = read(join(HOOKS_DIR, f))
+      if (text === null) continue
+      text.split(/\r?\n/).forEach((line, i) => {
+        if (line.includes('LINT-OK') || /^\s*\/\//.test(line)) return
+        if (VAULT_PATH_RE.test(line)) hits.push(`hooks/${f}:${i + 1} → ${line.trim().slice(0, 100)}`)
+      })
+    }
+  }
+
+  // Skills: every line (LINT-OK exempts), via the shared eachLine helper — see loadSkills().
+  for (const s of skills) {
+    eachLine(s, (line, n) => {
+      if (VAULT_PATH_RE.test(line)) hits.push(`${s.name}/SKILL.md:${n} → ${line.trim().slice(0, 100)}`)
+    })
+  }
+
+  if (hits.length) {
+    warn('no-vault-pointers', `${hits.length} live reference(s) to the Vault filesystem path in CoachApp's own tooling:\n    ` + hits.slice(0, 10).join('\n    ')
+      + (hits.length > 10 ? `\n    …and ${hits.length - 10} more` : '')
+      + '\n    CoachApp is repo-only since 2026-09-18 (docs/decisions.md). If this is a comment explaining what was'
+      + '\n    REMOVED, prefix it with // (hooks) or add LINT-OK (skills). If it is a real read/write, delete it.')
+  } else ok('no-vault-pointers', 'no live Vault filesystem path in any hook or skill')
 }
 
 // ---------------------------------------------------------------------------
@@ -1202,6 +1295,11 @@ function runSelfTest () {
 
     { check: 'full-file-review', expect: 'FULL-FILE review has never run',
       env: { OSLINT_MARKER: join(root, 'no-marker') } },
+    // Discriminating: ranAt 2026-01-01 on a file whose mtime is TODAY. Only the JSON branch can make
+    // this RED — if it were dead the marker would read as "ran 0 days ago" and this spec would go
+    // DECORATIVE. (Added 2026-09-18 when this check moved to the shared marker shape.)
+    { check: 'full-file-review', name: 'full-file-review/ranAt-honoured', expect: 'last ran',
+      env: { OSLINT_MARKER: file('ffr-old.json', JSON.stringify({ ranAt: '2026-01-01T00:00:00.000Z', sessionId: 's', summary: 'x' })) } },
 
     { check: 'bug-files', name: 'bug-files/no-frontmatter', expect: 'b.md: no frontmatter',
       env: { OSLINT_BUGS: bugDir('bf1', 'b.md', 'no frontmatter here\n') } },
@@ -1212,6 +1310,8 @@ function runSelfTest () {
 
     { check: 'stale-bugs', expect: 'still OPEN after 7+ days',
       env: { OSLINT_BUGS: bugDir('sb', 'b.md', `---\nid: b\nstatus: open\npriority: high\nreported: ${OLD}\n---\n# old open bug\n`) } },
+    { check: 'confirmation-queue', expect: 'sit fixed-awaiting-jake',
+      env: { OSLINT_BUGS: bugDir('cq', 'b.md', `---\nid: b\nstatus: fixed-awaiting-jake\npriority: high\nreported: ${OLD}\n---\n# old awaiting-jake bug\n`) } },
     // Both halves matter. The RED-before proves it can spot evidence; the companion below proves it
     // stays quiet when the spec cites an unrelated date — otherwise "every ageing row has a
     // candidate" would be indistinguishable from a working detector.
@@ -1234,6 +1334,26 @@ function runSelfTest () {
       env: { OSLINT_SETTINGS: file('hk2.json', '{"hooks":{ not json') } },
     { check: 'hooks', name: 'hooks/unregistered-script', expect: 'registered in NO settings file',
       env: { OSLINT_SETTINGS: file('hk3.json', '{"hooks":{}}') } },
+    // no-vault-pointers has two independent detectors (a hook code line, a skill line) — one fixture
+    // each, per this file's own rule that a fixture tripping two detectors proves neither.
+    { check: 'no-vault-pointers', name: 'no-vault-pointers/hook', expect: 'live reference(s) to the Vault filesystem path',
+      env: { OSLINT_HOOKS_DIR: (() => { file('vh/leak.mjs', "const X = 'C:/Users/jaken/Claude/Vault/memory'\n"); return join(root, 'vh') })(), // LINT-OK: deliberate fixture, must contain the pattern under test
+             OSLINT_SKILLS: join(root, 'nope-vp-hook') } },
+    { check: 'no-vault-pointers', name: 'no-vault-pointers/skill', expect: 'live reference(s) to the Vault filesystem path',
+      env: { OSLINT_SKILLS: skillDir('vps', FM + 'cd "C:\\Users\\jaken\\Claude\\Vault"\n') } }, // LINT-OK: deliberate fixture, must contain the pattern under test
+    // event-gates' marker reading changed shape 2026-09-18 and has three independent detectors.
+    // One fixture each. The third is the discriminating one: a JSON marker whose ranAt is 2026-01-01
+    // but whose FILE mtime is today — if the JSON branch were dead, the label would fall back to
+    // today's date, not 2026-01-01, and this spec would report DECORATIVE.
+    { check: 'event-gates', name: 'event-gates/no-summary', expect: 'carries no summary',
+      env: (() => { const m = file('eg-bare.txt', new Date().toISOString())
+        return { OSLINT_DEPLOY_CHECK_MARKER: m, OSLINT_FEATURE_AUDIT_MARKER: m, OSLINT_MOBILE_CHECK_MARKER: m } })() },
+    { check: 'event-gates', name: 'event-gates/placeholder', expect: 'unreplaced placeholder',
+      env: (() => { const m = file('eg-ph.json', JSON.stringify({ ranAt: new Date().toISOString(), sessionId: 's', summary: 'REPLACE WITH WHAT THIS RUN ACTUALLY FOUND' }))
+        return { OSLINT_DEPLOY_CHECK_MARKER: m, OSLINT_FEATURE_AUDIT_MARKER: m, OSLINT_MOBILE_CHECK_MARKER: m } })() },
+    { check: 'event-gates', name: 'event-gates/ranAt-honoured', expect: 'marker: 2026-01-01',
+      env: (() => { const m = file('eg-old.json', JSON.stringify({ ranAt: '2026-01-01T00:00:00.000Z', sessionId: 's', summary: 'ran clean' }))
+        return { OSLINT_DEPLOY_CHECK_MARKER: m, OSLINT_FEATURE_AUDIT_MARKER: m, OSLINT_MOBILE_CHECK_MARKER: m } })() },
     { check: 'claude-md', expect: 'is missing',
       env: { OSLINT_CLAUDE_MD: join(root, 'no-claude-md') } },
     { check: 'stale-predictions', expect: 'past verify_by and still ungraded',
@@ -1685,11 +1805,45 @@ function checkDocObligations () {
 //     any git read error or a missing/unreadable repo — a measurement failure must never block a
 //     session, same rule this whole file follows everywhere else.
 //
-//     No --self-test fixture yet, same as checkRule0: a git-based fixture needs a disposable temp repo
-//     with real tags/commits (guardrails.selftest.mjs already does this for a different reason), which
-//     is its own piece of work, not bundled into this pass. Inputs are still env-overridable per this
-//     file's own rule, so that fixture can be added later without a redesign.
+//     Self-test coverage is PARTIAL, deliberately: the marker-reading paths (bare string, placeholder,
+//     ranAt-over-mtime) have fixtures — added 2026-09-18, see runSelfTest — because they don't need a
+//     git repo shaped to the test. The git-correlation half (tags / UI-commit counts since a marker)
+//     still has none: a fixture for it needs a disposable temp repo with real tags and commits
+//     (guardrails.selftest.mjs already does this for a different reason), which is its own piece of
+//     work. Inputs are env-overridable per this file's own rule, so that fixture can be added later.
 // ---------------------------------------------------------------------------
+// Markers written since 2026-09-18 carry {ranAt, sessionId, summary} JSON instead of a bare
+// ISO-string touch — see decisions.md's 2026-09-18 "Event-gate markers now carry a real result"
+// entry. Reads either shape without erroring: an old bare-string marker, or one this session's
+// tooling predates, falls back to file mtime with no summary. Never throws, never blocks — a
+// marker-read failure is a measurement failure, same rule this whole file follows everywhere.
+//
+// Two hardenings, both found in review before this shipped:
+//  - The summary is PRINTED into the session-start banner, which enters model context, so it is
+//    forced to one line, string-only, capped at 140 chars. A marker file is not a trusted channel
+//    just because a skill normally writes it.
+//  - The skills' marker command ships with a template summary ("REPLACE WITH …"). Run verbatim, that
+//    literal text would count as a real result and recreate the exact lazy-stamp gap this field
+//    exists to close — so a summary still reading as the template is reported as a placeholder, not
+//    accepted as evidence.
+const PLACEHOLDER_SUMMARY_RE = /^REPLACE WITH/i
+function readEventMarker (p) {
+  if (!existsSync(p)) return { exists: false, time: 0, summary: null, placeholder: false }
+  const mtime = statSync(p).mtimeMs
+  let raw = ''
+  try { raw = readFileSync(p, 'utf8').trim() } catch { return { exists: true, time: mtime, summary: null, placeholder: false } }
+  try {
+    const j = JSON.parse(raw)
+    if (j && j.ranAt) {
+      const t = Date.parse(j.ranAt)
+      const s = typeof j.summary === 'string' ? j.summary.replace(/\s+/g, ' ').trim().slice(0, 140) : ''
+      const placeholder = PLACEHOLDER_SUMMARY_RE.test(s)
+      return { exists: true, time: Number.isFinite(t) ? t : mtime, summary: s && !placeholder ? s : null, placeholder }
+    }
+  } catch { /* old bare-ISO-string format, or unparseable — fall through to mtime */ }
+  return { exists: true, time: mtime, summary: null, placeholder: false }
+}
+
 function checkEventGateEvidence () {
   let git
   try {
@@ -1698,7 +1852,7 @@ function checkEventGateEvidence () {
   } catch { warn('event-gates', 'could not read git history for this repo — skipped'); return }
 
   const notes = []
-  const markerAge = p => (existsSync(p) ? statSync(p).mtimeMs : 0)
+  const seen = []   // every marker checked, for the clean-path summary line below
   const markerLabel = t => (t ? new Date(t).toISOString().slice(0, 10) : 'never')
 
   // deploy-check vs. release tags — rare, deliberate events, so this one is worded with confidence.
@@ -1708,26 +1862,44 @@ function checkEventGateEvidence () {
       const i = l.indexOf(' ')
       return { tag: l.slice(0, i), time: Date.parse(l.slice(i + 1)) }
     })
-    const marker = markerAge(DEPLOY_CHECK_MARKER)
-    const unmatched = tags.filter(t => t.time > marker)
+    const marker = readEventMarker(DEPLOY_CHECK_MARKER)
+    seen.push(['deploy-check', marker])
+    const unmatched = tags.filter(t => t.time > marker.time)
     if (unmatched.length) {
       const newest = unmatched.reduce((a, b) => (a.time > b.time ? a : b))
       notes.push(`deploy-check: ${unmatched.length} release tag(s) cut since its last run `
-        + `(marker: ${markerLabel(marker)}), newest ${newest.tag}`)
+        + `(marker: ${markerLabel(marker.time)}), newest ${newest.tag}`)
     }
   } catch { /* no tags yet, or this sub-check failed — does not block the other sub-checks */ }
 
   // feature-audit / mobile-check vs. commits touching UI-relevant paths.
   for (const [label, markerPath] of [['feature-audit', FEATURE_AUDIT_MARKER], ['mobile-check', MOBILE_CHECK_MARKER]]) {
     try {
-      const marker = markerAge(markerPath)
+      const marker = readEventMarker(markerPath)
+      seen.push([label, marker])
       const args = ['log', '--oneline']
-      if (marker) args.push(`--since=${new Date(marker).toISOString()}`)
+      if (marker.time) args.push(`--since=${new Date(marker.time).toISOString()}`)
       args.push('--', 'js/', 'css/', 'index.html')
       const out = git(...args)
       const n = out ? out.split(/\r?\n/).filter(Boolean).length : 0
-      if (n > 0) notes.push(`${label}: ${n} UI-relevant commit(s) since its last run (marker: ${markerLabel(marker)})`)
+      if (n > 0) notes.push(`${label}: ${n} UI-relevant commit(s) since its last run (marker: ${markerLabel(marker.time)})`)
     } catch { /* does not block the other sub-check */ }
+  }
+
+  // A marker that exists but carries no summary was either written before 2026-09-18, or written
+  // without one — the second case is indistinguishable from a touch-marker stamped without the
+  // real work behind it, which is exactly the class this file exists to catch (see os-lint's own
+  // history: checkGatesFired, checkSelfTestFresh's unwritten marker, and 2026-09-18's near-miss
+  // where a marker was almost stamped for three skills that had not actually run).
+  const placeholders = seen.filter(([, m]) => m.exists && m.placeholder).map(([label]) => label)
+  const noSummary = seen.filter(([, m]) => m.exists && !m.summary && !m.placeholder).map(([label]) => label)
+  if (placeholders.length) {
+    notes.push(`${placeholders.join(', ')}: marker's summary is still the unreplaced placeholder — the result `
+      + `step was never filled in, so this is a touch-marker, not a record of a real run`)
+  }
+  if (noSummary.length) {
+    notes.push(`${noSummary.join(', ')}: marker exists but carries no summary — cannot confirm `
+      + `real findings behind it, only that the file was touched`)
   }
 
   if (notes.length) {
@@ -1735,7 +1907,11 @@ function checkEventGateEvidence () {
       + '\n    Measurement only per docs/technical-debt.md — not yet a gate. See docs/decisions.md\'s\n'
       + '    2026-08-25 entry for why this starts as a count, not a blocking check.')
   } else {
-    ok('event-gates', 'no UI-relevant commits or release tags since the last recorded run of each event-triggered gate')
+    const withSummary = seen.filter(([, m]) => m.summary)
+    const detail = withSummary.length
+      ? ' Last known results: ' + withSummary.map(([l, m]) => `${l} (${markerLabel(m.time)}): "${m.summary}"`).join('; ')
+      : ''
+    ok('event-gates', 'no UI-relevant commits or release tags since the last recorded run of each event-triggered gate.' + detail)
   }
 }
 
@@ -1759,6 +1935,7 @@ checkFullFileReview()
 checkBugFrontmatter()
 checkStaleBugs()
 checkClosureCandidates()
+checkConfirmationQueue()
 checkDeferredCriticals()
 checkLedgerStatusDrift()
 checkContextBudget()
@@ -1865,6 +2042,7 @@ function checkRule0 () {
 checkRule0()
 checkHookSelfTests()
 checkHooks()
+checkNoVaultPointers()
 // checkGatesFired retired 2026-09-15 (call commented out), deleted outright 2026-09-18 along with
 // its GATES/GATE_WINDOW/VAULT/LOG constants and self-test spec — see docs/decisions.md's 2026-09-18
 // entry. No replacement mechanism was built for evidencing these gates fired from the repo side —

@@ -98,18 +98,30 @@ End with a tight report:
 
 Be honest and direct — a real client hitting the bug in a gym is worse than flagging it now. Flag everything, no matter how small.
 
-## Last step — record that this ran
+## Last step — record what this run actually found
 
 `gates-fired` (the check that used to prove this gate fires by grepping the Vault's `LOG.md`) was
-retired 2026-09-15 when `LOG.md` was frozen, with no replacement built — this project now has zero
-mechanical evidence feature-audit still runs on real features. Start closing that gap the same way
-`full-file-review` already proves it: stamp a marker on every real run.
+retired 2026-09-15 when `LOG.md` was frozen, with no replacement built. A bare timestamp only proves
+a file got touched, not that a real run happened behind it — the same "reports success while doing
+nothing" shape this project keeps finding elsewhere, and one this exact marker almost fell into on
+2026-09-18 (a stamp was attempted with no run behind it; a permission check caught it, not this OS).
+So the marker carries a real one-line result, not just a touch. **Replace the summary text below with
+what this run genuinely found — "clean, no issues" is only honest if that's true.**
 
 ```bash
-node -e "require('fs').writeFileSync('C:/Users/jaken/.claude/state/last-feature-audit-run', new Date().toISOString())"
+node -e "
+const fs = require('fs');
+const sessionId = fs.readFileSync('C:/Users/jaken/.claude/state/session-current', 'utf8').trim();
+fs.writeFileSync('C:/Users/jaken/.claude/state/last-feature-audit-run', JSON.stringify({
+  ranAt: new Date().toISOString(),
+  sessionId,
+  summary: 'REPLACE WITH WHAT THIS RUN ACTUALLY FOUND — e.g. \"clean, no issues\" or \"2 issues found, 1 fixed\"'
+}))
+"
 ```
 
-Deliberately just the marker, not a new staleness gate — this runs "after every feature build," which
+Deliberately just the marker, not a blocking gate — this runs "after every feature build," which
 is event-triggered, not periodic, so a naive "N days since last run" RED would misfire on any stretch
-spent on bug fixes or non-feature work rather than new builds. Giving it teeth needs measurement first,
-same as every other gate here — not done in this pass.
+spent on bug fixes or non-feature work rather than new builds. `os-lint`'s `checkEventGateEvidence`
+(added 2026-09-16) is the measure-first step this needed before being trusted — it correlates this
+marker against UI-relevant commits, WARN-only. Giving it RED-level teeth is a separate, later call.

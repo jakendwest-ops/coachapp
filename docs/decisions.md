@@ -12,6 +12,42 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-18 — The Vault/repo boundary is stated once (`CLAUDE.md` "What lives where") and checked
+(`no-vault-pointers`, WARN).** The check flags any `Claude/Vault` filesystem path on a live line of a hook
+or skill (`//` comments and `LINT-OK` lines exempt). The old boundary narrative in `CLAUDE.md` — five
+overlapping paragraphs, one of which wrongly told every session the Vault still held a live ledger
+`guardrails.mjs` reads — was replaced by one table.
+*Why:* it took three manual rounds (09-15, 09-17, 09-18) to close and nothing stopped a fourth.
+*Rejected:* a blocking version (new checks ship WARN-only until measured); matching the bare word
+"Vault" (prose says it constantly — only the parent-qualified path is a real reference).
+
+---
+
+**2026-09-18 — Ritual markers carry a result, not just a timestamp.** `last-{deploy-check,
+feature-audit,mobile-check}-run` and `last-full-file-review` are now `{ranAt, sessionId, summary}` JSON;
+both checks read either shape and cap the printed summary at one line / 140 chars (bounds its shape, not
+its content — only this project's own skills write these files); `checkEventGateEvidence` also flags a
+marker with no summary, or one still holding the skills' unreplaced "REPLACE WITH…" template.
+*Why:* a bare timestamp proves a file was touched, not that a run happened — the "reports success while
+doing nothing" class, which these markers nearly became on 2026-09-18 (a stamp attempted with no run
+behind it; only Claude Code's permission classifier stopped it, nothing in this OS).
+*Left, named:* `guardrails.mjs` RULE 2/5's session-ID markers (`review-ran`, `sql-safety-ran`) — a separate,
+already-reasoned tradeoff (a diff-hash marker re-blocks after every review-fix edit), not this defect.
+`checkFullFileReview` only *shows* a summary and never warns on its absence (a periodic RED gate; a
+missing summary would make a legitimately-stamped older marker noisy for a week).
+
+---
+
+**2026-09-18 — `checkConfirmationQueue`: the oldest 8 `fixed-awaiting-jake` rows, every session (WARN).**
+That bucket (93 rows) had no per-item surfacing anywhere — only an aggregate count in `backlog.md`.
+*Why:* three audits this session independently named the same root cause — bugs, predictions and
+closure-candidates are one bottleneck (Jake's confirmation throughput) wearing three names, and the
+most-repeated never-built recommendation was a short ordered list to start from. It surfaces; it
+closes nothing. *Rejected:* auto-closing, ranking by anything but age, treating the predictions backlog
+the same way.
+
+---
+
 **2026-09-18 — Full severing: CoachApp reads and writes nothing in the Vault, no exceptions.**
 Jake's explicit, absolute instruction, superseding the 2026-09-17 entry's narrower scope (which kept
 `lessons.jsonl`/`beliefs.jsonl`/`voice.md` in the Vault as "genuinely cross-project"). Cut:
@@ -93,17 +129,6 @@ check.
 
 ---
 
-**2026-09-16 — Finished the skills migration; narrowed the "Vault is retired" doctrine.** The 6
-remaining skills (`deploy-check`, `feature-audit`, `mobile-check`, `multi-agent-review`,
-`playwright`, `sql-safety`) moved from `~/.claude/skills` into this repo, completing 2026-09-15's
-migration. Also corrected that migration's doctrine: `Vault/memory/predictions.jsonl` and siblings
-are a live, cross-project (CoachApp + PTHub) ledger `guardrails.mjs` Rule 6 depends on every commit —
-never covered by "the repo replaces the Vault." The Vault is its own git repo with a GitHub remote,
-so this was wording overreach, not unversioned data — see CLAUDE.md. *Rejected:* migrating the
-JSONL files here — mixed-project data belongs with cross-project memory, not one product's repo.
-
----
-
 **2026-09-15 — The repo replaces the Vault as CoachApp's system of record.** Jake's explicit
 decision, resolving a question this documentation set had deliberately left open through several
 earlier passes. `docs/*.md` (including `docs/bugs/`, migrated wholesale) is now authoritative;
@@ -118,7 +143,9 @@ to be 3 releases stale relative to git, and a bug ledger row (GDPR consent captu
 `/hello-claude`, `/save`) are not repointed at `docs/` — they live in shared, git-versioned
 infrastructure (`~/.claude`) that also serves another project (PTHub), so repointing them is a
 separate, more carefully-gated step, not bundled into this one. See the transitional caveat in
-`CLAUDE.md`.
+`CLAUDE.md`. *[Added 2026-09-18: that caveat no longer exists — the repointing it described was
+completed 2026-09-16 and the Vault fully severed 2026-09-18; `CLAUDE.md`'s "What lives where" table
+is now the single current statement of the boundary.]*
 
 ---
 
@@ -127,6 +154,8 @@ separate, more carefully-gated step, not bundled into this one. See the transiti
 moved verbatim to [archive/decisions-pre-2026-09-15.md](archive/decisions-pre-2026-09-15.md) to clear
 `docs-budget` — none have been revisited since, 2026-09-15 is the natural cutoff every other archived
 doc in this set already uses. Read the archive for that history; nothing below duplicates it.
+`docs/archive/decisions-pre-2026-09-15.md` also holds one **superseded** later entry (2026-09-16, "Finished
+the skills migration; narrowed the Vault-is-retired doctrine") — its doctrine was reversed 09-17 and overtaken 09-18.
 
 ## Requires Validation
 

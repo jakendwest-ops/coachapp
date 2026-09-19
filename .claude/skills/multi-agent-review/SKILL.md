@@ -31,9 +31,18 @@ for f in js/*.js; do echo "$(git log --since='30 days ago' --oneline -- "$f" | w
 Hand each agent the *whole file(s)*, not a diff.
 
 **After a full-file run, update the marker** — otherwise `os-lint` keeps (correctly) reporting that this gate
-has never fired:
+has never fired. It records what the review actually found, not just that it ran (a bare timestamp
+proves a file was touched, nothing more) — **replace the summary text with the real result**:
 ```bash
-node -e "require('fs').writeFileSync('C:/Users/jaken/.claude/state/last-full-file-review', new Date().toISOString())"
+node -e "
+const fs = require('fs');
+const sessionId = fs.readFileSync('C:/Users/jaken/.claude/state/session-current', 'utf8').trim();
+fs.writeFileSync('C:/Users/jaken/.claude/state/last-full-file-review', JSON.stringify({
+  ranAt: new Date().toISOString(),
+  sessionId,
+  summary: 'REPLACE WITH WHAT THIS REVIEW ACTUALLY FOUND — e.g. \"1 blocking (filed), 3 non-blocking\" or \"clean\"'
+}))
+"
 ```
 
 State which mode you are running at the top of the report.

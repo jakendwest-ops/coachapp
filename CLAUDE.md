@@ -5,41 +5,28 @@ grow this file into a copy of `docs/*.md` or the Vault; point to them instead.
 
 ## Repository source of truth
 
-**Resolved 2026-09-15: this repo replaces the Vault.** Jake's explicit decision, ending what had
-been an open question — the repo, not the Vault and not conversational memory, is CoachApp's
-system of record going forward. `docs/*.md` is authoritative for vision, architecture, schema,
-decisions, technical debt, and the bug ledger (`docs/bugs/`, migrated wholesale from the Vault).
+**This repo is CoachApp's only system of record. Nothing CoachApp-side reads or writes the Vault.**
+`docs/*.md` is authoritative for vision, architecture, schema, decisions, technical debt, the bug
+ledger (`docs/bugs/`) and the prediction ledger (`docs/predictions.jsonl`). Decided 2026-09-15,
+actually finished 2026-09-18 after three rounds — the dated history is in `docs/decisions.md`, not
+repeated here. PTHub (the other project) ended 2026-09-15.
+
+**What lives where** — the one canonical statement of the boundary; if another doc disagrees, this wins:
+
+| Thing | Lives in |
+|---|---|
+| Docs, bug ledger, predictions, all 9 skills, `os-lint.mjs`, `guardrails.mjs` | this repo |
+| `claim-check.mjs`, `standing-behaviours.mjs`, this project's Claude memory | `~/.claude` (its own private `claude-config` repo) — generic, not CoachApp-specific |
+| The Vault | nothing CoachApp needs. Old CoachApp files are archived at `Vault/projects/_archive/CoachApp/`; `os-lint`'s `no-vault-pointers` check warns if a live path back into it reappears in a hook or skill |
 
 **Conversational memory is never authoritative.** Never rely on what a previous session said
 happened, what you remember doing, or an unverified summary carried over in context — if `docs/`
 has an answer, read the file.
 
-**Migration complete, 2026-09-15/16.** All 9 skills (`hello-claude`, `save`, `run-coachapp`,
-`deploy-check`, `feature-audit`, `mobile-check`, `multi-agent-review`, `playwright`, `sql-safety`)
-and both hooks (`os-lint.mjs`, `guardrails.mjs`) now live in this repo (`.claude/hooks/`,
-`.claude/skills/`), not `~/.claude` — CoachApp is fully self-contained for its own ritual/lint
-automation. PTHub (the other project that previously justified keeping this machinery shared) ended
-2026-09-15; its own PTHub-specific branches were stripped from the moved hooks at the same time.
-`claim-check.mjs` and `standing-behaviours.mjs` stay in `~/.claude` — confirmed generic, not
-CoachApp-specific. **Addressed 2026-09-18, not yet empirically verified:** neither skill asserted a
-working directory before doing anything, so a fresh session could in principle resolve "hello
-claude"/`/save` from wherever its shell happened to start rather than this repo. Both skills now
-open with an explicit `cd "C:\Users\jaken\OneDrive\coachapp"` as their literal first step (Step 0a),
-refusing to proceed if it fails — but this has been added, not yet watched succeed on an actual fresh
-session. Confirm it holds the next time either ritual runs cold.
-
-**Correction, 2026-09-16 — the Vault is not uniformly "historical."** The line above and the
-2026-09-15 decision both describe the CoachApp-specific project files (`STATUS.md`, `LOG.md`,
-`bugs/`) that were migrated wholesale into `docs/`. Separately, `Vault/memory/predictions.jsonl`,
-`lessons.jsonl`, and `beliefs.jsonl` are a **different, still-live, cross-project** memory ledger
-(shared with PTHub's own historical entries) that was never part of that migration and isn't
-CoachApp-specific — `guardrails.mjs` Rule 6 actively reads and blocks on `predictions.jsonl` state on
-every commit. The Vault itself is its own git repo (`github.com/jakendwest-ops/vault.git`), so this
-isn't an unversioned-data risk, just a doctrine statement that overreached: "the Vault is retired"
-was true of the project-specific files, not of this cross-project ledger. The Vault folder itself
-has not been deleted — retained as a historical archive for the migrated project files (most of it
-is now duplicated into `docs/archive/` anyway) pending Jake's own decision on its fate; the live
-JSONL ledger is the one part of it that is not archival.
+**`cd` guard, added 2026-09-18, not yet empirically verified:** `hello-claude` and `save` both open
+with an explicit `cd "C:\Users\jaken\OneDrive\coachapp"` (Step 0a) and refuse to proceed if it fails,
+so a fresh session can't resolve either ritual from wherever its shell happened to start. Added, not
+yet watched succeed on a cold session — confirm it holds the next time either runs fresh.
 
 ## What this is
 
@@ -82,9 +69,9 @@ module you change**, in the same commit. Full module map + data layer: `docs/arc
 
 ## Session startup
 
-Run `/hello-claude` first — it boots the preview server and scans for bugs. **Note the transitional
-caveat above: it still reads Vault paths, which are now historical snapshots, not live.** For
-anything about current priorities/risks/bugs, prefer:
+Run `/hello-claude` first — it boots the preview server and scans for bugs. **Repo only, since
+2026-09-18** — it no longer reads any Vault path at all (the full severing decision; see
+`docs/decisions.md`'s 2026-09-18 "Full severing" entry). For anything about current priorities/risks/bugs, prefer:
 
 - `docs/session-context.md` — priorities, risks, immediate next actions (point-in-time snapshot)
 - `docs/current-sprint.md` — the current release cycle's in-flight state
@@ -165,10 +152,8 @@ updates to:
 - `docs/technical-debt.md` — if a debt pattern was introduced, resolved, or newly understood
 - `docs/handover.md` — if enough of the above changed that its summary would now mislead a reviewer
 
-This is separate from, and does not replace, the Vault's own `/vault-save` end-of-session ritual
-(renamed from `/save` 2026-07-02, to end a name collision with this repo's own skill) for the
-Vault's own top-level `STATUS.md`/`LOG.md` — general cross-project continuity, not CoachApp's own
-(archived, historical) `Vault/projects/_archive/CoachApp/STATUS.md`.
+Bare `/save` is this repo's own skill and touches nothing outside it. (A separate `/vault-save`
+ritual exists for the Vault's other, unrelated projects — CoachApp never invokes it.)
 
 ## Where the real docs live
 
@@ -181,17 +166,6 @@ architecture audit, and other point-in-time audits) — read it for detail/trace
 it as current. See `docs/handover.md` for how the live docs relate to each other. Every file carries
 its own "Requires Validation" section; treat unmarked claims as checked, marked ones as open.
 
-**Vault — now a historical archive, not live.** Moved 2026-09-18 from
-`Vault\projects\CoachApp` to `Vault\projects\_archive\CoachApp` (a separate Vault-side session's
-own fix, committed there as `048ac24`) specifically so nothing scanning the Vault's live
-`projects/` folders could mistake it for current — it had been sitting un-archived since the
-2026-09-15 migration, describing itself as historical in prose here while still looking live on
-disk there. Retained, not deleted; see "Repository source of truth" above for what (if anything)
-still reads it.
-
-**All 9 skills and both hooks live in this repo's own `.claude/hooks/` and `.claude/skills/`** —
-fully self-contained since 2026-09-16 (`hello-claude`/`save`/`run-coachapp` moved 2026-09-15;
-`deploy-check`/`feature-audit`/`mobile-check`/`multi-agent-review`/`playwright`/`sql-safety`
-followed 2026-09-16, once PTHub — the other project the shared `~/.claude` location served — had
-ended). `claim-check` and `standing-behaviours` stay in `~/.claude` (generic, used across other
-projects too). Start any real session with `/hello-claude`.
+**The Vault** is not a place CoachApp reads or writes — see the "What lives where" table under
+"Repository source of truth" above (the one canonical statement of that boundary; the dated history
+of how it was closed is in `docs/decisions.md`). Start any real session with `/hello-claude`.

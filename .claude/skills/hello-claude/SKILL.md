@@ -111,7 +111,7 @@ Report findings with line numbers. If clean, say "Code review: clean." **Do not 
 **Weekly full-file review — driven by the marker, not self-assessment.** `os-lint` goes RED when
 `~/.claude/state/last-full-file-review` is missing or >7 days old. When it does: run
 `multi-agent-review` in **full-file mode** against the 2-3 highest-churn modules, then stamp the
-marker (`node -e "require('fs').writeFileSync('C:/Users/jaken/.claude/state/last-full-file-review', new Date().toISOString())"`).
+marker exactly as that skill says — with the real result, not a bare timestamp.
 (A self-assessed "first session of the week" version of this never once fired in 10 days — the
 marker replaced it after 5 unscoped `app-clients.js` queries survived ~12 diff-only reviews.)
 

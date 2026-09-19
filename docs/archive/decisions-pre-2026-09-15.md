@@ -100,3 +100,20 @@ oversight.
 - This log was seeded from `CLAUDE.md` prose and `.github/workflows/deploy.yml` comments in the
   session that first wrote it — it has not been cross-checked against the Vault's `LOG.md`, which
   likely has a fuller and more precisely dated decision history.
+
+---
+
+## Superseded entry — moved here 2026-09-18
+
+Not pre-2026-09-15, but its doctrine (a live cross-project Vault ledger; "rejected: migrating the JSONL
+files here") was reversed by the 2026-09-17 decision and fully overtaken by 2026-09-18's. No live
+document links to it. Moved verbatim.
+
+**2026-09-16 — Finished the skills migration; narrowed the "Vault is retired" doctrine.** The 6
+remaining skills (`deploy-check`, `feature-audit`, `mobile-check`, `multi-agent-review`,
+`playwright`, `sql-safety`) moved from `~/.claude/skills` into this repo, completing 2026-09-15's
+migration. Also corrected that migration's doctrine: `Vault/memory/predictions.jsonl` and siblings
+are a live, cross-project (CoachApp + PTHub) ledger `guardrails.mjs` Rule 6 depends on every commit —
+never covered by "the repo replaces the Vault." The Vault is its own git repo with a GitHub remote,
+so this was wording overreach, not unversioned data — see CLAUDE.md. *Rejected:* migrating the
+JSONL files here — mixed-project data belongs with cross-project memory, not one product's repo.

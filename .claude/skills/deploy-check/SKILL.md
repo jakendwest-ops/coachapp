@@ -169,19 +169,32 @@ gh run list --limit 3
 - Any ⚠️ → **Review before inviting — document the risk**
 - Any ❌ → **Do not proceed — fix first**
 
-## Last step — record that this ran
+## Last step — record what this run actually found
 
 `gates-fired` (the check that used to prove this gate fires by grepping the Vault's `LOG.md`) was
-retired 2026-09-15 when `LOG.md` was frozen, with no replacement built — this project now has zero
-mechanical evidence deploy-check still runs. Start closing that gap the same way `full-file-review`
-already proves it: stamp a marker on every real run.
+retired 2026-09-15 when `LOG.md` was frozen, with no replacement built. A bare timestamp only proves
+a file got touched, not that a real run happened behind it — the same "reports success while doing
+nothing" shape this project keeps finding elsewhere, and one this exact marker almost fell into on
+2026-09-18 (a stamp was attempted with no run behind it; a permission check caught it, not this OS).
+So the marker carries a real one-line result, not just a touch. **Replace the summary text below with
+what this run genuinely found — "clean, no issues" is only honest if that's true.**
 
 ```bash
-node -e "require('fs').writeFileSync('C:/Users/jaken/.claude/state/last-deploy-check-run', new Date().toISOString())"
+node -e "
+const fs = require('fs');
+const sessionId = fs.readFileSync('C:/Users/jaken/.claude/state/session-current', 'utf8').trim();
+fs.writeFileSync('C:/Users/jaken/.claude/state/last-deploy-check-run', JSON.stringify({
+  ranAt: new Date().toISOString(),
+  sessionId,
+  summary: 'REPLACE WITH WHAT THIS RUN ACTUALLY FOUND — e.g. \"clean, no issues\" or \"2 issues found, 1 fixed\"'
+}))
+"
 ```
 
-This is deliberately just the marker, not a new staleness gate — this check fires "before any beta
+This is deliberately just the marker, not a blocking gate — this check fires "before any beta
 invite or significant public push," which is event-triggered, not periodic, so a naive "N days since
 last run" RED would misfire on every quiet stretch with nothing to deploy (the exact false-alarm shape
-this project's own `checkGatesFired` post-mortem warned about). Giving it teeth needs the same
-measure-first step every other gate here got before being trusted — not done in this pass.
+this project's own `checkGatesFired` post-mortem warned about). `os-lint`'s `checkEventGateEvidence`
+(added 2026-09-16) is the measure-first step this needed before being trusted — it correlates this
+marker against real release tags, WARN-only. Giving it RED-level teeth is a separate, later call once
+that measurement has run for a while.

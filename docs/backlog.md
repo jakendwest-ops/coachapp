@@ -84,7 +84,10 @@ these as directional, not precise:
   described by another once actually read.
 - Whether the 93-item "fixed-awaiting-jake" bucket represents a confirmation-workflow bottleneck or
   normal cadence is not established — it's the largest single bucket, which is worth Jake's own
-  attention, but no claim is made here about why.
+  attention, but no claim is made here about why. **Partially addressed 2026-09-18:** `os-lint`'s
+  new `checkConfirmationQueue` surfaces the oldest 8 of these every session (WARN-level) as a
+  starting worklist — it doesn't resolve the bottleneck question, just makes the pile actionable
+  instead of an undifferentiated count.
 - The 12 deferred bugs beyond the GDPR one are mostly scope/infra decisions (e.g. a Supabase Pro
   upgrade, a runner "Phase 2," a client self-detach workflow gap) rather than live defects, based on
   filenames only — not individually verified here.
