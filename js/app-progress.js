@@ -441,14 +441,18 @@ async function delete1RM(id, clientId) {
   _refresh1RMs(clientId)
 }
 
-// ONE definition of "best" for a performance_logs record, used by renderClientPerformance (and, until
-// 2026-09-19, by the Benchmarks tab's renderProgressPBs, since deleted). Both queries ordered by
-// `date desc`, and both previously took the FIRST row —
-// i.e. the most recently logged entry — and rendered it beside a gold "PB" badge. So a lighter/slower
-// entry logged more recently displayed as the personal best. "Best" is category-dependent: for TIME
-// units (min/sec — cardio splits, benchmark clock times) a LOWER value is better; for everything else
-// (kg/lbs, cm/in, km/mi, reps) a HIGHER value is better. The unit is a reliable signal because
-// PERF_CATEGORIES (app-runner.js) never mixes a time unit with a non-time one within one category.
+// ONE definition of "best" for a performance_logs record. Callers: renderClientPerformance (the coach's
+// Performance tab) and, through _perfBestsByName (app-dashboard.js), the Benchmarks card on BOTH the
+// client and the solo dashboard. (The Benchmarks tab's renderProgressPBs was a third until 2026-09-19.)
+// Every one of those queries orders by `date desc` and used to take the FIRST row — i.e. the most
+// recently logged entry — and render it beside a gold "PB" badge. So a lighter/slower entry logged more
+// recently displayed as the personal best. "Best" depends on the UNIT: for TIME units (min/sec — cardio
+// splits, benchmark clock times) a LOWER value is better; for everything else (kg/lbs, cm/in, km/mi,
+// reps) a HIGHER value is better. The direction is taken from the NEWEST record's unit, which is reliable
+// only while one name stays in one family of units. PERF_CATEGORIES (app-runner.js) puts BOTH time
+// (min/sec) and distance (km/mi) units in `cardio`, so a name logged as 1350 sec and later as 5 km takes
+// its direction from whichever is newer. Unknown units ('Kg', '5km', '') are treated as higher-is-better
+// and unconverted.
 const _PERF_TIME_UNITS = new Set(['min', 'sec'])
 
 // PERF_CATEGORIES (app-runner.js) lets the SAME exercise name be logged in either unit of a pair
@@ -464,7 +468,11 @@ const _PERF_UNIT_BASE = {
   reps: v => v,
 }
 function _perfBaseValue(unit, value) {
-  const fn = _PERF_UNIT_BASE[unit]
+  // hasOwnProperty, not a bare `_PERF_UNIT_BASE[unit]`: `unit` is free text in the database, and a row
+  // whose unit is "__proto__" made the plain lookup return Object.prototype — truthy but not callable —
+  // and throw out of every caller, which since 2026-09-19 includes both dashboards. Every other unknown
+  // unit ('Kg', '5km', null) is simply absent here and falls through unconverted, as intended.
+  const fn = Object.prototype.hasOwnProperty.call(_PERF_UNIT_BASE, unit) ? _PERF_UNIT_BASE[unit] : null
   return fn ? fn(value) : value
 }
 function _bestPerfLog(records) {

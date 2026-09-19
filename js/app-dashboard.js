@@ -311,17 +311,8 @@ async function renderClientDashboard(el) {
   }
   const trendColour = weightTrend === '↓' ? 'var(--success)' : weightTrend === '↑' ? 'var(--danger)' : 'var(--text-muted)'
 
-  // PBs — best value per exercise (max for strength/benchmark, min for cardio time)
-  const pbMap = {}
-  ;(perfLogs || []).forEach(p => {
-    const key = p.name
-    if (!pbMap[key]) { pbMap[key] = p; return }
-    const better = p.category === 'cardio'
-      ? p.value < pbMap[key].value
-      : p.value > pbMap[key].value
-    if (better) pbMap[key] = p
-  })
-  const pbs = Object.values(pbMap)
+  // PBs — one best record per name; _perfBestsByName owns the rule (units converted, direction by unit)
+  const pbs = _perfBestsByName(perfLogs)
 
   // Event type label + colour
   function eventStyle(type) {
@@ -632,6 +623,25 @@ async function renderClientDashboard(el) {
 }
 
 
+// ─── Benchmarks card: one best record per name — client AND solo dashboards ───────────────────────
+// ONE helper for both cards. Each used to build its own `pbMap`, comparing raw `value`s with the
+// direction picked by CATEGORY (cardio = lower, everything else = higher). PERF_CATEGORIES lets one
+// name be logged in either unit of a pair, and a cardio distance is not a time, so that rule showed
+// 220 lbs over 100 kg, the SLOWER of two benchmark times, and the SHORTER of two cardio distances
+// (docs/bugs/2026-09-19-dashboard-benchmarks-cards-pick-best-without-checking-units.md).
+// _bestPerfLog (app-progress.js) already converts to a common unit and picks the direction by UNIT, and
+// the coach's Performance tab uses it — so this only groups by name and delegates.
+// `logs` arrive newest-first, so a name's first appearance is its most recent record and the returned
+// order — which the card slices to four — is "the most recently logged names".
+function _perfBestsByName(logs) {
+  const byName = new Map()
+  for (const p of logs || []) {
+    if (!byName.has(p.name)) byName.set(p.name, [])
+    byName.get(p.name).push(p)
+  }
+  return [...byName.values()].map(group => _bestPerfLog(group)).filter(Boolean)
+}
+
 // ─── SOLO / PERSONAL DASHBOARD ────────────────────────────────────────────────
 // ─── Solo dashboard tile helpers ──────────────────────────────────────────────────────────────
 // Top-level, not closures, so the CLIENT dashboard can adopt the same tiles in a later pass
@@ -877,13 +887,7 @@ async function renderSoloDashboard(el) {
   const progByDate = _programWorkoutsByDate(cp0, cpwMap)
   const upcoming = _soloUpcoming(events, progByDate, todayStr)
 
-  const pbMap = {}
-  ;(perfLogs || []).forEach(p => {
-    if (!pbMap[p.name]) { pbMap[p.name] = p; return }
-    const better = p.category === 'cardio' ? p.value < pbMap[p.name].value : p.value > pbMap[p.name].value
-    if (better) pbMap[p.name] = p
-  })
-  const pbs = Object.values(pbMap)
+  const pbs = _perfBestsByName(perfLogs)
 
   // Current phase, for the "Current program" strip that survives the tile redesign.
   let progName = null, progMeta = ''
