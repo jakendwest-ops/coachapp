@@ -50,10 +50,11 @@ test.describe('Chart unification — one style, one teardown', () => {
     expect(r.negatives).toBe(-3.2)
   })
 
-  // The invariant the whole refactor claims to have made structural. renderProgressPBs and
-  // renderProgressWeight are entered DIRECTLY from saveClientPB / saveClientWeight (app-clients.js),
-  // bypassing renderProgress — so without their own teardown, each save replaced the container's
-  // innerHTML and orphaned every chart on it, while the registry kept growing.
+  // The invariant the whole refactor claims to have made structural. renderProgressWeight is entered
+  // DIRECTLY from saveClientWeight (app-clients.js), bypassing renderProgress — so without its own
+  // teardown, each save replaced the container's innerHTML and orphaned every chart on it, while the
+  // registry kept growing. (renderProgressPBs, the Benchmarks-tab renderer, was the second such entry
+  // point until it was deleted 2026-09-19.)
   test('re-rendering a chart surface does not accumulate live Chart instances', async ({ page }) => {
     await loginAsClient(page)
     const r = await page.evaluate(async () => {
@@ -138,42 +139,5 @@ test.describe('Chart unification — one style, one teardown', () => {
     expect(r.dual.y2).toBe('#222222')
     expect(r.single.y2).toBeNull()
     expect(r.single.y, 'nothing to disambiguate on one axis — a coloured axis there is just noise').not.toBe('#111111')
-  })
-
-  // Personal Bests had NO chart at all before this — the biggest gap against "all sections that
-  // require a graph". It plots only entries sharing the BEST record's unit: the same lift can be
-  // logged in kg or lbs, and drawing 117.5 next to 259 on one axis reads as a collapse in performance.
-  test('Personal Bests renders a chart, excluding entries logged in another unit', async ({ page }) => {
-    await loginAsClient(page)
-    let cid = null
-    try {
-      const r = await page.evaluate(async () => {
-        const clientId = await _getCurrentClientId()
-        const tag = `[E2E] ChartUnit ${Date.now()}`
-        const mk = (value, unit, date) => ({ client_id: clientId, logged_by: currentUser.id, name: tag, category: 'strength', value, unit, date })
-        const { error } = await db.from('performance_logs').insert([
-          mk(100, 'kg', '2026-06-01'), mk(110, 'kg', '2026-07-01'), mk(117.5, 'kg', '2026-08-01'),
-          mk(259, 'lbs', '2026-08-10'),   // same lift, other unit — must NOT be plotted
-        ])
-        if (error) throw new Error(error.message)
-        const el = document.getElementById('main-content')
-        await renderProgressPBs(el)
-        await new Promise(r2 => setTimeout(r2, 800))
-        const canvases = [...document.querySelectorAll('canvas[id^="pb-chart-"]')]
-        const mine = canvases.map(c => Chart.getChart(c)).filter(Boolean)
-        return {
-          clientId, tag,
-          charts: mine.length,
-          points: mine.map(c => c.data.datasets[0].data.length),
-        }
-      })
-      cid = { clientId: r.clientId, tag: r.tag }
-      expect(r.charts, 'Personal Bests must now draw a chart').toBeGreaterThan(0)
-      expect(r.points, 'the lbs entry must be excluded — 4 entries, 3 plotted').toContain(3)
-    } finally {
-      if (cid) await page.evaluate(async c => {
-        await db.from('performance_logs').delete().eq('client_id', c.clientId).eq('name', c.tag)
-      }, cid)
-    }
   })
 })

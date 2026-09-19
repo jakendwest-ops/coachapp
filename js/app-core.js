@@ -214,8 +214,9 @@ function _ymdLocal(d) {
 //
 // STRENGTH IS DELIBERATELY ABSENT from the category list. Barbell lifts belong on the Personal Bests
 // (1RM) tab, which superseded this form for strength: 4 exercises here, last used 25 June, against
-// 12 exercises there from 1 July onward. Historical strength rows are still DISPLAYED — nothing is
-// deleted — they just cannot be added here any more, so the two stop diverging.
+// 12 exercises there from 1 July onward. Historical strength rows are kept — nothing is deleted —
+// but the Progress page that displayed them was deleted 2026-09-19, so they now show only within the
+// dashboard cards' four-record cut. They cannot be added here any more, so the two stop diverging.
 const _PB_FORM_CATEGORIES = ['cardio', 'benchmark', 'body_metric']
 
 function _pbUnitOptions(categoryId) {

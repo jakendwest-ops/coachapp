@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT, loginAsClient, clickVisible } = require('./helpers')
+const { loginAsPT } = require('./helpers')
 
 // Five fixes from the 2026-07-23 bug ledger (full-file review, 2026-07-23). Each assertion below
 // went RED against the code as the review found it.
@@ -196,66 +196,5 @@ test.describe('Ledger fixes 2026-07-23', () => {
     expect(r.rejectingGuards, 'the cardio distance and duration guards must both still be there').toBeGreaterThanOrEqual(2)
     expect(r.allToast, 'every guard that rejects typed input must toast, not return silently').toBe(true)
     expect(r.toastCount, 'both remaining cardio guards toast').toBeGreaterThanOrEqual(2)
-  })
-})
-
-// ── 7. Personal Bests card showed a value paired with the WRONG unit ─────────────────────────────
-// renderProgressPBs grouped performance_logs by exercise name and cached `unit` from whichever
-// record was encountered FIRST (the newest, since the query orders `date desc`). Once "best" started
-// being resolved independently by _bestPerfLog (test 3/3b above), `best` could be a DIFFERENT record
-// than the one the cached `unit` came from — rendering a value next to a unit it never actually had
-// (e.g. "100 lbs" when the real entries were 100kg and 220lbs). Found by multi-agent review,
-// 2026-07-24, in the same push that introduced _bestPerfLog.
-test.describe('Ledger fixes 2026-07-23 — Personal Bests unit pairing', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsClient(page)
-  })
-
-  test('Personal Bests shows the value and unit from the SAME record, even across mixed-unit entries', async ({ page }) => {
-    const clientId = await page.evaluate(async () => {
-      const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-      return data.id
-    })
-
-    // 100kg (older) is the true best; 220lbs (newer, ~99.8kg) only LOOKS bigger as a raw number.
-    const insertErr = await page.evaluate(async (clientId) => {
-      const { error: e1 } = await db.from('performance_logs').insert({
-        client_id: clientId, logged_by: currentUser.id,
-        category: 'strength', name: '[E2E] PB Mixed Units', value: 100, unit: 'kg',
-        date: '2026-01-01',
-      })
-      const { error: e2 } = await db.from('performance_logs').insert({
-        client_id: clientId, logged_by: currentUser.id,
-        category: 'strength', name: '[E2E] PB Mixed Units', value: 220, unit: 'lbs',
-        date: '2026-02-01',
-      })
-      return e1?.message || e2?.message || null
-    }, clientId)
-    expect(insertErr).toBeNull()
-
-    try {
-      await clickVisible(page, '[data-page="progress"]')
-      await page.waitForTimeout(1000)
-      // performance_logs rows live on Benchmarks since the 2026-08-17 rename.
-      await page.click('button:has-text("Benchmarks")')
-      await page.waitForTimeout(1500)
-
-      const card = page.locator('div', { hasText: '[E2E] PB Mixed Units' }).last()
-      // RED before: this read "100 lbs" — best.value from the 100kg record, paired with the
-      // group's cached unit from the newer 220lbs record. Neither entry was ever "100 lbs".
-      await expect(page.locator('text=100 kg')).toBeVisible({ timeout: 5000 })
-      await expect(page.locator('text=100 lbs')).toHaveCount(0)
-      await expect(page.locator('text=220 kg')).toHaveCount(0)
-    } finally {
-      const cleanup = await page.evaluate(async (clientId) => {
-        const { error } = await db.from('performance_logs').delete()
-          .eq('client_id', clientId).eq('name', '[E2E] PB Mixed Units')
-        const { data: left } = await db.from('performance_logs').select('id')
-          .eq('client_id', clientId).eq('name', '[E2E] PB Mixed Units')
-        return { err: error ? error.message : null, remaining: (left || []).length }
-      }, clientId)
-      expect(cleanup.err, 'cleanup delete errored').toBeNull()
-      expect(cleanup.remaining, 'cleanup deleted nothing — RLS likely denies DELETE, and this test has been stranding rows').toBe(0)
-    }
   })
 })

@@ -441,8 +441,9 @@ async function delete1RM(id, clientId) {
   _refresh1RMs(clientId)
 }
 
-// ONE definition of "best" for a performance_logs record, shared by renderClientPerformance and
-// renderProgressPBs. Both queries order by `date desc`, and both previously took the FIRST row —
+// ONE definition of "best" for a performance_logs record, used by renderClientPerformance (and, until
+// 2026-09-19, by the Benchmarks tab's renderProgressPBs, since deleted). Both queries ordered by
+// `date desc`, and both previously took the FIRST row —
 // i.e. the most recently logged entry — and rendered it beside a gold "PB" badge. So a lighter/slower
 // entry logged more recently displayed as the personal best. "Best" is category-dependent: for TIME
 // units (min/sec — cardio splits, benchmark clock times) a LOWER value is better; for everything else
@@ -1369,7 +1370,7 @@ async function renderProgress(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   // 2026-07-08 restructure: "Cardio" folded into Personal Bests (alongside 1RMs) instead of its
-  // own top-level tab — see renderProgressPBs.
+  // own top-level tab — see renderProgressPBs (deleted 2026-09-19, see below).
   //
   // 2026-08-14: 1RMs pulled back OUT to its own tab, partially reversing the 1RMs half of that
   // restructure (Cardio stays folded in). Jake compared Personal against the coach's client-profile
@@ -1385,13 +1386,25 @@ async function renderProgress(el) {
   // 2026-07-08 fold-in, and deleting it would take 6 months of 5K times, a Skierg PB and 11 entries
   // with notes down with it. So the 1RM tab takes the Personal Bests name, and the old page keeps
   // everything it holds under a name that describes what it is now.
-  const tabs = ['Body Weight', 'Personal Bests', 'Benchmarks', 'Performance']
-  // '1RMs' no longer exists as a tab, so a stored value would fall through to the default and drop
-  // the user on Body Weight. NOTE: _progressTab is a plain global with no localStorage behind it, so
-  // it resets on every reload and this cannot currently fire in production — it is here so the
-  // rename stays correct if tab state is ever persisted, and because within a single session the
-  // old code path could still hold '1RMs'. Do not read it as evidence that tabs are remembered.
-  if (window._progressTab === '1RMs') window._progressTab = 'Personal Bests'
+  //
+  // 2026-09-19: Jake asked for that page deleted anyway ("it needs to be removed", then "just delete
+  // the benchmarks page"), after being shown that it was the only Progress surface for cardio /
+  // benchmark / body-metric records. Done: no Benchmarks tab, no renderProgressPBs. The
+  // performance_logs rows are untouched. The client now sees them only on the dashboard Benchmarks
+  // cards (the four most recently logged names, no more); their coach still sees all of them on the
+  // client's Performance tab, and the Settings export includes them (without `notes`). A SOLO account
+  // has no coach and no client-profile view, so for solo the cards and the export are the only views.
+  // The 08-17 concern above was weighed against this and accepted — do not re-add the tab from it.
+  const tabs = ['Body Weight', 'Personal Bests', 'Performance']
+  // A stored tab name that is no longer a tab matches no chip and no branch below, so the page would
+  // sit on its "Coming soon" placeholder — NOT on Body Weight: the `||` default below only fires for
+  // an EMPTY value. So the two retired names go where their content went, and anything else unknown
+  // falls back to Body Weight. NOTE: _progressTab is a plain global with no localStorage behind it,
+  // so it resets on every reload and this cannot currently fire in production — it is here so a
+  // removed tab stays safe if tab state is ever persisted, and because within a single session old
+  // code could still hold either name. Do not read it as evidence that tabs are remembered.
+  if (window._progressTab === '1RMs' || window._progressTab === 'Benchmarks') window._progressTab = 'Personal Bests'
+  if (window._progressTab && !tabs.includes(window._progressTab)) window._progressTab = 'Body Weight'
   const activeTab = window._progressTab || 'Body Weight'
 
   el.innerHTML = `
@@ -1403,12 +1416,11 @@ async function renderProgress(el) {
     </div>
     <div id="progress-tab-content"><div class="loading-state">Coming soon</div></div>
   `
-  // A no-wrap scroll row can leave the active tab off-screen (e.g. Performance, last of four) — pull
+  // A no-wrap scroll row can leave the active tab off-screen (e.g. Performance, last of three) — pull
   // it into view. block:'nearest' keeps this from nudging the page vertically.
   el.querySelector('.chip-row .chip[aria-selected="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' })
 
   if (activeTab === 'Body Weight')    await renderProgressWeight(document.getElementById('progress-tab-content'))
-  if (activeTab === 'Benchmarks')     await renderProgressPBs(document.getElementById('progress-tab-content'))
   if (activeTab === 'Performance')    await renderPerformance(document.getElementById('progress-tab-content'))
   if (activeTab === 'Personal Bests') {
     const clientId = await _getCurrentClientId()
@@ -1432,7 +1444,7 @@ async function renderPerformance(el) {
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
 
   // 2026-07-08 restructure: was ['1RMs', 'Progressions'] — 1RMs moved into Personal Bests
-  // (renderProgressPBs), and "Progressions" (endless flat list) split into a searchable
+  // (renderProgressPBs, since deleted), and "Progressions" (endless flat list) split into a searchable
   // per-exercise view and a new per-session comparison view.
   // Per exercise is the progression tool and now the default; "Per session" is the diary.
   //
@@ -1687,7 +1699,7 @@ function _expandPerfSessionExercise(i, ei) {
 }
 
 async function renderProgressWeight(el) {
-  // Same reason as renderProgressPBs: entered DIRECTLY from saveClientWeight (js/app-clients.js:80),
+  // Entered DIRECTLY from saveClientWeight (js/app-clients.js:80),
   // so its own teardown never ran and every "+ Log weight" orphaned pw-chart and resting-hr-chart.
   // Pre-existing (the old `Chart.getChart('pw-chart')` also resolved the id only AFTER innerHTML had
   // replaced the canvas), but fixed here rather than carried forward into the shared path.
@@ -2729,121 +2741,10 @@ function _renderPerfExerciseList(query) {
 
 // renderProgressCardio removed 2026-07-19 (B5): cardio now has a proper metric_type trend card in
 // the Per-exercise view; the standalone "Cardio bests" section it fed is gone from Personal Bests.
-
-// 2026-07-08 restructure: Personal Bests now also hosts the 1RMs and Cardio bests sections that
-// used to be their own separate places (a standalone Cardio tab, a Performance > 1RMs sub-tab) —
-// one combined "bests" surface instead of 3. Each section keeps its own existing render function,
-// just mounted into a sub-container here instead of being reached independently.
-async function renderProgressPBs(el) {
-  // MUST destroy before the innerHTML below. This function is entered DIRECTLY from saveClientPB
-  // (js/app-clients.js:31), bypassing renderProgress — so its own teardown never ran. Replacing
-  // innerHTML detaches the old `pb-chart-N` canvases, and _renderMetricChart's guards then both miss:
-  // `Chart.getChart(el)` resolves the NEW canvas (undefined), and the registry filter compares against
-  // that new element, so the old entry is kept. Result: every "+ Log PB" leaves N live Chart instances
-  // bound to detached canvases, with their listeners and animation loops, and _activeCharts grows
-  // without bound. Exactly the leak class this whole change set exists to remove — introduced at the
-  // one chart site that did not exist before it. Caught by pre-push review.
-  _destroyManagedCharts()
-  el.innerHTML = '<div class="loading-state">Loading personal bests…</div>'
-  const clientId = await _getCurrentClientId()
-  const addPBBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Cardio &amp; benchmarks</span><button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button></div>
-    <div id="client-pb-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
-      ${_pbFormHtml(clientId)}
-    </div>`
-  // `name`, `category` and `unit` are PLAIN COLUMNS on performance_logs — that is exactly what
-  // saveClientPB() writes (app-clients.js). This query used to embed `performance_exercises(...)`,
-  // a table that does not exist and has no relationship to performance_logs, so PostgREST rejected
-  // the whole query. The error was discarded (`const { data: logs } =` with no error check), `logs`
-  // came back undefined, and the page fell through to the "No personal bests logged yet" empty
-  // state — meaning EVERY personal best a client logged was saved correctly and then never shown to
-  // anyone. Found by the RLS audit on 2026-07-12 (it enumerates the tables the app references, and
-  // performance_exercises did not exist), proved red/green with a real logged PB.
-  const { data: logs, error: pbErr } = await db.from('performance_logs')
-    .select('*')
-    .eq('client_id', clientId).order('date', { ascending: false })
-  if (pbErr) log.error('renderProgressPBs', 'personal bests fetch failed', pbErr)
-
-  let pbListHtml
-  let pbChartPlan = []
-  // Strength rows are read-only history now (the form no longer offers the category). They stay
-  // VISIBLE deliberately — 22 of Jake's 30 entries are strength and 11 carry notes, and hiding them
-  // would be deleting the page by another route. Only new entries are redirected.
-  const hasHistoricalStrength = (logs || []).some(l => l.category === 'strength')
-  if (!logs?.length) {
-    pbListHtml = '<div class="empty-state"><p>No records logged yet. Tap + Log record for a 5k time, a benchmark workout or a body metric.<br><span style="font-size:12px;color:var(--text-muted)">Barbell lifts live on the Personal Bests tab.</span></p></div>'
-  } else {
-    const byExercise = {}
-    for (const l of logs) {
-      const name = l.name || 'Unknown'
-      if (!byExercise[name]) byExercise[name] = { all: [], category: l.category || '' }
-      byExercise[name].all.push(l)
-    }
-    // See _bestPerfLog — "best" is the true max/min-by-unit, not the most recently logged row. The
-    // displayed unit MUST come from `best` itself, never a group-level unit captured from a
-    // different (e.g. newest) record — PERF_CATEGORIES lets the same exercise be logged in either
-    // unit of a pair (kg/lbs, cm/in...), so a cached group unit can silently mismatch which record
-    // `best` actually resolved to. Multi-agent review, 2026-07-24.
-    Object.values(byExercise).forEach(ex => { ex.best = _bestPerfLog(ex.all) })
-    // Personal Bests had NO chart at all — the single biggest gap against Jake's "include this graph
-    // type for all sections that require a graph" (2026-08-14). The coach's Performance tab has had a
-    // per-exercise chart since 2026-07-08; this is the same thing, through the same helper.
-    //
-    // Series is filtered to the BEST record's UNIT. PERF_CATEGORIES lets one exercise be logged in
-    // either unit of a pair (kg/lbs, cm/in), and plotting both on one axis would draw a cliff between
-    // 100kg and 220lbs that looks like a collapse in performance. Same reasoning as the _bestPerfLog
-    // comment above, applied to the plot rather than the headline number.
-    pbChartPlan = Object.entries(byExercise).map(([name, { best, all }], i) => {
-      const sameUnit = all.filter(l => (l.unit || '') === (best.unit || '') && l.value != null)
-      if (sameUnit.length < 2) return null
-      const chrono = [...sameUnit].sort((a, b) => new Date(a.date) - new Date(b.date))
-      return {
-        canvasId: `pb-chart-${i}`,
-        unit: best.unit || '',
-        labels: chrono.map(l => new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
-        values: chrono.map(l => parseFloat(l.value)),
-      }
-    }).filter(Boolean)
-    const chartByIndex = new Set(pbChartPlan.map(c => c.canvasId))
-
-    pbListHtml = Object.entries(byExercise).map(([name, { best, all, category }], i) => `
-      <div style="margin-bottom:12px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div>
-            <div style="font-size:var(--text-lg, 14px);font-weight:700">${escapeHtml(name)}</div>
-            <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${escapeHtml(category || '')}${category === 'strength' ? ' · historical' : ''}</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:var(--text-3xl, 20px);font-weight:800;color:var(--accent)">${escapeHtml(String(best.value))} <span style="font-size:var(--text-md, 12px)">${escapeHtml(best.unit || '')}</span></div>
-            <div style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${new Date(best.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
-          </div>
-        </div>
-        ${all.length > 1 ? `<div style="margin-top:8px;font-size:var(--text-sm, 11px);color:var(--text-muted)">${all.length} entries</div>` : ''}
-        ${chartByIndex.has(`pb-chart-${i}`) ? `<div style="position:relative;height:90px;margin-top:10px"><canvas id="pb-chart-${i}"></canvas></div>` : ''}
-      </div>`).join('')
-  }
-
-  // 1RMs moved OUT of here to its own top-level Progress tab on 2026-08-14 (see renderProgress).
-  // It had been appended below this page's own header and PB cards since the 2026-07-08 restructure,
-  // which read as a footer rather than a section — the coach's client profile gives 1RMs a full-width
-  // tab, and Jake rated that side better. Nothing else mounted into #pb-1rms-section; every 1RM
-  // writer reaches it through _refresh1RMs, which now finds it on the new tab instead.
-  el.innerHTML = `
-    ${addPBBtn}
-    ${hasHistoricalStrength ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;margin-bottom:10px;padding:8px 10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2)">Your older lift records are kept here. New lifts go on the <strong>Personal Bests</strong> tab.</div>` : ''}
-    ${pbListHtml}
-  `
-
-  // Drawn AFTER innerHTML — the canvases do not exist until the string is mounted.
-  pbChartPlan.forEach(c => {
-    _renderMetricChart(c.canvasId, {
-      labels: c.labels,
-      series: [{ data: c.values, colour: _METRIC_COLORS.e1rm, fill: true }],
-      height: true,
-      legend: false,
-      yFormat: v => `${_tickNum(v)}${c.unit ? ' ' + c.unit : ''}`,
-    })
-  })
-}
+//
+// renderProgressPBs removed 2026-09-19: it rendered the "Benchmarks" tab (performance_logs records,
+// per-exercise charts, its own "+ Log record" form). The tab was deleted at Jake's call — see the
+// comment in renderProgress. The rows themselves are untouched.
 
 async function renderSettings(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'

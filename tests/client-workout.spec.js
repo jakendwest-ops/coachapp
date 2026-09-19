@@ -652,14 +652,15 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     }
   })
 
-  test('a logged personal best actually appears on the Personal Bests page (regression, 2026-07-12)', async ({ page }) => {
-    // Every personal best anyone ever logged was saved correctly and then NEVER DISPLAYED.
-    // renderProgressPBs embedded `performance_exercises(name, category, unit)` — a table that does
-    // not exist and has no relationship to performance_logs — so PostgREST rejected the whole query.
-    // The error was discarded (`const { data: logs } =`, no error check), `logs` came back
-    // undefined, and the page fell through to its "No personal bests logged yet" empty state.
-    // The columns were plain fields on performance_logs all along — exactly what saveClientPB writes.
-    // Found by the RLS audit, which enumerates the tables the app references; that one wasn't real.
+  test('a logged personal best actually appears on the dashboard Benchmarks card (regression, 2026-07-12)', async ({ page }) => {
+    // 2026-07-12: every personal best anyone ever logged was saved correctly and then NEVER DISPLAYED.
+    // The Progress → Benchmarks tab's query embedded `performance_exercises(name, category, unit)` — a
+    // table that does not exist — so PostgREST rejected the whole query, the error was discarded, and
+    // the page fell through to its empty state. The columns were plain fields on performance_logs all
+    // along — exactly what saveClientPB writes. Found by the RLS audit.
+    // 2026-09-19: that tab was deleted. The dashboard Benchmarks card is now the only client-facing
+    // reader of performance_logs, so the same claim is pinned there: a row the client wrote is a row
+    // the client can see. It also keeps the client INSERT / SELECT / DELETE round-trip covered.
     const clientId = await page.evaluate(async () => {
       const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
       return data.id
@@ -676,15 +677,14 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     expect(insertErr).toBeNull() // the WRITE was never the problem — only the read
 
     try {
-      await clickVisible(page, '[data-page="progress"]')
-      await page.waitForTimeout(1000)
-      // performance_logs rows live on Benchmarks since the 2026-08-17 rename; 'Personal Bests' is
-      // now the 1RM grid, which reads a different table entirely.
-      await page.click('button:has-text("Benchmarks")')
+      // Re-render the dashboard: it was drawn at login, before the row above existed.
+      await page.evaluate(() => navigate('client-dashboard', 'replace'))
       await page.waitForTimeout(1500)
-
-      await expect(page.locator('text=[E2E] PB Deadlift')).toBeVisible({ timeout: 5000 })
-      await expect(page.locator('text=No personal bests logged yet')).toHaveCount(0)
+      // Scoped to the Benchmarks card. The row is dated today, so it sorts first and lands inside
+      // the card's top-4 cut.
+      const card = page.locator('.dashboard-card', { has: page.locator('h2.card-title', { hasText: 'Benchmarks' }) })
+      await expect(card.locator('text=[E2E] PB Deadlift')).toBeVisible({ timeout: 5000 })
+      await expect(card.locator('text=No records yet.')).toHaveCount(0)
     } finally {
       // Verify the cleanup actually cleaned. A working INSERT does not imply a working DELETE — they
       // are separate RLS policies — and an RLS-denied delete removes 0 rows while returning NO error.

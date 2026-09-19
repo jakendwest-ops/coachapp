@@ -52,26 +52,6 @@ test.describe('Progress page bug fixes (2026-07-08)', () => {
     await loginAsClient(page)
   })
 
-  // 2026-08-17: this page is now the "Benchmarks" tab (cardio / benchmarks / body metrics), and the
-  // button reads "+ Log record". The 1RM tab took the "Personal Bests" name — see
-  // tests/pb-consolidation-2026-08-17.spec.js.
-  test('"Log record" button on Benchmarks actually opens the form (regression — was wired to a Dashboard-only DOM node)', async ({ page }) => {
-    await clickVisible(page, '[data-page="progress"]')
-    await page.waitForTimeout(500)
-    await page.evaluate(() => { window._progressTab = 'Benchmarks'; renderProgress(document.getElementById('main-content')) })
-    await page.waitForTimeout(500)
-    const form = page.locator('#client-pb-form')
-    await expect(form).toBeAttached()
-    await expect(form).toBeHidden()
-    await page.click('button:has-text("+ Log record")')
-    await expect(form).toBeVisible({ timeout: 3000 })
-    // Form must have somewhere to actually write the entry — these inputs used to only exist
-    // on the Dashboard page, never on Progress, so the button previously did nothing at all.
-    await expect(page.locator('#cpb-name')).toBeVisible()
-    await expect(page.locator('#cpb-category')).toBeVisible()
-    await expect(page.locator('#cpb-value')).toBeVisible()
-  })
-
   test('Body Weight "Starting" tile prefers the starting_weight_kg goal field over the earliest logged entry (regression)', async ({ page }) => {
     // Isolates the exact value-selection logic added to renderProgressWeight — entering a
     // starting-weight goal used to have zero visible effect on this tile, since it always read
@@ -123,13 +103,13 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await loginAsClient(page)
   })
 
-  test('Progress tabs are Body Weight / Personal Bests / Benchmarks / Performance — Cardio is not its own tab', async ({ page }) => {
+  test('Progress tabs are Body Weight / Personal Bests / Performance — neither Cardio nor Benchmarks is a tab', async ({ page }) => {
     await clickVisible(page, '[data-page="progress"]')
     await page.waitForTimeout(500)
     await expect(page.locator('h1')).toContainText('My Progress')
     await expect(page.locator('button:has-text("Body Weight")')).toBeVisible()
     await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()   // the 1RM tab, renamed 2026-08-17
-    await expect(page.locator('button:has-text("Benchmarks")')).toBeVisible()       // the old PB page, renamed
+    await expect(page.locator('button', { hasText: /^Benchmarks$/ })).toHaveCount(0) // deleted 2026-09-19
     await expect(page.locator('button:has-text("Performance")')).toBeVisible()
     await expect(page.locator('button', { hasText: /^1RMs$/ })).toHaveCount(0)      // gone 2026-08-17
     // Exact-text match on any button, page-wide — "Cardio bests" is a heading div, not a button,
@@ -137,12 +117,13 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('button', { hasText: /^Cardio$/ })).toHaveCount(0)
   })
 
-  test('Benchmarks mounts neither Cardio-bests (removed 2026-07-19) nor 1RMs (its own tab since 2026-08-14)', async ({ page }) => {
+  test('a stale "Benchmarks" tab value lands on Personal Bests: 1RM grid mounts, Cardio-bests stays gone (removed 2026-07-19)', async ({ page }) => {
     await page.evaluate(() => { window._progressTab = 'Benchmarks'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(800)
-    await expect(page.locator('#pb-1rms-section')).toHaveCount(0)
+    await expect(page.locator('#pb-1rms-section')).toHaveCount(1)
     await expect(page.locator('#pb-cardio-section')).toHaveCount(0)
     await expect(page.locator('text=Cardio bests')).toHaveCount(0)
+    await expect(page.locator('#client-pb-form')).toHaveCount(0)   // the records form went with the tab
   })
 
   test('Performance tab shows "Per exercise" / "Per session" sub-tabs (Per exercise default), not the old "1RMs" / "Progressions"', async ({ page }) => {
@@ -176,16 +157,22 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('#perf-range')).toHaveCount(0)          // not meaningful on Per session
 
     // P2 — the top Progress tabs are a no-wrap scroll row; the active one is scrolled into view.
+    // 2026-09-19: with the Benchmarks tab gone the three chips overflow a 390px row by only ~9px, so the
+    // active chip is in view WITHOUT any scrolling and this passed vacuously. A 320px viewport restores
+    // the overflow this assertion was written for; the viewport goes back to 390x844 straight after.
+    await page.setViewportSize({ width: 320, height: 700 })
     await page.evaluate(() => { window._progressTab = 'Performance' })
     await render()
     const p2 = await page.evaluate(() => {
       const row = document.querySelector('.chip-row')
       const active = document.querySelector('.chip-row .chip[aria-selected="true"]')
       const r = active.getBoundingClientRect()
-      return { nowrap: getComputedStyle(row).flexWrap === 'nowrap', activeText: active.textContent.trim(), inView: r.left >= -1 && r.right <= window.innerWidth + 1 }
+      return { nowrap: getComputedStyle(row).flexWrap === 'nowrap', activeText: active.textContent.trim(), scrolled: row.scrollLeft > 0, inView: r.left >= -1 && r.right <= window.innerWidth + 1 }
     })
+    await page.setViewportSize({ width: 390, height: 844 })
     expect(p2.nowrap).toBe(true)
     expect(p2.activeText).toBe('Performance')
+    expect(p2.scrolled, 'the row overflows at 320px, so the active tab can only be in view if it was scrolled there').toBe(true)
     expect(p2.inView).toBe(true)
 
     // P4 — a 1RM row's date + estimate controls are hidden until the value input is focused.

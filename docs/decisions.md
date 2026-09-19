@@ -12,6 +12,21 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-19 — The Progress → Benchmarks tab is deleted.** Jake, twice ("it needs to be removed", "just
+delete the benchmarks page"), after being shown it was the only Progress view of `performance_logs`
+(cardio / benchmark / body-metric records) — a different table from Personal Bests' `client_1rms`.
+Supersedes the 2026-08-17 keep-and-rename (`archive/log.md`; the comment in `renderProgress`). Nothing
+calculates from it (every %1RM target reads `client_1rms`), so no prescription breaks; the rows are
+untouched in the DB and still in the Settings export (name, category, value, unit, date — the export has
+never carried `notes`).
+*Accepted:* the client now sees them only on the dashboard Benchmarks cards — the four most recently
+logged names — while their coach still sees all of them on the client's Performance tab. **A solo
+account has no coach and no client-profile view, so for solo the cards and the Settings export are the
+only views: records beyond the four most recent names are not visible in the app.** (Found by the
+2026-09-19 pre-commit review; the decision stands.) *Rejected:* merging into Personal Bests. *Follow-on:* `bugs/2026-09-19-dashboard-benchmarks-cards-pick-best-without-checking-units.md`.
+
+---
+
 **2026-09-18 — The Vault/repo boundary is stated once (`CLAUDE.md` "What lives where") and checked
 (`no-vault-pointers`, WARN).** The check flags any `Claude/Vault` filesystem path on a live line of a hook
 or skill (`//` comments and `LINT-OK` lines exempt). The old boundary narrative in `CLAUDE.md` — five

@@ -45,7 +45,12 @@ const TESTS = join(REPO, 'tests')
 // (saveTemplateDraft) chains its own `.eq().eq().select()` onto the returned builder, so this line is
 // not an unaccounted teardown delete. Every other new occurrence in that file (63 of them) got a real
 // `.select('id')` instead of raising this number.
-const BASELINE = readBaseline('SPEC_HYGIENE_BASELINE', 349)
+//
+// Lowered by 2 on 2026-09-19 (349 -> 347): deleting the Progress -> Benchmarks tab removed three tests,
+// two of whose teardowns were unchecked `.delete()`s. The replacement client test's teardown chains
+// `.select('id')`, so it adds none. Pinned at the measurement so the slots freed are not a free pass
+// for new unchecked deletes.
+const BASELINE = readBaseline('SPEC_HYGIENE_BASELINE', 347)
 
 if (!existsSync(TESTS)) {
   console.log('  no tests/ directory — refusing to report a count against nothing.')

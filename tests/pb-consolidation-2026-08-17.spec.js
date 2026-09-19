@@ -11,24 +11,37 @@
 //
 // So: the 1RM tab takes the name, the old page keeps its data as "Benchmarks", and the entry form
 // stops offering strength so the two cannot diverge again.
+//
+// UPDATED 2026-09-19: Jake had the "Benchmarks" tab deleted regardless (see docs/decisions.md). The
+// form and saveClientPB tests below still stand — the form lives on both dashboards — and the first
+// test now pins that Benchmarks is no longer a tab and that a stored 'Benchmarks' migrates forward.
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, loginAsClient } = require('./helpers')
 
 test.describe('Personal Bests consolidation', () => {
-  test('the tabs are renamed and a stored "1RMs" migrates forward', async ({ page }) => {
+  test('Benchmarks is no longer a tab; a stored "1RMs" or "Benchmarks" migrates to Personal Bests and any other unknown name falls back to Body Weight', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(async () => {
-      window._progressTab = '1RMs'            // what a returning user has in memory
-      await renderProgress(document.getElementById('main-content'))
-      const migrated = window._progressTab
+      const migrated = {}
+      for (const stored of ['1RMs', 'Benchmarks', 'NoSuchTab']) {
+        window._progressTab = stored          // what a returning user has in memory
+        await renderProgress(document.getElementById('main-content'))
+        migrated[stored] = {
+          tab: window._progressTab,
+          selected: document.querySelector('.chip-row .chip[aria-selected="true"]')?.textContent.trim() ?? null,
+        }
+      }
       const tabs = [...document.querySelectorAll('#main-content button')]
         .map(b => b.textContent.trim())
         .filter(t => ['Body Weight', 'Personal Bests', 'Benchmarks', 'Performance', '1RMs'].includes(t))
       return { migrated, tabs }
     })
-    // Without the migration a stored '1RMs' matches no tab and silently drops the user on Body Weight.
-    expect(r.migrated, 'a stored 1RMs must become Personal Bests').toBe('Personal Bests')
-    expect(r.tabs).toEqual(['Body Weight', 'Personal Bests', 'Benchmarks', 'Performance'])
+    // Without the migration a stored name that is no longer a tab matches no chip and no branch, and the
+    // page sits on its "Coming soon" placeholder — the `||` default only covers an EMPTY value.
+    expect(r.migrated['1RMs'], 'a stored 1RMs must become Personal Bests').toEqual({ tab: 'Personal Bests', selected: 'Personal Bests' })
+    expect(r.migrated['Benchmarks'], 'a stored Benchmarks must become Personal Bests').toEqual({ tab: 'Personal Bests', selected: 'Personal Bests' })
+    expect(r.migrated['NoSuchTab'], 'an unknown name must fall back to Body Weight with a chip selected').toEqual({ tab: 'Body Weight', selected: 'Body Weight' })
+    expect(r.tabs).toEqual(['Body Weight', 'Personal Bests', 'Performance'])
   })
 
   test('the PB form is ONE definition, and every field it needs is present', async ({ page }) => {
@@ -138,6 +151,45 @@ test.describe('Personal Bests consolidation', () => {
     expect(r.row.category).toBe('cardio')
     expect(r.row.unit).toBe('min')
     expect(r.row.notes, 'the notes field that used to crash this path must persist').toBe('felt strong')
+  })
+
+  // Restores the client-role coverage that went with the Benchmarks tab (2026-09-19): the deleted "Log
+  // record button opens the form" test was the only one that drove a CLIENT's PB form, and the solo test
+  // above is the only other end-to-end save. This drives the real button and the real save on the
+  // client dashboard, and checks the card redraws with the new row.
+  test('CLIENT: the dashboard "+ Log record" opens the form, and saving writes a row and redraws the card', async ({ page }) => {
+    await loginAsClient(page)
+    const name = '[E2E-PB] Client 5k ' + Date.now()
+    const clientId = await page.evaluate(async () => {
+      const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
+      return data.id
+    })
+    const card = page.locator('.dashboard-card', { has: page.locator('h2.card-title', { hasText: 'Benchmarks' }) })
+    try {
+      await expect(page.locator('#client-pb-form')).toBeHidden()
+      await card.getByRole('button', { name: '+ Log record' }).click()
+      await expect(page.locator('#client-pb-form')).toBeVisible()
+      await page.evaluate((n) => {
+        document.getElementById('cpb-name').value = n
+        document.getElementById('cpb-category').value = 'cardio'
+        _pbSyncUnits()
+        document.getElementById('cpb-value').value = '24.5'
+        document.getElementById('cpb-unit').value = 'min'
+        // Today, so it is the newest row and lands inside the card's four-record cut.
+        document.getElementById('cpb-date').value = new Date().toLocaleDateString('en-CA')
+      }, name)
+      await page.evaluate(id => saveClientPB(id), clientId)
+      await expect(card.locator(`text=${name}`)).toBeVisible({ timeout: 5000 })   // saved AND the card redrew
+    } finally {
+      // Verify the cleanup actually cleaned: an RLS-denied delete removes 0 rows and returns no error.
+      const cleanup = await page.evaluate(async ({ clientId, name }) => {
+        const { error } = await db.from('performance_logs').delete().eq('client_id', clientId).eq('name', name).select('id')
+        const { data: left } = await db.from('performance_logs').select('id').eq('client_id', clientId).eq('name', name)
+        return { err: error ? error.message : null, remaining: (left || []).length }
+      }, { clientId, name })
+      expect(cleanup.err, 'cleanup delete errored').toBeNull()
+      expect(cleanup.remaining, 'cleanup deleted nothing — RLS likely denies a client DELETE on performance_logs, and this test would strand rows').toBe(0)
+    }
   })
 
   test('a unit that does not belong to the category is rejected', async ({ page }) => {

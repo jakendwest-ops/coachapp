@@ -952,7 +952,7 @@ async function renderSoloDashboard(el) {
               <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
               <span style="font-size:var(--text-lg, 14px);font-weight:700">${pb.value} <span class="solo-tile-sub">${escapeHtml(pb.unit || '')}</span></span>
             </div>`).join('')}
-          ${pbs.length > 4 ? `<p class="solo-tile-sub" style="margin-top:8px;cursor:pointer" onclick="window._progressTab='Benchmarks';navigate('progress')">+${pbs.length - 4} more in Progress → Benchmarks</p>` : ''}
+          ${pbs.length > 4 ? `<p class="solo-tile-sub" style="margin-top:8px">+${pbs.length - 4} more</p>` : ''}
           <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
             ${_pbFormHtml(clientId)}
           </div>

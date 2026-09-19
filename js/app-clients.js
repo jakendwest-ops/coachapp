@@ -6,10 +6,11 @@
 
 async function saveClientPB(clientId) {
   const errorEl  = document.getElementById('cpb-error')
-  // Every field read through the optional chain. This function is called from THREE forms and used to
+  // Every field read through the optional chain. This function was called from THREE forms (two since
+  // 2026-09-19, when the Progress → Benchmarks tab that hosted the third was deleted) and used to
   // read #cpb-notes unconditionally — the SOLO dashboard's copy never rendered it, so saving a PB from
-  // your own dashboard threw a TypeError before the insert and reported nothing at all. All three now
-  // come from _pbFormHtml (app-core.js), but a missing element must degrade, not explode: this
+  // your own dashboard threw a TypeError before the insert and reported nothing at all. Every form now
+  // comes from _pbFormHtml (app-core.js), but a missing element must degrade, not explode: this
   // function cannot see which form invoked it.
   const val = (id) => document.getElementById(id)?.value ?? ''
   const name     = val('cpb-name').trim()
@@ -34,8 +35,9 @@ async function saveClientPB(clientId) {
   errorEl.textContent = ''
 
   // Deliberately AFTER input validation, not before. Authorization-first reads tidier, but two
-  // existing tests (pb-consolidation-2026-08-17.spec.js:79 and :143) drive this function with a
-  // dummy client id precisely to exercise the validation path without an insert, and the guard's
+  // existing tests (in pb-consolidation-2026-08-17.spec.js: "saving from a form with NO notes field
+  // does not throw" and "a unit that does not belong to the category is rejected") drive this
+  // function with a dummy client id precisely to exercise the validation path without an insert, and the guard's
   // job is to stop the WRITE. For a real caller the id is always their own, so ordering changes
   // nothing they see; the only thing authz-first would hide is 'these fields are required',
   // which is not a disclosure worth breaking two tests' stated intent for.
@@ -49,11 +51,9 @@ async function saveClientPB(clientId) {
 
   log.ok('saveClientPB', 'PB logged', { clientId: row.client_id, date: row.date })
   showToast('PB logged ✓', 'success', 2000)
-  // Refresh whichever view is actually showing this form — the client/solo My Progress
-  // page (progress-tab-content) or the correct Dashboard (client vs solo).
-  const progressEl = document.getElementById('progress-tab-content')
-  if (progressEl) renderProgressPBs(progressEl)
-  else _renderOwnDashboard()   // shared helper (app-core.js) — was correct but hand-rolled here
+  // The form only lives on the two dashboards now (client vs solo) — the My Progress → Benchmarks tab
+  // that used to host a third copy was deleted 2026-09-19 — so the redraw is always the dashboard.
+  _renderOwnDashboard()   // shared helper (app-core.js)
 }
 
 // The three client self-service writes (saveClientPB / saveClientCheckIn / saveClientWeight) route

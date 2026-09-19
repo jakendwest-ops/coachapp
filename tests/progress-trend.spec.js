@@ -31,12 +31,17 @@ test('resting-HR trend chart shows on the Body tab with >=2 entries (B4)', async
 // NOT the same thing and the distinction is what this test now pins: Cardio-bests was DELETED
 // (superseded by the per-exercise trend card), 1RMs was MOVED and must still exist somewhere. A
 // single "is it on this page" assertion cannot tell those apart, so each gets its own.
-test('Benchmarks renders neither Cardio-bests (deleted) nor 1RMs (its own tab) (B5)', async ({ page }) => {
+// UPDATED 2026-09-19: the 'Benchmarks' tab this used to load was deleted, and a stale 'Benchmarks'
+// value now lands on Personal Bests — which IS the 1RM grid, so the "no 1RMs here" half no longer
+// applies (the test below pins the grid). What remains is the half that still means something:
+// Cardio-bests stays deleted.
+test('Cardio-bests stays deleted; a stale Benchmarks tab value lands on Personal Bests without it (B5)', async ({ page }) => {
   await loginAsClient(page)
-  // 2026-08-17: the perf-logs page is now the 'Benchmarks' tab; 'Personal Bests' is the 1RM grid.
   await page.evaluate(() => { window._progressTab = 'Benchmarks'; renderProgress(document.getElementById('main-content')) })
   await page.waitForTimeout(1200)
-  expect(await page.locator('#pb-1rms-section').count()).toBe(0)      // 1RMs moved to its own tab
+  // It really did land on Personal Bests. Without this the two "gone" assertions below pass on an empty
+  // page too: nothing in js/ creates #pb-cardio-section any more, so they can only fail on a re-add.
+  expect(await page.locator('#pb-1rms-section').count()).toBe(1)
   expect(await page.locator('#pb-cardio-section').count()).toBe(0)    // cardio-bests gone for good
   expect(await page.getByText('Cardio bests', { exact: true }).count()).toBe(0)
 })

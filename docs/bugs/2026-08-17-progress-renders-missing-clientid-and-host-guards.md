@@ -49,3 +49,7 @@ the wrong person's data CANNOT paint, because every identity change funnels thro
 `navigate()`, which replaces `innerHTML` and detaches the node each render holds. A stale render writes
 into a detached node: invisible, harmless. Item 2 matters precisely because it is the one function that
 re-acquires its host by id, so its write can reach a live node.
+
+---
+
+**2026-09-19 note (status untouched — Jake or red→green evidence closes this):** item 1's subject, `renderProgressPBs`, was deleted along with the Progress → Benchmarks tab (see `docs/decisions.md`, 2026-09-19), so item 1 no longer applies. This row also carries item 2, which is unaffected.
