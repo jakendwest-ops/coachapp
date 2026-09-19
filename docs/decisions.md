@@ -12,6 +12,27 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-19 — Errors are captured automatically; feedback is an email link, and nothing a user types is stored.**
+Built to close the two beta gaps deferred 2026-07-11 (a tester's crash was invisible; no feedback channel), now that an
+outside tester exists (2026-08-09). `log.error` and two global handlers report to `app_errors`; the owner reads
+them, grouped, in a Settings card. *The constraint that shaped it:* the privacy policy promises error logs hold
+"only internal IDs and timestamps — never your name, email, or health values", so a report is a code, a code
+location and technical context, never error text — no policy edit, no version bump, no re-consent.
+*Rejected:* an in-app feedback form that stores text (needs a policy sentence and a version bump, so every user is
+re-prompted once, and free text can hold health data). *Also:* capture is off before consent, after sign-out and
+under WebDriver; users may delete their own rows (the E2E accounts must clean up after themselves); a trigger caps
+60 reports per user per hour. *Not verified by automation:* the owner's read path — no spec can log in as the owner.
+*Found in pre-commit review, fixed:* `created_at` was client-writable and the rate limit counts by it — 61 back-dated
+inserts were all accepted on the live table — so the trigger now sets it to `now()` itself and locks per user; capture
+is bound to the user id that passed the consent gate, not a bare flag; failed saves through `dbq` are reported; a report
+that fails to store is retried, capped at 5 a session. *Invisible by design:* failures before capture is on (profile
+fetch at boot, first-login starter seed, consent save, login, password forms). *To decide at the next policy revision:*
+the policy says logs hold "only internal IDs and timestamps"; a report also holds a tag, code, code location, page, role
+and module versions. No name, email or health value can reach it, so the promise holds in substance, but "only" is
+narrower than the data.
+
+---
+
 **2026-09-19 — The Progress → Benchmarks tab is deleted.** Jake, twice ("it needs to be removed", "just
 delete the benchmarks page"), after being shown it was the only Progress view of `performance_logs`
 (cardio / benchmark / body-metric records) — a different table from Personal Bests' `client_1rms`.

@@ -1349,6 +1349,11 @@ db.auth.onAuthStateChange((event, session) => {
     }
   } else {
     _appLoaded = false
+    // Error capture is per session: off until the next user passes the consent gate, and the de-dupe set is
+    // forgotten so the next account on this tab is not silenced by the last one's failures.
+    _errorReportingUid = null
+    _reportedSigs.clear()
+    _reportFailures = 0
     // Master-account/solo state is session-scoped, not per-account — loadUserInfo only ever SETS
     // these true/populates them, never resets them, so on a shared/gym device the NEXT account to
     // sign in on the same tab (no page reload — the primary sidebar sign-out button doesn't reload)
@@ -2758,11 +2763,20 @@ async function renderSettings(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const isCoach = currentProfile?.role === 'coach'
+  const isOwner = _isOwnerAccount()
 
-  const [{ data: profile }, { data: branding }] = await Promise.all([
+  // The owner also reads the error reports (app_errors). The card is a UI gate only — RLS decides what this
+  // query returns for anyone else (own rows). A failed load must degrade to a message, never break Settings:
+  // that includes the table not existing yet.
+  const [{ data: profile }, { data: branding }, { data: reports, error: reportsErr }] = await Promise.all([
     db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single(),
-    isCoach ? db.from('coach_branding').select('business_name, logo_path').eq('coach_id', currentUser.id).maybeSingle() : Promise.resolve({ data: null })
+    isCoach ? db.from('coach_branding').select('business_name, logo_path').eq('coach_id', currentUser.id).maybeSingle() : Promise.resolve({ data: null }),
+    isOwner
+      ? db.from('app_errors').select('id, created_at, user_id, kind, tag, detail, code, frame, build').order('created_at', { ascending: false }).limit(200)
+      : Promise.resolve({ data: null, error: null })
   ])
+  const errorReportsCard = isOwner ? _errorReportsCardHtml(reports, !!reportsErr) : ''
+  const feedbackCard = _feedbackCardHtml()
 
   const memberSince = profile?.created_at
     ? new Date(profile.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -2871,6 +2885,7 @@ async function renderSettings(el) {
       </div>
 
       ${soloInviteCard}
+      ${errorReportsCard}
 
       ${brandingCard}
 
@@ -2946,6 +2961,8 @@ async function renderSettings(el) {
         </div>
       </div>
 
+      ${feedbackCard}
+
       <!-- Sign out -->
       <div class="card">
         <div class="card-body" style="padding:16px 20px">
@@ -2969,6 +2986,114 @@ async function renderSettings(el) {
 
     </div>
   `
+}
+
+// ─── Settings: error reports (owner) and Send feedback (everyone) ──────────────────────────────────
+// See ERROR CAPTURE at the top of app-core.js for what a report holds and why. Both cards are styled by class,
+// not inline: the style-literal ratchet counts style= attributes and these would otherwise add a dozen.
+
+// "5m ago" / "3h ago" / "2d ago" for a report's last-seen time.
+function _reportAgo (iso) {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (!Number.isFinite(mins)) return ''
+  if (mins < 60) return `${Math.max(0, mins)}m ago`
+  if (mins < 1440) return `${Math.round(mins / 60)}h ago`
+  return `${Math.round(mins / 1440)}d ago`
+}
+
+// Reports collapse by kind + tag + code + frame into one line each ("saveClientPB 42501 — 14×, 3 users"),
+// most repeated first. Pure, so it is tested with fixtures: no spec can log in AS the owner.
+function _groupErrorReports (rows) {
+  const groups = new Map()
+  for (const r of rows || []) {
+    const key = [r.kind, r.tag, r.code ?? '', r.frame ?? ''].join('|')
+    let g = groups.get(key)
+    if (!g) {
+      g = { kind: r.kind, tag: r.tag, code: r.code, frame: r.frame, detail: r.detail, build: r.build,
+            last: r.created_at, count: 0, userSet: new Set(), ids: [] }
+      groups.set(key, g)
+    }
+    g.count++
+    g.userSet.add(r.user_id)
+    g.ids.push(r.id)
+    if (r.created_at > g.last) { g.last = r.created_at; g.detail = r.detail; g.build = r.build }
+  }
+  return [...groups.values()]
+    .map(({ userSet, ...g }) => ({ ...g, users: userSet.size }))
+    .sort((a, b) => b.count - a.count || (a.last < b.last ? 1 : a.last > b.last ? -1 : 0))
+}
+
+// EVERY interpolated value is escaped. Any signed-in user can write a row, and the owner — the highest-
+// privilege reader in the app — is the one who renders it: a hostile tag must show as text and run nothing.
+function _errorReportsCardHtml (rows, loadFailed) {
+  const groups = loadFailed ? [] : _groupErrorReports(rows)
+  const shown = groups.slice(0, 30)
+  const body = loadFailed
+    ? `<p class="settings-note">Couldn't load error reports.</p>`
+    : !groups.length
+      ? `<p class="settings-note">No error reports. Nothing has failed for anyone since the last clear.</p>`
+      : shown.map(g => `
+          <div class="report-row">
+            <div class="report-main">
+              <span class="report-tag">${escapeHtml(g.tag)}</span>
+              ${g.code ? `<span class="report-chip">${escapeHtml(g.code)}</span>` : ''}
+              <span class="report-chip">${escapeHtml(g.kind)}</span>
+            </div>
+            <div class="report-meta">${g.count}× · ${g.users} ${g.users === 1 ? 'user' : 'users'} · ${escapeHtml(_reportAgo(g.last))}${g.build ? ` · ${escapeHtml(g.build)}` : ''}</div>
+            ${g.detail ? `<div class="report-meta">${escapeHtml(g.detail)}</div>` : ''}
+            ${g.frame ? `<div class="report-meta">${escapeHtml(g.frame)}</div>` : ''}
+            <button class="btn-secondary report-clear" data-ids="${escapeHtml(g.ids.join(','))}" onclick="clearErrorReports(this)">Clear</button>
+          </div>`).join('')
+  return `
+      <div class="card" id="error-reports-card">
+        <div class="card-header settings-card-head">
+          <h2 class="section-title">Error reports</h2>
+        </div>
+        <div class="card-body settings-card-body">
+          <p class="settings-note">Failures the app caught for any user — a code and a location only, never the error text or anything they typed. Most repeated first.</p>
+          ${body}
+          ${shown.length > 1 ? `<div><button class="btn-secondary report-clear" data-ids="${escapeHtml(shown.flatMap(g => g.ids).join(','))}" onclick="clearErrorReports(this)">Clear all shown</button></div>` : ''}
+        </div>
+      </div>`
+}
+
+// Deletes report rows by id, in small batches (a long .in() list makes an oversized URL), behind a confirm, and
+// says how many it ACTUALLY removed — an RLS-refused delete removes 0 rows and returns no error.
+async function clearErrorReports (btn) {
+  const ids = (btn?.dataset?.ids || '').split(',').filter(Boolean)
+  if (!ids.length) return
+  const noun = `error report${ids.length === 1 ? '' : 's'}`
+  if (!(await confirmDialog(`Clear ${ids.length} ${noun}? This cannot be undone.`, { title: 'Clear error reports?', confirmLabel: 'Clear', danger: true }))) return
+  let removed = 0
+  for (let i = 0; i < ids.length; i += 50) {
+    const { data, error } = await db.from('app_errors').delete().in('id', ids.slice(i, i + 50)).select('id')
+    if (error) { log.error('clearErrorReports', 'delete failed', error); break }
+    removed += (data || []).length
+  }
+  showToast(removed === ids.length ? `Cleared ${removed}` : `Cleared ${removed} of ${ids.length}`, removed === ids.length ? 'success' : 'warn')
+  renderSettings(document.getElementById('main-content'))
+}
+
+// Send feedback is a mailto: link, not a form: nothing a person types is stored by CoachApp, which keeps this
+// inside the privacy policy as written. The prefill is technical context only (page, role, module versions) —
+// no name, no email — so it needs no scrubbing.
+function _feedbackMailto () {
+  const c = _reportContext()
+  const body = ['', '', '— write your message above this line —',
+    `Page: ${c.page ?? ''}`, `Role: ${c.role ?? ''}`, `App build: ${c.build ?? ''}`].join('\n')
+  return `mailto:${OWNER_EMAIL}?subject=${encodeURIComponent('CoachApp feedback')}&body=${encodeURIComponent(body)}`
+}
+function _feedbackCardHtml () {
+  return `
+      <div class="card" id="feedback-card">
+        <div class="card-header settings-card-head">
+          <h2 class="section-title">Send feedback</h2>
+        </div>
+        <div class="card-body settings-card-body">
+          <p class="settings-note">Something broken, confusing or missing? This opens your email app with a message to the CoachApp owner. Nothing is stored in CoachApp — what you write travels by email.</p>
+          <div><a class="btn-secondary settings-link-btn" href="${escapeHtml(_feedbackMailto())}">Send feedback by email</a></div>
+        </div>
+      </div>`
 }
 
 async function saveSettingsProfile() {
@@ -3158,6 +3283,25 @@ async function _buildMyDataBundle() {
     // missed on the first pass of this very commit and caught by the pre-push review.
     const { data: profile } = await db.from('profiles').select('full_name, role, created_at, consented_at, consent_policy_version').eq('id', currentUser.id).single()
     bundle.profile = profile
+
+    // The user's own error reports (app_errors): technical rows keyed on user_id, not client_id, so they sit
+    // outside the cids block below and apply to every role. Only "the table is not there yet" is tolerated (the
+    // export must not break for anyone before it exists); anything else throws, like the health data below —
+    // an export that silently omits a table while reporting success is exactly the failure this bundle avoids.
+    // PAGED: the API caps every response at max_rows = 200 (docs/roadmap.md), so one .limit(1000) query returns
+    // the OLDEST 200 and silently drops the rest. Stops on an empty page, so it is right whatever the cap is;
+    // the id tie-break keeps pages stable when several rows share a timestamp (a bulk insert does).
+    // NOTE: the sibling queries below (weights, workouts, …) have the same silent 200-row cap — not touched here.
+    const appErrors = []
+    for (let from = 0; from < 10000; from += 200) {
+      const { data, error: aeErr } = await db.from('app_errors')
+        .select('created_at, kind, tag, detail, code, frame, page, build').eq('user_id', currentUser.id)
+        .order('created_at').order('id').range(from, from + 199)
+      if (aeErr) { if (['42P01', 'PGRST205'].includes(aeErr.code)) break; throw aeErr }
+      if (!data?.length) break
+      appErrors.push(...data)
+    }
+    bundle.appErrors = appErrors
 
     // GDPR Art. 15/20 covers every piece of personal data held on this person - which VIEW they happen
     // to be in when they tap the button is irrelevant to the obligation. This used to be an if/else:

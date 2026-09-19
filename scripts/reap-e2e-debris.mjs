@@ -56,6 +56,10 @@ const PREFIXES = ['[E2E', '[TEST]']
 // Child-before-parent. Deleting a client cascades, but doing the leaf tables first keeps the counts
 // honest — otherwise a cascade silently removes rows this report then claims it deleted itself.
 const TARGETS = [
+  // app_errors (2026-09-19): a leaf keyed on the auth user, not on a client, so it goes first. RLS lets an
+  // account delete only its OWN rows, so this reaps what THIS account's crashed runs stranded — the specs'
+  // own finally-blocks remain the main cleanup for the other accounts.
+  ['app_errors', 'tag'],
   ['workout_logs', 'name'],
   ['workout_templates', 'name'],
   ['programs', 'name'],

@@ -28,13 +28,130 @@ const PRIVACY_POLICY_URL = 'privacy-policy.html'
 const OWNER_EMAIL = 'jakendwest@gmail.com'
 function _isOwnerAccount () { return currentUser?.email === OWNER_EMAIL }
 
+// ─── ERROR CAPTURE ────────────────────────────────────────────────────────────────────────────
+// Until 2026-09-19 a beta tester's crash was invisible to the owner unless they said so: log.error reached
+// only their own browser console and no global handler existed. Failures are now reported to the app_errors
+// table and read, grouped, in an owner-only Settings card (renderSettings, app-progress.js).
+//
+// WHAT IS STORED IS BOUNDED BY THE PRIVACY POLICY, NOT BY CONVENIENCE. privacy-policy.html promises error
+// logs hold "only internal IDs and timestamps — never your name, email, or health values". Postgres puts row
+// values in an error's message / details / hint, so those are NEVER read here. A report is: the kind, the
+// static tag and message LITERAL the developer wrote (log.* calls are already policed for PII by checks.sh
+// 9a), an error CODE, a code LOCATION (file?v=N:line), and technical context (page, role, module versions).
+// The user id is the table's own default (auth.uid()), so it is not sent. Because nothing outside that list
+// is stored, no policy edit and no consent re-prompt were needed.
+//
+// FEEDBACK IS NOT CAPTURED HERE. "Send feedback" is a mailto: link (renderSettings): nothing a person types is
+// stored, which is what keeps this inside the policy as written.
+//
+// GUARDS, each a real failure mode:
+//   · capture is ON FOR ONE USER ID (_errorReportingUid), set in showApp() only AFTER the consent gate passes
+//     for THAT user and cleared at sign-out. Consent is per person, so a bare on/off flag was not enough: a
+//     boot that is still awaiting when its user signs out could switch the flag on for whoever signs in next,
+//     before they have consented (found by the pre-commit review).
+//   · navigator.webdriver: the E2E suite triggers log.error constantly (fault injection) against the live
+//     database and would flood the owner's table. The specs that test capture set _errorReportingForce.
+//   · one report per distinct signature per session and 25 in total, so one broken loop cannot spam. A report
+//     that FAILS to store (offline at the gym, table missing) frees its signature to be retried, but after
+//     5 failures capture goes quiet for the session rather than hammer a broken pipe.
+//   · reporting never throws and never calls log.error itself (a failed report uses console.warn), so it
+//     cannot recurse or change what the user sees.
+//   · a code is taken only from an Error's own name or an object's code/status, and a message only if it is a
+//     STRING — so a domain object handed to log.error can never smuggle a name into the table.
+let _errorReportingUid = null
+const _reportedSigs = new Set()
+let _reportFailures = 0
+const _REPORT_CAP = 25
+const _REPORT_MAX_FAILURES = 5
+const _REPORT_FRAME_RE = /js\/([a-z-]+\.js)\?v=(\d+):(\d+):\d+/
+let _reportBuild = null
+
+// Printable ASCII only, email-shaped text redacted, length-capped. Belt and braces over the policy: the inputs
+// are developer literals, but an address must never reach the table by any route.
+function _reportClean (v, max) {
+  return String(v ?? '').replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]').replace(/[^\x20-\x7E]/g, '').slice(0, max)
+}
+// A code is allow-listed by SHAPE (Postgres 42501, PostgREST PGRST116, HTTP 401, JS TypeError). Anything else —
+// including every free-text field of an error — becomes null.
+function _reportCode (data) {
+  // `name` only from a real Error ("TypeError"). Any object may carry a `name` — a client's, an exercise's —
+  // and a short alphanumeric one would pass the shape check below.
+  const c = data?.code ?? data?.status ?? (data instanceof Error ? data.name : undefined)
+  if (typeof c !== 'string' && typeof c !== 'number') return null
+  return /^[A-Za-z0-9_.:-]{1,32}$/.test(String(c)) ? String(c) : null
+}
+// "js/app-x.js?v=N:line" from the skip-th application frame of a stack — Chrome ("at f (url:1:2)") and
+// Firefox/Safari ("f@url:1:2") alike. The column is dropped: the line plus the module version finds the code,
+// and fewer distinct values group better.
+function _reportFrame (stack, skip) {
+  const m = String(stack || '').split('\n').map(l => _REPORT_FRAME_RE.exec(l)).filter(Boolean)[skip]
+  return m ? `js/${m[1]}?v=${m[2]}:${m[3]}`.slice(0, 160) : null      // 160 = the column's CHECK
+}
+// The module versions this page loaded ("core35 dashboard22 …"), so a report says WHICH code failed.
+function _reportBuildId () {
+  if (_reportBuild === null) {
+    _reportBuild = [...document.querySelectorAll('script[src*="js/"]')]
+      .map(s => /js\/(?:app-)?([a-z-]+)\.js\?v=(\d+)/.exec(s.getAttribute('src') || ''))
+      .filter(Boolean).map(m => m[1] + m[2]).join(' ').slice(0, 120)
+  }
+  return _reportBuild
+}
+// Technical context shared by a report and the Send-feedback email prefill, so the two cannot drift. `role` is
+// the ACTIVE view (a master account flips coach/client/solo) and 'sudo' while the owner is "viewing as" a
+// client — otherwise an owner's impersonation error would read as a real client's.
+function _reportContext () {
+  return {
+    role: window._sudoClientId ? 'sudo' : (_reportClean(currentProfile?.role, 12) || null),
+    page: _reportClean(currentPage, 40) || null,
+    build: _reportBuildId() || null,
+  }
+}
+function _reportFailed (sig, why) {
+  _reportedSigs.delete(sig)                    // free the slot so a later occurrence can retry…
+  _reportFailures++                            // …but only a few times in total
+  console.warn('[report] not stored:', why)
+}
+function _reportProblem (kind, tag, msg, data, stack) {
+  try {
+    if (!currentUser?.id || currentUser.id !== _errorReportingUid) return
+    if (navigator.webdriver && !window._errorReportingForce) return
+    if (_reportedSigs.size >= _REPORT_CAP || _reportFailures >= _REPORT_MAX_FAILURES) return
+    // log.error and dbq capture their own stack, so frame 0 is that helper itself and its CALLER is frame 1;
+    // a handler's stack (uncaught / rejection) starts at the failing line.
+    const frame = _reportFrame(stack, kind === 'log' ? 1 : 0)
+    const code = _reportCode(data)
+    const sig = [kind, tag, code, frame].join('|')
+    if (_reportedSigs.has(sig)) return
+    _reportedSigs.add(sig)
+    const row = {
+      ..._reportContext(),
+      kind,
+      tag: _reportClean(tag, 80),
+      detail: typeof msg === 'string' && msg ? _reportClean(msg, 200) : null,
+      code, frame,
+    }
+    Promise.resolve(db.from('app_errors').insert(row)).then(
+      ({ error }) => { if (error) _reportFailed(sig, error.code || 'error') },
+      () => _reportFailed(sig, 'rejected'))
+  } catch (e) { console.warn('[report] failed:', e?.name) }
+}
+window.addEventListener('error', ev => {
+  if (ev.target && ev.target !== window) return        // a <script>/<img> that failed to load, not a script error
+  _reportProblem('uncaught', 'uncaught', null, ev.error || null,
+    ev.error?.stack || (ev.filename ? `${ev.filename}:${ev.lineno}:${ev.colno}` : ''))
+})
+window.addEventListener('unhandledrejection', ev => {
+  const r = ev.reason
+  _reportProblem('rejection', 'rejection', null, r && typeof r === 'object' ? r : null, r?.stack || '')
+})
+
 // ─── LOGGER ───────────────────────────────────────────────────────────────────
 // Structured console logging + user-visible error toasts.
 // Open DevTools → Console to trace any failure instantly.
 const log = {
   info:  (tag, msg, data) => console.log(`[${tag}]`, msg, data ?? ''),
   warn:  (tag, msg, data) => console.warn(`[${tag}]`, msg, data ?? ''),
-  error: (tag, msg, data) => { console.error(`[${tag}] ❌`, msg, data ?? ''); showToast(`${tag}: ${msg}`, 'error') },
+  error: (tag, msg, data) => { console.error(`[${tag}] ❌`, msg, data ?? ''); showToast(`${tag}: ${msg}`, 'error'); _reportProblem('log', tag, msg, data, new Error().stack) },
   ok:    (tag, msg, data) => console.log(`[${tag}] ✓`, msg, data ?? ''),
 }
 
@@ -148,6 +265,10 @@ async function dbq(label, query, { showUserError = true } = {}) {
     else {
       console.error(`[${label}] ❌ ${error.code ?? 'ERR'}: ${error.message}`, error)
       if (showUserError) showToast(`Save failed — ${error.message}`, 'error')
+      // dbq does not go through log.error, so without this every failed save it wraps (1RMs, consent, phase
+      // generation, deletes) was invisible to the owner. Every label is a developer literal; the message is
+      // deliberately NOT passed (see ERROR CAPTURE) — only the label, the code and the caller's location.
+      _reportProblem('log', label, null, error, new Error().stack)
     }
   } else {
     log.info(label, `query OK (${ms}ms)`)
@@ -794,6 +915,10 @@ async function acceptConsent () {
 }
 
 async function showApp() {
+  // Capture is off until THIS boot's user has passed the consent gate below. Remember who is booting: the awaits
+  // below can outlive a sign-out, and a boot for user A must never switch capture on for user B.
+  const _bootUid = currentUser?.id ?? null
+  _errorReportingUid = null
   document.getElementById('auth-screen').style.display = 'none'
   document.getElementById('app-shell').style.display   = 'flex'
   await loadUserInfo()
@@ -818,6 +943,12 @@ async function showApp() {
     showConsentGate(!!_consent?.consented_at)
     return
   }
+
+  // Error capture (see ERROR CAPTURE, top of this file) is on only from here: a user who has not consented
+  // was shown the gate and returned above. Bound to _bootUid and only if that user is STILL signed in — a
+  // sign-out during the awaits above must not hand the switch to whoever signs in next. Cleared again in
+  // onAuthStateChange when the session ends.
+  if (currentUser?.id === _bootUid) _errorReportingUid = _bootUid
 
   applyRoleUI()
   const role = currentProfile?.role

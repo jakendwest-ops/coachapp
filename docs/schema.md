@@ -191,6 +191,11 @@ converts.
   link was never recorded. **Not ownership-checked by the INSERT/UPDATE policies** — see
   `docs/bugs/2026-09-05-workout-logs-template-id-is-not-ownership-checked.md`.
 - Program blocks — new table, 2026-08-15.
+- `app_errors` — new table, 2026-09-19 (`scripts/add-app-errors-2026-09-19.sql`). Automatic error capture:
+  `user_id` (→ `auth.users`, ON DELETE CASCADE), `kind`, `tag`, `detail`, `code`, `frame`, `page`, `build`,
+  `role`, each length-CHECKed; never error text (privacy policy). RLS: INSERT own; SELECT and DELETE own or owner;
+  no UPDATE grant; nothing for anon. A trigger sets `created_at` to the server's time (a client must not choose it) and
+  refuses a 61st row per user per hour.
 
 ## How to keep this in sync
 

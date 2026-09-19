@@ -509,6 +509,23 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 
 .card-body { padding: 20px; }
 
+/* ─── Settings cards without inline styles ───────────────────────────────────────
+   The style-literal ratchet counts style= attributes in js/, so the newer Settings cards (Send feedback,
+   Error reports) are classed here instead of repeating the padding/gap the older cards inline. */
+.settings-card-head { padding: 16px 20px 0; }
+.settings-card-body { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+.settings-note { font-size: var(--text-base, 13px); color: var(--text-muted); margin: 0; }
+.settings-link-btn { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; font-size: var(--text-lg, 14px); padding: 12px 18px; }
+.settings-link-btn:hover { text-decoration: none; }   /* a:hover underlines, and out-ranks the rule above */
+
+/* Owner-only error reports: one row per distinct failure. */
+.report-row { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm, 8px); }
+.report-main { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.report-tag { font-size: var(--text-lg, 14px); font-weight: 600; word-break: break-word; }
+.report-chip { font-size: var(--text-sm, 11px); font-weight: 600; padding: 1px 7px; border-radius: var(--radius-full, 999px); background: var(--surface-2); color: var(--text-muted); }
+.report-meta { font-size: var(--text-md, 12px); color: var(--text-muted); word-break: break-word; }
+.report-clear { align-self: flex-start; min-height: 44px; font-size: var(--text-md, 12px); padding: 12px 16px; }   /* destructive: a real touch target, not a 24px sliver */
+
 .dashboard-card {
   background: var(--surface);
   border: 1px solid var(--border);

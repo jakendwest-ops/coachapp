@@ -55,12 +55,12 @@ fix are not the same fix).
 
 ## Raised but deliberately deprioritized (Jake's own call, 2026-07-11 — still relevant, not lost)
 
-- **Error monitoring/crash reporting** — `log.error` only reaches the user's own browser console; a
-  beta PT's crash is invisible to Jake unless self-reported.
+- **Error monitoring/crash reporting** — **Built 2026-09-19, not yet released**: failures report to `app_errors` and
+  the owner reads them in Settings (see [decisions.md](decisions.md)); the owner's read path is still to be checked live.
 - **Backup/restore posture** — Supabase free-tier point-in-time-recovery is limited; untested
   whether a real data-loss incident could actually be restored.
-- **Beta ops** — no in-app feedback channel; invite-email deliverability to real (non-Jake)
-  addresses has never been tested.
+- **Beta ops** — feedback channel **built 2026-09-19 (not yet released)** as a Settings "Send feedback" email link (nothing is
+  stored). Invite-email deliverability to real (non-Jake) addresses has still never been tested.
 - **`max_rows = 200` cap** — set during DB hardening; has already silently truncated results once
   (Workouts page needed an explicit `.limit()`).
 

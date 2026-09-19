@@ -76,7 +76,8 @@ test.describe('GDPR data export', () => {
     // Every category the app stores about a person. checkIns is Art. 9 special-category data and was
     // in NO branch of the export until 2026-07-23; the nested set data under workoutLogs was likewise
     // absent, so an export listed 200 session headers and zero numbers.
-    for (const k of ['weightLogs', 'workoutLogs', 'performanceLogs', 'goals', 'events', 'oneRepMaxes', 'checkIns']) {
+    // appErrors (2026-09-19): the user's own captured error reports — technical rows, but held against their id.
+    for (const k of ['weightLogs', 'workoutLogs', 'performanceLogs', 'goals', 'events', 'oneRepMaxes', 'checkIns', 'appErrors']) {
       expect(keys, `export is missing "${k}"`).toContain(k)
     }
   })
