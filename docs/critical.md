@@ -236,6 +236,15 @@ continue appending future entries here, not in a separate file._
   (`tests/review-followups-2026-09-20.spec.js`). **Lesson:** sweep a class by the COLUMN (`grep` every reader of it)
   and by every value that reaches a template, not by the name the first site happened to use; and a name-keyed checker
   cannot see a taint that crosses a function return or arrives under an unlisted name — its header now says so.
+- 2026-09-20: **The data export could report success while incomplete — and swallowed read errors.** The API returns
+  at most 200 rows per request and says nothing when it cuts a list short (measured: 200 rows for `.limit(1000)` on a
+  5,564-row table). `_buildMyDataBundle` read seven growing health tables that way, so a subject-access export past 200
+  rows in any of them silently omitted the rest (seven health tables, plus a coach's clients, templates and programmes:
+  the coach block was missed by the first pass and found in review); and it destructured `{ data }` and discarded the
+  error, so a table that failed to load, or the profile, produced a bundle with a hole and no sign of one. Both fixed (paged reads, failures throw and
+  the UI shows "Export failed"); same fix for the weight tabs and personal-best reads. Whether any real export was
+  affected is unmeasured. **Lesson:** an export that reports success must be proven complete past the API's cap, not
+  just on small fixtures — `tests/capped-api.js` now makes that testable.
 
 ## Requires Validation
 

@@ -295,7 +295,10 @@ async function renderClientDashboard(el) {
     db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
-    db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
+    // Paged (_fetchAllRows, app-core.js): _perfBestsByName picks each exercise's best from whatever rows arrive, and a
+    // plain read delivers only the newest 200 — so an exercise not logged within the last 200 entries vanished from
+    // this tile, and a record older than that was never a candidate for "best".
+    _fetchAllRows(() => db.from('performance_logs').select('name, category, value, unit, date', { count: 'exact' }).eq('client_id', clientId).order('date', { ascending: false }).order('id', { ascending: false })),
     db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
     db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(15),
     db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
@@ -865,7 +868,10 @@ async function renderSoloDashboard(el) {
     // 14, not 5: the tile draws a 7-day trend and weigh-ins are not daily, so 5 rows can span a
     // fortnight and leave the window empty.
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(14),
-    db.from('performance_logs').select('name, category, value, unit, date').eq('client_id', clientId).order('date', { ascending: false }),
+    // Paged (_fetchAllRows, app-core.js): _perfBestsByName picks each exercise's best from whatever rows arrive, and a
+    // plain read delivers only the newest 200 — so an exercise not logged within the last 200 entries vanished from
+    // this tile, and a record older than that was never a candidate for "best".
+    _fetchAllRows(() => db.from('performance_logs').select('name, category, value, unit, date', { count: 'exact' }).eq('client_id', clientId).order('date', { ascending: false }).order('id', { ascending: false })),
     // `id` and `week_number` added 2026-08-30. Without week_number every week of a periodised phase
     // collapses onto week 1's sessions; without id the clone lookup below cannot run. Both were
     // absent here while the calendar and workouts queries had them.

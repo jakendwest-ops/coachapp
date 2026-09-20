@@ -307,6 +307,42 @@ async function dbq(label, query, { showUserError = true } = {}) {
   return { data, error }
 }
 
+// Reads EVERY row of a query. The API returns at most 200 rows per response (max_rows, docs/roadmap.md; MEASURED
+// 2026-09-20: a 5,564-row table returns 200 for .range(0, 999) and for .limit(1000) alike) and it does so
+// SILENTLY — no error, just the first 200 rows of whichever order the caller chose. A read of a table that grows
+// (weigh-ins, sessions, check-ins) that asks for "all of it" is therefore right until row 201 and wrong from then
+// on, with nothing to say so. Use this for any such read:
+//
+//   const { data, error } = await _fetchAllRows(() =>
+//     db.from('weight_logs').select('*', { count: 'exact' }).eq('client_id', id).order('date').order('id'))
+//
+// - makeQuery builds a FRESH query on every call (a Supabase builder is awaited once); this adds the .range().
+// - Pass { count: 'exact' } to select(): the first response then says how many rows there are, so a history that
+//   fits one page costs ONE request and the loop never asks past the end (the API answers that with an error,
+//   PGRST103, measured). Without a count it still terminates and is still complete — one extra, empty request.
+// - ALWAYS end the order with a unique tie-break (`.order('id')`), so page boundaries fall in the same place every
+//   time; rows sharing a timestamp would otherwise be skipped or repeated between pages.
+// - Each page starts where the rows read so far end, not at a fixed stride, so an API cap SMALLER than pageSize
+//   cannot make it skip rows.
+// - Returns { data, error } like a single query, so it drops into `const { data, error } = await …`. On any
+//   failure — including running out of pages — `data` is null: a partial history must never pass for a whole one.
+//   (maxPages × pageSize = 10,000 rows by default.)
+// - Not atomic: a row written between two pages can shift a boundary by one. Named, not solved — the callers are
+//   history views and an export, where that shows on the next refresh rather than as a wrong number.
+async function _fetchAllRows(makeQuery, { pageSize = 200, maxPages = 50 } = {}) {
+  const rows = []
+  let total = null
+  for (let page = 0; page < maxPages; page++) {
+    const { data, error, count } = await makeQuery().range(rows.length, rows.length + pageSize - 1)
+    if (error) return { data: null, error }
+    if (page === 0 && count != null) total = count
+    if (!data?.length) return { data: rows, error: null }
+    rows.push(...data)
+    if (total != null && rows.length >= total) return { data: rows, error: null }
+  }
+  return { data: null, error: new Error(`_fetchAllRows: still more rows after ${maxPages} pages of ${pageSize} — refusing to return a truncated list`) }
+}
+
 // Clears a setInterval/setTimeout ID and returns null so the caller can zero the variable in one line:
 //   _runner._restInterval = clearTimer(_runner._restInterval)
 // Never use clearInterval() directly — the ID stays truthy and breaks if-guards.

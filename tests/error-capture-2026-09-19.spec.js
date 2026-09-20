@@ -225,7 +225,8 @@ test.describe('error capture — what gets reported, and what never does', () =>
       const orig = db.from.bind(db)
       db.from = (t) => {
         if (t !== 'app_errors') return orig(t)
-        const b = { select: () => b, eq: () => b, order: () => b, range: async (a, z) => { calls.push([a, z]); return { data: pages[a / 200] || [], error: null } } }
+        const all = pages.flat()
+        const b = { select: () => b, eq: () => b, order: () => b, range: async (a, z) => { calls.push([a, z]); return { data: all.slice(a, z + 1), error: null } } }
         return b
       }
       const bundle = await _buildMyDataBundle()
@@ -233,7 +234,12 @@ test.describe('error capture — what gets reported, and what never does', () =>
     })
     expect(r.n, 'all 237 reports are in the export').toBe(237)
     expect(r.last).toBe('row-236')
-    expect(r.calls, 'three pages: 200, 37, then the empty one that ends it').toEqual([[0, 199], [200, 399], [400, 599]])
+    // Three requests: 200, 37, then the empty one that ends it. Each page starts where the rows read so far end
+    // (200, then 237) — not on a fixed 200-row stride, which is what this asserted (0/200/400) while the export
+    // hand-rolled its own loop. Since 2026-09-20 the export pages through the shared _fetchAllRows, and a stride
+    // would silently SKIP rows the moment the API cap dropped below the page size. This stand-in does not report a
+    // count, so the empty page is what ends the loop here; against the live API the count ends it a request sooner.
+    expect(r.calls, 'three pages, each starting where the previous one ended').toEqual([[0, 199], [200, 399], [237, 436]])
   })
 
   test('helpers: printable-ASCII only, emails redacted, codes allow-listed, frames parsed from Chrome and Firefox stacks', async ({ page }) => {

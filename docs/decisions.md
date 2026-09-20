@@ -12,6 +12,19 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-20 — Reads of growing tables page through one shared helper, and a failed read fails the whole export.**
+The API returns at most 200 rows per request and says nothing when it cuts a list short (measured on the live project
+that day), so screens that asked for "all" were right until row 201. `_fetchAllRows` (`js/app-core.js`) is now the one
+way to read a table that grows without limit: it pages, returns `{ data: null, error }` rather than a partial list, and
+starts each page where the rows read so far end. *The choice a future session might reverse:* the data export used to
+tolerate a failed read, including the profile (it discarded the error and shipped a bundle with a hole in it); it now **throws**, and
+`downloadMyData` says "Export failed". An export that reports success while incomplete is worse than one that says it
+could not finish — do not make it "more forgiving". *Not chosen:* raising the server's `max_rows` (it only moves the cliff, and it is a hosted-project setting the app cannot
+see or test); a per-screen `.limit(...)` (the cliff moves, the silence stays). *Tested against* `tests/capped-api.js`, a read-only stand-in that caps
+at 200 like the live API and fails closed.
+
+---
+
 **2026-09-19 — Errors are captured automatically; feedback is an email link, and nothing a user types is stored.**
 Built to close the two beta gaps deferred 2026-07-11 (a tester's crash was invisible; no feedback channel), now that an
 outside tester exists (2026-08-09). `log.error` and two global handlers report to `app_errors`; the owner reads

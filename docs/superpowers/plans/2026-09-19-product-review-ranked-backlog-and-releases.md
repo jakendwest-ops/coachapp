@@ -15,6 +15,20 @@
 > and Jake's on-phone wake-lock check. New rows this work opened: `2026-09-20-workout-templates-insert-accepts-another-coachs-program-id`
 > (RLS gap, needs a schema read then a reviewed script), `…nine-save-functions-read-form-values-after-an-awaited-ownership-check`,
 > `…interval-and-count-in-timers-still-count-ticks`, `…runner-survives-a-session-ending-mid-workout-and-now-holds-the-wake-lock`.
+>
+> **Release 2a is built locally too (2026-09-20, unreleased, no SQL).** `_fetchAllRows` (`js/app-core.js`) + the read-only,
+> fail-closed stand-in `tests/capped-api.js` (its own 13-case self-test; it reorders ties per request); both weight tabs, the
+> data export's ten tables and its `app_errors` loop, the coach Performance tab and both dashboards' "Personal bests" now
+> page. A 3-angle review of that pass found no tenant leak but did find the export's coach block (clients, templates,
+> programmes) still unpaged, a same-day-weigh-in tie, and a stub that could not catch a missing tie-break or tenant filter,
+> all fixed. Three of the sixteen queries were NOT in this plan: the class sweep found them after the plan's five places (the dashboard best is computed from
+> the newest 200 rows only). Ledger: `2026-09-20-reads-of-growing-tables-are-silently-cut-at-200-rows` (closed on red→green).
+> **Measured on the live API that day:** the cap is real (200 rows for `.range(0, 999)` and `.limit(1000)`); an offset exactly
+> at the end is an empty page; past the end is an error (`PGRST103`). **Two lines of this plan the code disproved:** the R2a
+> red test said the coach weight tab's "current" differed from the client's — the coach tab loads newest-first, so its Current
+> was already right and it was ENTRIES / the "since" date / the table that were cut; and the export's own `app_errors` loop
+> comment claimed it was "right whatever the cap is" — with fixed 200-row strides it is right only for a cap of 200 or more.
+> **Not started:** R2b (server summary), R2c, R2d, and R2-0 needs Jake's read-only schema query first.
 
 # START HERE: one ranked backlog across all four product reviews (2026-09-19)
 

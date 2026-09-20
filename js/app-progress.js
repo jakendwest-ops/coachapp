@@ -491,11 +491,13 @@ async function renderClientPerformance(clientId, el) {
   log.info('renderClientPerformance', 'fetching performance logs', { clientId })
   el.innerHTML = '<div style="padding:24px;color:var(--text-muted);text-align:center">Loading…</div>'
 
-  const { data: logs, error } = await db
+  // Paged (_fetchAllRows, app-core.js): a plain read is cut at the API's 200 rows, so past 200 records the OLDEST
+  // ones — which is where a personal best usually lives — dropped off the tab and out of every "best" below.
+  const { data: logs, error } = await _fetchAllRows(() => db
     .from('performance_logs')
-    .select('*')
+    .select('*', { count: 'exact' })
     .eq('client_id', clientId)
-    .order('date', { ascending: false })
+    .order('date', { ascending: false }).order('id', { ascending: false }))
 
   if (error) { log.error('renderClientPerformance', 'fetch failed', error); el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading performance data</div></div>`; return }
   log.ok('renderClientPerformance', `loaded ${logs.length} records`)
@@ -779,12 +781,19 @@ async function renderClientWeight(clientId, el) {
   log.info('renderClientWeight', 'fetching weight logs', { clientId })
   el.innerHTML = '<div style="padding:24px;color:var(--text-muted);text-align:center">Loading…</div>'
 
-  const [{ data: logs, error }, { data: clientRow }] = await Promise.all([
-    db.from('weight_logs').select('*').eq('client_id', clientId).order('date', { ascending: false }),
+  // Paged (_fetchAllRows, app-core.js): the API caps a response at 200 rows and says nothing when it truncates, so
+  // past 200 weigh-ins this tab's ENTRIES, its "since" date, its table and its chart all stopped at the 200th newest.
+  const [{ data: logs, error }, { data: clientRow, error: clientErr }] = await Promise.all([
+    // Same-day weigh-ins tie on `date` (weight_logs has no unique (client, date)), so created_at breaks the tie — the
+    // one logged LATER is the current one — and `id` is the unique last resort the paging needs.
+    _fetchAllRows(() => db.from('weight_logs').select('*', { count: 'exact' }).eq('client_id', clientId).order('date', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: false })),
     db.from('clients').select('starting_weight_kg, goal_weight_kg').eq('id', clientId).single()
   ])
+  // clientErr counts too: ignoring it rendered a BLANK goals editor, and "Save goals" would then write NULLs over the
+  // person's real starting and goal weights.
+  const loadErr = error || clientErr
 
-  if (error) { log.error('renderClientWeight', 'fetch failed', error); el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading weight data</div></div>`; return }
+  if (loadErr) { log.error('renderClientWeight', 'fetch failed', loadErr); el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading weight data</div></div>`; return }
   log.ok('renderClientWeight', `loaded ${logs.length} entries`)
 
   const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
@@ -1720,10 +1729,15 @@ async function renderProgressWeight(el) {
   el.innerHTML = '<div class="loading-state">Loading weight data…</div>'
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
-  const [{ data: logs }, { data: clientRow }] = await Promise.all([
-    db.from('weight_logs').select('date, weight_kg, body_fat_pct, resting_hr').eq('client_id', clientId).order('date', { ascending: true }),
+  // Paged (_fetchAllRows, app-core.js). This tab loads OLDEST-first, so under the API's silent 200-row cap the
+  // "Current" tile froze at the 200th-oldest weigh-in and every later one was invisible to it.
+  // Same-day weigh-ins tie on `date` (weight_logs has no unique (client, date)), so created_at breaks the tie — the
+  // one logged LATER is "Current" — and `id` is the unique last resort the paging needs.
+  const [{ data: logs, error: logsErr }, { data: clientRow, error: clientErr }] = await Promise.all([
+    _fetchAllRows(() => db.from('weight_logs').select('date, weight_kg, body_fat_pct, resting_hr', { count: 'exact' }).eq('client_id', clientId).order('date', { ascending: true }).order('created_at', { ascending: true }).order('id', { ascending: true })),
     db.from('clients').select('starting_weight_kg, goal_weight_kg').eq('id', clientId).single()
   ])
+  const loadErr = logsErr || clientErr
   const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
   const goalWeightKg     = clientRow?.goal_weight_kg != null ? parseFloat(clientRow.goal_weight_kg) : null
   // 2026-07-08 BUG FIX: the button below called showClientWeightForm(), which only toggles a DOM
@@ -1749,6 +1763,14 @@ async function renderProgressWeight(el) {
         <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
       </div>
     </div>`
+  // A failed load must not read as "no data" (the empty state below invites the person to start logging again), and
+  // a failed CLIENT read must not render a blank goals editor that "Save goals" would write NULLs over. For a solo
+  // account this is the ONLY place to log a weight, so the button stays and there is a way to retry.
+  if (loadErr) {
+    log.error('renderProgressWeight', 'fetch failed', loadErr)
+    el.innerHTML = addWeightBtn + `<div class="loading-state">Error loading weight data. <button class="btn-secondary" onclick="renderProgressWeight(this.closest('.loading-state').parentElement)">Try again</button></div>`
+    return
+  }
   // P3 (2026-09-07): once both goals are set, this leads with the DATA (tiles + chart), not the
   // editor. The card collapses to a one-line "Start X → Goal Y · Edit" summary; the full editor is
   // still there, hidden, revealed by the Edit button. When either value is missing it stays a full
@@ -3281,27 +3303,30 @@ async function _buildMyDataBundle() {
     // the subject-access bundle. This select is an explicit ALLOWLIST — a new column does not appear
     // here on its own, which is the documented feedback-embed-select-column-allowlist class. It was
     // missed on the first pass of this very commit and caught by the pre-push review.
-    const { data: profile } = await db.from('profiles').select('full_name, role, created_at, consented_at, consent_policy_version').eq('id', currentUser.id).single()
+    const { data: profile, error: profileErr } = await db.from('profiles').select('full_name, role, created_at, consented_at, consent_policy_version').eq('id', currentUser.id).single()
+    if (profileErr) throw profileErr          // discarded until 2026-09-20: a failed read shipped `profile: null` as a success
     bundle.profile = profile
+
+    // Every LIST read below goes through this: it pages past the API's 200-row cap (_fetchAllRows, app-core.js) and
+    // THROWS on any failure, so an export that could not read a table fails ("Export failed" in downloadMyData) instead
+    // of reporting success with a hole in it. maxPages is 500 (100,000 rows), not the screens' 50: a subject-access
+    // export must not hit a wall that a history view can live with.
+    const all = async (makeQuery) => { const { data, error } = await _fetchAllRows(makeQuery, { maxPages: 500 }); if (error) throw error; return data }
 
     // The user's own error reports (app_errors): technical rows keyed on user_id, not client_id, so they sit
     // outside the cids block below and apply to every role. Only "the table is not there yet" is tolerated (the
     // export must not break for anyone before it exists); anything else throws, like the health data below —
     // an export that silently omits a table while reporting success is exactly the failure this bundle avoids.
-    // PAGED: the API caps every response at max_rows = 200 (docs/roadmap.md), so one .limit(1000) query returns
-    // the OLDEST 200 and silently drops the rest. Stops on an empty page, so it is right whatever the cap is;
-    // the id tie-break keeps pages stable when several rows share a timestamp (a bulk insert does).
-    // NOTE: the sibling queries below (weights, workouts, …) have the same silent 200-row cap — not touched here.
-    const appErrors = []
-    for (let from = 0; from < 10000; from += 200) {
-      const { data, error: aeErr } = await db.from('app_errors')
-        .select('created_at, kind, tag, detail, code, frame, page, build').eq('user_id', currentUser.id)
-        .order('created_at').order('id').range(from, from + 199)
-      if (aeErr) { if (['42P01', 'PGRST205'].includes(aeErr.code)) break; throw aeErr }
-      if (!data?.length) break
-      appErrors.push(...data)
-    }
-    bundle.appErrors = appErrors
+    // PAGED through _fetchAllRows (app-core.js): the API caps every response at max_rows = 200 (docs/roadmap.md) and
+    // says nothing when it truncates, so one .limit(1000) query returns the OLDEST 200 and silently drops the rest.
+    // The id tie-break keeps pages stable when several rows share a timestamp (a bulk insert does). This loop used
+    // to be hand-rolled here with fixed 200-row strides; every list in this export now goes through the one helper
+    // instead of two implementations that could drift, and a stride is no longer assumed to equal the cap.
+    const { data: appErrors, error: aeErr } = await _fetchAllRows(() => db.from('app_errors')
+      .select('created_at, kind, tag, detail, code, frame, page, build', { count: 'exact' }).eq('user_id', currentUser.id)
+      .order('created_at').order('id'), { maxPages: 500 })
+    if (aeErr && !['42P01', 'PGRST205'].includes(aeErr.code)) throw aeErr
+    bundle.appErrors = appErrors || []
 
     // GDPR Art. 15/20 covers every piece of personal data held on this person - which VIEW they happen
     // to be in when they tap the button is irrelevant to the obligation. This used to be an if/else:
@@ -3312,10 +3337,12 @@ async function _buildMyDataBundle() {
     // plain client simply owns none of these (three empty arrays). Gating on role made the export's
     // CONTENTS depend on a UI toggle, which is the same class of bug as the if/else this replaced.
     {
-      const [{ data: clients }, { data: templates }, { data: programs }] = await Promise.all([
-        db.from('clients').select('full_name, email, created_at').eq('coach_id', currentUser.id),
-        db.from('workout_templates').select('name, created_at').eq('coach_id', currentUser.id),
-        db.from('programs').select('name, created_at').eq('coach_id', currentUser.id),
+      // Paged and throwing like the health tables below: a coach past 200 templates (every periodised week is one) or
+      // programmes got a truncated list and "Download started" — found by the review of the first paging pass.
+      const [clients, templates, programs] = await Promise.all([
+        all(() => db.from('clients').select('full_name, email, created_at', { count: 'exact' }).eq('coach_id', currentUser.id).order('created_at').order('id')),
+        all(() => db.from('workout_templates').select('name, created_at', { count: 'exact' }).eq('coach_id', currentUser.id).order('created_at').order('id')),
+        all(() => db.from('programs').select('name, created_at', { count: 'exact' }).eq('coach_id', currentUser.id).order('created_at').order('id')),
       ])
       bundle.clients = clients; bundle.workoutTemplates = templates; bundle.programs = programs
     }
@@ -3328,14 +3355,18 @@ async function _buildMyDataBundle() {
       if (cErr) throw cErr
       const cids = (myClientRows || []).map(r => r.id)
       if (cids.length) {
-        const [{ data: weights }, { data: workouts }, { data: perf }, { data: goals }, { data: events }, { data: oneRMs }, { data: checkIns }] = await Promise.all([
-          db.from('weight_logs').select('date, weight_kg, body_fat_pct, resting_hr, notes').in('client_id', cids).order('date'),
-          db.from('workout_logs').select('name, date, notes, workout_log_exercises(exercise_name, exercise_type, metric_type, order_index, client_notes, workout_log_sets(set_number, side, weight_kg, reps_achieved, duration_seconds, distance_m, height_cm, effort_type, effort_value, avg_hr, max_hr, avg_watts, phase))').in('client_id', cids).order('date'),
-          db.from('performance_logs').select('name, category, value, unit, date').in('client_id', cids).order('date'),
-          db.from('goals').select('title, target_date, status').in('client_id', cids),
-          db.from('events').select('title, date, type').in('client_id', cids).order('date'),
-          db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at').in('client_id', cids).order('recorded_at'),
-          db.from('client_check_ins').select('*').in('client_id', cids).order('created_at'),
+        // Every one of these grows without limit: past 200 rows a plain query silently returned the OLDEST 200 and the
+        // export reported success — an incomplete subject-access disclosure — and the old destructuring discarded the
+        // error, so a table that failed to load produced a bundle with a hole in it and no sign of one. `all` (above)
+        // pages and throws; `.order('id')` is the unique tie-break the paging needs.
+        const [weights, workouts, perf, goals, events, oneRMs, checkIns] = await Promise.all([
+          all(() => db.from('weight_logs').select('date, weight_kg, body_fat_pct, resting_hr, notes', { count: 'exact' }).in('client_id', cids).order('date').order('id')),
+          all(() => db.from('workout_logs').select('name, date, notes, workout_log_exercises(exercise_name, exercise_type, metric_type, order_index, client_notes, workout_log_sets(set_number, side, weight_kg, reps_achieved, duration_seconds, distance_m, height_cm, effort_type, effort_value, avg_hr, max_hr, avg_watts, phase))', { count: 'exact' }).in('client_id', cids).order('date').order('id')),
+          all(() => db.from('performance_logs').select('name, category, value, unit, date', { count: 'exact' }).in('client_id', cids).order('date').order('id')),
+          all(() => db.from('goals').select('title, target_date, status', { count: 'exact' }).in('client_id', cids).order('id')),
+          all(() => db.from('events').select('title, date, type', { count: 'exact' }).in('client_id', cids).order('date').order('id')),
+          all(() => db.from('client_1rms').select('exercise_name, one_rm_kg, recorded_at', { count: 'exact' }).in('client_id', cids).order('recorded_at').order('id')),
+          all(() => db.from('client_check_ins').select('*', { count: 'exact' }).in('client_id', cids).order('created_at').order('id')),
         ])
         bundle.weightLogs = weights; bundle.workoutLogs = workouts
         bundle.performanceLogs = perf; bundle.goals = goals; bundle.events = events
