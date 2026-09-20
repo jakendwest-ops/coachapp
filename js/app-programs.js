@@ -1247,7 +1247,9 @@ async function openProgram(programId) {
           <button class="btn btn-secondary" onclick="document.getElementById('program-manage-modal').style.display='none';showEditProgramModal('${program.id}','${escapeAttr(program.name)}','${escapeAttr((program.description||''))}')">Edit name and description</button>
           <button class="btn btn-secondary" onclick="copyProgramWorkoutsToLibrary('${program.id}')" title="Copy every workout in this program into your reusable Library">Copy workouts to Library</button>
           ${program.is_personal
-            ? `<button class="btn btn-secondary" onclick="copyProgramToCoaching('${program.id}')" title="Make a coaching copy you can assign to clients">Copy to coaching programs</button>`
+            ? (window._masterAccount /* the copy lands in the COACHING pool: a native solo has no coaching view to list, open or delete it — bugs/2026-09-06-copy-to-coaching-creates-an-undeletable-orphan-for-a-solo-user */
+                ? `<button class="btn btn-secondary" onclick="copyProgramToCoaching('${program.id}')" title="Make a coaching copy you can assign to clients">Copy to coaching programs</button>`
+                : '')
             : (window._soloClientId && currentProfile?.role !== 'solo' ? `<button class="btn btn-secondary" onclick="moveProgramToPersonal('${program.id}')" title="Move into your Personal view — no longer assignable to clients">Move to Personal</button>` : '')}
           <button class="btn btn-danger" onclick="deleteProgram('${program.id}')">Delete program</button>
         </div>
@@ -1406,6 +1408,15 @@ async function moveProgramToPersonal(programId) {
 // The copy lands in the PT pool (is_personal: false) regardless of which view we're copying FROM —
 // same explicit-override trick _copyTemplateToLibrary uses, rather than reading the current role.
 async function copyProgramToCoaching(programId) {
+  // Needs a coaching view to copy INTO. The copy is written with is_personal:false, and for a NATIVE solo
+  // account (loadUserInfo's solo branch sets _soloClientId but deliberately not _masterAccount) there is no
+  // view switcher, no way to list an is_personal:false programme, and deleteProgram is reachable only from
+  // the list — so the copy, plus a full clone of every template in it, would be unlistable, unopenable and
+  // UNDELETABLE, and a second press would hit the name-collision guard below: a permanent dead end. The
+  // button is hidden for that user too; this refuses a direct call. It is the mirror of the guard in
+  // moveProgramToPersonal (which asks the same question of the OTHER direction) and answers it the same
+  // way: check the destination view exists BEFORE reading or writing anything.
+  if (!window._masterAccount) { showToast('You have no coaching view to copy this into.', 'warn'); return }
   const { data: src, error: srcErr } = await db.from('programs')
     .select('id, name, description, is_personal, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)')
     .eq('id', programId).eq('coach_id', currentUser.id).single()
