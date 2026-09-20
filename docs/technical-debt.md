@@ -18,10 +18,12 @@ process/tracking debt below.
 - **`app-workouts.js`'s own runner set-accuracy work** — built and Playwright-verified, historically
   shipped in stages; per-set target display, delete-a-set, live rep tally, and reusing the real
   add-exercise modal in the runner (not a simplified rebuild) all landed this way.
-- **Runner Phase 2 not started:** extending the fast table pattern to cardio/timed/unilateral/%1RM
-  exercises, which still use the older one-set wizard. Two known v1 gaps: superset auto-switch
-  (table mode never auto-advances to the paired exercise; unconfirmed whether real templates use
-  `supersetGroup`), and bodyweight-in-table code-reviewed but not independently live-verified.
+- **Runner Phase 2 — mostly done; this entry was stale (corrected 2026-09-20 from code and specs, not run):**
+  every non-cardio exercise already logs through the fast table (`_isPlainStrengthExercise`), including
+  unilateral, timed, jump and %1RM (`unilateral-runner-2026-08-19`, `runner-fast-table-metrics` specs). Only
+  cardio/intervals keep the one-set-at-a-time flow; what is left is Jake's "cardio runner needs the same UI" —
+  a design question (ledger row `2026-07-11-runner-phase-2`, deferred). Known v1 gaps stand: superset
+  auto-switch (unconfirmed whether real templates use `supersetGroup`); bodyweight-in-table not live-verified.
 - **`deleteProgram()` orphan-cleanup** stops future debris, but a historical backlog of orphaned
   templates on the main coach account (found while building that fix) was never separately cleaned
   up.
@@ -29,9 +31,11 @@ process/tracking debt below.
 - **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted —
   a UX gap, not a correctness bug.
 - **Invite email** doesn't yet include PT branding/logo (Edge Function not updated for it).
-- Runner-vs-"Hevy" competitive gaps banked as build items: strength inputs aren't pre-filled (every
-  set is a full retype), no plate calculator, background rest-timer alerts need PWA/native, and the
-  last-session strip is strength-only.
+- Runner-vs-"Hevy" gaps banked as build items — **partly stale (corrected 2026-09-20):** "not pre-filled" is
+  a choice, not a gap (Jake removed automatic pre-fill 2026-07-11: a pre-filled value looks typed; guarded by
+  `tests/runner.spec.js`), and the plate calculator was removed the same day. Still real: background rest-timer
+  alerts need PWA/native (a screen wake lock covers most gym use — planned), and the last-session strip is
+  strength-only.
 
 Migrated as historical record, not re-verified against current code — cross-check against
 [backlog.md](backlog.md)/`docs/bugs/` before treating any of the above as still accurate; several
@@ -61,6 +65,16 @@ which still needs deleting once its value is fully extracted):**
   (×2: `navigate()` and `switchView()`) and `app-workouts.js` (`_templateGoBack()`) — three
   near-identical copies that would benefit from one shared helper, deferred as a refactor-only change
   with no behavior risk.
+
+**New 2026-09-20, from planning the product-review releases** (read from code, impact unmeasured; evidence in
+[the release plans](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md)): **capped reads**
+(screens that read growing tables through the API's 200-row cap — incl. the runner's finish-screen PR baseline);
+**writes with no retry safety or transaction** (workout save, program assignment, `deletePhaseWeek`); **two
+propagation regimes** (a workout's content edit *offers* "Update assigned clients?", week-structure edits change
+their plans with no prompt — Jake's call; [schema.md](schema.md) said otherwise until today); **stale backlog
+premises** (3 of 20 ranked items rested on lines the code had left behind — check code first); **an unrunnable
+ad-hoc probe recipe** (`_adhoc*` is in `testIgnore`; the skills now say `_debug-adhoc`, gitignored but not
+runner-ignored, so a leftover runs in `npm test`); and no fault-injection test anywhere in `tests/`.
 
 ## Test-gate coverage debt
 

@@ -48,10 +48,10 @@ fix are not the same fix).
   (`workout_log_exercises`/`workout_log_sets`) are reasoned-safe but not independently behaviourally
   tested. Several goal-related writes (`saveGoalProgress`, `saveEditGoal`, `toggleMilestone`,
   `toggleClientMilestone`) share the same unanchored-write shape, lower priority.
-- **The 2026-07-11 "empty app" beta blocker is closed** — a brand-new coach used to land on zero
-  exercises/templates/clients; `starter-content.js` (~40 seeded exercises + a sample workout and
-  programme) resolved this. Confirmed present in the current codebase (see
-  [architecture.md](architecture.md)).
+- **Product-review backlog — planned 2026-09-19, nothing built:** a ranked 20-item backlog and red-first plans
+  for five small releases, in
+  [superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md);
+  it supersedes this list for *what to build next*. Three local commits are unreleased and unpushed.
 
 ## Raised but deliberately deprioritized (Jake's own call, 2026-07-11 — still relevant, not lost)
 
@@ -68,8 +68,8 @@ fix are not the same fix).
 
 A sample of what's tracked as planned-but-unscoped in the full archive — not exhaustive, see the
 archive for the complete list: a real superset data model (pairs of exercises tracked together, not
-just a text field), runner Phase 2 (extending the fast table to cardio/timed/unilateral/%1RM
-exercises), a proper client-detach/cancellation workflow (a client can currently self-detach from
+just a text field), the cardio side of runner Phase 2 (unilateral/timed/jump/%1RM already use the
+fast table — corrected 2026-09-20), a proper client-detach/cancellation workflow (a client can currently self-detach from
 their PT via the API with no workflow or PT-side notice), AMRAP/EMOM/circuit dedicated timer modes,
 and a goals overhaul (granular mini-goals/milestones).
 
@@ -77,10 +77,10 @@ and a goals overhaul (granular mini-goals/milestones).
 redesign — see [current-sprint.md](current-sprint.md) and
 [releases/v2026.09.6.md](releases/v2026.09.6.md)):**
 
-- **The equivalent propagation-once-on-Save redesign for program-workout edits** — the
-  2026-09-13 walkthrough's second ask (a confirm prompt when leaving a changed workout back to the
-  phases page, instead of a per-edit propagation interruption). Explicitly out of scope for
-  `v2026.09.6`, which covered only the template builder. Not yet scoped as its own plan.
+- **Program-workout edits already save once and prompt once** (corrected 2026-09-20, from code and specs —
+  not run): a programme slot's Edit opens the same staged editor `v2026.09.6` built, so that ask is met for
+  content. Still open: week-structure edits (duplicate/delete/generate weeks) change assigned clients' plans
+  with no prompt — Jake's call (release plans, R5).
 - **The same role-flip-before-dirty-check bug class in `app-dashboard.js`'s
   `sudoAsClient`/`exitSudo`** — found during this release's review but deferred (narrower exposure
   than the `switchView` case this release fixed; see [technical-debt.md](technical-debt.md)).

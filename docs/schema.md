@@ -71,8 +71,15 @@ flowchart TD
     D -.->|"NEVER affects"| F
     D -.->|"NEVER affects"| B
 
-    B -->|PT edits the master Program| G["Future assigns only — existing client copies untouched"]
+    B -->|"PT edits a master workout's content"| G["Offered once per Save: 'Update assigned clients?' — copies change only if the PT accepts"]
+    B -->|"PT duplicates, deletes or generates weeks, or shortens a phase"| H["Applied to assigned clients' plans automatically — no prompt"]
 ```
+
+**Corrected 2026-09-20** (read from `js/app-programs.js` / `js/app-workouts.js`, not run): the diagram used to
+say master edits reach *future* assignments only. A workout's content edit is offered to assigned clients once per
+Save (`_checkClientPlanPropagation`); week-structure edits (`duplicatePhaseWeek`, `generatePhasePeriodization`,
+`deletePhaseWeek`, shortening a phase) rewrite assigned clients' plans automatically. Whether that mix is
+intended is Jake's call.
 
 **Rule:** `program_id` set + `client_id` null = master. `program_id` null + `client_id` set =
 personal copy. Never both set, never both null for a real template (standalone templates are both
