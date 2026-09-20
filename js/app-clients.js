@@ -377,14 +377,12 @@ async function renderClientOverview(id, el) {
   ])
   const latestCI = checkIns?.[0]
 
-  function ciColour(val) {
-    return val <= 2 ? '#ef4444' : val >= 4 ? '#22c55e' : 'var(--accent)'
-  }
-
+  // Colour comes from _checkInColour (js/app-core.js), which knows each metric's polarity — stress and
+  // soreness are good when LOW. This used to be a local function that read every score as high-is-good.
   function ciTrend(metric) {
     const vals = (checkIns || []).map(c => c[metric]).filter(v => v != null).reverse()
     if (vals.length < 2) return ''
-    const bars = vals.map(v => `<div style="width:6px;border-radius:3px 3px 0 0;height:${(v/5)*28}px;background:${ciColour(v)};align-self:flex-end"></div>`).join('')
+    const bars = vals.map(v => `<div style="width:6px;border-radius:3px 3px 0 0;height:${(v/5)*28}px;background:${_checkInColour(metric, v)};align-self:flex-end"></div>`).join('')
     return `<div style="display:flex;gap:2px;align-items:flex-end;height:28px;margin-top:4px">${bars}</div>`
   }
 
@@ -396,9 +394,9 @@ async function renderClientOverview(id, el) {
           <div style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${new Date(latestCI.created_at).toLocaleDateString('en-GB', { day:'numeric',month:'short' })}</div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
-          ${[['Sleep','sleep'],['Energy','energy'],['Stress','stress'],['Soreness','soreness']].map(([label,key])=>`
+          ${CHECKIN_METRICS.map(({ label, key }) => `
           <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:8px">
-            <div style="font-size:20px;font-weight:800;color:${ciColour(latestCI[key])}">${latestCI[key]}/5</div>
+            <div style="font-size:20px;font-weight:800;color:${_checkInColour(key, latestCI[key])}">${latestCI[key]}/5</div>
             <div style="font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px">${label}</div>
             ${ciTrend(key)}
           </div>`).join('')}
@@ -411,8 +409,8 @@ async function renderClientOverview(id, el) {
           <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
             <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${new Date(ci.created_at).toLocaleDateString('en-GB', { day:'numeric',month:'short' })}</span>
             <div style="display:flex;gap:8px">
-              ${[['S',ci.sleep],['E',ci.energy],['St',ci.stress],['So',ci.soreness]].map(([abbr,val])=>`
-              <span style="font-size:12px;font-weight:600;color:${ciColour(val)}">${abbr}:${val}</span>`).join('')}
+              ${CHECKIN_METRICS.map(({ key, abbr }) => `
+              <span style="font-size:12px;font-weight:600;color:${_checkInColour(key, ci[key])}">${abbr}:${ci[key]}</span>`).join('')}
             </div>
           </div>`).join('')}
         </div>` : ''}

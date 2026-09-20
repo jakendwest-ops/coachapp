@@ -155,6 +155,37 @@ const log = {
   ok:    (tag, msg, data) => console.log(`[${tag}] ✓`, msg, data ?? ''),
 }
 
+// ─── WEEKLY CHECK-IN METRICS ──────────────────────────────────────────────────
+// The four 1-5 answers a client gives each week. `goodWhen` is which END of the scale is the good answer:
+// sleep and energy are good when HIGH, stress and soreness are good when LOW. The polarity lives here, once,
+// because the coach Overview coloured all four as if high were good — so stress 5/5 and soreness 5/5, the
+// two answers a coach most needs to notice, showed GREEN and a calm, fresh client showed red
+// (bugs/2026-09-19-check-in-stress-soreness-colours-inverted).
+const CHECKIN_METRICS = [
+  { key: 'sleep',    label: 'Sleep',    abbr: 'S',  goodWhen: 'high' },
+  { key: 'energy',   label: 'Energy',   abbr: 'E',  goodWhen: 'high' },
+  { key: 'stress',   label: 'Stress',   abbr: 'St', goodWhen: 'low'  },
+  { key: 'soreness', label: 'Soreness', abbr: 'So', goodWhen: 'low'  }
+]
+
+// 'good' | 'ok' | 'bad' for one answer, or null when there is nothing to judge (missing, non-numeric, or a
+// metric that is not in the list). A low-is-good answer is folded onto the same scale first (6 - n), so the
+// thresholds exist in exactly one place: 1-2 bad, 3 ok, 4-5 good.
+function _checkInTone(metricKey, val) {
+  const m = CHECKIN_METRICS.find(x => x.key === metricKey)
+  if (!m || val == null || val === '') return null
+  const n = Number(val)
+  if (!Number.isFinite(n)) return null
+  const score = m.goodWhen === 'low' ? 6 - n : n
+  return score <= 2 ? 'bad' : score >= 4 ? 'good' : 'ok'
+}
+
+// Design tokens, not hex: --danger is the red this always was; --success is the one green the design
+// system defines (a touch different from the old hard-coded green — deliberate). Anything with nothing to
+// judge is muted rather than coloured: the old function read a missing value as 0 and painted it red.
+const CHECKIN_TONE_COLOUR = { good: 'var(--success, #10b981)', ok: 'var(--accent)', bad: 'var(--danger, #ef4444)' }
+function _checkInColour(metricKey, val) { return CHECKIN_TONE_COLOUR[_checkInTone(metricKey, val)] ?? 'var(--text-muted)' }
+
 // ─── TOAST NOTIFICATIONS ──────────────────────────────────────────────────────
 // Surface DB errors and key events to the user — not just the console.
 function showToast(msg, type = 'error', duration = 4000) {
