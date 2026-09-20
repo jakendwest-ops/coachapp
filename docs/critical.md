@@ -245,6 +245,12 @@ continue appending future entries here, not in a separate file._
   the UI shows "Export failed"); same fix for the weight tabs and personal-best reads. Whether any real export was
   affected is unmeasured. **Lesson:** an export that reports success must be proven complete past the API's cap, not
   just on small fixtures — `tests/capped-api.js` now makes that testable.
+- 2026-09-20: **A tenant clause a stub cannot see is not proven.** The runner finish screen's PR baseline was rewritten as
+  one read scoped by client through a two-level `!inner` embed. Its first tests never asked about ANOTHER client, and the
+  test stand-in returned an embedded select whole — so dropping the client filter, or the second `!inner`, would have passed
+  every test (found by review). The stand-in now models PostgREST's `!inner` rule, the real-database test asks about another
+  client, and each breakage fails. **Lesson:** a tenant filter needs a fixture row belonging to someone else, asked about
+  through the real API; and check the read still lands in RLS-bounded tables (restated in the older deferred-RLS row).
 
 ## Requires Validation
 

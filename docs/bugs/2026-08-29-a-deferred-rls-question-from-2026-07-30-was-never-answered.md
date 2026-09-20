@@ -19,7 +19,11 @@ answer.** It was deferred and then forgotten — which is the failure mode the b
 read is bounded by an already-scoped id list:
 - `fetchRunnerLastSession:199-213` derives `logIds` from a `client_id`-scoped query
 - `openWorkoutLog:3046-3047` derives `exIds` from the RLS-bounded log embed
-- `showRunnerFinish:2249-2253` derives from a `!inner`-joined, client-scoped query
+- `showRunnerFinish` (`_prBaseline`, restated 2026-09-20 in Release 4b): no longer derives from an id list — it reads
+  `workout_log_sets` as the ROOT, contained by a client filter through an `!inner` chain up to `workout_logs`, whose SELECT
+  policy is anchored to the coach. So the app still does not depend on the sets/exercises SELECT policies for tenant
+  separation. Proved on the real database that another client's history is invisible (`tests/runner-pr-baseline-2026-09-20.spec.js`);
+  read-only, the same query agreed with the old read under a client session
 
 So the residual exposure is a **direct console INSERT of `workout_log_sets` against a foreign
 `log_id`** — which no app code and no test currently exercises. That is exactly the shape of the

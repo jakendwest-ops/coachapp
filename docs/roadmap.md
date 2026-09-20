@@ -62,8 +62,8 @@ fix are not the same fix).
 - **Beta ops** — feedback channel **built 2026-09-19 (not yet released)** as a Settings "Send feedback" email link (nothing is
   stored). Invite-email deliverability to real (non-Jake) addresses has still never been tested.
 - **`max_rows = 200` cap** — **measured 2026-09-20**: 200 rows even for `.limit(1000)`, silently. Weight tabs, data export
-  and personal-best reads fixed via `_fetchAllRows` (Release 2a, unreleased). **Open:** dashboard adherence + client list
-  (2b), ~13 unclassified reads (2d).
+  and personal-best reads fixed via `_fetchAllRows` (Release 2a, unreleased). Runner PR baseline fixed (4b). **Open:** dashboard adherence + client list
+  (2b), ~11 unclassified reads (2d).
 
 ## Named backlog items (from the full feature ledger, not yet scoped)
 

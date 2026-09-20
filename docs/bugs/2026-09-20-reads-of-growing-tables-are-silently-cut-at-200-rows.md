@@ -74,8 +74,9 @@ apply to the top-level rows, an offset at the end is an empty page, and two `id`
   in a month) and the client list's last-session lookup (newest 200 logs across ALL clients: a client not in that window
   reads "No sessions" instead of "35d ago"). These need a server-side summary, not paging.
 - **Release 2d.** A rough census (scratch script, not committed) found about 13 more reads of history-shaped tables with no
-  explicit bound (events 2, session logs 1, logged exercises 4, logged sets 3, goals 3); most are keyed to a single session, exercise or date window and are bounded in practice, and the
-  runner's finish-screen PR baseline (`js/app-runner.js`) is planned separately (Release 4b). They need classifying, not
+  explicit bound (events 2, session logs 1, logged exercises 4, logged sets 3, goals 3); most are keyed to a single session, exercise or date window and are bounded in practice. Two of them, the
+  runner's finish-screen PR baseline, were fixed in Release 4b (`2026-09-20-runner-finish-screen-claims-false-prs-and-loses-typed-notes`),
+  leaving about 11. They need classifying, not
   blanket paging — a ratchet with a measured baseline is the planned tool.
 - **Not atomic across pages:** a row written between two pages can shift a boundary by one. A history view shows it on
   refresh; it is not a wrong number. The export selects no `id`, so it cannot de-duplicate the rare repeated row.

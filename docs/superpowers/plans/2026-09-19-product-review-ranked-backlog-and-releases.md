@@ -28,6 +28,16 @@
 > red test said the coach weight tab's "current" differed from the client's — the coach tab loads newest-first, so its Current
 > was already right and it was ENTRIES / the "since" date / the table that were cut; and the export's own `app_errors` loop
 > comment claimed it was "right whatever the cap is" — with fixed 200-row strides it is right only for a cap of 200 or more.
+> **Release 4b is built locally too (2026-09-20, unreleased, no SQL): the runner's finish-screen PR baseline.** One shared rule
+> (`_isWeightPr`) and one bounded lookup per lift (`_prBaseline`: the heaviest set ever as a single `order desc, limit 1` row, by
+> library id and by name, the heavier winning). Reading the code confirmed the plan's premise (a 200-row-capped, name-only
+> baseline) and found three more faults the plan did not name: the screen flashed "PR" on every weighted lift until the
+> lookup returned and kept doing so if it failed (a missing baseline defaulted to 0); the repaint wiped typed notes and the
+> session name; and the rule was duplicated. All fixed red-first; the new query is also proved on the real database. Ledger:
+> `2026-09-20-runner-finish-screen-claims-false-prs-and-loses-typed-notes`. A 3-angle review of it found no tenant leak but a
+> real double-save hazard (the repaint re-enabled Save mid-save), a needless repaint, name-keyed baselines and an untested
+> tenant clause — all fixed. **Still gated on Jake's answers:** R4c (in-session
+> PR badge) and R4d ("same as last"); the first-ever-log-is-a-PR behaviour is unchanged until R4-0 Q4.
 > **Not started:** R2b (server summary), R2c, R2d, and R2-0 needs Jake's read-only schema query first.
 
 # START HERE: one ranked backlog across all four product reviews (2026-09-19)

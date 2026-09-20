@@ -85,6 +85,52 @@ test.describe('the capped-API stand-in', () => {
     expect(new Set(unique).size, 'a unique tie-break pages exactly').toBe(300)
   })
 
+  test('dotted filter paths resolve through to-one embeds; a row whose path does not resolve is excluded, like PostgREST !inner', async ({ page }) => {
+    await restoreCappedApi(page)
+    await installCappedApi(page, { sets: [
+      { id: 's1', w: 100, ex: { name: 'A', log: { client_id: 'c1' } } },
+      { id: 's2', w: 120, ex: { name: 'A', log: { client_id: 'c2' } } },
+      { id: 's3', w: 90,  ex: { name: 'B', log: { client_id: 'c1' } } },
+      { id: 's4', w: 80 },
+    ] })
+    const ids = async (q) => (await ask(page, q)).data.map(d => d.id)
+    const INNER = "id, ex!inner(name, log!inner(client_id))"
+    expect(await ids(`db.from('sets').select('${INNER}').eq('ex.log.client_id', 'c1').eq('ex.name', 'A')`), 'both levels must match').toEqual(['s1'])
+    expect(await ids(`db.from('sets').select('${INNER}').eq('ex.log.client_id', 'c1').order('w', { ascending: false }).limit(1)`), 'the heaviest of that client\'s rows, not of the table').toEqual(['s1'])
+    expect(await ids(`db.from('sets').select('${INNER}').eq('ex.log.client_id', 'nobody')`), 'no match').toEqual([])
+    expect((await ask(page, `db.from('sets').select('${INNER}', { count: 'exact' }).eq('ex.name', 'A')`)).count, 's4 has no embed at all, so it never matches').toBe(2)
+  })
+
+  test('WITHOUT !inner a dotted filter excludes nothing — PostgREST filters only the embedded rows and the parent stays', async ({ page }) => {
+    await restoreCappedApi(page)
+    await installCappedApi(page, { sets: [
+      { id: 's1', ex: { log: { client_id: 'c1' } } },
+      { id: 's2', ex: { log: { client_id: 'c2' } } },
+    ] })
+    const ids = async (q) => (await ask(page, q)).data.map(d => d.id).sort()
+    expect(await ids("db.from('sets').select('id, ex!inner(log!inner(client_id))').eq('ex.log.client_id', 'c1')"), 'inner at both levels: the other client is excluded').toEqual(['s1'])
+    expect(await ids("db.from('sets').select('id, ex!inner(log(client_id))').eq('ex.log.client_id', 'c1')"), 'inner missing at the second level: the parent stays').toEqual(['s1', 's2'])
+    expect(await ids("db.from('sets').select('id, ex(log!inner(client_id))').eq('ex.log.client_id', 'c1')"), 'inner missing at the first level: the parent stays').toEqual(['s1', 's2'])
+    expect(await ids("db.from('sets').select('id, ex(log(client_id))').eq('ex.log.client_id', 'c1')"), 'no inner at all: the parent stays').toEqual(['s1', 's2'])
+  })
+
+  test('a filter path that crosses a to-many embed throws rather than guess', async ({ page }) => {
+    await restoreCappedApi(page)
+    await installCappedApi(page, { t: [{ id: 'x', kids: [{ a: 1 }] }] })
+    const msg = await page.evaluate(async () => { try { await db.from('t').select('id, kids!inner(a)').eq('kids.a', 1); return null } catch (e) { return String(e.message) } })
+    expect(msg).toMatch(/crosses a to-many embed/)
+  })
+
+  test('unordered: "insertion" hands an order-less read back oldest-first (so a cap drops the NEWEST rows); the default shuffles it', async ({ page }) => {
+    const idsOf = async () => (await ask(page, "db.from('things').select('id')")).data.map(d => d.id)
+    const shuffled = await idsOf()
+    expect(shuffled.some(id => id > 'row-000199'), 'default: an unordered read is not fixture order, so rows past 199 can be returned').toBe(true)
+    await restoreCappedApi(page)
+    await installCappedApi(page, TABLES, { unordered: 'insertion' })
+    const natural = await idsOf()
+    expect([natural[0], natural.at(-1), natural.length], 'insertion: the first 200 rows in fixture order, the newest 100 dropped').toEqual(['row-000000', 'row-000199', 200])
+  })
+
   test('projection is faithful for plain lists: an unselected column is absent, an existing-but-unset one is null', async ({ page }) => {
     await restoreCappedApi(page)
     await installCappedApi(page, { t: [{ id: 'x', a: 1, b: 2 }] })

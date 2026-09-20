@@ -2271,6 +2271,45 @@ function addExtraCardioSet() {
 // addExtraStrengthSet removed 2026-08-29: zero references repo-wide. Its onclick lived in the
 // wizard deleted on 2026-08-11; superseded by addTableRow. Found by the weekly full-file review.
 
+// The ONE rule for "this session beat what was lifted before" — the finish screen's header count and its per-exercise
+// chips both call it. baselineKg is the heaviest weight (kg) ever logged for the lift: 0 when there is no history (the
+// first ever log of a lift counts as a PR, as it always has), and null/undefined when it could not be read — which is
+// NEVER a PR. A lookup that has not returned, or failed, must not read as "no history, so everything is a record".
+function _isWeightPr(bestKg, baselineKg) {
+  return baselineKg != null && bestKg > 0 && bestKg > baselineKg
+}
+
+// The heaviest set (kg) this client has EVER logged for one lift: 0 when there is none, and it THROWS when it cannot be
+// read. Two bounded reads in parallel — one by the lift's library id, one by its exact name — and the heavier wins:
+// the id keeps a renamed lift's history, the name keeps the rows logged before the id link existed.
+//
+// Each is ONE row (`order weight desc, limit 1`) however long the history. The read this replaced fetched every logged
+// exercise for those names and then every set of those, with no order and no limit; the API caps a response at 200 rows
+// and returns them oldest-first, so a client with more than ~200 sets of history was compared against their OLDEST sets
+// only, and every session heavier than their early ones read as a PR. `weight_kg` NOT NULL matters: descending order
+// puts NULLs first, and a null would otherwise win the sort.
+//
+// Scoped by client through the embedded log (`!inner`, filtered on the dotted path) exactly as before; RLS still applies.
+async function _prBaseline(clientId, { name, exerciseId }) {
+  const heaviest = async (column, value) => {
+    const { data, error } = await dbq('showRunnerFinish:prBaseline',
+      db.from('workout_log_sets')
+        .select('weight_kg, workout_log_exercises!inner(workout_logs!inner(client_id))')
+        .eq('workout_log_exercises.workout_logs.client_id', clientId)
+        .eq('workout_log_exercises.' + column, value)
+        .not('weight_kg', 'is', null)
+        .order('weight_kg', { ascending: false })
+        .limit(1),
+      { showUserError: false })
+    if (error) throw error
+    const kg = parseFloat(data?.[0]?.weight_kg)
+    return Number.isFinite(kg) ? kg : 0
+  }
+  const lookups = [heaviest('exercise_name', name)]
+  if (exerciseId) lookups.push(heaviest('exercise_id', exerciseId))
+  return Math.max(...await Promise.all(lookups))
+}
+
 async function showRunnerFinish() {
   // FULL teardown. This used to clear only _timerInterval, leaving the rest timer, the timed-set
   // timer, the cardio-interval timer and the draft safety-net all still ticking. The common path:
@@ -2322,12 +2361,18 @@ async function showRunnerFinish() {
   // METRES (2026-07-22) — via the shared reader so a legacy km draft still totals correctly.
   const totalDist = doneExs.filter(e=>e.type==='cardio').reduce((s,e) => s + e.loggedSets.reduce((sd,set) => sd + _cardioDistanceM(set), 0), 0)
 
-  // Show screen immediately while PR query runs
-  const renderScreen = (prevBests = {}) => {
-    const prCount = doneExs.filter(e => e.type !== 'cardio').filter(e => {
-      const best = Math.max(...e.loggedSets.map(s => parseFloat(s.weight)||0))
-      return best > 0 && best > (prevBests[e.name] || 0)
-    }).length
+  // The heaviest weight (kg) logged in this session for a lift; 0 for cardio and for bodyweight ('BW') sets.
+  const bestKg = e => e.type === 'cardio' ? 0 : Math.max(0, ...e.loggedSets.map(s => parseFloat(s.weight) || 0))
+  // `baselines` is a Map from each finished exercise to the heaviest kg logged before it — null until the lookups return,
+  // and an exercise whose lookup failed is simply absent — so until a lift's baseline is known nothing is claimed as a PR
+  // (_isWeightPr). It used to default to {}, a baseline of 0 for everything, so EVERY weighted lift showed "🏆 PR" until
+  // the lookup returned and kept showing it if the lookup failed. Keyed by the exercise itself, not its name: two lifts
+  // with the same name but different library ids have different baselines.
+  const isPr = (e, baselines) => _isWeightPr(bestKg(e), baselines?.get(e))
+
+  // Show the screen immediately, while the PR baselines are still being looked up.
+  const renderScreen = (baselines = null) => {
+    const prCount = doneExs.filter(e => isPr(e, baselines)).length
 
     el.innerHTML = `
       <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
@@ -2363,8 +2408,8 @@ async function showRunnerFinish() {
         <div style="flex:1;overflow-y:auto;padding:16px">
           ${doneExs.map(e => {
             const isCardio = e.type === 'cardio'
-            const bestWeight = isCardio ? 0 : Math.max(...e.loggedSets.map(s => parseFloat(s.weight)||0))
-            const isPR = !isCardio && bestWeight > 0 && bestWeight > (prevBests[e.name] || 0)
+            const bestWeight = bestKg(e)
+            const isPR = isPr(e, baselines)
             const exVol = isCardio ? 0 : e.loggedSets.reduce((s,set) => {
               const w = parseFloat(set.weight), r = parseInt(set.reps,10)
               return s + (isNaN(w)||isNaN(r) ? 0 : w*r)
@@ -2429,33 +2474,32 @@ async function showRunnerFinish() {
     `
   }
 
-  // Render immediately with no PR data, then re-render once PRs are fetched
+  // Render immediately with no PR data, then re-render once the baselines are known
   renderScreen()
 
-  const strengthNames = doneExs.filter(e=>e.type!=='cardio').map(e=>e.name)
-  if (strengthNames.length && clientId) {
-    const { data: prevExs } = await dbq('showRunnerFinish:prevExercises',
-      db.from('workout_log_exercises')
-        .select('id, exercise_name, workout_logs!inner(client_id)')
-        .eq('workout_logs.client_id', clientId)
-        .in('exercise_name', strengthNames),
-      { showUserError: false }
-    )
-    if (prevExs?.length) {
-      const { data: prevSets } = await dbq('showRunnerFinish:prevSets',
-        db.from('workout_log_sets')
-          .select('workout_log_exercise_id, weight_kg')
-          .in('workout_log_exercise_id', prevExs.map(e=>e.id))
-          .not('weight_kg', 'is', null),
-        { showUserError: false }
-      )
-      const exMap = Object.fromEntries(prevExs.map(e=>[e.id, e.exercise_name]))
-      const prevBests = {}
-      prevSets?.forEach(s => {
-        const name = exMap[s.workout_log_exercise_id]
-        if (name) prevBests[name] = Math.max(prevBests[name]||0, s.weight_kg)
-      })
-      if (document.getElementById('workout-runner')) renderScreen(prevBests)
+  const lifts = doneExs.filter(e => e.type !== 'cardio')
+  if (lifts.length && clientId) {
+    // One bounded lookup per lift, in parallel. A lift whose lookup fails is left out of `baselines`, and a lift with no
+    // baseline is never a PR — so a failure shows no PR at all rather than a PR for everything. (dbq has already
+    // reported the failure; this only records that this lift is unknown.)
+    const baselines = new Map()
+    await Promise.all(lifts.map(async e => {
+      try { baselines.set(e, await _prBaseline(clientId, { name: e.name, exerciseId: e.exerciseId })) }
+      catch (err) { log.warn('showRunnerFinish', 'PR baseline unavailable', { code: err?.code }) }
+    }))
+    // Repaint only when it would CHANGE something. The finished screen depends on the baselines only through its PR
+    // chips, so with no PR to show it is identical to the one already up — and replacing it would drop the athlete's
+    // focus, caret and scroll (and close a phone keyboard) for nothing. And never over a save that is already under way:
+    // saveRunnerSession disables the button on the node it captured, its ONLY re-entry guard, and a fresh form would put
+    // an ENABLED Save beside it — a second tap would insert a second log. (Found by review; the old code had the same
+    // hazard for any client with history.)
+    const saving = el.querySelector('button[onclick="saveRunnerSession()"]')?.disabled
+    if (el.isConnected && !saving && lifts.some(e => isPr(e, baselines))) {
+      // Repainting replaces the whole form, so carry over whatever was typed while the lookup ran: the notes and the
+      // session name used to be silently reset to their defaults.
+      const typed = ['rf-name', 'rf-notes'].map(id => [id, el.querySelector('#' + id)?.value])
+      renderScreen(baselines)
+      typed.forEach(([id, v]) => { const f = el.querySelector('#' + id); if (f && v != null) f.value = v })
     }
   }
 }

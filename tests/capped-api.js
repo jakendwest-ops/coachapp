@@ -30,6 +30,19 @@
 // This is deliberately STRICTER than the live API: "unspecified" is what a missing tie-break means. The shuffle is a fixed
 // function of the request number, so a failure reproduces.
 //
+// UNORDERED READS: by default a read with NO order at all is shuffled like a tie (see above). Pass
+// `{ unordered: 'insertion' }` to return it in fixture order instead — what a real table does in practice (a heap
+// with no updates hands rows back oldest-first), and therefore how a 200-row cap drops the NEWEST rows: exactly the
+// rows a progressing client's best lives in. Use it to reproduce a capped, unordered read deterministically. A read
+// with an explicit order still shuffles its ties in either mode.
+//
+// DOTTED FILTER PATHS: `.eq('workout_log_exercises.workout_logs.client_id', id)` — a filter through to-one embeds — is
+// resolved against the fixture row's nested objects, so a row that carries `{ workout_log_exercises: { workout_logs:
+// { client_id } } }` is filtered on the nested value. Like PostgREST, it EXCLUDES the parent row only when every embed on
+// the path is `!inner` in the select (`a!inner(b!inner(c))`); without it PostgREST filters just the embedded rows and the
+// parent stays with the embed null, so here the filter excludes nothing — which is what makes a dropped `!inner` fail a
+// test instead of quietly passing. A path that crosses an ARRAY (a to-many embed) throws rather than guess.
+//
 // Column projection is faithful for plain lists (a column you did not select comes back absent, a column that
 // exists but the fixture left out comes back null); a select containing an embed `a(b, c)` returns the fixture
 // row whole, because faking PostgREST's join is not what this is for.
@@ -41,12 +54,22 @@
 //     await restoreCappedApi(page)                 // in a finally
 
 // Runs INSIDE the page (Playwright serialises the function), so it must not reference anything outside itself.
-function _installInPage({ tables, cap }) {
+function _installInPage({ tables, cap, unordered }) {
   if (window.__cappedApi) throw new Error('capped-api: already installed — restoreCappedApi() first')
   const realFrom = db.from
   const calls = []
   const KNOWN = new Set(['select', 'eq', 'in', 'gte', 'lte', 'is', 'not', 'order', 'limit', 'range', 'single', 'maybeSingle', 'then'])
   const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+  // Value of a column, following dotted paths through nested objects (to-one embeds); never through an array.
+  const get = (row, col) => {
+    if (col.indexOf('.') === -1) return row[col]
+    let o = row
+    for (const k of col.split('.')) {
+      if (Array.isArray(o)) throw new Error('capped-api: the filter path "' + col + '" crosses a to-many embed — not implemented')
+      o = o == null ? undefined : o[k]
+    }
+    return o
+  }
 
   db.from = function (table) {
     if (!Object.prototype.hasOwnProperty.call(tables, table)) {
@@ -55,6 +78,8 @@ function _installInPage({ tables, cap }) {
     const spec = tables[table]
     const q = { cols: '*', count: false, filters: [], orders: [], limit: null, range: null, mode: 'many' }
     const desc = []   // human-readable record of the calls, for assertions
+    // A filter on an embedded column excludes the parent only when every embed on its path is `!inner` (see the header).
+    const viaInner = (col) => col.indexOf('.') === -1 || col.split('.').slice(0, -1).every(seg => q.cols.indexOf(seg + '!inner') !== -1)
 
     const settle = () => {
       if (spec && !Array.isArray(spec) && spec.error) {
@@ -74,7 +99,7 @@ function _installInPage({ tables, cap }) {
       }
       rows = rows.map((r, i) => [r, i]).sort(([a, ia], [b, ib]) => {
         for (const o of q.orders) {
-          const av = a[o.col], bv = b[o.col]
+          const av = get(a, o.col), bv = get(b, o.col)
           if (av == null && bv == null) continue
           // Postgres: ASC puts NULLs last, DESC puts them first.
           if (av == null) return o.asc ? 1 : -1
@@ -82,7 +107,7 @@ function _installInPage({ tables, cap }) {
           const c = cmp(av, bv)
           if (c) return o.asc ? c : -c
         }
-        return tieKey(ia) - tieKey(ib)
+        return (unordered === 'insertion' && q.orders.length === 0) ? ia - ib : tieKey(ia) - tieKey(ib)
       }).map(([r]) => r)
       if (q.range && q.count && q.range.from > total) {
         calls.push({ table, desc, range: q.range, error: 'PGRST103' })
@@ -113,12 +138,12 @@ function _installInPage({ tables, cap }) {
         desc.push('select(' + q.cols + (q.count ? ', count' : '') + ')')
         return proxy
       },
-      eq(col, v) { desc.push('eq(' + col + ')'); q.filters.push(r => r[col] === v); return proxy },
-      in(col, arr) { desc.push('in(' + col + ')'); q.filters.push(r => arr.includes(r[col])); return proxy },
-      gte(col, v) { desc.push('gte(' + col + ')'); q.filters.push(r => r[col] != null && r[col] >= v); return proxy },
-      lte(col, v) { desc.push('lte(' + col + ')'); q.filters.push(r => r[col] != null && r[col] <= v); return proxy },
-      is(col, v) { if (v !== null) throw new Error('capped-api: is() only supports null'); desc.push('is(' + col + ',null)'); q.filters.push(r => r[col] == null); return proxy },
-      not(col, op, v) { if (op !== 'is' || v !== null) throw new Error('capped-api: not() only supports (col, "is", null)'); desc.push('not(' + col + ',is,null)'); q.filters.push(r => r[col] != null); return proxy },
+      eq(col, v) { desc.push('eq(' + col + ')'); q.filters.push(r => !viaInner(col) || get(r, col) === v); return proxy },
+      in(col, arr) { desc.push('in(' + col + ')'); q.filters.push(r => !viaInner(col) || arr.includes(get(r, col))); return proxy },
+      gte(col, v) { desc.push('gte(' + col + ')'); q.filters.push(r => !viaInner(col) || (get(r, col) != null && get(r, col) >= v)); return proxy },
+      lte(col, v) { desc.push('lte(' + col + ')'); q.filters.push(r => !viaInner(col) || (get(r, col) != null && get(r, col) <= v)); return proxy },
+      is(col, v) { if (v !== null) throw new Error('capped-api: is() only supports null'); desc.push('is(' + col + ',null)'); q.filters.push(r => !viaInner(col) || get(r, col) == null); return proxy },
+      not(col, op, v) { if (op !== 'is' || v !== null) throw new Error('capped-api: not() only supports (col, "is", null)'); desc.push('not(' + col + ',is,null)'); q.filters.push(r => !viaInner(col) || get(r, col) != null); return proxy },
       order(col, opts) { desc.push('order(' + col + ((opts && opts.ascending === false) ? ' desc' : '') + ')'); q.orders.push({ col, asc: !(opts && opts.ascending === false) }); return proxy },
       limit(n) { if (q.range) throw new Error('capped-api: limit() combined with range() is not implemented'); desc.push('limit(' + n + ')'); q.limit = n; return proxy },
       range(from, to) { if (q.limit != null) throw new Error('capped-api: limit() combined with range() is not implemented'); desc.push('range(' + from + ',' + to + ')'); q.range = { from, to }; return proxy },
@@ -138,8 +163,8 @@ function _installInPage({ tables, cap }) {
   window.__cappedApi = { realFrom, calls }
 }
 
-async function installCappedApi(page, tables, { cap = 200 } = {}) {
-  await page.evaluate(_installInPage, { tables, cap })
+async function installCappedApi(page, tables, { cap = 200, unordered = 'shuffled' } = {}) {
+  await page.evaluate(_installInPage, { tables, cap, unordered })
 }
 
 async function restoreCappedApi(page) {
