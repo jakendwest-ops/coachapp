@@ -5,6 +5,17 @@
 > code before acting on it — three items (ranks 11, 17, 19) already turned out to rest on premises the code
 > contradicts (see the R4 and R5 sections). The decisions and questions in it are Jake's.
 
+> **Progress (2026-09-20) — Release 1 is built locally; nothing else is.** The first line above is true of everything
+> EXCEPT Release 1 (ranks 1–3): five commits R1a `0615d2f`, R1b `fd3b116`, R1c `558f0aa`, R1d `bb3e80e`, R1e `5570aa9`,
+> each red-first with a neuter proof and a ledger closure (R1a, R1b, R1c, R1d closed on red→green evidence; R1e's
+> on-phone check is Jake's). A 3-angle `multi-agent-review` of R1b–R1e ran AFTER those commits and returned follow-ups
+> (a second periodisation sink, an unescaped `programName`, rest-timer and wake-lock edge cases), which are in the
+> follow-up commit that carries this note; R1a had its own review before ITS commit. **Not done and not decided:** the
+> release itself (full `npm test`, a review after the LAST commit, `docs/releases/<version>.md`, Jake's push/tag call),
+> and Jake's on-phone wake-lock check. New rows this work opened: `2026-09-20-workout-templates-insert-accepts-another-coachs-program-id`
+> (RLS gap, needs a schema read then a reviewed script), `…nine-save-functions-read-form-values-after-an-awaited-ownership-check`,
+> `…interval-and-count-in-timers-still-count-ticks`, `…runner-survives-a-session-ending-mid-workout-and-now-holds-the-wake-lock`.
+
 # START HERE: one ranked backlog across all four product reviews (2026-09-19)
 
 Nothing below is built. Order = what to do first, weighing evidence (Real beats Hypothesis), value, cost,
@@ -384,6 +395,13 @@ Its SQL adds `coach_reply`, `reviewed_at`, `reviewed_by`, the column-level UPDAT
 policy, the client DELETE-own policy and the server-stamping trigger. Do R1's colour fix (its Commit A)
 first. R3c's "needs review" reason and its Seen / Reply actions reuse R3a's `markCheckInSeen` /
 `replyToCheckIn`, which is why R3a comes before it.
+
+**Added 2026-09-20 (from the R1d review):** the R3a read-only schema query on `client_check_ins` must also settle the
+COLUMN TYPES of `sleep` / `energy` / `stress` / `soreness`. `renderClientOverview` prints them raw (`${latestCI[key]}/5`)
+and R1d's `_checkInTone` returns `null` (a neutral colour) for anything it cannot read as a number 1–5, so a text or
+out-of-range column would render silently un-coloured rather than wrongly — but nothing has confirmed the type. The two
+drift lists of check-in metrics (the form's inputs and the Overview's `CHECKIN_METRICS`) should fold into the one shared
+list when Commit B replaces the form.
 
 ## R3b — programme helpers, the "Week 15" hero, and a safe "Assign next block" (no SQL)
 

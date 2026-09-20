@@ -38,6 +38,8 @@ const CASES = [
     src: 'function render(cfg, w) {\n  return `<input value="${cfg.deloadWeek || Math.min(w, 4)}">`\n}' },
   { want: 'BLOCK', why: 'the cfg sink as element text, not only as an attribute',
     src: 'function render(cfg) {\n  return `<span>${cfg.tiers.heavy.reps}</span>`\n}' },
+  { want: 'BLOCK', why: 'a coach-typed programme name arriving as a PARAMETER (clientOverviewTab), which no member-name rule sees',
+    src: 'function tab(client, programName = null) {\n  return `<span class="p">${programName}</span>`\n}' },
 
   // -- must BLOCK: the forms the checker already owned (pin them so extending FREE_TEXT cannot loosen) --
   { want: 'BLOCK', why: 'raw .name in markup — the original stored-XSS shape',
@@ -54,6 +56,8 @@ const CASES = [
     src: 'function render(cfg, t, repsDefault) {\n  return `<input id="r-${t}" type="text" value="${escapeHtml(String(cfg.tiers?.[t]?.reps ?? repsDefault[t]))}">`\n}' },
   { want: 'PASS', why: 'a constant-valued conditional computed BEFORE the template carries no cfg. in the interpolation',
     src: 'function render(cfg) {\n  const deloadOn = !!cfg.deloadWeek\n  return `<input ${deloadOn ? \'checked\' : \'\'}>`\n}' },
+  { want: 'PASS', why: 'THE FIX SHAPE for the parameter form: escapeHtml(programName)',
+    src: 'function tab(client, programName = null) {\n  return `<span class="p">${escapeHtml(programName)}</span>`\n}' },
   { want: 'PASS', why: 'escapeHtml on .name in markup',
     src: 'function render(c) {\n  return `<div>${escapeHtml(c.name)}</div>`\n}' },
   { want: 'PASS', why: 'escapeAttr is CORRECT inside a JS string in a handler — must not be flagged',

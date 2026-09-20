@@ -355,7 +355,7 @@ function clientOverviewTab(client, programName = null) {
   return `
     <div class="card">
       <div class="card-body">
-        ${programName ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)"><span style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Active program</span><span style="font-size:var(--text-lg, 14px);font-weight:600;color:var(--accent)">${programName}</span></div>` : ''}
+        ${programName ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)"><span style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Active program</span><span style="font-size:var(--text-lg, 14px);font-weight:600;color:var(--accent)">${escapeHtml(programName)}</span></div>` : ''}
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:20px">
           ${infoItem('Status', `<span class="badge badge-${client.status}">${client.status}</span>`)}
           ${infoItem('Email', client.email ? escapeHtml(client.email) : '—')}

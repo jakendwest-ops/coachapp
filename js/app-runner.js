@@ -89,7 +89,11 @@ let _runnerWakeLock = null
 // will eventually be got wrong. (A first draft used `let _runnerWakeLockPending = false` with its own finally;
 // that spec refused it, correctly.)
 async function _runnerWakeLockOn() {
-  if (!_runner || _runner._wakeLockOff) return
+  // Only while a runner is actually ON SCREEN. _runner is assigned before renderRunner() in both start paths, so
+  // if that render throws (a malformed draft on the Resume path) _runner stays set with no overlay and nothing to
+  // discard it — and the visibilitychange handler below would otherwise take, and hold, the screen lock for a
+  // runner nobody can see (found by the R1b–R1e review, 2026-09-20).
+  if (!_runner || _runner._wakeLockOff || !document.getElementById('workout-runner')) return
   if (_runnerWakeLock && !_runnerWakeLock.released) return
   try {
     const lock = await navigator.wakeLock?.request?.('screen')
@@ -1693,6 +1697,12 @@ function _doneIntervalPhase() {
 }
 
 function startRestTimer(secs) {
+  // A rest is a positive number of seconds. 0, NaN, negatives and non-numbers become 1 s — what the old per-tick
+  // counter did with 0 (it finished on its first tick), where a NaN would otherwise re-anchor on every poll and
+  // run the display branch four times a second forever. A numeric string ("90") is honoured. Unreachable through
+  // today's callers (`restSecs || 90`; interval rest phases only exist when non-zero) — this is for the next one.
+  secs = Number(secs)
+  secs = Number.isFinite(secs) && secs > 0 ? Math.ceil(secs) : 1
   _runner._restInterval = clearTimer(_runner._restInterval)
   _runner.restRemaining = secs
   _runner.restTotal     = secs
@@ -1736,7 +1746,9 @@ function _restTick() {
     _runner._restShown = _runner.restRemaining
   }
   const remaining = Math.max(0, Math.ceil((_runner._restEndsAt - Date.now()) / 1000))
-  if (remaining === _runner._restShown) return       // still inside the same displayed second
+  // Still inside the same displayed second — EXCEPT at zero: a rest that reads 0 with its time up must finish
+  // (it did under the old counter). Without this, a rest written to 0 mid-rest returned here forever.
+  if (remaining === _runner._restShown && remaining > 0) return
   _runner.restRemaining = remaining
   _runner._restShown = remaining
   if (_runner.restRemaining <= 0) {

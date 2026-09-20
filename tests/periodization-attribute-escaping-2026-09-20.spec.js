@@ -27,6 +27,16 @@ test.describe('periodization modal renders stored config values as data, not mar
     window._openProgramPhases = [{ id: crypto.randomUUID(), name: 'Phase', duration_weeks: 6, periodization_type: type, periodization_config: config }]
     showPeriodizationModal(window._openProgramPhases[0].id, crypto.randomUUID())
     const body = document.getElementById('pz-body')
+    // A breakout handler only runs when ITS event fires. window.__xss used to be read straight after the render,
+    // before anything could have fired, so the "nothing executed" assertions could never fail (found by the
+    // R1b–R1e review, 2026-09-20). Fire the events an injected handler would be waiting for — a pointer passing
+    // over an input, and focus — and only THEN read the flag. (An injected <img onerror> is asynchronous; that
+    // case is carried by the injectedElements assertion.)
+    for (const input of body.querySelectorAll('input')) {
+      input.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      input.dispatchEvent(new MouseEvent('mouseenter'))
+      input.focus()
+    }
     const attrsOf = (id) => { const e = document.getElementById(id); return e ? e.getAttributeNames().sort() : null }
     const valueOf = (id) => document.getElementById(id)?.value ?? null
     return {

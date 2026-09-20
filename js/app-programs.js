@@ -1102,11 +1102,17 @@ async function _buildProgramTemplatePool(templates) {
 // slab). The Configure / Generate actions moved to a compact button row below the header.
 function _periodizationLabel(ph) {
   const c = ph.periodization_config
+  // The result is interpolated RAW into the phase header (openProgram), and its inputs come from
+  // periodization_config — an UNTYPED jsonb column — so every value is escaped HERE, at the source. The
+  // escaping checker cannot follow a taint across a function return, and this reader aliases the config as `c`
+  // rather than `cfg`, which is how it sat unflagged beside the modal it shares a column with until two
+  // independent reviewers found it (2026-09-20). String() first: escapeHtml(0) alone would return ''.
+  const esc = v => escapeHtml(String(v))
   if (ph.periodization_type === 'linear') {
-    return `Linear${c?.startPct != null && c?.endPct != null ? ` ${c.startPct}→${c.endPct}%` : ''}`
+    return `Linear${c?.startPct != null && c?.endPct != null ? ` ${esc(c.startPct)}→${esc(c.endPct)}%` : ''}`
   }
   if (ph.periodization_type === 'undulating') {
-    return `Undulating${c?.tiers ? ` (${['heavy', 'moderate', 'light'].filter(t => c.tiers[t]?.pct != null).map(t => c.tiers[t].pct + '%').join('/')})` : ''}`
+    return `Undulating${c?.tiers ? ` (${['heavy', 'moderate', 'light'].filter(t => c.tiers[t]?.pct != null).map(t => esc(c.tiers[t].pct) + '%').join('/')})` : ''}`
   }
   return null
 }

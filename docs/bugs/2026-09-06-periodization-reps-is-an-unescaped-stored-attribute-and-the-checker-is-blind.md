@@ -94,3 +94,40 @@ first loop did), so an example written in a comment was flagged as code — its 
 **Neuter proofs** (scratch copies; the repo checker was never modified by them): drop `cfg.` from the list → exactly
 cases 0–3 go red; drop the comment skip → exactly case 13 goes red. The self-test is wired into `checks.sh` beside
 rule 9d and blocks on its own failure.
+
+---
+
+## 2026-09-20 (later, same day) — the class sweep above missed a second sink; found by review, fixed
+
+**What I got wrong.** The resolution above says the `cfg.*` values were the whole class and that `cfg.` occurs only in
+the modal. That was true of the *name* and false of the *column*: `program_phases.periodization_config` is an untyped
+jsonb column with more than one reader. `_periodizationLabel(ph)` (`js/app-programs.js`) reads the same config as `c`,
+and its result — `Linear 60→80%`, `Undulating (85%/75%/65%)` — is interpolated **raw** into the phase header by
+`openProgram`. `startPct`, `endPct` and the tier `pct` values are numbers *in the modal*, but the column does not
+enforce that: a stored `"<img src=x onerror=…>"` there rendered as a live element every time the programme was opened,
+not only when the modal was. Same direction as the row (coach → the same coach), same class. Two independent reviewers
+(Agents A and C of the R1b–R1e review) found it separately.
+
+**Why the sweep missed it.** It was keyed on the variable name `cfg`, and this reader aliases the object as `c`. Sweeping
+by name finds the sites that use the name; sweeping by *column* finds the readers. The right sweep was
+`grep -n periodization_config js/*.js` and reading every reader — I did that for the writers and the modal, not for the
+label helper.
+
+**Fix, at the source.** `_periodizationLabel` escapes each stored value with `escapeHtml(String(v))` (the `String()` is
+load-bearing: `escapeHtml(0)` returns `''`, and a real `0` percent must still print). It is escaped where the value
+enters the string rather than at the one call site, because the string is then composed and the checker cannot follow a
+taint across a function return.
+
+**Evidence.** `tests/review-followups-2026-09-20.spec.js`: hostile `startPct` / `tiers.heavy.pct` created a live `<img>`
+in the built label on the unfixed code (red), escaped text after (green); the mirror — honest numeric and `0` values —
+prints exactly as before under both.
+
+**The column, swept this time (read-only, 2026-09-20).** `grep -n periodization_config js/*.js` — every reader of the
+column: the two that put it in markup are the modal (`renderPeriodizationBody`, fixed 2026-09-20) and this label (fixed
+above); `generatePhasePeriodization` feeds it to `_computePeriodizedPct`, which produces numbers, not markup (a
+non-numeric stored value gives `NaN` in a generated workout — a data-quality matter, not an injection); the copy path
+(`copyProgramToCoaching`) and the two selects only pass the value through unrendered. So the render-side class for this
+column is now closed by reading, not by name.
+
+**Named, not fixed.** The checker stays name-keyed; this sink stays outside its reach (its comment now says so). Other
+untyped jsonb columns (`sets_json` and friends) were not swept by column in this pass.

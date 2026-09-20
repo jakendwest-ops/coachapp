@@ -143,6 +143,24 @@ test.describe('runner wake lock and end-time rest timer', () => {
     expect(r.toast, 'and must never interrupt a workout with a toast').toBe('')
   })
 
+  // From the review (B, 2026-09-20). _runner is assigned BEFORE renderRunner() runs in both start paths, so
+  // if that render ever throws (e.g. a malformed localStorage draft on the Resume path) _runner stays set with
+  // no #workout-runner on screen and nothing to discard it. Before the wake lock a stale _runner was inert;
+  // now the visibilitychange handler would take the screen lock and hold it. The lock is only wanted while a
+  // runner is actually on screen.
+  test('WAKE LOCK: a stale runner (its overlay is gone) does not take the lock on return to the tab', async ({ page }) => {
+    await installWakeLock(page)
+    await startRunner(page)
+    await expect.poll(async () => (await wl(page)).held).toBe(1)
+    const requestsAfter = await page.evaluate(() => {
+      const s = window.__wl.sentinels[0]; s.released = true; s.dispatchEvent(new Event('release'))   // the browser drops it
+      document.getElementById('workout-runner').remove()                                            // …and the runner is no longer on screen
+      document.dispatchEvent(new Event('visibilitychange'))                                          // request() is called synchronously
+      return window.__wl.requests.length
+    })
+    expect(requestsAfter, 'no second request for a runner nobody can see').toBe(1)
+  })
+
   // ── REST TIMER ────────────────────────────────────────────────────────────────────────────────
   // Starts the runner under a fake clock, logs a set (which starts the 90 s rest from the fixture's
   // "1:30"), then PAUSES the clock so the numbers below are deterministic.
@@ -157,21 +175,25 @@ test.describe('runner wake lock and end-time rest timer', () => {
       _runner._afterRest = () => { window.__afterRest++ }
     })
     const now = await page.evaluate(() => Date.now())
-    await page.clock.pauseAt(new Date(now + 50))
+    // A generous margin: pauseAt throws "Cannot fast-forward to the past" if its target is already behind the
+    // (still flowing) clock, and the two round trips above can take longer than a tight 50 ms. It fast-forwards
+    // to that time firing due timers once, so the rest reads ~88 afterwards — every assertion below is
+    // RELATIVE to the `start` value returned here, never an absolute number.
+    await page.clock.pauseAt(new Date(now + 2000))
     const start = await page.evaluate(() => _runner.restRemaining)
-    expect(start, 'the fixture asks for a 90 s rest').toBeGreaterThanOrEqual(88)
+    expect(start, 'the fixture asks for a 90 s rest').toBeGreaterThanOrEqual(84)
     return start
   }
   const remaining = (page) => page.evaluate(() => _runner.restRemaining)
 
   test('REST: a phone locked for 60 s of a 90 s rest wakes to ~30 s left, and the display agrees', async ({ page }) => {
-    await restingRunner(page)
+    const start = await restingRunner(page)
     await page.clock.fastForward(60000)                 // due timers fire ONCE, as when a suspended tab wakes
     const left = await remaining(page)
-    expect(left, `about 30 s should remain (a tick counter says ~89; got ${left})`).toBeGreaterThanOrEqual(27)
-    expect(left).toBeLessThanOrEqual(31)
+    expect(left, `60 s should come off (a tick counter takes ~1; started ${start}, got ${left})`).toBeGreaterThanOrEqual(start - 62)
+    expect(left).toBeLessThanOrEqual(start - 58)
     const shown = await page.evaluate(() => document.getElementById('rt-countdown')?.textContent || '')
-    expect(shown, 'the on-screen countdown shows the same time').toMatch(/^0:(2[7-9]|3[01])$/)
+    expect(shown, 'the on-screen countdown shows the same time').toBe(`0:${String(left).padStart(2, '0')}`)
   })
 
   test('REST: a phone locked past the end fires the finish exactly once on return', async ({ page }) => {
@@ -185,14 +207,14 @@ test.describe('runner wake lock and end-time rest timer', () => {
   })
 
   test('REST: a tab frozen by the OS is corrected the moment it becomes visible, before any timer runs', async ({ page }) => {
-    await restingRunner(page)
+    const start = await restingRunner(page)
     const now = await page.evaluate(() => Date.now())
     await page.clock.setSystemTime(new Date(now + 60000))   // time moves; NO timer fires
-    expect(await remaining(page), 'nothing has ticked yet').toBeGreaterThanOrEqual(85)
+    expect(await remaining(page), 'nothing has ticked yet').toBe(start)
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
     const left = await remaining(page)
-    expect(left, `visibilitychange must re-derive the countdown immediately (got ${left})`).toBeGreaterThanOrEqual(27)
-    expect(left).toBeLessThanOrEqual(31)
+    expect(left, `visibilitychange must re-derive the countdown immediately (started ${start}, got ${left})`).toBeGreaterThanOrEqual(start - 62)
+    expect(left).toBeLessThanOrEqual(start - 58)
   })
 
   test('MIRROR: in normal use a rest still counts down about one second per second, and finishes once', async ({ page }) => {
@@ -218,5 +240,42 @@ test.describe('runner wake lock and end-time rest timer', () => {
     expect(r.after, 'skipping fires the queued step once').toBe(1)
     await page.clock.runFor(120000)
     expect(await page.evaluate(() => window.__afterRest), 'and nothing fires afterwards').toBe(1)
+  })
+
+  // From the review (B and C, 2026-09-20). The old tick-counter finished a 0 s rest on its first tick
+  // (0 - 1 <= 0). The end-time version compared "remaining" with "what is shown" and returned when they were
+  // equal — so a rest that STARTS at 0 (or is written to 0 mid-rest) never finished: the interval stayed live,
+  // the queued next step never fired, and logging stayed blocked (it tests _restInterval). Unreachable through
+  // today's callers (they pass `restSecs || 90`; interval rest phases only exist when non-zero), so this pins
+  // the old behaviour for the next caller rather than fixing a live bug. NaN would also have re-anchored and run
+  // the display branch four times a second forever.
+  test('REST: a degenerate rest (0, NaN, or written to 0 mid-rest) still finishes once, as the old counter did', async ({ page }) => {
+    await page.clock.install({ time: new Date() })
+    await startRunner(page)
+    const run = async (label, setup) => {
+      await page.evaluate((setupSrc) => {
+        window.__afterRest = 0
+        _runner._afterRest = () => { window.__afterRest++ }
+        new Function(setupSrc)()
+      }, setup)
+      await page.clock.fastForward(2000)                // one due tick fires; a 1 s rest is over by then
+      const r = await page.evaluate(() => ({ left: _runner.restRemaining, after: window.__afterRest, interval: _runner._restInterval }))
+      expect.soft(r.left, `${label}: the rest is over`).toBeNull()
+      expect.soft(r.after, `${label}: the queued step fired once`).toBe(1)
+      expect.soft(r.interval, `${label}: no timer is left running`).toBeNull()
+    }
+    await run('startRestTimer(0)', 'startRestTimer(0)')
+    await run('startRestTimer(NaN)', 'startRestTimer(NaN)')
+    await run('restRemaining written to 0 mid-rest', 'startRestTimer(90); _runner.restRemaining = 0')
+  })
+
+  test('MIRROR: a numeric-string duration is honoured, not mistaken for garbage', async ({ page }) => {
+    await page.clock.install({ time: new Date() })
+    await startRunner(page)
+    const r = await page.evaluate(() => { startRestTimer('90'); return { left: _runner.restRemaining, total: _runner.restTotal } })
+    // Number(): the OLD code stored the string as-is, the new code stores a number — the invariant is only that
+    // "90" is honoured as 90 s, not mistaken for garbage and clamped to 1.
+    expect(Number(r.left), 'a "90" is 90 s, not clamped to 1').toBeGreaterThanOrEqual(89)
+    expect(Number(r.total)).toBeGreaterThanOrEqual(89)
   })
 })

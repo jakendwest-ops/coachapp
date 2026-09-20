@@ -228,6 +228,14 @@ continue appending future entries here, not in a separate file._
   `2026-09-20-workout-templates-insert-accepts-another-coachs-program-id`, needs a schema read and a reviewed
   policy script. **Lesson:** probe each write of a multi-write function separately; "RLS backstops it" had been
   assumed for both.
+- 2026-09-20: **The 8th instance's class sweep missed two more unescaped renders — both found by review, not by the
+  checker.** (1) The sweep was keyed on the variable name `cfg`; the same untyped jsonb column
+  (`periodization_config`) has a second reader, `_periodizationLabel`, that aliases it as `c` and renders raw into the
+  phase header. (2) `clientOverviewTab` interpolated `programName` — a coach-typed programme name arriving as a
+  function PARAMETER — with no escaper (9th instance; coach → the same coach, so low). Both fixed red→green
+  (`tests/review-followups-2026-09-20.spec.js`). **Lesson:** sweep a class by the COLUMN (`grep` every reader of it)
+  and by every value that reaches a template, not by the name the first site happened to use; and a name-keyed checker
+  cannot see a taint that crosses a function return or arrives under an unlisted name — its header now says so.
 
 ## Requires Validation
 

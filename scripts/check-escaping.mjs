@@ -39,7 +39,14 @@ const FILES = process.argv.slice(2)
 // them the cross-user class, and a rule that cries wolf gets switched off. `cfg.` matches only the
 // periodization modal (8 interpolations, all now escaped). Known limit: keyed on the variable NAME.
 // scripts/check-escaping.selftest.mjs holds the RED proof and the must-not-flag cases.
-const FREE_TEXT = /(full_name|exercise_name|client_notes|clientNotes|day_label|clientMap\[|\.name\b|\.title\b|\.notes\b|\.description\b|\.email\b|\.unit\b|\bcfg\.)/
+//
+// `programName` (added 2026-09-20, from the R1b–R1e review) is a coach-typed programme name that reaches
+// clientOverviewTab as a PARAMETER — so no member-name entry above ever matched it, and it rendered raw. Keyed
+// on the parameter's NAME, like `cfg.`: measured before it shipped — 0 findings over the fixed tree, and exactly
+// the committed sink over the unfixed one. KNOWN LIMITS this file cannot close, so they are stated rather than
+// implied: a taint that crosses a function RETURN (see _periodizationLabel, escaped at its source instead) or
+// arrives under a name not listed here is invisible to a name-keyed rule.
+const FREE_TEXT = /(full_name|exercise_name|client_notes|clientNotes|day_label|clientMap\[|\.name\b|\.title\b|\.notes\b|\.description\b|\.email\b|\.unit\b|\bcfg\.|\bprogramName\b)/
 
 const ESCAPED = /escapeHtml\(|escapeAttr\(|jsArg\(|encodeURIComponent\(/
 // Not sinks: a single character can't form a tag; a comparison isn't rendered.
