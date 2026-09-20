@@ -1285,13 +1285,36 @@ async function saveNewTemplate() {
   const errorEl = document.getElementById('ct-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
-  log.info('saveNewTemplate', 'creating template', {})
+  // Every DOM and role read is snapshotted HERE, before the first await, like `name` above. The guard
+  // below costs two round-trips; a Cancel / ✕ / navigation inside that window removes the modal, and
+  // reading #ct-desc afterwards threw a TypeError after the guard had passed (all three review angles
+  // found it, 2026-09-20). The role is snapshotted for the same reason as saveTemplateDraft's: a role
+  // read after an await can belong to a different view than the one the user pressed Create in.
+  const description = document.getElementById('ct-desc').value.trim() || null
+  const isPersonal = currentProfile?.role === 'solo'
   const ctx = window._phaseWorkoutContext
+  // Ownership BEFORE the first write, and on the PAIR. With a programme context this function writes
+  // twice using ids it was handed: a workout_templates row stamped with ctx.programId, then a
+  // program_phase_workouts row keyed on ctx.phaseId. Neither was verified. Measured 2026-09-20
+  // (tests/savenewtemplate-ownership-2026-09-20.spec.js, red first): RLS refuses the SECOND write for a
+  // foreign coach but NOT the first — another coach's programme id was accepted into
+  // workout_templates.program_id — and for two programmes of MY OWN it allows both, so only the pair
+  // assertion in _verifyPhaseOwnership stops a template stamped with programme B being slotted into
+  // programme A's phase. Mirrors _quickAssignPhaseWorkout.
+  // Ledger: docs/bugs/2026-09-18-savenewtemplate-writes-program_phase_workouts-with-no-ownership-check.md
+  if (ctx?.programId) {
+    const owned = ctx.phaseId
+      ? await _verifyPhaseOwnership('saveNewTemplate', ctx.phaseId, ctx.programId)
+      : await _verifyProgramOwnership('saveNewTemplate', ctx.programId)
+    if (!owned) { errorEl.textContent = 'Could not create — permission denied.'; return }
+  }
+
+  log.info('saveNewTemplate', 'creating template', {})
   const { data, error } = await db.from('workout_templates').insert({
     coach_id:    currentUser.id,
-    is_personal: currentProfile?.role === 'solo',
+    is_personal: isPersonal,
     name,
-    description: document.getElementById('ct-desc').value.trim() || null,
+    description,
     program_id:  ctx?.programId || null
   }).select().single()
 
