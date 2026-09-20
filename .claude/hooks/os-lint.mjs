@@ -543,7 +543,9 @@ const REL_PATH  = new RegExp(`\\b(?:js|tests|scripts|css|docs)/[\\w.-]+\\.${EXT}
 
 // Paths that are SUPPOSED not to exist. The throwaway ad-hoc spec is created, used and deleted
 // within a single check (and is gitignored) — a skill documenting it is correct, not stale.
-const EPHEMERAL = [/tests\/_adhoc\.spec\.js$/]
+// `_adhoc.spec.js` is the OLD name: playwright.config.js's testIgnore excludes `_adhoc*`, so it cannot be
+// run (0 tests found, verified 2026-09-20). The skills now say `_debug-adhoc.spec.js` — gitignored, runnable.
+const EPHEMERAL = [/tests\/_adhoc\.spec\.js$/, /tests\/_debug-adhoc\.spec\.js$/]
 
 function checkDeadFiles () {
   const hits = []

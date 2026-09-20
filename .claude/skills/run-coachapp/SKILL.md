@@ -36,7 +36,7 @@ Use **Playwright**, via a throwaway spec. This reuses the real config (390×844 
 `baseURL` localhost:3001) and the real login helpers — no new infrastructure, no auth to reinvent.
 
 ```js
-// tests/_adhoc.spec.js  — gitignored; DELETE IT when you're done
+// tests/_debug-adhoc.spec.js  — gitignored; DELETE IT when you're done
 const { test, expect } = require('@playwright/test')
 const { loginAsPT, loginAsClient, loginAsPT2 } = require('./helpers')
 
@@ -50,11 +50,16 @@ test('adhoc', async ({ page }) => {
 ```
 
 ```bash
-npx playwright test tests/_adhoc.spec.js --reporter=list
+npx playwright test tests/_debug-adhoc.spec.js --reporter=list
 ```
 
 Then `Read` the PNG to actually look at it. **Delete the spec afterwards** — it is gitignored so it can
-never be committed, but a stray one will still confuse the next session.
+never be committed, but a leftover one is still picked up by `npm test`, and OneDrive can bring a deleted
+probe back (`ls tests | grep -E '^(_debug-|_adhoc|zz-)'` before any commit).
+
+**Why `_debug-adhoc`, not `_adhoc`:** `playwright.config.js` lists `_adhoc*` in `testIgnore`, so
+`npx playwright test tests/_adhoc.spec.js` finds **0 tests** (verified 2026-09-20). `_debug-*` is gitignored
+but is not ignored by the runner.
 
 - **Different viewport?** Pass it in the test: `test.use({ viewport: { width: 1280, height: 800 } })`.
 - **Console errors?** `page.on('pageerror', e => console.log('PAGEERROR', e.message))` — this is how the

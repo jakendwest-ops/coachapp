@@ -47,7 +47,7 @@ Resolved 2026-07-13 — there is one mobile width now, and it is 390.)
 Write a throwaway spec (see the `run-coachapp` skill for the full pattern), then **look at the screenshot**:
 
 ```js
-// tests/_adhoc.spec.js — gitignored; delete when done
+// tests/_debug-adhoc.spec.js — gitignored; delete when done (NOT _adhoc*: the runner ignores it — see run-coachapp)
 const { test } = require('@playwright/test')
 const { loginAsPT } = require('./helpers')
 
@@ -61,7 +61,7 @@ test('mobile check', async ({ page }) => {          // 390×844 comes from playw
 ```
 
 ```bash
-npx playwright test tests/_adhoc.spec.js --reporter=list
+npx playwright test tests/_debug-adhoc.spec.js --reporter=list
 ```
 
 `Read` the PNG. A passing assertion is not a mobile check — **you have to look at it.** Check for
