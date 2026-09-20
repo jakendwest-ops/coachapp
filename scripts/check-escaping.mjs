@@ -28,7 +28,18 @@ const FILES = process.argv.slice(2)
 
 // Fields that hold text a human typed. `.label` is deliberately ABSENT: in this repo every `.label` is
 // a hardcoded constant (eventStyle, PERF_CATEGORIES, the runner's target columns, trend metrics).
-const FREE_TEXT = /(full_name|exercise_name|client_notes|clientNotes|day_label|clientMap\[|\.name\b|\.title\b|\.notes\b|\.description\b|\.email\b|\.unit\b)/
+//
+// `cfg.` (added 2026-09-20) is the periodization config object — window._pzConfig, the phase's
+// periodization_config jsonb, an UNTYPED column — so every value read from it is text until proven
+// otherwise. It is why the checker exited 0 over bugs/2026-09-06-periodization-reps-is-an-unescaped-
+// stored-attribute: `cfg.tiers?.[t]?.reps ?? repsDefault[t]` contained none of the names above, so the
+// interpolation was never a candidate. (The syntax was never the problem; the allowlist was.)
+// KEYED ON THE OBJECT, NOT ON `.reps`, deliberately. Measured over js/ before this shipped: `.reps` would
+// have flagged 3 runner sites — `s.reps||'—'`, a `type="number"` value, and a parseInt result — none of
+// them the cross-user class, and a rule that cries wolf gets switched off. `cfg.` matches only the
+// periodization modal (8 interpolations, all now escaped). Known limit: keyed on the variable NAME.
+// scripts/check-escaping.selftest.mjs holds the RED proof and the must-not-flag cases.
+const FREE_TEXT = /(full_name|exercise_name|client_notes|clientNotes|day_label|clientMap\[|\.name\b|\.title\b|\.notes\b|\.description\b|\.email\b|\.unit\b|\bcfg\.)/
 
 const ESCAPED = /escapeHtml\(|escapeAttr\(|jsArg\(|encodeURIComponent\(/
 // Not sinks: a single character can't form a tag; a comparison isn't rendered.
@@ -111,6 +122,11 @@ for (const file of FILES) {
   // app-programs.js that it finds with this split — a trailing \r was breaking the assignment match.
   // Changed here too rather than only in the new code, because the same latent weakness applied.
   src.split(/\r?\n/).forEach((line, i) => {
+    // A full-line comment is documentation, never a sink. The one-hop loop above already skips them; this
+    // loop did not, so an example written in a comment was flagged as if it were code — the docstring below
+    // even spells its own example as "<interp>" to dodge that. Found by scripts/check-escaping.selftest.mjs
+    // (2026-09-20). Only whole-line `//` comments: a trailing comment after code, and any code, is unaffected.
+    if (/^\s*\/\//.test(line)) return
     // Point 3 of the docstring, finally implemented. It was stated as a design goal from the start
     // but never written, and ESCAPED below whitelists escapeAttr unconditionally — so every misuse
     // passed. That gap shipped this bug TWICE: commit 9d0003b (2026-08-12), and again in the Per

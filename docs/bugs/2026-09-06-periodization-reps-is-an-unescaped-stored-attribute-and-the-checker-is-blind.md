@@ -1,9 +1,10 @@
 ---
 id: 2026-09-06-periodization-reps-is-an-unescaped-stored-attribute-and-the-checker-is-blind
-status: open
+status: closed
 priority: high
+closed_by: tests/periodization-attribute-escaping-2026-09-20.spec.js, scripts/check-escaping.selftest.mjs
 reported: 2026-09-06
-status_detail: "8th instance of the unescaped-render class, found by the 2026-09-06 full-file review (Agent C) and verified. js/app-programs.js:1744 interpolates free-text periodization reps into a plain value=\"\" with NO escaper; it round-trips through program_phases.periodization_config. scripts/check-escaping.mjs reports CLEAN over it — the checker is blind to this form, which matters more than the single site. Class swept: 45 sites of the shape, 1 exploitable."
+status_detail: "CLOSED 2026-09-20 on rule-(b) evidence, in the order this row demanded: the checker shown RED on the form first, then the sites escaped, then green — see the resolution at the bottom. Originally: 8th instance of the unescaped-render class, found by the 2026-09-06 full-file review (Agent C) and verified. js/app-programs.js:1744 interpolates free-text periodization reps into a plain value=\"\" with NO escaper; it round-trips through program_phases.periodization_config. scripts/check-escaping.mjs reports CLEAN over it — the checker is blind to this form, which matters more than the single site. Class swept: 45 sites of the shape, 1 exploitable."
 ---
 
 # Periodization "reps" is an unescaped stored attribute — and `check-escaping.mjs` does not see it
@@ -53,3 +54,43 @@ a quote. Named here so nobody re-derives them as findings later.
 **Closes when** (a) `check-escaping.mjs` is shown RED on this exact syntactic form FIRST, then (b) the
 site is escaped and the checker goes green — in that order. Fixing the site alone leaves the blind spot
 and the next instance unfound, which is how this class reached eight.
+
+---
+
+## 2026-09-20 — fixed; closed on rule-(b) evidence
+
+**In the order the row demanded.**
+
+1. *Checker shown RED on the form first.* The new `scripts/check-escaping.selftest.mjs` (16 cases, 8 must-block / 8
+   must-pass) ran against the UNCHANGED checker: exactly the four `cfg.` cases went red (the tier `reps` sink, a
+   numeric `cfg` field, an `||` fallback, and the value as element text); the 12 existing-form cases already
+   behaved. The render spec (`tests/periodization-attribute-escaping-2026-09-20.spec.js`) went red on the three
+   hostile-input tests against the unchanged code.
+2. *Sites escaped, checker taught.* The 6 `cfg.*` values that reach an attribute in `renderPeriodizationBody` now go
+   through `escapeHtml(String(...))`; the 2 conditionals (`deloadWeek ? 'checked' : ''`, `? 'grid' : 'none'`) are
+   computed once into a local so the template interpolates a constant.
+3. *Green.* The self-test passes (16 behaved), the checker is clean over the real `js/` tree, the render spec passes
+   (5), and 47 specs across the periodisation, escaper round-trip, builder and programme files pass.
+
+**The row's open question is answered.** It said *which part defeats the rule is unverified — the checker's internals
+were not read.* Nothing about the syntax did: `FREE_TEXT` (the checker's hand-written list of field names that hold
+human text) simply did not contain any name in `cfg.tiers?.[t]?.reps ?? repsDefault[t]`, so the interpolation was
+never a candidate. `cfg.` is now on the list.
+
+**Why `cfg.` and not `.reps`.** The row proposed extending the list with `.reps`. Measured over `js/` first: `.reps`
+would flag 3 runner sites (`s.reps||'—'`, a `type="number"` value, and a `parseInt` result) that are not the
+cross-user class — the row itself names the number inputs as safe. A rule that cries wolf gets switched off, so it is
+keyed on the object instead; `cfg.` occurs only in this modal (8 interpolations). Limit: keyed on the variable *name*.
+
+**What the bug actually did** (recorded from the red run): a stored `foo" onmouseover="…` added live `onmouseover`
+and `data-x` attributes to the input, and a value with a plain quote in it — `it's "10-12" & 3<4` — was truncated to
+`it's ` with stray attributes. So it also corrupted *honest* input containing a double quote, and saving the modal
+would then have stored the corrupted value.
+
+**One more thing the self-test found.** `check-escaping.mjs`'s main loop did not skip full-line `//` comments (its
+first loop did), so an example written in a comment was flagged as code — its own docstring spells its example as
+`<interp>` to dodge that. Made consistent; the tree stays clean and a self-test case pins it.
+
+**Neuter proofs** (scratch copies; the repo checker was never modified by them): drop `cfg.` from the list → exactly
+cases 0–3 go red; drop the comment skip → exactly case 13 goes red. The self-test is wired into `checks.sh` beside
+rule 9d and blocks on its own failure.

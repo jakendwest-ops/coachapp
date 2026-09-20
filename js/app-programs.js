@@ -1729,7 +1729,15 @@ function renderPeriodizationBody(durationWeeks) {
   const body = document.getElementById('pz-body')
   if (!body) return
   const type = window._pzType
+  // cfg is the phase's periodization_config — an UNTYPED jsonb column, so every value read from it is
+  // text until proven otherwise (bugs/2026-09-06-periodization-reps-is-an-unescaped-stored-attribute...:
+  // a stored `foo" onmouseover="…` broke out of value="" and landed a live handler on the input, and even a
+  // plain quote in a reps string truncated the field). Each cfg.* reaching an attribute goes through
+  // escapeHtml(String(...)) — escapeHtml, NOT escapeAttr, which is only for a JS string inside a handler —
+  // and check-escaping.mjs now treats `cfg.` as free text. Conditionals are computed here, once, so the
+  // template interpolates a constant rather than a cfg expression.
   const cfg = window._pzConfig || {}
+  const deloadOn = !!cfg.deloadWeek
   const tierDefault = { heavy: 85, moderate: 70, light: 55 }
   const repsDefault = { heavy: '3-5', moderate: '6-8', light: '10-12' }
   const tog = (label, val) => `<button type="button" onclick="setPeriodizationType('${val}',${durationWeeks})" style="padding:6px 14px;font-size:12px;font-weight:700;border-radius:6px;border:1px solid ${type===val?'var(--accent)':'#d1d5db'};background:${type===val?'var(--accent)':'transparent'};color:${type===val?'white':'#6b7280'};cursor:pointer">${label}</button>`
@@ -1742,18 +1750,18 @@ function renderPeriodizationBody(durationWeeks) {
     ${type === 'linear' ? `
       <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">Intensity steps evenly from the start % to the end % across ${durationWeeks} weeks. Every %1RM set in Week 1 is regenerated per week — reps, rest and tempo stay exactly as you set them.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div class="field"><label class="field-label">Start %1RM</label><input class="field-input" id="pz-start" type="number" min="1" max="100" value="${cfg.startPct ?? 65}"></div>
-        <div class="field"><label class="field-label">End %1RM</label><input class="field-input" id="pz-end" type="number" min="1" max="100" value="${cfg.endPct ?? 85}"></div>
+        <div class="field"><label class="field-label">Start %1RM</label><input class="field-input" id="pz-start" type="number" min="1" max="100" value="${escapeHtml(String(cfg.startPct ?? 65))}"></div>
+        <div class="field"><label class="field-label">End %1RM</label><input class="field-input" id="pz-end" type="number" min="1" max="100" value="${escapeHtml(String(cfg.endPct ?? 85))}"></div>
       </div>
       <div class="field">
         <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-base, 13px);font-weight:600;cursor:pointer">
-          <input type="checkbox" id="pz-deload-on" ${cfg.deloadWeek ? 'checked' : ''} onchange="document.getElementById('pz-deload-fields').style.display=this.checked?'grid':'none'">
+          <input type="checkbox" id="pz-deload-on" ${deloadOn ? 'checked' : ''} onchange="document.getElementById('pz-deload-fields').style.display=this.checked?'grid':'none'">
           Add a deload week
         </label>
       </div>
-      <div id="pz-deload-fields" style="display:${cfg.deloadWeek ? 'grid' : 'none'};grid-template-columns:1fr 1fr;gap:10px">
-        <div class="field"><label class="field-label">Deload week #</label><input class="field-input" id="pz-deload-week" type="number" min="2" max="${durationWeeks}" value="${cfg.deloadWeek || Math.min(durationWeeks, 4)}"></div>
-        <div class="field"><label class="field-label">Deload %1RM</label><input class="field-input" id="pz-deload-pct" type="number" min="1" max="100" value="${cfg.deloadPct ?? 50}"></div>
+      <div id="pz-deload-fields" style="display:${deloadOn ? 'grid' : 'none'};grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label class="field-label">Deload week #</label><input class="field-input" id="pz-deload-week" type="number" min="2" max="${durationWeeks}" value="${escapeHtml(String(cfg.deloadWeek || Math.min(durationWeeks, 4)))}"></div>
+        <div class="field"><label class="field-label">Deload %1RM</label><input class="field-input" id="pz-deload-pct" type="number" min="1" max="100" value="${escapeHtml(String(cfg.deloadPct ?? 50))}"></div>
       </div>
     ` : ''}
     ${type === 'undulating' ? `
@@ -1762,8 +1770,8 @@ function renderPeriodizationBody(durationWeeks) {
         ${['heavy', 'moderate', 'light'].map(t => `
           <div style="display:grid;grid-template-columns:70px 1fr 1fr;gap:8px;align-items:center;margin-bottom:6px">
             <span style="font-size:var(--text-md, 12px);font-weight:700;text-transform:capitalize">${t}</span>
-            <input class="field-input" id="pz-tier-${t}-pct" type="number" min="1" max="100" placeholder="%1RM" value="${cfg.tiers?.[t]?.pct ?? tierDefault[t]}">
-            <input class="field-input" id="pz-tier-${t}-reps" type="text" placeholder="Reps e.g. 3-5" value="${cfg.tiers?.[t]?.reps ?? repsDefault[t]}">
+            <input class="field-input" id="pz-tier-${t}-pct" type="number" min="1" max="100" placeholder="%1RM" value="${escapeHtml(String(cfg.tiers?.[t]?.pct ?? tierDefault[t]))}">
+            <input class="field-input" id="pz-tier-${t}-reps" type="text" placeholder="Reps e.g. 3-5" value="${escapeHtml(String(cfg.tiers?.[t]?.reps ?? repsDefault[t]))}">
           </div>`).join('')}
       </div>
       <div id="pz-day-tiers"><div style="color:var(--text-muted);font-size:var(--text-md, 12px)">Loading Week 1 sessions…</div></div>

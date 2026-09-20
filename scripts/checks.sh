@@ -350,6 +350,14 @@ fi
 # value="" attribute. Two inline-grep versions got one of those wrong each, and both reported clean
 # while real sinks sat in the tree.
 echo "Checking for unescaped free-text interpolation..."
+# Self-test FIRST and blocking, same as the other checkers. Until 2026-09-20 this checker had none, so
+# nothing had ever shown it RED on the periodization `cfg.` sink and it exited 0 over a live stored-attribute
+# injection. The self-test holds that RED proof and the must-not-flag cases (a generic `.reps` rule was
+# measured to cry wolf on the runner, so it is deliberately not one).
+if ! node scripts/check-escaping.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-escaping.selftest.mjs 2>&1 | sed 's/^/    /'
+  fail "check-escaping self-test FAILED -- the escaping gate can no longer be trusted, fix it before relying on the result below."
+fi
 if ! node scripts/check-escaping.mjs $FILES; then
   fail "unescaped free-text interpolation(s) -- see the paths above"
 fi
