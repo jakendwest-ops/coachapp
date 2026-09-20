@@ -37,3 +37,13 @@ with the wizard on 2026-08-11.
 **Closes when:** the decision is made and recorded, and either (a) a spec drives the hold timer through a
 real user path, or (b) the functions and their now-pointless teardown are gone and
 `weekly-review-2026-08-09.spec.js` no longer calls an unreachable function.
+
+---
+
+## 2026-09-20 — re-confirmed while planning the runner wake-lock / end-time-timer commit (R1e)
+
+`grep` over `js/` finds **no production caller** of `startStrengthSetTimer` (only its definition and the teardown
+`discardRunner` still runs), so the strength SET timer was left untouched by R1e — there is nothing reachable to make
+suspend-proof. Still open; the decision this row asks for (delete it, or wire it back to a real path) is unchanged. The
+timers that ARE live and still count ticks are tracked in
+[2026-09-20-interval-and-count-in-timers-still-count-ticks](2026-09-20-interval-and-count-in-timers-still-count-ticks.md).

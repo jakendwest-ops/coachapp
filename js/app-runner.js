@@ -69,7 +69,54 @@ async function _startFreshRunner(clientId) {
   renderRunner()
   _startRunnerTimerTick()
   _startRunnerDraftSafetyNet()
+  _runnerWakeLockOn()
 }
+
+// ─── SCREEN WAKE LOCK (2026-09-20) ──────────────────────────────────────────────────────────────────
+// A workout logger left on a bench dims and locks the phone mid-rest. While a runner is open we ask the
+// browser to keep the screen awake. The browser drops the lock whenever the tab is hidden, so it is taken
+// again on return (the visibilitychange listener below).
+//
+// Failure is silent BY DESIGN. This is a nicety: no API (older iOS/WebViews, non-https), a refused request,
+// or a failed release must never toast, never log.error (which would report it to the owner) and never
+// interrupt a workout — console.warn only. Feature detection is the optional call itself, so an absent API
+// is just an undefined lock.
+let _runnerWakeLock = null
+
+// One request at a time: two racing requests would leak a lock. That is a re-entry problem, so it goes through
+// the shared guardReentry (registered just below) rather than a hand-rolled in-flight flag — the repo's rule,
+// enforced by tests/reentry-guard-2026-08-28.spec.js, because every bespoke flag owns its own release path and
+// will eventually be got wrong. (A first draft used `let _runnerWakeLockPending = false` with its own finally;
+// that spec refused it, correctly.)
+async function _runnerWakeLockOn() {
+  if (!_runner || _runner._wakeLockOff) return
+  if (_runnerWakeLock && !_runnerWakeLock.released) return
+  try {
+    const lock = await navigator.wakeLock?.request?.('screen')
+    if (!lock) return                                   // API absent — nothing to do
+    if (!_runner || _runner._wakeLockOff) { await lock.release(); return }   // the workout ended while the request was in flight
+    _runnerWakeLock = lock
+    lock.addEventListener('release', () => { if (_runnerWakeLock === lock) _runnerWakeLock = null })
+  } catch (e) {
+    console.warn('[wakeLock]', 'could not keep the screen awake', e?.name || e)
+  }
+}
+guardReentry('_runnerWakeLockOn')   // overlapping calls (start + visibilitychange) are swallowed; see the comment above
+
+async function _runnerWakeLockOff() {
+  const lock = _runnerWakeLock
+  _runnerWakeLock = null               // taken synchronously, so a NEXT workout's lock is never released by this one
+  if (!lock) return
+  try { await lock.release() } catch (e) { console.warn('[wakeLock]', 'release failed', e?.name || e) }
+}
+
+// Back on the tab: the browser will have dropped the lock, and a suspended tab could not tick its rest
+// countdown — so re-take the lock and re-derive the countdown NOW, before the next timer callback.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !_runner) return
+  _runnerWakeLockOn()
+  _restTick()
+})
 
 function _startRunnerTimerTick() {
   // Clear before starting. Added 2026-08-29 by the weekly full-file review: this was the ONLY one of
@@ -210,6 +257,7 @@ async function _resumeRunnerFromDraft(clientId) {
   renderRunner()
   _startRunnerTimerTick()
   _startRunnerDraftSafetyNet()
+  _runnerWakeLockOn()
 }
 
 async function _discardRunnerDraftAndStartFresh(clientId) {
@@ -1648,6 +1696,13 @@ function startRestTimer(secs) {
   _runner._restInterval = clearTimer(_runner._restInterval)
   _runner.restRemaining = secs
   _runner.restTotal     = secs
+  // The rest counts to an END TIME, not down a counter (2026-09-20). It used to `restRemaining--` once per
+  // interval tick, so a tab the OS suspended — screen locked, another app in front — simply stopped
+  // counting: 60 s away from a 90 s rest came back as ~89 s left, its voice cues and finish beep never
+  // having fired. Now the displayed second is derived from Date.now() (see _restTick), so it is right the
+  // moment the tab wakes. restRemaining stays a plain integer that the renderers read.
+  _runner._restEndsAt = Date.now() + secs * 1000
+  _runner._restShown  = secs
   // Which exercise this rest belongs to — kept stable even if the athlete navigates elsewhere to
   // look ahead, so a returning tap (or the chip) knows where to reattach. `_restPendingFire` marks
   // a rest that reached zero while the athlete was looking at a DIFFERENT exercise: the beep/voice
@@ -1663,51 +1718,69 @@ function startRestTimer(secs) {
   // underneath — it never gets the floating page-top overlay that wizard mode still uses.
   const tableMode = _isPlainStrengthExercise(_runner.exercises[_runner.exIdx])
   if (!tableMode) renderRestTimer()
-  _runner._restInterval = setInterval(() => {
-    _runner.restRemaining--
-    if (_runner.restRemaining <= 0) {
-      _runner._restInterval = clearTimer(_runner._restInterval)
-      playBeep(1046, 0.5, 0.95) // higher, longer beep on finish — fires regardless of which exercise is on screen
-      if (_runner.exIdx === _runner._restForExIdx) {
-        // Common case, and the ONLY case before this fix: the athlete is still looking at the
-        // resting exercise. Behaviour unchanged from before this change.
-        _runner.restRemaining = null
-        _runner._restForExIdx = null
-        document.getElementById('rest-timer-overlay')?.remove()
-        const cb = _runner._afterRest
-        if (cb) { _runner._afterRest = null; cb() }
-        else renderRunner() // clears the inline rest bar (table mode) / stale "Resting…" state
-      } else {
-        // Elapsed while the athlete was viewing a different exercise. Leave _afterRest queued and
-        // restForExIdx pointing at the owning exercise — runnerJumpTo consumes it the moment they
-        // return. restRemaining stays 0 (not null) so the chip can render a "done" state.
-        _runner.restRemaining = 0
-        _runner._restPendingFire = true
-        document.getElementById('rest-timer-overlay')?.remove()
-        renderRunner() // updates the chip on whichever exercise is currently on screen
-      }
+  // 250 ms poll, per-second work only when the DISPLAYED second changes — see _restTick.
+  _runner._restInterval = setInterval(_restTick, 250)
+}
+
+// One tick of the rest countdown. It polls four times a second but does the per-second work (cues,
+// display, finish) only when the displayed second CHANGES, so every second is handled exactly once — the
+// 10 s and 5..1 voice cues cannot double-fire — while the number itself comes from the clock, not from
+// how many ticks the OS happened to let through. Also called from the visibilitychange handler, so a tab
+// that was frozen shows the truth before its next timer callback runs.
+function _restTick() {
+  if (!_runner || _runner.restRemaining == null || _runner._restEndsAt == null || !_runner._restInterval) return
+  // restRemaining is still a plain, writable integer — specs and the cross-exercise chip read and set it.
+  // If something changed it, honour that by re-anchoring the end time to the new value.
+  if (_runner.restRemaining !== _runner._restShown) {
+    _runner._restEndsAt = Date.now() + _runner.restRemaining * 1000
+    _runner._restShown = _runner.restRemaining
+  }
+  const remaining = Math.max(0, Math.ceil((_runner._restEndsAt - Date.now()) / 1000))
+  if (remaining === _runner._restShown) return       // still inside the same displayed second
+  _runner.restRemaining = remaining
+  _runner._restShown = remaining
+  if (_runner.restRemaining <= 0) {
+    _runner._restInterval = clearTimer(_runner._restInterval)
+    playBeep(1046, 0.5, 0.95) // higher, longer beep on finish — fires regardless of which exercise is on screen
+    if (_runner.exIdx === _runner._restForExIdx) {
+      // Common case, and the ONLY case before this fix: the athlete is still looking at the
+      // resting exercise. Behaviour unchanged from before this change.
+      _runner.restRemaining = null
+      _runner._restForExIdx = null
+      document.getElementById('rest-timer-overlay')?.remove()
+      const cb = _runner._afterRest
+      if (cb) { _runner._afterRest = null; cb() }
+      else renderRunner() // clears the inline rest bar (table mode) / stale "Resting…" state
     } else {
-      _unlockAudio()
-      if (_runner.restRemaining === 10) speakCue('10 seconds')
-      if (_runner.restRemaining <= 5) speakCue(String(_runner.restRemaining))
-      const onScreen = _runner.exIdx === _runner._restForExIdx
-      const el = onScreen ? document.getElementById('rt-countdown') : null
-      if (el) {
-        const r = _runner.restRemaining
-        const inTableMode = _isPlainStrengthExercise(_runner.exercises[_runner.exIdx])
-        el.textContent = inTableMode ? fmtRestCountdown(r) : (r < 60 ? r+'s' : fmtRestCountdown(r))
-        el.style.color = r <= 3 ? '#ef4444' : 'var(--accent)'
-      }
-      const ring = onScreen ? document.getElementById('rt-ring') : null
-      if (ring) {
-        const pct = _runner.restRemaining / _runner.restTotal
-        const circ = 2 * Math.PI * 18
-        ring.style.strokeDashoffset = circ * (1 - pct)
-      }
-      const chipEl = document.getElementById('wr-rest-chip-countdown')
-      if (chipEl) chipEl.textContent = fmtRestCountdown(_runner.restRemaining)
+      // Elapsed while the athlete was viewing a different exercise. Leave _afterRest queued and
+      // restForExIdx pointing at the owning exercise — runnerJumpTo consumes it the moment they
+      // return. restRemaining stays 0 (not null) so the chip can render a "done" state.
+      _runner.restRemaining = 0
+      _runner._restPendingFire = true
+      document.getElementById('rest-timer-overlay')?.remove()
+      renderRunner() // updates the chip on whichever exercise is currently on screen
     }
-  }, 1000)
+  } else {
+    _unlockAudio()
+    if (_runner.restRemaining === 10) speakCue('10 seconds')
+    if (_runner.restRemaining <= 5) speakCue(String(_runner.restRemaining))
+    const onScreen = _runner.exIdx === _runner._restForExIdx
+    const el = onScreen ? document.getElementById('rt-countdown') : null
+    if (el) {
+      const r = _runner.restRemaining
+      const inTableMode = _isPlainStrengthExercise(_runner.exercises[_runner.exIdx])
+      el.textContent = inTableMode ? fmtRestCountdown(r) : (r < 60 ? r+'s' : fmtRestCountdown(r))
+      el.style.color = r <= 3 ? '#ef4444' : 'var(--accent)'
+    }
+    const ring = onScreen ? document.getElementById('rt-ring') : null
+    if (ring) {
+      const pct = _runner.restRemaining / _runner.restTotal
+      const circ = 2 * Math.PI * 18
+      ring.style.strokeDashoffset = circ * (1 - pct)
+    }
+    const chipEl = document.getElementById('wr-rest-chip-countdown')
+    if (chipEl) chipEl.textContent = fmtRestCountdown(_runner.restRemaining)
+  }
 }
 
 function fmtRestCountdown(secs) {
@@ -2205,6 +2278,10 @@ async function showRunnerFinish() {
   stopIntervalTimer()
   stopStrengthSetTimer()
   _stopRunnerDraftSafetyNet()
+  // The workout is over: let the screen sleep again, and stop the visibilitychange listener re-taking the
+  // lock while the finish screen (a form) is open. _wakeLockOff is per-runner, so a NEXT workout is unaffected.
+  _runner._wakeLockOff = true
+  _runnerWakeLockOff()
   // Remove the floating rest overlay too — clearing its interval stops the countdown but leaves the
   // DOM node painted (z-400) OVER the finish screen (z-300), and its "Skip →" button re-renders the
   // runner, destroying the finish screen mid-typing. discardRunner already does this; this didn't.
@@ -2406,6 +2483,7 @@ function discardRunner() {
   clearInterval(_runner?._setTimerInterval)
   _stopRunnerDraftSafetyNet()
   _clearRunnerDraft(_runner?.clientId)
+  _runnerWakeLockOff()
   document.getElementById('workout-runner')?.remove()
   document.getElementById('wr-countin-overlay')?.remove()
   document.getElementById('wr-interval-overlay')?.remove()
