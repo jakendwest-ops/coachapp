@@ -214,6 +214,20 @@ continue appending future entries here, not in a separate file._
   Periodization modal. `scripts/check-escaping.mjs` exits 0 over it — a clean escaping run doesn't
   mean what it appears to. The class was counted, not sampled: 45 sites match the vulnerable
   pattern repo-wide, exactly 1 is exploitable.
+- 2026-09-20: **That 8th instance is closed, and the checker's blindness is root-caused.** Nothing about the
+  syntax defeated `check-escaping.mjs`: its hand-written free-text field list had no name in
+  `cfg.tiers?.[t]?.reps ?? …`, so the interpolation was never a candidate. `cfg.` is now on the list, a 16-case
+  self-test holds the RED proof (the checker had none) and is wired into `checks.sh`, and `.reps` was deliberately
+  NOT added — measured, it flags 3 runner sites that are not the cross-user class. The bug also corrupted
+  *honest* input containing a quote (`it's "10-12"` was truncated), not just hostile input.
+- 2026-09-20: **RLS did not cover every write of a two-write function — measured, not assumed.**
+  `saveNewTemplate` wrote a `workout_templates` row stamped with a caller-supplied `program_id`, then a
+  `program_phase_workouts` row. A red-first cross-tenant probe showed RLS refuses the second but ACCEPTS the
+  first: another coach's programme id landed in the row. The app now verifies the programme/phase pair before
+  either write; the database still accepts it — open row
+  `2026-09-20-workout-templates-insert-accepts-another-coachs-program-id`, needs a schema read and a reviewed
+  policy script. **Lesson:** probe each write of a multi-write function separately; "RLS backstops it" had been
+  assumed for both.
 
 ## Requires Validation
 
