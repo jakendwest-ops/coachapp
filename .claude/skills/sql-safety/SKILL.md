@@ -170,8 +170,8 @@ Run these checks before writing any SQL. Do not skip steps.
    true) and REJECTED every solo row outright (`c.coach_id IS NULL` there, so `NULL = coalesce(NULL, …)`
    evaluates `NULL`, not true) — it would have silently broken every solo workout save in production.
    Caught by 2 independent multi-agent-review passes before it reached Jake, not by testing the SQL
-   directly (there's no local way to execute RLS policy SQL against the real schema before Jake runs it) —
-   which is itself the reason this rule exists: read every subquery in a new policy asking "which table
+   directly (at the time there was no local way to execute RLS policy SQL against the real schema before Jake ran it;
+   there is now — see "Run the SQL locally before Jake does" below) — which is itself the reason this rule exists: read every subquery in a new policy asking "which table
    does each bare column name actually belong to," don't trust that Postgres would error if it were wrong.
 
 8. **A `cmd: ALL` policy with no explicit `WITH CHECK` reuses its `USING`/`qual` for writes too — and an
@@ -202,6 +202,26 @@ Run these checks before writing any SQL. Do not skip steps.
    changes the write-check and leaves `USING`/reads untouched.
 
 ---
+
+## Run the SQL locally before Jake does (since 2026-09-21)
+
+Until 2026-09-21 a script's first real execution was on the live project. It no longer has to be:
+`scripts/sql-verify/` runs a migration on an in-memory Postgres (PGlite, a dev dependency) loaded with the live tables,
+indexes and RLS policies (`scripts/sql-verify/live-schema.mjs`, read from the live project 2026-09-20).
+
+- **Any migration that creates or changes a view, function, index, grant or policy gets a verifier.** Copy
+  `scripts/sql-verify/coach-client-summary.verify.mjs`: run the script twice (idempotency), assert the numbers for scenarios
+  that include the boundaries, assert who can AND CANNOT read and write (another tenant, a client, no identity, anon), and
+  assert the read-back the script ends with.
+- **Every safeguard the script claims must fail when removed.** Add each as a mutation
+  (`scripts/sql-verify/coach-client-summary.mutations.mjs`); `scripts/sql-verify/run-mutations.mjs` requires the verifier to
+  fail on all of them. A first draft of the first verifier missed three (NULLs sorted last, a wrongly shaped index, a
+  zero-week default) — that is what this step catches.
+- **What a pass does NOT prove — say so when you report it:** INSERT/UPDATE/DELETE policies and any table not in
+  `live-schema.mjs` (extend it with the read-only query in that file's header first), PGlite is Postgres 18 while the live
+  server was 17.6, concurrency and locking, and the PostgREST layer (row caps, embeds). Still ship the script's own
+  read-back.
+- Both the verifier and its mutation suite run in `scripts/checks.sh` (rule 9m) on every push.
 
 ## When adding a new role or account type
 

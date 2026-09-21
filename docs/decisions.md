@@ -12,6 +12,18 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-21 — SQL is executed locally, on the live schema, before anyone runs it on the live database — and that check runs
+on every push.** Until now a migration's first real execution was on the live project (the sql-safety skill said there was
+"no local way"). `scripts/sql-verify/` runs a script on an in-memory Postgres (PGlite, a new dev dependency) loaded with the
+live tables, indexes and RLS policies, asserts the numbers and who is refused, and a mutation suite requires each deliberate
+breakage to fail; `checks.sh` rule 9m runs both (about 17 s). The first migration through it (`coach_client_summary`) had 47
+checks and 9 mutations, and the three mutations a first draft missed are why the suite exists. *Limits, stated in its README:*
+only SELECT/ALL policies are reproduced, PGlite is Postgres 18 vs the live 17.6, and it proves nothing about the PostgREST
+layer or the real data — the script's own read-back after applying is still the last check. *Not chosen:* a throwaway
+Supabase project (a second project, credentials and network on every push); relying on reviewers reading SQL.
+
+---
+
 **2026-09-20 — Reads of growing tables page through one shared helper, and a failed read fails the whole export.**
 The API returns at most 200 rows per request and says nothing when it cuts a list short (measured on the live project
 that day), so screens that asked for "all" were right until row 201. `_fetchAllRows` (`js/app-core.js`) is now the one

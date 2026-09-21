@@ -532,6 +532,22 @@ fi
 if ! node scripts/check-spec-hygiene.mjs; then
   fail "a new .delete() in tests/ does not check what it deleted -- see the lines above."
 fi
+# -- 9m. SQL migrations are EXECUTED locally before anyone runs them on the live database --
+# Until 2026-09-21 there was no way to run RLS SQL before pasting it into Supabase (the sql-safety skill said so in
+# as many words), so a script's first real execution was on the live project. scripts/sql-verify runs a migration on an
+# in-memory Postgres (PGlite) loaded with the live tables, indexes and RLS policies, and asserts the numbers, who can
+# read and write, and what the script's own read-back says. It runs on every push (about 3 s) so a script and its checks
+# cannot drift apart. The MUTATION suite (about 14 s, in parallel) applies deliberate breakages and requires each to FAIL:
+# a verifier that has only ever been seen to pass cannot be told from one incapable of failing.
+echo "Verifying SQL migrations locally (PGlite)..."
+if ! node scripts/sql-verify/run-mutations.mjs > /dev/null 2>&1; then
+  node scripts/sql-verify/run-mutations.mjs 2>&1 | sed "s/^/    /"
+  fail "the SQL verifier's mutation self-test FAILED -- a breakage went uncaught, so its checks can no longer be trusted. Fix it before relying on the result below."
+fi
+if ! node scripts/sql-verify/coach-client-summary.verify.mjs > /dev/null 2>&1; then
+  node scripts/sql-verify/coach-client-summary.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
+  fail "scripts/add-coach-client-summary-2026-09-20.sql no longer passes its local verification -- see the lines above."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print
