@@ -130,19 +130,27 @@ async function renderClients(el) {
   log.info('renderClients', 'fetching client list')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const [{ data: clients, error }, { data: recentLogs }] = await Promise.all([
+  const [{ data: clients, error }, { data: summaries, error: summaryErr }] = await Promise.all([
     db.from('clients').select('*').eq('coach_id', currentUser.id).order('full_name'),
-    db.from('workout_logs').select('client_id, date').eq('coach_id', currentUser.id).order('date', { ascending: false }).limit(200)
+    // PAGED: the API caps every response at 200 rows, and that applies to a view too.
+    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, last_session_date', { count: 'exact' }).order('full_name').order('client_id'))
   ])
 
   if (error) { log.error('renderClients', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('renderClients', `loaded ${clients.length} clients`)
 
-  // Last session date per client
+  // Last session date per client — computed in the database (coach_client_summary), so it is right for every client the list
+  // shows, however many sessions the whole roster has logged. It used to come from the newest 200 logs across ALL clients: a
+  // client outside that window read "No sessions" (grey) instead of "35d ago" (red) — exactly the clients a coach needs to
+  // chase — and a FAILED read looked identical. Now a failed read is "—" (unknown), and "No sessions" means the client
+  // genuinely has none. (The roster read above is still one request, so past 200 clients the API cuts the LIST itself —
+  // a separate, named limit; see the ledger row for this change.)
+  if (summaryErr) log.error('renderClients', 'summary fetch failed', summaryErr)
   const lastSession = {}
-  ;(recentLogs || []).forEach(l => { if (!lastSession[l.client_id]) lastSession[l.client_id] = l.date })
+  ;(summaries || []).forEach(r => { lastSession[r.client_id] = r.last_session_date })
 
   function lastSessionLabel(clientId) {
+    if (summaryErr) return { text: '—', colour: 'var(--text-muted)' }
     const d = lastSession[clientId]
     if (!d) return { text: 'No sessions', colour: 'var(--text-muted)' }
     const days = Math.floor((Date.now() - new Date(d + 'T00:00:00')) / 86400000)

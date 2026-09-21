@@ -39,7 +39,8 @@ Jake's choice — a deleted tab, a dashboard fix, and automatic error capture wi
   [technical-debt.md](technical-debt.md).
 - Found 2026-09-19 by reading code: screens that read growing tables through the API's 200-row cap (cap **measured**
   2026-09-20; weight tabs, data export, personal-best reads and the runner's PR baseline fixed locally; the dashboard adherence
-  panel and client list are not), and a workout save that is not retry-safe — [technical-debt.md](technical-debt.md).
+  panel and client list now read the `coach_client_summary` view — live since 2026-09-21, JS unreleased), and a workout save
+  that is not retry-safe — [technical-debt.md](technical-debt.md).
 
 ## Technical Debt Summary
 

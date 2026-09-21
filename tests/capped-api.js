@@ -17,11 +17,18 @@
 //   .range(beyond end)   [NO count requested]          -> OK, 0 rows
 //   empty set, .range(0, 199) + count                  -> OK, 0 rows, count 0
 //   empty set, .range(200, 399) + count                -> PGRST103
+// MEASURED 2026-09-21 (same probe, `exercises` now 5,650 rows; also 100 workout_logs, 13 weight_logs):
+//   .select('*', { count: 'exact', head: true })           -> data null, count 5650 (the true total, past the 200 cap)
+//   the same + .limit(5)                                   -> data null, count 5650 (a limit does not change a HEAD count)
+//   the same + a filter that matches nothing               -> data null, count 0
 //
 // FAILS CLOSED. It implements only the read methods the app's screens use (select with an optional exact count,
-// eq / in / gte / lte / is / not-is-null, order, limit, range, single, maybeSingle) and THROWS on anything else —
+// eq / in / gte / lte / is / not-is-null, order, limit, range, single, maybeSingle; `head: true` returns no rows but the
+// count, as a HEAD request does) and THROWS on anything else —
 // an unknown method, an unknown table, a write, limit() combined with range(). A stub that silently ignores a
-// call lets a test pass on nothing. It is read-only on purpose: no fixture rows, no debris, nothing to reap.
+// call lets a test pass on nothing. It is read-only on purpose: no fixture rows, no debris, nothing to reap. It fakes
+// `db.from(...)` ONLY — `db.rpc`, `db.storage`, `db.functions` and `db.auth` still reach the real backend, so a screen that
+// makes one of those calls needs its own stub (neither screen tested against this file today does).
 //
 // ROWS THAT TIE ON THE SORT KEY COME BACK IN A DIFFERENT ORDER ON EVERY REQUEST. Postgres does not promise an order for
 // ties, and a real table happens to keep one until it does not (an update, a vacuum, a second replica). A stub that
@@ -76,7 +83,7 @@ function _installInPage({ tables, cap, unordered }) {
       throw new Error('capped-api: the stub was not given table "' + table + '" — add it to the fixture, or the code under test reads something the test does not know about')
     }
     const spec = tables[table]
-    const q = { cols: '*', count: false, filters: [], orders: [], limit: null, range: null, mode: 'many' }
+    const q = { cols: '*', count: false, head: false, filters: [], orders: [], limit: null, range: null, mode: 'many' }
     const desc = []   // human-readable record of the calls, for assertions
     // A filter on an embedded column excludes the parent only when every embed on its path is `!inner` (see the header).
     const viaInner = (col) => col.indexOf('.') === -1 || col.split('.').slice(0, -1).every(seg => q.cols.indexOf(seg + '!inner') !== -1)
@@ -123,6 +130,10 @@ function _installInPage({ tables, cap, unordered }) {
         return out
       }
       rows = rows.map(project)
+      if (q.head) {   // a HEAD request: no rows, but the count of everything that matched
+        calls.push({ table, desc, count: q.count, returned: 0, total })
+        return { data: null, error: null, count: q.count ? total : null }
+      }
       const count = q.count ? total : null
       calls.push({ table, desc, range: q.range, count: q.count, returned: rows.length, total })
       if (q.mode === 'single') return rows.length === 1 ? { data: rows[0], error: null, count } : { data: null, error: { code: 'PGRST116', message: 'The result contains ' + rows.length + ' rows' }, count }
@@ -132,10 +143,11 @@ function _installInPage({ tables, cap, unordered }) {
 
     const builder = {
       select(cols, opts) {
-        if (opts && (opts.head || (opts.count && opts.count !== 'exact'))) throw new Error('capped-api: select() options other than { count: "exact" } are not implemented')
+        if (opts && (opts.count && opts.count !== 'exact')) throw new Error('capped-api: select() options other than { count: "exact" } and { head: true } are not implemented')
         q.cols = typeof cols === 'string' && cols.trim() ? cols : '*'
         q.count = !!(opts && opts.count === 'exact')
-        desc.push('select(' + q.cols + (q.count ? ', count' : '') + ')')
+        q.head = !!(opts && opts.head)
+        desc.push('select(' + q.cols + (q.count ? ', count' : '') + (q.head ? ', head' : '') + ')')
         return proxy
       },
       eq(col, v) { desc.push('eq(' + col + ')'); q.filters.push(r => !viaInner(col) || get(r, col) === v); return proxy },

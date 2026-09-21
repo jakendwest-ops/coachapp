@@ -38,7 +38,7 @@
 > real double-save hazard (the repaint re-enabled Save mid-save), a needless repaint, name-keyed baselines and an untested
 > tenant clause — all fixed. **Still gated on Jake's answers:** R4c (in-session
 > PR badge) and R4d ("same as last"); the first-ever-log-is-a-PR behaviour is unchanged until R4-0 Q4.
-> **R2-0 is answered and R2b's migration is written (2026-09-21) — not yet run.** Live schema: Postgres 17.6, RLS on all seven
+> **R2-0 is answered, R2b's migration is LIVE and its JS switch is built locally (2026-09-21, unreleased).** Live schema: Postgres 17.6, RLS on all seven
 > tables, and NO index on the `client_id` of `workout_logs` / `weight_logs` / `client_check_ins`, on `clients.coach_id` or on
 > `program_phases.program_id`; check-in scores are `integer` (settles the R3a column-type question); `clients.invited_at`
 > exists; nothing reads `client_programs.status`. `scripts/add-coach-client-summary-2026-09-20.sql` adds the five missing indexes
@@ -49,8 +49,20 @@
 > **JS obligations:** page the view read with `_fetchAllRows` (the API cap applies to a view too), filter active clients for "at
 > risk" but sum ALL rows for "Sessions this week", escape `full_name`, handle NULL scores with `_checkInTone`. **Trap for R3c:** a
 > later `create or replace view coach_client_summary` must repeat `with (security_invoker = true)` or RLS is bypassed. Ledger:
-> `2026-09-20-coach-dashboard-adherence-and-client-list-read-capped-slices-of-workout-logs` (open). **Not started:** running the
-> script (Jake), the JS switch, the real-database spec, R2c, R2d.
+> `2026-09-20-coach-dashboard-adherence-and-client-list-read-capped-slices-of-workout-logs` (closed on red→green; the screens ship with the next tag).
+> **Jake ran the script on 2026-09-21 and its read-back matched** (34 rows: `security_invoker` on, 19 columns, anon no privileges,
+> authenticated SELECT only, five indexes). The SQL harness is now a permanent gate (`scripts/sql-verify`, `checks.sh` rule 9m).
+> **The JS switch:** the coach dashboard and the client list read the view (paged with `_fetchAllRows`, ordered `full_name,
+> client_id`), replacing the month-newest-100 slice and the newest-200 last-session read. A failed read shows "—" and a named banner
+> instead of zeros or "No sessions"; the activity list is now really "last 7 days"; the dead `quietClients` code is gone. Red-first:
+> the new screens spec ran 8 red / 1 green on the unchanged screens and is 13 green now; 25 deliberate breakages of the screens'
+> code and the stand-in are each caught; a live-API spec (4 tests: the numbers, other coach / client / anonymous see nothing, the
+> coach's own solo record is excluded, writes are refused with `55000`) reads the deployed view. A second 3-angle review found no
+> blocking issue and no tenant leak; its non-blocking findings were fixed (activity-list ordering, a vacuous-capable write test,
+> paging fixtures that passed unpaged code under one sort order, a stricter "red", an over-claiming comment). **Measured on the live
+> API:** `head: true` + `count: 'exact'` returns the true total with no rows (5,650 on `exercises`). **Named, not fixed:** both
+> screens' `clients` roster reads are still one request (past 200 clients the API cuts the roster itself); `c.status` is rendered raw in
+> the list badge; "Goals due soon" has no tenant anchor. **Not started:** R2c, R2d; the release gate for the batch.
 
 # START HERE: one ranked backlog across all four product reviews (2026-09-19)
 

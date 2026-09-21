@@ -131,6 +131,19 @@ test.describe('the capped-API stand-in', () => {
     expect([natural[0], natural.at(-1), natural.length], 'insertion: the first 200 rows in fixture order, the newest 100 dropped').toEqual(['row-000000', 'row-000199', 200])
   })
 
+  test('head: true returns NO rows but the count of everything that matched, like a HEAD request', async ({ page }) => {
+    const r = await ask(page, "db.from('things').select('*', { count: 'exact', head: true }).eq('group', 1)")
+    expect([r.data, r.count, r.err], 'no body, the filtered count').toEqual([null, 100, null])
+    const noCount = await ask(page, "db.from('things').select('*', { head: true })")
+    expect([noCount.data, noCount.count], 'head without a count: no rows and no count').toEqual([null, null])
+    // Past the cap, and unaffected by a limit — both MEASURED on the live API (see the header of capped-api.js). "The rows
+    // that would have come back" is at most 200 (or the limit); "everything that matched" is all 300.
+    const all = await ask(page, "db.from('things').select('*', { count: 'exact', head: true })")
+    expect([all.data, all.count], 'unfiltered: the whole table, not the 200 a GET would return').toEqual([null, 300])
+    const limited = await ask(page, "db.from('things').select('*', { count: 'exact', head: true }).limit(5)")
+    expect([limited.data, limited.count], 'a limit does not shrink a HEAD count').toEqual([null, 300])
+  })
+
   test('projection is faithful for plain lists: an unselected column is absent, an existing-but-unset one is null', async ({ page }) => {
     await restoreCappedApi(page)
     await installCappedApi(page, { t: [{ id: 'x', a: 1, b: 2 }] })
@@ -161,7 +174,7 @@ test.describe('the capped-API stand-in', () => {
     }
     expect(await throws("db.from('things').select('id').limit(5).range(0, 4)"), 'limit then range').toMatch(/limit\(\) combined with range\(\)/)
     expect(await throws("db.from('things').select('id').range(0, 4).limit(5)"), 'range then limit').toMatch(/limit\(\) combined with range\(\)/)
-    expect(await throws("db.from('things').select('id', { head: true })"), 'head').toMatch(/select\(\) options other than/)
+    expect(await throws("db.from('things').select('id', { count: 'estimated' })"), 'a count mode other than exact').toMatch(/select\(\) options other than/)
     expect(await throws("db.from('things').select('id').not('n', 'eq', 5)"), 'not() other than is-null').toMatch(/not\(\) only supports/)
   })
 

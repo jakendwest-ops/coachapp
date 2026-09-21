@@ -33,6 +33,8 @@ async function renderDashboard(el) {
   const sevenDaysAgo   = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000).toISOString()
   const fourteenDaysOn = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const todayStr       = new Date().toISOString().split('T')[0]
+  // The UTC date of now-7d: the SAME cut-off coach_client_summary uses for sessions_7d, and the activity list's window.
+  const weekAgoStr     = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
   // Fetch coach's client IDs first so all queries are correctly scoped
   const { data: coachClients, error: coachClientsErr } = await db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).order('full_name')
@@ -43,13 +45,17 @@ async function renderDashboard(el) {
     { count: goalCount, error: goalCountErr },
     { data: recentWeights, error: recentWeightsErr },
     { data: recentWorkouts, error: recentWorkoutsErr },
-    { data: upcomingGoals, error: upcomingGoalsErr }
+    { data: upcomingGoals, error: upcomingGoalsErr },
+    { data: summaries, error: summariesErr }
   ] = await Promise.all([
     db.from('clients').select('*', { count: 'exact', head: true }).eq('coach_id', currentUser.id),
     db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active').in('client_id', coachClientIds),
     coachClientIds.length ? db.from('weight_logs').select('client_id, created_at, weight_kg').in('client_id', coachClientIds).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30) : { data: [] },
-    coachClientIds.length ? db.from('workout_logs').select('client_id, date, created_at').in('client_id', coachClientIds).gte('date', todayStr.slice(0,7) + '-01').order('date', { ascending: false }).limit(100) : { data: [] },
-    db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', fourteenDaysOn).order('target_date').limit(5)
+    coachClientIds.length ? db.from('workout_logs').select('client_id, date, created_at').in('client_id', coachClientIds).gte('date', weekAgoStr).order('created_at', { ascending: false }).limit(20) : { data: [] },
+    db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', fourteenDaysOn).order('target_date').limit(5),
+    // One row per client, computed in the database (scripts/add-coach-client-summary-2026-09-20.sql). PAGED: the API caps
+    // every response at 200 rows and that applies to a view too, so a bare read would silently drop the 201st client.
+    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, sessions_7d', { count: 'exact' }).order('full_name').order('client_id'))
   ])
 
   const _failed = _failedFetches({
@@ -58,6 +64,7 @@ async function renderDashboard(el) {
     'recent weigh-ins': recentWeightsErr,
     'recent sessions': recentWorkoutsErr,
     'upcoming goals': upcomingGoalsErr,
+    'session summaries': summariesErr,
   })
 
   const activeClients = (coachClients || []).filter(c => c.status === 'active')
@@ -65,30 +72,28 @@ async function renderDashboard(el) {
   const clientMap = {}
   ;(activeClients || []).forEach(c => { clientMap[c.id] = c.full_name })
 
-  // Activity feed — merge weight + workout logs, sort newest first
+  // Activity feed — merge weight + workout logs, sort newest first. The sessions are pooled by created_at (as the weigh-ins
+  // are) because that is the key this sort and the "Xh ago" label use: pooled by `date`, a session logged just now for an
+  // earlier day, or one of many dated the same day, could fall outside the 20 and never reach the top 8.
   const feed = [
     ...(recentWeights  || []).map(w => ({ type: 'weight',  client_id: w.client_id, logged_at: w.created_at, detail: fmtWeight(w.weight_kg, { spaced: true }) })),
     ...(recentWorkouts || []).map(w => ({ type: 'session', client_id: w.client_id, logged_at: w.created_at || w.date, detail: 'Session logged' }))
   ].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at)).slice(0, 8)
 
-  // Clients with no activity in last 7 days
-  const activeSet = new Set([
-    ...(recentWeights  || []).map(w => w.client_id),
-    ...(recentWorkouts || []).map(w => w.client_id)
-  ])
-  const quietClients = (activeClients || []).filter(c => !activeSet.has(c.id))
-
-  // Compliance — session count per active client this week
-  const weekAgoStr = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  const sessionCounts = {}
-  ;(recentWorkouts || []).filter(w => w.date >= weekAgoStr).forEach(w => {
-    sessionCounts[w.client_id] = (sessionCounts[w.client_id] || 0) + 1
-  })
-  const complianceRows = (activeClients || [])
-    .map(c => ({ ...c, sessions: sessionCounts[c.id] || 0 }))
+  // Compliance — sessions this week per active client, from the database's own count (coach_client_summary). This used to
+  // be counted from the current MONTH's logs, newest 100: past ~33 clients at three sessions a week the oldest days
+  // dropped out and active clients read "At risk", and on UTC days 1-7 of every month last month's sessions were invisible
+  // altogether. (The "quiet clients" set that sat here was computed from the same slice and never rendered; it is gone.)
+  // When the summaries could not be read the numbers are UNAVAILABLE, not zero — the card and the tile say so.
+  const summariesUnavailable = !!summariesErr
+  const sessionsById = {}
+  ;(summaries || []).forEach(r => { sessionsById[r.client_id] = Number(r.sessions_7d) || 0 })
+  const complianceRows = summariesUnavailable ? [] : (activeClients || [])
+    .map(c => ({ ...c, sessions: sessionsById[c.id] || 0 }))
     .sort((a, b) => a.sessions - b.sessions) // fewest first
 
-  const sessionsThisWeekTotal = (recentWorkouts || []).filter(w => w.date >= weekAgoStr).length
+  // Every client's sessions, active or not — as this tile always counted them.
+  const sessionsThisWeekTotal = summariesUnavailable ? '—' : Object.values(sessionsById).reduce((a, b) => a + b, 0)
 
   const firstName = currentProfile?.full_name?.split(' ')[0] || 'Coach'
   const today     = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -183,7 +188,7 @@ async function renderDashboard(el) {
             </div>
           </div>
           <div id="compliance-rows">
-            ${complianceRows.length === 0 ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No active clients.</p>` :
+            ${summariesUnavailable ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">Couldn't load this week's sessions — see the notice above.</p>` : complianceRows.length === 0 ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No active clients.</p>` :
               complianceRows.map(c => {
                 const dot = c.sessions === 0 ? 'var(--danger)' : c.sessions === 1 ? 'var(--warning)' : 'var(--success)'
                 const label = c.sessions === 0 ? 'No sessions' : `${c.sessions} session${c.sessions !== 1 ? 's' : ''}`

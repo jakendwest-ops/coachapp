@@ -62,8 +62,9 @@ fix are not the same fix).
 - **Beta ops** — feedback channel **built 2026-09-19 (not yet released)** as a Settings "Send feedback" email link (nothing is
   stored). Invite-email deliverability to real (non-Jake) addresses has still never been tested.
 - **`max_rows = 200` cap** — **measured 2026-09-20**: 200 rows even for `.limit(1000)`, silently. Weight tabs, data export
-  and personal-best reads fixed via `_fetchAllRows` (Release 2a, unreleased). Runner PR baseline fixed (4b). **Open:** dashboard adherence + client list
-  (2b), ~11 unclassified reads (2d).
+  and personal-best reads fixed via `_fetchAllRows` (Release 2a, unreleased). Runner PR baseline fixed (4b). Dashboard adherence +
+  client list now read the `coach_client_summary` view (2b, unreleased; the view has been live since 2026-09-21). **Open:** the
+  `clients` roster reads on those two screens are still one request; ~11 unclassified reads (2d).
 
 ## Named backlog items (from the full feature ledger, not yet scoped)
 

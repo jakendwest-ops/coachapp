@@ -69,8 +69,9 @@ which still needs deleting once its value is fully extracted):**
 **New 2026-09-20, from planning the product-review releases** (read from code, impact unmeasured; evidence in
 [the release plans](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md)): **capped reads**
 (screens that read growing tables through the API's 200-row cap — **cap measured 2026-09-20; the two weight tabs, the data
-export and the personal-best reads were fixed the same day (Release 2a, unreleased)**; still open: the coach dashboard
-adherence panel and the client list, plus about 11 unclassified reads; the runner's finish-screen PR baseline was fixed the same day, Release 4b, unreleased);
+export and the personal-best reads were fixed the same day (Release 2a, unreleased)**; the coach dashboard adherence panel and the client list
+were fixed 2026-09-21 (Release 2b: they read the `coach_client_summary` view; unreleased); still open: their unpaged `clients`
+roster reads, plus about 11 unclassified reads; the runner's finish-screen PR baseline was fixed the same day, Release 4b, unreleased);
 **writes with no retry safety or transaction** (workout save, program assignment, `deletePhaseWeek`); **two
 propagation regimes** (a workout's content edit *offers* "Update assigned clients?", week-structure edits change
 their plans with no prompt — Jake's call; [schema.md](schema.md) said otherwise until today); **stale backlog
