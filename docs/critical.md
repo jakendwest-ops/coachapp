@@ -251,6 +251,12 @@ continue appending future entries here, not in a separate file._
   every test (found by review). The stand-in now models PostgREST's `!inner` rule, the real-database test asks about another
   client, and each breakage fails. **Lesson:** a tenant filter needs a fixture row belonging to someone else, asked about
   through the real API; and check the read still lands in RLS-bounded tables (restated in the older deferred-RLS row).
+- 2026-09-21: **A view's `security_invoker` setting is reset by the next `create or replace view` that omits it.** Found reviewing
+  the new `coach_client_summary` view (Release 2b): re-creating it without `with (security_invoker = true)` silently made it run
+  with its owner's rights and bypass row-level security — another coach's log was then counted (measured on a local Postgres).
+  Any view over tenant data must repeat the clause on every replace and read `reloptions` back each time (the migration does).
+  Same review, recorded and not fixed: a client may be able to rewrite their own `clients.coach_id` (not verifiable from the repo;
+  a read-only policy query is pending), and a coach can attach another coach's programme id to their own client (write side only).
 
 ## Requires Validation
 

@@ -38,7 +38,19 @@
 > real double-save hazard (the repaint re-enabled Save mid-save), a needless repaint, name-keyed baselines and an untested
 > tenant clause — all fixed. **Still gated on Jake's answers:** R4c (in-session
 > PR badge) and R4d ("same as last"); the first-ever-log-is-a-PR behaviour is unchanged until R4-0 Q4.
-> **Not started:** R2b (server summary), R2c, R2d, and R2-0 needs Jake's read-only schema query first.
+> **R2-0 is answered and R2b's migration is written (2026-09-21) — not yet run.** Live schema: Postgres 17.6, RLS on all seven
+> tables, and NO index on the `client_id` of `workout_logs` / `weight_logs` / `client_check_ins`, on `clients.coach_id` or on
+> `program_phases.program_id`; check-in scores are `integer` (settles the R3a column-type question); `clients.invited_at`
+> exists; nothing reads `client_programs.status`. `scripts/add-coach-client-summary-2026-09-20.sql` adds the five missing indexes
+> and `coach_client_summary`. Verified on a real Postgres engine (an in-memory PGlite loaded with the exact live columns, indexes
+> and policies — the first local way this project has had to run RLS SQL): 47 checks, 9 deliberate breakages each caught. A
+> 3-angle review found no blocking issue and no tenant leak. **This plan's R2b text differs:** columns are `program_*` (not
+> `programme_*`), `last_check_in_at`, `check_in_*`; a no-phase programme is NULL weeks; future-dated logs are ignored.
+> **JS obligations:** page the view read with `_fetchAllRows` (the API cap applies to a view too), filter active clients for "at
+> risk" but sum ALL rows for "Sessions this week", escape `full_name`, handle NULL scores with `_checkInTone`. **Trap for R3c:** a
+> later `create or replace view coach_client_summary` must repeat `with (security_invoker = true)` or RLS is bypassed. Ledger:
+> `2026-09-20-coach-dashboard-adherence-and-client-list-read-capped-slices-of-workout-logs` (open). **Not started:** running the
+> script (Jake), the JS switch, the real-database spec, R2c, R2d.
 
 # START HERE: one ranked backlog across all four product reviews (2026-09-19)
 
