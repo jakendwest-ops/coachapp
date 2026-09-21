@@ -2747,6 +2747,19 @@ async function saveTemplateDraft() {
 }
 guardReentry('saveTemplateDraft')  // double-press could double-fork a shared template and double-write every staged change; see tests/reentry-guard-2026-08-28.spec.js
 
+// `change.row` is the row saveTemplateDraft wrote into the EDITED template, so it carries THAT
+// template's own bookkeeping: its template_id, its position (order_index) and its row id. None of that
+// belongs on a propagation target. It is stripped here, in the one place every op passes through, so the
+// caller can set the target's own id and next position LAST and they always win. Until 2026-09-20 the
+// add branch spread `...change.row` after `template_id: tid`, so from v2026.09.6 (when saveTemplateDraft
+// began putting template_id in the row) every propagated add landed back in the edited template — once
+// per target — while the targets got nothing. See
+// docs/bugs/2026-09-20-adding-an-exercise-to-a-program-workout-duplicates-it-several-times.md.
+function _propagationRowFields(row) {
+  const { template_id, order_index, id, ...fields } = row || {}
+  return fields
+}
+
 // Applies ONE exercise change (an entry from the `changes` array saveTemplateDraft builds, passed
 // in directly -- not read off a global) to a set of target templates, matched BY EXERCISE NAME
 // (Jake's choice, 2026-07-12). This replaces the old wholesale
@@ -2787,12 +2800,12 @@ async function _propagateExerciseChangeToTemplates(change, targetIds) {
       // doesn't have that exercise). Acts on ALL same-named rows, matching the delete branch — so a
       // session that happens to list an exercise name twice is treated consistently, never left
       // half-updated. A rename is fine: change.row carries the new name.
-      await propagate('update', db.from('workout_template_exercises').update(change.row).eq('template_id', tid).eq('exercise_name', change.matchName))
+      await propagate('update', db.from('workout_template_exercises').update(_propagationRowFields(change.row)).eq('template_id', tid).eq('exercise_name', change.matchName))
     } else if (change.op === 'add') {
       const { data: exists } = await db.from('workout_template_exercises').select('id').eq('template_id', tid).eq('exercise_name', change.row.exercise_name).limit(1)
       if (!exists?.length) {
         const { data: last } = await db.from('workout_template_exercises').select('order_index').eq('template_id', tid).order('order_index', { ascending: false }).limit(1)
-        await propagate('add', db.from('workout_template_exercises').insert({ template_id: tid, order_index: last?.length ? last[0].order_index + 1 : 0, ...change.row }).select('id'), { expectRows: true, tid })
+        await propagate('add', db.from('workout_template_exercises').insert({ ..._propagationRowFields(change.row), template_id: tid, order_index: last?.length ? last[0].order_index + 1 : 0 }).select('id'), { expectRows: true, tid })
       }
     }
   }
