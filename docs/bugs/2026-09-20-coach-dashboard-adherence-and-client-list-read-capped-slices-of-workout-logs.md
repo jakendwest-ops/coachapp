@@ -93,9 +93,9 @@ calendar days inclusive; `anon` gets "permission denied", `service_role` gets ze
 
 ## Named, not fixed (found while reviewing; none is made worse by the view)
 
-- **A client may be able to rewrite their own `clients.coach_id`** (repo-documented, NOT verified live — no `clients` policy SQL is
-  committed and my policy read covered SELECT/ALL only). It would let a client appear on another coach's dashboard. A read-only
-  query of the `clients` policies for every command would settle it.
+- **A client can rewrite their own `clients.coach_id`** — **CONFIRMED live 2026-09-26** by Jake's read-only policy query (policy
+  `clients_update_own_row` pins only `user_id`). Detaching was already known and accepted; pointing the row at another coach's id
+  is the new part. It would let a client appear on another coach's dashboard. Own row: `2026-09-26-a-client-can-rewrite-the-coach-id-of-their-own-clients-row`.
 - **A coach can attach another coach's programme id to their own client** (`client_programs` ALL policy has no check on the
   programme's owner). Write side only: the view returns the id with a NULL name and no phase weeks — nothing leaks.
 - **Five policies use a bare `auth.uid()`** (evaluated per row rather than once): the client policies on `client_programs`,
@@ -114,9 +114,9 @@ calendar days inclusive; `anon` gets "permission denied", `service_role` gets ze
   200 clients). The view side is paged; the `clients` side is not. How many clients any coach has today is unmeasured here, so
   no fix yet — evidence first.
 - **The list badge renders `c.status` raw** (`badge-${c.status}` and the text, js/app-clients.js ~184), and a roster read error's
-  message raw (~139). Exploitable only if a client-role user can UPDATE `clients.status` and no CHECK stops it — the same
-  unverified question as the `coach_id` rewrite above (the read-only `clients` policy query is still pending). `check-escaping`'s
-  free-text list does not include `.status`, so it cannot see it. One `escapeHtml` or a whitelist closes it.
+  message raw (~139). **Not exploitable (checked live 2026-09-26):** a client can update their own row, but `clients_status_check`
+  limits `status` to `active` / `inactive` / `archived`, so no markup can be stored there. `check-escaping`'s free-text list does
+  not include `.status`, so it cannot see it; one `escapeHtml` would still be tidy, but nothing is at risk.
 - **"Goals due soon" has no tenant anchor** (js/app-dashboard.js ~55: `status` and dates only, while the count above it has
   `.in('client_id', coachClientIds)`). It relies on the goals RLS policy, which is not in any committed script; for the owner's
   master account it may list personal goals on the coach dashboard.

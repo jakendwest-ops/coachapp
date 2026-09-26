@@ -537,7 +537,7 @@ fi
 # as many words), so a script's first real execution was on the live project. scripts/sql-verify runs a migration on an
 # in-memory Postgres (PGlite) loaded with the live tables, indexes and RLS policies, and asserts the numbers, who can
 # read and write, and what the script's own read-back says. It runs on every push (about 3 s) so a script and its checks
-# cannot drift apart. The MUTATION suite (about 14 s, in parallel) applies deliberate breakages and requires each to FAIL:
+# cannot drift apart. The MUTATION suite (about 20 s, in parallel, across every verifier) applies deliberate breakages and requires each to FAIL:
 # a verifier that has only ever been seen to pass cannot be told from one incapable of failing.
 echo "Verifying SQL migrations locally (PGlite)..."
 if ! node scripts/sql-verify/run-mutations.mjs > /dev/null 2>&1; then
@@ -547,6 +547,10 @@ fi
 if ! node scripts/sql-verify/coach-client-summary.verify.mjs > /dev/null 2>&1; then
   node scripts/sql-verify/coach-client-summary.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
   fail "scripts/add-coach-client-summary-2026-09-20.sql no longer passes its local verification -- see the lines above."
+fi
+if ! node scripts/sql-verify/clients-coach-id-guard.verify.mjs > /dev/null 2>&1; then
+  node scripts/sql-verify/clients-coach-id-guard.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
+  fail "scripts/add-clients-coach-id-guard-2026-09-26.sql no longer passes its local verification -- see the lines above."
 fi
 # -- 9n. A read of a table that grows with use must be bounded, or say why it need not be --
 # The API returns at most 200 rows per response and says NOTHING when it cuts a list short (measured 2026-09-20: 200 rows

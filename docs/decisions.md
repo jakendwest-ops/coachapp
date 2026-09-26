@@ -12,6 +12,34 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-26 — A client may detach themselves from their coach, but may no longer point their own `clients` row at ANOTHER
+coach; the rule lives in a trigger keyed on `current_user`.** Jake's read-only query of the live `clients` policies confirmed that
+`clients_update_own_row` pins only `user_id`, so a client could rewrite their own `coach_id` to anyone's id and appear in a
+stranger's roster (ledger `2026-09-26-a-client-can-rewrite-the-coach-id-of-their-own-clients-row`). Self-detach (setting it to
+NULL) was already accepted when weight goals shipped and stays; Jake chose to close ONLY the attach half. Done as a
+`BEFORE UPDATE OF coach_id` trigger, not a policy change: the policies OR together, so tightening one leaves the others open
+(the coach policies and the invite-claim policy both write this column), whereas a trigger gives one rule for every path. It
+refuses when `current_user` is `authenticated` or `anon` (the role PostgREST switches to), so the SQL editor, the service role
+and admin-owned functions are untouched. *Not chosen:* `auth.role()` (reads a request claim rather than the role actually in
+force); a column-level `REVOKE UPDATE (coach_id)` (would also stop coaches and the invite path, and would not distinguish
+self-detach); blocking self-detach too (needs the cancellation workflow designed — banked). *Consequence, stated because it is
+new:* self-detach is now ONE-WAY from the API (before the guard a client could set it back); undoing one is a line in the SQL
+editor, and any future "resume coaching" flow needs the service role or an admin-owned function. *Limits:* a `SECURITY DEFINER`
+function that changes `coach_id` is not caught (none is known, but the live database's functions are not all in the repo —
+unverified); INSERT is covered by the existing policy pinning `coach_id`; the source of the `invite-client` Edge Function is not in
+the repo, so it is unverified that it never changes `coach_id` under a caller's JWT (send one invite after applying). A
+three-angle review found no blocking flaw in the SQL and one in its proof (the mutation for the admin exemption switched the
+whole guard off instead, so nothing tested the exemption) — fixed before the commit.
+The first verifier draft assumed an invitee's `UPDATE … WHERE id = … RETURNING` reaches the trigger; it does not — measured
+2026-09-26 on the local copy of the live policies: a claim with `WHERE id` (with or without `RETURNING`) or `WHERE email … AND
+user_id IS NULL` matches no row (the unclaimed row passes no SELECT policy, and any WHERE needs SELECT rights); only a
+filter-free statement claims it. So through the app's normal filtered updates the "Client stamps own user_id" policy can never
+fire — live invite acceptance must go through `handle_new_user` or an Edge Function (not in this repo; unverified). The verifier
+therefore uses filter-free statements for the invitee cases and reproduces the hole BEFORE the script, which is what makes a
+green result mean something. Applied only when Jake runs the script.
+
+---
+
 **2026-09-21 — A read of a table that grows with use must be bounded, or say why it need not be — enforced as a ratchet on
 every push (`checks.sh` rule 9n).** The API silently returns at most 200 rows per response; sixteen reads that assumed
 otherwise were fixed on 2026-09-20/21, and each had passed every test it had because a fixture never holds 200 rows.

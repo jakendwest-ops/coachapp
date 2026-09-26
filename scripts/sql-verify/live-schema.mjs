@@ -11,9 +11,13 @@
 // service_role, `auth.uid()` reading the JWT subject from `request.jwt.claim.sub`, and Supabase's default grants on
 // new public tables.
 //
-// WHAT IT DOES NOT COVER (say so before trusting a pass): INSERT / UPDATE / DELETE policies (the policy read filtered
-// to SELECT and ALL — so "can a client rewrite clients.coach_id?" cannot be answered here); any table not listed;
-// triggers and functions; concurrency and locking; the PostgREST layer (row caps, embeds, the API's own auth);
+// EXTENDED 2026-09-26: the three UPDATE policies on `clients` (the read filtered to SELECT and ALL the first time, so it
+// missed them), exactly as Jake's second, unfiltered read of `clients` returned them, plus `auth.email()`. That is what
+// makes "can a client rewrite clients.coach_id?" answerable here — it CAN, which is what the coach_id guard migration fixes.
+//
+// WHAT IT DOES NOT COVER (say so before trusting a pass): INSERT / UPDATE / DELETE policies on every table EXCEPT `clients`
+// (the first policy read filtered to SELECT and ALL); the `clients` CHECK and foreign keys, and its `audit_clients` trigger; any
+// table not listed; triggers and functions; concurrency and locking; the PostgREST layer (row caps, embeds, the API's own auth);
 // PGlite is Postgres 18.x and the live server was 17.6 — the features used so far (RLS, security_invoker views,
 // lateral joins, btree indexes) behave the same, but a new feature needs the difference checked.
 //
@@ -54,6 +58,8 @@ export async function installLiveSchema(db) {
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema public, auth to anon, authenticated, service_role;
     grant execute on function auth.uid() to anon, authenticated, service_role;
+    create function auth.email() returns text language sql stable as $$ select nullif(current_setting('request.jwt.claim.email', true), '') $$;
+    grant execute on function auth.email() to anon, authenticated, service_role;
     alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
   `)
 
@@ -79,7 +85,8 @@ export async function installLiveSchema(db) {
     alter table public.client_check_ins enable row level security;
   `)
 
-  // ── the policies, exactly as read (SELECT and ALL; the only ones a read can meet) ─────────────────────────
+  // ── the policies, exactly as read (SELECT and ALL — the ones a read can meet — plus, from 2026-09-26, the three UPDATE
+  //    policies on `clients`) ─────────────────────────────────────────────────────────────────────────────
   await db.exec(`
     create policy "Client reads own check-ins" on public.client_check_ins for select to authenticated using (client_id in (select clients.id from clients where clients.user_id = (select auth.uid())));
     create policy "Coach reads client check-ins" on public.client_check_ins for select to authenticated using (client_id in (select clients.id from clients where clients.coach_id = (select auth.uid())));
@@ -88,6 +95,9 @@ export async function installLiveSchema(db) {
     create policy "solo user select own client_programs" on public.client_programs for select to public using (client_id in (select clients.id from clients where clients.user_id = auth.uid() and clients.coach_id is null));
     create policy "Coach manages clients" on public.clients for all to authenticated using ((select auth.uid()) = coach_id);
     create policy "clients: client reads own row" on public.clients for select to authenticated using (user_id = (select auth.uid()));
+    create policy "Client stamps own user_id on invite acceptance" on public.clients for update to authenticated using ((email = (select auth.email() as email)) and (user_id is null)) with check (user_id = (select auth.uid() as uid));
+    create policy "Coach updates own clients" on public.clients for update to public using (coach_id = (select auth.uid() as uid)) with check (coach_id = (select auth.uid() as uid));
+    create policy clients_update_own_row on public.clients for update to public using (user_id = auth.uid()) with check (user_id = auth.uid());
     create policy "Clients can view phases of programs they are assigned to" on public.program_phases for select to public using (program_id in (select client_programs.program_id from client_programs where client_programs.client_id in (select clients.id from clients where clients.user_id = auth.uid())));
     create policy "Coach manages phases of own programs" on public.program_phases for all to authenticated using (exists (select 1 from programs where programs.id = program_phases.program_id and programs.coach_id = (select auth.uid())));
     create policy "Clients can view programs they are assigned to" on public.programs for select to public using (id in (select client_programs.program_id from client_programs where client_programs.client_id in (select clients.id from clients where clients.user_id = auth.uid())));
