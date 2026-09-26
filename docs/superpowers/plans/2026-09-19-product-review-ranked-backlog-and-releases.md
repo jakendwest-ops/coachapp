@@ -62,7 +62,22 @@
 > paging fixtures that passed unpaged code under one sort order, a stricter "red", an over-claiming comment). **Measured on the live
 > API:** `head: true` + `count: 'exact'` returns the true total with no rows (5,650 on `exercises`). **Named, not fixed:** both
 > screens' `clients` roster reads are still one request (past 200 clients the API cuts the roster itself); `c.status` is rendered raw in
-> the list badge; "Goals due soon" has no tenant anchor. **Not started:** R2c, R2d; the release gate for the batch.
+> the list badge; "Goals due soon" has no tenant anchor.
+> **Release 2d is built locally (2026-09-21, unreleased, no SQL): a ratchet on unbounded reads.** `scripts/check-unbounded-reads.mjs`
+> (`checks.sh` rule 9n) flags a read of one of nine tables that grow with use (weigh-ins, sessions, sets, check-ins, events…) that
+> has no bound narrower than the API's 200-row cap, and pins the count AT the measured number (kept in the ledger row named below and in the checker, not repeated here), so a new
+> one fails the push and a fixed one lowers it. Measured first, then two of the sites were dealt with (one fixed, one made honest — below). Two flaws in its FIRST draft were found before it shipped —
+> it exempted `.limit(500)`, which returns 200 (found by auditing what it had exempted; a real read at js/app-workouts.js:933), and a
+> reason-less `// unbounded-ok:` note swallowed the next line of code as its "reason" (found by its own self-test). Both are pinned;
+> 19 deliberate breakages of the checker each fail its 35-case self-test. **Its first run found a real defect:**
+> `_buildExerciseSeries` (Performance ▸ Per exercise and Per programme) read every logged exercise in one request ordered by name, so
+> past about 200 rows whole exercises vanished from the end of the alphabet, and a failed read said "No sessions logged yet." Fixed
+> red-first (5 of 6 tests red before, 6 green after; 7 deliberate breakages each caught). Ledger:
+> `2026-09-21-exercise-progress-lists-lose-exercises-past-200-logged-rows`; the other sites are named in
+> `2026-09-21-remaining-unbounded-reads-of-growing-tables-are-named-not-fixed` (the library's `.limit(500)`, which returns 200, was
+> made `.limit(200)` — no behaviour change). A reviewer also showed several ways the checker could be fooled; trailing-comment
+> bounds and `.limit(n, { foreignTable })` are now closed and the rest are listed as accepted limits in its header. **Not started:** R2c (client-list triage); the
+> release gate for the batch.
 
 # START HERE: one ranked backlog across all four product reviews (2026-09-19)
 

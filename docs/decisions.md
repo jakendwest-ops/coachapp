@@ -12,6 +12,24 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-21 — A read of a table that grows with use must be bounded, or say why it need not be — enforced as a ratchet on
+every push (`checks.sh` rule 9n).** The API silently returns at most 200 rows per response; sixteen reads that assumed
+otherwise were fixed on 2026-09-20/21, and each had passed every test it had because a fixture never holds 200 rows.
+`scripts/check-unbounded-reads.mjs` flags a read chain on one of nine tables that grow with use (weigh-ins, sessions, sets,
+check-ins, events…) that has no bound narrower than the cap, and pins the count AT what was measured, so a NEW unbounded
+read fails the push and a fixed one lowers the number. A read bounded by construction carries `// unbounded-ok: <reason>`
+instead of raising the pin. Measured before it had teeth: its first draft treated any `.limit(...)` as a bound (so
+`.limit(500)`, which returns 200, passed) and a reason-less note swallowed the NEXT line of code as its "reason" — one found by
+auditing what it had exempted, one by its self-test; both are pinned, and 19 deliberate breakages of the checker each fail
+that self-test. On its first run it found a real defect — the Performance tab's exercise list lost whole exercises past about
+11 weeks of training and said "No sessions logged yet." when the read failed — fixed the same day. *Limits:* it reads chains,
+not data (`.in('log_id', ids)` over 20 ids and over 2,000 look alike); nine tables in `js/` only, not views, RPCs or the
+structural tables; the remaining sites (and the count) are named in
+`docs/bugs/2026-09-21-remaining-unbounded-reads-of-growing-tables-are-named-not-fixed.md`. *Not chosen:* a blocking rule (it
+would refuse reads that are bounded by construction, and a gate that refuses correct code gets switched off).
+
+---
+
 **2026-09-21 — SQL is executed locally, on the live schema, before anyone runs it on the live database — and that check runs
 on every push.** Until now a migration's first real execution was on the live project (the sql-safety skill said there was
 "no local way"). `scripts/sql-verify/` runs a script on an in-memory Postgres (PGlite, a new dev dependency) loaded with the

@@ -930,10 +930,15 @@ async function renderWorkoutTemplates(el) {
   // not rest on the policy alone. Safe for solo: solo logs carry coach_id = currentUser.id, because
   // saveRunnerSession derives it as `clientRecord.coach_id || currentUser.id` and solo's clients row
   // has coach_id NULL.
+  //
+  // .limit(200), not 500: the API returns at most 200 rows whatever is asked (measured 2026-09-20: .limit(1000) on a 5,564-row
+  // table returned 200), so 500 only LOOKED like a wider window. The behaviour is unchanged; the number now says what the
+  // query does. Residual limit, accepted: a template not trained within the newest 200 sessions on these templates falls back
+  // to its edit date. Closing it needs a server-side "newest session per template" (a view or an RPC).
   const { data: recentLogs, error: logsError } = await db.from('workout_logs')
     .select('template_id, date').eq('coach_id', currentUser.id)
     .in('template_id', templates.map(t => t.id))
-    .order('date', { ascending: false }).limit(500)
+    .order('date', { ascending: false }).limit(200)
 
   // A failed lookup must not masquerade as "never trained". Every row would quietly fall back to its
   // edit date and the page would look entirely correct — the failure mode this codebase keeps hitting.

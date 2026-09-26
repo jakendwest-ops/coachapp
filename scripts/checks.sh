@@ -548,6 +548,21 @@ if ! node scripts/sql-verify/coach-client-summary.verify.mjs > /dev/null 2>&1; t
   node scripts/sql-verify/coach-client-summary.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
   fail "scripts/add-coach-client-summary-2026-09-20.sql no longer passes its local verification -- see the lines above."
 fi
+# -- 9n. A read of a table that grows with use must be bounded, or say why it need not be --
+# The API returns at most 200 rows per response and says NOTHING when it cuts a list short (measured 2026-09-20: 200 rows
+# even for .limit(1000)). A read of a per-session / per-weigh-in table is right for a new account and silently wrong for a
+# busy one; sixteen were fixed on 2026-09-20/21 and every one had passed all of its tests, because a fixture never holds 200
+# rows. This is a RATCHET pinned AT the measured count (scripts/check-unbounded-reads.mjs, UNBOUNDED_READS_BASELINE): a NEW
+# unbounded read fails the push, a fixed one lowers the number. Measured before it was given teeth -- it flags chains, not
+# data, so a read that is bounded by construction carries a `// unbounded-ok: <reason>` note instead of raising the pin.
+echo "Checking unbounded reads of growing tables..."
+if ! node scripts/check-unbounded-reads.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-unbounded-reads.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-unbounded-reads self-test FAILED -- the gate can no longer be trusted, fix it before relying on the result below."
+fi
+if ! node scripts/check-unbounded-reads.mjs; then
+  fail "a NEW unbounded read of a growing table (the API silently returns only 200 rows) -- see the lines above."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print

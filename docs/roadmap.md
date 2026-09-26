@@ -64,7 +64,9 @@ fix are not the same fix).
 - **`max_rows = 200` cap** — **measured 2026-09-20**: 200 rows even for `.limit(1000)`, silently. Weight tabs, data export
   and personal-best reads fixed via `_fetchAllRows` (Release 2a, unreleased). Runner PR baseline fixed (4b). Dashboard adherence +
   client list now read the `coach_client_summary` view (2b, unreleased; the view has been live since 2026-09-21). **Open:** the
-  `clients` roster reads on those two screens are still one request; ~11 unclassified reads (2d).
+  `clients` roster reads on those two screens are still one request. Rule 9n (Release 2d, unreleased) now pins the unbounded
+  reads of the nine growing tables at their measured count, each named in the ledger; its census also found and fixed the Performance tab's
+  per-exercise list losing exercises past ~200 logged rows.
 
 ## Named backlog items (from the full feature ledger, not yet scoped)
 

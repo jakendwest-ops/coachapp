@@ -2173,7 +2173,7 @@ async function renderProgressPerProgram(clientId, el) {
   const [blocks, exercises] = await Promise.all([_loadProgramBlocks(clientId), _buildExerciseSeries(clientId)])
   if (myToken !== _perfProgramToken) return
 
-  if (blocks === null) {
+  if (blocks === null || exercises === null) {   // a failed exercise read must not draw the comparison with no exercises in it
     el.innerHTML = '<div class="empty-state"><div class="empty-title">Couldn\'t load your programmes</div><div class="empty-text">Check your connection and try again.</div></div>'
     return
   }
@@ -2351,6 +2351,7 @@ async function renderProgressStrength(el) {
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
   const exercises = await _buildExerciseSeries(clientId)
   if (myToken !== _perfExerciseToken) return
+  if (exercises === null) { el.innerHTML = '<div class="loading-state">Couldn\'t load your exercise history — check your connection and try again.</div>'; return }
   if (!exercises.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>'; return }
   window._trendCache = exercises
   window._trendState = window._trendState || { range: 'All', metricByEx: {} }
@@ -2361,13 +2362,20 @@ async function renderProgressStrength(el) {
   _renderPerfExerciseList('')
 }
 
+// The person's exercises, each with every session — or NULL when the history could not be read. null, not []: [] renders as
+// "No sessions logged yet.", and a failed read must not look like a brand-new account (the convention _loadProgramBlocks uses).
 async function _buildExerciseSeries(clientId) {
-  const { data: exRows } = await db.from('workout_log_exercises')
+  // Paged (_fetchAllRows, app-core.js): the API caps a response at 200 rows and says nothing when it truncates. This read is
+  // ordered by NAME, so past about 200 logged exercise rows (roughly 11 weeks at three sessions a week) whole exercises
+  // vanished from the END of the alphabet — "Squat" before "Bench" — with no sign anything was missing. `id` is the unique
+  // tie-break the paging needs: without it rows that share a name are dropped or repeated at every page boundary.
+  const { data: exRows, error } = await _fetchAllRows(() => db.from('workout_log_exercises')
     // `set_number` added 2026-08-15. A nested column list is an ALLOWLIST, and without it PostgREST
     // returns the sets in NO guaranteed order — fine while only aggregates were computed, wrong now
     // that each session renders its sets in sequence under the chart.
-    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(set_number, weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side, avg_watts, phase)')
-    .eq('workout_logs.client_id', clientId).order('exercise_name')
+    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(set_number, weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side, avg_watts, phase)', { count: 'exact' })
+    .eq('workout_logs.client_id', clientId).order('exercise_name').order('id'))
+  if (error) { log.error('_buildExerciseSeries', 'exercise history fetch failed', error); return null }
   const byName = {}
   for (const row of (exRows || [])) {
     const name = row.exercise_name; if (!name) continue
@@ -2379,7 +2387,15 @@ async function _buildExerciseSeries(clientId) {
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-function _setTrendRange(r) { window._trendState.range = r; renderProgressStrength(document.getElementById('perf-sub-content')) }
+// The range only FILTERS points the loaded history already holds, so it re-renders from `window._trendCache` — as the search box
+// and _setTrendMetric do. It used to call renderProgressStrength, which READ THE WHOLE HISTORY AGAIN on every change: one request
+// while the read was capped, up to one per 200 logged exercise rows now that it is paged. With no list on screen (a failed or
+// still-running load) it falls through to a full render, which is also the retry.
+function _setTrendRange(r) {
+  window._trendState.range = r
+  if (document.getElementById('perf-ex-list')) _renderPerfExerciseList(document.getElementById('perf-ex-search')?.value || '')
+  else renderProgressStrength(document.getElementById('perf-sub-content'))
+}
 function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = key; _renderPerfExerciseList(document.getElementById('perf-ex-search')?.value || '') }
 
 // Per-type chip config: [metricKey, label, aggMode, formatter, lowerBetter?]. Chips with all-zero

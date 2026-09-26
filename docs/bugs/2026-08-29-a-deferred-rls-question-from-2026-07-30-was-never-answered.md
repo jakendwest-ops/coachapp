@@ -24,6 +24,12 @@ read is bounded by an already-scoped id list:
   policy is anchored to the coach. So the app still does not depend on the sets/exercises SELECT policies for tenant
   separation. Proved on the real database that another client's history is invisible (`tests/runner-pr-baseline-2026-09-20.spec.js`);
   read-only, the same query agreed with the old read under a client session
+- `_buildExerciseSeries` (Performance ▸ Per exercise / Per programme; paged 2026-09-21): the same JOIN-scoped shape as
+  `_prBaseline` — it reads `workout_log_exercises` as the ROOT, contained by `.eq('workout_logs.client_id', …)` through a
+  `workout_logs!inner` embed (whose SELECT policy is anchored to the coach or the client's own row), with `workout_log_sets` as
+  a to-many embed. It is not derived from an id list either, but it likewise does not rely on the exercises/sets SELECT policies
+  for tenant separation. Tenant isolation is asserted against the stand-in (another person's rows must not appear); it has
+  not been probed cross-tenant on the real database
 
 So the residual exposure is a **direct console INSERT of `workout_log_sets` against a foreign
 `log_id`** — which no app code and no test currently exercises. That is exactly the shape of the
