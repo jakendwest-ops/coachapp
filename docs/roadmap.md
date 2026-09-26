@@ -52,6 +52,10 @@ fix are not the same fix).
   for five small releases, in
   [superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md);
   it supersedes this list for *what to build next*. Three local commits are unreleased and unpushed.
+- **Roster-size features deferred — Jake, 2026-09-26: no clients yet.** Client-list search / filter / sort (R2c), the ranked
+  "Needs attention" list (R3c), invite state and the programme-and-week row on the client list have no real roster to serve.
+  Not started, and not to be built speculatively: they need a session once there are real clients, so Jake can say what he
+  actually reaches for.
 
 ## Raised but deliberately deprioritized (Jake's own call, 2026-07-11 — still relevant, not lost)
 

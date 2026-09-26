@@ -76,7 +76,7 @@
 > `2026-09-21-exercise-progress-lists-lose-exercises-past-200-logged-rows`; the other sites are named in
 > `2026-09-21-remaining-unbounded-reads-of-growing-tables-are-named-not-fixed` (the library's `.limit(500)`, which returns 200, was
 > made `.limit(200)` — no behaviour change). A reviewer also showed several ways the checker could be fooled; trailing-comment
-> bounds and `.limit(n, { foreignTable })` are now closed and the rest are listed as accepted limits in its header. **Not started:** R2c (client-list triage); the
+> bounds and `.limit(n, { foreignTable })` are now closed and the rest are listed as accepted limits in its header. **R2c (client-list triage) is DEFERRED by Jake, 2026-09-26: no clients yet — revisit in a session once there is a real roster.** **Not started:** the
 > release gate for the batch.
 
 # START HERE: one ranked backlog across all four product reviews (2026-09-19)
@@ -381,6 +381,9 @@ and decide whether the script must add indexes — measure before promising the 
    35-day test fails.
 
 ## Commit R2c — client list you can triage (rank 6; needs R2b)
+
+> **DEFERRED — Jake, 2026-09-26: no clients yet.** Do not build until there is a real roster; a later session decides what he
+> actually reaches for. The same applies to R3c's "Needs attention" list, whose value also depends on a roster.
 
 1. Pure `renderClientRows(rows, state)` (testable with fixtures) + toolbar: search box (name, client-side —
    the list is at most 200 rows), status chips All / Active / Inactive / Archived, sort (Name; Last active,
