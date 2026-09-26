@@ -48,8 +48,10 @@ row isn't closed here — per this project's own closure rule, only Jake or a re
 it — but treating this as "still unresolved" (as this documentation set did before this migration)
 is now inaccurate. See [roadmap.md](roadmap.md) for the full correction.
 
-The GDPR export shipping without its profile section is a separate, still-open bug (2026-09-06),
-not affected by the above.
+The GDPR export shipping without its profile section (2026-09-06) is a separate matter from the
+above, and it is now **closed** — 684c7fa (2026-09-20) rewired every export read, profiles included,
+through a throw-on-error helper; closed on rule-(b) evidence, see
+[docs/bugs/2026-09-06-gdpr-export-ships-a-bundle-with-the-profile-section-missing.md](bugs/2026-09-06-gdpr-export-ships-a-bundle-with-the-profile-section-missing.md).
 
 ## Security constraints — non-negotiable
 

@@ -1,9 +1,10 @@
 ---
 id: 2026-09-06-gdpr-export-ships-a-bundle-with-the-profile-section-missing
-status: open
+status: closed
 priority: medium
 reported: 2026-09-06
-status_detail: "Found by the 2026-09-06 full-file review's mechanical sweep (the agent half of that review was killed by a rate limit and has NOT run). js/app-progress.js:3185 discards the error on the profiles read that fills bundle.profile, so a failed read produces a subject-access export with the profile section silently absent and the download still reporting success. Latent, not reachable on demand."
+closed_by: tests/capped-reads-2026-09-20.spec.js
+status_detail: "CLOSED 2026-09-26 (found during the v2026.09.7 release review) on rule-(b) evidence. Found by the 2026-09-06 full-file review's mechanical sweep. js/app-progress.js:3185 discarded the error on the profiles read that fills bundle.profile, so a failed read produced a subject-access export with the profile section silently absent and the download still reporting success. Closed as a side effect of 684c7fa (2026-09-20, 'Reads of growing tables page past the API's 200-row cap; the data export fails loudly'), which rewired every export read — profiles included — through a throw-on-error helper. tests/capped-reads-2026-09-20.spec.js's 'the export refuses to report success when ANY read fails' loops over every export table INCLUDING 'profiles' and asserts a failed read rejects rather than producing a bundle with a hole. Verified directly against HEAD, not taken on the commit message's word: the test file, and its explicit inclusion of 'profiles' in the loop, are both present at HEAD."
 ---
 
 # GDPR export can ship an incomplete bundle and still report success
