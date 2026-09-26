@@ -266,8 +266,11 @@ function maybeLaunchSelfTest () {
     mkdirSync(dirname(SELFTEST_ATTEMPT), { recursive: true })
     writeFileSync(SELFTEST_ATTEMPT, new Date().toISOString())
     const out = openSync(SELFTEST_LOG, 'w')
+    // windowsHide: on Windows a DETACHED child is given its own console window, and without this it is a VISIBLE black
+    // node.exe window that opens over the editor at session start and again every 45+ minutes while the marker is stale
+    // (reported 2026-09-26). The run needs no console — its output goes to SELFTEST_LOG.
     const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--self-test'],
-      { detached: true, stdio: ['ignore', out, out] })
+      { detached: true, windowsHide: true, stdio: ['ignore', out, out] })
     child.unref()
     return `LAUNCHED in the background just now, takes ~10 min. Output: ${SELFTEST_LOG}`
   } catch (e) {
