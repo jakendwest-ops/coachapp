@@ -32,9 +32,9 @@ const { loginAsPT } = require('./helpers')
 const FROZEN_UNGUARDED = {
   // ── Internal helpers: only ever run INSIDE an already-guarded entry point. Guarding them would
   //    guard the same gesture twice and add a second flag that can disagree with the first.
-  _archiveAssignmentBlock:            'internal — runs inside saveAssignProgram* (already guarded)',
-  _cloneTemplateForClient:            'internal — runs inside the assign/clone/periodization callers',
-  _cloneProgramForClient:             'internal — runs inside saveAssignProgram* (already guarded)',
+  _archiveAssignmentBlock:            'internal — runs inside unassignProgram / deleteProgram, via _removeAssignmentAndClones (confirm-gated)',
+  _cloneTemplateForClient:            'internal — runs inside the clone/periodization callers',
+  _cloneProgramForClient:             'no app caller since 2026-09-27 (the assign buttons use assign_program()); kept only for the specs that call it',
   _saveMissingOneRMEntries:           'internal — runs inside the assign flow after it has succeeded',
   _resolveExerciseIdForSave:          'internal — runs inside saveOneRMGrid / the Big-5 quick form',
   _propagateExerciseChangeToTemplates:'internal — runs inside _applyToAllSessions after a guarded save',
@@ -156,8 +156,10 @@ test.describe('A double-pressed write must not insert twice', () => {
     expect(scan.moduleCount, 'index.html must yield the real module list').toBeGreaterThanOrEqual(9)
 
     const found = scanInserters(scan.srcs)
-    // "all 0 inserters are fine" is a switched-off checker. 37 exist today.
-    expect(found.length, 'the scan found no inserters — it is inspecting nothing').toBeGreaterThanOrEqual(37)
+    // "all 0 inserters are fine" is a switched-off checker. 35 exist today: 37 until 2026-09-27, when
+    // saveAssignProgram and saveAssignProgramToClient stopped inserting from the browser (both now call the
+    // assign_program() database function), which also takes them out of this scan's sight — see the next test.
+    expect(found.length, 'the scan found no inserters — it is inspecting nothing').toBeGreaterThanOrEqual(35)
 
     for (const name of MUST_BE_GUARDED) {
       const fn = found.find(f => f.name === name)
@@ -176,6 +178,26 @@ test.describe('A double-pressed write must not insert twice', () => {
     const names = new Set(found.map(f => f.name))
     expect(frozen.filter(n => !names.has(n)),
       'every FROZEN_UNGUARDED entry must still name a real inserter').toEqual([])
+  })
+
+  // The two assign buttons write through one RPC (assign_program) since 2026-09-27, so the inserter scan above
+  // no longer sees them. A double press is still costly: the second call either restarts the plan or hits the
+  // unique index with a confusing error. Their guard is pinned here instead of silently dropping out of scope.
+  test('both assign buttons still disable themselves before their first write', async ({ page }) => {
+    await loginAsPT(page)
+    const scan = await readModules(page)
+    expect(scan.fatal).toBeUndefined()
+    const src = scan.srcs['js/app-programs.js']
+    for (const name of ['saveAssignProgram', 'saveAssignProgramToClient']) {
+      const start = src.search(new RegExp(`^async function ${name}\\s*\\(`, 'm'))
+      expect(start, `${name} must still exist`).toBeGreaterThanOrEqual(0)
+      const rest = src.slice(start)
+      const body = rest.slice(0, rest.slice(1).search(/\n(async )?function /) + 1)
+      expect(body, `${name} must call the assign_program transaction`).toMatch(/_assignProgramTx\(/)
+      const guardAt = body.search(/\.disabled\s*=\s*true/)
+      expect(guardAt, `${name} must disable its button`).toBeGreaterThanOrEqual(0)
+      expect(guardAt, `${name} must disable its button BEFORE calling the transaction`).toBeLessThan(body.indexOf('_assignProgramTx('))
+    }
   })
 
   test('no bespoke in-flight flag remains — the release must live in one try/finally', async ({ page }) => {

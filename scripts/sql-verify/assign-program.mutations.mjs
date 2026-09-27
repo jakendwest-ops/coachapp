@@ -1,0 +1,38 @@
+// Deliberate breakages of scripts/add-assign-program-rpc-2026-09-27.sql. run-mutations.mjs applies each one and requires the
+// verifier to FAIL — proof the checks can fail, so a green run means something.
+export const MUTATIONS = {
+  m1: { why: 'SECURITY DEFINER: the function would bypass row-level security (an unreadable workout would be copied, not refused)',
+        pairs: [['security invoker', 'security definer']] },
+  // Narrowing the condition to `where c.id = p_client_id` is NOT a breakage: the clients read policy already hides every client
+  // that is not the caller's, so it was equivalent (first mutation run, 2026-09-27). Removing the check entirely is.
+  m2: { why: 'no client ownership check at all (another coach reaches the writes; RLS refuses with a different, unhelpful error)',
+        pairs: [['  if not exists (select 1 from public.clients c\n                 where c.id = p_client_id and (c.coach_id = v_uid or c.user_id = v_uid)) then\n    raise exception \'assign_program: that client is not yours\' using errcode = \'42501\';\n  end if;\n', '']] },
+  m3: { why: 'no programme ownership check (another coach\'s programme could be assigned, as an empty plan)',
+        pairs: [['where p.id = p_program_id and p.coach_id = v_uid) then', 'where p.id = p_program_id) then']] },
+  m4: { why: 'a second assign silently restarts instead of being refused',
+        pairs: [['if not p_restart then', 'if false then']] },
+  m5: { why: 'the old block is not archived before the restart',
+        pairs: [["'restarted', v_existing.id\n      from public.programs p\n     where p.id = v_existing.program_id;", "'restarted', v_existing.id\n      from public.programs p\n     where false;"],
+                ["raise exception 'assign_program: could not archive the existing assignment' using errcode = '42501';", 'null;']] },
+  m6: { why: 'a copy someone trained from is deleted on restart',
+        pairs: [['       and not exists (select 1 from public.workout_logs l where l.template_id = t.id);', ';']] },
+  m7: { why: 'the sweep can delete a MASTER workout',
+        pairs: [['       and t.client_id is not null\n', '']] },
+  m8: { why: 'an unreadable session is skipped instead of failing the whole call (the half-copied plan the JS produced)',
+        pairs: [["raise exception 'assign_program: a session''s workout could not be read, so nothing was assigned' using errcode = '42501';", 'continue;']] },
+  m9: { why: 'anon may execute the function',
+        pairs: [['revoke all on function public.assign_program(uuid, uuid, date, boolean) from anon;\n', '']] },
+  m10: { why: '0 sets is copied as 0 instead of null (the JS wrote `sets || null`)',
+         pairs: [['nullif(e.sets, 0)', 'e.sets']] },
+  m11: { why: 'the copy loses its family (propagation could never find it)',
+         pairs: [['nullif(v_slot.description, \'\'), v_slot.family_id)', 'nullif(v_slot.description, \'\'), null)']] },
+  m12: { why: 'the week number is not carried to the client copy',
+         pairs: [['values (v_cp_id, v_slot.pw_id, v_new_tmpl, v_slot.week_number);', 'values (v_cp_id, v_slot.pw_id, v_new_tmpl, 1);']] },
+  m13: { why: 'the function has no fixed search_path',
+         pairs: [['set search_path = public, pg_temp\n', '']] },
+  m15: { why: 'a restart that finds its old assignment gone reports "permission denied" (42501) instead of "changed elsewhere"',
+         pairs: [["raise exception 'assign_program: the existing assignment was changed by something else' using errcode = '40001';",
+                  "raise exception 'assign_program: permission denied' using errcode = '42501';"]] },
+  m14: { why: 'a zero-week phase counts as 0 planned weeks, not 1 (the JS used duration_weeks || 1)',
+         pairs: [['case when ph.duration_weeks > 0 then ph.duration_weeks else 1 end', 'ph.duration_weeks']] },
+}

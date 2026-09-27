@@ -12,6 +12,23 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-27 — A write that spans tables goes through one transactional database function, not a browser chain.**
+The app-code audit (`archive/app-code-audit-2026-09-27.md`, R1) found the programme lifecycle written as chains of separate
+browser→API writes. Careful code could detect partial state, but it could not prevent it, and a restart could delete a
+client's plan and then fail to insert the new one.
+- **First instance:** `assign_program()` (`scripts/add-assign-program-rpc-2026-09-27.sql`), used by both assign buttons.
+- **The shape, for the next ones (`deleteProgram`, `deletePhaseWeek`):**
+  - `security invoker`, so row-level security stays the boundary and the function only adds checks;
+  - a pinned `search_path`;
+  - execute granted to `authenticated` only;
+  - errors raised with codes the JS maps to plain messages;
+  - verified on PGlite with the live policies and a mutation suite before Jake runs it.
+- **Rejected: `security definer`.** It would have made the function the security boundary and bypassed every policy.
+- **Rejected: keeping the browser chain with more guards.** Each guard adds a round-trip and one more place to forget, and
+  no guard makes a sequence of writes atomic.
+- **Cost:** the logic now lives in SQL as well as JS. The restart archive and sweep exist in both (`_archiveAssignmentBlock`
+  / `_removeAssignmentAndClones` still serve unassign and delete), and each copy's comment names the other.
+
 **2026-09-27 — The operating system was cut back to what refuses, what is broken, and what Jake can answer.** An audit
 the same day found the OS disrupting its operator and its alarms meaning nothing. Changes:
 

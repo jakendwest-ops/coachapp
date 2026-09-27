@@ -70,10 +70,12 @@ runner-ignored, so a leftover runs in `npm test`); and no fault-injection test a
 point-in-time, counts measured that day). Fixed the same day: phone sign-out skipping the draft wipe, the "PT" pill shown to
 every phone user, the login placeholder mojibake, and floating unhashed CDN scripts (checks.sh rules 9p/9q now hold the
 last two classes). Still open, in the audit's priority order:
-- **No transactions on the programme lifecycle.** Assign/clone, restart, `deleteProgram` and `deletePhaseWeek` are
-  browser-orchestrated chains (assign ≈ 2 requests per session, sequential). The restart path deletes the old plan before
-  inserting the new one. Recommended: `security invoker` Postgres functions, one transaction each, plus the first
-  fault-injection spec.
+- **No transactions on the programme lifecycle — HALF DONE (v2026.09.9).**
+  - **Done:** assign, restart and clone are now one `assign_program()` transaction, with the first fault-injection spec.
+    Shape recorded in `decisions.md` 2026-09-27.
+  - **Still browser-orchestrated chains:** `deleteProgram` and `deletePhaseWeek`. `deletePhaseWeek` only touches the client
+    copies the current view (PT vs Personal) may touch, which the database cannot see, so it needs its own design.
+  - **Now tests-only:** `_cloneProgramForClient` has no app caller; four older specs still call it.
 - **Escaping is opt-in** (181 `innerHTML` writes, stored XSS ×8): an auto-escaping `html` tagged template, ratcheted.
 - **`dbq()` at 8% adoption** (26 of 318 `db.from` calls, unchanged since the 2026-08-12 audit), and raw writes whose
   `error` is ignored never reach the error-report card. Decide: make it mandatory with a ratchet, or delete it.

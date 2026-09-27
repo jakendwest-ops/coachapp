@@ -329,8 +329,9 @@ async function _existingAssignment(clientId, programId) {
 // (workout_templates → client_program_workouts is CASCADE, i.e. deleting the TEMPLATE deletes the
 // cpw, never the reverse). So every removal stranded ~30 clones forever. Together with the
 // unguarded re-assign path, that is how one account accumulated 2013 client-owned templates, 1223
-// of them dead (2026-07-13). ONE helper, used by every path that drops an assignment, so the two
-// cannot diverge again.
+// of them dead (2026-07-13). ONE helper for every BROWSER path that drops an assignment (unassign, programme
+// delete); the restart path does the same sweep, with the same two guards, inside assign_program() since
+// 2026-09-27 — keep the two in step.
 //
 // Deliberately does NOT delete a clone that a workout_log points at: workout_logs.template_id is
 // SET NULL on delete, so history survives either way, but keeping the link means a logged session
@@ -339,12 +340,14 @@ async function _existingAssignment(clientId, programId) {
 // the block's date window still exists: the row is about to be hard-deleted, and there is a unique
 // index on (client_id, program_id) so a restart cannot keep it.
 //
-// Written here, in the one function all four destructive callers funnel through (:306 restart, :590
-// remove, :704 solo restart, :1319 programme delete), rather than at each caller — this codebase's
-// most-repeated failure is a rule landing in one function while its siblings drift.
+// Written here, in the one function the destructive browser callers funnel through (unassignProgram and
+// deleteProgram), rather than at each caller — this codebase's most-repeated failure is a rule landing in one
+// function while its siblings drift. SINCE 2026-09-27 THE RESTART PATH IS A SECOND COPY OF THIS: both assign
+// buttons restart through assign_program() (scripts/add-assign-program-rpc-2026-09-27.sql), which archives the
+// block in SQL with the same fields. Change one, change the other; assign-program.verify.mjs pins the SQL side.
 //
 // Returns false to ABORT the delete if the snapshot cannot be written. History loss must never be
-// traded for a silent removal, and all four callers already treat false as abort.
+// traded for a silent removal, and every caller already treats false as abort.
 async function _archiveAssignmentBlock(clientProgramId, reason) {
   const { data: cp, error } = await db.from('client_programs')
     .select('id, client_id, program_id, start_date, created_at, programs(name, program_phases(duration_weeks))')
@@ -447,39 +450,41 @@ async function saveAssignProgram(clientId) {
   if (existing) {
     const started = existing.start_date ? ` (started ${existing.start_date})` : ''
     if (!(await confirmDialog(`That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`, { title: 'Restart program?', confirmLabel: 'Restart', danger: true }))) { _release(); return }
-    if (!await _removeAssignmentAndClones(existing.id, 'restarted')) { errorEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
   }
 
-  const { data: cp, error } = await db.from('client_programs').insert({
-    client_id: clientId,
-    program_id: programId,
-    start_date: startDate || null
-  }).select('id').single()
-
-  if (error) {
-    log.error('saveAssignProgram', 'insert failed', error)
-    // 23505 = the unique index fired: a concurrent assign won the race.
-    errorEl.textContent = error.code === '23505' ? 'That program is already assigned to this client.' : error.message
-    _release(); return
-  }
+  // ONE transaction: archive + remove (on restart), the new assignment, and every session copy either all
+  // land or none do (_assignProgramTx). The JS chain this replaced could delete a client's plan and then fail.
+  const res = await _assignProgramTx('saveAssignProgram', clientId, programId, startDate, !!existing)
+  if (!res.ok) { errorEl.textContent = res.message; _release(); return }
   await _saveMissingOneRMEntries(clientId)
   closeModal('assign-program-modal')
-  // Must AWAIT the clone: it builds the client_program_workouts rows every calendar/Workouts/dashboard
-  // view reads to show the assigned sessions. Fire-and-forget here meant the re-render (and any page
-  // the user navigated to next) raced ahead of those rows and showed the pre-assignment state until a
-  // manual refresh — the "old data until refresh" bug, most visible when the program starts today.
-  const tabEl = document.getElementById('tab-content')
-  if (tabEl) tabEl.innerHTML = '<div class="loading-state">Assigning program…</div>'
-  // Capture the result, like the twin saveAssignProgramToClient does. Until 2026-09-02 this path
-  // DISCARDED the return value, so a failed clone re-rendered as if it had worked and the user saw
-  // an assignment with no sessions behind it. The twin gates its toast on cloneOk with a comment
-  // explaining exactly this; the fix had landed in one member of the pair only.
-  const cloneOk = await _cloneProgramForClient(cp.id, programId, clientId)
-  if (!cloneOk) {
-    log.error('saveAssignProgram', 'program clone reported failure -- assignment may be incomplete', { programId, clientId })
-    showToast('The program was assigned but its sessions could not all be copied — check the plan.', 'error')
+  renderClientPrograms(clientId, document.getElementById('tab-content'))
+}
+
+// Assigns (or, with restart, restarts) a programme through the assign_program() database function
+// (scripts/add-assign-program-rpc-2026-09-27.sql). It runs as ONE transaction with the caller's own rights, so
+// row-level security still decides every write, and a failure part-way changes nothing: the client keeps
+// exactly the plan they had. Until 2026-09-27 both assign paths did this as a chain of ~2 requests per session
+// from the browser, and a dropped connection or one refused write left permanent partial state.
+// Returns { ok, result } or { ok: false, message } with a message fit for the modal's error line. On success it
+// shows the "no phases yet" warning itself, as _cloneProgramForClient did.
+async function _assignProgramTx(fnName, clientId, programId, startDate, restart) {
+  const { data, error } = await db.rpc('assign_program', {
+    p_client_id: clientId, p_program_id: programId, p_start_date: startDate || null, p_restart: !!restart,
+  })
+  if (error) {
+    log.error(fnName, 'assign_program refused — nothing was changed', { code: error.code, programId, clientId })
+    if (error.code === '23505') return { ok: false, message: 'That program is already assigned.' }
+    if (error.code === '42501') return { ok: false, message: 'Could not assign — permission denied. Nothing was changed.' }
+    // 40001: the old assignment was removed by something else mid-restart (usually a second tab doing the same).
+    if (error.code === '40001') return { ok: false, message: 'This plan was just changed elsewhere — nothing was changed here. Close and try again.' }
+    return { ok: false, message: 'Could not assign the program — nothing was changed. Try again.' }
   }
-  renderClientPrograms(clientId, tabEl)
+  log.ok(fnName, 'assigned', { programId, clientId, sessions: data?.sessions, restarted: data?.restarted })
+  if (data && data.phases === 0) {
+    showToast('Assigned — but this program has no phases/workouts yet, so there’s nothing to do until you add some', 'warn', 8000)
+  }
+  return { ok: true, result: data }
 }
 
 // Clones one master workout_template (+ its exercises) into a client-owned copy. Returns the new template id, or null on failure.
@@ -535,6 +540,9 @@ async function _cloneTemplateForClient(tmpl, clientId) {
   return newTmpl.id
 }
 
+// NO APP CALLER since 2026-09-27: both assign buttons copy sessions inside assign_program() (one transaction).
+// Kept only because four older specs call it directly; retire it together with them. Do not wire it back into a
+// flow — it is the browser-side, non-transactional chain the database function replaced.
 async function _cloneProgramForClient(clientProgramId, programId, clientId) {
   const { data: phases, error: phErr } = await db
     .from('program_phases')
@@ -754,7 +762,7 @@ async function _saveMissingOneRMEntries(clientId) {
   })
   if (!rows.length) return
   const { error } = await db.from('client_1rms').insert(rows)
-  if (error) { log.error('_saveMissingOneRMEntries', 'insert failed', error); showToast(`Assigned, but the 1RM${rows.length!==1?'s':''} you entered didn't save — try adding ${rows.length!==1?'them':'it'} again from the client's 1RMs tab`, 'error') }
+  if (error) { log.error('_saveMissingOneRMEntries', 'insert failed', error); showToast(`Assigned, but the 1RM${rows.length!==1?'s':''} you entered didn't save — try adding ${rows.length!==1?'them':'it'} again from the client's 1RMs tab`, 'error'); return false }
 }
 
 async function unassignProgram(clientId, assignmentId) {
@@ -890,26 +898,17 @@ async function saveAssignProgramToClient(programId, soloClientId) {
       : `That client already has this program${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`,
       { title: 'Restart program?', confirmLabel: 'Restart', danger: true })
     if (!ok) { _release(); return }
-    if (!await _removeAssignmentAndClones(existing.id, 'restarted')) { errEl.textContent = 'Could not replace the existing assignment.'; _release(); return }
   }
 
-  const { data: cp, error } = await db.from('client_programs').insert({ client_id: clientId, program_id: programId, start_date: startDate || null }).select('id').single()
-  if (error) {
-    log.error('saveAssignProgramToClient', 'insert failed', error)
-    errEl.textContent = error.code === '23505' ? 'That program is already assigned.' : error.message
-    _release(); return
-  }
-  await _saveMissingOneRMEntries(clientId)
+  // One transaction for the restart and the copy, same as saveAssignProgram (see _assignProgramTx).
+  const res = await _assignProgramTx('saveAssignProgramToClient', clientId, programId, startDate, !!existing)
+  if (!res.ok) { errEl.textContent = res.message; _release(); return }
+  const oneRMsSaved = await _saveMissingOneRMEntries(clientId)   // false only when it has just toasted its own error
   document.getElementById('apc-modal')?.remove()
-  // AWAIT the clone before re-rendering — same "old data until refresh" race as saveAssignProgram:
-  // the client_program_workouts rows must exist before any view reads them. Then re-render the
-  // current page so the new assignment shows immediately (Workouts/Calendar/dashboard), no refresh.
-  showToast('Adding program…', 'info', 1500)
-  const cloneOk = await _cloneProgramForClient(cp.id, programId, clientId)
-  // Only show our own "done" toast when the clone had nothing to report — otherwise this single-toast
-  // UI (app-core.js's showToast keeps no queue) would instantly clobber whatever _cloneProgramForClient
-  // just told the user (a phase-count warning, a skip count, an insert failure). Fixed 2026-07-29.
-  if (soloClientId && cloneOk) showToast('Program added to your plan', 'success')
+  // Only toast "done" when nothing else was said: showToast keeps one node and no queue, so this would
+  // clobber the "no phases yet" warning _assignProgramTx has just shown (fixed that way 2026-07-29), or the
+  // 1RM-save error above (which it did clobber until 2026-09-27).
+  if (soloClientId && res.result?.phases !== 0 && oneRMsSaved !== false) showToast('Program added to your plan', 'success')
   if (typeof currentPage === 'string') navigate(currentPage, 'replace')
 }
 
@@ -1028,9 +1027,9 @@ async function _buildProgramTemplatePool(templates) {
   const uses = []
   // Deliberately queries program_phase_workouts ONLY, and that is correct — checked 2026-08-14 rather
   // than assumed. It looks like client_program_workouts belongs here too (a template used only in an
-  // assigned plan would read "Not used yet"), but that state cannot exist: _cloneProgramForClient
-  // (:418-420) inserts a cpw row ONLY with the id returned by _cloneTemplateForClient, which always
-  // stamps `client_id` (:338) — and on clone failure it skips the row entirely rather than falling back
+  // assigned plan would read "Not used yet"), but that state cannot exist: the assign writer (since
+  // 2026-09-27 the assign_program() database function; before that _cloneProgramForClient) inserts a cpw row
+  // ONLY with the id of a copy it just created with `client_id` set — and on failure it writes nothing rather than falling back
   // to the master. So every cpw row points at a client-owned clone, and this pool already excludes those
   // via `.is('client_id', null)`. Adding that query would match nothing. Do not "fix" this again.
   for (let i = 0; i < ids.length; i += 100) {
