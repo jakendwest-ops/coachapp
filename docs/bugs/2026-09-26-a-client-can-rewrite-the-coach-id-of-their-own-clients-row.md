@@ -1,9 +1,9 @@
 ---
 id: 2026-09-26-a-client-can-rewrite-the-coach-id-of-their-own-clients-row
-status: open
+status: closed
 priority: medium
 reported: 2026-09-26
-status_detail: "OPEN, CONFIRMED on the live database on 2026-09-26 by Jake's read-only policy query. A client can UPDATE any column of their own clients row, including coach_id, so they can detach themselves (already known and accepted, docs/archive/log.md) AND point the row at ANOTHER coach's id (not covered by that discussion, as far as the log shows). No data of anyone else is exposed by it; it lets a client push their own row and data into a stranger's roster. DECIDED by Jake 2026-09-26: close only the 'attach to another coach' half, keep the accepted self-detach. FIX BUILT, NOT YET APPLIED: scripts/add-clients-coach-id-guard-2026-09-26.sql (a BEFORE UPDATE OF coach_id trigger), proven on a copy of the live schema (scripts/sql-verify/clients-coach-id-guard.verify.mjs, 35 checks, 10 mutations) and reviewed by three angles before its commit. The live database is unchanged until Jake runs the script; then its read-back and tests/clients-coach-id-guard-2026-09-26.spec.js (RED before, green after) settle it. Moves to fixed-awaiting-jake once applied and the spec is green."
+status_detail: "CLOSED 2026-09-26. Jake ran scripts/add-clients-coach-id-guard-2026-09-26.sql live and pasted its read-back: function clients_guard_coach_id security_definer=false, search_path=public, pg_temp; trigger clients_guard_coach_id BEFORE UPDATE OF coach_id ON public.clients FOR EACH ROW, alongside the pre-existing audit_clients trigger — exactly as designed. Closure evidence per the ledger's own rule (b): tests/clients-coach-id-guard-2026-09-26.spec.js went RED against the live API before the script (foreign-key error, proving the hole was real) and GREEN after (3/3 passed) in the same session. A client can still detach themselves (accepted); they can no longer point their own row at another coach."
 ---
 
 # A client can rewrite the coach_id of their own `clients` row

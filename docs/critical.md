@@ -257,10 +257,11 @@ continue appending future entries here, not in a separate file._
   the new `coach_client_summary` view (Release 2b): re-creating it without `with (security_invoker = true)` silently made it run
   with its owner's rights and bypass row-level security — another coach's log was then counted (measured on a local Postgres).
   Any view over tenant data must repeat the clause on every replace and read `reloptions` back each time (the migration does).
-  Same review, recorded and not fixed: a client can rewrite their own `clients.coach_id` (**confirmed live 2026-09-26** — the
-  `clients_update_own_row` policy pins only `user_id`; detaching was already accepted, pointing at ANOTHER coach was not covered;
-  see docs/bugs/2026-09-26-a-client-can-rewrite-the-coach-id-of-their-own-clients-row.md), and a coach can attach another coach's
-  programme id to their own client (write side only).
+  Same review, recorded and **fixed and closed 2026-09-26**: a client could rewrite their own `clients.coach_id` (the
+  `clients_update_own_row` policy pinned only `user_id`; detaching was already accepted, pointing at ANOTHER coach was not
+  covered). A `BEFORE UPDATE OF coach_id` trigger now refuses it for end-user roles; detaching is unaffected. See
+  docs/bugs/2026-09-26-a-client-can-rewrite-the-coach-id-of-their-own-clients-row.md. A coach can still attach another coach's
+  programme id to their own client (write side only, unrelated, not fixed).
 
 ## Requires Validation
 
