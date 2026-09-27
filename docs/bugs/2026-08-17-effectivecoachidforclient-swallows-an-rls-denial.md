@@ -1,10 +1,10 @@
 ---
 id: 2026-08-17-effectivecoachidforclient-swallows-an-rls-denial
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-08-17
 closed_by: tests/effective-coach-id-2026-09-04.spec.js
-status_detail: "FIXED 2026-09-04. The trailing || currentUser.id is gone; the resolver captures the .single() error and returns NULL when the client row is not readable. The || user_id clause STAYS because solo coach_id is legitimately NULL, and that is the distinction the old code collapsed. All four callers handle null. Wider class enumerated: 9 sites, 2 already correct, 1 a documented deliberate choice, 5 read-path siblings still open."
+status_detail: "CLOSED 2026-09-27 via closure rule (b): the row records that restoring the old tail turned two of the three tests in tests/effective-coach-id-2026-09-04.spec.js red; green in the v2026.09.8 full-suite run (832 passed, 0 failed)."
 ---
 
 # `_effectiveCoachIdForClient` falls back to `currentUser.id` on a lookup FAILURE

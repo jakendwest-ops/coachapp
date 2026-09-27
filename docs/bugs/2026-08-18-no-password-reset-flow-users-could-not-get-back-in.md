@@ -1,9 +1,9 @@
 ---
 id: 2026-08-18-no-password-reset-flow-users-could-not-get-back-in
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-08-18
-status_detail: "FIXED commit f7a8105, live 2026-08-18 (app-progress v47). 7 red-before tests in tests/password-reset-2026-08-18.spec.js. Awaiting Jake: Colin West has not yet completed a reset."
+status_detail: "CLOSED 2026-09-27 via closure rule (b): the row records 7 red-before tests in tests/password-reset-2026-08-18.spec.js; green in the v2026.09.8 full-suite run (832 passed, 0 failed)."
 ---
 
 # A real beta user could not get back into the app — there was no reset flow at all

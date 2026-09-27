@@ -1,10 +1,10 @@
 ---
 id: 2026-08-22-var-surface2-is-not-a-token-that-exists
-status: fixed-awaiting-jake
+status: closed
 closed_by: "FIXED 0a23684 (progress v52), pushed 857c5e1. BOTH halves done: the typo (--surface2 -> --surface-2) AND the class (checks.sh rule 3c cross-checks every var() referenced in js/ against every token defined in main.css). Red-before used the REAL defect rather than a probe — with the typo present rule 3c fails naming --surface2; fixed, it passes. AWAITING JAKE because this is a VISIBLE change: the Progress table header gains the light grey it was always meant to have."
 priority: low
 reported: 2026-08-22
-status_detail: "PRE-EXISTING, not introduced by the tokenisation. Found by a static check I ran while waiting for a suite: every var() referenced in js/ vs every token defined in main.css."
+status_detail: "CLOSED 2026-09-27 via closure rule (b): the row records red-before on the real defect (checks.sh rule 3c failed naming --surface2) and green after; tests/design-tokens-2026-08-22.spec.js; green in the v2026.09.8 full-suite run (832 passed, 0 failed)."
 ---
 
 # `js/app-progress.js:851` uses `var(--surface2)` — the token is `--surface-2`

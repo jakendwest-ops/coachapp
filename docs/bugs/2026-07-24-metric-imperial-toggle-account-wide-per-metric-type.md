@@ -1,9 +1,9 @@
 ---
 id: 2026-07-24-metric-imperial-toggle-account-wide-per-metric-type
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-07-24
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b): the row records red->green tests/units-2026-07-24.spec.js; green in the v2026.09.8 full-suite run (832 passed, 0 failed)."
 ---
 
 # metric/imperial toggle, account-wide + per-metric-type

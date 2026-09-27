@@ -1,10 +1,10 @@
 ---
 id: 2026-08-22-no-delete-in-the-programs-family-is-rowcount-checked
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-08-22
 closed_by: tests/delete-rowcount-programs-2026-09-04.spec.js
-status_detail: "FIXED 2026-09-04. All 16 deletes in app-programs.js now rowcount-check (14) or carry an explicit reason why zero is legitimate (2); enumeration re-run shows 0 unchecked. Red-before/green-after proven: reverting the branch gave zero toasts (the user was told nothing). Reviewing the diff also caught a gap it had just created — generatePhasePeriodization ignored the cleanup helper failure and rebuilt on top of rows that were never removed."
+status_detail: "CLOSED 2026-09-27 via closure rule (b): the row records red-before/green-after for tests/delete-rowcount-programs-2026-09-04.spec.js (reverting the branch gave zero toasts); green in the v2026.09.8 full-suite run (832 passed, 0 failed)."
 ---
 
 # Every DELETE in app-programs reports success when it deletes nothing

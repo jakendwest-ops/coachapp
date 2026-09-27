@@ -1,9 +1,9 @@
 ---
 id: 2026-08-12-app-programs-phase-writes-no-ownership-anchor
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-08-12
-status_detail: "IMPLEMENTED + REVIEWED 2026-08-22, awaiting Jake. multi-agent-review (3 agents + verifier) run and all findings actioned; checks.sh GREEN (56 passed, exit 0). Four helpers in app-programs.js applied at 14 entry points, plus a template-ownership check at _quickAssignPhaseWorkout. SCOPE CORRECTION: this row said '~20+ call sites' and named four; real figure is 45 writes across 23 functions, and its line numbers had drifted (savePhase listed at 1324, actually 1418). It also missed unassignProgram. Scoped from a fresh grep. Coverage: 14 gated at entry, 2 already correctly anchored and left alone (moveProgramToPersonal, copyProgramToCoaching), 7 internal helpers covered by construction with every caller checked. ONE MODULE ONLY: app-programs v43->v44."
+status_detail: "CLOSED 2026-09-27 via closure rule (b): the row records red-before/green-after for tests/program-ownership-anchors-2026-08-22.spec.js, proven by neutering only the pair assertions; green in the v2026.09.8 full-suite run (832 passed, 0 failed)."
 ---
 
 # app-programs.js has no ownership-anchor helper for program_phases/program_phase_workouts — ~20+ write call sites are .eq('id', X)-only

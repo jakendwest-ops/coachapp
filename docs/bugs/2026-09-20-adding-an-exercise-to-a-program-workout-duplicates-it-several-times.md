@@ -1,9 +1,9 @@
 ---
 id: 2026-09-20-adding-an-exercise-to-a-program-workout-duplicates-it-several-times
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-09-20
-status_detail: "Fixed 2026-09-20/21, committed to master: 6 new specs went RED on the old code and GREEN after; a 244-test regression run over every propagation-touching spec was 243 passed/1 unrelated skip/0 failed; multi-agent review (3 angles + verifier) found no blocking issues — it caught the new spec's own cleanup missing workout_template_exercises and the program-tree teardown, both fixed and re-verified green. The LIVE site still has the bug until a tagged release, and duplicates already written to real data are NOT removed by the fix. Jake to confirm."
+status_detail: "CLOSED 2026-09-27 via closure rule (b): the row records 6 specs (tests/propagate-add-target-2026-09-20.spec.js) RED on the old code and GREEN after; its own 'after release' condition is met — shipped in v2026.09.7; green in the v2026.09.8 full-suite run (832 passed, 0 failed)."
 ---
 
 # Adding an exercise to a program workout duplicates it several times
