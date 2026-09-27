@@ -811,7 +811,10 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 @media (max-width: 900px) {
   .sidebar { display: none; }
   .bottom-nav { display: flex; }
-  #mobile-view-switcher { display: flex !important; }
+  /* Only for the master account: loadUserInfo adds .mvs-on (and the SIGNED_OUT handler removes it).
+     This used to be unconditional, so every phone user saw a "PT" pill. The modal rule above still wins
+     over this one (its :is(#id) plus :has(...) is more specific), so the pill still hides behind a sheet. */
+  #mobile-view-switcher.mvs-on { display: flex !important; }
   .app-shell { flex-direction: column; }
   .main-content { padding: 20px 16px; padding-bottom: calc(var(--bottom-nav-h) + 24px); }
   .stats-row { grid-template-columns: repeat(3, 1fr); }

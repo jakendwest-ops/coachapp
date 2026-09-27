@@ -1375,6 +1375,7 @@ db.auth.onAuthStateChange((event, session) => {
     window._soloClientId = null
     const switcher = document.getElementById('view-switcher')
     if (switcher) switcher.style.display = 'none'
+    document.getElementById('mobile-view-switcher')?.classList.remove('mvs-on')
     showAuth()
   }
 })
@@ -3004,7 +3005,7 @@ async function renderSettings(el) {
       <!-- Sign out -->
       <div class="card">
         <div class="card-body" style="padding:16px 20px">
-          <button id="settings-sign-out-btn" onclick="db.auth.signOut().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Sign out</button>
+          <button id="settings-sign-out-btn" onclick="signOutAndClearDrafts().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Sign out</button>
         </div>
       </div>
 
@@ -3451,6 +3452,6 @@ async function deleteAccountConfirmed(overlay) {
     return
   }
   overlay?.remove()
-  await db.auth.signOut()
+  await signOutAndClearDrafts()
   location.reload()
 }

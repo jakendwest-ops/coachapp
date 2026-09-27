@@ -934,7 +934,7 @@ function showConsentGate (isReconsent) {
 
 async function signOutFromConsentGate () {
   document.getElementById('consent-gate-modal')?.remove()
-  await db.auth.signOut()
+  await signOutAndClearDrafts()
   showAuth()
 }
 
@@ -1117,6 +1117,7 @@ async function loadUserInfo() {
       if (activeView === 'client') currentProfile = { ...currentProfile, role: 'client' }
       if (activeView === 'solo')   currentProfile = { ...currentProfile, role: 'solo' }
       document.getElementById('view-switcher').style.display = 'block'
+      document.getElementById('mobile-view-switcher')?.classList.add('mvs-on')
       updateViewSwitcherButtons(activeView)
     }
   }
@@ -1369,15 +1370,20 @@ document.getElementById('login-form').addEventListener('submit', async e => {
   }
 })
 
-document.getElementById('sign-out-btn').addEventListener('click', async () => {
-  // Runner drafts hold PII (client name, exercise names, weights/reps) and are only cleared on
-  // explicit discard/save or a same-day staleness check the next time that exact client's runner
-  // is opened -- on a shared/gym device, signing out one account and into another otherwise
-  // leaves a prior client's in-progress workout sitting in localStorage indefinitely, readable
-  // via devtools. Found by multi-agent review 2026-07-10.
-  Object.keys(localStorage).filter(k => k.startsWith('_runnerDraft_')).forEach(k => localStorage.removeItem(k))
+// EVERY deliberate sign-out goes through here (checks.sh rule 9q refuses a bare signOut call
+// anywhere else). Runner drafts hold PII (client name, exercises, weights) and otherwise survive on a
+// shared gym device until that exact client's runner is reopened. Until 2026-09-27 this wipe lived only
+// on the sidebar button, which is hidden on phones, so a phone sign-out (Settings) left the drafts behind.
+// Deliberately NOT done in onAuthStateChange: that also fires when a session simply expires, and wiping
+// there would throw away the genuine user's unsaved workout.
+async function signOutAndClearDrafts () {
+  try {
+    Object.keys(localStorage).filter(k => k.startsWith('_runnerDraft_')).forEach(k => localStorage.removeItem(k))
+  } catch (e) { console.warn('[signOut] could not clear runner drafts', e?.name) }
   await db.auth.signOut()
-})
+}
+
+document.getElementById('sign-out-btn').addEventListener('click', () => signOutAndClearDrafts())
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
 // Hands a render a container that STOPS ACCEPTING PAINT once the user has navigated away.

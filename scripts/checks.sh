@@ -579,6 +579,32 @@ fi
 if ! node scripts/check-security-embargo.mjs; then
   fail "an OPEN security bug is written up in docs/bugs/ and this repo is PUBLIC -- see the lines above."
 fi
+# -- 9p. Third-party scripts are pinned to an exact version with an integrity hash --
+# Deploys are gated on a release tag, but index.html loaded supabase-js@2 and chart.js@4 (floating, no
+# SRI) until 2026-09-27: any upstream release changed production with no tag, and a compromised CDN would
+# run with the user's session. Measured on the fixed tree: 2 third-party scripts, 0 findings; the pre-fix
+# index.html gives 2 findings.
+echo "Checking third-party scripts are pinned..."
+if ! node scripts/check-pinned-scripts.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-pinned-scripts.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-pinned-scripts self-test FAILED -- the gate can no longer be trusted."
+fi
+if ! node scripts/check-pinned-scripts.mjs $(git ls-files '*.html'); then
+  fail "a third-party script is not pinned with an integrity hash -- see the lines above."
+fi
+# -- 9q. Every sign-out goes through signOutAndClearDrafts() --
+# The PII runner-draft wipe was on one of four sign-out routes (the desktop-only sidebar button) until
+# 2026-09-27, so phone sign-outs never ran it. Measured on the fixed tree: 0 findings; the pre-fix js/
+# gives 4 (plus "helper missing").
+echo "Checking every sign-out clears runner drafts..."
+if ! node scripts/check-sign-out-path.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-sign-out-path.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-sign-out-path self-test FAILED -- the gate can no longer be trusted."
+fi
+# index.html too: an inline onclick there is as much a sign-out route as one in js/.
+if ! node scripts/check-sign-out-path.mjs $FILES index.html; then
+  fail "a sign-out bypasses signOutAndClearDrafts() -- see the lines above."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print

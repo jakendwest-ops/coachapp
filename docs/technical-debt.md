@@ -80,6 +80,19 @@ premises** (3 of 20 ranked items rested on lines the code had left behind — ch
 ad-hoc probe recipe** (`_adhoc*` is in `testIgnore`; the skills now say `_debug-adhoc`, gitignored but not
 runner-ignored, so a leftover runs in `npm test`); and no fault-injection test anywhere in `tests/`.
 
+**New 2026-09-27, from the app-code audit** ([archive/app-code-audit-2026-09-27.md](archive/app-code-audit-2026-09-27.md);
+point-in-time, counts measured that day). Fixed the same day: phone sign-out skipping the draft wipe, the "PT" pill shown to
+every phone user, the login placeholder mojibake, and floating unhashed CDN scripts (checks.sh rules 9p/9q now hold the
+last two classes). Still open, in the audit's priority order:
+- **No transactions on the programme lifecycle.** Assign/clone, restart, `deleteProgram` and `deletePhaseWeek` are
+  browser-orchestrated chains (assign ≈ 2 requests per session, sequential). The restart path deletes the old plan before
+  inserting the new one. Recommended: `security invoker` Postgres functions, one transaction each, plus the first
+  fault-injection spec.
+- **Escaping is opt-in** (181 `innerHTML` writes, stored XSS ×8): an auto-escaping `html` tagged template, ratcheted.
+- **`dbq()` at 8% adoption** (26 of 318 `db.from` calls, unchanged since the 2026-08-12 audit), and raw writes whose
+  `error` is ignored never reach the error-report card. Decide: make it mandatory with a ratchet, or delete it.
+- **History in comments:** 23% of `js/` lines are comments, 371 of them dated incident stories.
+
 ## Test-gate coverage debt
 
 The pre-push gate covers 2 spec files (`runner.spec.js`, `solo-account.spec.js`) out of the whole suite. Most
