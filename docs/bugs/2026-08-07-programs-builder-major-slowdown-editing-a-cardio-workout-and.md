@@ -3,7 +3,7 @@ id: 2026-08-07-programs-builder-major-slowdown-editing-a-cardio-workout-and
 status: open
 priority: high
 reported: 2026-08-07
-status_detail: "open (save half) / fixed — awaiting Jake (slowness)"
+status_detail: "open (save half) / fixed — awaiting Jake (slowness). 2026-09-27: a third reproduction, the first on the editor rebuilt in v2026.09.6, PASSES — tests/program-slot-edit-shows-without-refresh-2026-09-27.spec.js drives a cardio workout in a Tuesday slot → Edit → rename → Save → Back to program and the programme shows the change with no reload. Strong evidence the rebuild removed the old path; not closable by rule (b) (the old editor cannot be put back to go red). Closes when Jake repeats his edit on his own programme once and it shows without a refresh."
 ---
 
 # Programs builder: major slowdown editing a cardio workout, and the edit does not save until a page refresh
@@ -113,3 +113,11 @@ reproducing it, and it either names the mechanism or rules it out on his own acc
 
 If the warning does NOT appear when he reproduces it, this hypothesis is dead and should be recorded
 as such rather than left to linger.
+
+## 2026-09-27 — third reproduction, on the rebuilt editor: works
+
+`tests/program-slot-edit-shows-without-refresh-2026-09-27.spec.js` drives Jake's exact path on today's code — a cardio (interval)
+workout in a programme's Tuesday slot, opened with the slot's Edit, renamed, Save, then Back to program — and asserts both that the
+rename is in the database and that the programme builder SHOWS it without a reload. It passes. The editor this row was reported
+against was replaced in v2026.09.6 (staged draft + explicit Save), which is the likeliest reason. Limits: a one-exercise fixture, so
+the SLOWNESS half on a large real programme is not measured by it. Kept in the suite as a guard for this path.
