@@ -36,9 +36,7 @@ AFTER the code, since that ordering is what breaks rollbacks. Write "none" if no
 
 ## Verification
 
-- **Full suite:** <N passed / N failed / N skipped, and the run time>
-- **Flaky:** <ANY TEST THAT FAILED AND PASSED ON RETRY — name it, do not round it to "green">
-- **checks.sh:** <RESULT>
+{{AUTO:VERIFICATION}}
 - **Review:** <WHICH REVIEW RAN, AND WHAT IT FOUND — "clean" only if it genuinely found nothing>
 
 ---

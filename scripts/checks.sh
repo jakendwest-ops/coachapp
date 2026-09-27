@@ -5,7 +5,7 @@
 #
 # TWO MODES (2026-09-27, Jake: "make the commit and push cycle easy again").
 #   FAST (a local `git push`, the default): every static check, but NOT the browser smoke run (5.0 min) and NOT the
-#     SQL mutation self-test (45 s). Measured the same day: ~7 min per push -> ~80 s. A push no longer deploys (only a
+#     SQL mutation self-test (45 s). Measured the same day: ~7 min per push -> 51 s. A push no longer deploys (only a
 #     release tag does), and both skipped steps still run before anything ships.
 #   FULL (CI=true, i.e. GitHub Actions and scripts/release.mjs, or CHECKS_FULL=1 by hand): everything, including the
 #     mutation self-test. The browser tests then run as the FULL suite inside release.mjs.

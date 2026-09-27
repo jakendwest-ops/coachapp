@@ -43,13 +43,15 @@ Live: https://jakendwest-ops.github.io/coachapp
   `avilxuiacmtgeoxxhfhc` (eu-west-1). SQL/setup scripts in `scripts/`.
 - **Tests: Playwright** E2E only (`npm test`). No unit-test framework.
 - **Deploy: a `v*` TAG → GitHub Actions → GitHub Pages.** Changed 2026-09-05: **pushing to master no
-  longer deploys.** A push still runs the checks, so master stays verified, but the live site only
-  moves when a release tag is pushed. Committing straight to master is still the normal workflow —
+  longer deploys.** A push runs the static checks only (no browser tests since 2026-09-27), so master
+  can hold a browser regression; the live site only moves when a release tag is pushed, after the full suite. Committing straight to master is still the normal workflow —
   there is still no PR gate — the gate is at the release, not the commit.
-- **Cutting a release: `node scripts/release.mjs vYYYY.MM.N`** (date-based: year.month.sequence). It
-  REFUSES unless the tree is clean, you are on master, the tag is new, the FULL suite is green on that
-  exact commit, `checks.sh` passes, a `multi-agent-review` ran *after* the last commit, and filled-in
-  release notes exist at `docs/releases/<version>.md`. It does not push unless given `--push`.
+- **Cutting a release is one command: `node scripts/release.mjs vYYYY.MM.N --push`** (date-based:
+  year.month.sequence). Write `docs/releases/<version>.md` from `TEMPLATE.md` first, leaving its
+  `{{AUTO:VERIFICATION}}` line in, and commit it. The script REFUSES unless the tree is clean, you are on
+  master, the tag is new, a `multi-agent-review` saw this code, `checks.sh` passes, and the FULL suite is
+  green on this code. It then fills in the suite numbers, commits the notes, tags, and (with `--push`)
+  pushes master and the tag, which deploys. Without `--push` it stops at the local tag.
 
 ## The 9 modules (`js/`)
 

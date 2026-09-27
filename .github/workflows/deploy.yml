@@ -78,12 +78,12 @@ jobs:
         run: sh scripts/checks.sh
 
   # NO BROWSER TESTS IN CI, since 2026-09-27 (Jake's decision, docs/decisions.md). An `e2e` job used to
-  # run runner.spec.js + solo-account.spec.js here — the SAME two files the local pre-push hook runs
+  # run runner.spec.js + solo-account.spec.js here — the SAME two files the local pre-push hook then ran
   # before every push — against the ONE live Supabase test account the local suite also uses, so every
   # push started a run that collided with any local suite run. A separate CI account was considered twice
   # and rejected: a fresh account lacks the master/solo setup, so solo-account.spec.js would skip itself
-  # and CI would go green having tested less. Browser coverage lives in the pre-push hook and in
-  # scripts/release.mjs (full suite before every release). The six test-login secrets are no longer read.
+  # and CI would go green having tested less. Browser coverage lives only in scripts/release.mjs (full suite
+  # before every release; a push runs no browser tests since the same day). The six test-login secrets are no longer read.
 
   deploy:
     name: Deploy to GitHub Pages

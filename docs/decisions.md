@@ -33,6 +33,22 @@ would have caught some of them at push. Nothing reaches the live site without th
 
 **Rejected:** a warn-only push that never blocks. Jake chose to keep the static checks blocking.
 
+**Same day, the release became one command.** `release.mjs vX --push` now fills the notes' `{{AUTO:VERIFICATION}}`
+line from its own suite run, commits the notes, tags and pushes. The old four steps were: `--record`, paste the
+numbers by hand, commit, run again.
+- The review found one blocking gap, fixed before commit: the notes commit and the tag were not pinned to the verified
+  code.
+- The script now refuses unless:
+  - HEAD and the code fingerprint are unchanged since the suite ran;
+  - the notes commit contains only the notes file (`--only`);
+  - that commit sits directly on the verified commit.
+- It then tags that exact commit.
+
+**The suite's duration was investigated, not fixed.** The last run took 41.5 min against a "usual 14.0 min". A
+same-day A/B refuted the guess that video recording and test output inside OneDrive cause it: the same 59 tests took
+5.0 min as-is and 5.8 min with video off and output outside OneDrive. The likelier cause, unverified, is that the
+14-minute baseline predates the suite's growth to 125 spec files.
+
 **2026-09-27 — A write that spans tables goes through one transactional database function, not a browser chain.**
 The app-code audit (`archive/app-code-audit-2026-09-27.md`, R1) found the programme lifecycle written as chains of separate
 browser→API writes. Careful code could detect partial state, but it could not prevent it, and a restart could delete a

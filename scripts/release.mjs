@@ -13,12 +13,15 @@
 // It deliberately does NOT push by itself unless --push is given. Deploying is an outward-facing act
 // and stays a deliberate one.
 //
-// SEQUENCE: commit everything (notes included) → `--record` → tag with `--push`. (Until 2026-09-27 a
+// SEQUENCE (since 2026-09-27, one command): commit the notes with {{AUTO:VERIFICATION}} where the numbers go
+// (docs/releases/TEMPLATE.md has it), then `node scripts/release.mjs vX --push` — it runs every gate and the full
+// suite, fills the numbers in, commits the notes, tags and pushes. The older path still works: `--record`, write the
+// numbers by hand, then run again to tag. (Until 2026-09-27 a
 // push first started a CI browser run on the shared test account and the suite refused to start
 // alongside it; CI no longer runs browser tests, so the order no longer matters for that.)
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
-import { execFileSync, execSync } from 'node:child_process'
+import { execFileSync, execSync, spawn } from 'node:child_process'
 import { headFingerprint, readRecorded, REVIEW_PATHS as FINGERPRINT_PATHS } from './lib/review-fingerprint.mjs'
 import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -62,6 +65,34 @@ const fail = (what, why, how) => {
 }
 const pass = (what) => console.log(`  ✓ ${what}`)
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim()
+
+// ONE COMMAND (2026-09-27, Jake: "release takes too long"). Until now a release was four steps: --record, paste the
+// numbers into the notes by hand, commit the notes, run again to tag. If the notes contain AUTO, this script fills the
+// verification lines from the run it just did (or from the receipt that run left), commits the notes, and tags —
+// `node scripts/release.mjs vX --push` is then the whole release. Notes without AUTO work exactly as before.
+const AUTO = '{{AUTO:VERIFICATION}}'
+
+// Runs the full suite, streaming it live AND keeping the output, so its result lines can go into the notes.
+const runSuite = () => new Promise((resolve) => {
+  const child = spawn('npm test', { shell: true, stdio: ['inherit', 'pipe', 'pipe'] })
+  let out = ''
+  const on = (d) => { process.stdout.write(d); out += d }
+  child.stdout.on('data', on)
+  child.stderr.on('data', on)
+  child.on('close', (code) => resolve({ code, out }))
+})
+// Playwright's own end-of-run lines: "841 passed (41.5m)", "3 flaky" + one indented line per flaky test, "4 skipped".
+const summariseSuite = (raw) => {
+  // Strip colour codes, and read the LAST occurrence of each line: Playwright prints its summary at the very end, and a
+  // spec that happens to log "2 passed" earlier must not become the release's evidence (review 2026-09-27).
+  const out = raw.replace(/\x1b\[[0-9;]*m/g, '')
+  const n = (w) => Number([...out.matchAll(new RegExp(`^\\s*(\\d+) ${w}\\b`, 'gm'))].pop()?.[1] ?? 0)
+  const flakyBlock = out.match(/^\s*\d+ flaky\s*\n((?:[ \t]+\[[^\n]+\n?)+)/m)?.[1] || ''
+  const flakyTests = flakyBlock.split('\n').map(l => l.match(/tests[\\/]([^:\s]+):\d+:\d+ › (.+)/))
+    .filter(Boolean).map(m => `${m[1]} — ${m[2].trim().slice(0, 90)}`)
+  return { passed: n('passed'), failed: n('failed'), flaky: n('flaky'), skipped: n('skipped'),
+    duration: [...out.matchAll(/^\s*\d+ passed \(([^)]+)\)/gm)].pop()?.[1] || '?', flakyTests }
+}
 
 // One line per path: its git tree/blob hash at HEAD, or 'absent'. Compared verbatim.
 const codeFingerprint = () => CODE_PATHS.map(p => {
@@ -225,11 +256,8 @@ if (failed) {
 
 // 6. checks.sh ----------------------------------------------------------------------------------
 try {
-  // CI=true tells checks.sh to SKIP its 57-test Playwright smoke gate (it prints a loud warning
-  // instead). Deliberate: this script runs the FULL suite immediately below, of which the smoke gate
-  // is a strict subset. Without this, one `release.mjs` invocation starts Playwright twice — four
-  // wasted minutes, and two Playwright runs inside one command against the single shared test
-  // account, which is the collision this project forbids everywhere else.
+  // CI=true puts checks.sh in FULL mode (the SQL mutation self-test runs) and keeps its browser smoke run
+  // off — this script runs the FULL suite immediately below, of which the smoke run is a strict subset.
   execSync('sh scripts/checks.sh', { stdio: 'pipe', env: { ...process.env, CI: 'true' } })
   pass('checks.sh green (its smoke gate skipped — the full suite below supersedes it)')
 } catch {
@@ -237,28 +265,36 @@ try {
 }
 
 // 7. The FULL suite, on this exact commit -------------------------------------------------------
-// Not the 57-test pre-push smoke gate. That gate is explicitly documented as insufficient — a spec
+// Not the 2-spec smoke run (off on a push since 2026-09-27). That run was always insufficient — a spec
 // outside it sat red for three days across four deploys and nothing noticed. A release runs all of
 // it. The receipt exists so that a suite run you did five minutes ago is not repeated; it is keyed
 // to the exact sha, so it cannot vouch for code that has changed since.
 const fingerprint = codeFingerprint()
+const notesWantAuto = !recordOnly && existsSync(notesPath) && readFileSync(notesPath, 'utf8').includes(AUTO)
 let suiteOk = false
+let suite = null   // { summary, sha, at } — what AUTO is filled from
 if (existsSync(RECEIPT)) {
   try {
     const r = JSON.parse(readFileSync(RECEIPT, 'utf8'))
-    if (r.ok && r.fingerprint === fingerprint && (Date.now() - new Date(r.at).getTime()) < RECEIPT_MAX_AGE_MS) {
+    // A receipt without a summary (written before 2026-09-27) cannot fill AUTO, so it only counts when AUTO is unused.
+    if (r.ok && r.fingerprint === fingerprint && (Date.now() - new Date(r.at).getTime()) < RECEIPT_MAX_AGE_MS
+        && (r.summary || !notesWantAuto)) {
       suiteOk = true
+      suite = r.summary ? { summary: r.summary, sha: r.sha, at: r.at } : null
       pass(`full suite green on this code (receipt from ${r.at}, commit ${String(r.sha).slice(0, 7)})`)
     }
   } catch { /* a corrupt receipt is simply no receipt */ }
 }
 if (!suiteOk) {
   console.log('  … running the full suite (this takes ~30 minutes)')
-  try {
-    execSync('npm test', { stdio: 'inherit' })
-    writeFileSync(RECEIPT, JSON.stringify({ sha: head, fingerprint, ok: true, at: new Date().toISOString() }, null, 2))
-    pass('full suite green')
-  } catch {
+  const { code, out } = await runSuite()
+  if (code === 0) {
+    const summary = summariseSuite(out)
+    const at = new Date().toISOString()
+    writeFileSync(RECEIPT, JSON.stringify({ sha: head, fingerprint, ok: true, at, summary }, null, 2))
+    suite = { summary, sha: head, at }
+    pass(`full suite green (${summary.passed} passed, ${summary.flaky} flaky, ${summary.skipped} skipped, ${summary.duration})`)
+  } else {
     fail('full suite failed', 'a release does not ship over a red suite.', 'npm test')
   }
 }
@@ -273,15 +309,51 @@ if (failed) {
 if (recordOnly) {
   console.log(`
   Receipt written. The code is verified; nothing was tagged.`)
-  console.log(`  Now write docs/releases/${version}.md with the numbers above, then run:
+  console.log(`  Now write docs/releases/${version}.md (put ${AUTO} where the suite numbers go and they are filled for
+  you), commit it, then run:
 `)
-  console.log(`    node scripts/release.mjs ${version}
+  console.log(`    node scripts/release.mjs ${version} [--push]
 `)
   process.exit(0)
 }
 
-git('tag', '-a', version, '-m', `Release ${version}`)
-console.log(`\n  Tagged ${version} at ${head.slice(0, 7)}.`)
+// 8. Fill AUTO in the notes from the verified run, and commit it ---------------------------------------------------
+// docs/ is outside the code fingerprint, so this commit does not invalidate the receipt or the review it just checked.
+// The tag must name EXACTLY the code the gates verified. The clean-tree check ran ~30 minutes ago, before the suite:
+// anything committed or staged since (Jake, or another session in this folder) would otherwise ride into the tag and
+// deploy unverified. Found by the review of this change, 2026-09-27 — the auto-commit made the staged variant new.
+const refuse = (why) => { console.log(`\n  ✗ ${why} — ${version} NOT tagged.\n`); process.exit(1) }
+if (git('rev-parse', 'HEAD') !== head) refuse('HEAD moved while the gates ran (a commit landed mid-release); run the release again')
+if (codeFingerprint() !== fingerprint) refuse('the code changed while the gates ran; run the release again')
+let tagAt = head
+if (notesWantAuto) {
+  if (!suite) refuse(`${notesPath} asks for ${AUTO} but no suite summary is available`)
+  if (!(suite.summary.passed > 0)) refuse(`the suite summary could not be read (0 passed) — fill ${AUTO} by hand from the output above`)
+  if (git('diff', '--cached', '--name-only')) refuse('something is staged that is not the release notes; unstage it first')
+  const s = suite.summary
+  let prevTag = ''
+  try { prevTag = git('describe', '--tags', '--abbrev=0', '--match', 'v*', 'HEAD') } catch { /* first release */ }
+  const range = prevTag ? `${prevTag}..${head.slice(0, 7)}` : head.slice(0, 7)
+  const commits = prevTag ? git('rev-list', '--count', `${prevTag}..HEAD`) : '?'
+  const filled = [
+    `- **Full suite:** ${s.passed} passed / ${s.failed} failed / ${s.skipped} skipped / ${s.flaky} flaky in ${s.duration} — the`,
+    `  release gate's own run, ${suite.at.slice(0, 10)}, on \`${String(suite.sha).slice(0, 7)}\` (filled in by \`release.mjs\`).`,
+    `- **Flaky** (failed once, passed on retry): ${s.flakyTests.length ? '\n' + s.flakyTests.map(t => `  - \`${t}\``).join('\n') : 'none.'}`,
+    `- **checks.sh:** green in FULL mode (mutation self-test included; the smoke run is superseded by the full suite).`,
+    `- **Commits:** \`${range}\` (${commits}), plus this notes commit.`,
+  ].join('\n')
+  writeFileSync(notesPath, readFileSync(notesPath, 'utf8').replace(AUTO, filled))
+  // --only + pathspec: this commit can contain the notes file and nothing else, whatever else is in the index.
+  git('commit', '--only', '-m', `docs(release): ${version} verification (filled in by release.mjs)`, '--', notesPath)
+  tagAt = git('rev-parse', 'HEAD')
+  if (git('rev-parse', 'HEAD~1') !== head) refuse('the notes commit is not directly on the verified commit')
+  const inCommit = git('diff-tree', '--no-commit-id', '--name-only', '-r', tagAt)
+  if (inCommit !== notesPath) refuse(`the notes commit contains more than the notes: ${inCommit.split('\n').join(', ')}`)
+  pass(`release notes' verification filled in and committed (${tagAt.slice(0, 7)})`)
+}
+
+git('tag', '-a', version, tagAt, '-m', `Release ${version}`)
+console.log(`\n  Tagged ${version} at ${tagAt.slice(0, 7)}.`)
 
 if (doPush) {
   execFileSync('git', ['push', 'origin', 'master'], { stdio: 'inherit' })
