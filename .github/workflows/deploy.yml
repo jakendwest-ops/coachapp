@@ -77,84 +77,16 @@ jobs:
           CB_BASE: ${{ github.event_name == 'push' && github.ref_type == 'branch' && github.event.before || '' }}
         run: sh scripts/checks.sh
 
-  e2e:
-    # Named for what a GREEN badge on it actually means. While the secrets are absent this job passes
-    # having run nothing at all, and "Smoke tests (57): success" would read as 57 tests having passed.
-    # A green check that ran nothing is the exact failure this repo's rules exist to catch; the name
-    # and the warning below are the two things stopping this one from being an instance of it.
-    name: Smoke tests (57, skipped without secrets)
-    runs-on: ubuntu-latest
-    needs: check
-    steps:
-      - uses: actions/checkout@v5
-
-      # The suite needs real credentials for the test accounts. Until they exist as repository
-      # secrets this job reports what is missing and stops -- it does NOT fail. A workflow that goes
-      # red for a configuration nobody has done yet trains people to ignore red.
-      - name: Check for test credentials
-        id: preflight
-        env:
-          PT_EMAIL: ${{ secrets.PT_EMAIL }}
-        run: |
-          if [ -z "$PT_EMAIL" ]; then
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-            # A WARNING, not a notice. Notices are easy to scroll past; this needs to be visible on
-            # the run summary every time, because the whole point of the job is coverage that is not
-            # currently happening.
-            echo "::warning::Smoke tests SKIPPED - repository secrets are not set. CI ran ZERO browser tests."
-            echo "Add PT_EMAIL, PT_PASSWORD, CLIENT_EMAIL, CLIENT_PASSWORD, PT2_EMAIL and"
-            echo "PT2_PASSWORD under Settings > Secrets and variables > Actions, then re-run."
-            echo "Until then CI runs ZERO browser tests and the only browser coverage is the"
-            echo "local pre-push hook."
-          else
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-node@v4
-        if: steps.preflight.outputs.ok == 'true'
-        with:
-          node-version: 22
-          cache: npm
-      - name: Install dependencies
-        if: steps.preflight.outputs.ok == 'true'
-        run: npm ci
-      - name: Install Chromium
-        if: steps.preflight.outputs.ok == 'true'
-        run: npx playwright install --with-deps chromium
-
-      - name: Run the smoke gate
-        if: steps.preflight.outputs.ok == 'true'
-        env:
-          # launch.json's PowerShell listener cannot run here; playwright.config.js takes this
-          # override so .claude/launch.json stays the source of truth for the local command.
-          PREVIEW_SERVER_CMD: python3 -m http.server 3001
-          BASE_URL: http://localhost:3001
-          PT_EMAIL: ${{ secrets.PT_EMAIL }}
-          PT_PASSWORD: ${{ secrets.PT_PASSWORD }}
-          CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
-          CLIENT_PASSWORD: ${{ secrets.CLIENT_PASSWORD }}
-          PT2_EMAIL: ${{ secrets.PT2_EMAIL }}
-          PT2_PASSWORD: ${{ secrets.PT2_PASSWORD }}
-        # The same two specs the pre-push hook runs. Deliberately NOT the full suite: widening the
-        # gate was tried and reverted on 2026-08-20, and these specs share ONE live Supabase test
-        # account, so a CI run overlapping a local run contends for the same fixtures.
-        run: npx playwright test tests/runner.spec.js tests/solo-account.spec.js --reporter=line
-
-      - uses: actions/upload-artifact@v4
-        if: failure() && steps.preflight.outputs.ok == 'true'
-        with:
-          name: playwright-report
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
+  # NO BROWSER TESTS IN CI, since 2026-09-27 (Jake's decision, docs/decisions.md). An `e2e` job used to
+  # run runner.spec.js + solo-account.spec.js here — the SAME two files the local pre-push hook runs
+  # before every push — against the ONE live Supabase test account the local suite also uses, so every
+  # push started a run that collided with any local suite run. A separate CI account was considered twice
+  # and rejected: a fresh account lacks the master/solo setup, so solo-account.spec.js would skip itself
+  # and CI would go green having tested less. Browser coverage lives in the pre-push hook and in
+  # scripts/release.mjs (full suite before every release). The six test-login secrets are no longer read.
 
   deploy:
     name: Deploy to GitHub Pages
-    # Deliberately needs ONLY `check`, not `e2e`. Three unrelated specs currently fail only deep into
-    # a long run and pass on retry (see the flakiness ledger row), and CI's own flakiness profile has
-    # never been measured. Blocking every deploy on an unmeasured gate is how a gate gets bypassed.
-    # Give it teeth once CI has a track record -- measure first, same as every other rule here.
     needs: check
     # TAGS ONLY, as of 2026-09-05. A push to master runs the checks and stops here; it does not ship.
     # To deploy, create a release tag with scripts/release.mjs and push it.

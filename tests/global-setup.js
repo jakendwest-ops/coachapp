@@ -52,6 +52,12 @@ async function assertPreviewServer (base) {
   }
 }
 
+// RETIRED 2026-09-27 — kept for the record, no longer called. CI no longer runs any browser test (Jake's
+// choice: the `e2e` job was removed from .github/workflows/deploy.yml — it ran the same two spec files
+// the local pre-push hook already runs), so a CI run can no longer touch the test account and there is
+// nothing to collide with. The check below refused a local run during EVERY CI run regardless, which is
+// what made each release wait (twice on 2026-09-27). The history below is why it existed.
+//
 // Refuse to start a LOCAL run while CI is running the same tests against the same account.
 //
 // THE PROBLEM. Every test — local and CI — drives ONE live Supabase account. 54 of 97 spec files use
@@ -174,11 +180,9 @@ module.exports = async () => {
   // survive into a later run whose setup fails, and the teardown would scan anyway.
   delete process.env.COACHAPP_SETUP_COMPLETE
   const base = process.env.BASE_URL || DEFAULT_BASE
-  // FIRST, before the server check and before any login: this is the cheapest refusal available and
-  // the only one that costs nothing when it declines to act.
-  await assertNoOverlappingCiRun()
+  // assertNoOverlappingCiRun() used to run here — retired 2026-09-27, see its definition above.
   await assertPreviewServer(base)
-  // After the overlap refusal, before any fixture exists.
+  // Before any fixture exists.
   await reapDebris()
   // NO_SESSION_REUSE=1 forces every spec back onto the form login. Kept as an escape hatch for
   // diagnosing a suspected session-reuse problem without editing any file.

@@ -39,9 +39,17 @@ the same day found the OS disrupting its operator and its alarms meaning nothing
 - **Hard-coded counts removed** from `CLAUDE.md`, `hello-claude`, `architecture.md`, `handover.md` and
   `technical-debt.md` ("~59 of ~757 tests", "2 of 105 spec files" — both stale).
 
-*Not done, needs Jake:* isolated test accounts (a Supabase-side change; it would remove the CI-overlap guard and the
-shared-fixture rules entirely); applying any `unverified-accepted` batch; deciding whether the remaining Stop /
-Bash hooks are worth a window each.
+*Not done, needs Jake:* applying any `unverified-accepted` batch; deciding whether the remaining Stop / Bash hooks
+are worth a window each.
+
+**Same day, Jake's call — CI no longer runs browser tests.** The `e2e` job in `deploy.yml` ran the same two spec files
+the local pre-push hook already runs, against the one shared test account, so every push started a run that collided
+with local suite runs (the CI-overlap guard in `tests/global-setup.js` then refused the local run — twice during the
+v2026.09.8 release). A separate CI test account was the first idea and was rejected again for the reason recorded on
+2026-09-04: a fresh account has no master/solo setup, so `solo-account.spec.js` would skip itself and CI would go
+green having tested less. So the job was removed, and with it the CI-overlap guard and the release script's CI wait.
+Browser coverage: the pre-push smoke gate (local, every push) and the full suite in `scripts/release.mjs` (every
+release). *Lost:* a clean-Linux-machine run of those two files. The six test-login GitHub secrets are no longer read.
 
 ---
 

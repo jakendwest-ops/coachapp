@@ -19,7 +19,7 @@
 module.exports = async () => {
   if (process.env.CI || process.env.NO_REAP) return
   // Playwright queues this teardown before it awaits globalSetup, so it runs even when setup THREW.
-  // On an aborted run — preview server down, or the CI-overlap refusal — the real cause has already
+  // On an aborted run — preview server down (or, until 2026-09-27, the retired CI-overlap refusal) — the real cause has already
   // been reported and a sign-in plus a seven-table scan would just delay the exit.
   if (process.env.COACHAPP_SETUP_COMPLETE !== '1') return
 

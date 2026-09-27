@@ -618,12 +618,11 @@ fi
 # incapable of failing. It drives the precondition through all four states (down / 500 / wrong app
 # / correct) on a spare port, so it never touches a real preview server.
 if [ "${CI}" = "true" ]; then
-  # Not run HERE, on purpose: as of 2026-09-04 the smoke gate is its own `e2e` job in
-  # .github/workflows/deploy.yml, so running it inside this job too would double the browser load on
-  # one shared Supabase test account. That job skips itself with a notice until the test-account
-  # secrets exist, so "CI runs browser tests" is still conditional -- check the Actions tab rather
-  # than assuming it from this line.
-  echo "[WARN] Playwright not run in THIS job -- the smoke gate runs as the separate 'e2e' job, which skips itself until the test-account secrets are set. Local pre-push remains the guaranteed coverage."
+  # CI=true means GitHub Actions, or scripts/release.mjs (which runs the FULL suite itself right after).
+  # From 2026-09-04 to 2026-09-27 a separate `e2e` job in deploy.yml ran the smoke gate on GitHub against
+  # the one shared test account; Jake removed it on 2026-09-27 because it duplicated the local pre-push
+  # gate and its runs collided with local suite runs on that account.
+  echo "[INFO] Playwright is not run in CI (decided 2026-09-27): the browser smoke gate runs locally on every push (pre-push hook) and the full suite runs in scripts/release.mjs. CI runs these code checks only."
 else
   echo "Checking the preview-server precondition..."
   if ! node scripts/check-preview-server.selftest.mjs > /dev/null 2>&1; then
@@ -631,13 +630,9 @@ else
     fail "check-preview-server self-test FAILED -- the suite's server precondition can no longer be trusted, so a dead or wrong server would again be reported as failing tests."
   fi
   echo "Running Playwright smoke tests..."
-  # NO_CI_CHECK: tests/global-setup.js refuses a LOCAL run while a CI run is in progress, because both
-  # drive one live Supabase account. That protection is for an ad-hoc `npm test`, NOT for this gate.
-  # Blocking a PUSH because CI is still busy with the previous push would be a false refusal on the most
-  # ordinary workflow there is — push, spot something, push again — and the natural response would be to
-  # bypass the entire gate with --no-verify. A gate that tempts you past it is worse than the collision
-  # it prevents.
-  if NO_CI_CHECK=1 npx playwright test tests/runner.spec.js tests/solo-account.spec.js --reporter=line 2>&1; then
+  # (NO_CI_CHECK used to be set here to skip global-setup's CI-overlap refusal; that refusal was retired
+  # 2026-09-27 along with CI's browser job, so there is nothing left to skip.)
+  if npx playwright test tests/runner.spec.js tests/solo-account.spec.js --reporter=line 2>&1; then
     echo "  Playwright: passed"
   else
     echo ""

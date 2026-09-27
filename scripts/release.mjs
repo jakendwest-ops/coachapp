@@ -13,9 +13,9 @@
 // It deliberately does NOT push by itself unless --push is given. Deploying is an outward-facing act
 // and stays a deliberate one.
 //
-// SEQUENCE: commit everything (notes included) → `--record` → tag with `--push`. Do not `git push`
-// master separately first: that starts a CI run on the shared test account, which the suite has to wait
-// out (the script now waits automatically, but it costs up to ~5 minutes for nothing).
+// SEQUENCE: commit everything (notes included) → `--record` → tag with `--push`. (Until 2026-09-27 a
+// push first started a CI browser run on the shared test account and the suite refused to start
+// alongside it; CI no longer runs browser tests, so the order no longer matters for that.)
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
 import { execFileSync, execSync } from 'node:child_process'
@@ -246,21 +246,6 @@ if (existsSync(RECEIPT)) {
       pass(`full suite green on this code (receipt from ${r.at}, commit ${String(r.sha).slice(0, 7)})`)
     }
   } catch { /* a corrupt receipt is simply no receipt */ }
-}
-// WAIT OUT CI FIRST (2026-09-27). The suite's own global-setup refuses to start while a GitHub Actions run
-// is using the shared test account — correctly. But the normal release sequence (commit, push, then
-// record) STARTS exactly such a run, so the gate reliably failed with "0 tests ran" and had to be re-run
-// by hand after a wait (twice on 2026-09-27). Waiting here, up to 20 minutes, removes the manual loop
-// without weakening the guard: global-setup still refuses if anything is running when the suite starts.
-const ciBusy = () => {
-  try {
-    const out = execFileSync('gh', ['run', 'list', '--limit', '5', '--json', 'status'], { encoding: 'utf8', windowsHide: true })
-    return JSON.parse(out).some(r => ['in_progress', 'queued', 'pending', 'waiting'].includes(r.status))
-  } catch { return false }   // gh missing or offline: global-setup makes the real decision
-}
-if (!suiteOk && ciBusy()) {
-  console.log('  … a GitHub Actions run is using the shared test account; waiting for it (up to 20 min)')
-  for (let i = 0; i < 40 && ciBusy(); i++) execSync(process.platform === 'win32' ? 'ping -n 31 127.0.0.1 > NUL' : 'sleep 30', { stdio: 'ignore', windowsHide: true })
 }
 if (!suiteOk) {
   console.log('  … running the full suite (this takes ~30 minutes)')
