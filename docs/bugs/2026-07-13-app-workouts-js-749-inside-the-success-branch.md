@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-app-workouts-js-749-inside-the-success-branch
-status: fixed-awaiting-jake
+status: closed
 priority: critical
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b): commit 134140f made the phase-workout context an argument owned by showCreateTemplateModal; tests/regression-2026-07-13.spec.js 'cancelling create-from-phase-slot does not stamp the next library template with that program' is one of that commit's 9 red->green regression tests; green in the v2026.09.8 full-suite run."
 ---
 
 # app-workouts.js:749, inside the *success* branch

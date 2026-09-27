@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-6-more-unguarded-modals-double-tap-buried-overlay-silent-wro
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b): commit 134140f routed 25 modal mounts through mountModal and added tests/regression-2026-07-13.spec.js 'opening the same modal twice leaves exactly one in the DOM', one of that commit's 9 red->green regression tests (its message says so); the spec is green in the v2026.09.8 full-suite run."
 ---
 
 # 6 more unguarded modals (double-tap → buried overlay → silent wrong save)

@@ -36,7 +36,9 @@ const age = r => Math.floor((Date.now() - Date.parse(r.reported)) / DAY)
 const waiting = rows.filter(r => r.status === 'fixed-awaiting-jake' && r.reported).sort((a, b) => age(b) - age(a))
 // Rows whose STATUS says verified while their TEXT still says it is waiting — one fact in two fields
 // disagreeing. Only Jake knows which field is right, so they go on the same list.
-const mixed = rows.filter(r => r.status === 'confirmed' && /awaiting jake/i.test(r.detail))
+// A row whose detail STARTS with the confirmation (written by applying a batch) is settled, even though it keeps
+// its old text after "Previously:".
+const mixed = rows.filter(r => r.status === 'confirmed' && /awaiting jake/i.test(r.detail) && !/^confirmed/i.test(r.detail))
 
 console.log(`\nLEDGER — ${waiting.length} fix(es) waiting on Jake; the oldest ${Math.min(N, waiting.length)} below.`)
 console.log('Reply with a number and one word each: yes (works) / no (still broken) / accept (stop tracking).\n')
