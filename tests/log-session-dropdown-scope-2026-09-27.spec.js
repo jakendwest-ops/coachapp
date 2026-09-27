@@ -40,11 +40,15 @@ test('the coach Log-session template dropdown lists coaching templates only — 
     expect(options, "the coach's PERSONAL template must not be offered for a real client").not.toContain(names.personal)
     expect(options, 'a periodization week-clone must not be offered').not.toContain(names.clone)
   } finally {
-    await page.evaluate(() => { try { closeModal('log-session-modal') } catch {} })
-    await page.evaluate(async ({ names, fx }) => {
-      for (const n of Object.values(names)) await db.from('workout_templates').delete().eq('coach_id', currentUser.id).eq('name', n).select('id')
-      await db.from('programs').delete().eq('id', fx.programId).eq('coach_id', currentUser.id).select('id')
-      await db.from('clients').delete().eq('id', fx.clientId).eq('coach_id', currentUser.id).select('id')
-    }, { names, fx }).catch(() => {})
+    await page.evaluate(() => { if (document.getElementById('log-session-modal')) closeModal('log-session-modal') })
+    // Rowcount-checked and NOT swallowed: a cleanup that fails silently leaves debris nobody hears about.
+    const reaped = await page.evaluate(async ({ names, fx }) => {
+      let n = 0
+      for (const name of Object.values(names)) n += ((await db.from('workout_templates').delete().eq('coach_id', currentUser.id).eq('name', name).select('id')).data || []).length
+      n += ((await db.from('programs').delete().eq('id', fx.programId).eq('coach_id', currentUser.id).select('id')).data || []).length
+      n += ((await db.from('clients').delete().eq('id', fx.clientId).eq('coach_id', currentUser.id).select('id')).data || []).length
+      return n
+    }, { names, fx })
+    expect(reaped, 'cleanup must remove the 3 templates, the programme and the client').toBe(5)
   }
 })

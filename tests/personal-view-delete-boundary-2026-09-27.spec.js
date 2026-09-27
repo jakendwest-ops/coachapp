@@ -50,13 +50,19 @@ test('a Personal-view delete of week copies never touches a real client’s copy
     expect(left.cpw, "the real client's week copy must survive a Personal-view delete").toBe(1)
     expect(left.clone, "the real client's workout clone must survive too").toBe(1)
   } finally {
-    await page.evaluate(() => { try { if (currentProfile?.role === 'solo') switchView('coach') } catch {} })
-    await page.evaluate(async (fx) => {
+    await page.evaluate(() => { if (currentProfile?.role === 'solo') switchView('coach') })
+    // Rowcount-checked and NOT swallowed. The copy and clone may already be gone if the boundary failed,
+    // so only the programme, the master template and the client are required to be reaped.
+    const reaped = await page.evaluate(async (fx) => {
+      const n = r => (r.data || []).length
       await db.from('client_program_workouts').delete().eq('id', fx.cpwId).select('id')
       await db.from('workout_templates').delete().eq('id', fx.cloneId).eq('coach_id', currentUser.id).select('id')
-      await db.from('programs').delete().eq('id', fx.programId).eq('coach_id', currentUser.id).select('id')
-      await db.from('workout_templates').delete().eq('coach_id', currentUser.id).like('name', '[E2E-PVDEL]%').select('id')
-      await db.from('clients').delete().eq('id', fx.clientId).eq('coach_id', currentUser.id).select('id')
-    }, fx).catch(() => {})
+      return {
+        program: n(await db.from('programs').delete().eq('id', fx.programId).eq('coach_id', currentUser.id).select('id')),
+        master: n(await db.from('workout_templates').delete().eq('coach_id', currentUser.id).like('name', '[E2E-PVDEL]%').select('id')),
+        client: n(await db.from('clients').delete().eq('id', fx.clientId).eq('coach_id', currentUser.id).select('id')),
+      }
+    }, fx)
+    expect(reaped, 'cleanup must remove the programme, the master template and the client').toEqual({ program: 1, master: 1, client: 1 })
   }
 })
