@@ -69,7 +69,17 @@ const CASES = [
   { want: 'PASS', why: '.reps is deliberately NOT a free-text field — a runner number input must not cry wolf',
     src: 'function render(s) {\n  return `<input type="number" value="${s.reps||\'\'}">`\n}' },
   { want: 'PASS', why: 'a numeric / id interpolation carries no free-text field name',
-    src: 'function render(n, id) {\n  return `<div id="row-${id}">${n + 1}</div>`\n}' }
+    src: 'function render(n, id) {\n  return `<div id="row-${id}">${n + 1}</div>`\n}' },
+  // 2026-09-27: `.backLabel` / `.clientName` added to FREE_TEXT. A neuter run showed un-escaping
+  // `_ctx.backLabel` (the 2026-08-19 stored-XSS sink) failed NOTHING — the checker could not see it.
+  { want: 'BLOCK', why: 'THE 2026-08-19 BUG SHAPE: _ctx.backLabel rendered raw as markup',
+    src: 'function render(_ctx) {\n  return `<button class="back">${_ctx.backLabel}</button>`\n}' },
+  { want: 'BLOCK', why: '_ctx.clientName rendered raw as markup',
+    src: 'function render(_ctx) {\n  return `<span>${_ctx.clientName}</span>`\n}' },
+  { want: 'PASS', why: 'THE FIX SHAPE: escapeHtml(_ctx.backLabel)',
+    src: 'function render(_ctx) {\n  return `<button class="back">${escapeHtml(_ctx.backLabel)}</button>`\n}' },
+  { want: 'PASS', why: 'a LOCAL variable named clientName (pre-escaped with escapeAttr, used in a handler) is not the property — measured: flagging the bare word hit exactly this correct site in app-programs.js',
+    src: 'function render(d) {\n  const clientName = escapeAttr(d.full_name)\n  return `<button onclick="open(\'${clientName}\')">x</button>`\n}' }
 ]
 
 const dir = mkdtempSync(join(tmpdir(), 'escaping-selftest-'))

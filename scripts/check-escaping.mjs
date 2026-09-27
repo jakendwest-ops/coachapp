@@ -46,7 +46,7 @@ const FILES = process.argv.slice(2)
 // the committed sink over the unfixed one. KNOWN LIMITS this file cannot close, so they are stated rather than
 // implied: a taint that crosses a function RETURN (see _periodizationLabel, escaped at its source instead) or
 // arrives under a name not listed here is invisible to a name-keyed rule.
-const FREE_TEXT = /(full_name|exercise_name|client_notes|clientNotes|day_label|clientMap\[|\.name\b|\.title\b|\.notes\b|\.description\b|\.email\b|\.unit\b|\bcfg\.|\bprogramName\b)/
+const FREE_TEXT = /(full_name|exercise_name|client_notes|clientNotes|day_label|clientMap\[|\.name\b|\.title\b|\.notes\b|\.description\b|\.email\b|\.unit\b|\bcfg\.|\bprogramName\b|\.backLabel\b|\.clientName\b)/
 
 const ESCAPED = /escapeHtml\(|escapeAttr\(|jsArg\(|encodeURIComponent\(/
 // Not sinks: a single character can't form a tag; a comparison isn't rendered.

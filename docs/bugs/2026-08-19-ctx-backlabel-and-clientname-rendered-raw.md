@@ -1,9 +1,9 @@
 ---
 id: 2026-08-19-ctx-backlabel-and-clientname-rendered-raw
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-08-19
-status_detail: "Found while fixing the escapeAttr checker. 5th instance of the client→coach stored-XSS pattern CRITICAL.md tracks. Proven live in-browser before fixing. Awaiting Jake: no live confirmation."
+status_detail: "CLOSED 2026-09-27 via closure rule (b): tests/template-back-label-escaping-2026-09-27.spec.js renders the real template Back button with a hostile client-name label and asserts no element is created. Proven that day: green on current code, RED with escapeHtml removed from _ctx.backLabel, green after a byte-identical restore. The escaping checker could NOT see this sink (continuation-line blind spot, filed as 2026-09-27-escaping-checker-cannot-see-an-interpolation-on-a-continuation-line); .backLabel/.clientName were added to its FREE_TEXT with self-test cases."
 ---
 
 # `_ctx.backLabel` and `_ctx.clientName` were rendered RAW — a live stored-XSS sink
