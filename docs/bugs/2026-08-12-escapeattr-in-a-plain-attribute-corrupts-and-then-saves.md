@@ -1,6 +1,6 @@
 ---
 id: 2026-08-12-escapeattr-in-a-plain-attribute-corrupts-and-then-saves
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-08-12
 ---

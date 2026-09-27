@@ -1,9 +1,9 @@
 ---
 id: 2026-07-30-pii-sweep-19-sites-across-4-files
-status: fixed-awaiting-jake
+status: closed
 priority: low
 reported: 2026-07-30
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b), proven that day by a neuter run: scripts/check-pii-logs.mjs (checks.sh rule 9a, every push) passed on current code; with an email added to saveEditClient's log call it FAILED ('PII-in-log finding(s)'); after a byte-identical restore it passed again."
 ---
 
 # PII sweep, 19 sites across 4 files

@@ -1,9 +1,9 @@
 ---
 id: 2026-07-23-security-client-authored-text-ran-as-the-coach
-status: fixed-awaiting-jake
+status: closed
 priority: critical
 reported: 2026-07-23
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b), proven that day by a neuter run: tests/escaping-sweep-2026-08-12.spec.js (runs scripts/check-escaping.mjs) passed on current code; with the escaped PB notes in renderClientPerformance (the coach's view of a client's PBs) un-escaped it FAILED ('unescaped free-text interpolation(s) found'); after a byte-identical restore it passed again."
 ---
 
 # SECURITY: client-authored text ran as the COACH
