@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-the-destructive-half-of-the-personal-pt-boundary-was-never-g
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b), neuter-proven that day: tests/personal-view-delete-boundary-2026-09-27.spec.js drives _deleteClientCopiesForSlots from Personal view against a programme a real (fixture) client is assigned to; it passed on current code, FAILED with the _propagationTargets filter removed ('the real client's week copy must survive'), and passed again after a byte-identical restore."
 ---
 
 # the destructive half of the Personal/PT boundary was never guarded

@@ -1,9 +1,9 @@
 ---
 id: 2026-07-30-6-more-unanchored-writes
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-07-30
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b), neuter-proven that day: tests/write-ownership-anchors-2026-09-27.spec.js asserts every exercises/events/goals write in the six functions carries its coach_id / created_by anchor; removing the anchor from deleteExercise and from deleteGoal each FAILED it naming the write; green after a byte-identical restore. A behavioural probe cannot go red here (RLS already refused these writes on 2026-07-30), so the source-level pin is the proof."
 ---
 
 # 6 more unanchored writes

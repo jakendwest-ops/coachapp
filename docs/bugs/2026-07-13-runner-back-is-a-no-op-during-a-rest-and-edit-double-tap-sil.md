@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-runner-back-is-a-no-op-during-a-rest-and-edit-double-tap-sil
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b), neuter-proven that day: tests/runner-edit-set-double-tap-2026-09-27.spec.js, both halves. Edit double-tap: with the overlay guard and mountModal removed it FAILED ('a double tap must leave exactly one edit sheet'). Back during a rest with a queued advance: with the old skipRestTimer()-first code restored it FAILED ('must land on A … stayed on B'). Both green before and after a byte-identical restore. The older ledger-fixes-2026-07-29 Back test was shown NOT to catch the original bug (it never queues an _afterRest)."
 ---
 
 # runner ← Back is a no-op during a rest, and ✎ Edit double-tap silently saves the OLD values
