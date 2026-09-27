@@ -1,9 +1,9 @@
 ---
 id: 2026-07-23-resolvemetrictype-shared-by-runner-builder-edit-modal-makes-
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-07-23
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b): commit b637e09 ('Six bugs from the 2026-07-23 full-file review, all with red->green regression tests', tests/ledger-fixes-2026-07-23.spec.js) names this fix among the six; green in the v2026.09.8 full-suite run."
 ---
 
 # resolveMetricType (shared by runner + builder edit-modal) makes the legacy fallback reachable again

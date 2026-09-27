@@ -1,6 +1,6 @@
 ---
 id: 2026-08-09-periodization-generated-weeks-2-silently-lose-metric-type-do
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-08-09
 ---

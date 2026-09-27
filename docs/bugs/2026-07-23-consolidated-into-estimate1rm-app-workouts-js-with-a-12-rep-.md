@@ -1,9 +1,9 @@
 ---
 id: 2026-07-23-consolidated-into-estimate1rm-app-workouts-js-with-a-12-rep-
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-07-23
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b): commit b637e09 ('Six bugs from the 2026-07-23 full-file review, all with red->green regression tests', tests/ledger-fixes-2026-07-23.spec.js) names this fix among the six; green in the v2026.09.8 full-suite run."
 ---
 
 # consolidated into _estimate1RM (app-workouts.js) with a 12-rep ceiling, all 4 copies removed

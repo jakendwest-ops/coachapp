@@ -1,9 +1,9 @@
 ---
 id: 2026-08-17-escapeattr-survives-via-string-concatenation
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-08-17
-status_detail: "FIXED commit 28258aa, live 2026-08-19 (app-workouts v73). CHECKER FIRST, then the 9 sites. Both syntactic shapes now enumerated from a grep of the 14 chars before every escapeAttr( call, and a test plants one of EACH and asserts the correct handler usage is not flagged — verified red-before by reverting the rule to its 2026-08-16 form. An indirection rule was written and removed the same hour (it flagged correct code). Following it found a LIVE XSS — see 2026-08-19-ctx-backlabel-and-clientname-rendered-raw."
+status_detail: "CLOSED 2026-09-27 via closure rule (b): commit 28258aa records the checker test 'verified red-before by reverting the rule' (tests/escaper-attr-roundtrip-2026-08-16.spec.js); the concatenated sites were fixed in the same work; green in the v2026.09.8 full-suite run."
 ---
 
 # The escapeAttr class was declared closed on 2026-08-16 — 9 sites survive, and the checker cannot see them
