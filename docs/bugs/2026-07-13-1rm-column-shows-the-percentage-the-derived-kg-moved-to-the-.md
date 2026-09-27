@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-1rm-column-shows-the-percentage-the-derived-kg-moved-to-the-
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "CONFIRMED by Jake 2026-09-27 (batch reply: all ten oldest waiting fixes marked yes, closure rule (a)). Previously: fixed — awaiting Jake"
 ---
 
 # 1RM column shows the PERCENTAGE; the derived kg moved to the KG ghost text and now outranks last session (on a

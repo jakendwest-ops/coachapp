@@ -1,9 +1,9 @@
 ---
 id: 2026-07-08-live-confirm-the-exercise-picker-visualviewport-fix-b1aa50c-
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-07-08
-status_detail: "fixed — awaiting Jake"
+status_detail: "CONFIRMED by Jake 2026-09-27 (batch reply: all ten oldest waiting fixes marked yes, closure rule (a)). Previously: fixed — awaiting Jake"
 ---
 
 # Live-confirm the exercise-picker VisualViewport fix (b1aa50c) on Jake's own phone. Playwright cannot simulate

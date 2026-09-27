@@ -1,9 +1,9 @@
 ---
 id: 2026-07-12-create-a-throwaway-coach-account-confirm-it-lands-on-a-popul
-status: fixed-awaiting-jake
+status: confirmed
 priority: high
 reported: 2026-07-12
-status_detail: "fixed — awaiting Jake"
+status_detail: "CONFIRMED by Jake 2026-09-27 (batch reply: all ten oldest waiting fixes marked yes, closure rule (a)). Previously: fixed — awaiting Jake"
 ---
 
 # create a throwaway coach account, confirm it lands on a populated dashboard (~40 exercises + sample workout +

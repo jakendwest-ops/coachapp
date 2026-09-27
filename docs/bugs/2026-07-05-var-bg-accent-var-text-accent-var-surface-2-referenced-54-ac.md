@@ -1,9 +1,9 @@
 ---
 id: 2026-07-05-var-bg-accent-var-text-accent-var-surface-2-referenced-54-ac
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-07-05
-status_detail: "fixed — awaiting Jake"
+status_detail: "CONFIRMED by Jake 2026-09-27 (batch reply: all ten oldest waiting fixes marked yes, closure rule (a)). Previously: fixed — awaiting Jake"
 ---
 
 # var(--bg-accent)/var(--text-accent)/var(--surface-2) referenced 54× across 7 files, never defined in css/main

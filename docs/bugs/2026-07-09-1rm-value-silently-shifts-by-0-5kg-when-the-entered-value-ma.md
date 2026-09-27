@@ -1,10 +1,10 @@
 ---
 id: 2026-07-09-1rm-value-silently-shifts-by-0-5kg-when-the-entered-value-ma
-status: fixed-awaiting-jake
+status: confirmed
 priority: high
 reported: 2026-07-09
 reported_detail: re-checked 2026-08-02
-status_detail: "ACCIDENTAL VECTOR FOUND AND FIXED 2026-09-04. A mouse wheel over a focused number input steps it by one step in real Chrome 152 and real Edge, and NOT in Playwright bundled Chromium 149 — which is why two prior investigations tested this route and found nothing. Jake confirms the unit was kg, where one notch is EXACTLY 0.5 kg. Guarded globally across all 95 number inputs. Awaiting Jake: does it recur? One detail of the original report — that it happened when the value MATCHED another entry — is still unexplained."
+status_detail: "CONFIRMED by Jake 2026-09-27 (batch reply: all ten oldest waiting fixes marked yes, closure rule (a)). Previously: ACCIDENTAL VECTOR FOUND AND FIXED 2026-09-04. A mouse wheel over a focused number input steps it by one step in real Chrome 152 and real Edge, and NOT in Playwright bundled Chromium 149 — which is why two prior investigations tested this route and found nothing. Jake confirms the unit was kg, where one notch is EXACTLY 0.5 kg. Guarded globally across all 95 number inputs. Awaiting Jake: does it recur? One detail of the original report — that it happened when the value MATCHED another entry — is still unexplained."
 ---
 
 # 1RM value silently shifts by 0.5kg when the entered value matches an existing entry (e.g

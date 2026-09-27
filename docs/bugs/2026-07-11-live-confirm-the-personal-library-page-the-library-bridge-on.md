@@ -1,9 +1,9 @@
 ---
 id: 2026-07-11-live-confirm-the-personal-library-page-the-library-bridge-on
-status: fixed-awaiting-jake
+status: confirmed
 priority: high
 reported: 2026-07-11
-status_detail: "fixed — awaiting Jake"
+status_detail: "CONFIRMED by Jake 2026-09-27 (batch reply: all ten oldest waiting fixes marked yes, closure rule (a)). Previously: fixed — awaiting Jake"
 ---
 
 # Live-confirm the Personal → Library page + the Library bridge on Jake's own account: open Hybrid Weapon Experi
