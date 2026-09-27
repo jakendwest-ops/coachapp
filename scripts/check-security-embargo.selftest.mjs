@@ -18,6 +18,11 @@ const cases = [
   ['fixed-awaiting-jake + security: true', row('fixed-awaiting-jake', 'true'), 0],
   ['open + security: false',              row('open', 'false'),              0],
   ['open, no security field',             row('open'),                       0],
+  // tolerant parsing, added after review 2026-09-27
+  ['deferred + security: true',           row('deferred', 'true'),           1],
+  ['quoted "open" + security: "true"',    row('"open"', '"true"'),           1],
+  ['security: Yes # note',                row('open', 'Yes # note'),         1],
+  ['BOM before the frontmatter',          '﻿' + row('open', 'true'),    1],
 ]
 
 let bad = 0

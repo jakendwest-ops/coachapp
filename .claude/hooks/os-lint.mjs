@@ -301,7 +301,7 @@ function checkSelfTestFresh () {
       + '    It proves every check still fires against a fixture built to trip it, and names any that\n'
       + '    have gone DECORATIVE. gates-fired sat GREEN for weeks while incapable of failing; this is\n'
       + '    the mechanism that would have caught it unprompted.\n'
-      + '    The marker stamps only on a CLEAN run, so this stays RED until it genuinely passes.')
+      + '    The marker stamps only on a CLEAN run, so this stays listed until it genuinely passes.')
   } else ok('self-test', `os-lint self-test ran ${Math.floor(age)} day(s) ago`)
 }
 
@@ -781,6 +781,11 @@ function checkStaleBugs () {
     // row is openable. A 90-char excerpt of a 7,000-char cell was never enough to act on.
     if (age > 7) stale.push(`${age}d old — reported ${r.reported} — ${r.file}`)
   }
+  // An open CRITICAL is news every session, not weekly (review 2026-09-27: otherwise an open critical
+  // was quieter than a deferred one, which deferred-criticals WARNs on every start).
+  const crit = rows.filter(r => !r.malformed && r.status === 'open' && r.priority === 'critical')
+  if (crit.length) warn('open-criticals', `${crit.length} CRITICAL bug(s) are OPEN:\n    ` + crit.map(r => `reported ${r.reported} — ${r.file}`).join('\n    '))
+  else ok('open-criticals', 'no critical bug is open')
   if (stale.length) {
     digest('stale-bugs', `${stale.length} reported bug(s) still OPEN after 7+ days:\n    ` + stale.join('\n    ')
       + '\n    A Jake-reported item closes ONLY on (a) Jake confirming it, or (b) a test that went red before the fix and green after.')
@@ -1275,6 +1280,10 @@ function runSelfTest () {
     // 2026-09-27: moved from the per-message standing-behaviours hook; one unticked box must surface.
     { check: 'unfinished-ritual', expect: 'was interrupted and never finished',
       env: { OSLINT_RITUAL_DIR: dirname(file('rituals/ritual-probe.md', '- [x] done\n- [ ] never ran\n')) } },
+    // 2026-09-27: an open critical must surface every session, not only in the weekly digest.
+    { check: 'open-criticals', expect: 'CRITICAL bug(s) are OPEN',
+      env: { OSLINT_BUGS: bugDir('opencrit', '2026-08-11-probe-open-critical.md',
+        '---\nid: 2026-08-11-probe-open-critical\nstatus: open\npriority: critical\nreported: 2026-08-11\n---\n\n# probe\n') } },
     // 2026-09-27: a memory with no enforced_by must be listed as a retirement candidate.
     { check: 'retirement', expect: 'have no enforced_by',
       env: { OSLINT_MEM_DIR: memDir('retire', Object.fromEntries([memOK('noenforce')]), memIndex('noenforce')) } },

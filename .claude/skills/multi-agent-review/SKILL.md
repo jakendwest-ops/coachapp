@@ -98,14 +98,19 @@ Do not fix in this skill — report. Fixing happens after, under the normal buil
 ## Step 4 — Record that the review ran
 
 ```bash
-cp "C:/Users/jaken/.claude/state/session-current" "C:/Users/jaken/.claude/state/review-ran" && node scripts/lib/review-fingerprint.mjs --record
+cp "C:/Users/jaken/.claude/state/session-current" "C:/Users/jaken/.claude/state/review-ran"
+cd "C:/Users/jaken/OneDrive/coachapp" && node scripts/lib/review-fingerprint.mjs --record   # DIFF MODE ONLY
 ```
 
-The second command records **what code the review saw** (a git tree hash per code path, from the working
-tree). `scripts/release.mjs` passes its review gate when HEAD is exactly that code — so reviewing before
-the commit, as this project requires, no longer fails the release gate on timestamps (2026-09-27; the
-old timestamp comparison is only the fallback). If you fix review findings afterwards, the fingerprint
-no longer matches: that is correct — re-record after re-verifying the fixes.
+The second command records **what code the review saw** (a git tree hash per code path, taken from the
+index — staged changes, or HEAD if nothing is staged). `scripts/release.mjs` passes its review gate when
+HEAD is exactly that code, so reviewing before the commit no longer fails the release gate on timestamps
+(2026-09-27; the timestamp comparison is only the fallback).
+- It **refuses** while anything under the code paths is unstaged or untracked — then it is ambiguous which
+  code the review saw (another session's work in progress, say). Stage exactly what was reviewed, or skip it.
+- **Never after a full-file review** — that covers a few files, not the tree.
+- If you fix review findings afterwards the fingerprint no longer matches: correct — re-record after the
+  fixes are re-verified and staged.
 
 `hooks/guardrails.mjs` **blocks `git commit`** when the staged diff touches ownership/RLS scoping
 (`_verifyX`, `coach_id`, `client_id`, `auth.uid`, `create policy`) and no review has run this session.

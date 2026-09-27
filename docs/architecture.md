@@ -69,12 +69,9 @@ count; hard-coded totals here went stale). Widening it was tried and reverted on
 One workflow, "Check & Deploy":
 - **`check`** job — runs on every push/PR to `master`: `npm ci`, then `scripts/checks.sh`. On a tag
   push, also verifies `docs/releases/<tag>.md` exists before allowing deploy.
-- **`e2e`** job — runs the same 2-spec smoke gate as the pre-push hook, gated on repository secrets;
-  named "Smoke tests (57, skipped without secrets)" specifically so a green badge can't be misread
-  as 57 tests having passed when the secrets are absent.
-- **`deploy`** job — needs only `check`, deliberately not `e2e` (the e2e job's flakiness profile has
-  never been measured). Fires **only** on a `v*` tag push. A push to `master` alone never deploys —
-  see [decisions.md](decisions.md).
+- **`deploy`** job — needs `check`; fires **only** on a `v*` tag push, so a push to `master` never deploys.
+- No browser tests in CI since 2026-09-27 (see [decisions.md](decisions.md)): the pre-push hook and
+  `scripts/release.mjs` run them locally.
 
 ## Homegrown quality tooling
 

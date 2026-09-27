@@ -131,13 +131,11 @@ list, recommending one if the priority is obvious.
 ## Step 7 — Surface the bug ledger
 
 **The live ledger is `docs/bugs/` — one file per bug.** Check `docs/backlog.md` for the current snapshot
-(counts + themes), then read anything `os-lint` flagged as stale directly from `docs/bugs/`.
+(counts + themes), then read any stale row `os-lint` listed (in the weekly digest, or `--report`) from `docs/bugs/`.
 
 Surface every row whose status is `open` or `fixed-awaiting-jake`. Lead with whatever `os-lint` turned RED.
 If `os-lint` printed a **WEEKLY DIGEST**, give Jake ONE short list from it, and offer
 `node scripts/ledger-batch.mjs` — the oldest waiting rows as a yes/no list he can answer in one message.
-Statuses: `confirmed` = verified done (terminal); `unverified-accepted` = Jake agreed, in a batch, to stop
-tracking an unconfirmed fix (terminal, only Jake sets it).
 
 > ### 🔒 The closure rule
 > A Jake-reported item may be closed **only** by **(a)** Jake confirming it, or **(b)** a test that went
@@ -170,7 +168,8 @@ start investigating.** One file per bug: `docs/bugs/YYYY-MM-DD-slug.md`, frontma
 `priority` / `reported`. (It was a markdown table in STATUS.md until 2026-08-11, then per-file in the
 Vault; the repo replaced the Vault as system of record 2026-09-15 — see `docs/decisions.md`.)
 Not at `/save`. Not "if it's still relevant." Every row carries a `Reported` date and a `Status`
-(`open` / `fixed — awaiting Jake` / `confirmed` / `deferred (Jake)` — only Jake may set `deferred`).
+(`open` / `fixed-awaiting-jake` / `confirmed` / `deferred` / `closed` / `unverified-accepted` — only Jake sets
+`deferred` and `unverified-accepted`).
 The rituals had five mechanical rules for *removing* to-dos and **zero** for adding them. That is the whole
 reason reports rotted. `os-lint` lists any `open` row older than 7 days in the weekly digest.
 

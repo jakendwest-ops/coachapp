@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // PreToolUse(Bash) guardrails — the MECHANICAL half of the 2026-08-22 error-rate review.
 //
-// WHY A HOOK AND NOT A STANDING BEHAVIOUR. standing-behaviours.mjs already injects
+// WHY A HOOK AND NOT A STANDING BEHAVIOUR. standing-behaviours.mjs (retired 2026-09-27; its text is now
+// in CLAUDE.md) used to inject
 // "No claim without a check you actually ran" on EVERY turn, and on 2026-08-22 I still
 // read "exit code 0" off a piped Playwright run that had 2 failed tests. A rule that
 // fires every turn and is still violated is not under-stated, it is unenforceable by

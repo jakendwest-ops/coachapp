@@ -23,13 +23,16 @@ if (!existsSync(BUGS)) { console.log(`  no bug directory at ${BUGS}`); process.e
 const offenders = []
 let scanned = 0
 for (const f of readdirSync(BUGS).filter(f => f.endsWith('.md'))) {
-  const text = readFileSync(join(BUGS, f), 'utf8').replace(/\r\n/g, '\n')
+  const text = readFileSync(join(BUGS, f), 'utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n')
   const fm = text.match(/^---\n([\s\S]*?)\n---/)
   if (!fm) continue
   scanned++
-  const security = /^security:\s*true\s*$/m.test(fm[1])
-  const status = (fm[1].match(/^status:\s*(\S+)/m) || [])[1]
-  if (security && status === 'open') offenders.push(f)
+  // Tolerant parsing (review 2026-09-27): quotes, case, a trailing comment, and yes/true all count.
+  const field = k => ((fm[1].match(new RegExp(`^${k}:\\s*(.*)$`, 'm')) || [])[1] || '')
+    .replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '').toLowerCase()
+  const security = ['true', 'yes'].includes(field('security'))
+  // `deferred` is an unfixed hole too. `fixed-awaiting-jake` is allowed: by then the fix is written.
+  if (security && ['open', 'deferred'].includes(field('status'))) offenders.push(f)
 }
 
 if (offenders.length) {

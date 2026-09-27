@@ -19,7 +19,7 @@
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
 import { execFileSync, execSync } from 'node:child_process'
-import { headFingerprint, readRecorded } from './lib/review-fingerprint.mjs'
+import { headFingerprint, readRecorded, REVIEW_PATHS as FINGERPRINT_PATHS } from './lib/review-fingerprint.mjs'
 import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -178,6 +178,11 @@ if (recordOnly) {
 // service-role Edge Function) were both excluded, so changing either after the last review would
 // have satisfied this gate silently. They are exactly the code CLAUDE.md says must be reviewed.
 const REVIEW_PATHS = [...CODE_PATHS, '.github', 'supabase']
+// One list, two users: the fingerprint and this timestamp rule must cover the same paths (review 2026-09-27).
+if (REVIEW_PATHS.join('|') !== FINGERPRINT_PATHS.join('|')) {
+  console.log('\n  ✗ scripts/lib/review-fingerprint.mjs REVIEW_PATHS differs from release.mjs — make them identical.')
+  process.exit(1)
+}
 const lastCodeCommit = git('log', '-1', '--format=%ct', '--', ...REVIEW_PATHS)
 // FAIL CLOSED. An empty result means no commit touched any review path. That cannot happen today —
 // all of them have history — but `Number('') || 0` would silently mean epoch 1970, and every real
