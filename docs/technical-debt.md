@@ -82,7 +82,7 @@ runner-ignored, so a leftover runs in `npm test`); and no fault-injection test a
 
 ## Test-gate coverage debt
 
-The pre-push gate covers 2 of 105 spec files (`runner.spec.js`, `solo-account.spec.js`). Most
+The pre-push gate covers 2 spec files (`runner.spec.js`, `solo-account.spec.js`) out of the whole suite. Most
 RLS/ownership-relevant specs run only in the full local suite, not on every push. Widening this was
 tried once and reverted (2026-08-20 — see [decisions.md](decisions.md)) for concrete reasons
 (silent glob no-op, cleanup-unsafe cross-tenant probes at push frequency), so this is a known,

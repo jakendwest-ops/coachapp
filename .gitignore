@@ -40,3 +40,7 @@ tests/.sessions/
 # machine-specific, and meaningless in anyone else's checkout — a slow laptop would look like a
 # regression to a fast one.
 .suite-duration.json
+
+# Write-ups of OPEN security bugs, kept out of this PUBLIC repo until the fix is live
+# (scripts/check-security-embargo.mjs, checks.sh rule 9o). Move the file into docs/bugs/ once fixed.
+docs/bugs/embargo/

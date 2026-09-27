@@ -175,12 +175,25 @@ const REPORT = process.argv.includes('--report')
 const DAY = 86_400_000
 const now = Date.now()
 
-const findings = []   // { check, severity: 'RED'|'WARN', msg }
+const findings = []   // { check, severity: 'RED'|'WARN'|'DIGEST', msg }
 const passed = []
 
-const red  = (check, msg) => findings.push({ check, severity: 'RED', msg })
-const warn = (check, msg) => findings.push({ check, severity: 'WARN', msg })
-const ok   = (check, msg) => passed.push({ check, msg })
+// THREE SEVERITIES, since 2026-09-27 (docs/decisions.md). Until then every finding printed at every
+// session start, and five of them — stale bugs, ungraded predictions, the review/self-test cadence, the
+// confirmation queue — were RED or WARN at nearly EVERY start. A RED that is always on cannot be told
+// apart from no RED at all: the alarm fatigue this file names as its own worst failure mode, produced
+// by this file. So:
+//   RED    — the MACHINERY is broken or a rule was just violated (a hook points at nothing, the ledger's
+//            fields disagree, PII in a skill, a new memory with no enforced_by). Printed every session.
+//   WARN   — worth knowing now, not broken. Printed every session.
+//   DIGEST — BACKLOG and CADENCE (what is overdue, what is waiting on Jake). Printed once a week, as the
+//            weekly digest, and always in --report. Nothing about a digest item is less true; it is just
+//            not news every morning.
+const red    = (check, msg) => findings.push({ check, severity: 'RED', msg })
+const warn   = (check, msg) => findings.push({ check, severity: 'WARN', msg })
+const digest = (check, msg) => findings.push({ check, severity: 'DIGEST', msg })
+const ok     = (check, msg) => passed.push({ check, msg })
+const DIGEST_MARKER = env('OSLINT_DIGEST_MARKER', `${STATE}/last-weekly-digest`)
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -283,7 +296,7 @@ function checkSelfTestFresh () {
   const age = raw ? (now - Date.parse(raw.trim())) / DAY : Infinity
   if (!(age <= 7)) {
     const launched = maybeLaunchSelfTest()
-    red('self-test', `os-lint's own self-test has not run in ${raw ? Math.floor(age) + ' days' : 'ever'}.\n`
+    digest('self-test', `os-lint's own self-test has not run in ${raw ? Math.floor(age) + ' days' : 'ever'}.\n`
       + (launched ? `    ${launched}\n` : '    Run `node os-lint.mjs --self-test` yourself.\n')
       + '    It proves every check still fires against a fixture built to trip it, and names any that\n'
       + '    have gone DECORATIVE. gates-fired sat GREEN for weeks while incapable of failing; this is\n'
@@ -659,7 +672,7 @@ function checkFrontmatter () {
 // ---------------------------------------------------------------------------
 function checkFullFileReview () {
   if (!existsSync(MARKER)) {
-    red('full-file-review', 'the weekly FULL-FILE review has never run (no marker at ~/.claude/state/last-full-file-review).\n'
+    digest('full-file-review', 'the weekly FULL-FILE review has never run (no marker at ~/.claude/state/last-full-file-review).\n'
       + '    The per-session grep only checks fixed patterns; the pre-push review only ever sees the DIFF.\n'
       + '    A latent bug in a module no recent session touched can sit undetected forever — that is exactly\n'
       + '    how 5 unscoped app-clients.js queries survived ~12 reviews. Run: Skill(multi-agent-review) in full-file mode.')
@@ -672,7 +685,7 @@ function checkFullFileReview () {
   // a week; the value is that a real result appears in the banner and a bare re-stamp looks different.
   const m = readEventMarker(MARKER)
   const age = Math.floor((now - m.time) / DAY)
-  if (age > 7) red('full-file-review', `the weekly FULL-FILE review last ran ${age} days ago (>7). Run multi-agent-review in full-file mode.`)
+  if (age > 7) digest('full-file-review', `the weekly FULL-FILE review last ran ${age} days ago (>7). Run multi-agent-review in full-file mode.`)
   else ok('full-file-review', `full-file review ran ${age} day(s) ago` + (m.summary ? ` — "${m.summary}"` : ''))
 }
 
@@ -693,7 +706,17 @@ function checkFullFileReview () {
 //    read; whatever free text a human wrote is preserved separately in `status_detail`. One
 //    machine-readable fact, one human note — never one field trying to be both.
 // ---------------------------------------------------------------------------
-const BUG_STATUSES   = ['open', 'fixed-awaiting-jake', 'confirmed', 'deferred', 'closed']
+// What each status MEANS (written down 2026-09-27; `confirmed` had no definition anywhere, and 54 rows
+// used it, some with a status_detail still reading "fixed — awaiting Jake"):
+//   open                — a real problem, not yet fixed
+//   fixed-awaiting-jake — a fix shipped; needs Jake's confirmation or red→green evidence
+//   confirmed           — the fix (or "already safe") was VERIFIED by Jake or a behavioural probe. Terminal,
+//                         counted as done everywhere; kept distinct from `closed` only for history.
+//   deferred            — Jake chose not now. Only Jake sets it.
+//   closed              — done, with the evidence named in status_detail
+//   unverified-accepted — fixed, never confirmed, and Jake has agreed (in a batch) to stop tracking it.
+//                         Terminal. Only Jake sets it, per batch — never applied by age alone.
+const BUG_STATUSES   = ['open', 'fixed-awaiting-jake', 'confirmed', 'deferred', 'closed', 'unverified-accepted']
 const BUG_PRIORITIES = ['critical', 'high', 'medium', 'low', 'unset']
 
 function bugRows () {
@@ -759,7 +782,7 @@ function checkStaleBugs () {
     if (age > 7) stale.push(`${age}d old — reported ${r.reported} — ${r.file}`)
   }
   if (stale.length) {
-    red('stale-bugs', `${stale.length} reported bug(s) still OPEN after 7+ days:\n    ` + stale.join('\n    ')
+    digest('stale-bugs', `${stale.length} reported bug(s) still OPEN after 7+ days:\n    ` + stale.join('\n    ')
       + '\n    A Jake-reported item closes ONLY on (a) Jake confirming it, or (b) a test that went red before the fix and green after.')
   } else ok('stale-bugs', `no reported bug open longer than 7 days (${rows.length} rows scanned)`)
 }
@@ -837,7 +860,7 @@ function checkClosureCandidates () {
   }
   const shown = candidates.slice(0, 10)
   const more = candidates.length > 10 ? `\n    …and ${candidates.length - 10} more` : ''
-  warn('closure-candidates',
+  digest('closure-candidates',
     `${candidates.length} ageing row(s) name a spec that may already carry clause (b) evidence:\n    ` +
     shown.join('\n    ') + more +
     '\n    Open the spec. If it went RED before the fix and GREEN after, the row closes NOW and' +
@@ -872,11 +895,12 @@ function checkConfirmationQueue () {
 
   const shown = queue.slice(0, 8)
   const more = queue.length > shown.length ? `\n    …and ${queue.length - shown.length} more — the full count lives in backlog.md, not repeated here` : ''
-  warn('confirmation-queue',
+  digest('confirmation-queue',
     `${queue.length} row(s) sit fixed-awaiting-jake — oldest ${shown.length} first, as a starting point:\n    ` +
     shown.map(r => `${r.age}d old — reported ${r.reported} — ${r.file}`).join('\n    ') + more +
     '\n    Each needs Jake\'s own confirmation or a red→green test to close — this list does not' +
-    '\n    close anything, it just picks where to start rather than facing the whole pile at once.')
+    '\n    close anything, it just picks where to start rather than facing the whole pile at once.' +
+    '\n    Batch it: `node scripts/ledger-batch.mjs` prints the oldest 10 as a yes/no list for Jake.')
 }
 
 // ---------------------------------------------------------------------------
@@ -1142,7 +1166,7 @@ function checkStalePredictions () {
   due.sort((a, b) => b.age - a.age)
   const shown = due.slice(0, 8).map(d => `${d.age}d overdue — ${d.id} (by ${d.verify_by}) — ${d.claim}`)
   const more = due.length > shown.length ? `\n    …and ${due.length - shown.length} more` : ''
-  red('stale-predictions', `${due.length} CoachApp prediction(s) past verify_by and still ungraded:\n    ` + shown.join('\n    ') + more
+  digest('stale-predictions', `${due.length} CoachApp prediction(s) past verify_by and still ungraded:\n    ` + shown.join('\n    ') + more
     + '\n    Grade each true/false (Jake confirms, or red→green evidence does), then set "outcome". An ungraded prediction is calibration left open.')
 }
 
@@ -1247,6 +1271,13 @@ function runSelfTest () {
     // Multi-detector checks get one spec each; `name` disambiguates them in the output.
     { check: 'self-test', expect: 'has not run in',
       env: { OSLINT_SELFTEST_MARKER: join(root, 'no-selftest-marker') } },
+
+    // 2026-09-27: moved from the per-message standing-behaviours hook; one unticked box must surface.
+    { check: 'unfinished-ritual', expect: 'was interrupted and never finished',
+      env: { OSLINT_RITUAL_DIR: dirname(file('rituals/ritual-probe.md', '- [x] done\n- [ ] never ran\n')) } },
+    // 2026-09-27: a memory with no enforced_by must be listed as a retirement candidate.
+    { check: 'retirement', expect: 'have no enforced_by',
+      env: { OSLINT_MEM_DIR: memDir('retire', Object.fromEntries([memOK('noenforce')]), memIndex('noenforce')) } },
 
     { check: 'live-docs', name: 'live-docs/retired-term', expect: 'retired 2026-07-13',
       env: { OSLINT_LIVE_DOCS: file('ld1.md', 'Run the post-build-review skill.') } },
@@ -1369,12 +1400,11 @@ function runSelfTest () {
       env: { OSLINT_STATUS: file('cb-status.md', 'x'.repeat(600)),
              OSLINT_ROADMAP: file('cb-roadmap.md', 'y'.repeat(600)),
              OSLINT_CONTEXT_BUDGET: '1000' } },
-    // Fixture STATUS whose continuity block is far larger than the real baseline. OSLINT_STATUS is
-    // also what makes the check treat this as synthetic and refuse to persist a new baseline, so
-    // this spec doubles as the poisoning guard.
-    { check: 'continuity-budget', expect: 'the continuity block has grown',
-      env: { OSLINT_STATUS: file('cont-status.md',
-        '## Continuity block\n' + '### an entry\nbody line that makes this section large\n'.repeat(3000) + '\n## next\n') } },
+    // continuity-budget's spec was REMOVED 2026-09-27. The check was retired 2026-09-16 (its call is
+    // commented out below), but its spec stayed — so every self-test ended with 1 DECORATIVE check, the
+    // marker could never stamp, and "self-test has not run in N days" was RED at every session start from
+    // that day on. A retired check's spec is not "intentionally decorative"; it is a self-test that can
+    // never pass. Retire the spec with the check.
     { check: 'ritual-budget', expect: 'grown past their budget',
       env: { OSLINT_HELLO_SKILL: file('rb-hello.md', 'x'.repeat(600)),
              OSLINT_SAVE_SKILL:  file('rb-save.md',  'y'.repeat(600)),
@@ -1414,12 +1444,13 @@ function runSelfTest () {
     // Capture the check's WHOLE message, not just its verdict line: a RED message wraps onto
     // continuation lines, and the substring identifying WHICH detector fired usually lives there.
     const lines = out.split(/\r?\n/)
-    const start = lines.findIndex(l => new RegExp(`^\\s+(RED|WARN)\\s+${s.check}\\b`).test(l))
+    // DIGEST counts as firing (2026-09-27): a digest finding is a real finding shown weekly, not a pass.
+    const start = lines.findIndex(l => new RegExp(`^\\s+(RED|WARN|DIGEST)\\s+${s.check}\\b`).test(l))
     let msg = ''
     if (start !== -1) {
       msg = lines[start]
       for (let i = start + 1; i < lines.length; i++) {
-        if (/^\s+(RED|WARN|GREEN)\s+\S/.test(lines[i]) || /^\d+ RED /.test(lines[i])) break
+        if (/^\s+(RED|WARN|DIGEST|GREEN)\s+\S/.test(lines[i]) || /^\d+ RED /.test(lines[i])) break
         msg += '\n' + lines[i]
       }
     }
@@ -1663,7 +1694,7 @@ function checkRitualBudget () {
     red('ritual-budget', `the session rituals have grown past their budget: ${detail} (ceiling ${m.ceiling.toLocaleString()}, ${m.source}).\n`
       + '    hello-claude is read in full every session and save is the most-used mechanism in the OS.\n'
       + '    Cut, do not raise the ceiling — raising it is how the last two trims were undone. Look first\n'
-      + '    for behaviours already enforced by hooks/standing-behaviours.mjs, and for historical\n'
+      + '    for behaviours already stated in CLAUDE.md or enforced by a hook, and for historical\n'
       + '    justifications that have since hardened into a check.')
   } else {
     ok('ritual-budget', `rituals within budget (${detail}, ceiling ${m.ceiling.toLocaleString()}, ${m.source})`)
@@ -1956,8 +1987,8 @@ checkDocsBudget()
 // deliberately once its target is confirmed gone. Function body and self-test fixture left in place
 // rather than deleted — this one names no Vault path, so the 2026-09-18 "delete anything Vault-
 // related outright" treatment (see checkGatesFired's deletion, further up this file) doesn't apply;
-// --self-test will report 'continuity-budget' as DECORATIVE, and that reads as "intentionally
-// retired," not "found broken and ignored."
+// [2026-09-27: its self-test spec was removed too — a retired check's spec kept the self-test from ever
+// passing, which is what kept the self-test marker stale and RED since 2026-09-16.]
 // checkContinuityBudget()
 checkMastheadDrift()
 checkDocObligations()
@@ -2044,7 +2075,60 @@ function checkRule0 () {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Unfinished rituals — moved here 2026-09-27 from standing-behaviours.mjs, which ran it on EVERY message
+// (UserPromptSubmit). Once per session is enough to notice a hello-claude/save that died half-way, and it
+// removes a process spawn per message (each one opened a visible console window on this machine).
+// ---------------------------------------------------------------------------
+const RITUAL_DIR = env('OSLINT_RITUAL_DIR', STATE)
+function checkUnfinishedRituals () {
+  let files = []
+  try { files = readdirSync(RITUAL_DIR).filter(f => f.startsWith('ritual-') && f.endsWith('.md')) } catch { return }
+  const hits = []
+  for (const f of files) {
+    const open = (read(join(RITUAL_DIR, f)) || '').split(/\r?\n/).filter(l => /^\s*-\s*\[ \]/.test(l))
+    if (open.length) hits.push(`${f}: ${open.length} unticked step(s) — first: ${open[0].trim()}`)
+  }
+  if (hits.length) warn('unfinished-ritual', `a ritual was interrupted and never finished:\n    ${hits.join('\n    ')}\n    Finish it (or delete the checklist if it genuinely no longer applies).`)
+  else ok('unfinished-ritual', `no interrupted ritual checklist (${files.length} checked)`)
+}
+
+// ---------------------------------------------------------------------------
+// Retirement candidates — added 2026-09-27. Rules only ever get ADDED here: every incident produces a
+// memory, a skill paragraph or a check, and nothing removes one until it is found broken. A memory with
+// no `enforced_by:` is a rule nothing can fail (Rule 0's own words). Listed in the weekly digest so each
+// one is either mechanised or deleted — a list, never an automatic deletion.
+// ---------------------------------------------------------------------------
+function checkRetirementCandidates () {
+  if (!existsSync(MEM_DIR)) return
+  const files = readdirSync(MEM_DIR).filter(f => f.endsWith('.md') && f !== 'MEMORY.md')
+  const unenforced = files.filter(f => !/^enforced_by:/m.test(read(join(MEM_DIR, f)) || ''))
+    .map(f => ({ f, age: Math.floor((now - statSync(join(MEM_DIR, f)).mtimeMs) / DAY) }))
+    .sort((a, b) => b.age - a.age)
+  if (!unenforced.length) { ok('retirement', `every memory file names an enforced_by (${files.length} checked)`); return }
+  const shown = unenforced.slice(0, 8).map(x => `${x.age}d since last edit — ${x.f}`)
+  digest('retirement', `${unenforced.length} of ${files.length} memory file(s) have no enforced_by — rules nothing can fail.\n    `
+    + shown.join('\n    ') + (unenforced.length > 8 ? `\n    …and ${unenforced.length - 8} more` : '')
+    + '\n    For each: turn it into a check, name why it cannot be one (enforced_by: none — <why>), or delete it.')
+}
+
+// Meta-work share — a MEASUREMENT, never a finding (2026-09-27): what fraction of the last 30 days of
+// commits changed only the operating system (docs, hooks, skills, scripts) and not the app. It has no
+// threshold on purpose; the number is for Jake to judge, and it cannot go RED.
+function measureMetaWork () {
+  try {
+    const out = execFileSync('git', ['-C', REPO, 'log', '--since=30.days', '--name-only', '--pretty=format:@@'],
+      { encoding: 'utf8', windowsHide: true })
+    const commits = out.split('@@').map(c => c.split(/\r?\n/).filter(Boolean)).filter(c => c.length)
+    const app = commits.filter(c => c.some(f => /^(js|css)\//.test(f) || f === 'index.html')).length
+    if (commits.length) ok('meta-work', `last 30 days: ${commits.length} commits, ${app} touched the app (js/css/index.html), ${commits.length - app} only the OS/docs/tests (${Math.round(100 * (commits.length - app) / commits.length)}%)`)
+  } catch { /* measurement only — never fail the lint over it */ }
+}
+
 checkRule0()
+checkUnfinishedRituals()
+checkRetirementCandidates()
+if (REPORT) measureMetaWork()
 checkHookSelfTests()
 checkHooks()
 checkNoVaultPointers()
@@ -2055,16 +2139,29 @@ checkNoVaultPointers()
 checkClaudeMd()
 checkStalePredictions()
 
-const reds = findings.filter(f => f.severity === 'RED')
+const reds    = findings.filter(f => f.severity === 'RED')
+const warns   = findings.filter(f => f.severity === 'WARN')
+const digests = findings.filter(f => f.severity === 'DIGEST')
 
 if (REPORT) {
   console.log('\n=== os-lint report ===')
   for (const p of passed)   console.log(`  GREEN  ${p.check.padEnd(18)} ${p.msg}`)
   for (const f of findings) console.log(`  ${f.severity.padEnd(5)}  ${f.check.padEnd(18)} ${f.msg}`)
-  console.log(`\n${reds.length} RED / ${findings.length - reds.length} WARN / ${passed.length} GREEN\n`)
-} else if (findings.length) {
-  console.log('🔴 OS-LINT — the operating system has decayed. Fix these before feature work:\n')
-  for (const f of findings) console.log(`  [${f.severity}] ${f.check}\n    ${f.msg}\n`)
+  console.log(`\n${reds.length} RED / ${warns.length} WARN / ${digests.length} DIGEST / ${passed.length} GREEN\n`)
+} else {
+  // Session start. RED and WARN every time; the DIGEST once a week (see the severity note at the top).
+  if (reds.length) console.log('🔴 OS-LINT — a piece of the machinery is broken or a rule was just broken. Fix before feature work:\n')
+  else if (warns.length) console.log('🟡 OS-LINT — worth knowing (nothing is broken):\n')
+  for (const f of [...reds, ...warns]) console.log(`  [${f.severity}] ${f.check}\n    ${f.msg}\n`)
+
+  const last = read(DIGEST_MARKER)
+  const digestAge = last ? (now - Date.parse(last.trim())) / DAY : Infinity
+  if (digests.length && !(digestAge < 7)) {
+    console.log('📋 WEEKLY DIGEST — backlog and cadence, shown once a week (any time: node .claude/hooks/os-lint.mjs --report).')
+    console.log('   Surface this to Jake as ONE short list; none of it blocks work today.\n')
+    for (const f of digests) console.log(`  [DIGEST] ${f.check}\n    ${f.msg}\n`)
+    try { mkdirSync(dirname(DIGEST_MARKER), { recursive: true }); writeFileSync(DIGEST_MARKER, new Date().toISOString()) } catch { /* bookkeeping only */ }
+  }
 }
 
 process.exit(0)   // never block the session — speak loudly, but never stop Jake working

@@ -12,6 +12,39 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-27 — The operating system was cut back to what refuses, what is broken, and what Jake can answer.** An audit
+the same day found the OS disrupting its operator and its alarms meaning nothing. Changes:
+
+- **The per-message hook is retired.** On this Windows machine every hook invocation opens a visible console window —
+  a known Claude Code bug with no setting to suppress it (per a `claude-code-guide` research pass; the cited GitHub
+  issues were not opened by hand). `standing-behaviours.mjs` fired on every message, so its static text moved into
+  `CLAUDE.md` ("Standing behaviours"), which costs no process. Its unfinished-ritual check moved into `os-lint`
+  (once per session). The remaining hooks (SessionStart, the Bash pre/post guard, Stop) still open a window each.
+- **`os-lint` has three severities.** RED means the machinery is broken or a rule was just broken; WARN is worth
+  knowing; DIGEST — stale bugs, ungraded predictions, the review and self-test cadence, the confirmation queue,
+  and the new retirement list — prints once a week (`--report` any time). Before this, several items were RED at
+  nearly every session start, which is the alarm fatigue the file names as its own worst failure mode.
+- **Bug statuses are defined** (the `confirmed` status had no written meaning; 54 rows used it), and a new
+  terminal status `unverified-accepted` exists for fixes Jake agrees, in a batch, to stop tracking. **Only Jake
+  sets it, per batch** — never applied by age, which would break the closure rule. `scripts/ledger-batch.mjs`
+  prints the oldest waiting rows as a numbered yes / no / accept list.
+- **The release review gate checks WHAT was reviewed, not WHEN.** The review records a fingerprint of the code it
+  saw (`scripts/lib/review-fingerprint.mjs`); `release.mjs` passes when HEAD is exactly that code. The old
+  timestamp rule failed every correctly-reviewed ownership release (review before commit ⇒ marker older than the
+  commit) and could only be passed by re-stamping the marker by hand. `release.mjs` also now waits out an
+  in-progress CI run instead of failing with "0 tests ran".
+- **Open security write-ups are embargoed** (`checks.sh` rule 9o): a bug row marked `security: true` and `open`
+  refuses the push; keep it in `docs/bugs/embargo/` (git-ignored) until the fix is live. *Not chosen:* making the
+  repo private — GitHub Pages on a free plan serves public repos only, so the live site would go down.
+- **Hard-coded counts removed** from `CLAUDE.md`, `hello-claude`, `architecture.md`, `handover.md` and
+  `technical-debt.md` ("~59 of ~757 tests", "2 of 105 spec files" — both stale).
+
+*Not done, needs Jake:* isolated test accounts (a Supabase-side change; it would remove the CI-overlap guard and the
+shared-fixture rules entirely); applying any `unverified-accepted` batch; deciding whether the remaining Stop /
+Bash hooks are worth a window each.
+
+---
+
 **2026-09-26 — A client may detach themselves from their coach, but may no longer point their own `clients` row at ANOTHER
 coach; the rule lives in a trigger keyed on `current_user`.** Jake's read-only query of the live `clients` policies confirmed that
 `clients_update_own_row` pins only `user_id`, so a client could rewrite their own `coach_id` to anyone's id and appear in a

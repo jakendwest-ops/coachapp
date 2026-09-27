@@ -108,8 +108,8 @@ coach's `auth.uid()`, which masks whole categories of failure.
 
 Report findings with line numbers. If clean, say "Code review: clean." **Do not fix — just report.**
 
-**Weekly full-file review — driven by the marker, not self-assessment.** `os-lint` goes RED when
-`~/.claude/state/last-full-file-review` is missing or >7 days old. When it does: run
+**Weekly full-file review — driven by the marker, not self-assessment.** `os-lint` lists it in the
+weekly digest when `~/.claude/state/last-full-file-review` is missing or >7 days old. When it does: run
 `multi-agent-review` in **full-file mode** against the 2-3 highest-churn modules, then stamp the
 marker exactly as that skill says — with the real result, not a bare timestamp.
 (A self-assessed "first session of the week" version of this never once fired in 10 days — the
@@ -134,6 +134,10 @@ list, recommending one if the priority is obvious.
 (counts + themes), then read anything `os-lint` flagged as stale directly from `docs/bugs/`.
 
 Surface every row whose status is `open` or `fixed-awaiting-jake`. Lead with whatever `os-lint` turned RED.
+If `os-lint` printed a **WEEKLY DIGEST**, give Jake ONE short list from it, and offer
+`node scripts/ledger-batch.mjs` — the oldest waiting rows as a yes/no list he can answer in one message.
+Statuses: `confirmed` = verified done (terminal); `unverified-accepted` = Jake agreed, in a batch, to stop
+tracking an unconfirmed fix (terminal, only Jake sets it).
 
 > ### 🔒 The closure rule
 > A Jake-reported item may be closed **only** by **(a)** Jake confirming it, or **(b)** a test that went
@@ -148,10 +152,9 @@ Surface every row whose status is `open` or `fixed-awaiting-jake`. Lead with wha
 >
 > **An empty ledger is not a good outcome. An honest one is.**
 
-_Predictions aren't a manual ritual step anymore — `os-lint`'s `stale-predictions` check goes RED on
-any CoachApp prediction past `verify_by` and still ungraded, the same way it surfaces stale bugs (it
-went 16-deep-overdue as a grep nobody ran before the hook took it over). When RED, grade each
-true/false with Jake (the closure rule applies) and set `outcome`. Don't re-add a manual step._
+_Predictions aren't a manual ritual step — `os-lint`'s `stale-predictions` lists any past `verify_by`
+and still ungraded in the weekly digest. Grade each with Jake (the closure rule applies) and set
+`outcome`. Don't re-add a manual step._
 
 ---
 
@@ -169,10 +172,10 @@ Vault; the repo replaced the Vault as system of record 2026-09-15 — see `docs/
 Not at `/save`. Not "if it's still relevant." Every row carries a `Reported` date and a `Status`
 (`open` / `fixed — awaiting Jake` / `confirmed` / `deferred (Jake)` — only Jake may set `deferred`).
 The rituals had five mechanical rules for *removing* to-dos and **zero** for adding them. That is the whole
-reason reports rotted. `os-lint` turns any `open` row older than 7 days RED at session start.
+reason reports rotted. `os-lint` lists any `open` row older than 7 days in the weekly digest.
 
 ### 🔁 FIX THE CLASS, NOT THE INSTANCE
-> The *trigger* is owned by `hooks/standing-behaviours.mjs` rule 2, injected every turn. This section
+> The *trigger* is `CLAUDE.md`'s standing behaviour 2 (loaded every session). This section
 > keeps only what the hook has no room for: the shared-helper requirement and the incident behind it.
 
 **Put the guard in ONE shared helper** — grepping the siblings is not enough if each gets its own copy.
@@ -227,9 +230,8 @@ consecutive pushes. Note: `/code-review ultra` **does** exist in the VSCode exte
 user-triggered and billed — you cannot launch it. Offer it; never assume it.
 Allow a long timeout on `git push` (300000ms+) — the pre-push hook runs a Playwright **smoke gate**.
 
-**The gate is NOT the suite.** It runs `runner.spec.js` + `solo-account.spec.js` — **~59 of ~757
-tests** (grep-based, verified 2026-09-15; supersedes the earlier "57 of 523" figure — see
-`docs/architecture.md`). This skill claimed "the Playwright suite" until 2026-08-20; the vast
+**The gate is NOT the suite.** It runs `runner.spec.js` + `solo-account.spec.js` only — two spec files, a small
+fraction of the suite (no count written here: hard-coded counts drift; `ls tests/*.spec.js`). This skill claimed "the Playwright suite" until 2026-08-20; the vast
 majority of the suite has never blocked a push, and `ledger-fixes-2026-08-02.spec.js` sat RED for 3
 days across ~4 deploys because it was outside the gate. **Run `npm test` before any push touching a
 module you did not hand-test** — the gate will not do it for you.

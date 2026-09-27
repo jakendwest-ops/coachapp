@@ -445,9 +445,9 @@ if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
 // invented. Jake's standing rule, 2026-08-12: do not fix a problem that does not exist yet;
 // evidence first.
 //
-// So this records, and standing-behaviours.mjs surfaces the running tally so scope creep is
-// visible WHILE it happens rather than in hindsight. The threshold gets set when the data
-// supports one, or never.
+// So this records. Until 2026-09-27 standing-behaviours.mjs surfaced the running tally every turn;
+// that hook was retired (each invocation opened a console window), so the data is recorded only,
+// in state/scope.jsonl. The threshold gets set when the data supports one, or never.
 if (/\bgit\s+commit\b/.test(bareCmd)) {
   try {
     const files = execSync('git diff --cached --name-only', { cwd: REPO, encoding: 'utf8' })

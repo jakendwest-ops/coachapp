@@ -12,9 +12,14 @@
 //
 // It deliberately does NOT push by itself unless --push is given. Deploying is an outward-facing act
 // and stays a deliberate one.
+//
+// SEQUENCE: commit everything (notes included) → `--record` → tag with `--push`. Do not `git push`
+// master separately first: that starts a CI run on the shared test account, which the suite has to wait
+// out (the script now waits automatically, but it costs up to ~5 minutes for nothing).
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
 import { execFileSync, execSync } from 'node:child_process'
+import { headFingerprint, readRecorded } from './lib/review-fingerprint.mjs'
 import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -180,8 +185,16 @@ const lastCodeCommit = git('log', '-1', '--format=%ct', '--', ...REVIEW_PATHS)
 // someone adds a path with no history yet. A gate that cannot fail is the bug this repo ships most
 // often. Treating "unknown" as "now" forces a review instead of quietly vouching for one.
 const lastCommitAt = lastCodeCommit ? Number(lastCodeCommit) * 1000 : Date.now()
+// FINGERPRINT FIRST (2026-09-27, scripts/lib/review-fingerprint.mjs). The review records WHAT code it
+// saw; if HEAD is exactly that code, the review covers this release — whatever the timestamps say.
+// This is what makes a correct review-BEFORE-commit pass without re-stamping a marker by hand. The
+// timestamp rule below stays as the fallback for a review that recorded no fingerprint.
+const recordedReview = readRecorded()
+const reviewedExactly = !!recordedReview && recordedReview.fingerprint === headFingerprint()
 if (recordOnly) {
   // silent: the review gate belongs to tagging, not to verifying code
+} else if (reviewedExactly) {
+  pass(`a review saw exactly this code (fingerprint recorded ${recordedReview.at})`)
 } else if (!existsSync(REVIEW_MARKER)) {
   fail('no review marker', `${REVIEW_MARKER} does not exist.`,
     'run the multi-agent-review skill, which writes it')
@@ -233,6 +246,21 @@ if (existsSync(RECEIPT)) {
       pass(`full suite green on this code (receipt from ${r.at}, commit ${String(r.sha).slice(0, 7)})`)
     }
   } catch { /* a corrupt receipt is simply no receipt */ }
+}
+// WAIT OUT CI FIRST (2026-09-27). The suite's own global-setup refuses to start while a GitHub Actions run
+// is using the shared test account — correctly. But the normal release sequence (commit, push, then
+// record) STARTS exactly such a run, so the gate reliably failed with "0 tests ran" and had to be re-run
+// by hand after a wait (twice on 2026-09-27). Waiting here, up to 20 minutes, removes the manual loop
+// without weakening the guard: global-setup still refuses if anything is running when the suite starts.
+const ciBusy = () => {
+  try {
+    const out = execFileSync('gh', ['run', 'list', '--limit', '5', '--json', 'status'], { encoding: 'utf8', windowsHide: true })
+    return JSON.parse(out).some(r => ['in_progress', 'queued', 'pending', 'waiting'].includes(r.status))
+  } catch { return false }   // gh missing or offline: global-setup makes the real decision
+}
+if (!suiteOk && ciBusy()) {
+  console.log('  … a GitHub Actions run is using the shared test account; waiting for it (up to 20 min)')
+  for (let i = 0; i < 40 && ciBusy(); i++) execSync(process.platform === 'win32' ? 'ping -n 31 127.0.0.1 > NUL' : 'sleep 30', { stdio: 'ignore', windowsHide: true })
 }
 if (!suiteOk) {
   console.log('  … running the full suite (this takes ~30 minutes)')

@@ -39,7 +39,7 @@ triggered from here.
 > (62→32 on 2026-08-09, back over 100 within two weeks) — draining without closing the valve just
 > books the next drain. Predictions already past-due when this rule shipped are grandfathered
 > (`state/predictions-baseline.txt`) so it couldn't wall its own owner on day one; they still need a
-> real drain, and stay visible in `os-lint`'s `stale-predictions` RED.
+> real drain, and stay visible in `os-lint`'s weekly digest (`stale-predictions`).
 
 **Note (efficiency, 2026-07-02, updated 2026-09-18):** A save runs many small file writes, all in this
 one repo now. Batch them — write everything first (`docs/current-sprint.md`, `docs/roadmap.md` if
@@ -99,7 +99,7 @@ The ledger is `C:\Users\jaken\OneDrive\coachapp\docs\bugs` — one file per bug,
 ```yaml
 ---
 id: 2026-08-11-short-slug          # matches the filename, always
-status: open | fixed-awaiting-jake | confirmed | deferred | closed
+status: open | fixed-awaiting-jake | confirmed | deferred | closed | unverified-accepted
 priority: critical | high | medium | low | unset
 reported: 2026-08-11               # bare ISO date, nothing else in this field
 status_detail: "free text, only when it says more than the enum"

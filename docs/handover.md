@@ -62,7 +62,7 @@ The highest-impact entries from [decisions.md](decisions.md) (full log there):
 
 43 open bugs (oldest 72 days) out of 227 tracked in the Vault ledger; 1 deferred critical (GDPR
 consent capture). No canonical database schema document exists — only 20 ordered migration files.
-Pre-push test coverage is narrow (2 of 105 spec files). Full counts and analysis (not repeated here
+Pre-push test coverage is narrow (2 spec files; see [architecture.md](architecture.md)). Full counts and analysis (not repeated here
 to keep this the only copy of the prose, not the numbers): [backlog.md](backlog.md) owns the
 counts, [technical-debt.md](technical-debt.md) owns the analysis.
 

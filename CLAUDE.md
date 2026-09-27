@@ -16,7 +16,7 @@ repeated here. PTHub (the other project) ended 2026-09-15.
 | Thing | Lives in |
 |---|---|
 | Docs, bug ledger, predictions, all 9 skills, `os-lint.mjs`, `guardrails.mjs` | this repo |
-| `claim-check.mjs`, `standing-behaviours.mjs`, this project's Claude memory | `~/.claude` (its own private `claude-config` repo) — generic, not CoachApp-specific |
+| `claim-check.mjs`, this project's Claude memory | `~/.claude` (its own private `claude-config` repo) — generic, not CoachApp-specific. (`standing-behaviours.mjs` is still there but unregistered since 2026-09-27; its text moved into this file.) |
 | The Vault | nothing CoachApp needs. Old CoachApp files are archived at `Vault/projects/_archive/CoachApp/`; `os-lint`'s `no-vault-pointers` check warns if a live path back into it reappears in a hook or skill |
 
 **Conversational memory is never authoritative.** Never rely on what a previous session said
@@ -91,9 +91,9 @@ Run `/hello-claude` first — it boots the preview server and scans for bugs. **
   writes the marker that clears it. `checks.sh` (pre-push hook) enforces
   column names, query scoping, cache-bust, PII-in-logs, and duplicate functions on every push.
 - **The pre-push Playwright gate is a SMOKE gate, not the suite** — `runner.spec.js` +
-  `solo-account.spec.js` only, **~59 of ~757 tests** (grep-based `test(` counts, verified 2026-09-15;
-  supersedes the previously-cited "57 of 523" figure — see `docs/architecture.md` for how this was
-  checked). Run `npm test` yourself before any push touching a module you have not hand-tested; the
+  `solo-account.spec.js` only — **2 spec files, a small fraction of the suite.** No count is written
+  here on purpose: every hard-coded count in this file went stale (the last one said ~757 tests when a
+  full run was 838); `ls tests/*.spec.js` gives the live size. Run `npm test` yourself before any push touching a module you have not hand-tested; the
   gate will not catch it. A spec outside the gate sat RED for 3 days across ~4 deploys and nothing
   noticed. Widening it was tried and reverted on 2026-08-20 (the glob silently no-ops, and the
   cross-tenant probes aren't cleanup-safe at push frequency) — see LOG and `docs/decisions.md`.
@@ -101,6 +101,24 @@ Run `/hello-claude` first — it boots the preview server and scans for bugs. **
 
 Development work should also follow `docs/architecture.md` for module boundaries, the data layer,
 and CI/CD — don't re-derive these by re-reading the codebase each session.
+
+## Standing behaviours
+
+Moved here 2026-09-27 from `~/.claude/hooks/standing-behaviours.mjs`, which re-injected this list on
+every message. On this Windows machine every hook invocation opens a visible console window (a known
+Claude Code bug — no setting suppresses it), so a per-message hook cost a window per message. Static
+text in this file costs nothing. Rules 2 and 3 are still enforced by hooks (`guardrails.mjs`,
+`claim-check.mjs`); the rest are enforced by this list alone.
+
+1. Technical + plain-English pair after every significant change — inline, unasked.
+2. Fix the CLASS: grep every sibling doing the same job, COUNT them, fix all or name what you left.
+3. No claim without a check you actually ran. If unrun, say "unverified".
+4. SQL: read the schema first; one query per message; never anchor on something that can be NULL.
+5. Ownership/RLS work: `multi-agent-review` before the COMMIT; everything else before the push.
+6. An absolute instruction ("I don't want X", "no exceptions") is executed fully, first pass — never
+   narrowed by your own judgment about tradeoffs. State any cost AFTER doing it.
+7. Minimise shell calls: each one fires two hooks, i.e. two windows. Use file tools where they fit and
+   batch shell work into one script.
 
 ## Documentation maintenance
 

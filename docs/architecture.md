@@ -60,7 +60,8 @@ global-setup that asserts the preview server is real and a global-teardown that 
 failing on) leftover `[E2E]`-tagged fixture rows.
 
 **The pre-push gate is deliberately narrow:** only `tests/runner.spec.js` and
-`tests/solo-account.spec.js` — 2 of 105 spec files. Widening it was tried and reverted on
+`tests/solo-account.spec.js` — 2 spec files out of the whole suite (`ls tests/*.spec.js` for the live
+count; hard-coded totals here went stale). Widening it was tried and reverted on
 2026-08-20 (see [decisions.md](decisions.md)).
 
 ## CI/CD (evidenced from `.github/workflows/deploy.yml`)
@@ -85,11 +86,11 @@ provide.
 
 ## Governance split (repo vs. user-level)
 
-The repo's `.claude/settings.json` wires up SessionStart/PreToolUse/PostToolUse/Stop/UserPromptSubmit
-hooks, but the hook *implementations* (`os-lint.mjs`, `guardrails.mjs`, `claim-check.mjs`,
-`standing-behaviours.mjs`) live at the user level (`~/.claude`), not in this repo. That
-infrastructure is also shared with another project (PTHub) via a separate Vault git repo — see
-[decisions.md](decisions.md) for what that means for the Vault-to-repo migration.
+The repo's `.claude/settings.json` wires up SessionStart/PreToolUse/PostToolUse/Stop hooks.
+`os-lint.mjs` and `guardrails.mjs` live in this repo (`.claude/hooks/`); `claim-check.mjs` lives at the
+user level (`~/.claude/hooks/`). The UserPromptSubmit hook (`standing-behaviours.mjs`) was retired
+2026-09-27 — its text is now in `CLAUDE.md` — because every hook invocation opens a visible console
+window on this Windows machine (see [decisions.md](decisions.md)).
 `docs/superpowers/subagent-contract.md` is the one governance document that does live in-repo. This
 means some of the machinery enforcing quality gates today is not part of the repository itself.
 

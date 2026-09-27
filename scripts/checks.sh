@@ -567,6 +567,18 @@ fi
 if ! node scripts/check-unbounded-reads.mjs; then
   fail "a NEW unbounded read of a growing table (the API silently returns only 200 rows) -- see the lines above."
 fi
+# -- 9o. An OPEN security bug must not be written up in a PUBLIC repo --
+# The repo is public (GitHub Pages on a free plan needs that), and the bug ledger lives in it. A row marked
+# `security: true` with status `open` is refused here; keep it in docs/bugs/embargo/ (git-ignored) until
+# the fix is live. Opt-in by design: rows without the field are untouched (2026-09-27).
+echo "Checking for open security write-ups in the public repo..."
+if ! node scripts/check-security-embargo.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-security-embargo.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-security-embargo self-test FAILED -- the gate can no longer be trusted."
+fi
+if ! node scripts/check-security-embargo.mjs; then
+  fail "an OPEN security bug is written up in docs/bugs/ and this repo is PUBLIC -- see the lines above."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print
