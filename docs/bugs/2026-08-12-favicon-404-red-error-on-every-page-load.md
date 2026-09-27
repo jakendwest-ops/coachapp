@@ -1,6 +1,6 @@
 ---
 id: 2026-08-12-favicon-404-red-error-on-every-page-load
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: low
 reported: 2026-08-12
 ---

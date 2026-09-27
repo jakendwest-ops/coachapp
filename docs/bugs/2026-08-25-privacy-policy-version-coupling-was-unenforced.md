@@ -1,9 +1,9 @@
 ---
 id: 2026-08-25-privacy-policy-version-coupling-was-unenforced
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-08-25
-status_detail: "FIXED same session: checks.sh rule 9e + scripts/check-policy-version.mjs (+8-case self-test). Proven to refuse a real induced drift through checks.sh (exit 1). NOT PUSHED as of this save."
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # PRIVACY_POLICY_VERSION and the policy document could drift apart silently

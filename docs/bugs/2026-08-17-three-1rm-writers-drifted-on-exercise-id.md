@@ -1,8 +1,8 @@
 ---
 id: 2026-08-17-three-1rm-writers-drifted-on-exercise-id
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: low
-status_detail: "FIXED 52923dd (2026-08-26). All 3 offenders persist exercise_id; 5 red-green tests incl. a class guard. Headline still says two of three — see the 2026-08-26 correction in the body: it is three of four."
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 reported: 2026-08-17
 status_detail: "Weekly full-file review."
 ---

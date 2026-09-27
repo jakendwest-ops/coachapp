@@ -1,6 +1,6 @@
 ---
 id: 2026-08-11-showtoast-clobber-reintroduced-a-documented-trap-one-function-over
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-08-11
 ---

@@ -1,10 +1,10 @@
 ---
 id: 2026-07-24-solo-is-now-a-genuine-independent-account-type-at-the-data-m
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-07-24
 reported_detail: updated 2026-08-01
-status_detail: "fixed — awaiting Jake (SQL run live same date; not yet pushed; not yet live-verified — see top of file)"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # Solo is now a genuine, independent account type at the data-model level

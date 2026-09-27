@@ -1,10 +1,10 @@
 ---
 id: 2026-07-13-the-calendar-grid-genuinely-broke-on-a-long-workout-name-con
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-07-13
 reported_detail: confirmed + fixed 2026-08-02
-status_detail: "fixed — awaiting Jake"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # the calendar grid genuinely broke on a long workout name, confirmed visually before fixing

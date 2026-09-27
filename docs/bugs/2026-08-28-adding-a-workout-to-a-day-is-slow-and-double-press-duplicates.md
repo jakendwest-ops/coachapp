@@ -1,8 +1,8 @@
 ---
 id: 2026-08-28-adding-a-workout-to-a-day-is-slow-and-double-press-duplicates
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
-status_detail: "SHIPPED 66003ce (6 commits). Duplicate proven fixed both ways: guard removed -> 2 rows, guard in place -> 1. Picker now paints immediately. Awaiting Jake double-tapping Add and Create on live."
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 reported: 2026-08-28
 ---
 

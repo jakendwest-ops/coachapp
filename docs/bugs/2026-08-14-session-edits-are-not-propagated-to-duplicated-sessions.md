@@ -1,8 +1,8 @@
 ---
 id: 2026-08-14-session-edits-are-not-propagated-to-duplicated-sessions
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
-status_detail: "All 4 causes resolved. Clause (b) satisfied 2026-08-26 by an END-TO-END red-green test on the real path (real generator + real modal + real clicks). Jake’s live confirmation is now corroboration, not the only evidence."
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 reported: 2026-08-14
 ---
 

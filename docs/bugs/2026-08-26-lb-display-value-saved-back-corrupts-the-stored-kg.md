@@ -1,9 +1,9 @@
 ---
 id: 2026-08-26-lb-display-value-saved-back-corrupts-the-stored-kg
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-08-26
-status_detail: "FIXED d320220, 7 sites, one shared helper. Found while investigating 2026-07-09; it is a DIFFERENT bug from that one and does NOT explain Jake's 0.5 — that row stays open."
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # In lb, the displayed weight is a lossy proxy and saving it back corrupts the stored kg

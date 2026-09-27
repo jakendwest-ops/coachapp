@@ -1,9 +1,9 @@
 ---
 id: 2026-08-25-checks-sh-rule-2-clients-sub-check-was-vacuous
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-08-25
-status_detail: "found while executing OS v3 R1 (flip rule 2 warn->fail). Fixed in d361f87 by replacing all three sub-checks with scripts/check-query-scope.mjs. Awaiting Jake because the closure evidence is a self-test, not a red->green run against a real reported defect."
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # checks.sh rule 2 guarded the top bug class and could never fire

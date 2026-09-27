@@ -1,9 +1,9 @@
 ---
 id: 2026-08-09-in-app-invite-a-personal-user-onboard-beta-testers-as-solo-a
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-08-09
-status_detail: "fixed — awaiting Jake to deploy the Edge Function + confirm live"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # in-app "Invite a personal user" (onboard beta testers as solo accounts, no terminal)

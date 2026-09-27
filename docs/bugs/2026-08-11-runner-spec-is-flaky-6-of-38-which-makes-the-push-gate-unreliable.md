@@ -1,6 +1,6 @@
 ---
 id: 2026-08-11-runner-spec-is-flaky-6-of-38-which-makes-the-push-gate-unreliable
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-08-11
 ---

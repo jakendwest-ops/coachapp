@@ -1,9 +1,9 @@
 ---
 id: 2026-08-01-solo-only-accounts-can-never-see-their-seeded-starter-conten
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-08-01
-status_detail: "fixed — awaiting Jake"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # solo_only accounts can never see their seeded starter content

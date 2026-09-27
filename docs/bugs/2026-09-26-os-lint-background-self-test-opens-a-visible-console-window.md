@@ -1,9 +1,9 @@
 ---
 id: 2026-09-26-os-lint-background-self-test-opens-a-visible-console-window
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-09-26
-status_detail: "FIXED 2026-09-26, awaiting Jake. Jake reported black 'tab' windows opening over VS Code (twice; the second time with a screenshot of an empty console titled C:\\Program Files\\nodejs\\node). Cause found by reading the code, not by inspecting the process, so 'very likely' rather than confirmed: .claude/hooks/os-lint.mjs launched its ~10-minute self-test with spawn(..., { detached: true }) and no windowsHide, and on Windows a detached child gets its OWN VISIBLE console window. Added windowsHide: true. Closes on Jake confirming no window appears the next time the self-test launches."
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # os-lint's background self-test opens a visible black console window

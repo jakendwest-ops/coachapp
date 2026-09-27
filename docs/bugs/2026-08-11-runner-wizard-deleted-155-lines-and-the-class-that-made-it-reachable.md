@@ -1,6 +1,6 @@
 ---
 id: 2026-08-11-runner-wizard-deleted-155-lines-and-the-class-that-made-it-reachable
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-08-11
 ---

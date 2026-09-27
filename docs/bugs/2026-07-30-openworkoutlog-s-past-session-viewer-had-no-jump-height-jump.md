@@ -1,9 +1,9 @@
 ---
 id: 2026-07-30-openworkoutlog-s-past-session-viewer-had-no-jump-height-jump
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: low
 reported: 2026-07-30
-status_detail: "fixed — awaiting Jake"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # openWorkoutLog's past-session viewer had no jump_height/jump_distance column at all

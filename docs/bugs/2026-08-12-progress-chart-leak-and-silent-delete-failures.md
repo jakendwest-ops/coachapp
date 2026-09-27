@@ -1,9 +1,9 @@
 ---
 id: 2026-08-12-progress-chart-leak-and-silent-delete-failures
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-08-12
-status_detail: "found by the full-codebase architecture audit"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # app-progress.js: a Chart.js instance leak in renderProgressWeight, and 2 deletes that fail completely silently

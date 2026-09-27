@@ -1,9 +1,9 @@
 ---
 id: 2026-08-02-jump-reps-now-render-edit-as-a-range-in-all-3-places
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-08-02
-status_detail: "fixed — awaiting Jake"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # jump reps now render/edit as a range in all 3 places

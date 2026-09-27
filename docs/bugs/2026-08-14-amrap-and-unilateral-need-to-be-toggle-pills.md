@@ -1,6 +1,6 @@
 ---
 id: 2026-08-14-amrap-and-unilateral-need-to-be-toggle-pills
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-08-14
 ---

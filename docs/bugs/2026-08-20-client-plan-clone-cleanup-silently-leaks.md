@@ -1,9 +1,9 @@
 ---
 id: 2026-08-20-client-plan-clone-cleanup-silently-leaks
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-08-20
-status_detail: "ROOT CAUSE CONFIRMED 2026-08-20 by multi-agent-review (Agent A), verified against js/app-programs.js:758/763/473. A race: the assign modal is removed BEFORE the clone work is awaited, so the test raced ahead of the single batch insert of client_program_workouts. Fixed in tests/programs.spec.js with a real barrier plus a name-anchored backstop delete. 12 orphans cleaned from live DB. NOT closed: no test yet ASSERTS the cleanup left nothing behind."
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # A client-plan clone survives its test's own cleanup, silently

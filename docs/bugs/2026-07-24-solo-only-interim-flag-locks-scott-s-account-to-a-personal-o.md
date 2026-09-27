@@ -1,9 +1,9 @@
 ---
 id: 2026-07-24-solo-only-interim-flag-locks-scott-s-account-to-a-personal-o
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-07-24
-status_detail: "fixed — awaiting Scott's insert SQL"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # solo_only interim flag locks Scott's account to a personal-only experience while the real Solo-account-type wo

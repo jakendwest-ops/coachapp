@@ -1,6 +1,6 @@
 ---
 id: 2026-08-14-1rm-grid-layout-worse-on-personal-than-pt-client
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-08-14
 ---

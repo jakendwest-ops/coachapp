@@ -1,10 +1,10 @@
 ---
 id: 2026-08-07-cardio-interval-capture-rebuilt-one-exercise-finish-card-all
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-08-07
 reported_detail: fixed 2026-08-08
-status_detail: "fixed — awaiting Jake"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 ---
 
 # cardio/interval capture rebuilt: one exercise-finish card, all 4 metrics, plus a shared quick-prefs popover

@@ -1,7 +1,7 @@
 ---
 id: 2026-08-25-deploy-check-5c-names-a-signup-form-that-was-removed
-status: fixed-awaiting-jake
-status_detail: "Reworded same session (2026-08-25): 5c now names #invite-form, states self-signup is closed, and gained a PRIVACY_POLICY_VERSION sub-check pointing at rule 9e. Skill file only — not yet backed up to claude-config at time of writing."
+status: unverified-accepted
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'go ahead' to: accept rows whose fix is still in the code, and the general older rows; keep security/data-safety rows for an audit). No red->green test proves this one; no longer tracked."
 priority: low
 reported: 2026-08-25
 ---
