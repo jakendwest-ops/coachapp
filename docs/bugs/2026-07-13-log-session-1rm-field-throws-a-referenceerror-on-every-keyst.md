@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-log-session-1rm-field-throws-a-referenceerror-on-every-keyst
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: low
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'ok'): the fix is present in current code (checked 2026-09-27, commit 134140f), but no red->green test proves it, so it is no longer tracked."
 ---
 
 # Log-session 1RM field throws a ReferenceError on every keystroke

@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-duplicatephaseweek-embed-omits-is-personal-app-programs-js-1
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'ok'): the fix is present in current code (checked 2026-09-27, commit 134140f), but no red->green test proves it, so it is no longer tracked."
 ---
 
 # duplicatePhaseWeek embed omits is_personal (app-programs.js:1634), so its clones silently take the DB default

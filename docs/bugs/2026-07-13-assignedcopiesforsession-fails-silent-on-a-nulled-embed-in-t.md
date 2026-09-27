@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-assignedcopiesforsession-fails-silent-on-a-nulled-embed-in-t
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: medium
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'ok'): the fix is present in current code (checked 2026-09-27, commit 134140f), but no red->green test proves it, so it is no longer tracked."
 ---
 
 # assignedCopiesForSession fails SILENT on a nulled embed, in the one function whose job is deciding who a write

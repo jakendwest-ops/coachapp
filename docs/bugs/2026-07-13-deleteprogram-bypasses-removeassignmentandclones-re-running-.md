@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-deleteprogram-bypasses-removeassignmentandclones-re-running-
-status: fixed-awaiting-jake
+status: unverified-accepted
 priority: high
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "UNVERIFIED-ACCEPTED by Jake 2026-09-27 (batch reply 'ok'): the fix is present in current code (checked 2026-09-27, commit 134140f), but no red->green test proves it, so it is no longer tracked."
 ---
 
 # deleteProgram bypasses _removeAssignmentAndClones, re-running the debris factory you just cleaned
