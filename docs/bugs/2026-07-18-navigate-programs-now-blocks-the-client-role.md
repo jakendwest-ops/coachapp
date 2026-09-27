@@ -1,9 +1,9 @@
 ---
 id: 2026-07-18-navigate-programs-now-blocks-the-client-role
-status: fixed-awaiting-jake
+status: closed
 priority: low
 reported: 2026-07-18
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b): the row records a red->green test; it is tests/ledger-fixes-2026-08-01.spec.js 'a client calling navigate('programs') directly does not reach the builder', green in the v2026.09.8 full-suite run."
 ---
 
 # navigate('programs') now blocks the client role
