@@ -59,10 +59,10 @@ The suite runs single-worker/sequential (shared Supabase test-account auth state
 global-setup that asserts the preview server is real and a global-teardown that reports (without
 failing on) leftover `[E2E]`-tagged fixture rows.
 
-**The pre-push gate is deliberately narrow:** only `tests/runner.spec.js` and
-`tests/solo-account.spec.js` — 2 spec files out of the whole suite (`ls tests/*.spec.js` for the live
-count; hard-coded totals here went stale). Widening it was tried and reverted on
-2026-08-20 (see [decisions.md](decisions.md)).
+**A push runs no browser tests (since 2026-09-27).** The pre-push hook runs `checks.sh` in FAST mode
+(static checks only, ~50 s). The full suite runs in `scripts/release.mjs` before any tag. The old
+2-spec smoke run (`runner.spec.js` + `solo-account.spec.js`) is still available per push with
+`CHECKS_SMOKE=1` (see [decisions.md](decisions.md)).
 
 ## CI/CD (evidenced from `.github/workflows/deploy.yml`)
 
@@ -70,8 +70,9 @@ One workflow, "Check & Deploy":
 - **`check`** job — runs on every push/PR to `master`: `npm ci`, then `scripts/checks.sh`. On a tag
   push, also verifies `docs/releases/<tag>.md` exists before allowing deploy.
 - **`deploy`** job — needs `check`; fires **only** on a `v*` tag push, so a push to `master` never deploys.
-- No browser tests in CI since 2026-09-27 (see [decisions.md](decisions.md)): the pre-push hook and
-  `scripts/release.mjs` run them locally.
+- No browser tests in CI since 2026-09-27 (see [decisions.md](decisions.md)): `scripts/release.mjs`
+  runs the full suite locally. CI runs `checks.sh` in FULL mode (it includes the SQL mutation self-test
+  that a local push skips).
 
 ## Homegrown quality tooling
 

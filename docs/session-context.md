@@ -35,7 +35,7 @@ Jake's choice — a deleted tab, a dashboard fix, and automatic error capture wi
 
 - 1 deferred **critical** bug: GDPR consent capture (deferred 2026-08-19, but 5 of 6 steps have since shipped —
   see [roadmap.md](roadmap.md)).
-- The pre-push test gate is a smoke gate, not the suite — see `CLAUDE.md` and
+- A push runs no browser tests (since 2026-09-27); only the release's full suite does. See `CLAUDE.md` and
   [technical-debt.md](technical-debt.md).
 - Found 2026-09-19 by reading code: screens that read growing tables through the API's 200-row cap (cap **measured**
   2026-09-20; weight tabs, data export, personal-best reads and the runner's PR baseline fixed locally; the dashboard adherence

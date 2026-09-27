@@ -12,6 +12,27 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-27 — A push runs static checks only; the browser and the mutation self-test are the release's job.**
+Jake: "make the commit and push cycle easy again". Pushing master stopped deploying on 2026-09-05, and
+`release.mjs` runs the full suite plus `checks.sh` before every tag, so the push gate was checking the same
+things twice.
+
+Measured the same day:
+- a push cost ~7 min: `checks.sh`'s static part 123 s, plus the 2-spec browser smoke run 5.0 min;
+- the SQL mutation self-test alone was 45 s of the static part.
+
+What changed:
+- `checks.sh` now has two modes:
+  - **FAST**, the local pre-push default: measured **51 s**. It skips the smoke run and the mutation self-test.
+  - **FULL** (`CI=true`, i.e. GitHub Actions and `release.mjs`, or `CHECKS_FULL=1`): measured 96 s. It runs everything
+    it ran before, minus the browser, which `release.mjs` covers with the full suite.
+- `CHECKS_SMOKE=1` brings the smoke run back for one push.
+
+**Accepted cost:** master can now carry a browser regression until the next release, where before the 2 smoke specs
+would have caught some of them at push. Nothing reaches the live site without the full suite.
+
+**Rejected:** a warn-only push that never blocks. Jake chose to keep the static checks blocking.
+
 **2026-09-27 — A write that spans tables goes through one transactional database function, not a browser chain.**
 The app-code audit (`archive/app-code-audit-2026-09-27.md`, R1) found the programme lifecycle written as chains of separate
 browser→API writes. Careful code could detect partial state, but it could not prevent it, and a restart could delete a
@@ -65,7 +86,7 @@ with local suite runs (the CI-overlap guard in `tests/global-setup.js` then refu
 v2026.09.8 release). A separate CI test account was the first idea and was rejected again for the reason recorded on
 2026-09-04: a fresh account has no master/solo setup, so `solo-account.spec.js` would skip itself and CI would go
 green having tested less. So the job was removed, and with it the CI-overlap guard and the release script's CI wait.
-Browser coverage: the pre-push smoke gate (local, every push) and the full suite in `scripts/release.mjs` (every
+Browser coverage (superseded the same day — a push now runs no browser tests, see the entry above): the pre-push smoke gate (local, every push) and the full suite in `scripts/release.mjs` (every
 release). *Lost:* a clean-Linux-machine run of those two files. The six test-login GitHub secrets are no longer read.
 
 ---

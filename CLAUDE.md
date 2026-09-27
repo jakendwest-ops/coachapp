@@ -90,13 +90,12 @@ Run `/hello-claude` first — it boots the preview server and scans for bugs. **
   finding. `hooks/guardrails.mjs` **blocks** `git commit` on unreviewed ownership diffs; the review skill
   writes the marker that clears it. `checks.sh` (pre-push hook) enforces
   column names, query scoping, cache-bust, PII-in-logs, and duplicate functions on every push.
-- **The pre-push Playwright gate is a SMOKE gate, not the suite** — `runner.spec.js` +
-  `solo-account.spec.js` only — **2 spec files, a small fraction of the suite.** No count is written
-  here on purpose: every hard-coded count in this file went stale (the last one said ~757 tests when a
-  full run was 838); `ls tests/*.spec.js` gives the live size. Run `npm test` yourself before any push touching a module you have not hand-tested; the
-  gate will not catch it. A spec outside the gate sat RED for 3 days across ~4 deploys and nothing
-  noticed. Widening it was tried and reverted on 2026-08-20 (the glob silently no-ops, and the
-  cross-tenant probes aren't cleanup-safe at push frequency) — see LOG and `docs/decisions.md`.
+- **A push runs NO browser tests (since 2026-09-27).** `git push` runs `checks.sh` in FAST mode —
+  every static check, ~50 s — and skips the browser smoke run and the SQL mutation self-test. Browser
+  tests run only as the FULL suite inside `release.mjs`, which is what stands between master and the
+  live site. So master can hold a browser regression until the next release: run the specs for what you
+  touched (or `npm test`) before pushing work you have not hand-tested. `CHECKS_SMOKE=1 git push` puts the
+  2-spec smoke run back for one push; `CHECKS_FULL=1` adds the mutation self-test. See `docs/decisions.md`.
 - **No PII in `log.*` calls** — ids and dates only; never names, emails, weights, or health values.
 
 Development work should also follow `docs/architecture.md` for module boundaries, the data layer,

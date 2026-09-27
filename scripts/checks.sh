@@ -1,7 +1,16 @@
 #!/bin/sh
 # CoachApp code quality checks
-# Run by: git pre-push hook AND GitHub Actions CI
-# Any failure blocks the push / fails the CI job.
+# Run by: git pre-push hook AND GitHub Actions CI AND scripts/release.mjs
+# Any failure blocks the push / fails the CI job / refuses the release.
+#
+# TWO MODES (2026-09-27, Jake: "make the commit and push cycle easy again").
+#   FAST (a local `git push`, the default): every static check, but NOT the browser smoke run (5.0 min) and NOT the
+#     SQL mutation self-test (45 s). Measured the same day: ~7 min per push -> ~80 s. A push no longer deploys (only a
+#     release tag does), and both skipped steps still run before anything ships.
+#   FULL (CI=true, i.e. GitHub Actions and scripts/release.mjs, or CHECKS_FULL=1 by hand): everything, including the
+#     mutation self-test. The browser tests then run as the FULL suite inside release.mjs.
+#   CHECKS_SMOKE=1 puts the 2-spec browser smoke run back into a local push, for a push you want browser-checked.
+if [ "${CI}" = "true" ] || [ "${CHECKS_FULL}" = "1" ]; then FULL=1; else FULL=0; fi
 
 FILES="js/app-core.js js/app-dashboard.js js/app-programs.js js/app-clients.js js/app-calendar-goals.js js/app-workouts.js js/app-runner.js js/app-progress.js js/starter-content.js"
 ERRORS=0
@@ -540,9 +549,16 @@ fi
 # cannot drift apart. The MUTATION suite (about 20 s, in parallel, across every verifier) applies deliberate breakages and requires each to FAIL:
 # a verifier that has only ever been seen to pass cannot be told from one incapable of failing.
 echo "Verifying SQL migrations locally (PGlite)..."
-if ! node scripts/sql-verify/run-mutations.mjs > /dev/null 2>&1; then
-  node scripts/sql-verify/run-mutations.mjs 2>&1 | sed "s/^/    /"
-  fail "the SQL verifier's mutation self-test FAILED -- a breakage went uncaught, so its checks can no longer be trusted. Fix it before relying on the result below."
+# The mutation self-test is FULL-mode only (45 s measured 2026-09-27, the biggest static step): it proves the verifiers
+# CAN fail, which only changes when a verifier or its script changes. CI and release.mjs still run it. The verifiers
+# themselves (a few seconds each) run on every push, below.
+if [ "$FULL" = "1" ]; then
+  if ! node scripts/sql-verify/run-mutations.mjs > /dev/null 2>&1; then
+    node scripts/sql-verify/run-mutations.mjs 2>&1 | sed "s/^/    /"
+    fail "the SQL verifier's mutation self-test FAILED -- a breakage went uncaught, so its checks can no longer be trusted. Fix it before relying on the result below."
+  fi
+else
+  echo "  [skip] SQL mutation self-test -- runs in CI and at release (CHECKS_FULL=1 to run it here)"
 fi
 if ! node scripts/sql-verify/coach-client-summary.verify.mjs > /dev/null 2>&1; then
   node scripts/sql-verify/coach-client-summary.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
@@ -626,7 +642,11 @@ if [ "${CI}" = "true" ]; then
   # From 2026-09-04 to 2026-09-27 a separate `e2e` job in deploy.yml ran the smoke gate on GitHub against
   # the one shared test account; Jake removed it on 2026-09-27 because it duplicated the local pre-push
   # gate and its runs collided with local suite runs on that account.
-  echo "[INFO] Playwright is not run in CI (decided 2026-09-27): the browser smoke gate runs locally on every push (pre-push hook) and the full suite runs in scripts/release.mjs. CI runs these code checks only."
+  echo "[INFO] Playwright is not run in CI (decided 2026-09-27): the full suite runs in scripts/release.mjs. CI runs these code checks only."
+elif [ "${CHECKS_SMOKE}" != "1" ]; then
+  # Off by default on a local push since 2026-09-27 (the push-speed decision in the header). The full suite in
+  # release.mjs is what stands between master and the live site.
+  echo "  [skip] browser smoke run -- the full suite runs at release (CHECKS_SMOKE=1 git push to include it)"
 else
   echo "Checking the preview-server precondition..."
   if ! node scripts/check-preview-server.selftest.mjs > /dev/null 2>&1; then

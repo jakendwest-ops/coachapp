@@ -31,7 +31,8 @@ data layer and multi-tenancy (`coach_id` / `client_id`, and the solo `NULL coach
 ## How changes are verified
 
 - **Every push:** `scripts/checks.sh` (static checks and ratchets written for this codebase in place of a
-  linter/type checker, a local SQL verifier, and a two-file Playwright smoke gate) runs as the pre-push hook.
+  linter/type checker, and a local SQL verifier) runs as the pre-push hook in FAST mode (~50 s, no browser tests
+  since 2026-09-27).
 - **Every release:** `node scripts/release.mjs vYYYY.MM.N` refuses unless the tree is clean, the FULL suite is
   green on that code, a review saw exactly that code, and release notes exist. Only a `v*` tag deploys.
 - **CI (GitHub Actions):** code checks only — no browser tests since 2026-09-27 (see [decisions.md](decisions.md)).
@@ -40,7 +41,8 @@ data layer and multi-tenancy (`coach_id` / `client_id`, and the solo `NULL coach
 ## Known risks
 
 - **GDPR:** consent capture is 5 of 6 steps live; `delete_current_user()` still needs confirming in the database.
-- **Test coverage between releases:** only the two smoke-gate files run on every push.
+- **Test coverage between releases:** no browser tests run on a push (since 2026-09-27). Only the release's full suite
+  checks the browser.
 - **One shared test account** for all local runs; two local runs at once collide.
 - **Single operator:** confirmations, SQL and release decisions all go through Jake.
 - Patterns and gaps: [technical-debt.md](technical-debt.md).

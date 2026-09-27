@@ -227,7 +227,7 @@ tenant. **Only tenancy columns belong in RLS** — a display flag (`is_personal`
 Run `multi-agent-review` (3 fixed angles + a verifier). It has caught real, data-destroying bugs on several
 consecutive pushes. Note: `/code-review ultra` **does** exist in the VSCode extension, but it is
 user-triggered and billed — you cannot launch it. Offer it; never assume it.
-Allow a long timeout on `git push` (300000ms+) — the pre-push hook runs a Playwright **smoke gate**.
+`git push` runs static checks only (~50 s, no browser tests since 2026-09-27), so run the specs for what you touched first.
 
 **The gate is NOT the suite.** It runs `runner.spec.js` + `solo-account.spec.js` only — two spec files, a small
 fraction of the suite (no count written here: hard-coded counts drift; `ls tests/*.spec.js`). This skill claimed "the Playwright suite" until 2026-08-20; the vast

@@ -83,12 +83,11 @@ last two classes). Still open, in the audit's priority order:
 
 ## Test-gate coverage debt
 
-The pre-push gate covers 2 spec files (`runner.spec.js`, `solo-account.spec.js`) out of the whole suite. Most
-RLS/ownership-relevant specs run only in the full local suite, not on every push. Widening this was
-tried once and reverted (2026-08-20 — see [decisions.md](decisions.md)) for concrete reasons
-(silent glob no-op, cleanup-unsafe cross-tenant probes at push frequency), so this is a known,
-accepted tradeoff rather than an oversight — but it does mean a regression in an ungated spec can
-ship undetected between full-suite runs.
+Since 2026-09-27 a push runs **no** browser tests. The 2-spec smoke run was dropped from the pre-push hook for
+speed: ~7 min to ~50 s per push, see [decisions.md](decisions.md). Every spec now runs only in the release's full
+suite. That is the accepted tradeoff: master can carry a browser regression between releases, but nothing reaches the
+live site without the full suite passing. Widening the old push gate had been tried once and reverted (2026-08-20:
+silent glob no-op, cleanup-unsafe cross-tenant probes at push frequency).
 
 ## Process/tracking debt
 
