@@ -15,15 +15,9 @@ the live database — see its own Requires Validation.
 Migrated from `STATUS.md`'s 2026-09-08 save — real product/engineering debt, distinct from the
 process/tracking debt below.
 
-- **`app-workouts.js`'s own runner set-accuracy work** — built and Playwright-verified, historically
-  shipped in stages; per-set target display, delete-a-set, live rep tally, and reusing the real
-  add-exercise modal in the runner (not a simplified rebuild) all landed this way.
-- **Runner Phase 2 — mostly done; this entry was stale (corrected 2026-09-20 from code and specs, not run):**
-  every non-cardio exercise already logs through the fast table (`_isPlainStrengthExercise`), including
-  unilateral, timed, jump and %1RM (`unilateral-runner-2026-08-19`, `runner-fast-table-metrics` specs). Only
-  cardio/intervals keep the one-set-at-a-time flow; what is left is Jake's "cardio runner needs the same UI" —
-  a design question (ledger row `2026-07-11-runner-phase-2`, deferred). Known v1 gaps stand: superset
-  auto-switch (unconfirmed whether real templates use `supersetGroup`); bodyweight-in-table not live-verified.
+- **Runner:** only cardio/intervals still use the one-set-at-a-time flow (everything else is in the fast table);
+  Jake's "cardio runner needs the same UI" is a design question (`2026-07-11-runner-phase-2`, deferred). Superset
+  auto-switch unbuilt (unknown whether real templates use `supersetGroup`); bodyweight-in-table not live-verified.
 - **`deleteProgram()` orphan-cleanup** stops future debris, but a historical backlog of orphaned
   templates on the main coach account (found while building that fix) was never separately cleaned
   up.
@@ -31,15 +25,11 @@ process/tracking debt below.
 - **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted —
   a UX gap, not a correctness bug.
 - **Invite email** doesn't yet include PT branding/logo (Edge Function not updated for it).
-- Runner-vs-"Hevy" gaps banked as build items — **partly stale (corrected 2026-09-20):** "not pre-filled" is
-  a choice, not a gap (Jake removed automatic pre-fill 2026-07-11: a pre-filled value looks typed; guarded by
-  `tests/runner.spec.js`), and the plate calculator was removed the same day. Still real: background rest-timer
-  alerts need PWA/native (a screen wake lock covers most gym use — planned), and the last-session strip is
-  strength-only.
+- **Runner vs. competitor apps:** background rest-timer alerts need an installable app (the screen wake lock
+  shipped in v2026.09.7 covers most gym use); the last-session strip is strength-only. No pre-fill is Jake's
+  choice (2026-07-11), not a gap.
 
-Migrated as historical record, not re-verified against current code — cross-check against
-[backlog.md](backlog.md)/`docs/bugs/` before treating any of the above as still accurate; several
-may already be superseded by work in more recent release notes (`docs/releases/`).
+These were migrated from the Vault 2026-09-15 and not all re-verified — check `docs/bugs/` and `docs/releases/` first.
 
 **New 2026-09-17, from the template-draft-save release's own three review rounds (found, triaged,
 deliberately deferred rather than fixed in that release — full detail in
@@ -68,12 +58,8 @@ which still needs deleting once its value is fully extracted):**
 
 **New 2026-09-20, from planning the product-review releases** (read from code, impact unmeasured; evidence in
 [the release plans](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md)): **capped reads**
-(screens that read growing tables through the API's 200-row cap — **cap measured 2026-09-20; the two weight tabs, the data
-export and the personal-best reads were fixed the same day (Release 2a, unreleased)**; the coach dashboard adherence panel and the client list
-were fixed 2026-09-21 (Release 2b: they read the `coach_client_summary` view; unreleased); still open: their unpaged `clients`
-roster reads, plus the named unbounded reads pinned by `checks.sh` rule 9n (Release 2d; the census also found and fixed the
-Performance tab's exercise list losing exercises past ~200 logged rows); the runner's finish-screen PR baseline was fixed the same day, Release 4b, unreleased);
-**writes with no retry safety or transaction** (workout save, program assignment, `deletePhaseWeek`); **two
+(the API's silent 200-row cap — the known screens were fixed in v2026.09.7/.8; still open: the unpaged `clients` roster
+reads and the named sites `checks.sh` rule 9n pins); **writes with no retry safety or transaction** (workout save, program assignment, `deletePhaseWeek`); **two
 propagation regimes** (a workout's content edit *offers* "Update assigned clients?", week-structure edits change
 their plans with no prompt — Jake's call; [schema.md](schema.md) said otherwise until today); **stale backlog
 premises** (3 of 20 ranked items rested on lines the code had left behind — check code first); **an unrunnable
