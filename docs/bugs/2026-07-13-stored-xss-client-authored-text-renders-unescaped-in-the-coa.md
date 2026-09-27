@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-stored-xss-client-authored-text-renders-unescaped-in-the-coa
-status: fixed-awaiting-jake
+status: closed
 priority: critical
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b): commit 134140f added escapeAttr and swept the raw interpolations; tests/regression-2026-07-13.spec.js 'a template name containing an HTML payload renders as literal text, not markup' and the escapeAttr-ordering test are among that commit's 9 red->green regression tests; later sweeps are pinned by checks.sh's escaping checker; green in the v2026.09.8 full-suite run."
 ---
 
 # Stored XSS: client-authored text renders unescaped in the COACH s DOM

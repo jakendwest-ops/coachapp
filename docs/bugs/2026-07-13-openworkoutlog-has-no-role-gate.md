@@ -1,9 +1,9 @@
 ---
 id: 2026-07-13-openworkoutlog-has-no-role-gate
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-07-13
-status_detail: "fixed — awaiting Jake"
+status_detail: "CLOSED 2026-09-27 via closure rule (b): commit 134140f role-gated openWorkoutLog; tests/regression-2026-07-13.spec.js 'a client sees read-only coach notes and no Delete button; solo (own coach) keeps both' is one of that commit's 9 red->green regression tests; green in the v2026.09.8 full-suite run."
 ---
 
 # openWorkoutLog has NO role gate
