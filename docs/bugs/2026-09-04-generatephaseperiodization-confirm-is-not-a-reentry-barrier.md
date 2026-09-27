@@ -1,10 +1,10 @@
 ---
 id: 2026-09-04-generatephaseperiodization-confirm-is-not-a-reentry-barrier
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-09-04
 closed_by: tests-node/exemptions.test.mjs (the check that found it) + tests/reentry-guard-2026-08-28.spec.js guard-shape
-status_detail: "GUARDED 2026-09-04, same session it was found. A confirm() sitting AFTER three awaits cannot stop a second invocation already past them, so two taps could both run a body that DELETES every Week 2+ row before rebuilding it. Structurally verified (guard-shape asserts all 13 guarded names are genuinely wrapped) but NOT yet proven by a function-specific double-invoke test — see 'What is not yet proven'."
+status_detail: "CLOSED 2026-09-27 via closure rule (b), proven that day by a neuter run: tests/reentry-guard-2026-08-28.spec.js passed on current code; with guardReentry('generatePhasePeriodization') removed it FAILED ('an unguarded inserter is not on the frozen list'); after a byte-identical restore it passed again."
 ---
 
 # `generatePhasePeriodization`'s confirm() is not a re-entry barrier, and the function deletes before it writes

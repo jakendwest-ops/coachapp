@@ -1,9 +1,9 @@
 ---
 id: 2026-08-12-stored-xss-recurrence-across-5-files
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-08-12
-status_detail: "found by the full-codebase architecture audit; recurring class, 5th/6th/7th time this pattern has been found in this project"
+status_detail: "CLOSED 2026-09-27 via closure rule (b), proven that day by a neuter run: tests/escaping-sweep-2026-08-12.spec.js (runs scripts/check-escaping.mjs over every module) passed on current code; with one escaped event title in js/app-calendar-goals.js un-escaped it FAILED ('unescaped free-text interpolation(s) found'); after a byte-identical restore it passed again."
 ---
 
 # Unescaped free-text renders found across 5 files — the stored-XSS class that has already recurred 4 times (2026-07-13/-18/-23/-28) has more unfixed instances

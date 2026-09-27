@@ -1,9 +1,9 @@
 ---
 id: 2026-08-30-saveclientevent-single-throws-on-a-master-account
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-08-30
-status_detail: "PREMISE CORRECTED + FIXED 2026-09-04. The stated mechanism was WRONG: clients.user_id carries a UNIQUE index (clients_user_id_idx), measured by an insert refused with 23505, so two rows can never share a user_id and .single() could never see two. The REAL defect was the other half of the row — the save re-derived an id from the auth user instead of binding to the record the calendar had already resolved. Now uses window._calClientId, set by renderCalendar before it paints the button."
+status_detail: "CLOSED 2026-09-27 via closure rule (b), proven that day by a neuter run: tests/client-record-resolution-2026-09-04.spec.js passed on current code; with saveClientEvent reverted to ignore window._calClientId it FAILED ('must prefer the id the calendar resolved'); after a byte-identical restore it passed again."
 ---
 
 # `saveClientEvent` uses `.single()` on a query that can match two rows

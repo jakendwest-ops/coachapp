@@ -1,9 +1,9 @@
 ---
 id: 2026-08-12-mountmodal-not-adopted-clients-calendar-goals
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-08-12
-status_detail: "found by the full-codebase architecture audit; reintroduces a previously-fixed, documented race"
+status_detail: "CLOSED 2026-09-27 via closure rule (b), proven that day by a neuter run: tests/modal-stacking-2026-08-12.spec.js passed on current code; with one mountModal(overlay) in js/app-calendar-goals.js replaced by document.body.appendChild it FAILED ('a modal appended directly bypasses mountModal and reintroduces the stacking race'); after a byte-identical restore it passed again."
 ---
 
 # app-clients.js and app-calendar-goals.js never use mountModal() — reintroduces the 2026-07-04 modal-stacking race, two sites match the vulnerable shape exactly

@@ -1,9 +1,9 @@
 ---
 id: 2026-07-24-incident-fixed-same-session
-status: fixed-awaiting-jake
+status: closed
 priority: critical
 reported: 2026-07-24
-status_detail: "fixed — repaired + regression-tested"
+status_detail: "CLOSED 2026-09-27 via closure rule (b), proven that day by a neuter run: tests/role-inference-safety-2026-07-24.spec.js (both tests) passed on current code; with loadUserInfo's '!error &&' gate removed from the role-inference fallback it FAILED ('a failed fetch must never trigger the role-inference patch'); after a byte-identical restore it passed again."
 ---
 
 # INCIDENT, FIXED SAME SESSION
