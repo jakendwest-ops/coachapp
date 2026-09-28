@@ -4,6 +4,7 @@ status: open
 priority: high
 reported: 2026-07-13
 reported_detail: re-measured 2026-08-05
+status_detail: "2026-09-27: see 2026-07-06-tracking-prevention-theory-killed-2026-08-07's same-day finding — checked saveNewTemplate and renderWorkoutTemplates with the eager/unbounded-query lens, found nothing (both already bounded, saveNewTemplate is lean). No further code-level lead. Left open."
 ---
 
 # Same investigation as the row above

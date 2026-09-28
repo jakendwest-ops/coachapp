@@ -4,6 +4,7 @@ status: open
 priority: high
 reported: 2026-07-06
 reported_detail: re-measured 2026-08-05
+status_detail: "2026-09-27: checked the 'flagged for next pickup' lead with the SAME lens that found the openProgram defect (an eager/unbounded/repeatedly-re-paid query). renderWorkoutTemplates (js/app-workouts.js:883) has carried .limit(100)/.limit(200) on both its queries since 2026-07-07/08 — before this row's note was even written. saveNewTemplate (js/app-workouts.js:1288) makes only 1-3 small, targeted queries per save; no reuse-pool fetch, nothing re-run on every 'Back' press. No unbounded/eager-query defect found on this path. Both nav and create+display were already remeasured fast (242ms/450ms) on 2026-08-05, and the storage/tracking-prevention theory is dead. No further code-level lead exists; per les-052 this needs a live measurement from Jake's own session if the feeling of slowness recurs, not another read of the code. Left open — no defect to fix, and nothing to confirm."
 ---
 
 # TRACKING-PREVENTION THEORY KILLED 2026-08-07

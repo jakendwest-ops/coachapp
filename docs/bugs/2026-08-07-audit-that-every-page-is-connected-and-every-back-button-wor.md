@@ -1,8 +1,9 @@
 ---
 id: 2026-08-07-audit-that-every-page-is-connected-and-every-back-button-wor
-status: open
+status: closed
 priority: high
 reported: 2026-08-07
+status_detail: "CLOSED 2026-09-27 via closure rule (b). The 2026-08-07 audit found 5 of 6 back affordances correct and one inconsistent — backToGoals had no fallback for a missing #tab-content, unlike its sibling backToClientWorkouts, and was recorded as 'latent, could not make it break.' Re-verified present in TODAY'S code (not assumed fixed by the old note): unchanged. Fixed to match the sibling (navigate('workouts'), chosen deliberately over navigate('goals') because 'goals' is not a valid page for the coach role — see the code comment). tests/back-to-goals-fallback-2026-09-27.spec.js proves it for both the coach and solo paths that reach backToGoals: FAILED before the fix (landed on 'Page not found' instead of 'workouts'), passed after, passed again on a clean re-run. The other 5 affordances the audit checked, plus the 3 older rows it named (_templateGoBack solo branch, runnerGoBack no-op during rest, deleteTemplate's hardcoded Workouts fallback), are separately closed with their own tests as of 2026-09-27 (see 2026-07-13-runner-back-is-a-no-op-during-a-rest-and-edit-double-tap-sil, 2026-07-13-deleting-a-workout-template-from-the-templates-page-drops-yo)."
 ---
 
 # audit that every page is connected and every Back button works

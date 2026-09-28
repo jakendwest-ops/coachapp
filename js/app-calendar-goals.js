@@ -819,8 +819,22 @@ async function openGoal(goalId, clientId) {
 }
 
 function backToGoals(clientId) {
+  // Matches backToClientWorkouts's fallback (app-runner.js) — found by the 2026-08-07 Back-button
+  // audit as the one inconsistent affordance of 6 checked, left as a "latent, could not make it break"
+  // gap. #tab-content is the same container id the coach's client-profile page and the solo Goals page
+  // both mount (tests/solo-dashboard-tiles-2026-08-30.spec.js:307), so it is reachable if a role switch
+  // or a navigation away happens while a goal detail is on screen or its fetch is in flight — without
+  // this, the next call throws instead of landing somewhere real. Re-verified present in today's code
+  // 2026-09-27, not assumed fixed by the audit note alone.
+  //
+  // navigate('workouts'), not navigate('goals') — deliberately copying the SIBLING'S actual literal, not
+  // just its shape. 'workouts' is valid in coachPages/clientPages/soloPages (app-core.js); 'goals' is
+  // valid in soloPages only, so a coach landing here (backToGoals is reached from a client's Goals TAB,
+  // which only exists for the coach role) would hit navigate()'s own "Page not found" default instead of
+  // the safe landing this fix exists to provide.
   const content = document.getElementById('tab-content')
-  renderClientGoals(clientId, content)
+  if (content) renderClientGoals(clientId, content)
+  else navigate('workouts')
 }
 
 // ─── MILESTONE MODAL ──────────────────────────────────────────────────────────
