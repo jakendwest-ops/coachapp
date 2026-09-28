@@ -828,10 +828,14 @@ function backToGoals(clientId) {
   // 2026-09-27, not assumed fixed by the audit note alone.
   //
   // navigate('workouts'), not navigate('goals') — deliberately copying the SIBLING'S actual literal, not
-  // just its shape. 'workouts' is valid in coachPages/clientPages/soloPages (app-core.js); 'goals' is
-  // valid in soloPages only, so a coach landing here (backToGoals is reached from a client's Goals TAB,
-  // which only exists for the coach role) would hit navigate()'s own "Page not found" default instead of
-  // the safe landing this fix exists to provide.
+  // just its shape. This function is reached two ways: the coach's client-profile Goals tab
+  // (js/app-clients.js), and solo's own dedicated 'goals' page (app-core.js's soloPages). 'workouts' is
+  // valid for all three roles (coachPages/clientPages/soloPages, app-core.js); 'goals' is valid for solo
+  // only. Corrected 2026-09-28 (multi-agent-review): a coach calling navigate('goals') would NOT hit
+  // navigate()'s "Page not found" default — the 'goals' case has no role gate, so it would run and fall
+  // through to _getCurrentClientId() finding no client row for a coach's own user_id, landing on "No
+  // client profile found" instead. Either way it's a worse landing than 'workouts', which is why
+  // 'workouts' is still the right fallback — the reasoning was wrong, the choice wasn't.
   const content = document.getElementById('tab-content')
   if (content) renderClientGoals(clientId, content)
   else navigate('workouts')
