@@ -3,7 +3,7 @@ id: 2026-08-22-error-rate-and-the-rule-corpus
 status: open
 priority: high
 reported: 2026-08-22
-status_detail: "Jake-reported process problem, not an app bug. Filed under the intake rule so the MEASUREMENT survives the session — the fixes shipped, the verdict has not been taken."
+status_detail: "Jake-reported process problem, not an app bug. 2026-09-28: the measurement lapsed 5 weeks with no trigger attached to it (proving the row's own diagnosis). First real computation taken today on the row's actual metric (errors reaching Jake/a commit, not near-misses): zero — but this is session 1 of the count starting now, not 1 of 3 already in progress. A save-skill step now prompts this every session so it doesn't lapse again."
 ---
 
 # Jake: "you have gotten numerous things wrong over the last 24 hours" — and the rules did not prevent it
@@ -65,3 +65,41 @@ over the next few sessions, the diagnosis was wrong and the corpus was never the
 case the honest next suspects are session length and concurrent scope, and this row should say so.
 
 Jake closes this, or three consecutive sessions of the ratio do.
+
+## 2026-09-28 — the measurement lapsed for 5 weeks; partial data, and why it isn't session 1 of 3
+
+Nobody took this measurement between 2026-08-22 and today. That is itself evidence for the diagnosis this
+row already reached: a rule stated once ("the measurement is taken, not when the fixes are admired") with
+no trigger attached to it does not fire — exactly [[feedback_written_rules_dont_reduce_errors]], now
+demonstrated on this row about rules not reducing errors.
+
+**What was actually measured today, honestly, and why it does not count as session 1 of 3:**
+
+The 2026-08-22 count (six of six error classes already had a rule) was built from errors that **reached
+Jake** — things he noticed, complained about, or that a review caught after the fact. Reviewing this
+session's own work for the same thing: **zero errors reached a commit, a claim to Jake, or a shipped
+conclusion.** But that is not the same population as five self-caught near-misses that happened DURING the
+session's own working process and were corrected before becoming a claim — a flawed test assertion that
+would have reported a false "clobber" (caught by reading the failure output before concluding anything,
+same class as sql-safety's "a check that observes the wrong signal"), an instinct to copy a sibling
+function's exact fallback page without checking it was still valid for a different role (caught by reading
+`js/app-core.js`'s per-role page lists before shipping), and three earlier-session instances already on
+record (a self-contaminating test methodology, an invented helper call, a misread self-test harness) — all
+in classes [[feedback_reports_success_doing_nothing]] or standing behaviour 3 ("no claim without a check
+actually run") already cover, all caught before shipping.
+
+Counting near-misses as if they were the same metric as 2026-08-22's Jake-perceived count would be
+comparing two different things and calling it a trend — the exact "one fact in two fields" shape
+[[feedback_two_fields_one_fact]] warns about, just within one row instead of across two. So: **today's
+honest number, on the row's own defined metric (errors reaching Jake or a shipped claim, in a class that
+already had a rule), is zero — but this is the FIRST time the metric has actually been computed since
+2026-08-22, not a third of a trend.** Self-assessment also has an obvious blind spot this row's original
+methodology didn't have to contend with: Jake did the counting on 2026-08-22, and a session cannot see the
+mistake it doesn't notice it made.
+
+**Mechanism added, so this stops lapsing:** `.claude/skills/save/SKILL.md` Step 1 now explicitly prompts
+this measurement every session, scoped to the row's actual metric (errors that reached Jake, a commit, or a
+shipped claim — not self-caught near-misses), with a pointer to log a dated entry here. This is a save-skill
+step, not an os-lint hard gate — the classification itself needs judgement no mechanical check can do, and
+the mechanism is deliberately the trigger this row's own diagnosis says a bare rule needs. Still: Jake
+closes this, or three consecutive sessions computed THIS way do.

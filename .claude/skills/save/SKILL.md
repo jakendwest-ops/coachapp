@@ -60,6 +60,15 @@ Review the conversation and build a list of:
 - Skills or memory entries created or updated
 - Anything pushed to GitHub
 
+**Error-rate check (added 2026-09-28, see `docs/bugs/2026-08-22-error-rate-and-the-rule-corpus.md`):** did
+any mistake THIS session reach a commit, a claim made to Jake, or a shipped conclusion, that falls in a
+class an existing memory/skill/standing-behaviour already covers? Count only mistakes that actually reached
+something — not a self-caught draft corrected before it became a claim, that is a different measure and
+mixing the two was exactly the error this check exists to prevent repeating. If the count is anything other
+than zero, or if it's genuinely zero, append ONE dated line to that row (do not close it — only Jake or
+three consecutive sessions measured this way can). This is the row's own diagnosis in practice: a rule
+stated once with no trigger attached to it does not get re-applied on its own; this step is the trigger.
+
 ---
 
 ## Step 2 — Cache bust check
