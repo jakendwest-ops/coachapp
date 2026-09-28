@@ -768,6 +768,52 @@ function checkBugFrontmatter () {
   } else ok('bug-files', `all ${rows.length} bug files parse (status/priority/reported valid)`)
 }
 
+// ---------------------------------------------------------------------------
+// 8a2. Every OPEN row must state what would close it — ledger row
+//      2026-08-29-most-open-rows-never-say-what-would-close-them. Measured that day: 70% of open rows
+//      (73% of those aged 7+ days) said nothing a future session — or Jake — could act on to close them.
+//      A row with no stated condition cannot be closed by anyone; it can only be re-read forever.
+//
+//      RATCHETED, not a blocking rule on every row: the 2026-09-28 backlog (measured below, at the
+//      bottom of this file, written to a grandfather list) is accepted as-is — retrofitting 27 rows
+//      is a separate pass, not this check's job. What this refuses is GROWTH: a bug file added or
+//      newly turned `open` AFTER the grandfather list was written, with no closing condition. RED, not
+//      DIGEST — this is "a rule was just broken," the same severity class as rule-0.
+//
+//      Grandfather list, not a bare count (rule0's own pattern, chosen for the same reason
+//      feedback_threshold_at_current_not_above names: a number tells you THAT something grew, a list
+//      tells you WHICH row broke it). Lives in ~/.claude/state (the same repo as rule0-baseline.txt,
+//      predictions-baseline.txt) because it is a fact about this session's own judgement call, not
+//      CoachApp product data — pushed there separately from this file's own commit.
+//
+//      A row "states a closing condition" if it contains `closes when`, `closes only`, `will close`,
+//      or `closed_by`, case-insensitively — the exact grep basis the 2026-08-29 row used, kept
+//      identical so the count this check enforces is the same fact that row measured.
+// ---------------------------------------------------------------------------
+const CLOSING_CONDITION = /closes when|closes only|will close|closed_by/i
+const CLOSING_BASELINE = env('OSLINT_CLOSING_BASELINE', `${STATE}/closing-condition-baseline.txt`)
+function checkClosingConditions () {
+  const rows = bugRows()
+  if (rows === null) return   // checkStaleBugs already warned
+  if (!existsSync(CLOSING_BASELINE)) {
+    warn('closing-conditions', `no baseline at ${CLOSING_BASELINE} — cannot distinguish grandfathered rows from new ones`)
+    return
+  }
+  const grandfathered = new Set(readFileSync(CLOSING_BASELINE, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean))
+  const offenders = rows.filter(r => !r.malformed && r.status === 'open' && !grandfathered.has(r.file) && !CLOSING_CONDITION.test(r.action))
+  if (offenders.length) {
+    red('closing-conditions', `${offenders.length} OPEN bug file(s) state NO closing condition and are not on the grandfather list:\n    ` +
+      offenders.map(r => r.file).join('\n    ') +
+      `\n    A row nobody can close by name can only be re-read forever. Add "Closes when: <evidence>" naming\n` +
+      `    what layer would actually prove it (a test, Jake's own check, a specific command's output) —\n` +
+      `    not just the words, per the 2026-08-29 row's own follow-up: a condition that cannot be met is\n` +
+      `    worse than none. Only genuinely NEW/reopened rows trip this; the existing backlog is grandfathered.`)
+  } else {
+    const total = rows.filter(r => !r.malformed && r.status === 'open').length
+    ok('closing-conditions', `every open row not on the grandfather list (${grandfathered.size} grandfathered) states a closing condition (${total} open rows checked)`)
+  }
+}
+
 function checkStaleBugs () {
   const rows = bugRows()
   if (rows === null) { warn('stale-bugs', `no bug files found at ${BUGS}`); return }
@@ -1352,6 +1398,10 @@ function runSelfTest () {
       env: { OSLINT_BUGS: bugDir('bf2', 'b.md', `---\nid: b\nstatus: nonsense\npriority: high\nreported: ${OLD}\n---\n# x\n`) } },
     { check: 'bug-files', name: 'bug-files/bad-reported', expect: 'is not an ISO date',
       env: { OSLINT_BUGS: bugDir('bf3', 'b.md', '---\nid: b\nstatus: open\npriority: high\nreported: sometime\n---\n# x\n') } },
+
+    { check: 'closing-conditions', expect: 'state NO closing condition',
+      env: { OSLINT_BUGS: bugDir('cc1', 'b.md', `---\nid: b\nstatus: open\npriority: high\nreported: ${OLD}\n---\n# no condition here\n`),
+             OSLINT_CLOSING_BASELINE: file('cc1-baseline.txt', 'some-other-file.md\n') } },
 
     { check: 'stale-bugs', expect: 'still OPEN after 7+ days',
       env: { OSLINT_BUGS: bugDir('sb', 'b.md', `---\nid: b\nstatus: open\npriority: high\nreported: ${OLD}\n---\n# old open bug\n`) } },
@@ -1978,6 +2028,7 @@ checkRetired()
 checkFrontmatter()
 checkFullFileReview()
 checkBugFrontmatter()
+checkClosingConditions()
 checkStaleBugs()
 checkClosureCandidates()
 checkConfirmationQueue()

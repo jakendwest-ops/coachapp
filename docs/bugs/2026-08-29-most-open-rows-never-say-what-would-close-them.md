@@ -1,9 +1,9 @@
 ---
 id: 2026-08-29-most-open-rows-never-say-what-would-close-them
-status: open
+status: closed
 priority: high
 reported: 2026-08-29
-status_detail: "Measured 2026-08-29: 21 of 30 open rows (70%) state no closing condition, and 19 of the 26 open rows aged 7+ days (73%) state none. The closure rule demands evidence the rows never name, so stale-bugs stays RED and nobody can tell which rows are actually actionable."
+status_detail: "CLOSED 2026-09-28 via closure rule (b), exactly as this row's own 'Closes when' specified. os-lint's new checkClosingConditions (.claude/hooks/os-lint.mjs) refuses a NEW or newly-reopened `open` bug file with no `closes when` / `closes only` / `will close` / `closed_by` phrase — the same grep basis this row measured with, so the enforced fact matches the one found. Ratcheted with a NAMED grandfather list (not a bare count, per feedback_threshold_at_current_not_above and the rule-0 precedent), so the existing backlog is accepted as-is rather than blocking every session until 27 old rows are individually rewritten. Proven: (1) os-lint --self-test's new 'closing-conditions' case goes RED on a planted conditionless open row not on the grandfather list (49/49 checks bite, none decorative); (2) verified directly (not just assumed) that a row WITH a real condition passes even against an empty baseline, and a conditionless row ON the grandfather list also passes — the guard's documented risk (refusing rows that are fine) checked both ways. Baseline (~/.claude/state/closing-condition-baseline.txt, the same repo as rule0-baseline.txt) lists the 27 rows measured open-with-no-condition on 2026-09-28 (down from 21/30 on 2026-08-29 in absolute terms but the backlog itself grew in the meantime — not this row's job to shrink, only to stop it growing silently). The satisfiability refinement from this row's own same-day follow-up ('a condition that cannot be met is worse than none') is NOT mechanically enforced — that would need semantic understanding of which evidence layer a fix lives at — and is named here as a real limit, not fixed."
 ---
 
 # Most open ledger rows never say what would close them
