@@ -1408,6 +1408,10 @@ async function openTemplate(id, ctx = {}) {
   // a module-local is invisible to a test that stubs openTemplate, which made the guard untestable —
   // and an untestable guard is one nobody can prove fires. That exact shape (stubbing away the thing
   // under test) is what let the first fork bug survive a review round.
+  // Captured here, before the fetch below, so a repaint that resolves after the user has since
+  // navigated to a different top-level page (nav tab, Back, browser Back) can tell it no longer owns
+  // #main-content -- see the staleness check right after the fetch.
+  const _pageAtOpen = currentPage
   window._openTemplateId = id
   window._templateCtx = {
     backTo: ctx.backTo || null,
@@ -1428,6 +1432,22 @@ async function openTemplate(id, ctx = {}) {
     .select('*, workout_template_exercises(*)')
     .eq('id', id)
     .single()
+
+  // This repaint writes a raw element reference, not navigate()'s _pageScopedContainer -- so it has
+  // none of that guard's protection against landing after the app has moved on. Two ways this specific
+  // await can go stale: a NEWER openTemplate call (a different id) has since started -- window._openTemplateId
+  // no longer matches -- or the user navigated to a different top-level page entirely, most commonly an
+  // un-awaited repaint fired by _checkSiblingPropagation's final fallback (app-workouts.js, the
+  // no-propagation-target branch) landing after saveTemplateDraft's own caller already moved on. Found
+  // via docs/bugs/2026-08-07-programs-builder-major-slowdown-editing-a-cardio-workout-and-*.md: a
+  // successful Save immediately followed by navigating away let this exact abandoned repaint overwrite
+  // whatever page the user had already reached. Refused loudly, matching _pageScopedContainer's own
+  // reasoning -- a silent no-op here would be the same "reports success while doing nothing" shape in
+  // the mechanism meant to stop it.
+  if (window._openTemplateId !== id || currentPage !== _pageAtOpen) {
+    log.warn('openTemplate', 'stale repaint refused — the app moved on while this was loading', { id, pageAtOpen: _pageAtOpen, now: currentPage })
+    return
+  }
 
   if (error) { log.error('openTemplate', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 

@@ -3,7 +3,7 @@ id: 2026-08-07-programs-builder-major-slowdown-editing-a-cardio-workout-and
 status: open
 priority: high
 reported: 2026-08-07
-status_detail: "open (save half) / fixed — awaiting Jake (slowness). 2026-09-27: a third reproduction, the first on the editor rebuilt in v2026.09.6, PASSES — tests/program-slot-edit-shows-without-refresh-2026-09-27.spec.js drives a cardio workout in a Tuesday slot → Edit → rename → Save → Back to program and the programme shows the change with no reload. Strong evidence the rebuild removed the old path; not closable by rule (b) (the old editor cannot be put back to go red). Closes when Jake repeats his edit on his own programme once and it shows without a refresh."
+status_detail: "open (save half) / fixed — awaiting Jake (slowness). 2026-09-27: a third reproduction, the first on the editor rebuilt in v2026.09.6, PASSES — tests/program-slot-edit-shows-without-refresh-2026-09-27.spec.js drives a cardio workout in a Tuesday slot → Edit → rename → Save → Back to program and the programme shows the change with no reload. Strong evidence the rebuild removed the old path; not closable by rule (b) (the old editor cannot be put back to go red). 2026-09-28: a real, previously-unguarded repaint race was found and fixed in the same surface (openTemplate could clobber a page the user had already navigated to, after a successful Save) — red→green proven, does not by itself close this row since it is not proven to be JAKE'S specific 2026-08-07 report. Closes when Jake repeats his edit on his own programme once and it shows without a refresh."
 ---
 
 # Programs builder: major slowdown editing a cardio workout, and the edit does not save until a page refresh
@@ -121,3 +121,44 @@ workout in a programme's Tuesday slot, opened with the slot's Edit, renamed, Sav
 rename is in the database and that the programme builder SHOWS it without a reload. It passes. The editor this row was reported
 against was replaced in v2026.09.6 (staged draft + explicit Save), which is the likeliest reason. Limits: a one-exercise fixture, so
 the SLOWNESS half on a large real programme is not measured by it. Kept in the suite as a guard for this path.
+
+## 2026-09-28 — a real unguarded repaint race found and fixed (does not, by itself, close this row)
+
+Per les-052 ("measure live, do not re-read code and reason"), traced the CURRENT (post-v2026.09.6) save
+path for anything with the same shape as "the write landed, the UI never repainted, only a refresh fixed
+it" rather than theorising further. `openTemplate` (`js/app-workouts.js`) paints into a RAW
+`document.getElementById('main-content')` reference captured once at call time — never through
+`navigate()`'s `_pageScopedContainer`, so it has none of that guard's protection against a render landing
+after the app has moved on (the stale-render mechanism this row's 2026-09-04 hypothesis already named,
+but never measured on this specific surface).
+
+`_checkSiblingPropagation`'s final fallback branch (reached whenever a saved template has neither a
+program nor a client-plan context — the ordinary "edit a plain Library template" case) fires a bare,
+UN-AWAITED `openTemplate(templateId, ctx)`. `tests/template-draft-save-2026-09-13.spec.js` already proves
+`openTemplate`'s own dirty-draft guard stops that abandoned repaint from clobbering a draft that is still
+dirty. It was never tested for the DIFFERENT case: a SUCCESSFUL save, where the draft goes clean and the
+user navigates away immediately — the dirty-draft guard is explicitly scoped to the dirty case only.
+
+**Measured, not assumed:** `tests/template-editor-post-save-navigate-clobber-2026-09-28.spec.js` reproduces
+exactly this — save a plain template, then immediately `navigate('workouts')` (nothing blocks it; the
+draft is clean right after a successful save) — and the abandoned repaint, once its (artificially delayed,
+to make the race deterministic) fetch resolves, overwrote the Workouts page with the template editor.
+Confirmed RED with the fix neutered (`if (false && …)`), confirmed GREEN restored.
+
+**Fix:** `openTemplate` now captures `currentPage` at call time and, right after its fetch resolves,
+refuses to paint (logging loudly, matching `_pageScopedContainer`'s own reasoning) if `currentPage` has
+changed or a newer `openTemplate` call has superseded it. One function, ~20 lines.
+
+**What this does and does not prove:** this closes a real, demonstrated defect in the exact function this
+row's surface depends on, and removes one concrete way "the edit appears to vanish until a refresh"
+symptoms of this general shape can occur going forward. It does **not** prove it was the mechanism behind
+Jake's original 2026-08-07 report — that report's specific repro (three cardio workouts in Tue/Thu/Sat
+slots, each in a PROGRAM context) takes `_checkSiblingPropagation`'s program branch, not the plain-Library
+fallback this fix targets, and per the 2026-09-27 entry above the direct repro on the rebuilt editor
+already passes. Filed as a genuine, separately-useful fix rather than a claimed root cause. Full suite run
+clean except one pre-existing, unrelated flake (`programs.spec.js:233`, an inline-assign-grid duplicate-slot
+test that does not call `openTemplate` or `navigate` — passed on retry, matching the known flakiness class
+tracked in [[2026-08-14-test-gate-flakiness-returned-across-two-unrelated-files]]).
+
+Still open, still needs Jake: the row's own closing condition is unchanged — he repeats his edit on his
+own real programme once and it shows without a refresh.
