@@ -437,7 +437,7 @@ test.describe('Interval runner Start-trigger wiring (2026-07-26 fix round 1)', (
   })
 
   // Fix round 3/5, Critical 2: runnerJumpTo called skipRestTimer() WITHOUT nulling _afterRest first,
-  // unlike its siblings runnerGoBack/showRunnerFinish. skipRestTimer() fires the pending callback
+  // unlike its siblings runnerGoBack (since removed)/showRunnerFinish. skipRestTimer() fires the pending callback
   // immediately, while exIdx still points at the OLD exercise — so a queued `_advancePhase()` from an
   // interval rest phase runs against the wrong exercise, starting a new interval timer and mounting its
   // overlay on top of whatever the jump lands on.

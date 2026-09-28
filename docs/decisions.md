@@ -12,6 +12,19 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-28 — "Next exercise" goes to what is still to do, not to the next number; a tab shows completion, not position.**
+Jake's runner walkthrough (items 2-6 of 8). The runner knew only an exercise's position: tab colour was "a lower number
+than the current one" and Next was `exIdx++`, so skipping 1 to 3 left a never-touched 2 looking done and carried on to 4.
+An exercise is now *complete* when every set is done (interval blocks count work rounds only, via `_countableSets`).
+Tabs: green = complete, purple = current, plain otherwise. Next, from a complete exercise, goes to the lowest one still to
+do; from an unfinished one (a skip) it goes to the next unfinished one AFTER it and finishes if there is none. The first
+version wrapped round to the start when nothing lay ahead; review showed that cycles for ever when every exercise is half
+done, so it does not. Every "which is next" question (button, "Next:" lines, rest bars, cardio auto-advance) asks the
+one function, `_nextExerciseTarget`. Known consequence, left for the runner restructure: an exercise with no sets logged has
+no Next/Skip button, so being sent back to a skipped one leaves the End button as the way out. The Back button is gone
+(the tabs go back); the title shrinks to fit instead of being cut off. Ledger:
+[bugs/2026-09-28-runner-tabs-show-position-not-completion-and-next-exercise-cannot-return-to-a-skipped-one.md](bugs/2026-09-28-runner-tabs-show-position-not-completion-and-next-exercise-cannot-return-to-a-skipped-one.md).
+
 **2026-09-27 — A push runs static checks only; the browser and the mutation self-test are the release's job.**
 Jake: "make the commit and push cycle easy again". Pushing master stopped deploying on 2026-09-05, and
 `release.mjs` runs the full suite plus `checks.sh` before every tag, so the push gate was checking the same

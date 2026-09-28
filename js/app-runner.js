@@ -432,7 +432,7 @@ function _renderRunnerVsLast(ex) {
       <div style="font-size:var(--text-base, 13px);font-weight:800">${disp(cur)}${unit}</div>
       <div style="font-size:var(--text-2xs, 9px);font-weight:700;white-space:nowrap">${bottom}</div></div>`
   }
-  const heading = d.logged ? `vs last session · ${dateStr}` : `last session · ${dateStr} · beat it`
+  const heading = d.logged ? `vs last session · ${dateStr}` : `last session · ${dateStr}`
   return `
     <div style="margin-bottom:12px;padding:10px 12px;border-radius:var(--radius, 10px);background:var(--surface-2)">
       <div style="font-size:var(--text-2xs, 9px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">${heading}</div>
@@ -697,7 +697,8 @@ function renderStrengthTable(ex) {
   // DIFFERENT exercise (2026-07-29 redesign) and must not paint this exercise's inline bar.
   if (_runner.restRemaining != null && _runner._restForExIdx === _runner.exIdx) {
     const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
-    const nextEx = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name)
+    const nextIdx = _nextExerciseTarget()   // the same answer the header and the Next button give
+    const nextEx = nextIdx === -1 ? null : _runner.exercises[nextIdx]
     const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (ex.loggedSets.length + 1)
     restBar = `
     <div id="rest-timer-overlay" style="display:flex;align-items:center;gap:12px;padding:10px 12px;margin-bottom:10px;border-radius:var(--radius, 10px);background:var(--surface-2);border:1.5px solid var(--accent)">
@@ -890,8 +891,11 @@ function renderRunner() {
   _saveRunnerDraft()
   const ex      = _runner.exercises[_runner.exIdx]
   const setNum  = Math.min(ex.loggedSets.length + 1, ex.targetSets || Infinity)
-  const isLast  = _runner.exIdx === _runner.exercises.length - 1
-  const nextEx  = _runner.exercises[_runner.exIdx + 1]
+  // Where "Next exercise" will take the user — not simply the next number. See _nextExerciseTarget.
+  const nextIdx = _nextExerciseTarget()
+  const isLast  = nextIdx === -1   // nothing left to do: the button finishes the workout
+  const nextEx  = isLast ? null : _runner.exercises[nextIdx]
+  const doneFlags = _runner.exercises.map(e => _isExerciseComplete(e))
   const lastSet = ex.loggedSets[ex.loggedSets.length - 1]
   const isTable = _isPlainStrengthExercise(ex)
 
@@ -904,13 +908,12 @@ function renderRunner() {
       <!-- Header -->
       <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-          ${_runner.exIdx > 0 ? `<button onclick="runnerGoBack()" style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm, 8px);background:transparent;font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;color:var(--text-muted);flex-shrink:0">← Back</button>` : ''}
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
               <span style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}</span>
               <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
-            <div style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
+            <div id="wr-title" style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
             ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
             ${nextEx ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
           </div>
@@ -923,8 +926,13 @@ function renderRunner() {
              workout the bar's segments got thin enough to misclick a neighbour). Fixed-size and
              gapped so a tap always lands cleanly, and they scroll rather than shrink on a long
              workout — segment width used to shrink with exercise count, worst exactly when precision
-             mattered most. Number = the exercise's order, per Jake's own suggestion. -->
-        ${_runner.exercises.length > 1 ? `<div style="display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px">${_runner.exercises.map((e,i)=>`<button type="button" onclick="runnerJumpTo(${i})" title="${escapeHtml(e.name||'Exercise '+(i+1))}" style="flex-shrink:0;width:40px;height:40px;border-radius:var(--radius-sm, 8px);border:none;display:flex;align-items:center;justify-content:center;font-size:var(--text-base, 13px);font-weight:800;cursor:pointer;background:${i<_runner.exIdx?'rgba(99,102,241,0.45)':i===_runner.exIdx?'var(--accent)':'var(--surface-2)'};color:${i<=_runner.exIdx?'#fff':'var(--text-muted)'}">${i+1}</button>`).join('')}</div>` : ''}
+             mattered most. Number = the exercise's order, per Jake's own suggestion.
+             2026-09-28: the fill now says what happened, not where you are. Green = every set done, purple =
+             the one on screen, plain = anything else. It used to be "a lower number than the current one" in
+             light purple, so a skipped exercise looked done. The tabs are also the way back — the Back button
+             is gone. A finished exercise you are ON keeps its green and gets a white inner ring, so "done"
+             and "here" both show. -->
+        ${_runner.exercises.length > 1 ? `<div id="wr-tabs" style="position:relative;display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px">${_runner.exercises.map((e,i)=>`<button type="button" onclick="runnerJumpTo(${i})" title="${escapeHtml(e.name||'Exercise '+(i+1))}${doneFlags[i]?' — done':''}"${i===_runner.exIdx?' aria-current="step"':''} style="flex-shrink:0;width:40px;height:40px;border-radius:var(--radius-sm, 8px);border:none;display:flex;align-items:center;justify-content:center;font-size:var(--text-base, 13px);font-weight:800;cursor:pointer;background:${doneFlags[i]?'var(--success)':i===_runner.exIdx?'var(--accent)':'var(--surface-2)'};color:${doneFlags[i]||i===_runner.exIdx?'#fff':'var(--text-muted)'};box-shadow:${doneFlags[i]&&i===_runner.exIdx?'inset 0 0 0 3px rgba(255,255,255,.85)':'none'}">${i+1}</button>`).join('')}</div>` : ''}
         ${_runner.restRemaining != null && _runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx ? `
         <div onclick="runnerJumpTo(${_runner._restForExIdx})" style="display:flex;align-items:center;gap:8px;margin-top:8px;min-height:44px;padding:10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);border:1px solid var(--accent);cursor:pointer;box-sizing:border-box">
           <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '')} — ${_runner._restPendingFire ? 'rest done' : `<span id="wr-rest-chip-countdown" style="font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums">${fmtRestCountdown(_runner.restRemaining)}</span> rest left`} · tap to return</span>
@@ -1064,7 +1072,37 @@ function renderRunner() {
       </div>
     </div>
   `
+  _fitRunnerTitle()
+  _scrollRunnerTabsToCurrent()
   if (ex.type !== 'cardio') setTimeout(() => fetchRunnerLastSession(ex.name, ex.exerciseId), 0)
+}
+
+// The tab strip is rebuilt on every render, which puts its scroll back at the start. On a long workout (about
+// nine tabs fill a phone) the current tab could be off-screen — and with the Back button gone the tabs are the
+// only way back. Centre the current one. Found by review, 2026-09-28.
+function _scrollRunnerTabsToCurrent() {
+  const strip = document.getElementById('wr-tabs')
+  const cur = strip?.querySelector('[aria-current="step"]')
+  if (!strip || !cur) return
+  strip.scrollLeft = Math.max(0, cur.offsetLeft - (strip.clientWidth - cur.offsetWidth) / 2)
+}
+
+// Shrink the exercise title until the whole name shows. The header capped it at two lines with an ellipsis,
+// so "Flat Bench Dumbbell Press" arrived as "Flat Bench Dumbbe…". With the Back button gone most names fit at
+// full size; only one that would still be cut gets smaller, a pixel at a time down to 15px, and past that it
+// is allowed to wrap onto as many lines as it needs rather than be cut. Measured rather than guessed from the
+// character count, because the room depends on the phone's width and the user's text size. Jake, 2026-09-28.
+function _fitRunnerTitle() {
+  const t = document.getElementById('wr-title')
+  if (!t) return
+  const cut = () => t.scrollHeight > t.clientHeight + 1
+  // Back to full size first, so an earlier exercise's shrinking doesn't carry over. Set to the SAME declaration
+  // the markup uses — clearing it ('') would remove the inline size altogether and leave the title at the
+  // page's inherited 14px, which is not "start from the stylesheet size", it is a smaller title.
+  t.style.fontSize = 'var(--legacy-text-22, 22px)'
+  let px = parseFloat(getComputedStyle(t).fontSize)
+  while (cut() && px > 15) { px -= 1; t.style.fontSize = px + 'px' }
+  if (cut()) { t.style.display = 'block'; t.style.overflow = 'visible'; t.style.webkitLineClamp = 'unset'; t.style.lineClamp = 'unset' }
 }
 
 function logRunnerSet() {
@@ -1121,7 +1159,7 @@ function logRunnerSet() {
   const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
   if (hitTarget) {
     const proceed = () => {
-      const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+      const nextExIdx = _nextExerciseTarget()
       if (nextExIdx !== -1) {
         // More exercises — rest then advance. Start the rest timer (which sets
         // _restInterval) before re-rendering, so the page shows the "resting"
@@ -1430,7 +1468,7 @@ function _finishIntervalExercise() {
   stopIntervalTimer()
   const ex = _runner.exercises[_runner.exIdx]
   const proceed = () => {
-    const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+    const nextExIdx = _nextExerciseTarget()
     if (nextExIdx !== -1) { _runner.exIdx = nextExIdx; renderRunner() }
     else showRunnerFinish()
   }
@@ -1481,7 +1519,7 @@ function startIntervalTimer(secs) {
       // page shows the "resting" placeholder instead of a stale/phantom set input.
       if (hitTarget) {
         const proceed = () => {
-          const nextExIdx = _runner.exercises.findIndex((e, i) => i > _runner.exIdx && e.name)
+          const nextExIdx = _nextExerciseTarget()
           if (nextExIdx !== -1) {
             _runner._afterRest = () => { _runner.exIdx = nextExIdx; renderRunner() }
             startRestTimer(restSecs)
@@ -1526,7 +1564,7 @@ function startIntervalTimer(secs) {
 // Interval-exercise counterpart to startIntervalTimer, for a single timed PHASE (work/warmup/cooldown)
 // rather than a whole work->rest->work round trip. Shares the same _runner._interval* state and
 // stopIntervalTimer/renderIntervalTimer as the legacy timer, so every existing teardown path
-// (stopIntervalTimer itself, discardRunner, showRunnerFinish, runnerGoBack, skipToNextExercise) already
+// (stopIntervalTimer itself, discardRunner, showRunnerFinish, runnerJumpTo, skipToNextExercise) already
 // clears it correctly without any changes there. Do not repurpose startIntervalTimer for this — steady-
 // state cardio still owns it and is out of scope for the interval redesign.
 function startIntervalPhaseTimer(secs) {
@@ -1718,7 +1756,7 @@ function startRestTimer(secs) {
   // a rest that reached zero while the athlete was looking at a DIFFERENT exercise: the beep/voice
   // cues still fire on schedule, but any queued _afterRest is deliberately held until they actually
   // return to the owning exercise — firing it immediately would run against whatever exercise is
-  // currently on screen (the exact corruption runnerJumpTo/runnerGoBack already guard against
+  // currently on screen (the exact corruption runnerJumpTo already guards against
   // elsewhere). Jake, 2026-07-29: "the timer stops" when glancing at another exercise — fixed by
   // decoupling "is a rest running" from "is it the one on screen", not by making rests un-stoppable.
   _runner._restForExIdx  = _runner.exIdx
@@ -1828,7 +1866,8 @@ function renderRestTimer() {
   const pct   = secs / total
   const curEx    = _runner.exercises[_runner.exIdx]
   const hitTarget = curEx.targetSets > 0 && curEx.loggedSets.length >= curEx.targetSets
-  const nextEx   = _runner.exercises.find((e,i) => i > _runner.exIdx && e.name)
+  const nextIdx  = _nextExerciseTarget()   // the same answer the header and the Next button give
+  const nextEx   = nextIdx === -1 ? null : _runner.exercises[nextIdx]
   const nextSetNum = curEx.loggedSets.length + 1
   const nextRoundLabel = curEx.targetSets > 1 ? `Round ${nextSetNum} of ${curEx.targetSets}` : `Set ${nextSetNum}`
   const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: ' + nextRoundLabel
@@ -2062,15 +2101,46 @@ function deleteRunnerSet(exIdx, setIdx) {
   renderRunner()
 }
 
+// An exercise is complete when EVERY one of its sets is done. Plain strength keeps its sets as tableRows
+// (each with .done, created when the exercise is first opened — so an exercise never opened has none and
+// is not complete); every other type logs sets against a target. Partly done is not complete: it stays
+// plain on the tabs, and is still "to do" for Next exercise. Jake, 2026-09-28.
+// The non-table count goes through _countableSets (work rounds only), like the finish screen and My Progress:
+// an interval block also logs its warm-up and cool-down as sets, but `targetSets` counts work rounds alone,
+// so counting them would read "3 of 3" after a warm-up and two rounds. Found by review, 2026-09-28.
+function _isExerciseComplete(ex) {
+  if (!ex) return false
+  if (ex.tableRows?.length) return ex.tableRows.every(r => r.done)
+  const n = _countableSets(ex.loggedSets).length
+  return n > 0 && n >= (ex.targetSets || 1)
+}
+
+// Where "Next exercise" goes, as an index — or -1 when nothing is left to do, which means finish.
+//  - From a COMPLETED exercise: the lowest-numbered one still to do, wherever it is. Do 1, jump to 3, finish
+//    it, and Next takes you back to 2 rather than on to 4 (it used to be a bare exIdx++).
+//  - From one that isn't complete (a skip): the next unfinished one AFTER it, and if there is none, finish —
+//    exactly what Next on the last exercise always did. It must NOT wrap round to the start: with every
+//    exercise half done that walks 1, 2, 3, 4, 1, 2... and the button never says Finish. (My first version
+//    wrapped; review caught it.) Whatever is still undone behind you is what the tabs are for.
+// Every place that decides "the next exercise" asks this — the button, the "Next:" lines, the rest bar and
+// the wizard auto-advance — so they cannot disagree with each other.
+function _nextExerciseTarget() {
+  const { exercises, exIdx } = _runner
+  const todo = exercises.map((e, i) => i).filter(i => i !== exIdx && exercises[i].name && !_isExerciseComplete(exercises[i]))
+  if (!todo.length) return -1
+  if (_isExerciseComplete(exercises[exIdx])) return todo[0]
+  return todo.find(i => i > exIdx) ?? -1
+}
+
 function skipToNextExercise() {
   stopRunnerCountIn()
   stopIntervalTimer()
-  if (_runner.exIdx < _runner.exercises.length - 1) {
-    _runner.exIdx++
-    renderRunner()
-  } else {
-    showRunnerFinish()
-  }
+  const next = _nextExerciseTarget()
+  if (next === -1) { showRunnerFinish(); return }
+  // Through runnerJumpTo, not a bare index write: it already knows how to leave an exercise while a rest
+  // timer is running (the countdown keeps going; the rest chip takes over) and how to land on the exercise
+  // a finished rest belongs to.
+  runnerJumpTo(next)
 }
 
 function runnerJumpTo(i) {
@@ -2125,10 +2195,6 @@ function runnerJumpTo(i) {
   _runner._afterRest = null
   _runner.exIdx = i
   renderRunner()
-}
-
-function runnerGoBack() {
-  if (_runner && _runner.exIdx > 0) runnerJumpTo(_runner.exIdx - 1)
 }
 
 // Swap/add exercise are both session-only — neither writes to workout_templates.
@@ -2319,7 +2385,7 @@ async function showRunnerFinish() {
   // in the middle of typing. In wizard mode it's worse: _afterRest bounces them into the NEXT exercise.
   //
   // Note this must NOT call skipRestTimer() — that FIRES the pending _afterRest callback. Null the
-  // callback first, then clear. (Same trap as runnerGoBack.)
+  // callback first, then clear. (Same trap as runnerJumpTo.)
   _runner._afterRest = null
   _runner._timerInterval = clearTimer(_runner._timerInterval)
   _runner._restInterval  = clearTimer(_runner._restInterval)

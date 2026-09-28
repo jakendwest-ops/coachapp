@@ -291,7 +291,9 @@ test.describe('A5 — rest timer survives navigating to another exercise', () =>
     expect(res.notPending).toBe(true)
   })
 
-  test('runnerGoBack inherits the same nav-persistent rest behaviour', async ({ page }) => {
+  // Was 'runnerGoBack inherits…'. The Back button was removed on 2026-09-28; going back is now a tap on an
+  // earlier numbered tab, which is runnerJumpTo(exIdx - 1) — exactly what runnerGoBack delegated to.
+  test('going back to an earlier exercise keeps the rest running, the same nav-persistent behaviour', async ({ page }) => {
     await loginAsPT(page)
     const res = await page.evaluate(() => {
       const exA = { name: 'A', type: 'strength', metricType: 'weight_reps', loggedSets: [], targetSets: 3,
@@ -303,7 +305,7 @@ test.describe('A5 — rest timer survives navigating to another exercise', () =>
       const restIntervalBeforeJump = _runner._restInterval // captured BEFORE any navigation
       runnerJumpTo(1)
       const stillTickingAfterJump = _runner._restInterval === restIntervalBeforeJump && _runner.restRemaining != null
-      runnerGoBack()
+      runnerJumpTo(_runner.exIdx - 1)
       const backOnA = _runner.exIdx === 0
       const stillTickingAfterBack = _runner._restInterval === restIntervalBeforeJump && _runner.restRemaining != null
 

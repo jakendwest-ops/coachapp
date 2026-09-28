@@ -55,15 +55,13 @@ test.describe('Intervals 2026-07-24 — get-ready countdown + repeat-set builder
     const r = await page.evaluate(() => ({
       skipToNext: /stopRunnerCountIn\(\)/.test(skipToNextExercise.toString()),
       jumpTo: /stopRunnerCountIn\(\)/.test(runnerJumpTo.toString()),
-      // runnerGoBack was folded into runnerJumpTo(exIdx - 1) on 2026-07-29 (the nav-persistent rest
-      // redesign) — it no longer calls stopRunnerCountIn() directly, but inherits it by delegating to
-      // runnerJumpTo, which the assertion above already proves still stops the count-in.
-      goBack: /runnerJumpTo\(/.test(runnerGoBack.toString()),
+      // There used to be a third line here for runnerGoBack, which only delegated to runnerJumpTo(exIdx - 1)
+      // and so inherited the count-in stop from the assertion above. The Back button and the function were
+      // removed on 2026-09-28 (the numbered tabs go back), so there is nothing left to check for it.
       discard: /clearInterval\(_runner\?\._countInInterval\)/.test(discardRunner.toString()),
     }))
     expect(r.skipToNext, 'skipToNextExercise must stop a running count-in').toBe(true)
     expect(r.jumpTo, 'runnerJumpTo must stop a running count-in').toBe(true)
-    expect(r.goBack, 'runnerGoBack must delegate to runnerJumpTo (which stops the count-in)').toBe(true)
     expect(r.discard, 'discardRunner must clear the count-in interval').toBe(true)
   })
 

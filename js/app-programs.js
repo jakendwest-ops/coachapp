@@ -164,9 +164,9 @@ async function renderClientPrograms(clientId, el) {
                   return `
                     <div style="border-top:1px solid var(--border)">
                       <button onclick="toggleClientPhase('${dayPanelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:none;border:none;cursor:pointer;text-align:left">
-                        <div>
-                          <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--accent)">DAY ${day}</span>
-                          <span style="font-size:var(--text-base, 13px);font-weight:500;color:var(--text);margin-left:8px">${escapeHtml(sessionSummary)}</span>
+                        <div style="min-width:0">
+                          <div style="font-size:var(--text-md, 12px);font-weight:700;color:var(--accent);letter-spacing:.04em">${_dayHeadingLabel(day)}</div>
+                          <div style="font-size:var(--text-base, 13px);font-weight:500;color:var(--text);margin-top:2px">${escapeHtml(sessionSummary)}</div>
                         </div>
                         <svg id="${dayPanelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
                       </button>
@@ -995,6 +995,19 @@ async function renderPrograms(el) {
 // reads `day_of_week - 1`, and _quickAssignPhaseWorkout keeps its own array with a padded empty [0].
 // So ALWAYS subtract 1 when indexing this with a stored day_of_week.
 const _DAY_LABELS = ['MON','TUE','WED','THU','FRI','SAT','SUN']
+
+// The heading on a program's day list: "MONDAY · DAY 1". The list used to print only "DAY 1 / DAY 3 / DAY 5",
+// which reads as nonsense with the gaps — the weekday is what the day means. Jake, 2026-09-28. Both lists
+// (the client's Workouts page and the coach's Programs page) build it here so they cannot drift apart.
+// A day past 7 has no weekday, so it falls back to the bare number rather than printing "undefined".
+const _DAY_NAMES = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY']
+function _dayHeadingLabel(day) {
+  // Coerced to a number: the result goes straight into innerHTML, and both callers pass one today — this keeps
+  // it that way for the next caller, who might pass a string.
+  const n = Number(day)
+  const name = _DAY_NAMES[n - 1]
+  return name ? `${name} · DAY ${n}` : `DAY ${n}`
+}
 
 // Builds the Add-workout picker's pool, INCLUDING where each template is already used.
 //

@@ -716,9 +716,9 @@ async function renderClientWorkoutsPage(el) {
                 const sessionSummary = daySessions.map(pw => (cpwMap[pw.id]?.name || 'Session').replace(/ — W\d+/, '')).join(', ')
                 return `<div style="border-top:1px solid var(--border)">
                   <button onclick="toggleClientPhase('${dayPanelId}')" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:none;border:none;cursor:pointer;text-align:left">
-                    <div>
-                      <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--accent)">DAY ${day}</span>
-                      <span style="font-size:var(--text-base, 13px);font-weight:500;color:var(--text);margin-left:8px">${escapeHtml(sessionSummary)}</span>
+                    <div style="min-width:0">
+                      <div style="font-size:var(--text-md, 12px);font-weight:700;color:var(--accent);letter-spacing:.04em">${_dayHeadingLabel(day)}</div>
+                      <div style="font-size:var(--text-base, 13px);font-weight:500;color:var(--text);margin-top:2px">${escapeHtml(sessionSummary)}</div>
                     </div>
                     <svg id="${dayPanelId}-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted);transition:transform .2s;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>

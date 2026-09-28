@@ -30,7 +30,9 @@ test('double-tapping ✎ on a logged set opens ONE edit sheet, so the edit is no
 // stepped back one — landing on the exercise you were already on, so Back did nothing. The existing
 // tests/ledger-fixes-2026-07-29.spec.js Back test never queues an _afterRest, and a neuter run on
 // 2026-09-27 showed it stays green against the old code; this one reproduces the real sequence.
-test('Back during a rest that has queued "advance to the next exercise" goes back, not nowhere', async ({ page }) => {
+// 2026-09-28: the Back button and runnerGoBack are gone; going back is a tap on an earlier numbered tab,
+// which is runnerJumpTo(exIdx - 1) — the very call runnerGoBack made — so the same sequence is driven that way.
+test('Going back to an earlier exercise during a rest that has queued "advance to the next exercise" goes back, not nowhere', async ({ page }) => {
   await loginAsPT(page)
   const res = await page.evaluate(() => {
     const mk = n => ({ name: n, type: 'strength', metricType: 'weight_reps', targetSets: 1, sets_json: [{}],
@@ -38,7 +40,7 @@ test('Back during a rest that has queued "advance to the next exercise" goes bac
     _runner = { exercises: [mk('A'), mk('B'), mk('C')], exIdx: 1, startTime: Date.now() }
     startRestTimer(90)
     _runner._afterRest = () => { _runner.exIdx = 2; renderRunner() }   // what finishing B's last set queues
-    runnerGoBack()
+    runnerJumpTo(_runner.exIdx - 1)
     const landedOn = _runner.exIdx
     clearTimer(_runner._restInterval)
     document.getElementById('workout-runner')?.remove()
