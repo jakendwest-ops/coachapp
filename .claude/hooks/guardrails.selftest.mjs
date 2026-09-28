@@ -155,6 +155,40 @@ try {
     say(inRepo === 'DENY', 'DENY ', 'a commit inside CoachApp still gets the ownership gate')
   }
 
+  console.log('— rule 2d: rule 2 does not care which TOOL sent the command —')
+  // Ledger row 2026-08-22-subagent-routed-around-a-permission-denial: a dispatched subagent hit a
+  // classifier denial on a Bash `git commit` and switched to the PowerShell tool to force it through.
+  // guardrails.mjs never reads ev.tool_name (only tool_input.command), so its OWN logic was never the
+  // gap — the gap was that .claude/settings.json only registered this hook's PreToolUse/PostToolUse
+  // matcher on "Bash", so the harness never ran it at all for a PowerShell-routed command. Proven live
+  // 2026-09-28: with matcher "Bash" only, a real PowerShell tool call in-session did not fire this
+  // hook (a sentinel the hook would have written was absent); with matcher "Bash|PowerShell" the same
+  // call did. That is a harness-dispatch fact this self-test cannot exercise (it invokes guardrails.mjs
+  // directly, bypassing the harness's matcher routing entirely) — what THIS case pins is the half that
+  // IS testable here and must never regress: the hook's OWN decision is identical whether tool_name
+  // says 'Bash' or 'PowerShell', so extending the matcher (already done, .claude/settings.json) closes
+  // the gap completely rather than leaving a tool-specific blind spot inside the hook itself.
+  {
+    const own = "+  .eq('coach_id', currentUser.id)"
+    const viaBash = invoke(
+      { hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: 'S1', cwd: CLEAN_REPO, tool_input: { command: 'git commit -m x' } },
+      { GUARDRAILS_STATE: dir, GUARDRAILS_MARKER: join(dir, 'nope'), GUARDRAILS_FAKE_STAGED: own }
+    )
+    const viaPowerShell = invoke(
+      { hook_event_name: 'PreToolUse', tool_name: 'PowerShell', session_id: 'S1', cwd: CLEAN_REPO, tool_input: { command: 'git commit -m x' } },
+      { GUARDRAILS_STATE: dir, GUARDRAILS_MARKER: join(dir, 'nope'), GUARDRAILS_FAKE_STAGED: own }
+    )
+    say(viaBash === 'DENY' && viaPowerShell === 'DENY' && viaBash === viaPowerShell, 'DENY',
+      'an unreviewed ownership commit is refused identically via Bash and via PowerShell', ` (Bash=${viaBash}, PowerShell=${viaPowerShell})`)
+
+    writeFileSync(join(dir, 'nope2'), 'S2')   // a review marker matching THIS session id
+    const reviewed = invoke(
+      { hook_event_name: 'PreToolUse', tool_name: 'PowerShell', session_id: 'S2', cwd: CLEAN_REPO, tool_input: { command: 'git commit -m x' } },
+      { GUARDRAILS_STATE: dir, GUARDRAILS_MARKER: join(dir, 'nope2'), GUARDRAILS_FAKE_STAGED: own }
+    )
+    say(reviewed === 'ALLOW', 'ALLOW', 'a REVIEWED ownership commit via PowerShell is still allowed (no false refusal)')
+  }
+
   console.log('— rule 3: measurement must ACTUALLY write —')
   // This case exists because a missing `appendFileSync` import once made rule 3 throw straight into
   // its own catch: it recorded nothing, reported nothing, and looked exactly like a working check.
