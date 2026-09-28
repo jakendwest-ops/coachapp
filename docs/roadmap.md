@@ -26,11 +26,12 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   are done.
 - **UX cleanup pass — 3 of 4 areas shipped** (runner, builder, progress); dashboards (D2-D4: solo
   bottom-nav restructure, dashboard filtering, PT stat-tile layout) not started, awaiting Jake's go.
-- **Runner walkthrough of 2026-09-28 (8 items) — built, committed locally, held for one combined release.**
-  Items 1-6 (weekday on the program day list, no Back button, full exercise names, Next goes to what is
-  still to do, green/purple tabs, "beat it" removed) and items 7-8 (the "log-first" layout: Swap/Add/Units
-  behind a "⋯" sheet, one-line prescription, set table straight under the tabs, an always-present Skip/Next/
-  Finish bar, and a tappable "Last time → Stats" sheet with a progress chart). Decisions:
+- **Runner walkthrough of 2026-09-28 (8 items) — ✅ shipped, `v2026.09.11`, live.** Items 1-6 (weekday on
+  the program day list, no Back button, full exercise names, Next goes to what is still to do, green/purple
+  tabs, "beat it" removed) and items 7-8 (the "log-first" layout: Swap/Add/Units behind a "⋯" sheet,
+  one-line prescription, set table straight under the tabs, an always-present Skip/Next/Finish bar, and a
+  tappable "Last time → Stats" sheet with a progress chart). Not yet checked against Jake's real workout
+  history or a real assigned program (see [releases/v2026.09.11.md](releases/v2026.09.11.md)). Decisions:
   [decisions.md](decisions.md), 2026-09-28.
 - **Second 2026-09-28 note from Jake — six items, not started.** Template builder: Edit/Remove buttons too
   big ([ledger](bugs/2026-09-28-template-builder-edit-and-remove-buttons-squeeze-the-set-text.md)); interval

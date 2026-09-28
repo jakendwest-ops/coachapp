@@ -103,3 +103,34 @@ shipped claim — not self-caught near-misses), with a pointer to log a dated en
 step, not an os-lint hard gate — the classification itself needs judgement no mechanical check can do, and
 the mechanism is deliberately the trigger this row's own diagnosis says a bare rule needs. Still: Jake
 closes this, or three consecutive sessions computed THIS way do.
+
+## 2026-09-28, later the same day — the runner-rebuild phase, and a correction to the entry above
+
+**Correction first.** The entry above's "zero" missed a real instance from EARLIER the same session, before
+it was written: cutting the v2026.09.7 release, I ran two `git push` commands concurrently (one via a
+mistaken shell-backgrounding trick, one the normal tracked call) — both fired their own pre-push Playwright
+smoke gate against the single shared test account at the same time. That is exactly the class
+[[feedback_concurrent_test_contamination]] already names ("never run concurrent Playwright vs one :3001").
+It reached real execution (not a draft) and I disclosed it to Jake as a mistake in the same turn it
+happened — both criteria the row's metric asks for. No harm resulted (the first push landed cleanly, 58
+passed), but harmlessness isn't the metric; happening in an already-covered class is. So the correct count
+for the earlier part of the session is **one**, not zero, and the corrected memory
+(`feedback_concurrent_test_contamination.md`) already generalised the specific trigger (a session's OWN
+second invocation, not only a second session) before this note was written, so no further memory edit is
+needed here — this entry exists to fix the COUNT, which is the row's actual subject.
+
+**The later runner-rebuild phase (items 1-8 of Jake's walkthrough, building v2026.09.11), reviewed the same
+way:** zero errors reached a commit, a claim to Jake, or a shipped conclusion, in a class an existing
+memory/skill already covered. Several real defects were found and fixed before they reached that bar —
+an interval-warmup-counts-as-a-round bug and a wrap-round Next-exercise loop (caught by review before the
+first commit), a Chart.js instance leak, a stuck-sheet risk, a UTC/local date bug, and others (caught by
+review before the second commit) — none of these were NEW rule-class instances of something already on
+record; they were ordinary code review findings on new code, which is what review is for, not a repeat of a
+named failure mode. Two genuinely new, specific lessons were written from them
+([[feedback_checks_sh_quirks]], [[feedback_chart_and_date_gotchas]]) precisely because they were NOT already
+covered — the corpus growing on a real gap is the system working, not evidence against the diagnosis.
+
+**This is still session 1 of 3, not 2** — both entries above are the same continuous session; the second
+one corrects the first's count rather than adding a new data point. **Session 1's corrected count: one**
+error reached execution/a claim, in an already-covered class (the double `git push`), across the whole
+session. Two more sessions counted this same way, honestly, settle it.
