@@ -12,6 +12,21 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-28 — The runner is "log-first": the set table comes straight after the tabs, and the occasional things moved out of its way.**
+Jake's runner walkthrough (items 7 and 8 of 8): "the UI on this page is not user friendly." Measured on a phone, the first
+set row began **252px** below the tabs, under a Swap/Add row, a stats card and three prescription boxes. Now: Swap, Add and
+Units are behind a "⋯" button (a sheet, the app's existing bottom-sheet `.modal-overlay`, because the app has no dropdown
+precedent); the prescription is one line under the title; the table follows the tabs; the stats card is replaced by one
+"Last time" line with a filled **Stats** button (a bare "›" was easy to miss, and Jake asked for something obviously
+clickable) that opens a sheet with last session's sets, today vs last time, a Chart.js progress chart (Top set / Est. 1RM /
+Volume, reusing the Progress page's `_renderMetricChart`) and the heaviest lift ever (`_prBaseline`); and the bottom bar is
+always there — **Skip exercise** on an untouched exercise (the dashed "Log a set to continue" dead end is gone), Next
+exercise once started, Finish when nothing is left, naming the exercise it goes to. (An untouched *last* exercise reads a neutral "Finish workout" and goes through the End button's own flow: a big green Finish there made a mis-tap end the session, and the finish screen has no way back to the runner.) Designed and approved from a working
+prototype, not a description. Deliberate limits: the Stats sheet is for weight × reps exercises with a previous session (the
+same gate the old card had); the cardio/interval screens keep their own controls and get only the new header. The history read
+is the last 60 workouts and then only this exercise's rows in them, capped at 12 sessions, so it cannot be silently cut by the
+API's 200-row limit.
+
 **2026-09-28 — "Next exercise" goes to what is still to do, not to the next number; a tab shows completion, not position.**
 Jake's runner walkthrough (items 2-6 of 8). The runner knew only an exercise's position: tab colour was "a lower number
 than the current one" and Next was `exIdx++`, so skipping 1 to 3 left a never-touched 2 looking done and carried on to 4.

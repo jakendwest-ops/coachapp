@@ -16,6 +16,13 @@ async function pickOrCreateExercise(page, namePrefix) {
   return name
 }
 
+// The Swap / Add / Units actions moved behind a "⋯" button on 2026-09-28 (runner layout, walkthrough item 7): open the
+// menu, then choose the row. The row ids (#wr-swap-btn, #wr-add-btn) are unchanged.
+async function openRunnerMenuItem(page, label) {
+  await page.locator('#wr-menu-btn').click()
+  await page.locator('#runner-menu-modal').getByRole('button', { name: label }).click()
+}
+
 // ─── PT: Workouts page regression ────────────────────────────────────────────
 
 test.describe('PT Workouts page', () => {
@@ -428,11 +435,13 @@ test.describe('Workout runner (client)', () => {
     expect(phs.w).not.toBe('—')
     expect(phs.r).toBe('reps')
 
-    // R2 — before any set is logged the footer is a real button that drops focus into the first field.
-    const footer = page.locator('#workout-runner button', { hasText: 'Log a set to continue' })
+    // R2 (2026-09-07) was a dashed "Log a set to continue" footer that dropped focus into the first field. On
+    // 2026-09-28 the footer became a bar that is always there — before any set is logged it reads "Skip exercise",
+    // so an exercise you cannot do or do not want has a way forward (tests/runner-layout-2026-09-28.spec.js).
+    const footer = page.locator('#wr-cta')
     await expect(footer).toBeVisible()
-    await footer.click()
-    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('INPUT')
+    await expect(footer).toContainText('Skip exercise')
+    await expect(page.locator('#workout-runner').getByText('Log a set to continue')).toHaveCount(0)
   })
 
   test('runner polish (2026-09-08): reps tally is hidden until a set is logged; rest chip names the exercise clearly', async ({ page }) => {
@@ -564,7 +573,7 @@ test.describe('Workout runner (client)', () => {
     await wk.start()
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
 
-    await page.locator('button:has-text("Swap exercise")').click()
+    await openRunnerMenuItem(page, 'Swap exercise')
     const name = await pickOrCreateExercise(page, 'Playwright Swap Target')
     await expect(page.locator('#add-to-template-modal .modal-title')).toHaveText('Swap exercise')
     await expect(page.locator('#att-name-display')).toHaveText(name)
@@ -584,7 +593,7 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
 
     const before = await page.evaluate(() => _runner.exercises.length)
-    await page.locator('button:has-text("+ Add exercise")').click()
+    await openRunnerMenuItem(page, '+ Add exercise')
     const name = await pickOrCreateExercise(page, 'Playwright Added Exercise')
     await expect(page.locator('#add-to-template-modal .modal-title')).toHaveText('Add exercise')
 
@@ -601,12 +610,12 @@ test.describe('Workout runner (client)', () => {
     await wk.start()
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
 
-    await page.locator('button:has-text("Swap exercise")').click()
+    await openRunnerMenuItem(page, 'Swap exercise')
     await pickOrCreateExercise(page, 'Playwright Identity Check')
     const swapHtml = await page.locator('#att-sets-container').innerHTML()
     await page.locator('#add-to-template-modal .modal-close').click()
 
-    await page.locator('button:has-text("+ Add exercise")').click()
+    await openRunnerMenuItem(page, '+ Add exercise')
     await pickOrCreateExercise(page, 'Playwright Identity Check 2')
     const addHtml = await page.locator('#att-sets-container').innerHTML()
     await page.locator('#add-to-template-modal .modal-close').click()
@@ -622,24 +631,25 @@ test.describe('Workout runner (client)', () => {
     // the exact race that used to open two overlays sharing one hardcoded id, which left the
     // visible modal impossible to close (getElementById only ever finds the first match) and
     // forced a reload that lost the whole session.
-    const midFetch = await page.evaluate(() => {
+    // (Until 2026-09-28 this also asserted the on-page Swap/Add buttons were disabled mid-fetch. They now live in the
+    // "⋯" menu, which has closed by the time the picker opens, so there is nothing on the page to disable. The real
+    // guard was always the synchronous "is a picker already open" check, and that is what the count below proves.)
+    await page.evaluate(() => {
       showExercisePicker('add')
       showExercisePicker('swap')
-      return {
-        swapDisabled: document.getElementById('wr-swap-btn')?.disabled,
-        addDisabled: document.getElementById('wr-add-btn')?.disabled
-      }
     })
-    expect(midFetch.swapDisabled).toBe(true)
-    expect(midFetch.addDisabled).toBe(true)
 
     await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
     expect(await page.locator('#exercise-picker-modal').count()).toBe(1)
 
     await page.locator('#exercise-picker-modal .modal-close').click()
     await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
-    await expect(page.locator('button:has-text("Swap exercise")')).toBeEnabled()
-    await expect(page.locator('button:has-text("+ Add exercise")')).toBeEnabled()
+    // The menu still works after the picker has been closed: Swap opens the picker again (not merely "the button is
+    // enabled" — nothing disables it any more).
+    await openRunnerMenuItem(page, 'Swap exercise')
+    await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
+    await page.locator('#exercise-picker-modal .modal-close').click()
+    await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
   })
 
   test('logged set can be deleted from the edit sheet', async ({ page }) => {
@@ -708,7 +718,7 @@ test.describe('Workout runner (client)', () => {
     await wk.start()
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
 
-    await page.locator('button:has-text("Swap exercise")').click()
+    await openRunnerMenuItem(page, 'Swap exercise')
     await pickOrCreateExercise(page, 'Playwright Rest Swap Target')
     const restInput = page.locator('#ts-restmin-0')
     const hasRestField = (await restInput.count()) > 0
@@ -725,7 +735,7 @@ test.describe('Workout runner (client)', () => {
     await wk.start()
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
 
-    await page.locator('button:has-text("+ Add exercise")').click()
+    await openRunnerMenuItem(page, '+ Add exercise')
     await pickOrCreateExercise(page, 'Playwright Rest Add Target')
     const restInput = page.locator('#ts-restmin-0')
     const hasRestField = (await restInput.count()) > 0
@@ -742,7 +752,7 @@ test.describe('Workout runner (client)', () => {
     await wk.start()
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
 
-    await page.locator('button:has-text("+ Add exercise")').click()
+    await openRunnerMenuItem(page, '+ Add exercise')
     const name = `Playwright Picker Create Test ${Date.now()}`
     await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
     await page.fill('#exp-search', name)
@@ -759,7 +769,7 @@ test.describe('Workout runner (client)', () => {
     await wk.start()
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
 
-    await page.locator('button:has-text("+ Add exercise")').click()
+    await openRunnerMenuItem(page, '+ Add exercise')
     await pickOrCreateExercise(page, 'Playwright Change Test A')
     await page.fill('#att-notes', 'keep this note')
     await page.locator('button:has-text("Change")').click()

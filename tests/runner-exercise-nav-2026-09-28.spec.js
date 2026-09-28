@@ -171,7 +171,7 @@ test.describe('Runner exercise tabs and Next exercise (2026-09-28)', () => {
     expect.soft(r.nothingLogged).toBe(false)
   })
 
-  test('pressing Next while a rest is running: the rest bar and header both name the exercise the button goes to, and the rest keeps counting', async ({ page }) => {
+  test('pressing Next while a rest is running: the rest bar and the Next bar both name the exercise the button goes to, and the rest keeps counting', async ({ page }) => {
     await startRunner(page)
     try {
       await complete(page, 0)
@@ -182,7 +182,7 @@ test.describe('Runner exercise tabs and Next exercise (2026-09-28)', () => {
 
       // 1 and 4 are candidates; 2 is the lowest one still to do. A positional rule would say 4.
       await expect(page.locator('#rest-timer-overlay'), 'the rest bar names the same exercise the button goes to').toContainText('Next: Nav B')
-      await expect(page.locator('#workout-runner').getByText('Nav B', { exact: true }).first(), 'and so does the header').toBeVisible()
+      await expect(page.locator('#wr-cta-next'), 'and so does the Next bar at the bottom (the header no longer repeats it)').toContainText('Nav B')
       await nextBtn(page).click()
       const s = await page.evaluate(() => ({ idx: _runner.exIdx, resting: _runner.restRemaining != null, restFor: _runner._restForExIdx }))
       expect(s.idx, 'Next went to 2').toBe(1)

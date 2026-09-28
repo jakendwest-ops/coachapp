@@ -320,7 +320,7 @@ function renderRunnerLastSession(exName) {
     if (!data?.sets?.length) {
       el.innerHTML = ''
     } else {
-      const dateStr = new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+      const dateStr = _runnerShortDate(data.date)
       el.innerHTML = `
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-size:var(--text-2xs, 9px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);white-space:nowrap">↑ Beat · ${dateStr}</span>
@@ -407,7 +407,7 @@ function _runnerVsLast(ex) {
 function _renderRunnerVsLast(ex) {
   const d = _runnerVsLast(ex)
   if (!d) return ''
-  const dateStr = new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const dateStr = _runnerShortDate(d.date)
   // `cur`/`prev`/`diff`/`pct` are computed in canonical kg throughout — only the DISPLAYED numbers
   // convert to the user's preference; percentage change is unit-invariant so it never needs converting.
   const chip = (label, cur, prev, isWeight) => {
@@ -443,6 +443,261 @@ function _renderRunnerVsLast(ex) {
         ${chip('Sets', d.cur.sets, d.prev.sets, false)}
       </div>
     </div>`
+}
+
+// ── Last time → Stats (Jake's 2026-09-28 walkthrough, items 7-8) ─────────────────────────────────────────────
+// The stats card that sat at the top of the scroll area (Volume / Top / Reps / Sets vs last session) is now behind
+// one tappable line UNDER the set table: "Last time · 25 Sep — 3 × 8 @ 62.5 kg  [Stats]". The Stats pill is a filled
+// button with an icon on a tinted card, because a bare "›" was easy to miss and Jake asked for something that makes
+// it obvious you can click in. The sheet holds the card that used to be on the page, plus last session's sets, a
+// progress chart, and the heaviest lift ever. Same gate as before: weight × reps with a previous session.
+const _RUNNER_CHART_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>'
+
+function _runnerShortDate(d) {
+  // workout_logs.date is a calendar DATE ("2026-09-25"). new Date("2026-09-25") is UTC midnight, which reads as the
+  // 24th anywhere west of UTC, so build it from its parts in local time instead. Found by review, 2026-09-28.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d))
+  return (m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+// "3 × 8 @ 62.5 kg" when every set matched, "3 sets, top 62.5 kg" when they didn't, reps only for bodyweight.
+function _lastTimeSummary(sets) {
+  const kgs = sets.map(s => parseFloat(s.weight_kg) || 0)
+  const reps = sets.map(s => parseInt(s.reps_achieved) || 0)
+  const top = Math.max(...kgs)
+  const same = kgs.every(w => w === kgs[0]) && reps.every(r => r === reps[0])
+  if (!top) return same ? `${sets.length} × ${reps[0]} reps` : `${sets.length} sets`
+  return same ? `${sets.length} × ${reps[0]} @ ${fmtWeight(kgs[0], { spaced: true })}` : `${sets.length} sets, top ${fmtWeight(top, { spaced: true })}`
+}
+
+function _renderLastTimeCard(ex) {
+  const d = _runnerVsLast(ex)
+  if (!d) return ''
+  const dateStr = _runnerShortDate(d.date)
+  const summary = _lastTimeSummary(_runner.lastSession[ex.name].sets)
+  return `<button id="wr-lasttime" type="button" onclick="openRunnerStats()" aria-haspopup="dialog" aria-label="View stats for ${escapeHtml(ex.name)}. Last time ${escapeHtml(dateStr)}, ${escapeHtml(summary)}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;margin-top:14px;padding:10px 10px 10px 14px;background:var(--accent-light);border:1px solid rgba(99,102,241,.3);border-radius:var(--radius, 10px);text-align:left;cursor:pointer">
+    <span style="min-width:0"><span style="display:block;font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Last time · ${escapeHtml(dateStr)}</span><span style="display:block;font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-top:2px">${escapeHtml(summary)}</span></span>
+    <span aria-hidden="true" style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-height:40px;padding:0 14px 0 12px;border-radius:var(--radius-lg, 14px);background:var(--accent);color:#fff;font-size:var(--text-base, 13px);font-weight:700;box-shadow:0 1px 2px rgba(79,70,229,.35)">${_RUNNER_CHART_ICON}Stats</span></button>`
+}
+
+// The three things the chart can plot. Each takes one session's sets as [{kg, reps}] in canonical kg.
+const _RS_METRICS = {
+  top:  { label: 'Top set',  fn: sets => Math.max(...sets.map(s => s.kg)) },
+  e1rm: { label: 'Est. 1RM', fn: sets => Math.max(...sets.map(s => s.kg * (1 + s.reps / 30))) },   // Epley
+  vol:  { label: 'Volume',   fn: sets => sets.reduce((a, s) => a + s.kg * s.reps, 0) },
+}
+// canonical kg → the user's unit, as a NUMBER (weightToPref returns a string in lb).
+const _rsNum = kg => parseFloat(weightToPref(kg)) || 0
+
+// This session so far, from what's ticked. Only sets with both a weight and reps count as a data point.
+function _rsTodaySets(ex) {
+  return (ex.loggedSets || []).map(s => ({ kg: parseFloat(s.weight) || 0, reps: parseInt(s.reps) || 0 })).filter(s => s.kg > 0 && s.reps > 0)
+}
+
+// Recent sessions of ONE exercise, oldest first, at most 12. Reads the last 60 workouts (well inside the API's
+// 200-row cap), then only this exercise's rows in them, so a long history can never be silently cut mid-way. Matches
+// on exercise_id when there is one and falls back to the name, exactly as fetchRunnerLastSession does.
+async function _fetchRunnerExerciseHistory(ex) {
+  const { data: logs, error: logsErr } = await dbq('runnerStats:logs',
+    db.from('workout_logs').select('id, date').eq('client_id', _runner.clientId).order('date', { ascending: false }).limit(60),
+    { showUserError: false })
+  if (logsErr) throw logsErr
+  if (!logs?.length) return []
+  const dateOf = new Map(logs.map(l => [l.id, l.date]))
+  const ids = logs.map(l => l.id)
+  const read = async (col, val) => {
+    const { data, error } = await dbq('runnerStats:sets',
+      // unbounded-ok: this one exercise's rows inside the (at most 60) workouts read above, so a few dozen at most
+      db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)').eq(col, val).in('log_id', ids),
+      { showUserError: false })
+    if (error) throw error
+    return data || []
+  }
+  let rows = ex.exerciseId ? await read('exercise_id', ex.exerciseId) : []
+  if (!rows.length) rows = await read('exercise_name', ex.name)
+  const byLog = new Map()   // one point per workout: an exercise done twice in one session is one point
+  for (const r of rows) {
+    const sets = (r.workout_log_sets || []).map(s => ({ kg: parseFloat(s.weight_kg) || 0, reps: parseInt(s.reps_achieved) || 0 })).filter(s => s.reps > 0)
+    if (sets.length) byLog.set(r.log_id, (byLog.get(r.log_id) || []).concat(sets))
+  }
+  return [...byLog].map(([id, sets]) => ({ date: dateOf.get(id), sets })).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(-12)
+}
+
+function openRunnerStats() {
+  const ex = _runner?.exercises?.[_runner.exIdx]
+  if (!ex || !_runnerVsLast(ex)) return
+  document.getElementById('runner-stats-modal')?.remove()
+  const overlay = document.createElement('div')
+  overlay.id = 'runner-stats-modal'
+  overlay.className = 'modal-overlay'
+  overlay.style.zIndex = '1000'   // above the runner (z-index 300), like showRunnerOneRMSheet
+  overlay.onclick = e => { if (e.target === overlay) closeRunnerStats() }
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-label="${escapeHtml(ex.name)} stats">
+      <div class="modal-header">
+        <div style="min-width:0"><h2 class="modal-title">${escapeHtml(ex.name)}</h2>
+          <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">Last time · ${escapeHtml(_runnerShortDate(_runner.lastSession[ex.name].date))}</div></div>
+        <button class="modal-close" onclick="closeRunnerStats()" aria-label="Close">✕</button>
+      </div>
+      <div id="rs-body"></div>
+    </div>`
+  mountModal(overlay)
+  // Per-open state. Late replies write into THIS object and only paint if it is still the current one, so closing
+  // and reopening (or moving to another exercise) can't paint an old exercise's chart into a new sheet.
+  const state = _runner._rs = { metric: _runner._rs?.metric || 'top', name: ex.name, history: undefined, heaviest: undefined }
+  _renderRunnerStatsBody()
+  _loadRunnerStatsData(state, ex)
+}
+
+// Destroys the sheet's chart, if any. Called BEFORE any write that replaces #rs-progress — replacing it builds a new
+// canvas, and _renderMetricChart only ever destroys a chart on the canvas it is given, so every measure tap used to
+// leave the previous Chart.js instance behind (the class js/app-progress.js:806 documents). try/catch because Chart.js
+// is a CDN script: if it failed to load there is simply nothing to destroy.
+function _destroyRunnerStatsChart() {
+  try { const c = document.getElementById('rs-chart'); if (c) Chart.getChart(c)?.destroy() } catch { /* no Chart.js: nothing to destroy */ }
+}
+
+function closeRunnerStats() {
+  // Remove the sheet FIRST. If the chart teardown ever threw (no Chart.js), the ✕ and the backdrop tap both go
+  // through here, and a throw before the removal left a z-index 1000 sheet over a live workout with no way out.
+  let chart = null
+  try { const c = document.getElementById('rs-chart'); if (c) chart = Chart.getChart(c) } catch { /* no Chart.js */ }
+  document.getElementById('runner-stats-modal')?.remove()
+  try { chart?.destroy() } catch { /* already gone */ }
+}
+
+function _renderRunnerStatsBody() {
+  const host = document.getElementById('rs-body')
+  const ex = _runner?.exercises?.[_runner.exIdx]
+  if (!host || !ex) return
+  const sets = _runner.lastSession[ex.name].sets
+  const unit = window._unitPrefs.weight
+  const sec = (title) => `<div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:16px 0 6px">${title}</div>`
+  const cell = 'display:grid;grid-template-columns:40px 1fr 1fr 1fr;padding:7px 0;border-bottom:1px solid var(--border);font-size:var(--text-base, 13px);font-weight:600'
+  host.innerHTML = `
+    ${sec('Last session')}
+    <div id="rs-last-sets">
+      <div style="${cell};font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:700"><span>SET</span><span>${unit.toUpperCase()}</span><span>REPS</span><span>VOLUME</span></div>
+      ${sets.map(s => { const kg = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0
+        return `<div data-set style="${cell}"><span style="color:var(--accent);font-weight:800">${escapeHtml(String(s.set_number))}</span><span>${kg ? weightToPref(kg) : 'BW'}</span><span>${r || '—'}</span><span>${kg && r ? Math.round(_rsNum(kg * r)).toLocaleString('en-GB') : '—'}</span></div>` }).join('')}
+    </div>
+    ${sec('Today so far vs last time')}
+    <div id="rs-vs">${_renderRunnerVsLast(ex)}</div>
+    ${sec('Progress')}
+    <div id="rs-progress"></div>
+    <div id="rs-heaviest" style="display:none;justify-content:space-between;align-items:center;margin-top:12px;padding:10px 12px;border-radius:var(--radius, 10px);background:var(--surface-2)"></div>`
+  _renderRunnerStatsProgress()
+  _renderRunnerStatsHeaviest()
+}
+
+function _loadRunnerStatsData(state, ex) {
+  const live = () => _runner?._rs === state && document.getElementById('runner-stats-modal')
+  const cached = _runner.rsHistory?.[ex.name]
+  if (cached) { state.history = cached; _renderRunnerStatsProgress() }
+  else {
+    state.history = undefined
+    _fetchRunnerExerciseHistory(ex)
+      .then(h => { (_runner.rsHistory ||= {})[ex.name] = h; state.history = h })
+      .catch(() => { state.history = 'error' })
+      .finally(() => { if (live()) _renderRunnerStatsProgress() })
+  }
+  // Heaviest lift ever — the same lookup the finish screen's PR check uses. A failure just leaves the row out.
+  _prBaseline(_runner.clientId, { name: ex.name, exerciseId: ex.exerciseId })
+    .then(kg => { state.heaviest = kg })
+    .catch(() => { state.heaviest = 0 })
+    .finally(() => { if (live()) _renderRunnerStatsHeaviest() })
+}
+
+function _renderRunnerStatsHeaviest() {
+  const el = document.getElementById('rs-heaviest')
+  const kg = _runner?._rs?.heaviest
+  if (!el) return
+  // style.display, not the `hidden` attribute: the row sets display:flex, and an author display beats [hidden].
+  if (!(kg > 0)) { el.style.display = 'none'; return }
+  el.style.display = 'flex'
+  el.innerHTML = `<span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Heaviest ever</span><span style="font-size:var(--text-lg, 14px);font-weight:800">${escapeHtml(fmtWeight(kg, { spaced: true }))}</span>`
+}
+
+function setRunnerStatsMetric(m) {
+  if (!_RS_METRICS[m] || !_runner?._rs) return
+  _runner._rs.metric = m
+  _renderRunnerStatsProgress()
+}
+
+function _renderRunnerStatsProgress() {
+  const host = document.getElementById('rs-progress')
+  const st = _runner?._rs
+  const ex = _runner?.exercises?.[_runner.exIdx]
+  if (!host || !st || !ex) return
+  _destroyRunnerStatsChart()
+  const note = (msg, retry) => { host.innerHTML = `<div style="padding:18px 0;text-align:center;font-size:var(--text-base, 13px);color:var(--text-muted)">${msg}${retry ? `<div><button type="button" onclick="retryRunnerStats()" style="margin-top:10px;padding:8px 14px;border:1px solid var(--border);border-radius:var(--radius-sm, 8px);background:var(--surface);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">Try again</button></div>` : ''}</div>` }
+  if (st.history === undefined) return note('Loading your progress…')
+  if (st.history === 'error') return note('Couldn’t load your progress.', true)
+  const today = _rsTodaySets(ex)
+  // Only sessions with a logged weight can be charted. A bodyweight exercise has none, and saying "a couple of
+  // workouts" would be wrong for it for ever.
+  const weighted = st.history.filter(s => s.sets.some(x => x.kg > 0))
+  if (st.history.length && !weighted.length && !today.length) return note('This exercise has no logged weight, so there is no weight progress to chart.')
+  if (weighted.length + (today.length ? 1 : 0) < 2) return note('Not enough sessions yet to draw a line. Your progress appears here after a couple of workouts.')
+  if (typeof Chart === 'undefined') return note('The chart could not load. Check your connection and reload the page.')
+
+  const m = _RS_METRICS[st.metric]
+  const conv = v => st.metric === 'vol' ? Math.round(_rsNum(v)) : Math.round(_rsNum(v) * 10) / 10
+  const histVals = weighted.map(s => conv(m.fn(s.sets)))
+  const labels = weighted.map(s => _runnerShortDate(s.date))
+  const series = [{ label: m.label, data: histVals.slice(), fill: true }]
+  if (today.length) {
+    labels.push('Today')
+    series[0].data.push(null)
+    const todayLine = new Array(histVals.length - 1).fill(null).concat([histVals[histVals.length - 1], conv(m.fn(today))])
+    series.push({ label: 'Today', data: todayLine, dashed: true, pointRadius: 5 })
+  }
+  host.innerHTML = `
+    <div role="group" aria-label="Chart measure" style="display:inline-flex;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:2px;margin-bottom:8px">
+      ${Object.entries(_RS_METRICS).map(([k, v]) => `<button type="button" data-rs-metric="${k}" aria-pressed="${st.metric === k}" onclick="setRunnerStatsMetric('${k}')" style="padding:6px 12px;border-radius:var(--radius-sm, 8px);font-size:var(--text-md, 12px);font-weight:700;cursor:pointer;background:${st.metric === k ? 'var(--surface)' : 'transparent'};color:${st.metric === k ? 'var(--text)' : 'var(--text-muted)'};box-shadow:${st.metric === k ? '0 1px 2px rgba(0,0,0,.08)' : 'none'}">${v.label}</button>`).join('')}
+    </div>
+    <div style="position:relative;height:180px"><canvas id="rs-chart" style="width:100%;height:100%"></canvas></div>`
+  try { _renderMetricChart('rs-chart', { labels, series, height: true, legend: false, tooltipUnit: window._unitPrefs.weight }) }
+  catch { note('The chart could not be drawn.') }
+}
+
+function retryRunnerStats() {
+  const ex = _runner?.exercises?.[_runner.exIdx]
+  if (!ex || !_runner._rs) return
+  delete _runner.rsHistory?.[ex.name]
+  _loadRunnerStatsData(_runner._rs, ex)
+  _renderRunnerStatsProgress()
+}
+
+// ── The "⋯" menu: Units, Swap, Add (2026-09-28) ─────────────────────────────────────────────────────────
+// These used to be a Units gear in the header and a Swap/Add row under the tabs, all before the set table. They
+// are occasional actions; the table is the constant one. A sheet rather than an anchored dropdown because this
+// app has no popover precedent (see _quickPrefsIconHtml) and .modal-overlay already becomes a bottom sheet on a
+// phone. The row ids are the old buttons' ids, and the picker's own re-entry guard is unchanged.
+function openRunnerMenu() {
+  document.getElementById('runner-menu-modal')?.remove()
+  const overlay = document.createElement('div')
+  overlay.id = 'runner-menu-modal'
+  overlay.className = 'modal-overlay'
+  overlay.style.zIndex = '1000'
+  overlay.onclick = e => { if (e.target === overlay) closeRunnerMenu() }
+  const row = (id, kind, label) => `<button id="${id}" type="button" onclick="runnerMenuDo('${kind}')" style="display:flex;align-items:center;width:100%;min-height:52px;padding:0 16px;border:1px solid var(--border);border-radius:var(--radius, 10px);background:var(--surface);font-size:var(--text-xl, 16px);font-weight:700;color:var(--text);cursor:pointer;text-align:left">${label}</button>`
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-label="Exercise options">
+      <div class="modal-header"><h2 class="modal-title">Options</h2><button class="modal-close" onclick="closeRunnerMenu()" aria-label="Close">✕</button></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${row('wr-units-btn', 'prefs', '⚙ Units &amp; preferences')}
+        ${row('wr-swap-btn', 'swap', '⇄ Swap exercise')}
+        ${row('wr-add-btn', 'add', '+ Add exercise')}
+      </div>
+    </div>`
+  mountModal(overlay)
+}
+function closeRunnerMenu() { document.getElementById('runner-menu-modal')?.remove() }
+function runnerMenuDo(kind) {
+  closeRunnerMenu()
+  if (kind === 'prefs') _openQuickPrefsPopover()
+  else showExercisePicker(kind)
 }
 
 function _prevSetsByIndex(ex) {
@@ -529,18 +784,6 @@ function toggleTableSet(rowIdx) {
     _syncLoggedSetsFromTable(ex)
     renderRunner()
   }
-}
-
-function _runnerFocusFirstInput() {
-  // R2 (2026-09-07): the pre-first-set footer is a real control now — tapping it drops you into the
-  // first field that still needs a value rather than leaving you to find the row yourself.
-  const inputs = document.querySelectorAll('#workout-runner input[type="number"], #workout-runner input[inputmode="numeric"], #workout-runner input[inputmode="decimal"]')
-  for (const el of inputs) {
-    // 'nearest', not 'center': in the pre-first-set state the first field is usually already on
-    // screen, and 'center' would yank it to the middle for no reason.
-    if (!el.value) { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); el.focus(); return }
-  }
-  inputs[0]?.focus()
 }
 
 function addTableRow() {
@@ -667,14 +910,26 @@ function _buildTargetCols(tgt, ex) {
   return { cols, needsOneRM }
 }
 
+// The prescription — "5–8 REPS  1–2 RIR  2:00 REST" — as ONE line under the exercise title. It was a bordered
+// row of boxes at the top of the scroll area, below a stats card and the Swap/Add buttons, which pushed the set
+// table (the thing you actually do here) down the screen. Same columns, same escaping: `cols` values are escaped
+// where _buildTargetCols creates them, and this stays the single sink they reach (tests/full-file-review-2026-08-01
+// pins that). Wraps rather than truncates if a set prescribes many things. Jake, 2026-09-28.
 function _renderTargetBarHtml(cols) {
   if (!cols.length) return ''
-  return `<div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:10px">${cols.map((c, i) =>
-    `<div style="flex:1;text-align:center;padding:8px 4px${i < cols.length-1 ? ';border-right:1px solid var(--border)' : ''}">
-      <div style="font-size:18px;font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'};line-height:1.1">${c.val}</div>
-      <div style="font-size:var(--text-2xs, 9px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
-    </div>`
+  return `<div id="wr-rx" style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;margin-top:6px">${cols.map(c =>
+    `<span style="white-space:nowrap"><span style="font-size:var(--text-xl, 16px);font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'}">${c.val}</span> <span style="font-size:var(--text-2xs, 9px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">${c.label}</span></span>`
   ).join('')}</div>`
+}
+
+// The current set's prescription for the header. Tracks progress (loggedSets.length), so "3 × 8 then 1 × AMRAP"
+// changes as the athlete advances — same formula the table has always used.
+function _runnerTargetCols(ex) {
+  const tgt = ex.sets_json?.[ex.loggedSets.length] ?? ex.sets_json?.[ex.sets_json.length - 1] ?? {}
+  return _buildTargetCols(tgt, ex)
+}
+function _renderPrescriptionLine(ex) {
+  return ex.type !== 'cardio' ? _renderTargetBarHtml(_runnerTargetCols(ex).cols) : ''
 }
 
 function renderStrengthTable(ex) {
@@ -683,9 +938,8 @@ function renderStrengthTable(ex) {
   // Current working set's target — tracks progress (loggedSets.length), same formula the
   // wizard uses, instead of always reading set 1's prescription regardless of which set is next.
   const curIdx = ex.loggedSets.length
-  const tgt = ex.sets_json?.[curIdx] ?? ex.sets_json?.[ex.sets_json.length - 1] ?? {}
-  const { cols, needsOneRM } = _buildTargetCols(tgt, ex)
-  const targetBar = _renderTargetBarHtml(cols)
+  // Only the 1RM banner is decided here now; the prescription itself is the header line (_renderPrescriptionLine).
+  const { needsOneRM } = _runnerTargetCols(ex)
   const oneRMBanner = needsOneRM ? `
     <div id="wr-onerm-banner" onclick="showRunnerOneRMSheet(${_runner.exIdx})" style="background:rgba(245,158,11,.1);border:1.5px solid #f59e0b;border-radius:var(--radius, 10px);padding:12px;text-align:center;cursor:pointer;margin-bottom:10px">
       <div style="font-size:var(--text-base, 13px);font-weight:700;color:#b45309">⚠ Set your 1RM to see target weight</div>
@@ -877,7 +1131,6 @@ function renderStrengthTable(ex) {
   const tally = (mt === 'weight_reps' || mt === 'unilateral') ? _renderRepsTallyHtml(ex) : ''
 
   return `
-    ${showTargets ? targetBar : ''}
     ${showTargets ? oneRMBanner : ''}
     ${restBar}
     ${header}
@@ -914,11 +1167,14 @@ function renderRunner() {
               <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
             <div id="wr-title" style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
-            ${(ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
-            ${nextEx ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
+            ${isTable
+              ? _renderPrescriptionLine(ex)
+              : (ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
+            <!-- The set table has the Next bar at the bottom, which names the next exercise; cardio has no such bar. -->
+            ${!isTable && nextEx ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
           </div>
-          <div style="display:flex;gap:8px;flex-shrink:0">
-            ${_quickPrefsIconHtml()}
+          <div style="display:flex;gap:8px;flex-shrink:0;align-items:center">
+            <button id="wr-menu-btn" onclick="openRunnerMenu()" aria-label="Exercise options: units, swap, add" aria-haspopup="dialog" style="width:44px;height:44px;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);background:var(--surface);font-size:var(--text-3xl, 20px);font-weight:800;line-height:1;color:var(--text-muted);cursor:pointer;flex-shrink:0">⋯</button>
             <button onclick="confirmEndRunner()" style="padding:7px 16px;border:none;border-radius:var(--radius-sm, 8px);background:var(--danger, #ef4444);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;color:#fff;flex-shrink:0">End</button>
           </div>
         </div>
@@ -937,18 +1193,14 @@ function renderRunner() {
         <div onclick="runnerJumpTo(${_runner._restForExIdx})" style="display:flex;align-items:center;gap:8px;margin-top:8px;min-height:44px;padding:10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);border:1px solid var(--accent);cursor:pointer;box-sizing:border-box">
           <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '')} — ${_runner._restPendingFire ? 'rest done' : `<span id="wr-rest-chip-countdown" style="font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums">${fmtRestCountdown(_runner.restRemaining)}</span> rest left`} · tap to return</span>
         </div>` : ''}
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <button id="wr-swap-btn" onclick="showExercisePicker('swap')" style="flex:1;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 10px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">⇄ Swap exercise</button>
-          <button id="wr-add-btn" onclick="showExercisePicker('add')" style="flex:1;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm, 8px);padding:6px 10px;cursor:pointer;font-size:var(--text-sm, 11px);font-weight:700;color:var(--text-muted)">+ Add exercise</button>
-        </div>
         ${_runner.templateDesc ? `<div style="margin-top:8px;padding:6px 10px;background:var(--surface-2);border-radius:var(--radius-sm, 8px);font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);line-height:1.5">${escapeHtml(_runner.templateDesc)}</div>` : ''}
       </div>
 
       <!-- Scrollable area: logged sets + PT note + client notes -->
       <div style="flex:1;overflow-y:auto;padding:12px 16px">
-        ${_renderRunnerVsLast(ex)}
-        <!-- Logged sets -->
-        ${isTable ? renderStrengthTable(ex) : !ex.loggedSets.length
+        <!-- Logged sets. The table comes first (2026-09-28): it used to sit below a stats card and the prescription
+             boxes; those are now one line in the header and a Stats button under the table. -->
+        ${isTable ? renderStrengthTable(ex) + _renderLastTimeCard(ex) : !ex.loggedSets.length
           ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px);margin:0 0 8px">No sets logged yet.</p>`
           : `<div style="margin-bottom:8px">${ex.loggedSets.map((s,i) => `
             <div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px">
@@ -1003,12 +1255,26 @@ function renderRunner() {
 
 
       <!-- Set input -->
-      <div style="padding:10px 12px 12px;background:var(--surface)">
-        ${isTable ? `
-          ${ex.loggedSets.length > 0
-            ? `<button onclick="skipToNextExercise()" style="width:100%;height:52px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:#fff;font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer">${isLast?'Finish 🏁':'Next exercise →'}</button>`
-            : `<button onclick="_runnerFocusFirstInput()" style="width:100%;height:52px;border:1px dashed var(--border);border-radius:var(--radius, 10px);background:var(--surface-2);color:var(--text-muted);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">↑ Log a set to continue</button>`}
-        ` : _runner._restInterval && _runner._restForExIdx === _runner.exIdx ? `
+      <div style="padding:10px 12px 12px;background:var(--surface)${isTable ? ';padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px));border-top:1px solid var(--border)' : ''}">
+        ${isTable ? (() => {
+          // Always here (2026-09-28). It used to be a dashed "Log a set to continue" until the first set was
+          // ticked, which left an exercise you couldn't do — or wanted to skip — with no way forward. Now an
+          // untouched exercise offers Skip, a started one Next, and when nothing else is left it finishes.
+          // Where it goes is _nextExerciseTarget's answer, and it names that exercise.
+          const started = ex.loggedSets.length > 0
+          // The last exercise with nothing logged (or a one-exercise workout on first paint) is not "you're done, well
+          // done": it is a way OUT. So it is neutral, not green, and goes through confirmEndRunner — the End button's own
+          // flow — because Finish from here would send a mis-tap to a finish screen with no route back to the runner.
+          const untouchedLast = isLast && !started
+          const label = untouchedLast ? 'Finish workout' : isLast ? 'Finish 🏁' : started ? 'Next exercise →' : 'Skip exercise →'
+          const bg = started ? (isLast ? 'var(--success)' : 'var(--accent)') : 'var(--surface-2)'
+          const ctaStyle = `width:100%;min-height:52px;border:none;border-radius:var(--radius, 10px);background:${bg};color:${started ? '#fff' : 'var(--text-muted)'};font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:6px 10px`
+          const ctaBody = `${label}${nextEx ? `<span id="wr-cta-next" style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-sm, 11px);font-weight:600;opacity:.85">Next: ${escapeHtml(nextEx.name)}</span>` : ''}`
+          // Two literal buttons, not one with a computed onclick: scripts/check-inline-handlers only accepts literal names.
+          return untouchedLast
+            ? `<button id="wr-cta" onclick="confirmEndRunner()" style="${ctaStyle}">${ctaBody}</button>`
+            : `<button id="wr-cta" onclick="skipToNextExercise()" style="${ctaStyle}">${ctaBody}</button>`
+        })() : _runner._restInterval && _runner._restForExIdx === _runner.exIdx ? `
           <div style="padding:14px;text-align:center;border-radius:var(--radius, 10px);background:var(--surface-2)">
             <div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text-muted)">Resting — inputs available after rest</div>
           </div>
