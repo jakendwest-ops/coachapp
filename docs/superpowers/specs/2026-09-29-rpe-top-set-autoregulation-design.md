@@ -21,7 +21,7 @@ express neither half of it right now.
 | Piece | Where | State |
 |---|---|---|
 | %1RM authoring | `intensityMin`/`intensityMax` per set-row, labelled "Intensity (%1RM)" (`js/app-workouts.js:2020`) | Ships. Always resolves against the client's **stored** 1RM. |
-| %1RM → weight | `_calcWeightFromPct(oneRM, pct)` (`js/app-runner.js:3180`) | Ships. Floors to nearest 2.5. |
+| %1RM → weight | `_calcWeightFromPct(oneRM, pct)` (`js/app-runner.js:3180`) | Ships. Floors to nearest 2.5 — **this spec changes it to 1.25**, see below. |
 | Stored 1RM lookup | `_lookupClientOneRM` (`js/app-runner.js:2480`), `client_1rms` fetched once at session load (`js/app-runner.js:43`) | Ships. Append-only table, newest row per exercise wins. |
 | 1RM estimation | `_estimate1RM(weight, reps)` (`js/app-workouts.js:106`) | Ships. Epley, capped at 12 reps, `r===1` returns the weight unchanged. |
 | Manual estimate | `showRunnerOneRMSheet` "Estimate from a set" (`js/app-runner.js:3189`) | Ships. User-triggered, weight+reps only, **RPE-blind**. |
@@ -50,8 +50,12 @@ express neither half of it right now.
 - **An RPE-tagged single is RPE-adjusted, not treated as measured.** This narrows — deliberately —
   the 2026-09-04 "a single is not an estimate" rule. See below; this is the one existing behaviour
   this spec changes.
-- **Additive and opt-in.** Every existing template keeps its exact current behaviour; nothing is
-  migrated, nothing is re-interpreted.
+- **Additive and opt-in** — with one deliberate exception, the rounding change below. Every
+  existing template keeps its exact current *structure*; nothing is migrated, no `sets_json` is
+  re-interpreted.
+- **%1RM weights floor to the nearest 1.25, not 2.5 — globally, in the shared helper** (Jake,
+  2026-09-29). Chosen over applying 1.25 only to the new backoff sets, which would leave two
+  rounding rules for one concept — the drift shape this codebase has been bitten by repeatedly.
 
 ### The one behaviour change: RPE-tagged singles
 
@@ -87,8 +91,16 @@ neither can be lost silently.
 | 11 | 70.7 | 69.4 | 68.0 | 66.7 | 65.3 | 64.0 | 62.6 | 61.3 | 59.9 |
 | 12 | 68.0 | 66.7 | 65.3 | 64.0 | 62.6 | 61.3 | 59.9 | 58.6 | 57.4 |
 
-**Worked golden path:** 3 reps @ RPE 8 → 86.3%. A 100kg top set → e1RM 115.9kg. Backoff at 70% →
-81.1kg → floors to **80kg** on the bar.
+**Worked golden path:** 3 reps @ RPE 8 → 86.3%. A 100kg top set → e1RM 115.9kg.
+
+| Backoff | Exact | Floored to 1.25 | (old 2.5 rule) |
+|---|---|---|---|
+| 70% | 81.11kg | **80kg** | 80kg |
+| 75% | 86.91kg | **86.25kg** | 85kg |
+| 80% | 92.70kg | **92.5kg** | 92.5kg |
+
+The 75% row is the one that shows what the 1.25 change buys: 1.25kg closer to the prescribed
+intensity than the old rule allowed.
 
 ### Provenance — read this before trusting the numbers
 
@@ -129,7 +141,38 @@ function _estimate1RM(weight, reps, opts) {
 - `_clampRpe` snaps to the nearest 0.5 and clamps to 6–10. Below RPE 6 the chart has no data and the
   performance is too far from maximal to extrapolate from; clamping to 6 is honest about that.
 
-### 2. `sets_json` gains two fields — **both must be added to the allowlist**
+### 2. `_calcWeightFromPct` floors to 1.25 — and its formatter has to change with it
+
+`js/app-runner.js:3180`. One shared helper feeds every %1RM-derived weight in the runner (target
+bar, table pre-fill, wizard live-preview and placeholder), so this is one change, not four.
+
+```js
+const rounded = Math.floor(parseFloat(oneRM) * parseFloat(pct) / 100 / 1.25) * 1.25
+return String(Math.round(rounded * 100) / 100)
+```
+
+**The divisor cannot change on its own.** The existing last line is
+`rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1)` — one decimal place, which is exactly
+enough for 2.5 steps (`.0` and `.5`). At 1.25 steps the results are `.25` and `.75`, so `73.75`
+would render as **`"73.8"`**: not a loadable number, and 0.05kg away from what was actually
+calculated. Changing the divisor without the formatter produces a display bug at three of the four
+call sites. `String(Math.round(rounded * 100) / 100)` handles all three shapes — `70`, `72.5`,
+`73.75` — without a trailing `.0`.
+
+No float-drift risk: 1.25 is 5/4, exactly representable in binary, so `Math.floor(x / 1.25) * 1.25`
+lands on exact quarters.
+
+**This re-opens a decision, so it needs logging.** The floor-to-2.5 rule was itself a deliberate
+change on 2026-07-10 (from round-to-nearest-0.5), recorded in `docs/archive/log.md`. Moving it to
+1.25 needs its own dated `docs/decisions.md` entry naming the 2026-07-10 entry it supersedes —
+otherwise a future session reading only the old rationale ("71.25kg isn't loadable on a real bar")
+reverts it.
+
+**Blast radius, stated plainly:** every %1RM target weight in every already-assigned programme can
+shift up by up to 1.25kg. Nothing stored changes — these are display/pre-fill values computed at
+render time — but a client mid-programme may see a target move from 85kg to 86.25kg.
+
+### 3. `sets_json` gains two fields — **both must be added to the allowlist**
 
 `_cleanTemplateSets` (`js/app-workouts.js:377`) is an explicit allowlist, and its own header comment
 records what happens when a field is missed: *"the pill would appear to work, save without error,
@@ -147,7 +190,7 @@ render nonsense from.
 No migration. `sets_json` is unvalidated JSONB (`js/app-runner.js:859`); absent fields read as
 undefined and fall to the defaults, so every existing template is untouched.
 
-### 3. Program builder
+### 4. Program builder
 
 - **"This is the top set"** toggle, rendered only on an exercise's first set-row. Turning it on:
   - hides that row's Weight and Intensity(%1RM) inputs — there is nothing to prescribe, the load is
@@ -162,7 +205,7 @@ undefined and fall to the defaults, so every existing template is untouched.
   banner naming the affected rows. It must not silently revert them to stored-1RM — that would
   change a real training day's loads without the coach seeing it.
 
-### 4. Runner
+### 5. Runner
 
 - Top-set row renders with a **TOP SET** badge, its target reps and target RPE, and an open weight
   field (nothing to prefill).
@@ -174,7 +217,9 @@ undefined and fall to the defaults, so every existing template is untouched.
 - Chip on the exercise header: **"Est. 1RM: 115.9kg"**, rendered through `fmtWeight` so it honours
   the account's kg/lb preference.
 - Rows with `intensityBasis: 'topSet'` resolve their target through the **existing**
-  `_calcWeightFromPct(_liveE1RM, pct)` — same floor-to-2.5 rounding as every other %1RM set.
+  `_calcWeightFromPct(_liveE1RM, pct)` — same floor-to-1.25 rounding as every other %1RM set, via
+  the same helper. The top set's own load is never rounded: it is what the lifter actually put on
+  the bar.
 - **Before the top set is logged**, those rows show *"Log the top set first"* — never a stored-1RM
   fallback. A plausible-looking wrong number on the bar is worse than an honest blank.
 - **Editing the top set afterwards** recomputes `_liveE1RM` and re-prefills backoff rows **not yet
@@ -193,7 +238,7 @@ undefined and fall to the defaults, so every existing template is untouched.
   refused — the runner already lets sets be worked in any order, and a guard that refuses a
   legitimate user is the failure mode this project has hit before.
 
-### 5. Persistence
+### 6. Persistence
 
 - Nothing writes to `client_1rms` mid-session. It is append-only and `_savePostSessionOneRM` already
   carries a `guardReentry` against duplicate rows; a mid-set write would also create rows for
@@ -214,6 +259,23 @@ undefined and fall to the defaults, so every existing template is untouched.
 - RPE-tagged single (RPE < 10) adjusts upward; untagged single and RPE-10 single still return
   exactly the weight (the 2026-09-04 rule, both halves).
 - The four existing `_estimate1RM` tests stay green unmodified.
+
+**Rounding (`tests/runner.spec.js`, the existing `%1RM target weight rounding` describe block):**
+
+Two of its four tests assert the old rule and **will go red — updating them is part of this change,
+not collateral damage**:
+
+| Test | Line | Asserts | Becomes |
+|---|---|---|---|
+| `rounds DOWN to the nearest 2.5kg…` | `:180` | `_calcWeightFromPct(100, 74)` → `'72.5'` | `'73.75'` — and the title needs rewriting; it currently reads "…to the nearest 2.5kg, not to the nearest 2.5kg", saying the same thing twice |
+| `non-whole results still show one decimal place` | `:192` | `_calcWeightFromPct(142.5, 80)` → `'112.5'` | `'113.75'` — and the title's premise is now wrong; one decimal place is no longer the rule |
+
+The other two stay green unchanged (`(100, 70)` → `'70'`; null inputs → `''`), which is worth
+keeping as-is: they prove the change didn't disturb the whole-number and empty-input paths.
+
+Add one test the old suite had no reason to need: a quarter-step result formats as `'73.75'` and
+**not** `'73.8'`. That is the formatter bug this change would otherwise introduce, and without this
+test it would ship looking plausible.
 
 **E2E (Playwright):**
 - **Builder round-trip:** toggle top set + set a row to `'topSet'`, save, reload, assert both fields
@@ -252,3 +314,9 @@ same commit.
   wants a stored-1RM-derived provisional number to warm up against. Deliberately chosen as blank
   first; revisit after a real session.
 - **Whether one top set per exercise is enough** in practice for how Jake actually programmes.
+- **1.25kg granularity for an account set to lb.** The rounding is applied in canonical kg and only
+  then converted for display (`js/app-runner.js:1037` states this explicitly), so an lb user now
+  sees steps of 1.25kg ≈ 2.76lb — not loadable on a lb-plated bar. This is not *introduced* here
+  (the old 2.5kg ≈ 5.51lb was equally unloadable) and the change makes it strictly finer, so it is
+  not a blocker. But if Jake ever wants genuinely loadable lb targets, the rounding increment has
+  to become unit-aware, and that is a separate piece of work.
