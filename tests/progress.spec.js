@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsClient, clickVisible } = require('./helpers')
+const { loginAsClient, loginAsPT, clickVisible } = require('./helpers')
 
 test.describe('Progress page regressions (2026-07-05)', () => {
   test.beforeEach(async ({ page }) => {
@@ -103,7 +103,7 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await loginAsClient(page)
   })
 
-  test('Progress tabs are Body Weight / Personal Bests / Performance — neither Cardio nor Benchmarks is a tab', async ({ page }) => {
+  test('Progress tabs are Body Weight / Personal Bests / Performance / Goals — neither Cardio nor Benchmarks is a tab', async ({ page }) => {
     await clickVisible(page, '[data-page="progress"]')
     await page.waitForTimeout(500)
     await expect(page.locator('h1')).toContainText('My Progress')
@@ -111,10 +111,80 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()   // the 1RM tab, renamed 2026-08-17
     await expect(page.locator('button', { hasText: /^Benchmarks$/ })).toHaveCount(0) // deleted 2026-09-19
     await expect(page.locator('button:has-text("Performance")')).toBeVisible()
+    await expect(page.locator('button', { hasText: /^Goals$/ })).toBeVisible()      // added 2026-09-29, own tab instead of dashboard-tile-only
     await expect(page.locator('button', { hasText: /^1RMs$/ })).toHaveCount(0)      // gone 2026-08-17
     // Exact-text match on any button, page-wide — "Cardio bests" is a heading div, not a button,
     // so this can't false-pass against Personal Bests' new sub-section label.
     await expect(page.locator('button', { hasText: /^Cardio$/ })).toHaveCount(0)
+  })
+
+  test('Goals tab (2026-09-29) renders the real renderClientGoals view, not a placeholder', async ({ page }) => {
+    // Jake: "'Goals' does not have its own page." A `goals` route already existed (2026-08-30) but was
+    // reachable only from the dashboard tile. This makes it a tab here too, reusing renderClientGoals —
+    // the same function that route already calls — rather than a second implementation of goal rendering.
+    // Not awaited (renderProgress is async) and no manual sleep after: the chip-row itself paints
+    // synchronously before renderProgress's first internal await, so the first expect below can
+    // already find it; both expects poll for the rest, same as Phase 2's real-wait direction.
+    await page.evaluate(() => { window._progressTab = 'Goals'; renderProgress(document.getElementById('main-content')) })
+    await expect(page.locator('.chip-row .chip', { hasText: 'Goals' })).toHaveAttribute('aria-selected', 'true')
+    // "+ Add goal" only exists in renderClientGoals' own output — its presence here is proof this tab
+    // actually mounted that function into #progress-tab-content, not just showing a "Coming soon" shell.
+    await expect(page.locator('#progress-tab-content button:has-text("+ Add goal")')).toBeVisible({ timeout: 3000 })
+  })
+
+  test('Goals tab (2026-09-29): opening a goal from here actually opens it, not a dead click', async ({ page, browser }) => {
+    // Found by review: renderClientGoals' own children (openGoal, deleteGoal, saveNewGoal, backToGoals,
+    // milestone/check-in modals) all hardcode document.getElementById('tab-content') to repaint
+    // themselves — the id the `goals` route and the coach's client-profile Goals tab both already
+    // provide. The first version of this branch left that id missing from #progress-tab-content, so a
+    // goal tap here silently did nothing (openGoal threw on a null el, swallowed as an unhandled
+    // rejection with no visible error). This proves the fix: the branch now wraps its host in the id
+    // renderClientGoals' children actually look for.
+    const TAG = '[E2E] Progress tab goal-open check'
+    // Goals RLS requires the COACH as created_by (tests/goal-ownership-2026-08-21.spec.js's own fixture
+    // — a client inserting their own goal directly is refused, by design: the coach sets goals, the
+    // client tracks progress). Insert as PT in a separate context; the client's own `page` never sees a
+    // service key it doesn't have.
+    const ptCtx = await browser.newContext()
+    let goalId = null
+    try {
+      const ptPage = await ptCtx.newPage()
+      await loginAsPT(ptPage)
+      const clientId = await page.evaluate(async () => await _getCurrentClientId())
+      expect(clientId, 'the E2E client must have a clients row').not.toBeNull()
+      goalId = await ptPage.evaluate(async ({ title, cid }) => {
+        const { data, error } = await db.from('goals').insert({
+          client_id: cid, created_by: currentUser.id, title,
+          goal_type: 'custom', priority: 1, status: 'active',
+        }).select('id').single()
+        if (error) throw new Error(error.message)
+        return data.id
+      }, { title: TAG, cid: clientId })
+    } finally { await ptCtx.close().catch(() => {}) }
+    expect(goalId, 'fixture goal must exist').not.toBeNull()
+
+    try {
+      await page.evaluate(() => { window._progressTab = 'Goals'; renderProgress(document.getElementById('main-content')) })
+      await expect(page.locator('#progress-tab-content .card', { hasText: TAG })).toBeVisible({ timeout: 3000 })
+      await page.locator('#progress-tab-content .card', { hasText: TAG }).click()
+      // .back-btn "All goals" only exists in openGoal's own detail-view output — its presence proves
+      // openGoal actually painted into a real element, not a dead click against a null #tab-content.
+      await expect(page.locator('.back-btn', { hasText: 'All goals' })).toBeVisible({ timeout: 3000 })
+    } finally {
+      // Owner-side cleanup (PT context again — client cannot delete a coach-owned goal, same RLS shape
+      // as the insert above), name-anchored so a failed assertion above still can't strand the fixture.
+      const cleanupCtx = await browser.newContext()
+      try {
+        const ptPage = await cleanupCtx.newPage()
+        await loginAsPT(ptPage)
+        await ptPage.evaluate(async (title) => {
+          // .select() + rowcount: an RLS-refused delete returns { data: [], error: null } — it looks
+          // exactly like one that worked. Same convention as goal-ownership-2026-08-21.spec.js.
+          const { data: gone } = await db.from('goals').delete().eq('created_by', currentUser.id).eq('title', title).select('id')
+          if ((gone || []).length !== 1) console.error('CLEANUP INCOMPLETE: expected to reap 1 goal, reaped', (gone || []).length)
+        }, TAG)
+      } finally { await cleanupCtx.close().catch(() => {}) }
+    }
   })
 
   test('a stale "Benchmarks" tab value lands on Personal Bests: 1RM grid mounts, Cardio-bests stays gone (removed 2026-07-19)', async ({ page }) => {
@@ -157,8 +227,9 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('#perf-range')).toHaveCount(0)          // not meaningful on Per session
 
     // P2 — the top Progress tabs are a no-wrap scroll row; the active one is scrolled into view.
-    // 2026-09-19: with the Benchmarks tab gone the three chips overflow a 390px row by only ~9px, so the
-    // active chip is in view WITHOUT any scrolling and this passed vacuously. A 320px viewport restores
+    // 2026-09-19: with the Benchmarks tab gone the chips barely overflowed a 390px row, so the active
+    // chip could land in view WITHOUT any scrolling and this passed vacuously (still true with the
+    // Goals tab added 2026-09-29 — more chips only widens the row further). A 320px viewport restores
     // the overflow this assertion was written for; the viewport goes back to 390x844 straight after.
     await page.setViewportSize({ width: 320, height: 700 })
     await page.evaluate(() => { window._progressTab = 'Performance' })

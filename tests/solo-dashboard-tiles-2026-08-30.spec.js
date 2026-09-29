@@ -127,6 +127,37 @@ test.describe('solo dashboard tiles', () => {
     expect(r.noClone, 'no Start button without a clone id').not.toContain('startWorkoutRunner')
   })
 
+  // ── 4b. Current-program strip merged into this tile (Jake, 2026-09-28: "'Current program' and
+  //        'next session' panels do the same thing. Combine the 2 to reduce the clutter") ─────────
+  test('a 4th arg puts the program/phase as an eyebrow above the session name, and drops no existing behaviour', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const today = _ymdLocal(new Date())
+      const withProg = _soloTileNextSession(
+        [{ date: today, kind: 'session', title: 'Upper A', templateId: 'clone-1' }], 'c1', today,
+        { name: 'Hypertrophy Block', meta: 'Accumulation · Week 3' })
+      const noProg = _soloTileNextSession(
+        [{ date: today, kind: 'session', title: 'Upper A', templateId: 'clone-1' }], 'c1', today, null)
+      // The 3 existing call sites above (tests 1 and 4) never pass a 4th argument at all — confirms
+      // the new parameter is additive and doesn't change their behaviour.
+      const omitted = _soloTileNextSession(
+        [{ date: today, kind: 'session', title: 'Upper A', templateId: 'clone-1' }], 'c1', today)
+      return { withProg, noProg, omitted }
+    })
+    expect(r.withProg, 'shows the program name').toContain('Hypertrophy Block')
+    expect(r.withProg, 'shows the phase/week meta').toContain('Accumulation · Week 3')
+    // Position: the eyebrow must read above the session name in the markup, not after it — that's
+    // what makes it read as "which program this session belongs to", not an unrelated footer line.
+    expect(r.withProg.indexOf('Hypertrophy Block'), 'eyebrow comes before the session name')
+      .toBeLessThan(r.withProg.indexOf('Upper A'))
+    expect(r.noProg, 'no eyebrow markup when nothing is assigned').not.toContain('solo-strip-eyebrow')
+    expect(r.omitted, 'omitting the 4th arg entirely behaves the same as passing null').not.toContain('solo-strip-eyebrow')
+    // The merge dropped the strip's own "View program" button — the WHOLE tile already navigates to
+    // Workouts (onclick="navigate('workouts')" on the outer div), so nothing is lost, only de-duplicated.
+    expect(r.withProg, 'no separate View program button — the tile itself is the click target now')
+      .not.toContain('View program')
+    expect(r.withProg).toContain("navigate('workouts')")
+  })
+
   // ── 5. A periodised phase must resolve to the RIGHT week ──────────────────────
   test('_programWorkoutsByDate places week 2 sessions on week 2, not week 1', async ({ page }) => {
     const r = await page.evaluate(() => {
@@ -223,15 +254,17 @@ test.describe('solo dashboard tiles', () => {
       try { out.next = _soloTileNextSession([], 'c1', today) } catch (e) { out.nextErr = String(e) }
       try { out.up = _soloTileNextUp([], today) } catch (e) { out.upErr = String(e) }
       try { out.recent = _soloTileRecent(null, 'c1') } catch (e) { out.recentErr = String(e) }
+      try { out.myProgress = _soloTileMyProgress(null, 'c1') } catch (e) { out.myProgressErr = String(e) }
       try { out.progNull = JSON.stringify(_programWorkoutsByDate(null, null)) } catch (e) { out.progErr = String(e) }
       return out
     })
-    ;['weightErr', 'weightNullErr', 'nextErr', 'upErr', 'recentErr', 'progErr'].forEach(k =>
+    ;['weightErr', 'weightNullErr', 'nextErr', 'upErr', 'recentErr', 'myProgressErr', 'progErr'].forEach(k =>
       expect(r[k], `${k} should not be set`).toBeUndefined())
     expect(r.weight).toContain('solo-tile-empty')
     expect(r.next).toContain('solo-tile-empty')
     expect(r.up).toContain('solo-tile-empty')
     expect(r.recent).toContain('solo-tile-empty')
+    expect(r.myProgress).toContain('solo-tile-empty')
     // {} not null: callers iterate the result, and a null would move the failure into their loop.
     expect(r.progNull).toBe('{}')
   })
@@ -291,6 +324,51 @@ test.describe('solo dashboard tiles', () => {
     expect(r.pctMilestones, 'falls back to completed milestones').toBe(50)
     // Guards against divide-by-zero: start === target would otherwise render NaN%.
     expect(Number.isFinite(r.pctDivZero), 'start === target must not produce NaN').toBe(true)
+  })
+
+  // ── 9b. Benchmarks card replaced by a small "My progress" preview (Jake, 2026-09-28: "Benchmarks
+  //        can be removed from this page and replaced with my progress and being linked to that
+  //        page.") — decision: "Small preview, same idea as today". CORRECTED 2026-09-29 (multi-agent
+  //        review, same session): the first version dropped id="client-pb-form" and showClientPBForm
+  //        entirely on the wrong assumption that Personal Bests (client_1rms — barbell 1RMs) covers the
+  //        same ground as this card's own data (performance_logs — cardio times, custom benchmarks).
+  //        It does not; that version broke tests/pb-consolidation-2026-08-17.spec.js:119 ("SOLO: the
+  //        dashboard form actually writes a row") and left solo accounts with no way to log a new
+  //        performance_logs entry at all. This is the fixed version's spec, not the original's. ────
+  test('My progress tile: small preview, a working +Log record form, and a secondary link to Progress', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const pbs = [
+        { name: 'Deadlift', value: 140, unit: 'kg' },
+        { name: 'Bench Press', value: 100, unit: 'kg' },
+        { name: '5k run', value: 22.5, unit: 'min' },
+      ]
+      return {
+        populated: _soloTileMyProgress(pbs, 'c1'),
+        empty: _soloTileMyProgress([], 'c1'),
+        nullish: _soloTileMyProgress(null, 'c1'),
+      }
+    })
+    expect(r.populated, 'renamed from Benchmarks').toContain('My progress')
+    expect(r.populated, 'not the old name').not.toContain('Benchmarks')
+    // Small preview: 2 of the 3 fixture PBs, not all of them.
+    expect(r.populated).toContain('Deadlift')
+    expect(r.populated).toContain('Bench Press')
+    expect(r.populated, 'a small preview, not the full list').not.toContain('5k run')
+    expect(r.populated).toContain('+1 more')
+    // The pre-existing capability, restored exactly as tests/pb-consolidation-2026-08-17.spec.js:119
+    // exercises it: a real onclick to showClientPBForm and the #client-pb-form host it looks for.
+    expect(r.populated, 'the +Log record shortcut must still be here, working, not just described as reachable elsewhere')
+      .toContain("showClientPBForm('c1')")
+    expect(r.populated, 'the form host pb-consolidation-2026-08-17.spec.js:127 looks for').toContain('id="client-pb-form"')
+    // A secondary, explicit link to Progress -> Personal Bests — not the whole card (this card holds
+    // an interactive form; making the whole card a click-to-navigate target would need every field in
+    // that form to stopPropagation, which is exactly the kind of thing that quietly breaks later).
+    expect(r.populated).toContain("navigate('progress')")
+    expect(r.populated, "must land on Personal Bests, not wherever Progress was last left").toContain("_progressTab='Personal Bests'")
+    expect(r.empty, 'empty state still has a working +Log record').toContain("showClientPBForm('c1')")
+    expect(r.empty, 'empty state still links through').toContain("navigate('progress')")
+    expect(r.empty).toContain('solo-tile-empty')
+    expect(r.nullish, 'null must not throw').toContain('solo-tile-empty')
   })
 
   test('a solo user can reach the goals page, and it carries the real goals UI', async ({ page }) => {

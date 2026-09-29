@@ -1,9 +1,10 @@
 ---
 id: 2026-09-28-template-builder-edit-and-remove-buttons-squeeze-the-set-text
-status: open
+status: closed
 priority: low
 reported: 2026-09-28
-status_detail: "Reported by Jake from a phone screenshot of the template builder (item 1 of a second 2026-09-28 walkthrough note). Read but not yet reproduced or fixed. Cause is visible in the markup: the exercise row is one flex line and the two text buttons take about a third of its width."
+closed_by: tests/template-exercise-card-actions-2026-09-29.spec.js
+status_detail: "CLOSED 2026-09-29 on rule-(b) evidence, this row's own stated closing condition. The new spec's line-wrap check went RED against the unfixed markup (Range.getClientRects() found 2 distinct line tops for the exact string this doc quotes, at the real ~163px squeezed column width — confirmed against the live app, not just the test) and GREEN after the fix; reviewed (critic subagent, fresh context) with no blocking findings. Uncommitted-to-a-release until it ships."
 ---
 
 # Template builder: the Edit and Remove buttons are too big and push the set text onto separate lines
@@ -24,9 +25,18 @@ lines. His words: "edit and remove buttons are too big and force the text on the
 
 Text buttons, side by side, in the same row as the up/down arrows, the number badge and the text column.
 
-## Proposed direction (not applied)
+## Resolution (2026-09-29)
 
-Icon buttons (pencil, cross) of the same 32px size the runner already uses for its delete-set control, each with an
-`aria-label` ("Edit exercise", "Remove exercise"), so the text column gets back roughly 90px. Needs Jake's yes on icons over words.
+Jake was offered the icon-button direction below alongside a full-width-row alternative and picked words on their own
+row ("Words on their own row (Recommended)"). Built as proposed: `js/app-workouts.js`'s `_renderTemplateExerciseList()`
+now closes the card's top flex row after the number/name/set-text column (dropping the button `<div>` from that row
+entirely) and opens a new sibling row below it, full card width, with Edit and Remove each `flex:1` — same idea as the
+runner's bottom action bar. The set-text column now has the row's full width instead of sharing it with a ~130px
+button pair, so nothing there wraps at 390px. Behaviour unchanged: both buttons still call the same
+`showEditTemplateExerciseModal`/`_stageRemoveExercise` handlers, just relocated.
+
+**Proposed direction not taken:** icon buttons (pencil, cross) of the same 32px size the runner uses for its
+delete-set control. Left here for reference in case Jake wants tighter cards later — not pursued once the full-width
+row was picked instead.
 
 **Closes when** at a 390px viewport a two-set exercise card's set lines each fit on one line, shown by a spec that measures them.

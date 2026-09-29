@@ -53,3 +53,11 @@ re-acquires its host by id, so its write can reach a live node.
 ---
 
 **2026-09-19 note (status untouched — Jake or red→green evidence closes this):** item 1's subject, `renderProgressPBs`, was deleted along with the Progress → Benchmarks tab (see `docs/decisions.md`, 2026-09-19), so item 1 no longer applies. This row also carries item 2, which is unaffected.
+
+**2026-09-29 note (status untouched — named, not fixed):** the new Goals tab (`renderProgress`'s Goals
+branch, `js/app-progress.js`, added alongside `renderClientGoals`) copies item 2's exact shape —
+`const clientId = await _getCurrentClientId(); const host = document.getElementById('progress-tab-content')`,
+host acquired after the same await, same narrow master-account-only window. Found by review while adding
+that branch; not fixed here, since fixing item 2 properly means touching the Personal Bests branch this
+note is already about, which is out of scope for "add a Goals tab." Two branches now carry item 2's shape
+instead of one — worth folding into whichever session eventually fixes item 2 itself.

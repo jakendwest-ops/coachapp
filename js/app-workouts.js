@@ -1566,10 +1566,10 @@ function _renderTemplateExerciseList() {
               return `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--accent);margin-top:3px;font-style:italic">${escapeHtml(ex.notes)}</div>`
             })()}
           </div>
-          <div style="display:flex;gap:6px;flex-shrink:0">
-            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditTemplateExerciseModal('${ex._draftKey}','${id}')">Edit</button>
-            <button class="btn-danger" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="_stageRemoveExercise('${ex._draftKey}')">Remove</button>
-          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn-secondary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="showEditTemplateExerciseModal('${ex._draftKey}','${id}')">Edit</button>
+          <button class="btn-danger" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="_stageRemoveExercise('${ex._draftKey}')">Remove</button>
         </div>
       </div>
     </div>`

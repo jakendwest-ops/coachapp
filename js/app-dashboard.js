@@ -778,11 +778,20 @@ function _soloTileRecent(recentSessions, clientId) {
   </div>`
 }
 
-function _soloTileNextSession(upcoming, clientId, todayStr) {
+// progInfo (optional): { name, meta } for the assigned program/phase, folded in as a small eyebrow
+// above the session name. Merged in 2026-09-29 — Jake: "'Current program' and 'next session' panels
+// do the same thing. Combine the 2 to reduce the clutter." The old standalone strip's own "View
+// program" button is gone with it; the whole tile already navigate()s to Workouts on tap, same
+// destination, one fewer control.
+function _soloTileNextSession(upcoming, clientId, todayStr, progInfo) {
+  const eyebrow = progInfo?.name
+    ? `<div class="solo-strip-eyebrow">${escapeHtml(progInfo.name)}${progInfo.meta ? ' · ' + escapeHtml(progInfo.meta) : ''}</div>`
+    : ''
   const next = upcoming.find(u => u.kind === 'session')
   if (!next) {
     return `<div class="dashboard-card solo-tile" onclick="navigate('workouts')">
       <div class="card-header"><h2 class="card-title">Next session</h2></div>
+      ${eyebrow}
       <p class="solo-tile-empty">No programmed session ahead. Tap to start a freeform one.</p>
     </div>`
   }
@@ -793,6 +802,7 @@ function _soloTileNextSession(upcoming, clientId, todayStr) {
   const canStart = !!next.templateId
   return `<div class="dashboard-card solo-tile" onclick="navigate('workouts')">
     <div class="card-header"><h2 class="card-title">Next session</h2></div>
+    ${eyebrow}
     <div class="solo-tile-name">${escapeHtml(next.title)}</div>
     <div class="solo-tile-line"><span class="solo-tile-sub">${_dashFormatDate(next.date)} · ${_dashDaysUntil(next.date, todayStr)}</span></div>
     ${canStart
@@ -848,6 +858,46 @@ function _soloTileGoals(goals, todayStr) {
   </div>`
 }
 
+// Replaces the old standalone Benchmarks card (Jake, 2026-09-28: "Benchmarks can be removed from this
+// page and replaced with my progress and being linked to that page"). Decision: "Small preview, same
+// idea as today" — same pbMap-derived list this card always showed, just fewer rows shown by default.
+//
+// CORRECTED 2026-09-29 (multi-agent review, after this first shipped the same session): the first
+// version dropped id="client-pb-form" and showClientPBForm entirely, on the assumption that "+ Log
+// record" was still reachable "one tap further in" on the Personal Bests tab this card links to. That
+// assumption was wrong — Personal Bests renders renderClient1RMs, reading/writing client_1rms (barbell
+// 1RMs only); this card's own data is performance_logs (cardio times, custom benchmarks, everything
+// showClientPBForm/saveClientPB write). They are different tables with no UI connecting them. The old
+// version broke tests/pb-consolidation-2026-08-17.spec.js:119 ("SOLO: the dashboard form actually
+// writes a row") and left solo accounts with NO reachable way to log a new performance_logs entry.
+// Fixed by keeping the card's own form exactly as before (not whole-card-clickable, same as the old
+// Benchmarks card never was, so no stopPropagation is needed against an outer navigate()); "linked to
+// that page" is now a small explicit secondary control rather than the whole card, so it doesn't imply
+// the two are showing the same data.
+//
+// Not yet resolved, flagged for Jake rather than decided here: Personal Bests (1RMs) and this card's
+// own performance_logs preview are topically different lists, so the link is "the closest existing
+// page", not a real match — no page currently browses a solo/client's full performance_logs list (the
+// old standalone Benchmarks TAB was deliberately deleted 2026-09-19 for exactly that role; see
+// js/app-progress.js's renderProgress comments, "2026-09-19" note).
+function _soloTileMyProgress(pbs, clientId) {
+  const list = pbs || []
+  return `<div class="dashboard-card">
+    <div class="card-header">
+      <h2 class="card-title">My progress</h2>
+      <button class="btn-secondary solo-strip-btn" onclick="showClientPBForm('${clientId}')">+ Log record</button>
+    </div>
+    ${!list.length ? `<p class="solo-tile-empty">No records yet.</p>` : list.slice(0, 2).map(pb => `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
+        <span style="font-size:var(--text-lg, 14px);font-weight:700">${pb.value} <span class="solo-tile-sub">${escapeHtml(pb.unit || '')}</span></span>
+      </div>`).join('')}
+    <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;margin-top:8px" onclick="window._progressTab='Personal Bests';navigate('progress')">${list.length > 2 ? `+${list.length - 2} more` : 'View in Progress'} →</button>
+    <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+      ${_pbFormHtml(clientId)}
+    </div>
+  </div>`
+}
 
 async function renderSoloDashboard(el) {
   log.info('renderSoloDashboard', 'loading personal dashboard')
@@ -902,7 +952,8 @@ async function renderSoloDashboard(el) {
 
   const pbs = _perfBestsByName(perfLogs)
 
-  // Current phase, for the "Current program" strip that survives the tile redesign.
+  // Current phase, folded into the Next session tile as a small eyebrow (merged 2026-09-29 — see
+  // _soloTileNextSession's own comment).
   let progName = null, progMeta = ''
   if (cp0) {
     const prog = cp0.programs
@@ -940,40 +991,16 @@ async function renderSoloDashboard(el) {
       </div>
     </div>
 
-    ${progName ? `
-    <div class="solo-program-strip">
-      <div style="min-width:0">
-        <div class="solo-strip-eyebrow">Current program</div>
-        <div class="solo-strip-name">${escapeHtml(progName)}</div>
-        ${progMeta ? `<div class="row-meta">${escapeHtml(progMeta)}</div>` : ''}
-      </div>
-      <button onclick="navigate('workouts')" class="btn-secondary solo-strip-btn">View program</button>
-    </div>` : ''}
-
     <div class="solo-tiles">
       ${_soloTileWeight(weights, todayStr)}
-      ${_soloTileNextSession(upcoming, clientId, todayStr)}
+      ${_soloTileNextSession(upcoming, clientId, todayStr, progName ? { name: progName, meta: progMeta } : null)}
       ${_soloTileNextUp(upcoming, todayStr)}
       ${_soloTileRecent(recentSessions, clientId)}
       ${_soloTileGoals(goals, todayStr)}
     </div>
 
     <div class="solo-lower">
-        <div class="dashboard-card">
-          <div class="card-header">
-            <h2 class="card-title">Benchmarks</h2>
-            <button class="btn-secondary solo-strip-btn" onclick="showClientPBForm('${clientId}')">+ Log record</button>
-          </div>
-          ${!pbs.length ? `<p class="solo-tile-empty">No records yet.</p>` : pbs.slice(0,4).map(pb => `
-            <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
-              <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
-              <span style="font-size:var(--text-lg, 14px);font-weight:700">${pb.value} <span class="solo-tile-sub">${escapeHtml(pb.unit || '')}</span></span>
-            </div>`).join('')}
-          ${pbs.length > 4 ? `<p class="solo-tile-sub" style="margin-top:8px">+${pbs.length - 4} more</p>` : ''}
-          <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-            ${_pbFormHtml(clientId)}
-          </div>
-        </div>
+      ${_soloTileMyProgress(pbs, clientId)}
     </div>
   `
 

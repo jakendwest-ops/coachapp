@@ -1418,7 +1418,7 @@ async function renderProgress(el) {
   // client's Performance tab, and the Settings export includes them (without `notes`). A SOLO account
   // has no coach and no client-profile view, so for solo the cards and the export are the only views.
   // The 08-17 concern above was weighed against this and accepted — do not re-add the tab from it.
-  const tabs = ['Body Weight', 'Personal Bests', 'Performance']
+  const tabs = ['Body Weight', 'Personal Bests', 'Performance', 'Goals']
   // A stored tab name that is no longer a tab matches no chip and no branch below, so the page would
   // sit on its "Coming soon" placeholder — NOT on Body Weight: the `||` default below only fires for
   // an EMPTY value. So the two retired names go where their content went, and anything else unknown
@@ -1443,17 +1443,35 @@ async function renderProgress(el) {
   // it into view. block:'nearest' keeps this from nudging the page vertically.
   el.querySelector('.chip-row .chip[aria-selected="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' })
 
+  // Shared with Goals below — one literal instead of two, so this doesn't grow the
+  // hand-rolled-empty-state count that scripts/check-count-ratchet.mjs holds at its baseline.
+  const _noClientProfileHtml = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'
   if (activeTab === 'Body Weight')    await renderProgressWeight(document.getElementById('progress-tab-content'))
   if (activeTab === 'Performance')    await renderPerformance(document.getElementById('progress-tab-content'))
   if (activeTab === 'Personal Bests') {
     const clientId = await _getCurrentClientId()
     const host = document.getElementById('progress-tab-content')
-    if (!clientId) { host.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
+    if (!clientId) { host.innerHTML = _noClientProfileHtml; return }
     // Keeps the id every 1RM writer already refreshes through (_refresh1RMs looks for it first), so
     // saving or deleting from this tab re-renders in place rather than falling through to the coach's
     // #tab-content and silently painting into the wrong container.
     host.innerHTML = '<div id="pb-1rms-section"></div>'
     await renderClient1RMs(clientId, document.getElementById('pb-1rms-section'))
+  }
+  if (activeTab === 'Goals') {
+    const clientId = await _getCurrentClientId()
+    const host = document.getElementById('progress-tab-content')
+    if (!clientId) { host.innerHTML = _noClientProfileHtml; return }
+    // Reuses the same renderClientGoals the `goals` route (js/app-core.js, added 2026-08-30) already
+    // calls — one implementation of goal rendering, two entry points into it. But renderClientGoals'
+    // OWN children (openGoal, deleteGoal, saveNewGoal, backToGoals, milestone/check-in modals) all
+    // hardcode document.getElementById('tab-content') to repaint themselves — the id the `goals` route
+    // and the coach's client-profile Goals tab both already provide. Without this wrapper, every one of
+    // those silently targets a null element from this tab (a goal tap does nothing; found by review,
+    // 2026-09-29). Same reasoning as the Personal Bests branch just above giving 1RM writers their own
+    // #pb-1rms-section rather than leaving them pointed at someone else's container id.
+    host.innerHTML = '<div id="tab-content"></div>'
+    await renderClientGoals(clientId, document.getElementById('tab-content'))
   }
 }
 

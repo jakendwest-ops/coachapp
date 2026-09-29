@@ -569,9 +569,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 /* Five tiles in a two-column grid leave the last one alone at half width. Span it instead of
    leaving a hole. :nth-child(odd) so it only applies when the count IS odd. */
 .solo-tiles > .solo-tile:last-child:nth-child(odd) { grid-column:1 / -1; }
-.solo-program-strip { display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius, 10px); padding:12px 14px; margin-bottom:16px; }
-.solo-strip-eyebrow { font-size:var(--text-xs, 10px); font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); }
-.solo-strip-name { font-size:var(--text-lg, 14px); font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.solo-strip-eyebrow { font-size:var(--text-xs, 10px); font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-bottom:2px; }
 .solo-strip-btn { font-size:var(--text-md, 12px); padding:6px 14px; flex-shrink:0; }
 .solo-milestone { display:inline-flex; align-items:center; gap:4px; font-size:var(--text-sm, 11px); padding:3px 8px; border-radius:var(--radius-full, 999px); border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
 

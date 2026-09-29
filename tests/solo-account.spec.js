@@ -149,13 +149,20 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('.bottom-nav-item[data-page="clients"]')).toBeVisible()
   })
 
-  test('solo dashboard shows a "Current program" header with a View program button, when a program is assigned (2026-07-05)', async ({ page }) => {
+  test('solo dashboard folds the current program into the Next session tile, when a program is assigned (merged 2026-09-29)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    const hasProgram = await page.locator('text=Current program').isVisible({ timeout: 3000 }).catch(() => false)
+    // Jake, 2026-09-28: "'Current program' and 'next session' panels do the same thing. Combine the 2
+    // to reduce the clutter." The standalone strip + its own "View program" button are gone — the
+    // program/phase now reads as a small eyebrow inside the Next session tile instead
+    // (tests/solo-dashboard-tiles-2026-08-30.spec.js covers the eyebrow markup itself directly).
+    const tile = page.locator('.solo-tile').filter({ has: page.locator('.card-title', { hasText: 'Next session' }) })
+    const hasProgram = await tile.locator('.solo-strip-eyebrow').isVisible({ timeout: 3000 }).catch(() => false)
     test.skip(!hasProgram, 'No program assigned to this solo account')
-    await expect(page.locator('text=Current program')).toBeVisible()
-    await expect(page.locator('button:has-text("View program")')).toBeVisible()
-    await page.locator('button:has-text("View program")').click()
+    await expect(tile.locator('.solo-strip-eyebrow')).toBeVisible()
+    await expect(page.locator('button:has-text("View program")')).toHaveCount(0)
+    // The eyebrow itself has no stopPropagation, so tapping it hits the same tile-wide navigate() the
+    // old button used to trigger — same destination, one fewer control.
+    await tile.locator('.solo-strip-eyebrow').click()
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
   })
 
