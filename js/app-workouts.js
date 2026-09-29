@@ -1701,7 +1701,7 @@ function flushTemplateSets(containerId) {
     const num  = id => { const el = document.getElementById(id); return el ? (parseInt(el.value, 10) || 0) : undefined }
     const mmss = id => { const el = document.getElementById(id); return el ? (parseRest(el.value) || 0) : undefined }
     const set = (k, v) => { if (v !== undefined) s[k] = v }
-    set('countdownSecs', num('ts-countdown-0'))
+    set('countdownSecs', mmss('ts-countdown-0'))   // text mm:ss like every sibling timed field, 2026-09-28 — was num()
     set('warmupSecs',    mmss('ts-warmup-0'))
     set('workSecs',      mmss('ts-worksecs-0'))
     set('restSecs',      mmss('ts-restsecs-0'))
@@ -1905,7 +1905,11 @@ function renderTemplateSets(containerId, type) {
         </div>
       </div>
       <div style="display:${isSteady ? 'none' : 'block'}">
-        ${row('Initial countdown', mini('ts-countdown-0', 'type="number" placeholder="0"'+(s.countdownSecs != null ? ` value="${escapeHtml(String(s.countdownSecs))}"` : '')))}
+        <!-- Text/mm:ss, matching Warm-up below — was the one timed block field still a bare number box (Jake,
+             2026-09-28: "format needs to be 0:00"). fmtRestCountdown is arithmetic-only on a number, so it is
+             safe unescaped even if countdownSecs is somehow a non-numeric legacy value (degrades to "NaN:NaN"
+             text, never markup) — same reasoning as Warm-up's own value attribute just below. -->
+        ${row('Initial countdown', mini('ts-countdown-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.countdownSecs||0)}"`))}
         ${row('Warm-up', mini('ts-warmup-0', `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${fmtRestCountdown(s.warmupSecs||0)}"`))}
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">

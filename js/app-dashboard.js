@@ -731,15 +731,17 @@ function _soloTileWeight(weights, todayStr) {
   </div>`
 }
 
+// Renamed from 'Next up' to 'My calendar', Jake 2026-09-28: "This tile should be 'my calendar' not 'next up'."
+// Function/id names left alone deliberately (_soloTileNextUp, .solo-tile-* classes) -- only the visible label changed.
 function _soloTileNextUp(upcoming, todayStr) {
   if (!upcoming.length) {
     return `<div class="dashboard-card solo-tile" onclick="navigate('calendar')">
-      <div class="card-header"><h2 class="card-title">Next up</h2></div>
+      <div class="card-header"><h2 class="card-title">My calendar</h2></div>
       <p class="solo-tile-empty">Nothing scheduled. Tap to open your calendar.</p>
     </div>`
   }
   return `<div class="dashboard-card solo-tile" onclick="navigate('calendar')">
-    <div class="card-header"><h2 class="card-title">Next up</h2></div>
+    <div class="card-header"><h2 class="card-title">My calendar</h2></div>
     ${upcoming.slice(0, 3).map(u => `
       <div class="solo-tile-row">
         <span class="solo-tile-pip" style="background:${u.colour}"></span>

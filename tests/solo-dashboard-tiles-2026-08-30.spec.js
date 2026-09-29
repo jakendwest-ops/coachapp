@@ -47,7 +47,8 @@ test.describe('solo dashboard tiles', () => {
       }
     })
     expect(r.tiles, 'four tiles').toBe(4)
-    expect(r.titles).toEqual(['Weight', 'Next session', 'Next up', 'Recent sessions'])
+    // Jake, 2026-09-28: "This tile should be 'my calendar' not 'next up'".
+    expect(r.titles).toEqual(['Weight', 'Next session', 'My calendar', 'Recent sessions'])
     // Every destination must be one of soloPages (app-core.js:733). navigate() does NOT role-gate,
     // so a typo'd or coach-only page would render the wrong dashboard rather than being refused.
     const solo = ['solo-dashboard', 'workouts', 'library', 'programs', 'calendar', 'progress', 'settings']

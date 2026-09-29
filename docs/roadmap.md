@@ -33,14 +33,16 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   tappable "Last time → Stats" sheet with a progress chart). Not yet checked against Jake's real workout
   history or a real assigned program (see [releases/v2026.09.11.md](releases/v2026.09.11.md)). Decisions:
   [decisions.md](decisions.md), 2026-09-28.
-- **Second 2026-09-28 note from Jake — six items, not started.** Template builder: Edit/Remove buttons too
-  big ([ledger](bugs/2026-09-28-template-builder-edit-and-remove-buttons-squeeze-the-set-text.md)); interval
-  "Initial countdown" should be `0:00`
-  ([ledger](bugs/2026-09-28-interval-initial-countdown-is-the-only-time-field-not-in-0-00-format.md)). Solo
-  dashboard: rename "Next up" to "My calendar"; replace the Benchmarks card with a "My progress" tile linking
-  to the Progress page; merge the "Current program" strip and the next-session tile, which duplicate each
-  other; and clarify "Goals does not have its own page" — a `goals` route exists (added 2026-08-30) but is
-  reachable only from the dashboard tile, so what Jake wants there is an open question.
+- **Second 2026-09-28 note from Jake — six items, 2 of 6 built.** ✅ Interval "Initial countdown" now reads
+  `0:00` like its siblings, closed on rule-(b) evidence
+  ([ledger](bugs/2026-09-28-interval-initial-countdown-is-the-only-time-field-not-in-0-00-format.md)). ✅ Solo
+  dashboard's "Next up" tile renamed to "My calendar" (function/ids unchanged, label only). Both committed
+  locally, not yet released. Not started: template builder Edit/Remove buttons too big
+  ([ledger](bugs/2026-09-28-template-builder-edit-and-remove-buttons-squeeze-the-set-text.md), needs Jake's
+  call on the fix shape); replace the solo dashboard's Benchmarks card with a "My progress" tile linking to
+  the Progress page; merge the "Current program" strip and the next-session tile, which duplicate each other;
+  and clarify "Goals does not have its own page" — a `goals` route exists (added 2026-08-30) but is reachable
+  only from the dashboard tile, so what Jake wants there is an open question.
 - **Solo/signup:** the data model and invite-based onboarding (an owner-gated Edge Function) are
   done. Genuine open public self-signup for new solo accounts remains a deliberate deferral, not
   scoped.

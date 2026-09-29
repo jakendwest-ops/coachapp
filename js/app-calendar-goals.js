@@ -1,7 +1,8 @@
 ﻿// Maps a client's assigned programme onto real calendar dates: { 'YYYY-MM-DD': [phaseWorkout, ...] }.
 //
 // Extracted 2026-08-30 from the inline block inside renderCalendar, unchanged in behaviour, so the
-// solo dashboard's "Next up" and "Next session" tiles resolve dates by the SAME rule the calendar
+// solo dashboard's "My calendar" (renamed 2026-09-28, was "Next up") and "Next session" tiles resolve
+// dates by the SAME rule the calendar
 // grid draws. Before this there was no function anywhere answering "what is scheduled on date X" —
 // _buildWorkoutsHero (app-workouts.js:563) only returns the first session of the current programme
 // WEEK, ignoring today's date entirely, so a tile built on it would disagree with the calendar.

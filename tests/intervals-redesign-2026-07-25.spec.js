@@ -128,7 +128,7 @@ test.describe('Interval builder (2026-07-25)', () => {
       mk('att-type', 'select'); mk('att-sets-container', 'div')
       window._templateSets = [{}]
       renderTemplateSets('att-sets-container', 'interval')
-      document.getElementById('ts-countdown-0').value = '5'
+      document.getElementById('ts-countdown-0').value = '0:05'
       document.getElementById('ts-warmup-0').value    = '2:00'
       document.getElementById('ts-worksecs-0').value  = '0:30'
       document.getElementById('ts-restsecs-0').value  = '0:45'
@@ -147,6 +147,33 @@ test.describe('Interval builder (2026-07-25)', () => {
     expect(b.recoverySecs).toBe(60)
     expect(b.cycles).toBe(3)
     expect(b.cooldownSecs).toBe(180)
+  })
+
+  // Jake, 2026-09-28: "format needs to be 0:00" — Initial countdown was the one block field still built as
+  // a bare number box (placeholder "0", raw seconds), unlike every sibling timed field (Warm-up, Work, Rest,
+  // Recovery, Cool-down), which are all text fields formatted as mm:ss. Same fix shape as Warm-up: the input
+  // becomes text/"0:00"/fmtRestInput-on-input, and the save reads it with the same `mmss()` parser
+  // (`parseRest`) as every other timed block field, not a raw number parse — countdownSecs is still stored in
+  // seconds, so no data migration for existing rows (a stored 10 now DISPLAYS as "0:10").
+  test('Initial countdown is a text field formatted 0:00, like Warm-up — not a bare number box (2026-09-28)', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const mk = (id, el = 'input') => { let e = document.getElementById(id); if (!e) { e = document.createElement(el); e.id = id; document.body.appendChild(e) } return e }
+      mk('att-type', 'select'); mk('att-sets-container', 'div')
+      // A stored block with countdownSecs already at 70s (1:10) — proves the DISPLAY side, not just the parse.
+      window._templateSets = [{ countdownSecs: 70, warmupSecs: 0 }]
+      renderTemplateSets('att-sets-container', 'interval')
+      const cd = document.getElementById('ts-countdown-0')
+      const wu = document.getElementById('ts-warmup-0')
+      return {
+        cdType: cd?.type, cdPlaceholder: cd?.getAttribute('placeholder'), cdValue: cd?.value,
+        cdOninput: cd?.getAttribute('oninput'), wuType: wu?.type, wuOninput: wu?.getAttribute('oninput'),
+      }
+    })
+    expect(r.cdType, 'a text field, not type="number" — mm:ss cannot round-trip through a number input').toBe(r.wuType)
+    expect(r.cdPlaceholder, 'placeholder reads 0:00, matching every other timed field').toBe('0:00')
+    expect(r.cdValue, 'a stored 70 seconds displays as 1:10').toBe('1:10')
+    expect(r.cdOninput, 'same live-formatting behaviour as Warm-up while typing').toBe(r.wuOninput)
   })
 
   test('+ More targets survive a flush on an interval block (les-036 shape)', async ({ page }) => {
@@ -974,13 +1001,20 @@ test.describe('Pre-push review fixes (2026-07-27)', () => {
   // payload lands as inert attribute text rather than splitting into a second live attribute/handler
   // the moment a coach opens the block editor.
   //
-  // These fields are all `type="number"` — the browser itself refuses to store a non-numeric string
-  // as .value, even when the escaped `value="..."` attribute is well-formed HTML (confirmed directly:
-  // an escaped payload in a number input's value attribute round-trips through .value as "", not the
-  // payload). So countdown/sets/cycles read back empty, and workDistanceM (routed through
+  // sets/cycles/workDistanceM are `type="number"` — the browser itself refuses to store a non-numeric
+  // string as .value, even when the escaped `value="..."` attribute is well-formed HTML (confirmed
+  // directly: an escaped payload in a number input's value attribute round-trips through .value as "",
+  // not the payload). So sets/cycles read back empty, and workDistanceM (routed through
   // distanceToPref()'s parseFloat first) reads back its leading numeric prefix. Neither is a
   // byte-for-byte round-trip — that's the browser's own number-input validation adding a second layer
   // on top of escapeAttr, not a weaker guarantee.
+  //
+  // countdown became `type="text"` on 2026-09-28 (format needs to read mm:ss, like its sibling timed
+  // fields), so that number-input coercion no longer applies to it — its own safety comes from
+  // fmtRestCountdown being pure arithmetic on a NUMBER (`s.countdownSecs||0`): fed the string payload,
+  // `payload/60` coerces to NaN and the field ends up showing the harmless literal text "NaN:NaN", never
+  // the payload itself and never live markup — proven the same way as every other field here, by the
+  // handler/attribute assertions below.
   test('interval block fields carrying a breakout payload cannot inject an attribute/handler', async ({ page }) => {
     await loginAsPT(page)
     const payload = '1" onmouseover="window.__xssFired=(window.__xssFired||0)+1" data-x="'
@@ -1017,7 +1051,7 @@ test.describe('Pre-push review fixes (2026-07-27)', () => {
     // countdownSecs/sets/cycles: the browser blanks a number input's .value whenever its escaped
     // `value="..."` attribute isn't a valid number — the payload is neutralised in the DOM (proven by
     // the handler/attribute assertions above) but never surfaces through .value at all.
-    expect(r.countdown.value).toBe('')
+    expect(r.countdown.value, 'text field: renders the arithmetic-only NaN literal, not the payload').toBe('NaN:NaN')
     expect(r.sets.value).toBe('')
     expect(r.cycles.value).toBe('')
     // workDistanceM is additionally routed through distanceToPref() first, which parseFloat()s it down
