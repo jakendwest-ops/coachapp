@@ -25,9 +25,20 @@ express neither half of it right now.
 | Stored 1RM lookup | `_lookupClientOneRM` (`js/app-runner.js:2480`), `client_1rms` fetched once at session load (`js/app-runner.js:43`) | Ships. Append-only table, newest row per exercise wins. |
 | 1RM estimation | `_estimate1RM(weight, reps)` (`js/app-workouts.js:106`) | Ships. Epley, capped at 12 reps, `r===1` returns the weight unchanged. |
 | Manual estimate | `showRunnerOneRMSheet` "Estimate from a set" (`js/app-runner.js:3189`) | Ships. User-triggered, weight+reps only, **RPE-blind**. |
-| Per-set effort capture | `effortType` (`'rpe'`/`'rir'`) + `effortMin`/`effortMax` in `sets_json`; `effort_value`/`effort_type` on logged sets | Ships. **Display only** — never feeds any calculation. |
+| Effort *prescription* | `effortType` (`'rpe'`/`'rir'`) + `effortMin`/`effortMax` in `sets_json` | Ships. Display only — never feeds any calculation. |
+| Effort *capture* | `effort_value`/`effort_type` on `workout_log_sets` | **Only from the manual Log Session modal.** The in-gym runner captures no effort at all — see the gap below. |
 
-**The two gaps:**
+**The three gaps:**
+
+0. **The runner cannot capture an RPE at all.** Discovered 2026-09-29 while planning, after this
+   spec was first approved — it had assumed the top set's effort value was already obtainable in the
+   runner. It is not. The strength table has exactly two data columns, weight and reps.
+   `js/app-runner.js:3038` states it outright: *"no runner logged-set shape carries `.rpe` … there
+   is no effort input in the strength table at all, so the in-gym runner currently captures NO
+   effort. Effort only reaches the DB via the manual Log Session modal."* A write hook is already
+   parked at `:3044` for when capture is added — **and it hardcodes `effort_type: 'rpe'`**, which
+   the same comment warns would re-create the 2026-08-11 RIR-displayed-as-RPE inversion if wired to
+   an RIR-capable input. This is a prerequisite for everything below, not a detail.
 
 1. **No RPE-aware estimate.** Every formula on the Wikipedia 1RM page (Brzycki, Epley, Lander,
    Lombardi, Mayhew, Wathen…) is a *to-failure* model — it assumes the set ended because it could
@@ -52,6 +63,13 @@ express neither half of it right now.
   this spec changes.
 - **Additive and opt-in.** Every existing template keeps its exact current behaviour; nothing is
   migrated, nothing is re-interpreted.
+- **Runner effort capture appears only where the coach prescribed effort** (Jake, 2026-09-29, after
+  gap 0 was found). A set row gets an RPE/RIR input when — and only when — its `sets_json` carries
+  `effortMin`/`effortMax`. Chosen over a top-set-only input (which would leave the runner unable to
+  log a prescribed RPE on any other set) and over a third column on every strength set (largest
+  change to the in-gym screen, most regression risk on a 390px phone, and nobody asked for effort on
+  sets where none was prescribed). It is self-scoping: the top set always qualifies, because a
+  prescribed RPE is what makes it a top set.
 
 ### The one behaviour change: RPE-tagged singles
 
@@ -162,7 +180,26 @@ undefined and fall to the defaults, so every existing template is untouched.
   banner naming the affected rows. It must not silently revert them to stored-1RM — that would
   change a real training day's loads without the coach seeing it.
 
-### 4. Runner
+### 4. Runner: effort capture (prerequisite — gap 0)
+
+Nothing else in this spec can work until the runner can record an RPE. Build this first.
+
+- `_blankTableRow` gains an `effort` field; `_syncLoggedSetsFromTable` carries it through.
+- The strength table renders a third input on a row **only** when that row's `sets_json` entry has
+  `effortMin` or `effortMax`. Rows without a prescribed effort render exactly as they do today —
+  same two columns, same widths, no layout change at all.
+- The column header reads `RPE` or `RIR` from that row's `effortType`, matching how
+  `_buildTargetCols` already labels the target chip (`js/app-runner.js:907`).
+- **`effort_type` must be written from the prescription, never hardcoded.** The parked hook at
+  `js/app-runner.js:3044` sets `effort_type: 'rpe'` unconditionally. It has to become
+  `row.effort_type = <this row's effortType> === 'rir' ? 'rir' : 'rpe'`. RIR and RPE run in opposite
+  directions — RIR 2 is near-maximal, RPE 2 is a warm-up — so an RIR logged as RPE does not
+  mislabel the number, it inverts its meaning. That exact bug was fixed on 2026-08-11 and the
+  comment at `:3042` exists specifically to stop it coming back.
+- Input shape follows the Log Session modal's existing effort input (`js/app-runner.js:3378`):
+  `step="0.5"`, `min="0"`, `max="10"`, placeholder `1–10` for RPE and `0–5` for RIR.
+
+### 5. Runner
 
 - Top-set row renders with a **TOP SET** badge, its target reps and target RPE, and an open weight
   field (nothing to prefill).
@@ -193,7 +230,7 @@ undefined and fall to the defaults, so every existing template is untouched.
   refused — the runner already lets sets be worked in any order, and a guard that refuses a
   legitimate user is the failure mode this project has hit before.
 
-### 5. Persistence
+### 6. Persistence
 
 - Nothing writes to `client_1rms` mid-session. It is append-only and `_savePostSessionOneRM` already
   carries a `guardReentry` against duplicate rows; a mid-set write would also create rows for
@@ -215,6 +252,16 @@ undefined and fall to the defaults, so every existing template is untouched.
   exactly the weight (the 2026-09-04 rule, both halves).
 - The four existing `_estimate1RM` tests stay green unmodified.
 
+**E2E (Playwright) — effort capture (gap 0), before anything else:**
+- A set row whose `sets_json` has `effortMin` renders an effort input; a row without one renders the
+  unchanged two-column layout. Both directions, or the "only where prescribed" rule is unproven.
+- **The inversion guard:** a set prescribed `effortType: 'rir'`, logged with a value, saves
+  `effort_type: 'rir'` — not `'rpe'`. This is the 2026-08-11 bug; the parked hook at `:3044` would
+  fail this test as written today, which is exactly why it must exist before the hook is touched.
+- A prescribed-effort row left blank saves no `effort_value` at all, rather than 0. RIR 0 is a real
+  prescription meaning "to failure", so blank and zero must stay distinguishable —
+  `_hasNumVal`, not a truthy check.
+
 **E2E (Playwright):**
 - **Builder round-trip:** toggle top set + set a row to `'topSet'`, save, reload, assert both fields
   survived. This is the allowlist-drop class that killed the cardio targets — the one test that must
@@ -227,9 +274,10 @@ undefined and fall to the defaults, so every existing template is untouched.
   backoff weights would be invisible to every other test — the 2026-08-14 lb-only 1RM grid crash is
   the precedent.
 
-**Not introduced:** no new Supabase queries, no new `coach_id` filter, no RLS surface, no new
-`log.*` call carrying a health value. `multi-agent-review` still runs before the push per the
-standing rule for non-ownership work.
+**Not introduced:** no new Supabase queries and no new `coach_id` filter, so no RLS surface — effort
+capture writes two already-existing columns (`effort_value`, `effort_type`) through the existing
+`workout_log_sets` insert, and no `log.*` call carries a health value. `multi-agent-review` still
+runs before the push per the standing rule for non-ownership work.
 
 ## Cache-bust
 
