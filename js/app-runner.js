@@ -722,7 +722,7 @@ function _blankTableRow(ex) {
   if (mt === 'timed_hold') return { duration: '', weight: ex.bodyweight ? 'BW' : '', done: false }
   if (mt === 'jump_height') return { height_cm: '', reps: '', done: false }
   if (mt === 'jump_distance') return { distance_m: '', reps: '', done: false }
-  return { weight: ex.bodyweight ? 'BW' : '', reps: '', done: false }
+  return { weight: ex.bodyweight ? 'BW' : '', reps: '', effort: '', done: false }
 }
 
 function _ensureTableRows(ex) {
@@ -738,13 +738,24 @@ function _ensureTableRows(ex) {
 
 function _syncLoggedSetsFromTable(ex) {
   const mt = _exMetricType(ex)
-  ex.loggedSets = ex.tableRows.filter(r => r.done).map(r => {
-    if (mt === 'unilateral') return { leftWeight: r.leftWeight || null, leftReps: r.leftReps || null, rightWeight: r.rightWeight || null, rightReps: r.rightReps || null }
-    if (mt === 'timed_hold') return { duration: r.duration || null, weight: _hasNumVal(r.weight) ? r.weight : null }
-    if (mt === 'jump_height') return { height_cm: _hasNumVal(r.height_cm) ? r.height_cm : null, reps: r.reps || null }
-    if (mt === 'jump_distance') return { distance_m: _hasNumVal(r.distance_m) ? r.distance_m : null, reps: r.reps || null }
-    return { weight: _hasNumVal(r.weight) ? r.weight : null, reps: r.reps }
-  })
+  // Index preserved BEFORE the filter: sets_json is keyed by real row position, so a skipped set
+  // would otherwise shift every later row onto the wrong prescription.
+  ex.loggedSets = ex.tableRows
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.done)
+    .map(({ r, i }) => {
+      if (mt === 'unilateral') return { leftWeight: r.leftWeight || null, leftReps: r.leftReps || null, rightWeight: r.rightWeight || null, rightReps: r.rightReps || null }
+      if (mt === 'timed_hold') return { duration: r.duration || null, weight: _hasNumVal(r.weight) ? r.weight : null }
+      if (mt === 'jump_height') return { height_cm: _hasNumVal(r.height_cm) ? r.height_cm : null, reps: r.reps || null }
+      if (mt === 'jump_distance') return { distance_m: _hasNumVal(r.distance_m) ? r.distance_m : null, reps: r.reps || null }
+      // effortType travels WITH the value: the save path must not guess which scale this number is on.
+      return {
+        weight: _hasNumVal(r.weight) ? r.weight : null,
+        reps: r.reps,
+        effort: _hasNumVal(r.effort) ? r.effort : null,
+        effortType: ex.sets_json?.[i]?.effortType === 'rir' ? 'rir' : 'rpe'
+      }
+    })
 }
 
 function toggleTableSet(rowIdx) {
@@ -1004,7 +1015,7 @@ function renderStrengthTable(ex) {
       : parseFn
         ? `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=${parseFn}(this.value)`
         : `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
-    return `<input type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${escapeHtml(String(toDisplay(row[field]) ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
+    return `<input id="set-${i}-${field}" type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${escapeHtml(String(toDisplay(row[field]) ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
       oninput="${bind}"
       style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done ? 'var(--border)' : 'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
   }
@@ -1017,7 +1028,7 @@ function renderStrengthTable(ex) {
       : isCurrent
         ? 'border:2px solid var(--accent);background:var(--surface-2);color:var(--accent)'
         : 'border:1.5px solid var(--border);background:var(--surface-2);color:var(--text-muted)'
-    return `<button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}" style="width:44px;height:44px;flex-shrink:0;border-radius:var(--radius-sm, 8px);font-size:var(--text-2xl, 18px);font-weight:800;cursor:pointer;${state}">✓</button>`
+    return `<button id="set-${i}-done" onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}" style="width:44px;height:44px;flex-shrink:0;border-radius:var(--radius-sm, 8px);font-size:var(--text-2xl, 18px);font-weight:800;cursor:pointer;${state}">✓</button>`
   }
   // Deliberately SMALLER than the 44x44 complete-set tick above: the destructive action must not be the
   // easier target mid-set. Jake asked twice (2026-07-13, 2026-07-23). aria-label carries the full meaning
@@ -1096,17 +1107,35 @@ function renderStrengthTable(ex) {
     // showing "—" reads as disabled. Ghost values from last session / %1RM still win when present.
     const wPlaceholder = oneRMPh || (prev?.weight_kg != null ? weightToPref(prev.weight_kg) : '') || window._unitPrefs.weight
     const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || 'reps'
+    // Only where the coach actually prescribed an effort (Jake, 2026-09-29). A row with no
+    // effortMin/effortMax renders exactly the two columns it always has — no layout change at all
+    // for the exercises nobody asked for effort on.
+    // _hasNumVal, not the truthy check the brief originally sketched: a prescription of exactly
+    // effortMin: 0 (RIR 0, "to failure") is falsy but very real — this project has four prior
+    // instances of the falsy-zero bug class, and the RIR-0 test below depends on this being right.
+    const wantsEffort = _hasNumVal(rowTgt0?.effortMin) || _hasNumVal(rowTgt0?.effortMax)
+    const isRIR = rowTgt0?.effortType === 'rir'
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${ex.bodyweight
           ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>`
           : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder, unit:'weight' })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
+        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10' }) : ''}
         ${inDone(i, row, isCurrent)}${inDel(i)}
       </div></div>`
   }).join('')
 
   const th = (label, w) => `<span style="${w ? `width:${w}` : 'flex:1'};text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</span>`
+  // Same "any row prescribes it" scoping as the per-row wantsEffort above, so the header only grows
+  // an extra column when at least one row actually rendered the effort input. Its scale label reads
+  // off the FIRST prescribing row's effortType, the same field _buildTargetCols reads at :907. The
+  // builder's setTsEffort toggle IS per-set, so a genuinely mixed RPE/RIR exercise is buildable —
+  // this picks the first prescribing row's scale for the header label regardless, same simplification
+  // _buildTargetCols already makes per-set; each cell's own placeholder (0–5 vs 1–10, per wantsEffort
+  // above) still reflects that ROW's real scale, so a mixed exercise is a header-label approximation
+  // only, not a data-capture bug.
+  const effortRx = mt === 'weight_reps' ? ex.sets_json?.find(s => _hasNumVal(s?.effortMin) || _hasNumVal(s?.effortMax)) : null
   let header
   const weightLabel = window._unitPrefs.weight === 'lb' ? 'Lb' : 'Kg'
   const jumpHeightLabel = window._unitPrefs.jumpHeight === 'in' ? 'Height (in)' : 'Height (cm)'
@@ -1125,7 +1154,7 @@ function renderStrengthTable(ex) {
   } else if (mt === 'jump_distance') {
     header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
   } else {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}${effortRx ? th(effortRx.effortType === 'rir' ? 'RIR' : 'RPE') : ''}<span style="width:44px"></span>${delSpacer}</div>`
   }
   // Reps tally only makes sense for rep-based types.
   const tally = (mt === 'weight_reps' || mt === 'unilateral') ? _renderRepsTallyHtml(ex) : ''
@@ -3035,13 +3064,14 @@ async function saveRunnerSession() {
         if (_hasNumVal(s.height_cm))  row.height_cm = parseFloat(s.height_cm)
         if (s.reps)       row.reps_achieved = parseInt(s.reps)
         if (s.weight !== 'BW' && _hasNumVal(s.weight)) row.weight_kg = parseFloat(s.weight)
-        // UNREACHABLE as of 2026-08-11, deliberately left in place: no runner logged-set shape
-        // carries `.rpe` (see _blankTableRow — there is no effort input in the strength table at all),
-        // so the in-gym runner currently captures NO effort. Effort only reaches the DB via the manual
-        // Log Session modal. Kept as the obvious hook if capture is added — but note it hardcodes 'rpe',
-        // so wiring an RIR-capable input to it without also setting effort_type would recreate exactly
-        // the inversion fixed above.
-        if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
+        // Effort capture landed 2026-09-29 (the runner's fast table now renders an effort input
+        // wherever a set's prescription carries one — renderStrengthTable's wantsEffort).
+        // effort_type comes from what was PRESCRIBED, never a literal. RIR and RPE run in opposite
+        // directions, so a hardcoded 'rpe' here does not mislabel an RIR — it inverts its meaning.
+        if (_hasNumVal(s.effort)) {
+          row.effort_type = s.effortType === 'rir' ? 'rir' : 'rpe'
+          row.effort_value = parseFloat(s.effort)
+        }
       }
       applyCardioMetrics(row)
       if (Object.keys(row).length > 2) allSets.push(row)

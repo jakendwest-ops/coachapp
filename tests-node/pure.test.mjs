@@ -192,6 +192,15 @@ describe('training maths', () => {
     assert.equal(get('_estimate1RM')(100, 13, { effortType: 'rpe', effortValue: 8 }), null)
   })
 
+  test('_estimate1RM treats RIR 0 as RPE 10 — a real prescription, not a missing value', () => {
+    // RIR 0 means "to failure". A truthy check on the effort value would drop it and silently fall
+    // back to plain Epley. This project has four prior instances of that falsy-zero bug class.
+    const f = get('_estimate1RM')
+    assert.equal(f(100, 5, { effortType: 'rir', effortValue: 0 }), f(100, 5, { effortType: 'rpe', effortValue: 10 }))
+    // RPE 10 at 5 reps is the to-failure case, so this must equal plain Epley, not a table lookup.
+    assert.equal(Math.round(f(100, 5, { effortType: 'rir', effortValue: 0 }) * 100) / 100, 116.67)
+  })
+
   test('_rollingAvg averages over the trailing window', () => {
     sameShape(get('_rollingAvg')([1, 2, 3, 4], 2), [1, 1.5, 2.5, 3.5])
   })
