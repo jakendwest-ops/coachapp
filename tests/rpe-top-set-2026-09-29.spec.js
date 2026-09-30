@@ -473,3 +473,38 @@ test.describe('runner: backoff sets resolve against the live e1RM (Task 5, 2026-
     expect(lbPh, 'an lb backoff target must be the converted number, not the kg one').toBeGreaterThan(150)
   })
 })
+
+test.describe('post-session 1RM prefill (Task 6, 2026-09-29)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+  })
+  test.afterEach(async ({ page }) => {
+    await cleanupFixture(page)
+  })
+
+  // The modal has no input — the estimate is display text and the value is baked into the Save
+  // button's onclick. The brief guessed at `toHaveValue`; showPostSessionOneRMModal was read first
+  // and an id added to the line that actually shows the number, per the brief's own fallback.
+  test('the post-session 1RM estimate comes from the top set, not plain Epley', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    // Returning the promise from evaluate awaits the whole async save chain rather than sleeping.
+    await page.evaluate(() => saveRunnerSession())
+    // Plain Epley on 100x3 is 110.0; the RPE-aware estimate is 115.9. This number is therefore a
+    // real discriminator between the two code paths, not merely "a number appeared".
+    await expect(page.locator('#psorm-estimate-0')).toContainText('115.9')
+  })
+
+  // The sibling path. Every exercise without a top set must keep the estimate it always had —
+  // this is the regression half of the change, and it is the half that has bitten before.
+  test('an exercise with no top set still offers the plain Epley estimate', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [{ repsMin: 3 }] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.click('#set-0-done')
+    await page.evaluate(() => saveRunnerSession())
+    await expect(page.locator('#psorm-estimate-0')).toContainText('110')
+  })
+})

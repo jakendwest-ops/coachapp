@@ -3167,6 +3167,20 @@ async function saveRunnerSession() {
         const est = _estimate1RM(w, r)
         if (est && (!best || est > best.estimate)) best = { estimate: est, weight: w, reps: r }
       })
+      // The top set's RPE-aware estimate wins outright when there is one — not "if it is higher".
+      // The loop above is plain Epley, which assumes every set was taken to failure; a set stopped
+      // at RPE 8 had two reps left, so Epley systematically UNDER-predicts it (100x3 -> 110 vs the
+      // RPE-aware 115.9). Picking the larger of the two would still be picking between a model that
+      // knows what was left in the tank and one that does not, so the better-informed one wins.
+      //
+      // weight/reps come from tableRows[0], mirroring _recomputeLiveE1RM exactly, so the modal's
+      // "100 kg x 3 reps" heading describes the very set the estimate underneath it came from.
+      // Placed before the !best guard on purpose: the loop discards anything over 10 reps, while
+      // _estimate1RM accepts up to 12, so a top set of 11 or 12 has a live estimate and no `best`.
+      const topRow = ex.tableRows?.[0]
+      if (Number.isFinite(ex._liveE1RM) && topRow && _hasNumVal(topRow.weight) && topRow.reps) {
+        best = { estimate: ex._liveE1RM, weight: parseFloat(topRow.weight), reps: parseInt(topRow.reps) }
+      }
       if (!best) return null
       const currentOneRM = ex.oneRM ? parseFloat(ex.oneRM) : 0
       if (best.estimate <= currentOneRM) return null
@@ -3202,7 +3216,7 @@ function showPostSessionOneRMModal(clientId, candidates) {
         ${candidates.map((c, i) => `
           <div id="psorm-row-${i}" style="background:rgba(99,102,241,.07);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:12px;margin-bottom:10px">
             <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--accent)">${escapeHtml(c.name)} — ${fmtWeight(c.weight)} × ${c.reps} reps</div>
-            <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${fmtWeight(c.estimate, { spaced: true, decimals: 1 })}</div>
+            <div id="psorm-estimate-${i}" style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${fmtWeight(c.estimate, { spaced: true, decimals: 1 })}</div>
             <div style="display:flex;gap:6px">
               <button class="btn-primary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${escapeAttr(c.name)}',${c.estimate},${c.exerciseId ? `'${c.exerciseId}'` : 'null'})">Save as my 1RM</button>
               <button class="btn-secondary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="document.getElementById('psorm-row-${i}').remove()">Skip</button>
