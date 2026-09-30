@@ -301,3 +301,74 @@ test.describe('builder: top set + intensity basis (Task 3, 2026-09-29)', () => {
     expect(warningText).toContain('no longer a top set')
   })
 })
+
+// ─── Task 4: live e1RM computation and the chip (2026-09-29) ───────────────────────────────────
+//
+// Reuses the SAME runner fixture helpers as the Task 2 describe block above (startRunnerWithFixture /
+// cleanupFixture, module-scope `fixture`) rather than inventing a parallel set — this task's tests
+// drive the exact same real entry point (startWorkoutRunner) with a top-set + backoff-set fixture.
+//
+// Scope note: the plan originally listed four tests here. Two asserted on `#set-1-basis-note` and on
+// a backoff row's computed placeholder -- both belong to Task 5 (backoff target resolution), which
+// owns those DOM hooks. They are NOT here; this task's tests exercise only its own surface: the
+// computation (`ex._liveE1RM`) and the chip (`#ex-e1rm-chip`).
+test.describe('runner: live e1RM from the top set (Task 4, 2026-09-29)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+  })
+  test.afterEach(async ({ page }) => {
+    await cleanupFixture(page)
+  })
+
+  test('ticking the top set computes an e1RM and shows the chip', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+    ] })
+    await page.fill('#set-0-weight', '100')
+    await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8')
+    await page.click('#set-0-done')
+    // 3 reps @ RPE 8 = 86.3% of 1RM, so 100 / 0.863 = 115.87 -> displayed 115.9
+    await expect(page.locator('#ex-e1rm-chip')).toContainText('115.9')
+  })
+
+  test('a top set with no weight produces no e1RM and no chip', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+    ] })
+    await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8')
+    await page.click('#set-0-done')
+    await expect(page.locator('#ex-e1rm-chip')).toHaveCount(0)
+    const v = await page.evaluate(() => _runner.exercises[0]._liveE1RM ?? null)
+    expect(v).toBeNull()
+  })
+
+  // Verified against toggleTableSet's real behaviour (js/app-runner.js) before writing this: ticking
+  // an already-done row un-ticks it (row.done -> false, no re-validation), so a SECOND click on the
+  // same button is required to re-tick it (row.done -> true, re-validated against the now-corrected
+  // fields). The double click below is not a guess -- it is what the function actually does.
+  test('correcting the top set recomputes the e1RM, and an already-logged set keeps its typed value', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    const first = await page.evaluate(() => _runner.exercises[0]._liveE1RM)
+    await page.fill('#set-1-weight', '80');  await page.fill('#set-1-reps', '8')
+    await page.click('#set-1-done')
+    // Correct a typo on the top set and re-tick it.
+    await page.fill('#set-0-weight', '110')
+    await page.click('#set-0-done')
+    await page.click('#set-0-done')
+    const second = await page.evaluate(() => _runner.exercises[0]._liveE1RM)
+    // 110 / 0.863 = 127.46, up from 115.87 — the estimate must follow the correction.
+    expect(Math.round(second * 100) / 100).toBe(127.46)
+    expect(second).not.toBe(first)
+    // A set the lifter already logged is a record of what was actually lifted; it must not be rewritten.
+    expect(await page.inputValue('#set-1-weight')).toBe('80')
+  })
+})

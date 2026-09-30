@@ -788,13 +788,25 @@ function toggleTableSet(rowIdx) {
     _unlockSpeech()
     row.done = true
     _syncLoggedSetsFromTable(ex)
+    _recomputeLiveE1RM(ex)
     startRestTimer(ex.restSecs || 90)
     renderRunner()
   } else {
     row.done = false
     _syncLoggedSetsFromTable(ex)
+    _recomputeLiveE1RM(ex)
     renderRunner()
   }
+}
+
+// The top set is always row 0 (Jake, 2026-09-29) — an exercise has at most one. Recomputed on every
+// tick and every edit of that row, so correcting a typo corrects the backoff targets with it.
+function _recomputeLiveE1RM(ex) {
+  const tgt0 = ex.sets_json?.[0]
+  if (!tgt0?.isTopSet) { ex._liveE1RM = null; return }
+  const row = ex.tableRows?.[0]
+  if (!row?.done || !_hasNumVal(row.weight) || !row.reps || !_hasNumVal(row.effort)) { ex._liveE1RM = null; return }
+  ex._liveE1RM = _estimate1RM(row.weight, row.reps, { effortType: tgt0.effortType, effortValue: row.effort })
 }
 
 function addTableRow() {
@@ -945,6 +957,12 @@ function _renderPrescriptionLine(ex) {
 
 function renderStrengthTable(ex) {
   _ensureTableRows(ex)
+  // Recomputed here, once per render, rather than from inCell's oninput handlers: those write
+  // straight into tableRows[i][field] and deliberately skip a re-render (to avoid re-rendering on
+  // every keystroke). Hooking every input would mean hooking a binding built to avoid exactly that.
+  // Doing it here means ticking the top set (which DOES re-render, via toggleTableSet) recomputes for
+  // free, and correcting a typo + re-ticking recomputes from the corrected values.
+  _recomputeLiveE1RM(ex)
   const prevMap = _prevSetsByIndex(ex)
   // Current working set's target — tracks progress (loggedSets.length), same formula the
   // wizard uses, instead of always reading set 1's prescription regardless of which set is next.
@@ -1216,6 +1234,7 @@ function renderRunner() {
               <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
             <div id="wr-title" style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
+            ${Number.isFinite(ex._liveE1RM) ? `<div style="margin-top:4px"><span id="ex-e1rm-chip" style="font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);padding:2px 8px;border-radius:999px;background:rgba(99,102,241,.12)">Est. 1RM: ${fmtWeight(ex._liveE1RM, { spaced: true, decimals: 1 })}</span></div>` : ''}
             ${isTable
               ? _renderPrescriptionLine(ex)
               : (ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
