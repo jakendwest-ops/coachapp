@@ -5,7 +5,7 @@ point-in-time file, not a live feed.** For anything time-sensitive, run the `/he
 instead — it reads the repo's live docs and checks current state every session. This file is for a
 fast read when that ritual hasn't been run, or for a non-Claude-Code reader.
 
-Snapshot date: 2026-09-20.
+Snapshot date: 2026-09-30.
 
 ## Project Summary
 
@@ -15,9 +15,17 @@ and build/assign/track workout programmes, with coach/client/solo roles. See
 
 ## Current Release Cycle
 
-Last shipped: `v2026.09.6` (2026-09-17, tagged and deployed). Three commits sit on `master` unpushed, by
-Jake's choice — a deleted tab, a dashboard fix, and automatic error capture with a Send-feedback link. See
+Last shipped: `v2026.09.11` (2026-09-28, tagged and deployed — the runner rebuild). **Eight commits sit
+on `master` unpushed**, including the Personal Bests page and the second 2026-09-28 walkthrough batch. See
 [current-sprint.md](current-sprint.md).
+
+**RPE top-set autoregulation is built but unmerged**, on the `worktree-rpe-top-set` branch: a coach marks
+set 1 as the top set with a prescribed RPE, the runner captures the effort actually hit, estimates a live
+e1RM from the RTS chart rather than Epley, and backoff sets target a percentage of *that* instead of a
+stored 1RM that may be months old. Spec and plan:
+[superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md](superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md),
+[superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md](superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md).
+Unreviewed and not hand-verified in a real browser session yet — both are the remaining gates.
 
 ## Current Priorities
 

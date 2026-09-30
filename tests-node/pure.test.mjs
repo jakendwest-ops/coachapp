@@ -130,6 +130,77 @@ describe('training maths', () => {
     assert.equal(Math.round(get('_estimate1RM')(100, 5) * 100) / 100, 116.67)
   })
 
+  test('_RPE_PCT_TABLE is internally consistent — X reps @ RPE Y equals (X + 10 - Y) reps @ RPE 10', () => {
+    // An RPE 8 triple and a 5-rep max are the same performance. This invariant is the transcription
+    // guard: it catches a mistyped cell that a spot-check of three values would sail past.
+    const t = get('_RPE_PCT_TABLE')
+    for (let reps = 1; reps <= 12; reps++) {
+      for (let rpe = 6; rpe <= 10; rpe++) {
+        const equivalent = reps + (10 - rpe)
+        if (equivalent > 12) continue
+        assert.equal(t[reps][rpe], t[equivalent][10],
+          `${reps} reps @ RPE ${rpe} should equal ${equivalent} reps @ RPE 10`)
+      }
+    }
+  })
+
+  test('_estimate1RM uses the RPE table when an effort value is supplied', () => {
+    // 3 @ RPE 8 = 86.3% of 1RM. 100 / 0.863 = 115.87...
+    const r = get('_estimate1RM')(100, 3, { effortType: 'rpe', effortValue: 8 })
+    assert.equal(Math.round(r * 100) / 100, 115.87)
+  })
+
+  test('_estimate1RM treats RIR 2 and RPE 8 as the same performance', () => {
+    const f = get('_estimate1RM')
+    assert.equal(f(100, 3, { effortType: 'rir', effortValue: 2 }),
+                 f(100, 3, { effortType: 'rpe', effortValue: 8 }))
+  })
+
+  test('_estimate1RM RPE-adjusts a submaximal single', () => {
+    // 1 @ RPE 8 = 92.2%. The lifter says they had ~2 more in them, so this is NOT their max.
+    const r = get('_estimate1RM')(100, 1, { effortType: 'rpe', effortValue: 8 })
+    assert.equal(Math.round(r * 100) / 100, 108.46)
+  })
+
+  test('_estimate1RM still returns the weight for a single at RPE 10 or with no effort', () => {
+    // The 2026-09-04 rule, narrowed not removed: a maximal or untagged single is measured fact.
+    const f = get('_estimate1RM')
+    assert.equal(f(100, 1, { effortType: 'rpe', effortValue: 10 }), 100)
+    assert.equal(f(100, 1), 100)
+    assert.equal(f(100, 1, {}), 100)
+  })
+
+  test('_estimate1RM clamps an out-of-range effort instead of returning NaN', () => {
+    const f = get('_estimate1RM')
+    // RPE 3 is below the chart. Clamp to 6 rather than index an undefined cell.
+    assert.equal(f(100, 3, { effortType: 'rpe', effortValue: 3 }),
+                 f(100, 3, { effortType: 'rpe', effortValue: 6 }))
+    // RIR 8 converts to RPE 2 — same clamp.
+    assert.equal(f(100, 3, { effortType: 'rir', effortValue: 8 }),
+                 f(100, 3, { effortType: 'rpe', effortValue: 6 }))
+    assert.ok(Number.isFinite(f(100, 3, { effortType: 'rpe', effortValue: 3 })))
+  })
+
+  test('_estimate1RM ignores a blank or non-numeric effort rather than throwing', () => {
+    const f = get('_estimate1RM')
+    assert.equal(f(100, 5, { effortType: 'rpe', effortValue: '' }), f(100, 5))
+    assert.equal(f(100, 5, { effortType: 'rpe', effortValue: null }), f(100, 5))
+    assert.equal(f(100, 5, { effortType: 'rpe', effortValue: 'abc' }), f(100, 5))
+  })
+
+  test('_estimate1RM still refuses beyond the rep cap even with an RPE', () => {
+    assert.equal(get('_estimate1RM')(100, 13, { effortType: 'rpe', effortValue: 8 }), null)
+  })
+
+  test('_estimate1RM treats RIR 0 as RPE 10 — a real prescription, not a missing value', () => {
+    // RIR 0 means "to failure". A truthy check on the effort value would drop it and silently fall
+    // back to plain Epley. This project has four prior instances of that falsy-zero bug class.
+    const f = get('_estimate1RM')
+    assert.equal(f(100, 5, { effortType: 'rir', effortValue: 0 }), f(100, 5, { effortType: 'rpe', effortValue: 10 }))
+    // RPE 10 at 5 reps is the to-failure case, so this must equal plain Epley, not a table lookup.
+    assert.equal(Math.round(f(100, 5, { effortType: 'rir', effortValue: 0 }) * 100) / 100, 116.67)
+  })
+
   test('_rollingAvg averages over the trailing window', () => {
     sameShape(get('_rollingAvg')([1, 2, 3, 4], 2), [1, 1.5, 2.5, 3.5])
   })

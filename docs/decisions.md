@@ -12,6 +12,21 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-09-30 — The preview server serves the checkout it was launched from, not a hardcoded path.**
+`.claude/launch.json` is git-TRACKED and its PowerShell server hardcoded `Join-Path
+'C:/Users/jaken/OneDrive/coachapp'`. Every git worktree therefore inherited it and served the MAIN
+checkout's `js/` while Playwright ran the WORKTREE's specs — a worktree suite could go green having
+tested code its author never wrote. Measured on `worktree-rpe-top-set`: 5 specs failed in ways that
+read as application bugs; pointed at the right root the same specs went 13 passed / 3 failed, and
+only the 3 genuinely unimplemented ones were red. It now serves `(Get-Location)` (Playwright spawns
+`webServer` with cwd set to the config's own directory), refuses to start where there is no
+`index.html`, and prints the directory it serves. **Rejected:** leaving it and relying on
+`PREVIEW_SERVER_CMD` per run — a safeguard you must remember to apply is the failure mode, not the
+fix. The real gap was that `global-setup`'s precondition only checked the `<title>`, which reads
+"CoachApp" in every checkout; it now compares the served `index.html` against this checkout's
+(normalising the BOM and CRLF), and `check-preview-server.selftest.mjs` gained cases 5 and 6 so both
+the new refusal and the BOM false positive are pinned. Do not restore the absolute path.
+
 **2026-09-28 — The runner is "log-first": the set table comes straight after the tabs, and the occasional things moved out of its way.**
 Jake's runner walkthrough (items 7 and 8 of 8): "the UI on this page is not user friendly." Measured on a phone, the first
 set row began **252px** below the tabs, under a Swap/Add row, a stats card and three prescription boxes. Now: Swap, Add and

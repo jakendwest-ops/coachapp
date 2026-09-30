@@ -40,7 +40,10 @@ test.describe('Runner fast table — metric_type aware', () => {
     expect(res.routing.cardio).toBe(false)
 
     // Sync shapes match the ②b save contract
-    expect(res.sync.weight_reps).toEqual({ weight: '100', reps: '5' })
+    // weight_reps now also carries effort/effortType (2026-09-29, runner effort capture — gap 0):
+    // effort is null when nothing was typed, effortType falls back to 'rpe' when the fixture's
+    // sets_json carries no effortType at all (mk() below seeds sets_json: [{}]).
+    expect(res.sync.weight_reps).toEqual({ weight: '100', reps: '5', effort: null, effortType: 'rpe' })
     expect(res.sync.unilateral).toEqual({ leftWeight: '20', leftReps: '10', rightWeight: '18', rightReps: '9' })
     expect(res.sync.timed_hold).toEqual({ duration: '1:30', weight: '5' })
     // reps = contacts; added 2026-07-23 so a prescribed jump count can actually be logged.

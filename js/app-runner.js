@@ -722,7 +722,7 @@ function _blankTableRow(ex) {
   if (mt === 'timed_hold') return { duration: '', weight: ex.bodyweight ? 'BW' : '', done: false }
   if (mt === 'jump_height') return { height_cm: '', reps: '', done: false }
   if (mt === 'jump_distance') return { distance_m: '', reps: '', done: false }
-  return { weight: ex.bodyweight ? 'BW' : '', reps: '', done: false }
+  return { weight: ex.bodyweight ? 'BW' : '', reps: '', effort: '', done: false }
 }
 
 function _ensureTableRows(ex) {
@@ -738,13 +738,24 @@ function _ensureTableRows(ex) {
 
 function _syncLoggedSetsFromTable(ex) {
   const mt = _exMetricType(ex)
-  ex.loggedSets = ex.tableRows.filter(r => r.done).map(r => {
-    if (mt === 'unilateral') return { leftWeight: r.leftWeight || null, leftReps: r.leftReps || null, rightWeight: r.rightWeight || null, rightReps: r.rightReps || null }
-    if (mt === 'timed_hold') return { duration: r.duration || null, weight: _hasNumVal(r.weight) ? r.weight : null }
-    if (mt === 'jump_height') return { height_cm: _hasNumVal(r.height_cm) ? r.height_cm : null, reps: r.reps || null }
-    if (mt === 'jump_distance') return { distance_m: _hasNumVal(r.distance_m) ? r.distance_m : null, reps: r.reps || null }
-    return { weight: _hasNumVal(r.weight) ? r.weight : null, reps: r.reps }
-  })
+  // Index preserved BEFORE the filter: sets_json is keyed by real row position, so a skipped set
+  // would otherwise shift every later row onto the wrong prescription.
+  ex.loggedSets = ex.tableRows
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.done)
+    .map(({ r, i }) => {
+      if (mt === 'unilateral') return { leftWeight: r.leftWeight || null, leftReps: r.leftReps || null, rightWeight: r.rightWeight || null, rightReps: r.rightReps || null }
+      if (mt === 'timed_hold') return { duration: r.duration || null, weight: _hasNumVal(r.weight) ? r.weight : null }
+      if (mt === 'jump_height') return { height_cm: _hasNumVal(r.height_cm) ? r.height_cm : null, reps: r.reps || null }
+      if (mt === 'jump_distance') return { distance_m: _hasNumVal(r.distance_m) ? r.distance_m : null, reps: r.reps || null }
+      // effortType travels WITH the value: the save path must not guess which scale this number is on.
+      return {
+        weight: _hasNumVal(r.weight) ? r.weight : null,
+        reps: r.reps,
+        effort: _hasNumVal(r.effort) ? r.effort : null,
+        effortType: ex.sets_json?.[i]?.effortType === 'rir' ? 'rir' : 'rpe'
+      }
+    })
 }
 
 function toggleTableSet(rowIdx) {
@@ -777,13 +788,25 @@ function toggleTableSet(rowIdx) {
     _unlockSpeech()
     row.done = true
     _syncLoggedSetsFromTable(ex)
+    _recomputeLiveE1RM(ex)
     startRestTimer(ex.restSecs || 90)
     renderRunner()
   } else {
     row.done = false
     _syncLoggedSetsFromTable(ex)
+    _recomputeLiveE1RM(ex)
     renderRunner()
   }
+}
+
+// The top set is always row 0 (Jake, 2026-09-29) — an exercise has at most one. Recomputed on every
+// tick and every edit of that row, so correcting a typo corrects the backoff targets with it.
+function _recomputeLiveE1RM(ex) {
+  const tgt0 = ex.sets_json?.[0]
+  if (!tgt0?.isTopSet) { ex._liveE1RM = null; return }
+  const row = ex.tableRows?.[0]
+  if (!row?.done || !_hasNumVal(row.weight) || !row.reps || !_hasNumVal(row.effort)) { ex._liveE1RM = null; return }
+  ex._liveE1RM = _estimate1RM(row.weight, row.reps, { effortType: tgt0.effortType, effortValue: row.effort })
 }
 
 function addTableRow() {
@@ -934,6 +957,12 @@ function _renderPrescriptionLine(ex) {
 
 function renderStrengthTable(ex) {
   _ensureTableRows(ex)
+  // Recomputed here, once per render, rather than from inCell's oninput handlers: those write
+  // straight into tableRows[i][field] and deliberately skip a re-render (to avoid re-rendering on
+  // every keystroke). Hooking every input would mean hooking a binding built to avoid exactly that.
+  // Doing it here means ticking the top set (which DOES re-render, via toggleTableSet) recomputes for
+  // free, and correcting a typo + re-ticking recomputes from the corrected values.
+  _recomputeLiveE1RM(ex)
   const prevMap = _prevSetsByIndex(ex)
   // Current working set's target — tracks progress (loggedSets.length), same formula the
   // wizard uses, instead of always reading set 1's prescription regardless of which set is next.
@@ -1004,7 +1033,7 @@ function renderStrengthTable(ex) {
       : parseFn
         ? `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=${parseFn}(this.value)`
         : `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
-    return `<input type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${escapeHtml(String(toDisplay(row[field]) ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
+    return `<input id="set-${i}-${field}" type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${escapeHtml(String(toDisplay(row[field]) ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
       oninput="${bind}"
       style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done ? 'var(--border)' : 'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
   }
@@ -1017,7 +1046,7 @@ function renderStrengthTable(ex) {
       : isCurrent
         ? 'border:2px solid var(--accent);background:var(--surface-2);color:var(--accent)'
         : 'border:1.5px solid var(--border);background:var(--surface-2);color:var(--text-muted)'
-    return `<button onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}" style="width:44px;height:44px;flex-shrink:0;border-radius:var(--radius-sm, 8px);font-size:var(--text-2xl, 18px);font-weight:800;cursor:pointer;${state}">✓</button>`
+    return `<button id="set-${i}-done" onclick="toggleTableSet(${i})" aria-label="${row.done?'Mark set incomplete':'Mark set complete'}" style="width:44px;height:44px;flex-shrink:0;border-radius:var(--radius-sm, 8px);font-size:var(--text-2xl, 18px);font-weight:800;cursor:pointer;${state}">✓</button>`
   }
   // Deliberately SMALLER than the 44x44 complete-set tick above: the destructive action must not be the
   // easier target mid-set. Jake asked twice (2026-07-13, 2026-07-23). aria-label carries the full meaning
@@ -1027,6 +1056,12 @@ function renderStrengthTable(ex) {
   const inDel = (i) => ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="width:32px;height:32px;flex-shrink:0;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:var(--legacy-text-15, 15px);font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center">&times;</button>` : ''
   const inSetNum = (i, isCurrent) => `<span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text-muted)'};text-align:center">${i+1}</span>`
 
+  // Hoisted above the row map (was computed only for the header, further down) so each row can also
+  // consult it: whether THIS EXERCISE shows an effort column at all, vs. whether THIS ROW prescribes
+  // one, are different questions once a top set carries an effort and its backoff sets don't — the
+  // row map needs both to decide between a real effort cell, an empty placeholder, or nothing.
+  const effortRx = mt === 'weight_reps' ? ex.sets_json?.find(s => _hasNumVal(s?.effortMin) || _hasNumVal(s?.effortMax)) : null
+
   const rows = ex.tableRows.map((row, i) => {
     const prev = prevMap[i]
     // The %1RM-derived load, computed once for every metric_type. The target bar shows the PERCENTAGE
@@ -1034,10 +1069,20 @@ function renderStrengthTable(ex) {
     // unilateral too, not just weight_reps. A bodyweight set renders 'BW' and has no input to ghost,
     // which is correct: there is no load to prescribe.
     const rowTgt0 = ex.sets_json?.[i]
+    // Which 1RM this row's percentage is OF. A 'topSet' row resolves against what was lifted TODAY
+    // (ex._liveE1RM, recomputed by _recomputeLiveE1RM on every tick); everything else keeps the
+    // stored client_1rms value, which is what every pre-existing template means and must keep meaning.
+    //
+    // _liveE1RM is undefined until the first recompute and null whenever the top set can't produce an
+    // estimate, so `!basisRM` covers both — and when it's falsy a topSet row deliberately falls through
+    // to '' rather than to ex.oneRM. Never fall back to the stored 1RM here: a plausible-looking stale
+    // number sitting on the bar is worse than an honest blank.
+    const usesTopSet = rowTgt0?.intensityBasis === 'topSet'
+    const basisRM = usesTopSet ? ex._liveE1RM : ex.oneRM
     // The %1RM rounding (nearest 2.5kg, a barbell-plate constraint) stays in kg regardless of
     // preference — only the DISPLAYED number converts, same as every other weight ghost value.
-    const oneRMPh = (rowTgt0?.intensityMin && ex.oneRM)
-      ? weightToPref(_calcWeightFromPct(ex.oneRM, rowTgt0.intensityMin)) + (rowTgt0.intensityMax && rowTgt0.intensityMax !== rowTgt0.intensityMin ? '–' + weightToPref(_calcWeightFromPct(ex.oneRM, rowTgt0.intensityMax)) : '')
+    const oneRMPh = (rowTgt0?.intensityMin && basisRM)
+      ? weightToPref(_calcWeightFromPct(basisRM, rowTgt0.intensityMin)) + (rowTgt0.intensityMax && rowTgt0.intensityMax !== rowTgt0.intensityMin ? '–' + weightToPref(_calcWeightFromPct(basisRM, rowTgt0.intensityMax)) : '')
       : ''
     // The row for the set you're currently on is highlighted so it's visually obvious which set the
     // target bar above applies to (Jake: "highlighted, not entered as text underneath — ugly UI").
@@ -1096,17 +1141,54 @@ function renderStrengthTable(ex) {
     // showing "—" reads as disabled. Ghost values from last session / %1RM still win when present.
     const wPlaceholder = oneRMPh || (prev?.weight_kg != null ? weightToPref(prev.weight_kg) : '') || window._unitPrefs.weight
     const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || 'reps'
+    // Only where the coach actually prescribed an effort (Jake, 2026-09-29). A row with no
+    // effortMin/effortMax renders exactly the two columns it always has — no layout change at all
+    // for the exercises nobody asked for effort on (effortRx is falsy, so wantsPlaceholder below is
+    // false too and this row falls through to the plain two-cell case, unchanged).
+    // _hasNumVal, not the truthy check the brief originally sketched: a prescription of exactly
+    // effortMin: 0 (RIR 0, "to failure") is falsy but very real — this project has four prior
+    // instances of the falsy-zero bug class, and the RIR-0 test below depends on this being right.
+    const wantsEffort = _hasNumVal(rowTgt0?.effortMin) || _hasNumVal(rowTgt0?.effortMax)
+    const isRIR = rowTgt0?.effortType === 'rir'
+    // Task 2 fix round 1 (2026-09-29, controller ruling on self-review finding #1): the feature's own
+    // primary case — a prescribed top set followed by plain backoff sets — makes an exercise where
+    // SOME rows render the effort cell and some don't. The header still grows the RIR/RPE column
+    // whenever ANY row prescribes (effortRx), so a row that itself doesn't (wantsEffort false) needs
+    // an empty flex:1 placeholder of its own, or its Kg/Reps cells stretch to fill that gap and drift
+    // out of alignment with the header and with the other rows. Only inserted when the EXERCISE shows
+    // the column at all — a plain exercise with no effort anywhere keeps its untouched two cells.
+    const wantsPlaceholder = !wantsEffort && !!effortRx
+    // A topSet row with nothing to resolve against says WHY its target is blank, rather than leaving
+    // the lifter staring at an empty bar mid-session. The two messages are different on purpose:
+    // telling someone to log a set they already logged reads as the app not having noticed.
+    //
+    // The third case — row 0 is not a top set at all, so there is no set to log — also lands on
+    // "Log the top set first". It is reachable only from legacy or hand-edited sets_json, and the
+    // BUILDER already warns about it explicitly at authoring time (app-workouts.js's topSetWarning),
+    // which is where it can actually be fixed.
+    const basisNote = (usesTopSet && !basisRM && rowTgt0?.intensityMin)
+      ? `<div id="set-${i}-basis-note" style="font-size:var(--text-sm, 11px);color:var(--text-muted);padding:2px 0 0 28px">${ex.sets_json?.[0]?.isTopSet && ex.tableRows?.[0]?.done ? "Can't estimate from this set" : 'Log the top set first'}</div>`
+      : ''
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${ex.bodyweight
           ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>`
           : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder, unit:'weight' })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
+        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10' }) : wantsPlaceholder ? '<span style="flex:1" aria-hidden="true"></span>' : ''}
         ${inDone(i, row, isCurrent)}${inDel(i)}
-      </div></div>`
+      </div>${basisNote}</div>`
   }).join('')
 
   const th = (label, w) => `<span style="${w ? `width:${w}` : 'flex:1'};text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</span>`
+  // effortRx is computed once, above the row map (it now also decides each row's placeholder cell —
+  // see there). Same "any row prescribes it" scoping grows the header only when at least one row
+  // actually rendered the effort input. Its scale label reads off the FIRST prescribing row's
+  // effortType, the same field _buildTargetCols reads at :907. The builder's setTsEffort toggle IS
+  // per-set, so a genuinely mixed RPE/RIR exercise is buildable — this picks the first prescribing
+  // row's scale for the header label regardless, same simplification _buildTargetCols already makes
+  // per-set; each cell's own placeholder (0–5 vs 1–10, per wantsEffort above) still reflects that
+  // ROW's real scale, so a mixed exercise is a header-label approximation only, not a data-capture bug.
   let header
   const weightLabel = window._unitPrefs.weight === 'lb' ? 'Lb' : 'Kg'
   const jumpHeightLabel = window._unitPrefs.jumpHeight === 'in' ? 'Height (in)' : 'Height (cm)'
@@ -1116,16 +1198,22 @@ function renderStrengthTable(ex) {
   // header, so the two flex:1 cells sat narrower than the labels above them (2026-09-11 walkthrough:
   // "column headers are not centre aligned to the columns they represent").
   const delSpacer = ex.tableRows.length > 1 ? `<span style="width:40px;flex-shrink:0"></span>` : ''
+  // id="wr-table-header": a stable, narrow hook so a DOM-text scan (e.g.
+  // runner-layout-2026-09-28.spec.js's "no stray prescription label" check) can exempt this ONE
+  // legitimate column-header row by element, not by matching its text — the effort column below
+  // renders a literal RIR/RPE and must not be mistaken for the banned duplicate read-only prescription
+  // box that check exists to catch. Every metric-type branch gets the same id (mutually exclusive —
+  // only one renders per call) so the exemption is not weight_reps-specific.
   if (mt === 'unilateral') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(`L / R · ${weightLabel.toLowerCase()} × reps`)}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(`L / R · ${weightLabel.toLowerCase()} × reps`)}<span style="width:44px"></span>${delSpacer}</div>`
   } else if (mt === 'timed_hold') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : weightLabel)}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : weightLabel)}<span style="width:44px"></span>${delSpacer}</div>`
   } else if (mt === 'jump_height') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(jumpHeightLabel)}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(jumpHeightLabel)}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
   } else if (mt === 'jump_distance') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
   } else {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}${effortRx ? th(effortRx.effortType === 'rir' ? 'RIR' : 'RPE') : ''}<span style="width:44px"></span>${delSpacer}</div>`
   }
   // Reps tally only makes sense for rep-based types.
   const tally = (mt === 'weight_reps' || mt === 'unilateral') ? _renderRepsTallyHtml(ex) : ''
@@ -1167,6 +1255,7 @@ function renderRunner() {
               <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
             <div id="wr-title" style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
+            ${Number.isFinite(ex._liveE1RM) ? `<div style="margin-top:4px"><span id="ex-e1rm-chip" style="font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);padding:2px 8px;border-radius:999px;background:rgba(99,102,241,.12)">Est. 1RM: ${fmtWeight(ex._liveE1RM, { spaced: true, decimals: 1 })}</span></div>` : ''}
             ${isTable
               ? _renderPrescriptionLine(ex)
               : (ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
@@ -3035,13 +3124,14 @@ async function saveRunnerSession() {
         if (_hasNumVal(s.height_cm))  row.height_cm = parseFloat(s.height_cm)
         if (s.reps)       row.reps_achieved = parseInt(s.reps)
         if (s.weight !== 'BW' && _hasNumVal(s.weight)) row.weight_kg = parseFloat(s.weight)
-        // UNREACHABLE as of 2026-08-11, deliberately left in place: no runner logged-set shape
-        // carries `.rpe` (see _blankTableRow — there is no effort input in the strength table at all),
-        // so the in-gym runner currently captures NO effort. Effort only reaches the DB via the manual
-        // Log Session modal. Kept as the obvious hook if capture is added — but note it hardcodes 'rpe',
-        // so wiring an RIR-capable input to it without also setting effort_type would recreate exactly
-        // the inversion fixed above.
-        if (s.rpe) { row.effort_type = 'rpe'; row.effort_value = parseFloat(s.rpe) }
+        // Effort capture landed 2026-09-29 (the runner's fast table now renders an effort input
+        // wherever a set's prescription carries one — renderStrengthTable's wantsEffort).
+        // effort_type comes from what was PRESCRIBED, never a literal. RIR and RPE run in opposite
+        // directions, so a hardcoded 'rpe' here does not mislabel an RIR — it inverts its meaning.
+        if (_hasNumVal(s.effort)) {
+          row.effort_type = s.effortType === 'rir' ? 'rir' : 'rpe'
+          row.effort_value = parseFloat(s.effort)
+        }
       }
       applyCardioMetrics(row)
       if (Object.keys(row).length > 2) allSets.push(row)
@@ -3077,6 +3167,20 @@ async function saveRunnerSession() {
         const est = _estimate1RM(w, r)
         if (est && (!best || est > best.estimate)) best = { estimate: est, weight: w, reps: r }
       })
+      // The top set's RPE-aware estimate wins outright when there is one — not "if it is higher".
+      // The loop above is plain Epley, which assumes every set was taken to failure; a set stopped
+      // at RPE 8 had two reps left, so Epley systematically UNDER-predicts it (100x3 -> 110 vs the
+      // RPE-aware 115.9). Picking the larger of the two would still be picking between a model that
+      // knows what was left in the tank and one that does not, so the better-informed one wins.
+      //
+      // weight/reps come from tableRows[0], mirroring _recomputeLiveE1RM exactly, so the modal's
+      // "100 kg x 3 reps" heading describes the very set the estimate underneath it came from.
+      // Placed before the !best guard on purpose: the loop discards anything over 10 reps, while
+      // _estimate1RM accepts up to 12, so a top set of 11 or 12 has a live estimate and no `best`.
+      const topRow = ex.tableRows?.[0]
+      if (Number.isFinite(ex._liveE1RM) && topRow && _hasNumVal(topRow.weight) && topRow.reps) {
+        best = { estimate: ex._liveE1RM, weight: parseFloat(topRow.weight), reps: parseInt(topRow.reps) }
+      }
       if (!best) return null
       const currentOneRM = ex.oneRM ? parseFloat(ex.oneRM) : 0
       if (best.estimate <= currentOneRM) return null
@@ -3112,7 +3216,7 @@ function showPostSessionOneRMModal(clientId, candidates) {
         ${candidates.map((c, i) => `
           <div id="psorm-row-${i}" style="background:rgba(99,102,241,.07);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:12px;margin-bottom:10px">
             <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--accent)">${escapeHtml(c.name)} — ${fmtWeight(c.weight)} × ${c.reps} reps</div>
-            <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${fmtWeight(c.estimate, { spaced: true, decimals: 1 })}</div>
+            <div id="psorm-estimate-${i}" style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${fmtWeight(c.estimate, { spaced: true, decimals: 1 })}</div>
             <div style="display:flex;gap:6px">
               <button class="btn-primary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${escapeAttr(c.name)}',${c.estimate},${c.exerciseId ? `'${c.exerciseId}'` : 'null'})">Save as my 1RM</button>
               <button class="btn-secondary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="document.getElementById('psorm-row-${i}').remove()">Skip</button>

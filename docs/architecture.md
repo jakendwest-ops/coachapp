@@ -18,7 +18,7 @@ Each has its own `?v=N` cache-bust query string on its `<script>` tag in `index.
 | Module | Lines | Responsibility |
 |---|---|---|
 | app-workouts | 3,639 | Workout templates/library, template editor, session-detail drawer |
-| app-runner | 3,476 | In-gym logger: strength table + wizard, rest timer, session autosave/resume |
+| app-runner | 3,476 | In-gym logger: strength table + wizard, rest timer, session autosave/resume; per-set effort (RPE/RIR) capture and a live top-set e1RM that backoff sets target |
 | app-progress | 3,356 | Body weight, personal bests, cardio, charts. A "progress photos" feature was built then code-removed — data/bucket retained (per an in-file comment) |
 | app-programs | 2,821 | Programmes, phases, periodization, assign/clone to clients; heaviest raw-query module, with its own ownership-anchor verification |
 | app-calendar-goals | 1,134 | Calendar (maps assigned programmes onto real dates) and goals |
@@ -56,8 +56,15 @@ count — a reasonable but not exact proxy for test count, since it can include 
 separate small Node-native unit-test layer (`tests-node/`, `node --test`) covers pure logic.
 
 The suite runs single-worker/sequential (shared Supabase test-account auth state), with a
-global-setup that asserts the preview server is real and a global-teardown that reports (without
-failing on) leftover `[E2E]`-tagged fixture rows.
+global-setup that asserts the preview server is real, is CoachApp, and is serving **this**
+checkout, and a global-teardown that reports (without failing on) leftover `[E2E]`-tagged fixture
+rows. That last assertion exists because `.claude/launch.json` is git-tracked: a worktree used to
+inherit the main checkout's server root and test code its author never wrote (2026-09-30, see
+[decisions.md](decisions.md)).
+
+`_estimate1RM` (`app-workouts.js`) is RPE-aware: given an effort value it reads the RTS/Tuchscherer
+reps x RPE -> %1RM chart instead of Epley, which assumes every set went to failure. The chart itself
+is covered by `tests-node/pure.test.mjs`, not a browser spec.
 
 **A push runs no browser tests (since 2026-09-27).** The pre-push hook runs `checks.sh` in FAST mode
 (static checks only, ~50 s). The full suite runs in `scripts/release.mjs` before any tag. The old

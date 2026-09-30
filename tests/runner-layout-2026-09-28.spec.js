@@ -126,8 +126,60 @@ test.describe('Runner log-first layout (2026-09-28)', () => {
     const h = await rx.evaluate(el => el.getBoundingClientRect().height)
     expect(h, 'one line at 16px, not a wrapped block').toBeLessThan(30)
     // The old three-box bar is gone: every prescription label on the page lives in the one line.
-    const stray = await page.evaluate(() => [...document.querySelectorAll('#workout-runner *')].filter(e => !e.children.length && ['REPS', 'RIR', 'REST'].includes(e.textContent.trim()) && !e.closest('#wr-rx')).length)
-    expect(stray, 'no REPS / RIR / REST label outside the prescription line').toBe(0)
+    // EXEMPTION (2026-09-29, runner effort capture — Task 2 fix round 1): #wr-table-header, the fast
+    // table's own column-header row, is deliberately excluded. That rule was written to kill the old
+    // three-box bar, which DUPLICATED read-only prescription text already shown in #wr-rx. A table
+    // column header is a different thing — it labels an INPUT the lifter fills in (Set/Kg/Reps/RIR or
+    // RPE), and this check already tolerated 'Set'/'Kg'/'Reps' there (it only matches the exact
+    // uppercase acronyms REPS/RIR/REST, and those headers render mixed-case). The effort column is the
+    // one new header that DOES hit an exact acronym match ('RIR'/'RPE'), and it must stay: RIR and RPE
+    // are opposite scales, so an unlabelled effort column would recreate the exact inversion hazard
+    // this whole task exists to prevent. Scoped to the one real header element by id, not by text, so
+    // a genuine stray prescription box anywhere else in the runner is still caught.
+    const stray = await page.evaluate(() => [...document.querySelectorAll('#workout-runner *')].filter(e => !e.children.length && ['REPS', 'RIR', 'REST'].includes(e.textContent.trim()) && !e.closest('#wr-rx') && !e.closest('#wr-table-header')).length)
+    expect(stray, 'no REPS / RIR / REST label outside the prescription line or the table header').toBe(0)
+  })
+
+  // (review, Task 2 fix round 1, 2026-09-29): the feature's actual primary use case — a prescribed
+  // top set followed by plain backoff sets — is a MIXED exercise: only SOME rows render the effort
+  // cell. The header still grows the RIR/RPE column (it renders when ANY row prescribes one), but a
+  // non-prescribing row used to render one fewer cell than a prescribing row, so its Kg/Reps cells
+  // (both flex:1) stretched to fill the gap and drifted out of alignment with the header above them —
+  // the exact "column headers not centre aligned" bug class from 2026-09-11. Fixed by giving a
+  // non-prescribing row an empty flex:1 placeholder wherever the exercise as a whole shows the effort
+  // column. Pinned here by cell COUNT rather than by pixel position: a non-prescribing row must render
+  // the same number of direct children as a prescribing row in the same exercise, or the columns
+  // cannot possibly line up regardless of exact widths.
+  test('(review) a mixed-prescription exercise keeps row cell counts aligned — a prescribed top set followed by a plain backoff set', async ({ page }) => {
+    await loginAsClient(page)
+    await page.evaluate(() => {
+      window._unitPrefs = { ...(window._unitPrefs || {}), weight: 'kg' }
+      _runner = {
+        clientId: 'layout-spec-mixed', startTime: Date.now(), exIdx: 0, lastSession: { 'Mixed Rx': null },
+        exercises: [{
+          name: 'Mixed Rx', type: 'strength', metricType: 'weight_reps', targetSets: 2,
+          sets_json: [
+            { repsMin: '3', effortType: 'rpe', effortMin: '8' }, // top set: prescribes effort
+            { repsMin: '8' }                                      // backoff set: no effort prescribed
+          ],
+          loggedSets: [], exerciseId: null, order_index: 0, restSecs: 60,
+        }],
+      }
+      renderRunner()
+    })
+    await expect(page.locator('#workout-runner button:text-is("End")')).toBeVisible()
+
+    // Sanity: the header DID grow the effort column (proves this test exercises the mixed case at
+    // all, not a header that stayed 3-wide because nothing prescribed effort).
+    await expect(page.locator('#wr-table-header')).toContainText('RPE')
+    await expect(page.locator('#set-0-effort'), 'the prescribing row renders the effort input').toBeVisible()
+    await expect(page.locator('#set-1-effort'), 'the non-prescribing row must NOT get a real effort input — only a same-width placeholder').toHaveCount(0)
+
+    const counts = await page.evaluate(() => ({
+      row0: document.getElementById('set-0-weight').parentElement.children.length,
+      row1: document.getElementById('set-1-weight').parentElement.children.length,
+    }))
+    expect(counts.row1, 'a non-prescribing row must render the same cell count as a prescribing row in the same exercise, or its Kg/Reps columns stretch and drift out of alignment with the header').toBe(counts.row0)
   })
 
   test('the "Last time" line is a clearly tappable Stats button, after the sets — and absent when there is no history', async ({ page }) => {

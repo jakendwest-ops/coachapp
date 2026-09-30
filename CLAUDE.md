@@ -41,7 +41,8 @@ Live: https://jakendwest-ops.github.io/coachapp
 - **No build step.** Static site: `index.html` loads `css/main.css` and the `js/` modules directly.
 - **Backend: Supabase** (Postgres + Row-Level Security + Auth + Storage), `supabase-js` v2. Project
   `avilxuiacmtgeoxxhfhc` (eu-west-1). SQL/setup scripts in `scripts/`.
-- **Tests: Playwright** E2E only (`npm test`). No unit-test framework.
+- **Tests: Playwright** E2E only (`npm test`), plus a small `node:test` harness for pure functions
+  (`tests-node/*.test.mjs`, `npm run test:unit`) — used for the RPE/1RM lookup tables, which need no browser.
 - **Deploy: a `v*` TAG → GitHub Actions → GitHub Pages.** Changed 2026-09-05: **pushing to master no
   longer deploys.** A push runs the static checks only (no browser tests since 2026-09-27), so master
   can hold a browser regression; the live site only moves when a release tag is pushed, after the full suite. Committing straight to master is still the normal workflow —
