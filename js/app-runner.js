@@ -1038,6 +1038,12 @@ function renderStrengthTable(ex) {
   const inDel = (i) => ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="width:32px;height:32px;flex-shrink:0;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:var(--legacy-text-15, 15px);font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center">&times;</button>` : ''
   const inSetNum = (i, isCurrent) => `<span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text-muted)'};text-align:center">${i+1}</span>`
 
+  // Hoisted above the row map (was computed only for the header, further down) so each row can also
+  // consult it: whether THIS EXERCISE shows an effort column at all, vs. whether THIS ROW prescribes
+  // one, are different questions once a top set carries an effort and its backoff sets don't — the
+  // row map needs both to decide between a real effort cell, an empty placeholder, or nothing.
+  const effortRx = mt === 'weight_reps' ? ex.sets_json?.find(s => _hasNumVal(s?.effortMin) || _hasNumVal(s?.effortMax)) : null
+
   const rows = ex.tableRows.map((row, i) => {
     const prev = prevMap[i]
     // The %1RM-derived load, computed once for every metric_type. The target bar shows the PERCENTAGE
@@ -1109,33 +1115,41 @@ function renderStrengthTable(ex) {
     const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || 'reps'
     // Only where the coach actually prescribed an effort (Jake, 2026-09-29). A row with no
     // effortMin/effortMax renders exactly the two columns it always has — no layout change at all
-    // for the exercises nobody asked for effort on.
+    // for the exercises nobody asked for effort on (effortRx is falsy, so wantsPlaceholder below is
+    // false too and this row falls through to the plain two-cell case, unchanged).
     // _hasNumVal, not the truthy check the brief originally sketched: a prescription of exactly
     // effortMin: 0 (RIR 0, "to failure") is falsy but very real — this project has four prior
     // instances of the falsy-zero bug class, and the RIR-0 test below depends on this being right.
     const wantsEffort = _hasNumVal(rowTgt0?.effortMin) || _hasNumVal(rowTgt0?.effortMax)
     const isRIR = rowTgt0?.effortType === 'rir'
+    // Task 2 fix round 1 (2026-09-29, controller ruling on self-review finding #1): the feature's own
+    // primary case — a prescribed top set followed by plain backoff sets — makes an exercise where
+    // SOME rows render the effort cell and some don't. The header still grows the RIR/RPE column
+    // whenever ANY row prescribes (effortRx), so a row that itself doesn't (wantsEffort false) needs
+    // an empty flex:1 placeholder of its own, or its Kg/Reps cells stretch to fill that gap and drift
+    // out of alignment with the header and with the other rows. Only inserted when the EXERCISE shows
+    // the column at all — a plain exercise with no effort anywhere keeps its untouched two cells.
+    const wantsPlaceholder = !wantsEffort && !!effortRx
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${ex.bodyweight
           ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>`
           : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder, unit:'weight' })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
-        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10' }) : ''}
+        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10' }) : wantsPlaceholder ? '<span style="flex:1" aria-hidden="true"></span>' : ''}
         ${inDone(i, row, isCurrent)}${inDel(i)}
       </div></div>`
   }).join('')
 
   const th = (label, w) => `<span style="${w ? `width:${w}` : 'flex:1'};text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</span>`
-  // Same "any row prescribes it" scoping as the per-row wantsEffort above, so the header only grows
-  // an extra column when at least one row actually rendered the effort input. Its scale label reads
-  // off the FIRST prescribing row's effortType, the same field _buildTargetCols reads at :907. The
-  // builder's setTsEffort toggle IS per-set, so a genuinely mixed RPE/RIR exercise is buildable —
-  // this picks the first prescribing row's scale for the header label regardless, same simplification
-  // _buildTargetCols already makes per-set; each cell's own placeholder (0–5 vs 1–10, per wantsEffort
-  // above) still reflects that ROW's real scale, so a mixed exercise is a header-label approximation
-  // only, not a data-capture bug.
-  const effortRx = mt === 'weight_reps' ? ex.sets_json?.find(s => _hasNumVal(s?.effortMin) || _hasNumVal(s?.effortMax)) : null
+  // effortRx is computed once, above the row map (it now also decides each row's placeholder cell —
+  // see there). Same "any row prescribes it" scoping grows the header only when at least one row
+  // actually rendered the effort input. Its scale label reads off the FIRST prescribing row's
+  // effortType, the same field _buildTargetCols reads at :907. The builder's setTsEffort toggle IS
+  // per-set, so a genuinely mixed RPE/RIR exercise is buildable — this picks the first prescribing
+  // row's scale for the header label regardless, same simplification _buildTargetCols already makes
+  // per-set; each cell's own placeholder (0–5 vs 1–10, per wantsEffort above) still reflects that
+  // ROW's real scale, so a mixed exercise is a header-label approximation only, not a data-capture bug.
   let header
   const weightLabel = window._unitPrefs.weight === 'lb' ? 'Lb' : 'Kg'
   const jumpHeightLabel = window._unitPrefs.jumpHeight === 'in' ? 'Height (in)' : 'Height (cm)'
@@ -1145,16 +1159,22 @@ function renderStrengthTable(ex) {
   // header, so the two flex:1 cells sat narrower than the labels above them (2026-09-11 walkthrough:
   // "column headers are not centre aligned to the columns they represent").
   const delSpacer = ex.tableRows.length > 1 ? `<span style="width:40px;flex-shrink:0"></span>` : ''
+  // id="wr-table-header": a stable, narrow hook so a DOM-text scan (e.g.
+  // runner-layout-2026-09-28.spec.js's "no stray prescription label" check) can exempt this ONE
+  // legitimate column-header row by element, not by matching its text — the effort column below
+  // renders a literal RIR/RPE and must not be mistaken for the banned duplicate read-only prescription
+  // box that check exists to catch. Every metric-type branch gets the same id (mutually exclusive —
+  // only one renders per call) so the exemption is not weight_reps-specific.
   if (mt === 'unilateral') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(`L / R · ${weightLabel.toLowerCase()} × reps`)}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(`L / R · ${weightLabel.toLowerCase()} × reps`)}<span style="width:44px"></span>${delSpacer}</div>`
   } else if (mt === 'timed_hold') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : weightLabel)}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Time')}${th(ex.bodyweight ? 'BW' : weightLabel)}<span style="width:44px"></span>${delSpacer}</div>`
   } else if (mt === 'jump_height') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(jumpHeightLabel)}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(jumpHeightLabel)}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
   } else if (mt === 'jump_distance') {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th('Distance (m)')}${th('Jumps')}<span style="width:44px"></span>${delSpacer}</div>`
   } else {
-    header = `<div style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}${effortRx ? th(effortRx.effortType === 'rir' ? 'RIR' : 'RPE') : ''}<span style="width:44px"></span>${delSpacer}</div>`
+    header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}${effortRx ? th(effortRx.effortType === 'rir' ? 'RIR' : 'RPE') : ''}<span style="width:44px"></span>${delSpacer}</div>`
   }
   // Reps tally only makes sense for rep-based types.
   const tally = (mt === 'weight_reps' || mt === 'unilateral') ? _renderRepsTallyHtml(ex) : ''
