@@ -42,12 +42,17 @@ const CASES = [
     rows: [{ value: 25, unit: 'min', daysAgo: 1 }, { value: 24, unit: 'min', daysAgo: 0 }] },
 ]
 
-const benchmarksCard = page =>
-  page.locator('.dashboard-card', { has: page.locator('h2.card-title', { hasText: 'Benchmarks' }) })
+// Parameterised by title since 2026-09-30: dd61a20 replaced the SOLO dashboard's Benchmarks card
+// with a "My progress" tile (Jake, 2026-09-28: "Benchmarks can be removed from this page"). The
+// CLIENT dashboard still has Benchmarks. Same row markup in both, so only the title differs.
+const cardByTitle = (page, title) =>
+  page.locator('.dashboard-card', { has: page.locator('h2.card-title', { hasText: title }) })
+const benchmarksCard = page => cardByTitle(page, 'Benchmarks')
 
 // The value cell for ONE fixture name. Each card row is an inline-flex div holding [name] and [value + unit].
-const shownValue = (page, name) =>
-  benchmarksCard(page).locator('div[style*="display:flex"]', { hasText: name }).locator('span').nth(1)
+const shownValueIn = (card, name) =>
+  card.locator('div[style*="display:flex"]', { hasText: name }).locator('span').nth(1)
+const shownValue = (page, name) => shownValueIn(benchmarksCard(page), name)
 
 async function seedRows(page, clientId, name, category, rows) {
   const err = await page.evaluate(async ({ clientId, name, category, rows }) => {
@@ -116,8 +121,14 @@ test.describe('dashboard Benchmarks card — best record per name', () => {
     }
   })
 
-  // The solo dashboard has its own copy of the same card, so it needs its own proof. Skips without a solo
-  // client record, exactly like solo-account.spec.js — on an account with none this asserts nothing.
+  // The solo dashboard shows the same best-record-per-name rule, but since dd61a20 it does so through
+  // the "My progress" tile rather than a Benchmarks card. The RULE is unchanged and still worth pinning
+  // — the tile renders the same pbMap-derived values — so this is retargeted, not deleted. Skips without
+  // a solo client record, exactly like solo-account.spec.js.
+  //
+  // NOTE: the tile shows only the first TWO records (_soloTileMyProgress slices to 2) where the old card
+  // showed four. The fixture row is dated today, so it sorts to the front; if this ever goes flaky on an
+  // account with several same-day records, that slice is the reason.
   test('SOLO: the personal dashboard uses the same rule — 60 cm then 30 in (76.2 cm) shows 30 in', async ({ page }) => {
     await loginAsPT(page)
     const soloId = await page.evaluate(() => window._soloClientId || null)
@@ -130,7 +141,7 @@ test.describe('dashboard Benchmarks card — best record per name', () => {
       await seedRows(page, soloId, name, 'body_metric',
         [{ value: 60, unit: 'cm', daysAgo: 1 }, { value: 30, unit: 'in', daysAgo: 0 }])
       await page.evaluate(() => renderSoloDashboard(document.getElementById('main-content')))
-      await expect(shownValue(page, name)).toHaveText('30 in')
+      await expect(shownValueIn(cardByTitle(page, 'My progress'), name)).toHaveText('30 in')
     } finally {
       await removeRows(page, soloId, name)
     }

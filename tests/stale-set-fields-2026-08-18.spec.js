@@ -21,7 +21,14 @@ const { loginAsPT } = require('./helpers')
 
 // The exact number of fields _cleanTemplateSets emits. Verified against the shipped function, not
 // assumed — see the assertion below for why a bare cross-type comparison is not enough.
-const EXPECTED_KEYS = 42
+//
+// 42 -> 44 on 2026-09-30, and this is the deliberate confirmation the comment below asks for. The
+// RPE top-set work added exactly two fields to the allowlist: `isTopSet` (marks set 1 as the top
+// set) and `intensityBasis` ('topSet' | 'stored', which 1RM a %1RM row resolves against). Both are
+// emitted for EVERY metric type with their value gated on weight_reps, which is the shape this
+// file exists to enforce — so the cross-type equality assertions above stayed green and only the
+// count moved. That is the ratchet working exactly as designed: it caught a real, intended change.
+const EXPECTED_KEYS = 44
 
 const clean = (page, set, metricType) => page.evaluate(({ set, metricType }) =>
   _cleanTemplateSets([set], _deriveFromMetricType(metricType), metricType)[0], { set, metricType })
