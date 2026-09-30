@@ -16,9 +16,18 @@ const { loginAsPT } = require('./helpers')
 // than returning it, so the test bodies below can call it exactly as the brief specifies.
 let fixture = null
 
-async function startRunnerWithFixture(page, { sets }) {
+// `storedOneRM` plants a client_1rms row for this fixture's exercise (Task 5). It must be inserted
+// BEFORE startWorkoutRunner: launchRunner fetches client_1rms once at session load
+// (js/app-runner.js:43) and never re-reads it, so a row written afterwards is invisible to the run.
+// The lookup keys on trimmed-lowercase exercise_name here — the fixture's template exercise has no
+// exercise_id, so the name fallback is the path under test.
+//
+// `unit` is a first-class fixture dimension, not a display detail: the whole suite runs in kg, so an
+// lb-only fault is invisible to every other test (the 2026-08-14 lb-only 1RM grid crash is the
+// precedent). Set before startWorkoutRunner so the first render already sees it.
+async function startRunnerWithFixture(page, { sets, storedOneRM = null, unit = null }) {
   const tag = '[E2E] RPE-TopSet ' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
-  const ids = await page.evaluate(async ({ tag, sets }) => {
+  const ids = await page.evaluate(async ({ tag, sets, storedOneRM }) => {
     const { data: client, error: clientErr } = await db.from('clients')
       .insert({ coach_id: currentUser.id, full_name: tag }).select('id').single()
     if (clientErr) return { error: 'client: ' + clientErr.message }
@@ -30,11 +39,19 @@ async function startRunnerWithFixture(page, { sets }) {
       metric_type: 'weight_reps', order_index: 0, sets_json: sets
     })
     if (exErr) return { error: 'exercise: ' + exErr.message }
+    if (storedOneRM != null) {
+      const { error: rmErr } = await db.from('client_1rms').insert({
+        client_id: client.id, exercise_name: tag + ' Exercise', one_rm_kg: storedOneRM,
+        recorded_at: new Date().toISOString().split('T')[0]
+      })
+      if (rmErr) return { error: 'client_1rms: ' + rmErr.message }
+    }
     return { clientId: client.id, templateId: tmpl.id }
-  }, { tag, sets })
+  }, { tag, sets, storedOneRM })
   expect(ids.error, 'fixture setup must succeed before any assertion runs').toBeUndefined()
   fixture = ids
 
+  if (unit) await page.evaluate(u => { window._unitPrefs.weight = u }, unit)
   await page.evaluate(({ clientId, templateId }) => startWorkoutRunner(clientId, templateId), ids)
   // startWorkoutRunner does not await launchRunner's async tail (_startFreshRunner fetches
   // client_1rms before rendering) — wait for the real signal, tableRows on the runner's first
@@ -80,7 +97,13 @@ async function cleanupFixture(page) {
     }
     await db.from('workout_template_exercises').delete().eq('template_id', templateId)
     await db.from('workout_templates').delete().eq('id', templateId)
+    // client_1rms is planted by storedOneRM and is FK'd to the client — delete it before the client,
+    // or the client delete fails and strands the whole fixture.
+    await db.from('client_1rms').delete().eq('client_id', clientId)
     await db.from('clients').delete().eq('id', clientId)
+    // Restore kg. The page fixture is per-test so this should already be true, but an lb value
+    // leaking into a later test would fail it in a way that points at the wrong code.
+    if (window._unitPrefs) window._unitPrefs.weight = 'kg'
   }, { clientId, templateId }).catch(() => {})
 }
 
@@ -370,5 +393,83 @@ test.describe('runner: live e1RM from the top set (Task 4, 2026-09-29)', () => {
     expect(second).not.toBe(first)
     // A set the lifter already logged is a record of what was actually lifted; it must not be rewritten.
     expect(await page.inputValue('#set-1-weight')).toBe('80')
+  })
+})
+
+test.describe('runner: backoff sets resolve against the live e1RM (Task 5, 2026-09-29)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+  })
+  test.afterEach(async ({ page }) => {
+    await cleanupFixture(page)
+  })
+
+  test('backoff targets come from the live e1RM, floored to 2.5', async ({ page }) => {
+    // 3 @ RPE 8 -> 86.3% -> 100/0.863 = 115.87. 70% = 81.11 -> floors to 80.
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    await expect(page.locator('#set-1-weight')).toHaveAttribute('placeholder', '80')
+  })
+
+  test('before the top set is logged, backoff rows say so and show no number', async ({ page }) => {
+    // Never fall back to the stored 1RM here: a plausible-looking stale number on the bar is worse
+    // than an honest blank.
+    await startRunnerWithFixture(page, {
+      storedOneRM: 140,
+      sets: [
+        { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+        { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+      ]
+    })
+    await expect(page.locator('#set-1-basis-note')).toContainText('Log the top set first')
+    expect(await page.getAttribute('#set-1-weight', 'placeholder')).not.toContain('97.5')  // 70% of 140
+  })
+
+  test('a stored-basis row still uses the stored 1RM, unchanged', async ({ page }) => {
+    await startRunnerWithFixture(page, {
+      storedOneRM: 140,
+      sets: [{ repsMin: 5, intensityMin: 70, intensityBasis: 'stored' }]
+    })
+    await expect(page.locator('#set-0-weight')).toHaveAttribute('placeholder', '97.5')
+  })
+
+  test('a topSet-basis row with no top set on row 0 falls back to the note, not the stored 1RM', async ({ page }) => {
+    // Legacy or hand-edited sets_json, or a coach who turned the top-set pill back off.
+    await startRunnerWithFixture(page, {
+      storedOneRM: 140,
+      sets: [
+        { repsMin: 5 },
+        { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+      ]
+    })
+    await expect(page.locator('#set-1-basis-note')).toBeVisible()
+    expect(await page.getAttribute('#set-1-weight', 'placeholder')).not.toContain('97.5')
+  })
+
+  test('the chip and backoff targets render in lb for an lb account', async ({ page }) => {
+    // The suite runs in kg throughout, so an lb-only fault here is invisible to every other test —
+    // the 2026-08-14 lb-only 1RM grid crash is the precedent.
+    await startRunnerWithFixture(page, {
+      unit: 'lb',
+      sets: [
+        { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+        { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+      ]
+    })
+    await page.fill('#set-0-weight', '220'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    await expect(page.locator('#ex-e1rm-chip')).toContainText('lb')
+    // The brief's assertion here was `not.toBe('')`, which passed BEFORE this task was implemented —
+    // an unresolved row falls back to the unit string ('lb'), which is also not empty. That is the
+    // "reports success while doing nothing" class, so it is pinned to a value instead.
+    // 220 lb = 99.79 kg -> /0.863 = 115.63 kg e1RM -> 70% = 80.94 -> floors to 80 kg -> ~176 lb.
+    // The kg-vs-lb gap (80 vs 176) is the discriminator; the exact rounding of the conversion is not
+    // pinned, because that belongs to weightToPref's own tests, not this one.
+    const lbPh = parseFloat(await page.getAttribute('#set-1-weight', 'placeholder'))
+    expect(lbPh, 'an lb backoff target must be the converted number, not the kg one').toBeGreaterThan(150)
   })
 })

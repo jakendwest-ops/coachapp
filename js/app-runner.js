@@ -1069,10 +1069,20 @@ function renderStrengthTable(ex) {
     // unilateral too, not just weight_reps. A bodyweight set renders 'BW' and has no input to ghost,
     // which is correct: there is no load to prescribe.
     const rowTgt0 = ex.sets_json?.[i]
+    // Which 1RM this row's percentage is OF. A 'topSet' row resolves against what was lifted TODAY
+    // (ex._liveE1RM, recomputed by _recomputeLiveE1RM on every tick); everything else keeps the
+    // stored client_1rms value, which is what every pre-existing template means and must keep meaning.
+    //
+    // _liveE1RM is undefined until the first recompute and null whenever the top set can't produce an
+    // estimate, so `!basisRM` covers both — and when it's falsy a topSet row deliberately falls through
+    // to '' rather than to ex.oneRM. Never fall back to the stored 1RM here: a plausible-looking stale
+    // number sitting on the bar is worse than an honest blank.
+    const usesTopSet = rowTgt0?.intensityBasis === 'topSet'
+    const basisRM = usesTopSet ? ex._liveE1RM : ex.oneRM
     // The %1RM rounding (nearest 2.5kg, a barbell-plate constraint) stays in kg regardless of
     // preference — only the DISPLAYED number converts, same as every other weight ghost value.
-    const oneRMPh = (rowTgt0?.intensityMin && ex.oneRM)
-      ? weightToPref(_calcWeightFromPct(ex.oneRM, rowTgt0.intensityMin)) + (rowTgt0.intensityMax && rowTgt0.intensityMax !== rowTgt0.intensityMin ? '–' + weightToPref(_calcWeightFromPct(ex.oneRM, rowTgt0.intensityMax)) : '')
+    const oneRMPh = (rowTgt0?.intensityMin && basisRM)
+      ? weightToPref(_calcWeightFromPct(basisRM, rowTgt0.intensityMin)) + (rowTgt0.intensityMax && rowTgt0.intensityMax !== rowTgt0.intensityMin ? '–' + weightToPref(_calcWeightFromPct(basisRM, rowTgt0.intensityMax)) : '')
       : ''
     // The row for the set you're currently on is highlighted so it's visually obvious which set the
     // target bar above applies to (Jake: "highlighted, not entered as text underneath — ugly UI").
@@ -1148,6 +1158,17 @@ function renderStrengthTable(ex) {
     // out of alignment with the header and with the other rows. Only inserted when the EXERCISE shows
     // the column at all — a plain exercise with no effort anywhere keeps its untouched two cells.
     const wantsPlaceholder = !wantsEffort && !!effortRx
+    // A topSet row with nothing to resolve against says WHY its target is blank, rather than leaving
+    // the lifter staring at an empty bar mid-session. The two messages are different on purpose:
+    // telling someone to log a set they already logged reads as the app not having noticed.
+    //
+    // The third case — row 0 is not a top set at all, so there is no set to log — also lands on
+    // "Log the top set first". It is reachable only from legacy or hand-edited sets_json, and the
+    // BUILDER already warns about it explicitly at authoring time (app-workouts.js's topSetWarning),
+    // which is where it can actually be fixed.
+    const basisNote = (usesTopSet && !basisRM && rowTgt0?.intensityMin)
+      ? `<div id="set-${i}-basis-note" style="font-size:var(--text-sm, 11px);color:var(--text-muted);padding:2px 0 0 28px">${ex.sets_json?.[0]?.isTopSet && ex.tableRows?.[0]?.done ? "Can't estimate from this set" : 'Log the top set first'}</div>`
+      : ''
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
         ${ex.bodyweight
@@ -1156,7 +1177,7 @@ function renderStrengthTable(ex) {
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
         ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10' }) : wantsPlaceholder ? '<span style="flex:1" aria-hidden="true"></span>' : ''}
         ${inDone(i, row, isCurrent)}${inDel(i)}
-      </div></div>`
+      </div>${basisNote}</div>`
   }).join('')
 
   const th = (label, w) => `<span style="${w ? `width:${w}` : 'flex:1'};text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</span>`
