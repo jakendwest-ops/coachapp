@@ -447,6 +447,13 @@ function _cleanTemplateSets(sets, derived, metricType) {
     // Gated on metricType like `amrap` above: switching an exercise's type must not leave a stale
     // bodyweight flag on, e.g. a jump that still claims to be bodyweight.
     bodyweight: _BW_TYPES.has(metricType) && !!s.bodyweight,
+    // Gated on metricType like `amrap` and `bodyweight` above, and for the same reason: switching an
+    // exercise's type must not leave a stale top-set flag behind for the runner to render from.
+    isTopSet: metricType === 'weight_reps' && !!s.isTopSet,
+    // What intensityMin/Max is a percentage OF. 'stored' = the client's last saved 1RM, which is
+    // every existing template's behaviour and therefore the default. 'topSet' = the e1RM this
+    // session's top set produced.
+    intensityBasis: metricType === 'weight_reps' && s.intensityBasis === 'topSet' ? 'topSet' : 'stored',
     repsMin: s.repsMin || null, repsMax: s.repsMax || null, weight: s.weight || null,
     intensityMin: s.intensityMin || null, intensityMax: s.intensityMax || null,
     restMin: s.restMin || null, restMax: s.restMax || null,
@@ -1769,6 +1776,7 @@ function flushTemplateSets(containerId) {
     { const wEl = document.getElementById(`ts-weight-${i}`); s.weight = wEl ? (weightFromInput(wEl) ?? '') : s.weight }
     s.intensityMin = document.getElementById(`ts-imin-${i}`)?.value     ?? s.intensityMin
     s.intensityMax = document.getElementById(`ts-imax-${i}`)?.value     ?? s.intensityMax
+    s.intensityBasis = document.getElementById(`ts-basis-${i}`)?.value  ?? s.intensityBasis
     s.restMin      = document.getElementById(`ts-restmin-${i}`)?.value  ?? s.restMin
     s.restMax      = document.getElementById(`ts-restmax-${i}`)?.value  ?? s.restMax
     s.effortMin    = document.getElementById(`ts-emin-${i}`)?.value     ?? s.effortMin
@@ -1837,7 +1845,9 @@ function setTsEffort(i, type, containerId) {
 // copy-pasted byte-for-byte into each branch of renderTemplateSets; the exercise-level Unilateral
 // pill added 2026-08-14 would have been a third copy, so it is hoisted instead. `label` is a literal
 // in every call site — never interpolate user text through it without escaping.
-const _togPill = (label, active, onclick) => `<button type="button" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
+// `id` is optional (4th arg) so a caller that needs a stable hook for a test/label-for can ask for
+// one without disturbing every existing call site, none of which pass it.
+const _togPill = (label, active, onclick, id) => `<button type="button"${id ? ` id="${id}"` : ''} onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
 
 // Unilateral is a metric_type, i.e. per EXERCISE, so unlike AMRAP its pill cannot live in a per-set
 // card — _deriveFromMetricType stamps every set from it uniformly, and a per-set unilateral flag
@@ -1996,7 +2006,27 @@ function renderTemplateSets(containerId, type) {
     return
   }
 
-  container.innerHTML = (window._templateSets || []).map((s, i) => {
+  // True only when this render is actually showing an ACTIVE top set: a weight_reps exercise (the
+  // only type the pill is offered on, and the only type _cleanTemplateSets' allowlist entry ever
+  // saves the flag as true for) with row 0's flag set. Every place below that changes what's shown
+  // because of a top set checks THIS, not the raw isTopSet flag alone -- toggleUnilateralType
+  // deliberately preserves every field (including isTopSet) when flipping weight_reps<->unilateral
+  // ("never discards anything the user has already typed"), so without this a coach who marked a top
+  // set and then tapped Unilateral would see the weight cell stay hidden and the "not prescribed"
+  // note stay up with the TOP SET pill itself gone -- no visible control left to undo it until they
+  // flip back or save. Same render/allowlist-mismatch shape the controller ruling on the pill gate
+  // itself already exists to prevent, just one layer further in.
+  const topSetActive = type === 'weight_reps' && !!window._templateSets[0]?.isTopSet
+
+  // Turning the top-set pill OFF must never silently rewrite a later row that still points `% of`
+  // at it — a training day's loads changing with no visible cause is the same silent-loss shape as
+  // the rest of this file's allowlist guards, just at the UI layer instead of the save layer. Warn
+  // instead, and leave the orphaned rows exactly as the coach left them until they act on it.
+  const topSetWarning = (!topSetActive && window._templateSets.some(s => s.intensityBasis === 'topSet'))
+    ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warn-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set ${window._templateSets.map((s, n) => s.intensityBasis === 'topSet' ? n + 1 : null).filter(Boolean).join(', ')} still uses "Today's top set", but set 1 is no longer a top set. Those sets have no percentage to work from until you switch set 1 back on or change them to "Last saved 1RM".</div>`
+    : ''
+
+  container.innerHTML = topSetWarning + (window._templateSets || []).map((s, i) => {
     const et = s.effortType || 'rpe'
     const tog = _togPill
     const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'var(--border)'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'var(--text-muted)'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
@@ -2011,6 +2041,13 @@ function renderTemplateSets(containerId, type) {
             ${showAmrap ? tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`) : ''}
             ${showBodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
           ` : ''}
+          ${/* Controller ruling overriding the plan's original `showAmrap && i === 0` gate: showAmrap
+               is true for weight_reps OR unilateral, but the _cleanTemplateSets allowlist entry above
+               gates isTopSet on weight_reps ONLY. Gating the pill on showAmrap would let it render,
+               toggle and save without error on a unilateral exercise, then lose the flag on save —
+               the exact silent-drop shape this task exists to guard against. Gate on the resolved
+               metric type directly so the render gate and the allowlist gate match exactly. */''}
+          ${type === 'weight_reps' && i === 0 ? tog('TOP SET', s.isTopSet, `toggleTsSet(${i},'isTopSet','${containerId}')`, `ts-topset-${i}`) : ''}
           <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--legacy-text-15, 15px);line-height:1">×</button>
         </div>
       </div>
@@ -2058,13 +2095,26 @@ function renderTemplateSets(containerId, type) {
       ` : `
         <div class="ts-grid">
           ${cell('Reps', gmini(`ts-rmin-${i}`,'type="number" placeholder="0"'+(s.repsMin?` value="${escapeHtml(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" placeholder="0"'+(s.repsMax?` value="${escapeHtml(String(s.repsMax))}"`:'')))}
-          ${s.bodyweight ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
+          ${/* A top set has nothing to prescribe as weight — whatever gets lifted on the day IS the
+               data point the e1RM is computed from. Same reasoning as the bodyweight branch beside it.
+               Gated on topSetActive (type === 'weight_reps'), not the raw flag -- see its definition
+               above for why. */''}
+          ${(s.bodyweight || (i === 0 && topSetActive)) ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
           <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
-        ${more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `
+        ${(i === 0 && topSetActive)
+          ? `<div style="padding:8px 0;font-size:var(--text-sm, 11px);color:var(--text-muted)">Weight isn't prescribed — logged live in the runner, then used to calculate this session's e1RM for the sets below.</div>`
+          : more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `
           <div class="ts-grid">
             ${cell('Intensity (%1RM)', gmini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${escapeHtml(String(s.intensityMin))}"`:'')) + dash + gmini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${escapeHtml(String(s.intensityMax))}"`:'')))}
+            ${/* Only offered on a row that ISN'T the top set itself, and only once row 0 actually IS
+                 one — a top set has no %1RM of anything to speak of, and this control means nothing
+                 until there is a top set for it to point at. */''}
+            ${i > 0 && topSetActive ? cell('% of', `<select id="ts-basis-${i}" class="field-input" style="font-size:var(--text-base, 13px)" onchange="flushTemplateSets('${containerId}');window._templateSets[${i}].intensityBasis=this.value">
+              <option value="stored"${s.intensityBasis !== 'topSet' ? ' selected' : ''}>Last saved 1RM</option>
+              <option value="topSet"${s.intensityBasis === 'topSet' ? ' selected' : ''}>Today's top set</option>
+            </select>`) : ''}
             ${cell('Tempo', gmini(`ts-tempo-${i}`,'type="text" maxlength="4" placeholder="e.g. 3011"'+(s.tempo?` value="${escapeHtml(String(s.tempo))}"`:'')))}
             ${cell('Countdown (s)', gmini(`ts-cd-${i}`,'type="number" placeholder="—"'+(s.countdown?` value="${escapeHtml(String(s.countdown))}"`:'')))}
           </div>

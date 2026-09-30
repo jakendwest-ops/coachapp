@@ -134,3 +134,141 @@ test.describe('runner effort capture (gap 0, 2026-09-29)', () => {
     expect(saved[1].effort_value ?? null).toBeNull()
   })
 })
+
+// ─── Task 3: sets_json fields + the program builder UI (isTopSet / intensityBasis, 2026-09-29) ────
+//
+// _cleanTemplateSets is an ALLOWLIST: a sets_json key missing from it is silently dropped on save —
+// no error, no warning. That is exactly how every cardio target was lost before les-036. These tests
+// drive the REAL builder (openTemplate / showEditTemplateExerciseModal / renderTemplateSets /
+// _stageEditExercise / saveTemplateDraft), not a hand-built object, because the bug this guards
+// against lives in the render/save wiring, not in the data shape alone — asserting on a plain object
+// would stay green even if the allowlist entry were missing.
+//
+// Owns its fixture end to end — a fresh template + one weight_reps exercise per test, created
+// directly with the same db.from(...).insert(...) calls the runner fixtures above use, never
+// "whatever's first" (see this file's header comment on that anti-pattern).
+let builderFixture = null
+
+async function openTemplateBuilderWithFixture(page, { sets }) {
+  const tag = '[E2E] RPE-TopSet Builder ' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+  // Every seeded set carries a `tempo` value purely so this fixture's "+ More targets" <details>
+  // starts OPEN -- more()'s own rule is "open whenever a field inside already holds a value"
+  // (js/app-workouts.js, the `more` helper in renderTemplateSets). Without this, ts-imin-N/ts-basis-N
+  // sit inside a CLOSED native <details>, and a real Playwright click/select/fill on them times out
+  // waiting for visibility -- confirmed against the same pattern intervals-redesign-2026-07-25.spec.js
+  // and builder-metric-type.spec.js both rely on ("open` is passed true whenever a field INSIDE
+  // already holds a value").
+  const seedSets = Array.from({ length: sets }, () => ({ effortType: 'rpe', tempo: '3010' }))
+  const setup = await page.evaluate(async ({ tag, seedSets }) => {
+    const { data: t, error: tErr } = await db.from('workout_templates')
+      .insert({ coach_id: currentUser.id, program_id: null, client_id: null, name: tag }).select('id').single()
+    if (tErr) return { error: 'template: ' + tErr.message }
+    const { error: exErr } = await db.from('workout_template_exercises').insert({
+      template_id: t.id, exercise_name: tag + ' Exercise', exercise_type: 'strength',
+      metric_type: 'weight_reps', order_index: 0, sets_json: seedSets
+    })
+    if (exErr) return { error: 'exercise: ' + exErr.message }
+    return { templateId: t.id }
+  }, { tag, seedSets })
+  expect(setup.error, 'fixture setup must succeed before any assertion runs').toBeUndefined()
+  builderFixture = { templateId: setup.templateId }
+
+  // openTemplate(...) + showEditTemplateExerciseModal(...) are the same real entry points the
+  // exercise list's own "Edit" click uses (js/app-workouts.js:_renderTemplateExerciseList) -- this
+  // bypasses only that click, not the code under test.
+  await page.evaluate(async (id) => { await openTemplate(id) }, builderFixture.templateId)
+  await page.evaluate(async () => {
+    const row = window._templateDraft.exercises[0]
+    await showEditTemplateExerciseModal(row._draftKey, window._templateDraft.templateId)
+  })
+  await page.waitForSelector('#ts-rmin-0', { state: 'visible' })
+}
+
+// Drives the real "Save" button in the exercise modal (-> _stageEditExercise, in-memory only, same
+// as the real UI) and then the real saveTemplateDraft() the "Save workout" button calls -- so the
+// _cleanTemplateSets allowlist is exercised exactly as a coach tapping through the UI would exercise
+// it, not bypassed by calling a save function directly on a hand-built sets array.
+async function saveTemplate(page) {
+  await page.click('#att-confirm-btn')
+  await page.waitForSelector('#save-template-draft-btn')
+  const err = await page.evaluate(async () => {
+    try { await saveTemplateDraft(); return null } catch (e) { return e?.message || String(e) }
+  })
+  expect(err, 'saveTemplateDraft must not throw').toBeNull()
+}
+
+// Fresh openTemplate() re-fetches the template from the database (not the in-memory draft this
+// session already staged), then reopens the same exercise's edit modal -- proving the value actually
+// round-tripped through the real save path, not merely survived in memory.
+async function reopenTemplate(page) {
+  await page.evaluate(async (id) => { await openTemplate(id) }, builderFixture.templateId)
+  await page.evaluate(async () => {
+    const row = window._templateDraft.exercises[0]
+    await showEditTemplateExerciseModal(row._draftKey, window._templateDraft.templateId)
+  })
+  await page.waitForSelector('#ts-rmin-0', { state: 'visible' })
+}
+
+async function cleanupBuilderFixture(page) {
+  if (!builderFixture) return
+  const { templateId } = builderFixture
+  builderFixture = null
+  await page.evaluate(async (id) => {
+    await db.from('workout_template_exercises').delete().eq('template_id', id)
+    await db.from('workout_templates').delete().eq('id', id)
+  }, templateId).catch(() => {})
+}
+
+test.describe('builder: top set + intensity basis (Task 3, 2026-09-29)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsPT(page)
+  })
+  test.afterEach(async ({ page }) => {
+    await cleanupBuilderFixture(page)
+  })
+
+  test('isTopSet and intensityBasis survive a save and reload', async ({ page }) => {
+    // _cleanTemplateSets is an ALLOWLIST: a key missing from it saves without error and loses the
+    // value. That is how every cardio target was lost before les-036. This test is the guard.
+    await openTemplateBuilderWithFixture(page, { sets: 2 })
+    await page.click('#ts-topset-0')
+    await page.selectOption('#ts-basis-1', 'topSet')
+    await page.fill('#ts-imin-1', '70')
+    await saveTemplate(page)
+    await reopenTemplate(page)
+    const sets = await page.evaluate(() => window._templateSets)
+    expect(sets[0].isTopSet).toBe(true)
+    expect(sets[1].intensityBasis).toBe('topSet')
+    expect(sets[1].intensityMin).toBe('70')
+  })
+
+  test('a set with no basis chosen persists as stored, not undefined', async ({ page }) => {
+    // Every pre-existing template must keep behaving exactly as it does today.
+    await openTemplateBuilderWithFixture(page, { sets: 1 })
+    await page.fill('#ts-imin-0', '75')
+    await saveTemplate(page)
+    await reopenTemplate(page)
+    const sets = await page.evaluate(() => window._templateSets)
+    expect(sets[0].intensityBasis).toBe('stored')
+  })
+
+  test('turning the top set off warns instead of silently orphaning a later row\'s basis', async ({ page }) => {
+    // The plan explicitly forbids silently rewriting sets_json here -- a training day's loads must
+    // not change with no visible cause. This proves the warning fires and names the orphaned set,
+    // not that anything gets auto-corrected.
+    await openTemplateBuilderWithFixture(page, { sets: 2 })
+    await page.click('#ts-topset-0')
+    await page.selectOption('#ts-basis-1', 'topSet')
+    const before = await page.locator('#att-sets-container').innerText()
+    expect(before, 'no warning while set 1 IS still a top set').not.toContain('no longer a top set')
+
+    await page.click('#ts-topset-0')   // turn set 1's top-set flag back off
+    const after = await page.locator('#att-sets-container').innerText()
+    expect(after).toContain('Set 2')
+    expect(after).toContain('no longer a top set')
+
+    // And the orphaned row's data must survive UNCHANGED -- the warning is informational only.
+    const sets = await page.evaluate(() => window._templateSets)
+    expect(sets[1].intensityBasis, 'the warning must not have silently rewritten the orphaned row').toBe('topSet')
+  })
+})
