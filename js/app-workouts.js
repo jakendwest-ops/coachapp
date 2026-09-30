@@ -2036,7 +2036,7 @@ function renderTemplateSets(containerId, type) {
   // the rest of this file's allowlist guards, just at the UI layer instead of the save layer. Warn
   // instead, and leave the orphaned rows exactly as the coach left them until they act on it.
   const topSetWarning = (!topSetActive && window._templateSets.some(s => s.intensityBasis === 'topSet'))
-    ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warn-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set ${window._templateSets.map((s, n) => s.intensityBasis === 'topSet' ? n + 1 : null).filter(Boolean).join(', ')} still uses "Today's top set", but set 1 is no longer a top set. Those sets have no percentage to work from until you switch set 1 back on or change them to "Last saved 1RM".</div>`
+    ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warning-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set ${window._templateSets.map((s, n) => s.intensityBasis === 'topSet' ? n + 1 : null).filter(Boolean).join(', ')} still uses "Today's top set", but set 1 is no longer a top set. Those sets have no percentage to work from until you switch set 1 back on or change them to "Last saved 1RM".</div>`
     : ''
 
   // A TOP SET with no prescribed effort is a silent, permanent dead end: the runner renders the
@@ -2052,7 +2052,7 @@ function renderTemplateSets(containerId, type) {
   const ts0 = window._templateSets?.[0]
   const tsEffortSet = [ts0?.effortMin, ts0?.effortMax].some(v => v !== null && v !== undefined && v !== '')
   const topSetNoEffort = (topSetActive && !tsEffortSet)
-    ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warn-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set 1 is a top set but has no ${(ts0?.effortType === 'rir') ? 'RIR' : 'RPE'} prescribed. Without one the runner has no effort to record, so it cannot estimate a 1RM and any set using "Today's top set" will have no target.</div>`
+    ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warning-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set 1 is a top set but has no ${(ts0?.effortType === 'rir') ? 'RIR' : 'RPE'} prescribed. Without one the runner has no effort to record, so it cannot estimate a 1RM and any set using "Today's top set" will have no target.</div>`
     : ''
 
   container.innerHTML = topSetWarning + topSetNoEffort + (window._templateSets || []).map((s, i) => {

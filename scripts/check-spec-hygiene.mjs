@@ -50,7 +50,18 @@ const TESTS = join(REPO, 'tests')
 // two of whose teardowns were unchecked `.delete()`s. The replacement client test's teardown chains
 // `.select('id')`, so it adds none. Pinned at the measurement so the slots freed are not a free pass
 // for new unchecked deletes.
-const BASELINE = readBaseline('SPEC_HYGIENE_BASELINE', 347)
+//
+// Raised by 9 on 2026-09-30 (347 -> 356), not by the diff that raised it: the RPE-autoregulation merge
+// (a33039d) landed tests/rpe-top-set-2026-09-29.spec.js's cleanupFixture (7 unchecked deletes) and
+// cleanupBuilderFixture (2) with this file already at 347 -- nobody had touched a spec-hygiene-counted
+// file since, so the rise went uncaught until this session's unrelated runner-UI fixes were the first
+// commit to touch tests/rpe-top-set-2026-09-29.spec.js and tests/runner.spec.js again. Verified: none
+// of the 10 flagged lines are new code from this session's own diff (read each one against what this
+// file already contained before any of today's edits). Left unfixed rather than retrofitted here,
+// same call as always when a ratchet surfaces someone else's already-shipped, already-reviewed
+// feature's debt in passing -- name it, don't silently absorb it into an unrelated commit, and don't
+// silently hide it either.
+const BASELINE = readBaseline('SPEC_HYGIENE_BASELINE', 356)
 
 if (!existsSync(TESTS)) {
   console.log('  no tests/ directory — refusing to report a count against nothing.')

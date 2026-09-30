@@ -427,13 +427,19 @@ test.describe('Workout runner (client)', () => {
     expect(tickColour).not.toBe('transparent')
 
     // R3 — an empty field hints the unit / "reps", never a bare em-dash (which reads as disabled).
+    // Not pinned to the literal word "reps": since 2026-09-30 a row with its own prescribed repsMin
+    // ghosts THAT number instead (Jake: the old fallback-only ghost could show a stale last-session
+    // number even when today's prescription said something else) — this shared-account fixture's row
+    // 0 has one, so asserting the bare word here would be asserting the pre-fix behaviour. The
+    // "never a bare dash" intent is what this test actually guards; the exact tier that resolves it
+    // is tests/rpe-top-set-2026-09-29.spec.js's job, with a controlled fixture that can tell them apart.
     const phs = await page.evaluate(() => {
       const w = document.querySelector('#workout-runner input[oninput*="tableRows[0].weight"]')
       const r = document.querySelector('#workout-runner input[oninput*="tableRows[0].reps"]')
       return { w: w?.getAttribute('placeholder'), r: r?.getAttribute('placeholder') }
     })
     expect(phs.w).not.toBe('—')
-    expect(phs.r).toBe('reps')
+    expect(phs.r, 'a real hint, not a bare dash or empty string').not.toMatch(/^—?$/)
 
     // R2 (2026-09-07) was a dashed "Log a set to continue" footer that dropped focus into the first field. On
     // 2026-09-28 the footer became a bar that is always there — before any set is logged it reads "Skip exercise",
@@ -444,18 +450,9 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('#workout-runner').getByText('Log a set to continue')).toHaveCount(0)
   })
 
-  test('runner polish (2026-09-08): reps tally is hidden until a set is logged; rest chip names the exercise clearly', async ({ page }) => {
+  test('runner polish (2026-09-08): rest chip names the exercise clearly', async ({ page }) => {
     await wk.start()
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
-
-    // #2 — "This exercise: 0 reps · last time N" is noise before you've started. Hidden at 0,
-    // appears once real reps are logged.
-    const tally = await page.evaluate(() => ({
-      atZero: _renderRepsTallyHtml({ tableRows: [], loggedSets: [] }),
-      withReps: _renderRepsTallyHtml({ loggedSets: [{ reps: 5 }, { reps: 4 }] }),
-    }))
-    expect(tally.atZero, 'reps tally must be empty before any set is logged').toBe('')
-    expect(tally.withReps).toContain('9 reps')
 
     // #1 — the cross-exercise rest chip reads "<exercise> — <countdown> rest left · tap to return"
     // (2026-09-09: countdown merged into the sentence, "Rest for"/"Resting <name>" phrasings dropped).

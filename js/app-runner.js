@@ -829,35 +829,13 @@ function deleteTableRow(rowIdx) {
   renderRunner()
 }
 
-// Running rep total for the exercise currently being logged, and the equivalent total
-// from the last time this exercise was logged — lets the client see live whether they've
-// beaten last session's total reps, updating with every set registered.
-function _currentRepsTotal(ex) {
-  if (ex.tableRows) return ex.tableRows.filter(r => r.done).reduce((s, r) => s + (parseInt(r.reps, 10) || 0), 0)
-  return ex.loggedSets.reduce((s, st) => {
-    if (st.leftReps != null || st.rightReps != null) return s + (parseInt(st.leftReps, 10) || 0) + (parseInt(st.rightReps, 10) || 0)
-    return s + (parseInt(st.reps, 10) || 0)
-  }, 0)
-}
-
-function _previousRepsTotal(ex) {
-  const sets = _runner?.lastSession?.[ex.name]?.sets
-  if (!sets) return null
-  return sets.reduce((s, st) => s + (parseInt(st.reps_achieved, 10) || 0), 0)
-}
-
-function _renderRepsTallyHtml(ex) {
-  const curTotal = _currentRepsTotal(ex)
-  const prevTotal = _previousRepsTotal(ex)
-  // Only once at least one set is logged. "0 reps · last time 21" before you've started is noise —
-  // it's a "beating last session?" gauge, and there's nothing to gauge yet (Jake, 2026-09-08).
-  if (!curTotal) return ''
-  const beat = prevTotal != null && curTotal > prevTotal
-  return `<div style="margin-top:8px;padding:8px 10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);display:flex;justify-content:space-between;align-items:center">
-    <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">This exercise</span>
-    <span style="font-size:13px;font-weight:800;color:${beat ? 'var(--accent)' : 'var(--text)'}">${curTotal} reps${prevTotal != null ? ` <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· last time ${prevTotal}</span>` : ''}</span>
-  </div>`
-}
+// REMOVED 2026-09-30 (Jake: "we could remove the 'this exercise last time' box, as it is now
+// redundant... so that we make more space on this page"). Used to sit directly above the
+// wr-lasttime Stats card (_renderLastTimeCard) — a live "beating last session?" reps gauge right
+// next to a second, separate last-time summary read as one too many numbers in the same spot.
+// Freed space goes to making ex-e1rm-chip and wr-rx larger/clearer, per the same walkthrough.
+// This was the only call site for _currentRepsTotal/_previousRepsTotal/_renderRepsTallyHtml, so all
+// three go together rather than leaving two of them orphaned.
 
 // Shared with the wizard's per-set target chips (see the strength IIFE further down) —
 // kept as a standalone pair here so the table can show the same prescription info
@@ -940,15 +918,22 @@ function _buildTargetCols(tgt, ex) {
   return { cols, needsOneRM }
 }
 
-// The prescription — "5–8 REPS  1–2 RIR  2:00 REST" — as ONE line under the exercise title. It was a bordered
-// row of boxes at the top of the scroll area, below a stats card and the Swap/Add buttons, which pushed the set
-// table (the thing you actually do here) down the screen. Same columns, same escaping: `cols` values are escaped
-// where _buildTargetCols creates them, and this stays the single sink they reach (tests/full-file-review-2026-08-01
-// pins that). Wraps rather than truncates if a set prescribes many things. Jake, 2026-09-28.
+// The prescription — "5–8 REPS  1–2 RIR  2:00 REST" — under the exercise title, not a separate
+// section above a stats card and Swap/Add buttons pushing the set table down (that positioning call
+// from 2026-09-28 still stands). RESTORED TO BOXES 2026-09-30 (Jake, on the merged RPE-autoregulation
+// feature: "these used to be in clear larger boxes... made more clear again" — the 2026-09-28 redesign
+// had compressed this into one inline-flowing line; this brings back the bordered, equal-width,
+// value-over-label cells it used before that, unchanged apart from a top margin instead of a bottom
+// one now that it sits below the title/chip instead of above the old stats card). Same columns, same
+// escaping: `cols` values are escaped where _buildTargetCols creates them, and this stays the single
+// sink they reach (tests/full-file-review-2026-08-01 pins that).
 function _renderTargetBarHtml(cols) {
   if (!cols.length) return ''
-  return `<div id="wr-rx" style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;margin-top:6px">${cols.map(c =>
-    `<span style="white-space:nowrap"><span style="font-size:var(--text-xl, 16px);font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'}">${c.val}</span> <span style="font-size:var(--text-2xs, 9px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">${c.label}</span></span>`
+  return `<div id="wr-rx" style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-top:8px">${cols.map((c, i) =>
+    `<div style="flex:1;text-align:center;padding:8px 4px${i < cols.length - 1 ? ';border-right:1px solid var(--border)' : ''}">
+      <div style="font-size:var(--text-2xl, 18px);font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'};line-height:1.1">${c.val}</div>
+      <div style="font-size:var(--text-2xs, 9px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
+    </div>`
   ).join('')}</div>`
 }
 
@@ -1161,7 +1146,18 @@ function renderStrengthTable(ex) {
     // Fall back to the unit / "reps" rather than a bare em-dash (R3, 2026-09-07): an empty field
     // showing "—" reads as disabled. Ghost values from last session / %1RM still win when present.
     const wPlaceholder = oneRMPh || (prev?.weight_kg != null ? weightToPref(prev.weight_kg) : '') || window._unitPrefs.weight
-    const rPlaceholder = (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || 'reps'
+    // FIXED 2026-09-30 (Jake: "the ghost reps... are still showing the reps from the previous
+    // session, which could be confusing"). This used to be prev-only, unlike wPlaceholder right above
+    // it: a backoff row's own prescribed repsMin never won, so its reps ghost could show last
+    // session's number even while the row's OWN target bar read something else entirely. Same tier
+    // order as wPlaceholder now, and matches jPh a few lines below (the jump branch already got this
+    // right) — today's prescription first, last session second, the bare word third.
+    // !rowTgt0?.timed guards the same hazard _buildTargetCols guards for the identical field
+    // (repsMin holds SECONDS on a timed row, not reps) -- unreachable today since the builder stamps
+    // `timed` uniformly across an exercise's whole sets_json and this branch only runs for
+    // non-timed_hold metric types, but a hand-edited/legacy-drifted row is a residual risk this file
+    // already accepts elsewhere (review, 2026-09-30).
+    const rPlaceholder = (rowTgt0?.repsMin && !rowTgt0?.timed ? String(rowTgt0.repsMin) : '') || (prev?.reps_achieved != null ? String(prev.reps_achieved) : '') || 'reps'
     // Only where the coach actually prescribed an effort (Jake, 2026-09-29). A row with no
     // effortMin/effortMax renders exactly the two columns it always has — no layout change at all
     // for the exercises nobody asked for effort on (effortRx is falsy, so wantsPlaceholder below is
@@ -1236,16 +1232,12 @@ function renderStrengthTable(ex) {
   } else {
     header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}${effortRx ? th(effortRx.effortType === 'rir' ? 'RIR' : 'RPE') : ''}<span style="width:44px"></span>${delSpacer}</div>`
   }
-  // Reps tally only makes sense for rep-based types.
-  const tally = (mt === 'weight_reps' || mt === 'unilateral') ? _renderRepsTallyHtml(ex) : ''
-
   return `
     ${showTargets ? oneRMBanner : ''}
     ${restBar}
     ${header}
     ${rows}
     <button onclick="addTableRow()" style="width:100%;margin-top:8px;padding:8px;border:1px dashed var(--border);border-radius:var(--radius-sm, 8px);background:transparent;font-size:var(--text-md, 12px);font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add set</button>
-    ${tally}
   `
 }
 
@@ -1276,7 +1268,9 @@ function renderRunner() {
               <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
             <div id="wr-title" style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
-            ${isTable && Number.isFinite(ex._liveE1RM) ? `<div style="margin-top:4px"><span id="ex-e1rm-chip" style="font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);padding:2px 8px;border-radius:999px;background:rgba(99,102,241,.12)">Est. 1RM: ${fmtWeight(ex._liveE1RM, { spaced: true, decimals: 1 })}</span></div>` : ''}
+            <!-- Enlarged 2026-09-30 alongside wr-rx (Jake: "these need to be made more clear"): 11px was
+                 easy to miss next to the now-boxed prescription below it. -->
+            ${isTable && Number.isFinite(ex._liveE1RM) ? `<div style="margin-top:6px"><span id="ex-e1rm-chip" style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--accent);padding:4px 10px;border-radius:999px;background:rgba(99,102,241,.12)">Est. 1RM: ${fmtWeight(ex._liveE1RM, { spaced: true, decimals: 1 })}</span></div>` : ''}
             ${isTable
               ? _renderPrescriptionLine(ex)
               : (ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}

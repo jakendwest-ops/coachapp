@@ -668,3 +668,154 @@ test.describe('builder: top-set review fixes (2026-09-30)', () => {
     await expect(page.locator('#att-sets-container')).not.toContainText('Set 1 is a top set but has no RPE prescribed')
   })
 })
+
+// ── Jake's walkthrough of the merged feature (2026-09-30) ───────────────────────────────────────
+//
+// "The top set RPE calculator is correct, however the ghost reps that have been filled in are still
+// showing the reps from the previous session (which could be confusing to a user, using this for the
+// first time."
+//
+// js/app-runner.js's renderStrengthTable computes wPlaceholder (the weight ghost) as
+// `oneRMPh || prev?.weight_kg || unit` -- the %1RM-derived target wins over last session's number
+// when both exist. rPlaceholder (the reps ghost, one line below it) was only ever
+// `prev?.reps_achieved || 'reps'` -- no equivalent first tier reading the row's OWN prescribed
+// repsMin, so a backoff row's reps ghost always showed last time's number even when today's
+// prescription disagreed. The jump_height/jump_distance branch a few lines below already gets this
+// right (`jPh = rowTgt0?.repsMin ? ... : prev?.reps_achieved ...`) -- this brings the default
+// weight_reps branch in line with its own sibling.
+test.describe('runner: backoff row reps ghost prefers today\'s prescription over last session (Jake, 2026-09-30)', () => {
+  test.beforeEach(async ({ page }) => { await loginAsPT(page) })
+  test.afterEach(async ({ page }) => { await cleanupFixture(page) })
+
+  test('a conflicting last session does not win over the prescribed repsMin', async ({ page }) => {
+    // Not startRunnerWithFixture here: the prior session below must exist, under the SAME client_id
+    // and exercise name the runner starts with, BEFORE startWorkoutRunner triggers
+    // fetchRunnerLastSession (setTimeout(0) off renderRunner, app-runner.js:1453) -- once that
+    // resolves it caches "no history" for this name (app-runner.js:276) and never re-fetches, so
+    // seeding afterward would be invisible. Client and exercise name are both picked up front instead
+    // of read back from the fixture afterward, which is what made the first draft of this test wrong
+    // on two counts (wrong client, wrong name) rather than one.
+    const tag = '[E2E] RPE-TopSet-ReppsGhost ' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+    const exName = tag + ' Exercise'
+    const ids = await page.evaluate(async ({ tag, exName }) => {
+      const { data: client, error: clientErr } = await db.from('clients')
+        .insert({ coach_id: currentUser.id, full_name: tag }).select('id').single()
+      if (clientErr) return { error: 'client: ' + clientErr.message }
+      const { data: log, error: logErr } = await db.from('workout_logs').insert({
+        coach_id: currentUser.id, client_id: client.id, name: tag + ' prior', date: '2026-09-01'
+      }).select().single()
+      if (logErr) return { error: 'log: ' + logErr.message }
+      const { data: exRow, error: exErr } = await db.from('workout_log_exercises').insert({
+        log_id: log.id, exercise_name: exName, exercise_type: 'strength', order_index: 0
+      }).select().single()
+      if (exErr) return { error: 'log exercise: ' + exErr.message }
+      const { error: setsErr } = await db.from('workout_log_sets').insert([
+        { workout_log_exercise_id: exRow.id, set_number: 1, reps_achieved: 3, weight_kg: 90 },
+        // Deliberately far from today's prescribed 8 -- the exact adversarial condition Jake described.
+        { workout_log_exercise_id: exRow.id, set_number: 2, reps_achieved: 15, weight_kg: 60 },
+      ])
+      if (setsErr) return { error: 'log sets: ' + setsErr.message }
+      const { data: tmpl, error: tmplErr } = await db.from('workout_templates')
+        .insert({ coach_id: currentUser.id, name: tag }).select('id').single()
+      if (tmplErr) return { error: 'template: ' + tmplErr.message }
+      const { error: tmplExErr } = await db.from('workout_template_exercises').insert({
+        template_id: tmpl.id, exercise_name: exName, exercise_type: 'strength', metric_type: 'weight_reps',
+        order_index: 0,
+        sets_json: [
+          { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+          { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' },
+        ]
+      })
+      if (tmplExErr) return { error: 'template exercise: ' + tmplExErr.message }
+      return { clientId: client.id, templateId: tmpl.id }
+    }, { tag, exName })
+    expect(ids.error, 'fixture setup must succeed before any assertion runs').toBeUndefined()
+    fixture = ids   // module-scope, so the shared afterEach's cleanupFixture(page) tears all of this down
+
+    await page.evaluate(({ clientId, templateId }) => startWorkoutRunner(clientId, templateId), ids)
+    await page.waitForFunction(
+      () => typeof _runner !== 'undefined' && !!(_runner && _runner.exercises && _runner.exercises[0] && _runner.exercises[0].tableRows),
+      { timeout: 10000 }
+    )
+    // != null, NOT !== undefined: fetchRunnerLastSession (app-runner.js:273-onward) sets
+    // lastSession[name] = null SYNCHRONOUSLY before its own DB fetch even starts, so !== undefined
+    // is satisfied instantly and proves nothing about the real fetch finishing -- a genuine gap found
+    // while chasing this exact test's own false pass (review, 2026-09-30). != null waits for the
+    // fetch to actually resolve into a real object, which this test's own seeded history guarantees
+    // it eventually will (a test with no seeded history must not use this wait -- it would hang).
+    await page.waitForFunction((n) => _runner?.lastSession?.[n] != null, exName, { timeout: 8000 })
+    await page.evaluate(() => renderRunner())   // lastSession resolves after the initial render; repaint to pick it up
+
+    expect(await page.getAttribute('#set-1-reps', 'placeholder'),
+      'today\'s prescribed 8 must win over last session\'s conflicting 15').toBe('8')
+  })
+
+  test('with no conflicting history, the prescribed repsMin still wins over the bare "reps" placeholder', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' },
+    ] })
+    expect(await page.getAttribute('#set-1-reps', 'placeholder')).toBe('8')
+  })
+
+  test('a plain row with no repsMin prescribed still falls back to the bare word, unchanged', async ({ page }) => {
+    // startRunnerWithFixture's client is fresh (no workout_logs at all), so this only proves tier 3
+    // (the bare word) survives -- it does NOT exercise tier 2 (last session winning when tier 1 is
+    // absent). That coverage gap was found by review, 2026-09-30; the test below closes it for real.
+    await startRunnerWithFixture(page, { sets: [{ effortType: 'rpe', effortMin: 8 }] })
+    expect(await page.getAttribute('#set-0-reps', 'placeholder')).toBe('reps')
+  })
+
+  test('a plain row with no repsMin prescribed still falls back to last session, when one exists', async ({ page }) => {
+    // The regression half, actually exercised this time: a row that prescribes nothing specific must
+    // keep showing last session's number exactly as it always has -- this fix adds a FIRST tier ahead
+    // of it, it must not remove the second. Same inline-fixture reasoning as the first test in this
+    // block: the prior session must exist, under the same client_id and exercise name, before
+    // startWorkoutRunner triggers fetchRunnerLastSession, so startRunnerWithFixture (which creates its
+    // own client/name internally, after this test would need to seed against them) cannot be used here.
+    const tag = '[E2E] RPE-TopSet-ReppsGhostTier2 ' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+    const exName = tag + ' Exercise'
+    const ids = await page.evaluate(async ({ tag, exName }) => {
+      const { data: client, error: clientErr } = await db.from('clients')
+        .insert({ coach_id: currentUser.id, full_name: tag }).select('id').single()
+      if (clientErr) return { error: 'client: ' + clientErr.message }
+      const { data: log, error: logErr } = await db.from('workout_logs').insert({
+        coach_id: currentUser.id, client_id: client.id, name: tag + ' prior', date: '2026-09-01'
+      }).select().single()
+      if (logErr) return { error: 'log: ' + logErr.message }
+      const { data: exRow, error: exErr } = await db.from('workout_log_exercises').insert({
+        log_id: log.id, exercise_name: exName, exercise_type: 'strength', order_index: 0
+      }).select().single()
+      if (exErr) return { error: 'log exercise: ' + exErr.message }
+      const { error: setsErr } = await db.from('workout_log_sets').insert([
+        { workout_log_exercise_id: exRow.id, set_number: 1, reps_achieved: 12, weight_kg: 80 },
+      ])
+      if (setsErr) return { error: 'log sets: ' + setsErr.message }
+      const { data: tmpl, error: tmplErr } = await db.from('workout_templates')
+        .insert({ coach_id: currentUser.id, name: tag }).select('id').single()
+      if (tmplErr) return { error: 'template: ' + tmplErr.message }
+      // No repsMin anywhere on this row -- tier 1 must have nothing to win with.
+      const { error: tmplExErr } = await db.from('workout_template_exercises').insert({
+        template_id: tmpl.id, exercise_name: exName, exercise_type: 'strength', metric_type: 'weight_reps',
+        order_index: 0, sets_json: [{ effortType: 'rpe', effortMin: 8 }]
+      })
+      if (tmplExErr) return { error: 'template exercise: ' + tmplExErr.message }
+      return { clientId: client.id, templateId: tmpl.id }
+    }, { tag, exName })
+    expect(ids.error, 'fixture setup must succeed before any assertion runs').toBeUndefined()
+    fixture = ids
+
+    await page.evaluate(({ clientId, templateId }) => startWorkoutRunner(clientId, templateId), ids)
+    await page.waitForFunction(
+      () => typeof _runner !== 'undefined' && !!(_runner && _runner.exercises && _runner.exercises[0] && _runner.exercises[0].tableRows),
+      { timeout: 10000 }
+    )
+    // != null, not !== undefined -- see the sibling test above for why (fetchRunnerLastSession sets
+    // the key to null synchronously before its real fetch even starts).
+    await page.waitForFunction((n) => _runner?.lastSession?.[n] != null, exName, { timeout: 8000 })
+    await page.evaluate(() => renderRunner())
+
+    expect(await page.getAttribute('#set-0-reps', 'placeholder'),
+      'tier 1 is absent, so tier 2 (last session\'s 12) must win over tier 3 (the bare word)').toBe('12')
+  })
+})

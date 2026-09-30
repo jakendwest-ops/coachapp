@@ -118,14 +118,27 @@ test.describe('Runner log-first layout (2026-09-28)', () => {
     expect(m.rowBottom, 'the first set row is on screen without scrolling').toBeLessThan(m.vh * 0.5)
   })
 
-  test('the prescription is one line under the title — reps, RIR and rest together, not three boxes', async ({ page }) => {
+  // RESTORED TO BOXES 2026-09-30 (Jake, on the merged RPE-autoregulation feature: "these used to be
+  // in clear larger boxes... made more clear again"). Was a single inline-flowing line since the
+  // 2026-09-28 redesign this file is named for; that redesign's OWN stated reason (killing the old
+  // three-box bar's real estate, not the boxes themselves being wrong) no longer outweighs the
+  // legibility Jake asked back — see js/app-runner.js's _renderTargetBarHtml for the fuller history.
+  // What this test still guards, unchanged: every prescription value lives in ONE element (#wr-rx),
+  // not scattered as stray read-only labels elsewhere on the page.
+  test('the prescription sits under the title as bordered boxes — reps, RIR and rest together, with no stray label elsewhere', async ({ page }) => {
     await startRunner(page)
     const rx = page.locator('#wr-rx')
     await expect(rx).toBeVisible()
     for (const part of ['5–8', 'REPS', '1–2', 'RIR', '2:00', 'REST']) await expect(rx).toContainText(part)
     const h = await rx.evaluate(el => el.getBoundingClientRect().height)
-    expect(h, 'one line at 16px, not a wrapped block').toBeLessThan(30)
-    // The old three-box bar is gone: every prescription label on the page lives in the one line.
+    // A boxed cell (8px vertical padding + an 18px value line + a 9px label line) runs ~45-55px —
+    // clearly more than one 16px text line (~20px), clearly less than it wrapping onto a second ROW
+    // of cells (which would roughly double it). Bounds a real box, not a guess: measured live at ~51px.
+    expect(h, 'a single row of boxes, not a single text line or a wrapped second row').toBeGreaterThan(35)
+    expect(h, 'a single row of boxes, not a single text line or a wrapped second row').toBeLessThan(80)
+    // Every prescription value still lives in ONE place: no stray read-only REPS/RIR/REST label
+    // anywhere else on the page (the table's own Reps/RIR column HEADERS are a different, exempted
+    // thing — see the check below).
     // EXEMPTION (2026-09-29, runner effort capture — Task 2 fix round 1): #wr-table-header, the fast
     // table's own column-header row, is deliberately excluded. That rule was written to kill the old
     // three-box bar, which DUPLICATED read-only prescription text already shown in #wr-rx. A table
