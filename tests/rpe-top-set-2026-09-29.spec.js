@@ -508,3 +508,163 @@ test.describe('post-session 1RM prefill (Task 6, 2026-09-29)', () => {
     await expect(page.locator('#psorm-estimate-0')).toContainText('110')
   })
 })
+
+// ── Fixes from the multi-agent review of 6d1598b..ffafa56 (2026-09-30) ────────────────────────
+// Every test here pins a defect the review found and 18 green tests did not.
+test.describe('RPE top set: review fixes (2026-09-30)', () => {
+  test.beforeEach(async ({ page }) => { await loginAsPT(page) })
+  test.afterEach(async ({ page }) => { await cleanupFixture(page) })
+
+  // FINDING 1 (high): inCell's oninput writes to tableRows with no re-render, and saveRunnerSession
+  // never re-synced. So an edited weight reached the modal HEADING (fresh tableRows) while the
+  // estimate under it and the saved row stayed stale. Display value != stored value.
+  test('editing the top set without re-ticking keeps the saved set, the heading and the estimate in agreement', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    // Correct the weight and do NOT re-tick — the exact sequence that desynced them.
+    await page.fill('#set-0-weight', '110')
+    const rows = await finishSessionAndReadSets(page)
+    // 110 x 3 @ RPE 8 -> 110/0.863 = 127.46 -> 127.5. NOT 115.9, which is the 100 kg answer.
+    await expect(page.locator('#psorm-estimate-0')).toContainText('127.5')
+    await expect(page.locator('#psorm-row-0')).toContainText('110')
+    expect(rows.length, 'the ticked set must be saved').toBeGreaterThan(0)
+    expect(Number(rows[0].weight_kg), 'the DB must store what the input showed').toBe(110)
+  })
+
+  // FINDING 2 (high): needsOneRM never learned about intensityBasis, so the amber banner demanded
+  // the very thing this feature removes the need for — while the row below it showed a live target.
+  test('a topSet-basis backoff row does not demand a stored 1RM', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    await expect(page.locator('#set-1-weight')).toHaveAttribute('placeholder', '80')
+    await expect(page.locator('#wr-onerm-banner'),
+      'the target is right there — the banner contradicts it').toHaveCount(0)
+  })
+
+  // FINDING 2b: the column label still said "1RM TARGET" for a percentage of today's top set.
+  test('a topSet-basis row is not labelled as a percentage of the stored 1RM', async ({ page }) => {
+    await startRunnerWithFixture(page, { storedOneRM: 140, sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    const labels = await page.evaluate(() => _runnerTargetCols(_runner.exercises[0]).cols.map(c => c.label))
+    expect(labels.join('|')).not.toContain('1RM TARGET')
+  })
+
+  // FINDING 3 (medium): the swap path cleared tableRows/loggedSets/oneRM but not _liveE1RM, and the
+  // chip renders above the isTable branch — so a rowing machine displayed "Est. 1RM: 115.9 kg".
+  test('the e1RM chip never renders on a non-table exercise', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    await expect(page.locator('#ex-e1rm-chip')).toHaveCount(1)
+    // Stand in for a strength -> cardio swap: the leftover _liveE1RM must not paint on cardio.
+    await page.evaluate(() => { _runner.exercises[0].type = 'cardio'; renderRunner() })
+    await expect(page.locator('#ex-e1rm-chip')).toHaveCount(0)
+  })
+
+  // FINDING 4 (high): the override replaced `best` outright, discarding a set the lifter actually
+  // completed. A 120 kg single is direct evidence; an RPE-derived 115.9 must not outrank it.
+  test('a heavier set actually lifted is not discarded by the top-set estimate', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 1 }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    await page.fill('#set-1-weight', '120'); await page.fill('#set-1-reps', '1')
+    await page.click('#set-1-done')
+    await page.evaluate(() => saveRunnerSession())
+    // _estimate1RM(120, 1) returns 120 unchanged. The top set's 115.9 must not suppress it.
+    await expect(page.locator('#psorm-estimate-0')).toContainText('120')
+  })
+
+  // FINDING 5 (medium, Agent A): the new effort input carried no min/max, unlike both of its
+  // siblings in the manual Log Session modal, and nothing range-guarded the write.
+  test('the effort input is bounded, and an out-of-range value never reaches the database', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true }
+    ] })
+    await expect(page.locator('#set-0-effort')).toHaveAttribute('min', '0')
+    await expect(page.locator('#set-0-effort')).toHaveAttribute('max', '10')
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '88');  await page.click('#set-0-done')
+    const rows = await finishSessionAndReadSets(page)
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows[0].effort_value, 'an impossible RPE is dropped, not stored').toBeFalsy()
+    expect(Number(rows[0].weight_kg), 'but the real set still saves').toBe(100)
+  })
+
+  // FINDING (Agent C 3): typing the RPE AFTER ticking did nothing, because oninput skips the
+  // re-render — the only recovery was to untick and re-tick, and nothing said so.
+  test('entering the effort after the set is ticked recomputes the targets without a re-tick', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.click('#set-0-done')                       // ticked with NO effort
+    await expect(page.locator('#set-1-basis-note')).toBeVisible()
+    await page.fill('#set-0-effort', '8')
+    await page.locator('#set-0-effort').blur()            // change, not input — no per-keystroke render
+    await expect(page.locator('#set-1-weight')).toHaveAttribute('placeholder', '80')
+  })
+})
+
+// ── Builder-side review fixes (2026-09-30) ───────────────────────────────────────────────────
+test.describe('builder: top-set review fixes (2026-09-30)', () => {
+  test.beforeEach(async ({ page }) => { await loginAsPT(page) })
+  test.afterEach(async ({ page }) => { await cleanupBuilderFixture(page) })
+
+  // FINDING (Agent C 1): the builder HIDES the Weight and Intensity cells on a top-set row, but
+  // flushTemplateSets deliberately preserves an un-rendered field — so values entered before the
+  // pill was tapped survived into sets_json with no visible control left to clear them, and the
+  // runner rendered a kg target and a %1RM ghost on the one set the builder called unprescribed.
+  test('marking a row as the top set clears the weight and %1RM it can no longer show', async ({ page }) => {
+    await openTemplateBuilderWithFixture(page, { sets: 2 })
+    await page.fill('#ts-weight-0', '100')
+    await page.fill('#ts-imin-0', '85')
+    await page.click('#ts-topset-0')          // hides both cells
+    await saveTemplate(page)
+    await reopenTemplate(page)
+    const s0 = await page.evaluate(() => window._templateSets[0])
+    expect(s0.isTopSet, 'the pill itself must still round-trip').toBe(true)
+    expect(s0.weight, 'a hidden weight must not survive on a top set').toBeFalsy()
+    expect(s0.intensityMin, 'a hidden %1RM must not survive on a top set').toBeFalsy()
+  })
+
+  // FINDING (Agents B 4 / C 2): a top set with no prescribed effort is a silent, permanent dead
+  // end — no effort input renders in the runner, so no estimate can ever form and every
+  // "Today's top set" row is targetless for the whole session. The coach is the only person who
+  // can fix it and the only person who never sees it. Jake's call (2026-09-30): WARN, not refuse.
+  test('a top set with no prescribed effort warns the coach at authoring time', async ({ page }) => {
+    await openTemplateBuilderWithFixture(page, { sets: 2 })
+    await page.click('#ts-topset-0')
+    await expect(page.locator('#att-sets-container'))
+      .toContainText('Set 1 is a top set but has no RPE prescribed')
+  })
+
+  // The warning must clear once the coach does the thing it asks for — a warning that never goes
+  // away is noise, and this project has measured alarm fatigue burying a real row before.
+  test('the no-effort warning clears once an RPE is prescribed', async ({ page }) => {
+    await openTemplateBuilderWithFixture(page, { sets: 2 })
+    await page.click('#ts-topset-0')
+    await expect(page.locator('#att-sets-container')).toContainText('Set 1 is a top set but has no RPE prescribed')
+    await page.fill('#ts-emin-0', '8')
+    // Same pair every control in this builder fires on change (see the `% of` select at
+    // app-workouts.js:2150) — flush the DOM into _templateSets, then re-render from it.
+    await page.evaluate(() => { flushTemplateSets('att-sets-container'); renderTemplateSets('att-sets-container', 'weight_reps') })
+    await expect(page.locator('#att-sets-container')).not.toContainText('Set 1 is a top set but has no RPE prescribed')
+  })
+})

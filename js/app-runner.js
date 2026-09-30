@@ -922,8 +922,15 @@ function _buildTargetCols(tgt, ex) {
     // Always the PERCENTAGE — the derived kg lives in the KG field's ghost text (see wPlaceholder in
     // renderStrengthTable), so showing it here too spent a whole column repeating one number.
     const pct = tgt.intensityMin + (tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin ? '–' + tgt.intensityMax : '')
-    if (!ex.oneRM) needsOneRM = true   // banner still offers to set it; without a 1RM there is no kg to ghost
-    cols.push({ val: escapeHtml(pct) + '%', label: '1RM TARGET', accent: true })
+    // A 'topSet' row resolves against TODAY's top set, not client_1rms — so a missing stored 1RM is
+    // not a problem it can have, and the amber "⚠ Set your 1RM" banner must not fire for it. Before
+    // this, logging the top set advanced the target bar to the backoff row and raised the banner at
+    // the same instant its kg ghost started resolving correctly: the screen showed a working target
+    // beside a warning that no target could be shown. Sibling of basisRM in renderStrengthTable —
+    // that one learned about intensityBasis and this one did not (multi-agent review, 2026-09-30).
+    const ofTopSet = tgt.intensityBasis === 'topSet'
+    if (!ex.oneRM && !ofTopSet) needsOneRM = true   // banner still offers to set it; without a 1RM there is no kg to ghost
+    cols.push({ val: escapeHtml(pct) + '%', label: ofTopSet ? 'OF TOP SET' : '1RM TARGET', accent: true })
   }
   // Value carries the NUMBER only — the column's own label already says RPE or RIR, so prefixing
   // the value with it just says the same word twice ("RPE / RPE 8–9"). Jake, 2026-07-11.
@@ -1025,7 +1032,20 @@ function renderStrengthTable(ex) {
   // canonical (weightFromPref/jumpHeightFromPref) before it's written into tableRows — so every
   // consumer downstream of tableRows (volume calc, loggedSets, the save path) keeps working in kg/cm
   // exactly as before, untouched by this feature.
-  const inCell = (i, row, field, { mode = 'decimal', step = '', ph = '—', fmt = false, unit = null } = {}) => {
+  // `min`/`max` bound the input (the effort cell had neither, while both of its siblings in the
+  // manual Log Session modal carry min="0" max="10").
+  //
+  // `recompute` re-derives the live e1RM on CHANGE — on blur, not per keystroke, so it does not
+  // reintroduce the re-render-on-every-character cost oninput exists to avoid. Without it, typing
+  // an RPE AFTER ticking the set did nothing visible and the only recovery was to untick and
+  // re-tick, which nothing told you.
+  //
+  // The caller passes it ONLY for a row that is already done, and that restriction is load-bearing,
+  // not caution: on an unticked row the next thing the lifter does is tap ✓, and blurring the
+  // effort field re-renders the table out from under that tap — the button is replaced mid-click
+  // and the set never logs. Caught by seven previously-green tests going red on the first attempt
+  // at this fix. A ticked row has no such pending tap, so the re-render is free.
+  const inCell = (i, row, field, { mode = 'decimal', step = '', ph = '—', fmt = false, unit = null, min = null, max = null, recompute = false } = {}) => {
     const toDisplay = v => unit === 'weight' ? weightToPref(v) : unit === 'jumpHeight' ? jumpHeightToPref(v) : v
     const parseFn = unit === 'weight' ? 'weightFromPref' : unit === 'jumpHeight' ? 'jumpHeightFromPref' : null
     const bind = fmt
@@ -1033,8 +1053,9 @@ function renderStrengthTable(ex) {
       : parseFn
         ? `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=${parseFn}(this.value)`
         : `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
-    return `<input id="set-${i}-${field}" type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} value="${escapeHtml(String(toDisplay(row[field]) ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
-      oninput="${bind}"
+    return `<input id="set-${i}-${field}" type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} ${min !== null ? `min="${min}"` : ''} ${max !== null ? `max="${max}"` : ''} value="${escapeHtml(String(toDisplay(row[field]) ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
+      oninput="${bind}"${recompute ? `
+      onchange="_recomputeLiveE1RM(_runner.exercises[${_runner.exIdx}]);renderRunner()"` : ''}
       style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done ? 'var(--border)' : 'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
   }
   // Incomplete state used to render a transparent ✓ inside a bare grey box — invisible, though it is
@@ -1175,7 +1196,7 @@ function renderStrengthTable(ex) {
           ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>`
           : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder, unit:'weight' })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
-        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10' }) : wantsPlaceholder ? '<span style="flex:1" aria-hidden="true"></span>' : ''}
+        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10', min: 0, max: 10, recompute: !!row.done }) : wantsPlaceholder ? '<span style="flex:1" aria-hidden="true"></span>' : ''}
         ${inDone(i, row, isCurrent)}${inDel(i)}
       </div>${basisNote}</div>`
   }).join('')
@@ -1255,7 +1276,7 @@ function renderRunner() {
               <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
             <div id="wr-title" style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
-            ${Number.isFinite(ex._liveE1RM) ? `<div style="margin-top:4px"><span id="ex-e1rm-chip" style="font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);padding:2px 8px;border-radius:999px;background:rgba(99,102,241,.12)">Est. 1RM: ${fmtWeight(ex._liveE1RM, { spaced: true, decimals: 1 })}</span></div>` : ''}
+            ${isTable && Number.isFinite(ex._liveE1RM) ? `<div style="margin-top:4px"><span id="ex-e1rm-chip" style="font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);padding:2px 8px;border-radius:999px;background:rgba(99,102,241,.12)">Est. 1RM: ${fmtWeight(ex._liveE1RM, { spaced: true, decimals: 1 })}</span></div>` : ''}
             ${isTable
               ? _renderPrescriptionLine(ex)
               : (ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
@@ -2642,6 +2663,12 @@ async function _confirmRunnerExerciseFromModal(mode) {
     ex.loggedSets = []
     delete ex.tableRows
     delete ex.phases
+    // Belongs with tableRows: it is derived from them, and the swapped-in exercise has none yet.
+    // Left behind, it painted the PREVIOUS lift's "Est. 1RM" chip on the new exercise — for one
+    // frame on a strength swap (the chip renders above renderStrengthTable's recompute), and
+    // permanently on a cardio swap, which never calls renderStrengthTable at all. _saveRunnerDraft
+    // persisted it too, so a rowing machine kept a barbell e1RM across a resume.
+    delete ex._liveE1RM
     ex.oneRM = oneRM
     // targetSets above is cleanSets.length, always 1 for an interval block — _initIntervalPhases
     // overwrites it with the real work-round count, matching how the initial session-load path
@@ -2991,6 +3018,17 @@ async function saveRunnerSession() {
   const notes     = document.getElementById('rf-notes')?.value.trim() || null
   const clientId  = _runner.clientId
   const date      = _runner.date
+  // Re-sync from the live table BEFORE anything reads loggedSets or _liveE1RM. inCell's oninput
+  // writes straight into tableRows and deliberately skips a re-render, so an edit made after the
+  // last tick was invisible here: the saved row kept the old weight while the post-session modal's
+  // heading read the new one off tableRows, above an estimate computed from the old one. One
+  // screen, two different numbers, both plausible. Found by multi-agent review 2026-09-30.
+  //
+  // _syncLoggedSetsFromTable keeps only rows with `done`, so this refreshes VALUES and never
+  // changes which sets count as logged — an untouched tick-state means an identical set list.
+  _runner.exercises.forEach(ex => {
+    if (ex.tableRows) { _syncLoggedSetsFromTable(ex); _recomputeLiveE1RM(ex) }
+  })
   const exercises = _loggedExercises()
   if (!exercises.length) { showToast('No sets logged — nothing to save.', 'warn', 3000); return }
 
@@ -3128,9 +3166,17 @@ async function saveRunnerSession() {
         // wherever a set's prescription carries one — renderStrengthTable's wantsEffort).
         // effort_type comes from what was PRESCRIBED, never a literal. RIR and RPE run in opposite
         // directions, so a hardcoded 'rpe' here does not mislabel an RIR — it inverts its meaning.
+        // Range-guarded, for the reason spelled out for pace_500m_secs above: every set in the
+        // session rides ONE batched workout_log_sets insert, so a single out-of-range value that
+        // trips a CHECK fails the whole batch and the rollback deletes the entire session, not the
+        // one field. Both RPE (0-10) and RIR (0-5) fit inside 0-10. Dropping the field keeps the
+        // set; keeping it could cost the workout. Added after multi-agent review, 2026-09-30.
         if (_hasNumVal(s.effort)) {
-          row.effort_type = s.effortType === 'rir' ? 'rir' : 'rpe'
-          row.effort_value = parseFloat(s.effort)
+          const e = parseFloat(s.effort)
+          if (e >= 0 && e <= 10) {
+            row.effort_type = s.effortType === 'rir' ? 'rir' : 'rpe'
+            row.effort_value = e
+          }
         }
       }
       applyCardioMetrics(row)
@@ -3167,18 +3213,24 @@ async function saveRunnerSession() {
         const est = _estimate1RM(w, r)
         if (est && (!best || est > best.estimate)) best = { estimate: est, weight: w, reps: r }
       })
-      // The top set's RPE-aware estimate wins outright when there is one — not "if it is higher".
-      // The loop above is plain Epley, which assumes every set was taken to failure; a set stopped
-      // at RPE 8 had two reps left, so Epley systematically UNDER-predicts it (100x3 -> 110 vs the
-      // RPE-aware 115.9). Picking the larger of the two would still be picking between a model that
-      // knows what was left in the tank and one that does not, so the better-informed one wins.
+      // The top set's RPE-aware estimate beats plain Epley for the SAME set: Epley assumes the set
+      // went to failure, so it under-predicts a set stopped at RPE 8 (100x3 -> 110 vs 115.9).
       //
-      // weight/reps come from tableRows[0], mirroring _recomputeLiveE1RM exactly, so the modal's
-      // "100 kg x 3 reps" heading describes the very set the estimate underneath it came from.
+      // But it must not beat a HIGHER number off a DIFFERENT set. This originally replaced `best`
+      // outright, arguing "better-informed wins"; multi-agent review (2026-09-30) showed that
+      // argument only holds within one set. The loop ranges over every logged set, so a lifter who
+      // took a 120 kg single after a 100x3 @ RPE 8 top set had the 120 — a weight actually lifted,
+      // which _estimate1RM returns unchanged for a single — thrown away in favour of an estimated
+      // 115.9. Worse, the `<= currentOneRM` skip below then ran on the LOWER figure, so a real PR
+      // could vanish from the modal entirely. Take whichever is higher.
+      //
+      // weight/reps come from tableRows[0], mirroring _recomputeLiveE1RM exactly, so when the top
+      // set does win, the modal's "100 kg x 3 reps" heading describes the set it came from.
       // Placed before the !best guard on purpose: the loop discards anything over 10 reps, while
       // _estimate1RM accepts up to 12, so a top set of 11 or 12 has a live estimate and no `best`.
       const topRow = ex.tableRows?.[0]
-      if (Number.isFinite(ex._liveE1RM) && topRow && _hasNumVal(topRow.weight) && topRow.reps) {
+      if (Number.isFinite(ex._liveE1RM) && topRow && _hasNumVal(topRow.weight) && topRow.reps &&
+          (!best || ex._liveE1RM > best.estimate)) {
         best = { estimate: ex._liveE1RM, weight: parseFloat(topRow.weight), reps: parseInt(topRow.reps) }
       }
       if (!best) return null

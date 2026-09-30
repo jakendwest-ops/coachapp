@@ -364,7 +364,11 @@ function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = 
     // ("8 (AMRAP)" = at least 8, then keep going); with no target it stands alone.
     const repsPart = s.amrap && markAmrap ? (reps ? `${reps} (AMRAP)` : 'AMRAP') : reps
     const weight = s.weight ? fmtWeight(s.weight) : null
-    const intensity = range(s.intensityMin, s.intensityMax, '% 1RM')
+    // Basis-aware: a 'topSet' row is a percentage of TODAY's top set, not of the stored 1RM, and
+    // showing "70% 1RM" for it tells the coach the wrong thing about their own programme. Sibling
+    // of _runnerTargetCols' label and of renderStrengthTable's basisRM (multi-agent review,
+    // 2026-09-30 — the first fix taught one of the three and left these two behind).
+    const intensity = range(s.intensityMin, s.intensityMax, s.intensityBasis === 'topSet' ? '% of top set' : '% 1RM')
     const effort = s.effortMin
       ? (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + range(s.effortMin, s.effortMax)
       : (s.rpe ? 'RPE ' + s.rpe : null)
@@ -454,8 +458,17 @@ function _cleanTemplateSets(sets, derived, metricType) {
     // every existing template's behaviour and therefore the default. 'topSet' = the e1RM this
     // session's top set produced.
     intensityBasis: metricType === 'weight_reps' && s.intensityBasis === 'topSet' ? 'topSet' : 'stored',
-    repsMin: s.repsMin || null, repsMax: s.repsMax || null, weight: s.weight || null,
-    intensityMin: s.intensityMin || null, intensityMax: s.intensityMax || null,
+    repsMin: s.repsMin || null, repsMax: s.repsMax || null,
+    // Gated for the same reason as `amrap`/`bodyweight` above, one layer along: the builder HIDES
+    // the Weight and Intensity cells on a top-set row ("Weight isn't prescribed — logged live"),
+    // but flushTemplateSets deliberately PRESERVES an un-rendered field. So a coach who set 100 kg
+    // @ 85% and then tapped TOP SET left both values in sets_json with no visible control left to
+    // clear them, and the runner dutifully rendered a 100 kg target and an 85%-of-stored-1RM ghost
+    // on the one set the builder had just said has no prescribed load. Gate here, not at the three
+    // render sites — one gate, not three (multi-agent review, 2026-09-30).
+    weight: (metricType === 'weight_reps' && s.isTopSet) ? null : (s.weight || null),
+    intensityMin: (metricType === 'weight_reps' && s.isTopSet) ? null : (s.intensityMin || null),
+    intensityMax: (metricType === 'weight_reps' && s.isTopSet) ? null : (s.intensityMax || null),
     restMin: s.restMin || null, restMax: s.restMax || null,
     effortType: s.effortType || 'rpe', effortMin: s.effortMin || null, effortMax: s.effortMax || null,
     tempo: s.tempo || null, countdown: s.countdown || null,
@@ -2026,7 +2039,23 @@ function renderTemplateSets(containerId, type) {
     ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warn-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set ${window._templateSets.map((s, n) => s.intensityBasis === 'topSet' ? n + 1 : null).filter(Boolean).join(', ')} still uses "Today's top set", but set 1 is no longer a top set. Those sets have no percentage to work from until you switch set 1 back on or change them to "Last saved 1RM".</div>`
     : ''
 
-  container.innerHTML = topSetWarning + (window._templateSets || []).map((s, i) => {
+  // A TOP SET with no prescribed effort is a silent, permanent dead end: the runner renders the
+  // effort input only where a row prescribes one (renderStrengthTable's wantsEffort), and
+  // _recomputeLiveE1RM needs a captured effort, so there is no box to fill, no estimate can ever
+  // form, and every "% of today's top set" row reads "Can't estimate from this set" for the whole
+  // session. The coach is the only one who can fix it and the only one who never sees it. Warn
+  // rather than refuse (Jake, 2026-09-30) — same choice as topSetWarning above, so a half-built
+  // template is never blocked from saving.
+  // Explicit presence test rather than a truthy one. The effort inputs carry min="1" so a
+  // prescribed 0 is not reachable through the UI today, but this project has shipped four
+  // falsy-zero bugs and a hand-edited or imported sets_json is not bound by the input's min.
+  const ts0 = window._templateSets?.[0]
+  const tsEffortSet = [ts0?.effortMin, ts0?.effortMax].some(v => v !== null && v !== undefined && v !== '')
+  const topSetNoEffort = (topSetActive && !tsEffortSet)
+    ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warn-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set 1 is a top set but has no ${(ts0?.effortType === 'rir') ? 'RIR' : 'RPE'} prescribed. Without one the runner has no effort to record, so it cannot estimate a 1RM and any set using "Today's top set" will have no target.</div>`
+    : ''
+
+  container.innerHTML = topSetWarning + topSetNoEffort + (window._templateSets || []).map((s, i) => {
     const et = s.effortType || 'rpe'
     const tog = _togPill
     const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'var(--border)'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'var(--text-muted)'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`

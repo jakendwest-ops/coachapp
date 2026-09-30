@@ -616,7 +616,11 @@ async function _getProgramOneRMStatus(programId, clientId) {
   ;(phases || []).forEach(phase => {
     ;(phase.program_phase_workouts || []).filter(pw => (pw.week_number || 1) === 1).forEach(pw => {
       ;(pw.workout_templates?.workout_template_exercises || []).forEach(ex => {
-        const usesPct = (ex.sets_json || []).some(s => s.intensityMin != null || s.intensityMax != null)
+        // A 'topSet' row resolves against the e1RM this session's top set produces, so it needs
+        // no stored 1RM and must not make the coach supply one. Third and last sibling of the
+        // basis-blind trio found by multi-agent review 2026-09-30 (the others: this file's runner
+        // banner/label, and app-workouts' set-detail line).
+        const usesPct = (ex.sets_json || []).some(s => (s.intensityMin != null || s.intensityMax != null) && s.intensityBasis !== 'topSet')
         // A later NULL must not overwrite a real id. Several writers insert `exercise_id: … || null`
         // (starter-content.js:130, app-workouts.js:2113/2180), so one name can legitimately appear
         // twice across week-1 slots with the id on only one of them. This was harmless while `missing`
