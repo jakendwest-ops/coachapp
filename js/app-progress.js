@@ -29,6 +29,16 @@ function _refresh1RMs(clientId) {
   return renderClient1RMs(clientId, el)
 }
 
+// Same shape as _refresh1RMs just above, for renderClientPerformance's own two write paths
+// (savePerformanceLog, deletePerfLog): the client/solo Personal Bests tab (pb-performance-section,
+// added 2026-09-30 — Jake: "personal bests page should be the only page that contains all of this
+// data") or the PT-facing client-profile Performance tab (tab-content).
+function _refreshClientPerformance(clientId) {
+  const el = document.getElementById('pb-performance-section') || document.getElementById('tab-content')
+  if (!el) return Promise.resolve()
+  return renderClientPerformance(clientId, el)
+}
+
 // Writes only the rows the user actually CHANGED. client_1rms is append-only — the newest row per
 // exercise wins, and "+ Update" has always inserted rather than updated — so saving every row every
 // time would stamp a fresh entry against today for lifts that were never touched, burying the real
@@ -748,7 +758,7 @@ async function savePerformanceLog(clientId) {
 
   if (error) { log.error('savePerformanceLog', 'insert failed', error); document.getElementById('perf-error') && (document.getElementById('perf-error').textContent = error.message); return }
   log.ok('savePerformanceLog', 'record saved', { clientId, category })
-  renderClientPerformance(clientId, document.getElementById('tab-content'))
+  _refreshClientPerformance(clientId)
 }
 
 async function deletePerfLog(id, clientId) {
@@ -772,7 +782,7 @@ async function deletePerfLog(id, clientId) {
     return
   }
   log.ok('deletePerfLog', 'record deleted', { id })
-  renderClientPerformance(clientId, document.getElementById('tab-content'))
+  _refreshClientPerformance(clientId)
 }
 
 // ─── WEIGHT TRACKING ──────────────────────────────────────────────────────────
@@ -1452,11 +1462,18 @@ async function renderProgress(el) {
     const clientId = await _getCurrentClientId()
     const host = document.getElementById('progress-tab-content')
     if (!clientId) { host.innerHTML = _noClientProfileHtml; return }
-    // Keeps the id every 1RM writer already refreshes through (_refresh1RMs looks for it first), so
-    // saving or deleting from this tab re-renders in place rather than falling through to the coach's
-    // #tab-content and silently painting into the wrong container.
-    host.innerHTML = '<div id="pb-1rms-section"></div>'
-    await renderClient1RMs(clientId, document.getElementById('pb-1rms-section'))
+    // Two sections, one tab (2026-09-30 — Jake: "personal bests page should be the only page that
+    // contains all of this data"). Each keeps the id its own writer already refreshes through
+    // (_refresh1RMs / _refreshClientPerformance look for it first), so saving or deleting from either
+    // section re-renders in place rather than falling through to the coach's #tab-content and silently
+    // painting into the wrong container. 1RMs first — it's the more-used surface (BIG_5 quick-entry).
+    host.innerHTML = '<div id="pb-1rms-section"></div><div id="pb-performance-section" style="margin-top:28px"></div>'
+    // Concurrent, not sequential: each does its own independent DB round trip into its own container,
+    // so the second's fetch has no reason to wait on the first's render finishing first (found by review).
+    await Promise.all([
+      renderClient1RMs(clientId, document.getElementById('pb-1rms-section')),
+      renderClientPerformance(clientId, document.getElementById('pb-performance-section')),
+    ])
   }
   if (activeTab === 'Goals') {
     const clientId = await _getCurrentClientId()

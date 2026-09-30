@@ -254,7 +254,7 @@ test.describe('solo dashboard tiles', () => {
       try { out.next = _soloTileNextSession([], 'c1', today) } catch (e) { out.nextErr = String(e) }
       try { out.up = _soloTileNextUp([], today) } catch (e) { out.upErr = String(e) }
       try { out.recent = _soloTileRecent(null, 'c1') } catch (e) { out.recentErr = String(e) }
-      try { out.myProgress = _soloTileMyProgress(null, 'c1') } catch (e) { out.myProgressErr = String(e) }
+      try { out.myProgress = _soloTileMyProgress(null) } catch (e) { out.myProgressErr = String(e) }
       try { out.progNull = JSON.stringify(_programWorkoutsByDate(null, null)) } catch (e) { out.progErr = String(e) }
       return out
     })
@@ -328,14 +328,19 @@ test.describe('solo dashboard tiles', () => {
 
   // ── 9b. Benchmarks card replaced by a small "My progress" preview (Jake, 2026-09-28: "Benchmarks
   //        can be removed from this page and replaced with my progress and being linked to that
-  //        page.") — decision: "Small preview, same idea as today". CORRECTED 2026-09-29 (multi-agent
-  //        review, same session): the first version dropped id="client-pb-form" and showClientPBForm
-  //        entirely on the wrong assumption that Personal Bests (client_1rms — barbell 1RMs) covers the
-  //        same ground as this card's own data (performance_logs — cardio times, custom benchmarks).
-  //        It does not; that version broke tests/pb-consolidation-2026-08-17.spec.js:119 ("SOLO: the
-  //        dashboard form actually writes a row") and left solo accounts with no way to log a new
-  //        performance_logs entry at all. This is the fixed version's spec, not the original's. ────
-  test('My progress tile: small preview, a working +Log record form, and a secondary link to Progress', async ({ page }) => {
+  //        page.") — decision: "Small preview, same idea as today". Went through two corrections the
+  //        same weekend, both from real findings, worth keeping visible:
+  //          2026-09-29 (multi-agent review): v1 dropped the dashboard's own +Log record form on the
+  //          wrong assumption that Personal Bests already covered this data. It didn't yet (it rendered
+  //          renderClient1RMs only — barbell 1RMs, a different table from this card's performance_logs)
+  //          — v1 broke tests/pb-consolidation-2026-08-17.spec.js's SOLO write-path test. Restored the
+  //          form as v2, as a stopgap, flagging the mismatch to Jake.
+  //          2026-09-30 (Jake): "personal bests page should be the only page that contains all of this
+  //          data." Personal Bests now mounts renderClientPerformance too (js/app-progress.js), which
+  //          genuinely does cover this card's data — so v3 (here) removes the form again, this time
+  //          correctly. tests/pb-consolidation-2026-08-17.spec.js proves the destination actually has
+  //          the write path now; this test only needs to prove the dashboard side.
+  test('My progress tile: small preview, no independent form — the real write path lives on Personal Bests now', async ({ page }) => {
     const r = await page.evaluate(() => {
       const pbs = [
         { name: 'Deadlift', value: 140, unit: 'kg' },
@@ -343,9 +348,9 @@ test.describe('solo dashboard tiles', () => {
         { name: '5k run', value: 22.5, unit: 'min' },
       ]
       return {
-        populated: _soloTileMyProgress(pbs, 'c1'),
-        empty: _soloTileMyProgress([], 'c1'),
-        nullish: _soloTileMyProgress(null, 'c1'),
+        populated: _soloTileMyProgress(pbs),
+        empty: _soloTileMyProgress([]),
+        nullish: _soloTileMyProgress(null),
       }
     })
     expect(r.populated, 'renamed from Benchmarks').toContain('My progress')
@@ -355,17 +360,15 @@ test.describe('solo dashboard tiles', () => {
     expect(r.populated).toContain('Bench Press')
     expect(r.populated, 'a small preview, not the full list').not.toContain('5k run')
     expect(r.populated).toContain('+1 more')
-    // The pre-existing capability, restored exactly as tests/pb-consolidation-2026-08-17.spec.js:119
-    // exercises it: a real onclick to showClientPBForm and the #client-pb-form host it looks for.
-    expect(r.populated, 'the +Log record shortcut must still be here, working, not just described as reachable elsewhere')
-      .toContain("showClientPBForm('c1')")
-    expect(r.populated, 'the form host pb-consolidation-2026-08-17.spec.js:127 looks for').toContain('id="client-pb-form"')
-    // A secondary, explicit link to Progress -> Personal Bests — not the whole card (this card holds
-    // an interactive form; making the whole card a click-to-navigate target would need every field in
-    // that form to stopPropagation, which is exactly the kind of thing that quietly breaks later).
+    // No independent write path any more — Personal Bests is the only page with one, per Jake's
+    // 2026-09-30 instruction. tests/pb-consolidation-2026-08-17.spec.js's own "no longer hosts its own
+    // PB form" test proves this same fact end to end against the real rendered dashboard.
+    expect(r.populated, 'no +Log record button on this tile any more').not.toContain('Log record')
+    expect(r.populated, 'no inline form host either — it only ever existed for that button').not.toContain('client-pb-form')
+    // The whole card links to Progress -> Personal Bests — safe now that there's no form inside it to
+    // fight over clicks with (no stopPropagation needed anywhere).
     expect(r.populated).toContain("navigate('progress')")
     expect(r.populated, "must land on Personal Bests, not wherever Progress was last left").toContain("_progressTab='Personal Bests'")
-    expect(r.empty, 'empty state still has a working +Log record').toContain("showClientPBForm('c1')")
     expect(r.empty, 'empty state still links through').toContain("navigate('progress')")
     expect(r.empty).toContain('solo-tile-empty')
     expect(r.nullish, 'null must not throw').toContain('solo-tile-empty')

@@ -15,6 +15,13 @@
 // UPDATED 2026-09-19: Jake had the "Benchmarks" tab deleted regardless (see docs/decisions.md). The
 // form and saveClientPB tests below still stand — the form lives on both dashboards — and the first
 // test now pins that Benchmarks is no longer a tab and that a stored 'Benchmarks' migrates forward.
+//
+// UPDATED 2026-09-30: Jake — "personal bests page should be the only page that contains all of this
+// data." The form now lives on the CLIENT dashboard only (js/app-dashboard.js's renderClientDashboard,
+// untouched here); the SOLO dashboard's own copy is gone, and the Personal Bests tab now mounts
+// renderClientPerformance (js/app-progress.js) alongside the 1RM grid so it genuinely is the one place
+// with all of it. "the form lives on both dashboards" above is stale for solo specifically — see the
+// tests below this note for the current, real state.
 const { test, expect } = require('./fixtures')
 const { loginAsPT, loginAsClient } = require('./helpers')
 
@@ -112,37 +119,46 @@ test.describe('Personal Bests consolidation', () => {
     expect(r.error, 'it must reach validation and tell the user what is wrong').toContain('required')
   })
 
-  // The whole point of the fix, end to end. Until now this path had NEVER completed a successful
-  // insert: saveClientPB read #cpb-notes unconditionally, the solo dashboard's form never rendered
-  // it, so every attempt threw a TypeError before the insert and showed the user nothing. A unit test
-  // proving saveClientPB tolerates a missing field does not prove the real form saves — this does.
-  test('SOLO: the dashboard form actually writes a row', async ({ page }) => {
+  // SUPERSEDED 2026-09-30 (Jake: "personal bests page should be the only page that contains all of
+  // this data"). This test used to drive the solo DASHBOARD's own copy of the form (#client-pb-form,
+  // showClientPBForm/saveClientPB) — that copy is gone now; js/app-dashboard.js's My-progress tile is a
+  // preview + link only, per the same instruction. The real write path a solo user reaches today is
+  // Progress -> Personal Bests -> the performance-log form renderClientPerformance mounts alongside the
+  // 1RM grid (savePerformanceLog, #pb-performance-section) — this test now proves THAT path end to end,
+  // keeping the original's actual intent (solo can genuinely write a performance_logs row, not just a
+  // unit that tolerates a missing field) rather than the specific UI it used to go through.
+  test('SOLO: the real write path (Progress -> Personal Bests) actually writes a row', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(async () => {
       if (!window._soloClientId) return { skip: true }
       await switchView('solo')
+      // switchView resolves before renderSoloDashboard's own async fetches finish — without this wait,
+      // that late completion overwrites the renderProgress call below moments after it runs (found live:
+      // #main-content read back the SOLO DASHBOARD's own markup, not Progress, when this was missing).
+      // The original test this one replaces already knew this — same wait, same reason.
       await new Promise(res => setTimeout(res, 2500))
+      window._progressTab = 'Personal Bests'
+      await renderProgress(document.getElementById('main-content'))
+      await new Promise(res => setTimeout(res, 800))
       const name = '[E2E-PB] 5k ' + Date.now()
-      showClientPBForm(window._soloClientId)
-      const form = document.getElementById('client-pb-form')
-      if (!form) return { err: 'solo dashboard rendered no PB form' }
-      if (!document.getElementById('cpb-notes')) return { err: 'solo form still has no #cpb-notes' }
+      if (!document.getElementById('pb-performance-section')) return { err: 'Personal Bests tab has no #pb-performance-section' }
+      if (!document.getElementById('pl-name')) return { err: 'renderClientPerformance did not mount its own add-form' }
 
-      document.getElementById('cpb-name').value = name
-      document.getElementById('cpb-category').value = 'cardio'
-      _pbSyncUnits()
-      document.getElementById('cpb-value').value = '24.5'
-      document.getElementById('cpb-unit').value = 'min'
-      document.getElementById('cpb-date').value = '2026-08-17'
-      document.getElementById('cpb-notes').value = 'felt strong'
-      await saveClientPB(window._soloClientId)
+      document.getElementById('pl-category').value = 'cardio'
+      updatePerfUnits()
+      document.getElementById('pl-name').value = name
+      document.getElementById('pl-value').value = '24.5'
+      document.getElementById('pl-unit').value = 'min'
+      document.getElementById('pl-date').value = '2026-08-17'
+      document.getElementById('pl-notes').value = 'felt strong'
+      await savePerformanceLog(window._soloClientId)
       await new Promise(res => setTimeout(res, 1500))
 
       const { data } = await db.from('performance_logs')
         .select('id, name, category, unit, value, notes').eq('client_id', window._soloClientId).eq('name', name)
       const row = data?.[0]
       if (row) await db.from('performance_logs').delete().eq('id', row.id)   // owns its fixture
-      return { row, formError: document.getElementById('cpb-error')?.textContent || '' }
+      return { row, formError: document.getElementById('perf-error')?.textContent || '' }
     })
     test.skip(!!r.skip, 'no solo client record on this account')
     expect(r.err).toBeUndefined()
@@ -150,7 +166,76 @@ test.describe('Personal Bests consolidation', () => {
     expect(r.row, 'a row must actually exist in performance_logs').toBeTruthy()
     expect(r.row.category).toBe('cardio')
     expect(r.row.unit).toBe('min')
-    expect(r.row.notes, 'the notes field that used to crash this path must persist').toBe('felt strong')
+    expect(r.row.notes, 'notes must persist through the real form').toBe('felt strong')
+  })
+
+  // Companion to the test above: proves the OLD dashboard-tile path is genuinely gone, not just
+  // untested — "only page that contains all of this data" means the dashboard no longer offers an
+  // independent way to create one.
+  test('SOLO: the dashboard no longer hosts its own PB form — My progress is a preview + link only', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      if (!window._soloClientId) return { skip: true }
+      await switchView('solo')
+      await new Promise(res => setTimeout(res, 1500))
+      return {
+        hasForm: !!document.getElementById('client-pb-form'),
+        hasLogRecordButton: [...document.querySelectorAll('button')].some(b => b.textContent.trim() === '+ Log record'),
+      }
+    })
+    test.skip(!!r.skip, 'no solo client record on this account')
+    expect(r.hasForm, 'the old inline form must not be on the solo dashboard any more').toBe(false)
+    expect(r.hasLogRecordButton, 'the old dashboard button must not be on the solo dashboard any more').toBe(false)
+  })
+
+  // The structural half of "only page that contains all of this data": both sections must mount
+  // together, not just the one a given test happens to drive.
+  test('Personal Bests tab mounts the 1RM grid AND the performance-log categories, both from one tab', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      if (!window._soloClientId) return { skip: true }
+      await switchView('solo')
+      // See the "SOLO: the real write path" test's own comment just above for why this wait is load-bearing.
+      await new Promise(res => setTimeout(res, 2500))
+      window._progressTab = 'Personal Bests'
+      await renderProgress(document.getElementById('main-content'))
+      await new Promise(res => setTimeout(res, 800))
+      return {
+        has1RMSection: !!document.getElementById('pb-1rms-section'),
+        hasPerfSection: !!document.getElementById('pb-performance-section'),
+        // Real markers from each render function's own output, not just the wrapper ids existing.
+        has1RMHeading: document.getElementById('pb-1rms-section')?.textContent.includes('Personal Bests') ?? false,
+        hasPerfForm: !!document.getElementById('pl-category'),
+        // #pb-1rms-section must come first in the DOM — the 1RM grid is the more-used surface
+        // (BIG_5 quick-entry) and shouldn't make a user scroll past the less-common category list.
+        orderCorrect: (() => {
+          const a = document.getElementById('pb-1rms-section'), b = document.getElementById('pb-performance-section')
+          return !!(a && b) && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+        })(),
+      }
+    })
+    test.skip(!!r.skip, 'no solo client record on this account')
+    expect(r.has1RMSection).toBe(true)
+    expect(r.hasPerfSection).toBe(true)
+    expect(r.has1RMHeading, 'the 1RM grid actually rendered, not just an empty wrapper').toBe(true)
+    expect(r.hasPerfForm, 'renderClientPerformance actually rendered, not just an empty wrapper').toBe(true)
+    expect(r.orderCorrect, '1RM grid comes before the performance-log section').toBe(true)
+  })
+
+  // _refresh1RMs (js/app-progress.js:23) already has this exact guard, with its own comment
+  // explaining why: a caller on a surface hosting neither container must not throw when the write
+  // that already succeeded tries to redraw. _refreshClientPerformance mirrors it — test it the same way.
+  test('_refreshClientPerformance does not throw when neither container is on the page', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      document.getElementById('pb-performance-section')?.remove()
+      document.getElementById('tab-content')?.remove()
+      try {
+        await _refreshClientPerformance('00000000-0000-0000-0000-000000000000')
+        return { threw: false }
+      } catch (e) { return { threw: true, message: e.message } }
+    })
+    expect(r.threw, 'must resolve quietly, not throw: ' + r.message).toBe(false)
   })
 
   // Restores the client-role coverage that went with the Benchmarks tab (2026-09-19): the deleted "Log

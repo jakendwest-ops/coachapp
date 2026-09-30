@@ -862,40 +862,30 @@ function _soloTileGoals(goals, todayStr) {
 // page and replaced with my progress and being linked to that page"). Decision: "Small preview, same
 // idea as today" — same pbMap-derived list this card always showed, just fewer rows shown by default.
 //
-// CORRECTED 2026-09-29 (multi-agent review, after this first shipped the same session): the first
-// version dropped id="client-pb-form" and showClientPBForm entirely, on the assumption that "+ Log
-// record" was still reachable "one tap further in" on the Personal Bests tab this card links to. That
-// assumption was wrong — Personal Bests renders renderClient1RMs, reading/writing client_1rms (barbell
-// 1RMs only); this card's own data is performance_logs (cardio times, custom benchmarks, everything
-// showClientPBForm/saveClientPB write). They are different tables with no UI connecting them. The old
-// version broke tests/pb-consolidation-2026-08-17.spec.js:119 ("SOLO: the dashboard form actually
-// writes a row") and left solo accounts with NO reachable way to log a new performance_logs entry.
-// Fixed by keeping the card's own form exactly as before (not whole-card-clickable, same as the old
-// Benchmarks card never was, so no stopPropagation is needed against an outer navigate()); "linked to
-// that page" is now a small explicit secondary control rather than the whole card, so it doesn't imply
-// the two are showing the same data.
+// CORRECTED 2026-09-29 (multi-agent review, same session): the first version dropped
+// id="client-pb-form"/showClientPBForm entirely, on the wrong assumption that "+ Log record" was still
+// reachable "one tap further in" on the Personal Bests tab this card links to — at the time, that tab
+// rendered renderClient1RMs only (client_1rms, barbell 1RMs), a different table from this card's own
+// performance_logs data. Restored the form there as a stopgap while flagging the mismatch to Jake.
 //
-// Not yet resolved, flagged for Jake rather than decided here: Personal Bests (1RMs) and this card's
-// own performance_logs preview are topically different lists, so the link is "the closest existing
-// page", not a real match — no page currently browses a solo/client's full performance_logs list (the
-// old standalone Benchmarks TAB was deliberately deleted 2026-09-19 for exactly that role; see
-// js/app-progress.js's renderProgress comments, "2026-09-19" note).
-function _soloTileMyProgress(pbs, clientId) {
+// CORRECTED AGAIN 2026-09-30 (Jake: "personal bests page should be the only page that contains all of
+// this data"): Personal Bests now mounts renderClientPerformance alongside the 1RM grid
+// (js/app-progress.js's renderProgress, #pb-performance-section) — the SAME add-form/history/delete UI
+// the coach's client-profile Performance tab already used, reused rather than reinvented, and now
+// genuinely covers this card's own data. So this tile goes back to a pure preview + link, this time
+// correctly: nothing is lost, because the destination actually has it now.
+// tests/pb-consolidation-2026-08-17.spec.js proves both halves: the real write path from Personal
+// Bests, and that this dashboard no longer hosts an independent copy.
+function _soloTileMyProgress(pbs) {
   const list = pbs || []
-  return `<div class="dashboard-card">
-    <div class="card-header">
-      <h2 class="card-title">My progress</h2>
-      <button class="btn-secondary solo-strip-btn" onclick="showClientPBForm('${clientId}')">+ Log record</button>
-    </div>
-    ${!list.length ? `<p class="solo-tile-empty">No records yet.</p>` : list.slice(0, 2).map(pb => `
+  return `<div class="dashboard-card solo-tile" onclick="window._progressTab='Personal Bests';navigate('progress')">
+    <div class="card-header"><h2 class="card-title">My progress</h2></div>
+    ${!list.length ? `<p class="solo-tile-empty">No records yet. Tap to add one.</p>` : list.slice(0, 2).map(pb => `
       <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
         <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
         <span style="font-size:var(--text-lg, 14px);font-weight:700">${pb.value} <span class="solo-tile-sub">${escapeHtml(pb.unit || '')}</span></span>
       </div>`).join('')}
-    <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;margin-top:8px" onclick="window._progressTab='Personal Bests';navigate('progress')">${list.length > 2 ? `+${list.length - 2} more` : 'View in Progress'} →</button>
-    <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-      ${_pbFormHtml(clientId)}
-    </div>
+    ${list.length > 2 ? `<span class="solo-tile-sub">+${list.length - 2} more</span>` : ''}
   </div>`
 }
 
@@ -1000,7 +990,7 @@ async function renderSoloDashboard(el) {
     </div>
 
     <div class="solo-lower">
-      ${_soloTileMyProgress(pbs, clientId)}
+      ${_soloTileMyProgress(pbs)}
     </div>
   `
 
