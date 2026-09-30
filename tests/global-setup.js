@@ -20,7 +20,12 @@ require('dotenv').config()
 
 const DEFAULT_BASE = 'http://localhost:3001'
 
-async function assertPreviewServer (base) {
+// The index.html THIS checkout expects to be served. In a git worktree __dirname is the worktree's
+// tests/, so this resolves to the worktree's own index.html — which is the entire point of the
+// fourth check below.
+const LOCAL_INDEX = require('path').join(__dirname, '..', 'index.html')
+
+async function assertPreviewServer (base, localIndexPath = LOCAL_INDEX) {
   let res, body
   try {
     res = await fetch(base + '/')
@@ -48,6 +53,51 @@ async function assertPreviewServer (base) {
       `\n\nWRONG APP ON ${base}: serving "${title}", not CoachApp.\n` +
       `This is NOT a test failure. A stale configuration is serving a different app on this port.\n` +
       `Remove the wrong config from .claude/launch.json entirely — do not just reorder it — then re-run.\n`
+    )
+  }
+
+  // THE RIGHT APP FROM THE WRONG DIRECTORY (added 2026-09-30).
+  //
+  // The title check above passes for ANY CoachApp checkout, and until today .claude/launch.json —
+  // which is git-TRACKED — hardcoded `Join-Path 'C:/Users/jaken/OneDrive/coachapp'`. A git worktree
+  // inherited that file, so its server served the MAIN checkout's js while Playwright ran the
+  // WORKTREE's specs. Measured on the rpe-top-set worktree: 5 specs failed in ways that looked like
+  // application bugs; pointed at the right root, the same specs went 13 passed / 3 failed.
+  //
+  // That is the reports-success-while-doing-nothing shape at suite scale — a worktree run can go
+  // GREEN having tested code the author never wrote. The title check could never catch it, because
+  // both copies are honestly called CoachApp. This compares the bytes.
+  let local
+  try {
+    local = require('fs').readFileSync(localIndexPath, 'utf8')
+  } catch (err) {
+    // Fail OPEN: if this checkout's index.html cannot be read, that is not a reason to refuse to run
+    // the suite. Say so rather than passing silently.
+    console.log(`  [preview-server] could not read ${localIndexPath} (${err.code}) — skipped the same-checkout check.`)
+    return
+  }
+  // Normalise the two differences that are NOT a wrong-directory signal:
+  //
+  //  - a leading BOM. index.html is written with one (ef bb bf), and the two read paths disagree
+  //    about it: fs.readFileSync(...,'utf8') KEEPS U+FEFF, while Response.text() decodes through a
+  //    TextDecoder that strips it. Comparing raw made this check fire on a server that was serving
+  //    exactly the right directory — caught on its first real run, 2026-09-30. playwright.config.js
+  //    documents the same trap for .claude/launch.json.
+  //  - line endings. core.autocrlf can leave the working copy CRLF.
+  const norm = s => s.replace(/^﻿/, '').replace(/\r\n/g, '\n')
+  if (norm(body) !== norm(local)) {
+    const vers = s => (s.match(/[\w-]+\.js\?v=\d+/g) || []).join(' ')
+    throw new Error(
+      `\n\nRIGHT APP, WRONG DIRECTORY on ${base}\n` +
+      `This is NOT a test failure — the server is serving a DIFFERENT CoachApp checkout than the\n` +
+      `one these tests came from, so every result would describe code you are not editing.\n\n` +
+      `  this checkout : ${localIndexPath}\n` +
+      `    ${vers(local) || '(no module version tags found)'}\n` +
+      `  being served  :\n` +
+      `    ${vers(body) || '(no module version tags found)'}\n\n` +
+      `Usual cause: running from a git worktree while .claude/launch.json points at another root.\n` +
+      `The server prints the directory it serves on startup — check that line, or set\n` +
+      `PREVIEW_SERVER_CMD to a server rooted in this directory.\n`
     )
   }
 }
