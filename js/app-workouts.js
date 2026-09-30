@@ -2103,11 +2103,22 @@ function renderTemplateSets(containerId, type) {
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
           <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
-        ${(i === 0 && topSetActive)
-          ? `<div style="padding:8px 0;font-size:var(--text-sm, 11px);color:var(--text-muted)">Weight isn't prescribed — logged live in the runner, then used to calculate this session's e1RM for the sets below.</div>`
-          : more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `
+        ${/* Fix round 1 (Important finding 1): the FIRST version of this swapped out the whole
+             "+ More targets" block for the note, which took Tempo and Countdown down with it even
+             though only Weight and Intensity(%1RM) were meant to go — the exact "removing a container
+             drops every affordance it hosted" class this file has been bitten by before (les-043, the
+             week-tabs/Save-to-Library loss). Tempo is an independent prescription dimension that still
+             applies to a top set (a controlled eccentric doesn't stop mattering because the load is
+             chosen on the day), so the note now sits ALONGSIDE "+ More targets", not instead of it, and
+             only the Intensity cell inside it is swapped out below -- Tempo/Countdown are untouched and
+             stay reachable for every row, top set or not. */''}
+        ${(i === 0 && topSetActive) ? `<div style="padding:8px 0;font-size:var(--text-sm, 11px);color:var(--text-muted)">Weight isn't prescribed — logged live in the runner, then used to calculate this session's e1RM for the sets below.</div>` : ''}
+        ${more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `
           <div class="ts-grid">
-            ${cell('Intensity (%1RM)', gmini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${escapeHtml(String(s.intensityMin))}"`:'')) + dash + gmini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${escapeHtml(String(s.intensityMax))}"`:'')))}
+            ${/* Intensity (%1RM) has nothing to be a percentage OF on the top set's own row -- its
+                 whole point is to PRODUCE today's e1RM, not consume one. Omitted only for that row;
+                 every other row keeps it exactly as before. */''}
+            ${(i === 0 && topSetActive) ? '' : cell('Intensity (%1RM)', gmini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${escapeHtml(String(s.intensityMin))}"`:'')) + dash + gmini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${escapeHtml(String(s.intensityMax))}"`:'')))}
             ${/* Only offered on a row that ISN'T the top set itself, and only once row 0 actually IS
                  one — a top set has no %1RM of anything to speak of, and this control means nothing
                  until there is a top set for it to point at. */''}

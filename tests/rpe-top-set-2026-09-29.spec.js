@@ -271,4 +271,33 @@ test.describe('builder: top set + intensity basis (Task 3, 2026-09-29)', () => {
     const sets = await page.evaluate(() => window._templateSets)
     expect(sets[1].intensityBasis, 'the warning must not have silently rewritten the orphaned row').toBe('topSet')
   })
+
+  test('switching to Unilateral clears the top-set-only UI, and still warns about the orphaned basis', async ({ page }) => {
+    // Fix round 1, Important finding 2: toggleUnilateralType preserves every set field, INCLUDING
+    // isTopSet, when it flips weight_reps<->unilateral -- "never discards anything the user has
+    // already typed" is the whole point of that control. Without the topSetActive guard (gating every
+    // top-set-driven render decision on `type === 'weight_reps'`, not the raw isTopSet flag alone), a
+    // coach who marked a top set and then tapped "Unilateral (per side)" would be left looking at a
+    // hidden weight cell and no TOP SET pill to turn it back off with. This test reaches that state
+    // through the REAL Unilateral pill, not the TOP SET pill, so it actually exercises the toggle path
+    // the guard was written for.
+    await openTemplateBuilderWithFixture(page, { sets: 2 })
+    await page.click('#ts-topset-0')
+    await page.selectOption('#ts-basis-1', 'topSet')
+
+    await page.click('#att-metric-pills button:has-text("Unilateral")')
+
+    const r = await page.evaluate(() => ({
+      type: document.getElementById('att-type')?.value,
+      pillGone: !document.getElementById('ts-topset-0'),
+      weightCellBack: !!document.getElementById('ts-weight-0'),
+    }))
+    expect(r.type, 'the type select must actually have flipped to unilateral').toBe('unilateral')
+    expect(r.pillGone, 'the TOP SET pill only ever renders for weight_reps -- it must be gone').toBe(true)
+    expect(r.weightCellBack, 'row 0 must get its weight input back once it is no longer an ACTIVE top set').toBe(true)
+
+    const warningText = await page.locator('#att-sets-container').innerText()
+    expect(warningText, 'row 1 still points at "Today\'s top set" with nothing active to point at -- must warn').toContain('Set 2')
+    expect(warningText).toContain('no longer a top set')
+  })
 })
