@@ -1,9 +1,9 @@
 ---
 id: 2026-10-01-client-failed-save-rollback-deletes-nothing
-status: open
+status: closed
 priority: medium
 reported: 2026-10-01
-status_detail: "FIX BUILT 2026-10-01, NOT YET APPLIED. Jake chose option 1 (a narrow client DELETE grant). scripts/add-client-empty-session-delete-2026-10-01.sql adds two read-only SECURITY DEFINER functions and two DELETE policies: a client may delete their own session, and its exercise rows, only while NO set is saved under it AND the session was created in the last 15 minutes. Verified locally on PGlite loaded with the live schema and every live policy on these tables (scripts/sql-verify/client-empty-session-delete.verify.mjs, 62 checks, 19 mutations all caught). Reviewed by three reviewers before the commit (no blocking finding; the 15-minute window, a strict refusal check, a blanket-delete probe and the read-back showing execute privileges all came from that review). The FIRST draft, which wrote the no-sets test straight into the policies, failed on the real engine with infinite recursion and would have broken the coach's and solo user's existing deletes too. Waiting on Jake to run the script in the Supabase SQL editor. The closing spec (a client's exact rollback sequence, expected to delete) is written but deliberately NOT committed until the script is applied, because it is RED against the live database by design and would block the release gate."
+status_detail: "CLOSED 2026-10-01. Jake ran scripts/add-client-empty-session-delete-2026-10-01.sql on the live project and pasted the read-back: both functions definer=true, search_path=public, pg_temp, anon_exec=false, authenticated_exec=true; both policies DELETE authenticated. BEFORE: a probe ran the app's exact rollback as the E2E client and it deleted nothing (no error, rows still there). AFTER: tests/client-rollback-2026-10-01.spec.js, run against the live project, passes: a client's rollback removes a failed save's exercise rows and session (cleanup afterwards found only the one finished-session control), and the SAME calls on a session that has a set delete nothing (the grant is narrow). Regression: 33 spec files that save or delete sessions as coach, client and solo ran against the live database after the migration: 318 passed, 0 failed, 1 skipped (unrelated), and no policy-recursion error anywhere (the first draft of the migration would have caused them). Not Jake-reported. Still open and named in the body: the lost-response case (follow-up option 3)."
 closing_conditions: "A test that makes a client's session save fail after the log row exists (or runs the rollback sequence as the client) and then finds NO half-written session left behind, RED before and GREEN after the chosen fix. Jake chooses the fix; nothing is built until he does."
 ---
 
@@ -44,7 +44,7 @@ then saves the real one, so the history shows a duplicate. The coach can delete 
 
 ## Status of the fix (2026-10-01)
 
-Built, reviewed, verified locally, not applied. **Closes when** (unchanged): a test makes a client's save fail after the log row exists (or runs the rollback sequence as the
+**APPLIED AND VERIFIED LIVE 2026-10-01.** (Earlier status: built, reviewed, verified locally, not applied.) **Closes when** (unchanged): a test makes a client's save fail after the log row exists (or runs the rollback sequence as the
 client) and finds no half-written session left, RED before and GREEN after. The "before" half is already shown (the probe: the rollback deleted nothing). The "after" half
 needs the script applied to the live project; then `tests/client-rollback-2026-10-01.spec.js` is run (it must pass) and committed.
 
@@ -66,3 +66,11 @@ the state a failed save leaves. It adds no DELETE on `workout_log_sets` and no U
   SQL editor may or may not wrap a paste in one transaction.
 - **The manual "Log session" modal can save exercises with no sets** (coach-only UI). A client could delete such a recent session through the API; it holds no sets, but it
   could hold a coach's note (`workout_logs.notes`) — the reason for the 15-minute window.
+
+## Result (2026-10-01, after Jake applied it)
+
+- Read-back from the live project: two functions (definer=true, fixed search_path, anon cannot execute, authenticated can) and two DELETE policies for authenticated only. Exactly as the script says.
+- `tests/client-rollback-2026-10-01.spec.js` (committed now that the script is applied; it is red without it): GREEN against the live project.
+- The same test also proves the limit: a finished session (one that has a set) is NOT deletable by its client, through the same calls.
+- Coach and solo deletes unaffected: 318 passed / 0 failed in the 33 spec files that save or delete sessions.
+- Not shown able to fail by mutation on the LIVE database (that would mean weakening live policies); the local verifier's 19 mutations and the earlier probe are the evidence that the checks can fail.

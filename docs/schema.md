@@ -181,6 +181,13 @@ converts.
 | `stroke_rate_spm` | 2026-08-08 | smallint + CHECK |
 | `effort_type`, `effort_value` | RPE work | `effort_type` has a CHECK (`'rpe'` or `'rir'`; NULL passes). **`effort_value` has NO CHECK** — read from `pg_constraint` on the live project 2026-10-01 — so the app's 0–10 guard (`_effortOrNull`) is the only limit and is deliberately conservative. |
 
+**`workout_logs` / `workout_log_exercises` DELETE by a client (2026-10-01, applied by Jake).** A client has NO general delete on session history. Two narrow DELETE policies
+(`Client deletes own empty workout logs`, `Client deletes own empty log exercises`, authenticated only) let a client delete their OWN session, and its exercise rows, only while
+no `workout_log_sets` exist under it and the session is under 15 minutes old: exactly what a failed save's rollback needs. They call two read-only SECURITY DEFINER functions,
+`client_may_delete_log(uuid)` and `client_may_delete_log_exercise(uuid)` (fixed search_path; EXECUTE revoked from PUBLIC and anon; false for anyone who does not own the row).
+The test is in a function because writing it into the policy makes Postgres refuse it with "infinite recursion detected in policy" (the policies on these tables read each other).
+Script and rollback: `scripts/add-client-empty-session-delete-2026-10-01.sql`; local verifier: `scripts/sql-verify/client-empty-session-delete.verify.mjs`.
+
 **`metric_type`** — added 2026-07-18 to `workout_template_exercises` (text, not null, default
 `weight_reps`), with matching CHECK constraints on `exercises`, `workout_template_exercises` and
 `workout_log_exercises` (2026-07-25). Cardio was merged into interval 2026-08-09.
