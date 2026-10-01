@@ -69,7 +69,13 @@ const REPO = process.env.UNBOUNDED_REPO || join(dirname(fileURLToPath(import.met
 // library), `goals`, `clients`. Their unbounded reads are named in the ledger row this header points to, not counted here.
 const GROWING = [
   'weight_logs', 'workout_logs', 'workout_log_exercises', 'workout_log_sets', 'performance_logs',
-  'client_check_ins', 'events', 'goal_check_ins', 'app_errors'
+  'client_check_ins', 'events', 'goal_check_ins', 'app_errors',
+  // Added 2026-10-01 (Jake: "the account shouldnt have nearly 7000 exercises"). The header above left
+  // `exercises` out ON PURPOSE as "named in a ledger row, not counted" — but the exercise PICKER and the
+  // Library both read it unpaged, so past row 200 an exercise vanished from the list AND its search, and the
+  // picker then offered to create the one it could not show. The E2E account holds 6,275. A coach's library
+  // is added to by their own activity (the picker's Create), so it belongs here.
+  'exercises'
 ]
 
 // Pinned AT the 2026-09-21 measurement (see the header): 9. Lowered to 8 the same day when `_buildExerciseSeries` was paged —

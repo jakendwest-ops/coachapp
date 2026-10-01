@@ -1,13 +1,35 @@
 const { test, expect } = require('./fixtures')
 const { loginAsPT, loginAsClient, logTableSet, clickVisible } = require('./helpers')
 
+// Every exercise these tests create through the picker's real "Create new exercise" is a genuine library
+// row, and nothing used to remove them: ~600 runs left ~10 each, 6,275 on the E2E account by 2026-10-01
+// (Jake: "this appears to be a duplication bug" — it was this). Names are now tagged [E2E] so the reaper
+// can find them even after a crashed test, and the hook below removes them. It deletes AS THE PT in a
+// separate context, because these tests run as a CLIENT: RLS answers a refused delete with an empty result
+// and NO error, so a client-side cleanup would report success while removing nothing.
+const createdExerciseNames = []
+test.afterEach(async ({ browser }) => {
+  if (!createdExerciseNames.length) return
+  const names = createdExerciseNames.splice(0)
+  const ctx = await browser.newContext()
+  try {
+    const ptPage = await ctx.newPage()
+    await loginAsPT(ptPage)
+    await ptPage.evaluate(async (names) => {
+      await db.from('exercises').delete().eq('coach_id', currentUser.id).in('name', names).select('id')
+    }, names)
+  } catch (err) { console.warn('[runner.spec] CLEANUP FAILED — exercises may be left in the test account (the reaper is the backstop):', err.message) }
+  finally { try { await ctx.close() } catch (err) { console.warn('[runner.spec] could not close the cleanup context:', err.message) } }
+})
+
 // Drives the exercise picker (2026-07-06): type a name, tap "Create new exercise", land on
 // the sets/reps screen with that exercise locked in. Shared by every add/swap test below.
 // Appends a timestamp to the given prefix and returns the actual name used, so repeated test
 // runs never collide with a same-named exercise a previous (possibly failed) run already
 // created — the picker has no de-dupe-by-identical-name UI, each run needs its own name.
 async function pickOrCreateExercise(page, namePrefix) {
-  const name = `${namePrefix} ${Date.now()}`
+  const name = `[E2E] ${namePrefix} ${Date.now()}`
+  createdExerciseNames.push(name)
   await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
   await page.fill('#exp-search', name)
   await page.getByText('Create new exercise', { exact: false }).click()
@@ -145,7 +167,7 @@ test.describe('Exercise identity resolver', () => {
 
   test('_resolveExerciseIdForSave links to an existing library exercise by case-insensitive name match', async ({ page }) => {
     const result = await page.evaluate(async () => {
-      const uniqueName = `PW Test Exercise ${Date.now()}`
+      const uniqueName = `[E2E] PW Test Exercise ${Date.now()}`
       const { data: created } = await db.from('exercises').insert({ coach_id: currentUser.id, name: uniqueName }).select('id').single()
       const resolvedId = await _resolveExerciseIdForSave(uniqueName.toUpperCase(), currentUser.id)
       await db.from('exercises').delete().eq('id', created.id)
@@ -156,7 +178,7 @@ test.describe('Exercise identity resolver', () => {
 
   test('_resolveExerciseIdForSave auto-creates a new library entry when no match exists', async ({ page }) => {
     const result = await page.evaluate(async () => {
-      const uniqueName = `PW Auto-Create Test ${Date.now()}`
+      const uniqueName = `[E2E] PW Auto-Create Test ${Date.now()}`
       const resolvedId = await _resolveExerciseIdForSave(uniqueName, currentUser.id)
       const { data: found } = await db.from('exercises').select('id, name').eq('id', resolvedId).single()
       if (found) await db.from('exercises').delete().eq('id', found.id)
@@ -753,7 +775,8 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
 
     await openRunnerMenuItem(page, '+ Add exercise')
-    const name = `Playwright Picker Create Test ${Date.now()}`
+    const name = `[E2E] Playwright Picker Create Test ${Date.now()}`
+    createdExerciseNames.push(name)
     await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
     await page.fill('#exp-search', name)
     await expect(page.getByText('Create new exercise', { exact: false })).toBeVisible()
@@ -775,7 +798,8 @@ test.describe('Workout runner (client)', () => {
     await page.locator('button:has-text("Change")').click()
 
     await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
-    const nameB = `Playwright Change Test B ${Date.now()}`
+    const nameB = `[E2E] Playwright Change Test B ${Date.now()}`
+    createdExerciseNames.push(nameB)
     await page.fill('#exp-search', nameB)
     await page.getByText('Create new exercise', { exact: false }).click()
 

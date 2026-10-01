@@ -189,6 +189,10 @@ test.describe('A1-cont — 0 is a real value for jump height/distance too, not j
         await db.from('workout_log_exercises').delete().eq('log_id', log.id)
         await db.from('workout_logs').delete().eq('id', log.id)
       }
+      // The library exercise saveWorkoutSession AUTO-CREATES for this name is part of what the test made. It
+      // was never removed — one row per run, 163 of them by 2026-10-01 (stored lowercased then, so a by-name
+      // delete would not have matched even if it had been here). Unconditional: a failed run must clean up too.
+      await db.from('exercises').delete().eq('coach_id', currentUser.id).eq('name', tag).select('id')
       document.getElementById('log-session-modal')?.remove()
       return { threw, weight, foundLog: !!log }
     })

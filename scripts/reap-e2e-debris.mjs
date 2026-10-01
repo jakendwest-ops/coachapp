@@ -19,7 +19,9 @@
 //      reason it does not use a service-role key. Since 2026-09-05 it also ASSERTS the account looks
 //      like a test account before deleting — guard 2 was previously resting on an unchecked
 //      assumption about what PT_EMAIL happens to contain.
-//   3. Name prefix. Only rows whose name/title/full_name starts with '[E2E' or '[TEST]'.
+//   3. Name prefix. Only rows whose name/title/full_name starts with '[E2E' or '[TEST]' (any case) — plus,
+//      for `exercises` only, the retired untagged 'Playwright ' / 'PW ' names. scripts/lib/debris-patterns.mjs
+//      is the one definition; tests-node/debris-patterns.test.mjs pins it.
 //   4. Age cutoff (default 2h). A row this run just created is never in scope.
 //
 // WHAT PROTECTS AGAINST A CONCURRENT RUN — stated accurately, because the first version of this
@@ -37,12 +39,23 @@
 import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
+import { TAG_PREFIXES, prefixesFor, likePattern, isDebrisName } from './lib/debris-patterns.mjs'
 
 dotenv.config()
 
 const DELETE = process.argv.includes('--delete')
 const AGE_HOURS = Number(process.env.REAP_AGE_HOURS ?? 2)
-const PAGE = 1000
+// 200, NOT 1000. The API returns at most 200 rows per response whatever .limit() asks for (measured
+// 2026-09-20, docs/roadmap.md), so PAGE = 1000 meant (a) each run saw and reaped at most 200 rows, and
+// (b) the "full page — there may be more" note below could never fire, because 200 !== 1000. A backlog
+// read as "nothing more". The page size now equals the cap, so a full page is detectable, and every
+// table is paged until a short page.
+const PAGE = 200
+const MAX_PAGES = 100            // 20,000 rows per prefix per run, then say so rather than loop forever
+const DELETE_CHUNK = 100         // ids per DELETE: a 6,000-uuid .in() is a ~200 KB URL the gateway refuses
+// If a table holds far more rows than matched ANY debris pattern, say so. 2026-10-01: 6,275 exercises, 0
+// matched, "No debris found" — a cleaner that cannot see the mess reports clean. This is the canary.
+const UNMATCHED_WARN = 500
 
 // MEASURED 2026-09-05, do not shorten this to '[E2E]'. The suite does not use one tag: 308 uses of
 // '[E2E]', plus per-spec variants '[E2E-RLS]', '[E2E-PP]', '[E2E-PB]', '[E2E-2BJ]', and one file
@@ -51,7 +64,7 @@ const PAGE = 1000
 // the tool built to prevent it. '[E2E' as a prefix covers the whole family; [ and ] are literal in
 // SQL LIKE (only % and _ are wildcards), so no escaping is needed. '[TEST]' is kept even though the
 // convention has moved on, because rows carrying it may still exist in the database.
-const PREFIXES = ['[E2E', '[TEST]']
+const PREFIXES = TAG_PREFIXES   // the banner below; the per-table list (incl. legacy exercise names) is prefixesFor()
 
 // Child-before-parent. Deleting a client cascades, but doing the leaf tables first keeps the counts
 // honest — otherwise a cascade silently removes rows this report then claims it deleted itself.
@@ -134,25 +147,38 @@ let total = 0
 let failedTables = 0
 let capped = false
 
+// Collects EVERY matching row for one prefix, a page at a time. ILIKE, so '[e2e] …' is found as well as
+// '[E2E] …' — the old case-sensitive LIKE matched 0 of 810 lowercase rows.
+async function collect(table, col, prefix) {
+  const rows = []
+  let aged = true
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE
+    // created_at is not guaranteed on every table. Ask for it, and fall back to prefix-only scoping
+    // if the column does not exist — never silently skip the table, which would hide debris.
+    let res = await db.from(table).select(`id, ${col}, created_at`)
+      .ilike(col, likePattern(prefix)).lt('created_at', cutoff).order('id').range(from, from + PAGE - 1)
+    if (res.error && /created_at/.test(res.error.message || '')) {
+      aged = false
+      res = await db.from(table).select(`id, ${col}`).ilike(col, likePattern(prefix)).order('id').range(from, from + PAGE - 1)
+    }
+    if (res.error) return { rows, error: res.error, aged, capped: false }
+    rows.push(...(res.data || []))
+    if ((res.data || []).length < PAGE) return { rows, error: null, aged, capped: false }
+  }
+  return { rows, error: null, aged, capped: true }
+}
+
 for (const [table, col] of TARGETS) {
-  // One query per prefix, merged. Cheaper to read than an .or() with bracket-laden values in it.
   let rows = []
   let error = null
   let aged = true
-  for (const prefix of PREFIXES) {
-    // created_at is not guaranteed on every table. Ask for it, and fall back to prefix-only scoping
-    // if the column does not exist — never silently skip the table, which would hide debris.
-    let res = await db.from(table)
-      .select(`id, ${col}, created_at`).like(col, `${prefix}%`).lt('created_at', cutoff).limit(PAGE)
-    if (res.error && /created_at/.test(res.error.message || '')) {
-      aged = false
-      res = await db.from(table).select(`id, ${col}`).like(col, `${prefix}%`).limit(PAGE)
-    }
-    if (res.error) { error = res.error; break }
-    // A full page means there may be more that this run will neither report nor delete. Say so —
-    // otherwise a later "clean" reads as "there is nothing left" while a backlog quietly remains.
-    if ((res.data || []).length === PAGE) capped = true
-    rows.push(...(res.data || []))
+  for (const prefix of prefixesFor(table)) {
+    const r = await collect(table, col, prefix)
+    if (r.error) { error = r.error; break }
+    aged = aged && r.aged
+    if (r.capped) capped = true
+    rows.push(...r.rows)
   }
 
   if (error) {
@@ -164,8 +190,19 @@ for (const [table, col] of TARGETS) {
   // A row can only match one prefix, but de-dupe anyway so a future overlapping prefix cannot make
   // the count lie.
   rows = [...new Map(rows.map(r => [r.id, r])).values()]
+  // Belt and braces: whatever the server pattern let through, only rows the JS rule ALSO calls debris are
+  // ever reported or deleted, so the set can never be broader than debris-patterns.mjs says.
+  rows = rows.filter(r => isDebrisName(r[col], table))
   const n = rows.length
-  if (!n) { console.log(`  ${table.padEnd(22)} clean`); continue }
+
+  // The canary. How many rows does this table hold that matched NO pattern? A test account whose table is
+  // dominated by unmatched rows has a leak this tool cannot see — say so instead of printing "clean".
+  const { count: inTable } = await db.from(table).select('id', { count: 'exact', head: true })
+  const unmatched = (inTable ?? 0) - n
+  const canary = unmatched > UNMATCHED_WARN
+    ? `      WARN: ${unmatched} other row(s) in ${table} match NO debris pattern. Some fixture is leaking untagged names\n      — 2026-10-01 was 6,275 exercises, 0 matched, "No debris found". Find what creates them and tag it [E2E].`
+    : null
+  if (!n) { console.log(`  ${table.padEnd(22)} clean${canary ? ' (matched nothing)' : ''}`); if (canary) console.log(canary); continue }
 
   total += n
   const note = aged ? '' : '  (no created_at — prefix-scoped only)'
@@ -195,11 +232,18 @@ for (const [table, col] of TARGETS) {
   if (DELETE) {
     // .select() on the delete, then count: an RLS-refused delete resolves as { data: [], error: null },
     // so without the rowcount this would report success while removing nothing.
-    const { data: gone, error: delErr } = await db.from(table)
-      .delete().in('id', rows.map(r => r.id)).select('id')
-    if (delErr) { console.log(`      DELETE FAILED: ${delErr.message}`); failedTables++ }
-    else console.log(`      deleted ${(gone || []).length} of ${n}`)
+    // In chunks: one .in('id', [6,000 uuids]) is a ~200 KB URL the gateway refuses.
+    let deleted = 0
+    let delFailed = false
+    for (let i = 0; i < rows.length; i += DELETE_CHUNK) {
+      const { data: gone, error: delErr } = await db.from(table)
+        .delete().in('id', rows.slice(i, i + DELETE_CHUNK).map(r => r.id)).select('id')
+      if (delErr) { console.log(`      DELETE FAILED after ${deleted} row(s): ${delErr.message}`); failedTables++; delFailed = true; break }
+      deleted += (gone || []).length
+    }
+    if (!delFailed) console.log(`      deleted ${deleted} of ${n}`)
   }
+  if (canary) console.log(canary)
 }
 
 console.log('─'.repeat(76))

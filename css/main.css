@@ -712,9 +712,19 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 .tabs {
   display: flex;
   gap: 0;
-  border-bottom: 2px solid var(--border);
+  /* The strip scrolls ITSELF. It was a plain flex row with no overflow rule, so on a phone (609px of tabs in a
+     358px column) its overflow escaped to .main-content — whose overflow-y:auto makes overflow-x auto too — and
+     reaching Weight / Performance / Programs / 1RMs slid the WHOLE page sideways, the client's name with it
+     (2026-10-01, found by the RPE end-to-end journey's phone screenshots). */
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* The bottom rule is an inset shadow, not a border: a scroll container clips whatever is painted outside its
+     padding box, and each tab's active underline used to overlap a real border by design (margin-bottom:-2px).
+     Same colour, same 2px, drawn inside, so the underline still sits on it and is not cut off. */
+  box-shadow: inset 0 -2px 0 var(--border);
   margin-bottom: 24px;
 }
+.tabs::-webkit-scrollbar { display: none; }
 
 .tab-btn {
   padding: 9px 16px;
@@ -722,7 +732,9 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   font-size: 13.5px;
   color: var(--text-muted);
   border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
+  /* flex-shrink:0 + nowrap: a tab keeps its natural width and the STRIP scrolls, rather than the label wrapping. */
+  flex-shrink: 0;
+  white-space: nowrap;
   transition: all 0.15s;
 }
 .tab-btn:hover { color: var(--text); }

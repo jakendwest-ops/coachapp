@@ -3771,13 +3771,21 @@ async function saveWorkoutSession(clientId) {
   // Resolve exercise names to library ids in parallel, not one lookup-per-block -- dedupe by
   // trimmed/lowercased name first so two blocks sharing a name (e.g. two "Bench Press" blocks)
   // don't race the same resolve-or-create check and risk creating a duplicate library entry.
-  const uniqueNames = [...new Set(blocks.map(b => b.name.trim().toLowerCase()))]
-  const resolvedIds = await Promise.all(uniqueNames.map(n => _resolveExerciseIdForSave(n, coachId)))
-  const idByName = Object.fromEntries(uniqueNames.map((n, i) => [n, resolvedIds[i]]))
+  //
+  // The lowercased string is only the DE-DUPE KEY. Resolving with it (as this did) made every exercise this
+  // path auto-created land in the library lowercased — logging a past session with a new "Hack Squat" gave
+  // "hack squat" — while the log row beside it kept the name as typed, so the two disagreed. The first-seen
+  // name, as typed, is what is resolved and therefore what gets created. A Map, not a plain object: an
+  // exercise named "constructor" or "__proto__" must not collide with an object's own properties.
+  const nameByKey = new Map()
+  blocks.forEach(b => { const k = b.name.trim().toLowerCase(); if (!nameByKey.has(k)) nameByKey.set(k, b.name.trim()) })
+  const uniqueKeys = [...nameByKey.keys()]
+  const resolvedIds = await Promise.all(uniqueKeys.map(k => _resolveExerciseIdForSave(nameByKey.get(k), coachId)))
+  const idByKey = new Map(uniqueKeys.map((k, i) => [k, resolvedIds[i]]))
 
   const exerciseRows = blocks.map((block, bi) => ({
     log_id:        sessionLog.id,
-    exercise_id:   idByName[block.name.trim().toLowerCase()],
+    exercise_id:   idByKey.get(block.name.trim().toLowerCase()),
     exercise_name: block.name.trim(),
     exercise_type: block.type,
     order_index:   bi

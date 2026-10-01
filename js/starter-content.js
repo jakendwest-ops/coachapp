@@ -80,6 +80,16 @@ async function _markSeeded() {
 // stranding the coach half-onboarded (e.g. an empty "Example" template, or an orphan program). The
 // flag is flipped only once all six artifacts exist. Each step returns on error, leaving the flag
 // false so the next login retries.
+// Exercise names are matched by KEY — trimmed and case-folded — never by their exact text. Seeding compared them
+// case-sensitively, so a coach who already had "bench press" was given a second "Bench Press" (a duplication path;
+// Jake, 2026-10-01). A Map, not a plain object: a name like "constructor" is just a name.
+const _exerciseKey = n => String(n || '').trim().toLowerCase()
+function _indexExercisesByName(rows) {
+  const m = new Map()
+  ;(rows || []).forEach(r => { const k = _exerciseKey(r.name); if (!m.has(k)) m.set(k, r.id) })   // first (oldest) wins
+  return m
+}
+
 async function _seedStarterContent() {
   // Deliberately NOT just `currentProfile?.role === 'solo'`: currentProfile.role gets reassigned to
   // 'solo' in-memory for a master account whose stored view-switcher state (localStorage
@@ -97,16 +107,21 @@ async function _seedStarterContent() {
   if (!(currentProfile?.role === 'coach' || isSoloAccount) || currentProfile?.starter_seeded) return
 
   // 1. Exercises — insert only those the coach doesn't already have (by name); build the full map.
-  const { data: existingEx, error: exReadErr } = await db.from('exercises').select('id, name').eq('coach_id', currentUser.id)
+  // Paged. The API silently returns at most 200 rows, and this read decides which starter exercises are
+  // MISSING: on a library already past 200 it would see only a slice, conclude the rest were missing, and
+  // insert them again — a duplication path (Jake, 2026-10-01). On error `data` is null, and the line below
+  // already returns rather than seed blind.
+  const { data: existingEx, error: exReadErr } = await _fetchAllRows(() => db.from('exercises').select('id, name', { count: 'exact' })
+    .eq('coach_id', currentUser.id).order('name').order('id'))
   if (exReadErr) { log.error('_seedStarterContent', 'exercise read failed', exReadErr); return }
-  const exIdByName = Object.fromEntries((existingEx || []).map(r => [r.name, r.id]))
-  const missingEx = STARTER_EXERCISES.filter(e => !(e.name in exIdByName))
+  const exIdByName = _indexExercisesByName(existingEx)
+  const missingEx = STARTER_EXERCISES.filter(e => !exIdByName.has(_exerciseKey(e.name)))
   if (missingEx.length) {
     const { data: exRows, error: exErr } = await db.from('exercises').insert(
       missingEx.map(e => ({ coach_id: currentUser.id, is_personal: isSoloAccount, name: e.name, muscle_group: e.muscle_group, category: e.category }))
     ).select('id, name')
     if (exErr) { log.error('_seedStarterContent', 'exercise seed failed', exErr); return }
-    ;(exRows || []).forEach(r => { exIdByName[r.name] = r.id })
+    ;(exRows || []).forEach(r => { exIdByName.set(_exerciseKey(r.name), r.id) })
   }
 
   // 2. Sample workout — create if the coach has no standalone template by that name; then ensure it
@@ -127,7 +142,7 @@ async function _seedStarterContent() {
   const { count: wteCount } = await db.from('workout_template_exercises').select('id', { head: true, count: 'exact' }).eq('template_id', templateId)
   if (!wteCount) {
     const { error: wteErr } = await db.from('workout_template_exercises').insert(STARTER_TEMPLATE.exercises.map(x => ({
-      template_id: templateId, exercise_id: exIdByName[x.exercise_name] || null, exercise_name: x.exercise_name,
+      template_id: templateId, exercise_id: exIdByName.get(_exerciseKey(x.exercise_name)) || null, exercise_name: x.exercise_name,
       exercise_type: x.exercise_type, order_index: x.order_index, sets: x.sets,
       sets_json: Array.from({ length: x.sets }, () => x.set),
     })))

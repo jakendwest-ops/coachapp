@@ -1071,7 +1071,9 @@ async function renderWorkoutTemplates(el) {
 
 async function renderExerciseLibrary(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
-  const { data: exercises, error } = await db.from('exercises').select('*').eq('coach_id', currentUser.id).eq('is_personal', currentProfile?.role === 'solo').order('name')
+  // Paged for the same reason as the picker's read: a plain read showed only the first 200 exercises.
+  const { data: exercises, error } = await _fetchAllRows(() => db.from('exercises').select('*', { count: 'exact' })
+    .eq('coach_id', currentUser.id).eq('is_personal', currentProfile?.role === 'solo').order('name').order('id'))
 
   if (error) { log.error('renderExerciseLibrary', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
@@ -1200,10 +1202,22 @@ async function saveNewExercise() {
   const errorEl = document.getElementById('ae-error')
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
+  // Refuse a name the coach already has (any case). This path never checked — only a double-press
+  // guard — so "Bench Press" twice made two. An ARCHIVED match counts, and the message says where it is.
+  const isPersonal = currentProfile?.role === 'solo'
+  const { row: existing, error: lookupErr } = await _findExerciseByName(currentUser.id, isPersonal, name)
+  if (lookupErr) { errorEl.textContent = 'Could not check your library — try again.'; return }
+  if (existing) {
+    errorEl.textContent = existing.is_archived
+      ? `"${existing.name}" already exists but is archived — restore it from the Archived list instead.`
+      : `"${existing.name}" already exists in your library.`
+    return
+  }
+
   log.info('saveNewExercise', 'inserting exercise', {})
   const { error } = await db.from('exercises').insert({
     coach_id:      currentUser.id,
-    is_personal:   currentProfile?.role === 'solo',
+    is_personal:   isPersonal,
     name,
     muscle_group:  document.getElementById('ae-muscle').value   || null,
     category:      document.getElementById('ae-category').value || null,
@@ -2448,11 +2462,41 @@ async function _effectiveCoachIdForClient(clientId) {
 // Silent resolve-or-create — kept only for the Big 5 quick-start 1RM form, which has no free
 // text entry at all (fixed labelled inputs), so there's nothing for a user to explicitly pick.
 // Every other exercise-identity entry point goes through the explicit picker below instead.
+// Escapes the three characters that make LIKE/ILIKE read text as a PATTERN: the backslash (the escape
+// itself), % and _. An exercise called "Row_Wide" must not match "RowXWide".
+const _likeEscape = s => String(s).replace(/[\\%_]/g, '\\$&')
+
+// ONE definition of "the exercise this coach already has under this name": a case-insensitive EXACT match,
+// oldest first. Three insert paths (the picker's Create, the Library's Add, auto-create on save) each had
+// their own idea of this — two had none at all — which is how an app with no database uniqueness rule
+// came to create duplicates (Jake, 2026-10-01).
+//
+//  - NOT .maybeSingle(): that ERRORS when two rows match, the error was ignored, and "no row" led straight
+//    to an insert — so an existing duplicate begot a third. This takes the oldest and never errors on
+//    duplicates that already exist.
+//  - The pattern is escaped, then the result is compared for exact (trimmed, case-folded) equality again
+//    client-side. PostgREST also treats `*` as a wildcard, which escaping cannot remove, so the exact
+//    compare is what makes the match an EQUALITY rather than a pattern. limit(50) leaves room for a
+//    broadened match to sit ahead of the exact one.
+//  - Returns { row, error }, and a caller that gets an error must NOT go on to insert: if we cannot tell
+//    whether the exercise exists, creating it blind is exactly how duplicates are made.
+async function _findExerciseByName(coachId, isPersonal, name) {
+  const trimmed = (name || '').trim()
+  if (!trimmed || !coachId) return { row: null, error: null }
+  const { data, error } = await db.from('exercises').select('id, name, is_archived, metric_type')
+    .eq('coach_id', coachId).eq('is_personal', isPersonal).ilike('name', _likeEscape(trimmed))
+    .order('created_at').order('id').limit(50)
+  if (error) { log.error('_findExerciseByName', 'lookup failed', error); return { row: null, error } }
+  const want = trimmed.toLowerCase()
+  return { row: (data || []).find(r => (r.name || '').trim().toLowerCase() === want) || null, error: null }
+}
+
 async function _resolveExerciseIdForSave(name, coachId) {
   const trimmed = (name || '').trim()
   if (!trimmed || !coachId) return null
   const isPersonal = currentProfile?.role === 'solo'
-  const { data: existing } = await db.from('exercises').select('id').eq('coach_id', coachId).eq('is_personal', isPersonal).ilike('name', trimmed).maybeSingle()
+  const { row: existing, error: lookupErr } = await _findExerciseByName(coachId, isPersonal, trimmed)
+  if (lookupErr) return null   // cannot tell whether it exists, so do not guess by inserting
   if (existing) return existing.id
   const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, is_personal: isPersonal, name: trimmed }).select('id').single()
   if (error) { log.error('_resolveExerciseIdForSave', 'auto-create failed', error); return null }
@@ -2511,7 +2555,10 @@ async function _openExercisePicker(coachId, onPick) {
   }
   if (!_exercisePickerState) return // closed while resolving
   _exercisePickerState.coachId = coachId
-  const { data } = await db.from('exercises').select('id, name, muscle_group, is_archived, metric_type').eq('coach_id', coachId).eq('is_personal', currentProfile?.role === 'solo').order('name')
+  // Paged: the API silently returns at most 200 rows, so a plain read hid every exercise past row 200 from
+  // BOTH the list and its search (the E2E account holds 6,275). Fails to null rather than a partial list.
+  const { data } = await _fetchAllRows(() => db.from('exercises').select('id, name, muscle_group, is_archived, metric_type', { count: 'exact' })
+    .eq('coach_id', coachId).eq('is_personal', currentProfile?.role === 'solo').order('name').order('id'))
   if (!_exercisePickerState) return // closed before the fetch resolved
   _exercisePickerState.allExercises = data || []
   // Re-render using whatever is CURRENTLY typed, not '' — the user may have already started
@@ -2534,7 +2581,10 @@ function _renderExercisePickerResults(query) {
   // only for the separately-rendered visible text.
   const jsArg = escapeAttr   // was a local JS-escape that left `"` live — a " closes the HTML attribute
   const rowHtml = e => `<div onclick="_pickExercise('${e.id}','${jsArg(e.name)}','${e.metric_type || 'weight_reps'}')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:var(--text-lg, 14px)">${escapeHtml(e.name)}${e.muscle_group ? `<span style="color:var(--text-muted);font-size:var(--text-md, 12px)"> · ${escapeHtml(e.muscle_group)}</span>` : ''}</div>`
-  const createRow = query.trim() ? `<div onclick="_createExerciseFromPicker('${jsArg(query.trim())}')" style="padding:12px;border:1.5px dashed var(--accent);border-radius:var(--radius, 10px);background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:var(--text-lg, 14px);cursor:pointer;margin-bottom:12px">+ Create new exercise: "${escapeHtml(query.trim())}"</div>` : ''
+  // No Create row when an exact match (any case) is already in the list, active OR archived: it sat directly
+  // above the match it duplicated. _createExerciseFromPicker also checks, so this is the UI half of a pair.
+  const exactExists = !!q && all.some(e => (e.name || '').trim().toLowerCase() === q)
+  const createRow = (query.trim() && !exactExists) ? `<div onclick="_createExerciseFromPicker('${jsArg(query.trim())}')" style="padding:12px;border:1.5px dashed var(--accent);border-radius:var(--radius, 10px);background:rgba(99,102,241,.06);color:var(--accent);font-weight:600;font-size:var(--text-lg, 14px);cursor:pointer;margin-bottom:12px">+ Create new exercise: "${escapeHtml(query.trim())}"</div>` : ''
   resultsEl.innerHTML = `
     ${createRow}
     ${activeMatches.length ? activeMatches.map(rowHtml).join('') : (!q ? '<div class="empty-state" style="padding:20px 0"><div class="empty-text">No exercises yet — search above to create your first one.</div></div>' : '')}
@@ -2564,7 +2614,15 @@ async function _createExerciseFromPicker(name) {
   const coachId = _exercisePickerState?.coachId
   const trimmed = (name || '').trim()
   if (!trimmed || !coachId) { return }
-  const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, is_personal: currentProfile?.role === 'solo', name: trimmed }).select('id, name').single()
+  // Look BEFORE inserting. This path had no existence check at all, and the picker offered "Create" for
+  // any typed text — even with an exact match in the list one row below — so a single mis-tap, or an
+  // exercise hidden past the 200-row cap, made a duplicate. If it exists, PICK it. If we cannot tell,
+  // refuse rather than insert blind.
+  const isPersonal = currentProfile?.role === 'solo'
+  const { row: existing, error: lookupErr } = await _findExerciseByName(coachId, isPersonal, trimmed)
+  if (lookupErr) { showToast('Could not check your library — try again.', 'error'); return }
+  if (existing) { _pickExercise(existing.id, existing.name, existing.metric_type); return }
+  const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, is_personal: isPersonal, name: trimmed }).select('id, name').single()
   if (error) { log.error('_createExerciseFromPicker', 'insert failed', error); showToast('Could not create exercise — try again.', 'error'); return }
   _pickExercise(created.id, created.name)
 }
