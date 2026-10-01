@@ -166,10 +166,18 @@ test.describe('A1 — 0 weight is a real value, not treated as missing', () => {
     expect(res.blankDone).toBe(false)
   })
 
-  test('_syncLoggedSetsFromTable preserves a real 0, still nulls blank/cleared', async ({ page }) => {
+  // The VALUE mapping this test was written for: a real 0 stays 0, a blank or cleared weight becomes null (never 0, never
+  // dropped to a falsy ''). It is asserted on a BODYWEIGHT exercise, where a blank weight is a legitimate state.
+  //
+  // CHANGED 2026-10-01. This used to use a plain exercise and expect all three rows kept, i.e. it pinned that a TICKED set
+  // whose weight was cleared afterwards is still saved (with a null weight). That is the gap the ledger row
+  // "edits-after-a-tick-bypass-the-tick-time-required-field-guard" named: the tick refuses a weightless set on a weighted
+  // exercise, so the read-back must too. The rule is now one predicate shared by both (_rowIncompleteReason), and the
+  // plain-exercise half of this test below asserts the new behaviour instead of the old one.
+  test('_syncLoggedSetsFromTable preserves a real 0, still nulls blank/cleared (bodyweight exercise)', async ({ page }) => {
     await loginAsPT(page)
     const res = await page.evaluate(() => {
-      const ex = { metricType: 'weight_reps', tableRows: [
+      const ex = { metricType: 'weight_reps', bodyweight: true, tableRows: [
         { weight: 0, reps: '5', done: true },
         { weight: null, reps: '5', done: true }, // cleared after typing
         { weight: '', reps: '5', done: true },   // never touched
@@ -178,6 +186,21 @@ test.describe('A1 — 0 weight is a real value, not treated as missing', () => {
       return ex.loggedSets.map(s => s.weight)
     })
     expect(res).toEqual([0, null, null])
+  })
+
+  test('_syncLoggedSetsFromTable on a WEIGHTED exercise keeps the real 0 and drops a ticked set whose weight is gone', async ({ page }) => {
+    await loginAsPT(page)
+    const res = await page.evaluate(() => {
+      const ex = { metricType: 'weight_reps', tableRows: [
+        { weight: 0, reps: '5', done: true },
+        { weight: null, reps: '5', done: true }, // cleared after typing
+        { weight: '', reps: '5', done: true },   // never touched
+      ] }
+      _syncLoggedSetsFromTable(ex)
+      return { weights: ex.loggedSets.map(s => s.weight), stillTicked: ex.tableRows.map(r => r.done) }
+    })
+    expect(res.weights, 'only the real 0 kg set is a logged set').toEqual([0])
+    expect(res.stillTicked, 'and the other two stop claiming to be done').toEqual([true, false, false])
   })
 })
 
