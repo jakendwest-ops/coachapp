@@ -1,9 +1,9 @@
 ---
 id: 2026-10-01-global-setup-same-checkout-check-compares-only-index-html
-status: open
+status: closed
 priority: medium
 reported: 2026-10-01
-status_detail: "Found by the multi-agent review of the RPE top-set work (2026-09-30 / 2026-10-01), not reported by Jake. VERIFIED BY ME on 2026-10-01: to prove a test could fail I served this worktree's NEW index.html with OLD copies of three JS modules on a spare port, and the check accepted it. It compares index.html only, so it is blind exactly when the served page matches and the modules do not."
+status_detail: "FIXED 2026-10-01 by a test that ran RED on the old check and GREEN on the new: scripts/check-preview-server.selftest.mjs gained four states. Old check: it ACCEPTED a server with the same index.html over different module bytes, over a different stylesheet, and over a module the server does not serve (3 DID NOT THROW). New check: all three refused, naming the files; identical modules (BOM and CRLF aside) still accepted. Also checked against a real server rooted in the main checkout: refused. The PREVIEW_SERVER_CMD advice now says a live-reload server will trip the check. Found by the multi-agent review, not reported by Jake."
 closing_conditions: "assertPreviewServer detects a server whose JS differs from this checkout even when index.html is byte-identical (the server reports its root, or the check also compares module bytes), with a self-test case that goes RED before and GREEN after. The error message must also stop recommending PREVIEW_SERVER_CMD as the fix without saying a live-reload server will trip the byte comparison."
 ---
 
@@ -22,6 +22,15 @@ I demonstrated it directly: new `index.html` + old `app-runner.js`/`app-workouts
 a spare port passed the check. Agent C also noted at 82d6596 (the commit that introduced the check) the
 guard would not have fired had `index.html` been identical — it differed there, so it did fire, but by luck
 of the version tags rather than by design.
+
+## Fixed 2026-10-01
+
+`assertPreviewServer` now also fetches every `js/` and `css/` file this checkout's `index.html` references and compares
+it byte for byte (same BOM / CRLF normalisation) with this checkout's copy; a file the server does not serve counts as
+different, and a local file that cannot be read is skipped with a line (fail open, as before). It did not use the
+suggested root-reporting header: the launch.json server cannot report a root without a second config change, and the
+byte comparison needs no cooperation from the server. Test: `scripts/check-preview-server.selftest.mjs` states 7-10,
+now run by `checks.sh` rule 9s on every push (it used to run only under `CHECKS_SMOKE=1`).
 
 Second, smaller: the failure message tells the user to set `PREVIEW_SERVER_CMD`. A dev server that injects a
 live-reload snippet (live-server, browser-sync, vite) serves a body that legitimately differs from the file,

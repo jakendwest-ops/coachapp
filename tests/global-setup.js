@@ -97,7 +97,55 @@ async function assertPreviewServer (base, localIndexPath = LOCAL_INDEX) {
       `    ${vers(body) || '(no module version tags found)'}\n\n` +
       `Usual cause: running from a git worktree while .claude/launch.json points at another root.\n` +
       `The server prints the directory it serves on startup — check that line, or set\n` +
-      `PREVIEW_SERVER_CMD to a server rooted in this directory.\n`
+      `PREVIEW_SERVER_CMD to a PLAIN static server rooted in this directory (one that injects a\n` +
+      `live-reload snippet — live-server, browser-sync, vite — serves bytes that differ from the files\n` +
+      `and will trip this same check).\n`
+    )
+  }
+
+  // THE SAME index.html OVER ANOTHER CHECKOUT'S MODULES (added 2026-10-01).
+  //
+  // The comparison above catches the 2026-09-30 worktree bug only because a js change normally moves a `?v=` tag in
+  // index.html. It is blind exactly when index.html is byte-identical: a branch whose diff does not touch index.html
+  // (css-only, test-only, scripts-only), or a js change whose cache-bust bump was forgotten (checks.sh only notices
+  // that at PUSH, after the suite has run). Demonstrated directly: this worktree's NEW index.html served with three
+  // OLD modules passed the check.
+  //
+  // So every script and stylesheet this checkout's index.html references is fetched from the server and compared
+  // byte for byte (same BOM / CRLF normalisation) with this checkout's own copy. A module the server does not serve at
+  // all counts as different. A local file that cannot be READ is skipped with a line, never a refusal — same fail-open
+  // rule as above. No query string is sent: the server keys on the path, and the cache-bust is for browsers.
+  const fs = require('fs')
+  const path = require('path')
+  const root = path.dirname(localIndexPath)
+  const refs = [...new Set([...local.matchAll(/(?:src|href)="((?:js|css)\/[^"?#]+)[^"]*"/g)].map(m => m[1]))]
+  const different = []
+  await Promise.all(refs.map(async rel => {
+    let mine
+    try {
+      mine = fs.readFileSync(path.join(root, rel), 'utf8')
+    } catch (err) {
+      console.log(`  [preview-server] could not read ${rel} (${err.code}) — not compared.`)
+      return
+    }
+    try {
+      const r = await fetch(`${base}/${rel}`)
+      if (!r.ok) { different.push(`${rel} (server answered HTTP ${r.status})`); return }
+      if (norm(await r.text()) !== norm(mine)) different.push(rel)
+    } catch (err) {
+      different.push(`${rel} (${err.message})`)
+    }
+  }))
+  if (different.length) {
+    throw new Error(
+      `\n\nRIGHT APP, WRONG DIRECTORY on ${base} — index.html matches, the code does not\n` +
+      `This is NOT a test failure — the server is serving ${different.length} of ${refs.length} script/stylesheet file(s) that\n` +
+      `differ from this checkout's, so every result would describe code you are not editing.\n\n` +
+      different.map(f => `    ${f}`).join('\n') + '\n\n' +
+      `Usual cause: running from a git worktree while .claude/launch.json (or a server already\n` +
+      `listening on this port) points at another root. The server prints the directory it serves on\n` +
+      `startup. A plain static server rooted in this directory is the fix; one that injects a\n` +
+      `live-reload snippet serves bytes that differ from the files and will trip this check too.\n`
     )
   }
 }

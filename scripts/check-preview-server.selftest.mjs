@@ -10,6 +10,8 @@
 //   3. a 200 serving a DIFFERENT app -> must throw "WRONG APP"       <- a bare 200 check misses this
 //   4. a 200 serving THIS checkout   -> must PASS
 //   5. a 200 serving ANOTHER CoachApp checkout -> must throw "WRONG DIRECTORY"  <- the title misses this
+//   7-10. the SAME index.html over different / missing module or stylesheet bytes -> must throw, naming the file;
+//         identical modules (BOM / CRLF aside) -> must PASS   <- the index.html comparison alone misses this
 //
 // Case 3 is the reason this file exists. `run-coachapp` warns that a stale entry in
 // .claude/launch.json can serve a different app on 3001, and a precondition that only checked for
@@ -61,10 +63,15 @@ async function expectPass (label, localIndexPath) {
 
 // A throwaway stand-in for "this checkout's index.html", so cases 4 and 5 can control whether the
 // served body matches without depending on the real file.
-function tmpIndex (contents) {
-  const p = path.join(os.tmpdir(), `coachapp-selftest-index-${process.pid}-${Math.random().toString(36).slice(2, 8)}.html`)
+function tmpIndex (contents, files = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coachapp-selftest-'))
+  const p = path.join(dir, 'index.html')
   fs.writeFileSync(p, contents)
-  tmpFiles.push(p)
+  for (const [rel, body] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true })
+    fs.writeFileSync(path.join(dir, rel), body)
+  }
+  tmpDirs.push(dir)
   return p
 }
 
@@ -73,7 +80,7 @@ const html = title => `<!doctype html><html><head><title>${title}</title></head>
 // cache-bust versions. Case 5 is exactly the worktree bug of 2026-09-30.
 const coachApp = v => `<!doctype html><html><head><title>CoachApp</title></head><body><script src="js/app-runner.js?v=${v}"></script></body></html>`
 
-const tmpFiles = []
+const tmpDirs = []
 let failures = 0
 async function step (fn) {
   try { await fn() } catch (err) { failures++; console.error(`  FAIL  ${err.message}`) }
@@ -114,7 +121,49 @@ s = await serve((req, res) => { res.setHeader('content-type', 'text/html'); res.
 await step(() => expectPass('BOM-only difference', tmpIndex('﻿' + coachApp(100))))
 await close(s)
 
-for (const p of tmpFiles) { try { fs.unlinkSync(p) } catch {} }
+// 7-10 (2026-10-01). The title and index.html checks above are BLIND to a server that serves the right index.html over
+// ANOTHER checkout's modules: a branch whose diff does not touch index.html (css-only, test-only), or a js change whose
+// cache-bust bump was forgotten, leaves index.html byte-identical. Demonstrated directly: this worktree's new
+// index.html served with three OLD modules passed the check. The modules (and the stylesheet) are compared too.
+const withAssets = (assets) => (req, res) => {
+  const u = req.url.split('?')[0]
+  if (u === '/') { res.setHeader('content-type', 'text/html'); res.end(coachApp(100)); return }
+  const body = assets[u]
+  if (body === undefined) { res.statusCode = 404; res.end('nope'); return }
+  res.setHeader('content-type', 'text/plain'); res.end(body)
+}
+const pageWithCss = `<!doctype html><html><head><title>CoachApp</title><link rel="stylesheet" href="css/main.css?v=9"></head><body><script src="js/app-runner.js?v=100"></script></body></html>`
+
+// 7. the index matches, one module's BYTES differ — must be refused, naming the file
+s = await serve(withAssets({ '/js/app-runner.js': 'const x = "OTHER CHECKOUT"' }))
+await step(() => expectThrow('same index.html, different module bytes', 'js/app-runner.js',
+  tmpIndex(coachApp(100), { 'js/app-runner.js': 'const x = "THIS CHECKOUT"' })))
+await close(s)
+
+// 8. ...and the stylesheet is covered as well
+s = await serve((req, res) => {
+  const u = req.url.split('?')[0]
+  if (u === '/') { res.setHeader('content-type', 'text/html'); res.end(pageWithCss); return }
+  res.setHeader('content-type', 'text/plain'); res.end(u === '/css/main.css' ? 'body{color:red}' : 'js')
+})
+await step(() => expectThrow('same index.html, different stylesheet', 'css/main.css',
+  tmpIndex(pageWithCss, { 'css/main.css': 'body{color:blue}', 'js/app-runner.js': 'js' })))
+await close(s)
+
+// 9. every module identical (one with a BOM and CRLF on the local side only) — must be ACCEPTED: the check must not
+// refuse the correct server, which is the failure mode this project has shipped nine times
+s = await serve(withAssets({ '/js/app-runner.js': 'line1\nline2\n' }))
+await step(() => expectPass('same index.html, identical modules (BOM + CRLF differences only)',
+  tmpIndex(coachApp(100), { 'js/app-runner.js': '\uFEFFline1\r\nline2\r\n' })))
+await close(s)
+
+// 10. the server does not serve a module the index references — also not this checkout
+s = await serve(withAssets({}))
+await step(() => expectThrow('same index.html, a referenced module is not served', 'js/app-runner.js',
+  tmpIndex(coachApp(100), { 'js/app-runner.js': 'present locally' })))
+await close(s)
+
+for (const d of tmpDirs) { try { fs.rmSync(d, { recursive: true, force: true }) } catch {} }
 
 if (failures) {
   console.error(`\n${failures} self-test failure(s) — the preview-server precondition cannot be trusted.`)
@@ -125,5 +174,5 @@ if (failures) {
   // person reading 127 would go looking for a missing command rather than a failed check.
   process.exitCode = 1
 } else {
-  console.log('\nAll 6 states verified: it refuses four distinct bad servers and accepts the two good ones.')
+  console.log('\nAll 10 states verified: it refuses eight distinct bad servers and accepts the good ones.')
 }

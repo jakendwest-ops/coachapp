@@ -647,6 +647,22 @@ if [ "$FULL" = "1" ]; then
 else
   echo "  [skip] session hooks' self-tests -- run at release (CHECKS_FULL=1 to run them here)"
 fi
+# -- 9s. The preview server in .claude/launch.json refuses dotfiles, short names and off-root paths --
+# It served /.env and /.git/config (and /ENV~1, /GIT~1/config through the 8.3 short names) until 2026-10-01. The
+# self-test starts the REAL server from launch.json on a spare port over a temp site and attacks it with raw request
+# lines; ~3 s, every push. Windows-only by nature (the server is a PowerShell command): it exits 0 with a [skip] elsewhere.
+echo "Checking the preview server refuses dotfiles..."
+if ! node scripts/check-launch-server.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-launch-server.selftest.mjs 2>&1 | grep -E "FAIL|misbehaved|Error" | sed "s/^/    /"
+  fail "the preview server in .claude/launch.json serves something it must not (a dotfile, a short name, a file outside the root) or hangs on a request -- see the lines above."
+fi
+# The suite's server precondition (tests/global-setup.js) used to be self-tested only on the CHECKS_SMOKE=1 path, i.e. almost
+# never. It is pure node on a spare port (~2 s) and now covers "right index.html, another checkout's modules", so it runs
+# on every push.
+if ! node scripts/check-preview-server.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-preview-server.selftest.mjs 2>&1 | grep -E "FAIL|failure" | sed "s/^/    /"
+  fail "check-preview-server self-test FAILED -- the suite's server precondition can no longer be trusted: a worktree could run against another checkout's code and report green."
+fi
 # -- 10. Playwright smoke tests --
 #
 # 2026-08-29: until today a dead :3001 made this step fail all 57 smoke tests and print
