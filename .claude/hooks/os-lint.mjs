@@ -36,7 +36,32 @@ import { fileURLToPath } from 'node:url'
 
 const HOME     = 'C:/Users/jaken'
 const STATE    = `${HOME}/.claude/state`
-const REPO     = `${HOME}/OneDrive/coachapp`
+// MAIN_REPO is the checkout this hook lives in (settings.json points every hook at main's copy). REPO is the working
+// tree being LINTED, and until 2026-10-01 they were one constant — so a session in a git worktree linted the MAIN ledger
+// and could not see a bug row written in its own tree (nine that day). REPO is now resolved from the cwd, and accepted
+// only if git says that tree shares MAIN_REPO's common dir (the main checkout itself, or any worktree of it). Anything
+// else — another repo, not a repo, git unavailable — falls back to MAIN_REPO, the old behaviour: this hook never
+// refuses to run over a failure to find out where it is. OSLINT_REPO forces a root; '' means "resolve from the cwd".
+// tests: .claude/hooks/os-lint.worktree.selftest.mjs. The same class in guardrails.mjs: guardrails.selftest.mjs "rule 2e".
+const MAIN_REPO = process.env.OSLINT_MAIN_REPO || `${HOME}/OneDrive/coachapp`
+const normTree = p => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+const gitOut = (args, cwd) => {
+  try { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }
+  catch { return null }
+}
+// --self-test pins its children to main: they run with fixtures for most inputs, and what is NOT overridden must keep
+// reading the same tree it always did, wherever the detached run was launched from.
+if (process.argv.includes('--self-test') && !process.env.OSLINT_REPO) process.env.OSLINT_REPO = MAIN_REPO
+const REPO = process.env.OSLINT_REPO || (() => {
+  const top = gitOut(['rev-parse', '--show-toplevel'], process.cwd())
+  if (!top) return MAIN_REPO
+  const home = gitOut(['rev-parse', '--path-format=absolute', '--git-common-dir'], MAIN_REPO)
+  const here = gitOut(['rev-parse', '--path-format=absolute', '--git-common-dir'], top)
+  return home && here && normTree(home) === normTree(here) ? top : MAIN_REPO
+})()
+// Linting any tree but main is READ-ONLY for the shared state: the size baselines ratchet DOWN, so a worktree on an
+// older branch (smaller docs) would re-pin the one shared ceiling below what main measures, and main would go RED.
+const OTHER_TREE = normTree(REPO) !== normTree(MAIN_REPO)
 
 // EVERY input is env-overridable, uniformly. Not a convenience — a requirement.
 // Until 2026-08-21 only 3 of 15 checks had an override, so the other 12 could not be pointed at a
@@ -135,9 +160,10 @@ function measuredCeiling (group, entries, override, inputEnv = []) {
   try { base = JSON.parse(readFileSync(SIZE_BASELINE, 'utf8')) } catch { /* first run: pinned below */ }
   const prev = Number(base[group]) || 0
   if (!prev || total < prev) {
-    if (synthetic) {
-      // Measure and report, but never persist a fixture as the new floor.
-      return { total, sizes, ceiling: Math.round(total * SIZE_TOLERANCE), source: 'fixture input — baseline NOT written' }
+    if (synthetic || OTHER_TREE) {
+      // Measure and report, but never persist a fixture — or another working tree — as the new floor.
+      return { total, sizes, ceiling: Math.round(total * SIZE_TOLERANCE),
+               source: synthetic ? 'fixture input — baseline NOT written' : 'another working tree — baseline NOT written' }
     }
     base[group] = total
     try { writeFileSync(SIZE_BASELINE, JSON.stringify(base, null, 2) + '\n') } catch { /* never fail over bookkeeping */ }
@@ -1723,7 +1749,7 @@ function checkContinuityBudget () {
   try { base = JSON.parse(readFileSync(SIZE_BASELINE, 'utf8')) } catch { /* first run */ }
   const prev = Number(base.continuity) || 0
   const synthetic = !!process.env.OSLINT_STATUS
-  if ((!prev || size < prev) && !synthetic) {
+  if ((!prev || size < prev) && !synthetic && !OTHER_TREE) {
     base.continuity = size
     try { writeFileSync(SIZE_BASELINE, JSON.stringify(base, null, 2) + '\n') } catch { /* bookkeeping */ }
     ok('continuity-budget', `continuity block ${size.toLocaleString()} chars / ${entries} entries `
