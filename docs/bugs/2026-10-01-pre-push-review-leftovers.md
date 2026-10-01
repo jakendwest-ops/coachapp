@@ -9,7 +9,7 @@ closing_conditions: "Jake decides item 1 (should a client see Add / Edit / Delet
 
 # What the pre-push review found that was not fixed in the same push
 
-**Closes when:** Jake decides item 1, and each remaining item is either fixed with a test or consciously accepted in writing in this row. Naming them is not closing them.
+**Closes when:** Jake decides item 1, item 11 is answered by the `workout_logs` policy read and fixed or accepted, and each remaining item is either fixed with a test or consciously accepted in writing in this row. Naming them is not closing them.
 
 ## Needs Jake
 
@@ -20,14 +20,27 @@ closing_conditions: "Jake decides item 1 (should a client see Add / Edit / Delet
    this goal can edit it"); Delete already had a rowcount check. Question for Jake: should a client see Add / Edit / Delete at all, or only
    their own progress controls? Not verified: client RLS on `goals`, `goal_milestones` and `goal_check_ins` is not in the repo SQL.
 
-## Not fixed — need a read of the live database first
+## Answered by the live policy read (Jake pasted `pg_policies`, 2026-10-01)
 
-2. **Extend the verified-schema snapshot.** The RLS policy text for `exercises`, `client_1rms`, `workout_log_exercises`, `workout_log_sets` and
-   `performance_logs` is not captured in `scripts/sql-verify/live-schema.mjs`, so the verifier and the cross-tenant specs cannot cover them. Needs one read
-   of `pg_policies` for those tables (Jake runs it), then the snapshot is extended and a CLIENT-role cross-tenant spec is added next to
-   `tests/rpe-cross-tenant-2026-10-01.spec.js` (which attacks as an unrelated COACH only).
-3. **Review the runner's library-owner fallback** (`coachId: clientRecord?.coach_id || currentUser.id` in `js/app-workouts.js`'s runner picker context)
-   against the same policy read: it is the same shape `_effectiveCoachIdForClient` was already tightened against. Pre-existing, not in this diff.
+2. **Exercise library access for a CLIENT — checked, and proved by behaviour.** Policy text: a client can INSERT into `exercises` only with
+   `coach_id` IN (their own coach's id) (`exercises_insert_by_client`), can SELECT only that coach's rows (`exercises_select_by_client`), and has NO
+   UPDATE or DELETE policy; a coach or solo user manages `coach_id = auth.uid()`. New spec
+   `tests/exercise-client-cross-tenant-2026-10-01.spec.js` attacks as the client against an unrelated coach (insert, read) and against their own
+   coach's row (rename, delete), with positive controls that the same client's insert/read into their OWN coach's library succeed: all refused, as the text
+   says. (Not shown able to fail by mutation: the policy cannot be weakened from here; the positive controls are what make a refusal mean something.)
+3. **The runner's library-owner fallback** (`clientRecord?.coach_id || currentUser.id`) — accepted as harmless. If the `clients` read is denied the
+   exercise would be inserted with `coach_id` = the caller's own uid, which the `coaches manage own exercises` policy allows: it lands in the caller's own
+   namespace, not anyone else's. A functional oddity (the coach would not see it), not a tenancy hole.
+
+## NEW from the same policy read — needs one more query from Jake
+
+11. **A CLIENT's failed-save rollback may not be able to delete.** `saveRunnerSession` / `saveWorkoutSession` clean up a half-written session with
+    unchecked `delete()`s on `workout_log_exercises` and `workout_logs` (`js/app-runner.js` around the batched set insert). The pasted policies give a
+    client NO delete policy on `workout_log_exercises` or `workout_log_sets` (only coach `ALL` policies and the client INSERT/SELECT ones); the policies on
+    `workout_logs` itself were not in the paste. A policy-refused delete returns no error, so if a client's set insert ever fails (a CHECK, a network
+    drop mid-save) the rollback would leave a session row with exercises and no sets while the app says the save failed, and a retry would duplicate it.
+    Coach and solo are unaffected (their `ALL` policies cover the deletes). Needs the `workout_logs` policies read, then either a client DELETE policy
+    scoped like the INSERT ones, or a rollback that checks its rowcount and says so.
 
 ## Not fixed — small, named so they are not forgotten
 
