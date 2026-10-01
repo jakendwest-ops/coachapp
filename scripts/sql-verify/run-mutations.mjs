@@ -10,12 +10,14 @@ import { fileURLToPath } from 'node:url'
 import { MUTATIONS as SUMMARY } from './coach-client-summary.mutations.mjs'
 import { MUTATIONS as COACH_ID_GUARD } from './clients-coach-id-guard.mutations.mjs'
 import { MUTATIONS as ASSIGN_PROGRAM } from './assign-program.mutations.mjs'
+import { MUTATIONS as EMPTY_SESSION_DELETE } from './client-empty-session-delete.mutations.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const SUITES = [
   { name: 'coach_client_summary view', verifier: 'coach-client-summary.verify.mjs', mutations: SUMMARY },
   { name: 'clients.coach_id guard', verifier: 'clients-coach-id-guard.verify.mjs', mutations: COACH_ID_GUARD },
   { name: 'assign_program() transaction', verifier: 'assign-program.verify.mjs', mutations: ASSIGN_PROGRAM },
+  { name: 'client delete of an empty session', verifier: 'client-empty-session-delete.verify.mjs', mutations: EMPTY_SESSION_DELETE },
 ]
 
 const run = (verifier, key) => new Promise((resolve) => {

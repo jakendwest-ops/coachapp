@@ -8,6 +8,8 @@ A verifier runs a migration on it and asserts what the migration is supposed to 
 ```
 node scripts/sql-verify/coach-client-summary.verify.mjs   # the coach_client_summary view; exit 0 = all passed
 node scripts/sql-verify/clients-coach-id-guard.verify.mjs # the clients.coach_id guard trigger; exit 0 = all passed
+node scripts/sql-verify/assign-program.verify.mjs         # the assign_program() transaction; exit 0 = all passed
+node scripts/sql-verify/client-empty-session-delete.verify.mjs # a client deleting their own EMPTY, recent session; exit 0 = all passed
 node scripts/sql-verify/run-mutations.mjs                 # deliberate breakages, every suite; exit 0 = every one was caught
 ```
 
@@ -22,8 +24,11 @@ All run on every push from `scripts/checks.sh` (rule 9m). A new verifier joins t
    not show the hole cannot prove it was closed — `clients-coach-id-guard.verify.mjs` does this first.
 3. Assert what must be **refused** as hard as what must work: another tenant, a client, a caller with no identity, `anon`,
    a write. Run each as that caller with `as(role, jwtSubject, sql)` so RLS applies exactly as for a real request. An `UPDATE`
-   with a `WHERE` or a `RETURNING` needs SELECT rights, so a row the caller cannot SELECT matches nothing and never reaches a
-   trigger — use a statement shape that reaches the thing under test, and check the state back as the superuser.
+   or `DELETE` with a `WHERE` or a `RETURNING` needs SELECT rights, so a row the caller cannot SELECT matches nothing and never
+   reaches a trigger or a write policy — use a statement shape that reaches the thing under test (`client-empty-session-delete`
+   adds a BLANKET `delete from t` with no WHERE for exactly this), and check the state back as the superuser. Make "refused"
+   STRICT (no error AND no row): an error such as "infinite recursion detected in policy" is a defect, not a refusal — the first
+   draft of that migration failed that way and a lenient check counted it as a pass.
 4. Assert the script's own **read-back** (the final `SELECT` it ends with) — the editor's "Success. No rows returned."
    proves nothing about DDL.
 5. Add a `*.mutations.mjs` entry for **every safeguard the script claims** (remove it, and the verifier must fail).
@@ -33,9 +38,11 @@ All run on every push from `scripts/checks.sh` (rule 9m). A new verifier joins t
 
 ## What a pass does NOT prove
 
-- **INSERT / DELETE policies, and UPDATE policies on any table except `clients`.** The first schema read covered SELECT and ALL
-  only; on 2026-09-26 the three UPDATE policies on `clients` were added (which is how "can a client rewrite their own
-  `clients.coach_id`?" was answered: yes). Other tables' write policies are still not here.
+- **Write policies on tables not listed.** The first schema read covered SELECT and ALL only. Since then the `clients` UPDATE
+  policies (2026-09-26), the programme-lifecycle tables (2026-09-27, `live-schema-programs.mjs`) and the session-log tables
+  (`workout_logs`, `workout_log_exercises`, `workout_log_sets`, 2026-10-01) have their write policies here, verbatim from the
+  live `pg_policies`. `exercises`, `client_1rms` and `performance_logs` are still NOT here. Role lists (`to authenticated` vs
+  `to public`) were not captured for every policy, and neither was the PERMISSIVE flag: all are modelled permissive.
 - **The `clients` CHECK constraint, foreign keys and its `audit_clients` trigger**, and any table not listed.
 - **The engine.** PGlite is Postgres 18.x; the live server was 17.6. RLS, `security_invoker` views, lateral joins, btree
   indexes and a plain `BEFORE UPDATE OF` trigger behave the same; a new feature needs the difference checked.

@@ -32,7 +32,9 @@ export function applyMutation(script, pairs) {
   let out = script
   for (const [from, to] of pairs) {
     if (out.split(from).length !== 2) { console.log('MUTATION ANCHOR PROBLEM', JSON.stringify(from)); process.exit(2) }
-    out = out.replace(from, to)
+    // split/join, NOT String.replace: in a replacement string `$$` means a literal `$`, so a mutation whose text contains a dollar-quoted body
+    // (`as $$`) silently became a syntax error and the check it was written for never ran (found by review, 2026-10-01).
+    out = out.split(from).join(to)
   }
   return out
 }
