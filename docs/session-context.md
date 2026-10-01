@@ -19,13 +19,17 @@ Last shipped: `v2026.09.11` (2026-09-28, tagged and deployed — the runner rebu
 on `master` unpushed**, including the Personal Bests page and the second 2026-09-28 walkthrough batch. See
 [current-sprint.md](current-sprint.md).
 
-**RPE top-set autoregulation is built but unmerged**, on the `worktree-rpe-top-set` branch: a coach marks
-set 1 as the top set with a prescribed RPE, the runner captures the effort actually hit, estimates a live
-e1RM from the RTS chart rather than Epley, and backoff sets target a percentage of *that* instead of a
-stored 1RM that may be months old. Spec and plan:
+**RPE top-set autoregulation is merged to `master` and has been through two multi-agent review rounds.**
+A coach marks set 1 as the top set with a prescribed RPE; the runner captures the effort actually hit,
+estimates a live e1RM from the RTS chart rather than Epley, and backoff sets target a percentage of *that*
+instead of a stored 1RM that may be months old. Spec and plan:
 [superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md](superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md),
 [superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md](superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md).
-Unreviewed and not hand-verified in a real browser session yet — both are the remaining gates.
+Round 1 found 8 defects, round 2 (of round 1's fixes) found a data-loss regression in one of them; the
+round-2 fixes sit on the `worktree-rpe-top-set` branch, **not yet merged**, because another session was
+editing `js/app-runner.js` in the shared checkout at the time. Nothing is pushed. Jake has looked at it in
+a real session (the runner layout commit says so) but has not signed it off; nine open ledger rows from the
+reviews are in `docs/bugs/` dated 2026-10-01.
 
 ## Current Priorities
 

@@ -426,7 +426,15 @@ const _AMRAP_TYPES = new Set(['weight_reps', 'unilateral'])
 const _BW_TYPES = new Set(['weight_reps', 'unilateral', 'timed_hold'])
 
 function _cleanTemplateSets(sets, derived, metricType) {
-  return (sets || []).map(s => ({
+  return (sets || []).map((s, i) => {
+  // A top set exists ONLY on row 0: the runner reads sets_json[0].isTopSet, the builder renders the
+  // TOP SET pill only for i === 0, and topSetActive reads _templateSets[0]. The raw per-row flag is
+  // NOT that fact — "Copy previous set" and the per-row sync button copy a whole row, flag included,
+  // onto a later row that then has no pill to clear it. Gating on the raw flag erased that row's
+  // percentage on save (found by multi-agent review round 2, 2026-10-01). Computed once here so the
+  // flag and the three nulls below cannot disagree about which row they mean.
+  const isTop = i === 0 && metricType === 'weight_reps' && !!s.isTopSet
+  return ({
     // `amrap`: removed 2026-08-11, RESTORED 2026-08-14 — both on Jake's call. It was trimmed as unused
     // surface (zero live usage across 52 template exercises), then asked back after real gym use, now
     // as a visible per-set pill rather than a buried toggle. Still NOT the same thing as a scored
@@ -453,7 +461,7 @@ function _cleanTemplateSets(sets, derived, metricType) {
     bodyweight: _BW_TYPES.has(metricType) && !!s.bodyweight,
     // Gated on metricType like `amrap` and `bodyweight` above, and for the same reason: switching an
     // exercise's type must not leave a stale top-set flag behind for the runner to render from.
-    isTopSet: metricType === 'weight_reps' && !!s.isTopSet,
+    isTopSet: isTop,
     // What intensityMin/Max is a percentage OF. 'stored' = the client's last saved 1RM, which is
     // every existing template's behaviour and therefore the default. 'topSet' = the e1RM this
     // session's top set produced.
@@ -466,9 +474,9 @@ function _cleanTemplateSets(sets, derived, metricType) {
     // clear them, and the runner dutifully rendered a 100 kg target and an 85%-of-stored-1RM ghost
     // on the one set the builder had just said has no prescribed load. Gate here, not at the three
     // render sites — one gate, not three (multi-agent review, 2026-09-30).
-    weight: (metricType === 'weight_reps' && s.isTopSet) ? null : (s.weight || null),
-    intensityMin: (metricType === 'weight_reps' && s.isTopSet) ? null : (s.intensityMin || null),
-    intensityMax: (metricType === 'weight_reps' && s.isTopSet) ? null : (s.intensityMax || null),
+    weight: isTop ? null : (s.weight || null),
+    intensityMin: isTop ? null : (s.intensityMin || null),
+    intensityMax: isTop ? null : (s.intensityMax || null),
     restMin: s.restMin || null, restMax: s.restMax || null,
     effortType: s.effortType || 'rpe', effortMin: s.effortMin || null, effortMax: s.effortMax || null,
     tempo: s.tempo || null, countdown: s.countdown || null,
@@ -501,7 +509,8 @@ function _cleanTemplateSets(sets, derived, metricType) {
     restSecs: s.restSecs ?? null, sets: s.sets ?? null,
     recoverySecs: s.recoverySecs ?? null, cycles: s.cycles ?? null,
     cooldownSecs: s.cooldownSecs ?? null
-  }))
+  })
+  })
 }
 
 // ─── SESSION DETAIL SLIDE-IN ──────────────────────────────────────────────────
@@ -1878,6 +1887,19 @@ function toggleUnilateralType(containerId) {
   renderTemplateSets(containerId, next)
 }
 
+// Flips the "top set has no effort" banner in place from what is TYPED, not from _templateSets —
+// that array is only flushed from the DOM on a control that re-renders, which is exactly what this
+// avoids. No-ops when no top set exists (the banner is not rendered then).
+function _syncTopSetEffortWarning() {
+  const banner = document.getElementById('ts-topset-effort-warning')
+  if (!banner) return
+  const present = ['ts-emin-0', 'ts-emax-0'].some(id => {
+    const v = document.getElementById(id)?.value
+    return v !== undefined && v !== null && v !== ''
+  })
+  banner.style.display = present ? 'none' : ''
+}
+
 function renderTemplateSets(containerId, type) {
   const container = document.getElementById(containerId)
   if (!container) return
@@ -2039,6 +2061,14 @@ function renderTemplateSets(containerId, type) {
     ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warning-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set ${window._templateSets.map((s, n) => s.intensityBasis === 'topSet' ? n + 1 : null).filter(Boolean).join(', ')} still uses "Today's top set", but set 1 is no longer a top set. Those sets have no percentage to work from until you switch set 1 back on or change them to "Last saved 1RM".</div>`
     : ''
 
+  // The banner is rendered whenever a top set exists and merely HIDDEN once an effort is present, so
+  // _syncTopSetEffortWarning can flip it in place as the coach types. The effort inputs carry no
+  // change handler of their own, so a warning computed only here would stay on screen after the coach
+  // fixed it until some unrelated control happened to re-render the list — and re-rendering from
+  // those inputs would drop focus and swallow the next tap, the same defect that sank round 1's
+  // runner fix. A warning that never goes away is noise; this project has measured alarm fatigue
+  // burying a real row.
+  //
   // A TOP SET with no prescribed effort is a silent, permanent dead end: the runner renders the
   // effort input only where a row prescribes one (renderStrengthTable's wantsEffort), and
   // _recomputeLiveE1RM needs a captured effort, so there is no box to fill, no estimate can ever
@@ -2051,8 +2081,8 @@ function renderTemplateSets(containerId, type) {
   // falsy-zero bugs and a hand-edited or imported sets_json is not bound by the input's min.
   const ts0 = window._templateSets?.[0]
   const tsEffortSet = [ts0?.effortMin, ts0?.effortMax].some(v => v !== null && v !== undefined && v !== '')
-  const topSetNoEffort = (topSetActive && !tsEffortSet)
-    ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warning-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set 1 is a top set but has no ${(ts0?.effortType === 'rir') ? 'RIR' : 'RPE'} prescribed. Without one the runner has no effort to record, so it cannot estimate a 1RM and any set using "Today's top set" will have no target.</div>`
+  const topSetNoEffort = topSetActive
+    ? `<div id="ts-topset-effort-warning" style="${tsEffortSet ? 'display:none;' : ''}padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warning-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set 1 is a top set but has no ${(ts0?.effortType === 'rir') ? 'RIR' : 'RPE'} prescribed. Without one the runner has no effort to record, so it cannot estimate a 1RM and any set using "Today's top set" will have no target.</div>`
     : ''
 
   container.innerHTML = topSetWarning + topSetNoEffort + (window._templateSets || []).map((s, i) => {
@@ -2110,7 +2140,7 @@ function renderTemplateSets(containerId, type) {
           ${cell('Duration (mm:ss)', gmini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${escapeHtml(String(s.duration||'0:00'))}"`))}
           ${cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
-          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
       ` : isJump ? `
         <div class="ts-grid">
@@ -2119,7 +2149,7 @@ function renderTemplateSets(containerId, type) {
             : cell('Target distance (m)', gmini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${escapeHtml(String(s.targetDistanceM))}"`:'')))}
           ${cell('Jumps per set', gmini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${escapeHtml(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMax?` value="${escapeHtml(String(s.repsMax))}"`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
-          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
       ` : `
         <div class="ts-grid">
@@ -2130,7 +2160,7 @@ function renderTemplateSets(containerId, type) {
                above for why. */''}
           ${(s.bodyweight || (i === 0 && topSetActive)) ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
-          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
         ${/* Fix round 1 (Important finding 1): the FIRST version of this swapped out the whole
              "+ More targets" block for the note, which took Tempo and Countdown down with it even

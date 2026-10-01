@@ -602,6 +602,38 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
   return !insertError && !skipped
 }
 
+// Which exercises a programme needs a STORED 1RM for, keyed by name, each with the exercise_id to
+// anchor the client_1rms row on. Pure (no DB), so tests-node/needed-one-rms.test.mjs can pin it.
+//
+// Two separate questions, deliberately answered separately:
+//  - does this exercise NEED a stored 1RM?  A %1RM row does — unless it is a 'topSet'-basis row,
+//    which resolves against the e1RM this session's top set produces and so needs none.
+//  - which exercise_id identifies it?  Harvested from EVERY slot, whether or not that slot needs a
+//    stored 1RM. Round 1 folded both into one `usesPct`-gated step, so a programme with "Squat" as a
+//    top set on day 1 (library id set) and as a stored-basis %1RM on day 3 (id null — several writers
+//    insert `exercise_id: … || null`) skipped the day-1 slot entirely and lost the id, which makes
+//    _saveMissingOneRMEntries write a name-only client_1rms row: the row that breaks the moment the
+//    lift is renamed, and the one exercise_id harvesting exists to prevent. Found by multi-agent
+//    review round 2 (2026-10-01); it was a regression from narrowing usesPct, not a pre-existing gap.
+// First real id wins; a later NULL never overwrites one.
+function _neededOneRMsByName(phases) {
+  const idByName = new Map()
+  const needsStored = new Set()
+  ;(phases || []).forEach(phase => {
+    ;(phase.program_phase_workouts || []).filter(pw => (pw.week_number || 1) === 1).forEach(pw => {
+      ;(pw.workout_templates?.workout_template_exercises || []).forEach(ex => {
+        if (ex.exercise_id && !idByName.get(ex.exercise_name)) idByName.set(ex.exercise_name, ex.exercise_id)
+        if ((ex.sets_json || []).some(s => (s.intensityMin != null || s.intensityMax != null) && s.intensityBasis !== 'topSet')) {
+          needsStored.add(ex.exercise_name)
+        }
+      })
+    })
+  })
+  const needed = new Map()
+  needsStored.forEach(name => needed.set(name, idByName.get(name) || null))
+  return needed
+}
+
 // ─── Assignment-time 1RM check ─────────────────────────────────────────────────
 // Week 1 is sufficient to determine which exercises this program needs — generated
 // periodization weeks (2+) always reuse the same exercise names, just different %1RM values.
@@ -612,27 +644,7 @@ async function _getProgramOneRMStatus(programId, clientId) {
 
   // Keyed by name (needed regardless of ID availability, since that's what gets displayed/matched
   // against). exercise_id is carried alongside so the have/missing check can prefer it over name.
-  const neededByName = new Map()
-  ;(phases || []).forEach(phase => {
-    ;(phase.program_phase_workouts || []).filter(pw => (pw.week_number || 1) === 1).forEach(pw => {
-      ;(pw.workout_templates?.workout_template_exercises || []).forEach(ex => {
-        // A 'topSet' row resolves against the e1RM this session's top set produces, so it needs
-        // no stored 1RM and must not make the coach supply one. Third and last sibling of the
-        // basis-blind trio found by multi-agent review 2026-09-30 (the others: this file's runner
-        // banner/label, and app-workouts' set-detail line).
-        const usesPct = (ex.sets_json || []).some(s => (s.intensityMin != null || s.intensityMax != null) && s.intensityBasis !== 'topSet')
-        // A later NULL must not overwrite a real id. Several writers insert `exercise_id: … || null`
-        // (starter-content.js:130, app-workouts.js:2113/2180), so one name can legitimately appear
-        // twice across week-1 slots with the id on only one of them. This was harmless while `missing`
-        // carried bare names — the id was discarded anyway and matching fell through to the name. It
-        // became load-bearing the moment _saveMissingOneRMEntries started WRITING the id: a lost id
-        // here puts back exactly the name-only row this change exists to remove. Found in review.
-        // `!prev` covers both "not seen yet" and "seen but null", so a real id can still upgrade a
-        // null, and the first real id wins over any later one.
-        if (usesPct && !neededByName.get(ex.exercise_name)) neededByName.set(ex.exercise_name, ex.exercise_id || null)
-      })
-    })
-  })
+  const neededByName = _neededOneRMsByName(phases)
   if (!neededByName.size) return { have: [], missing: [] }
 
   const { data: existing } = await db.from('client_1rms').select('exercise_id, exercise_name, one_rm_kg').eq('client_id', clientId).order('recorded_at', { ascending: false })

@@ -714,6 +714,24 @@ function _prevSetsByIndex(ex) {
 // once the weight fix shipped and Jake tried 0 on a Depth Jump instead.
 const _hasNumVal = w => w != null && w !== ''
 
+// The ONE definition of "an effort value we are willing to store or estimate from": a finite number
+// in 0..10, or null. Both RPE (1-10) and RIR (0-5) sit inside it, and 0 is REAL — RIR 0 is "to
+// failure", and this project has shipped the falsy-zero bug at five sites, so callers must test
+// `=== null`, never truthiness.
+//
+// Three consumers share it so they cannot disagree: the runner save, the manual Log Session save, and
+// _recomputeLiveE1RM. Round 1 guarded only the first, so the second wrote parseFloat() straight into
+// the same all-or-nothing batched insert, and the third fed _estimate1RM the raw string — where
+// _clampRpe turned a typed -5 into "RPE 6" and 88 into "RPE 10", so the database refused a value the
+// estimate, chip, backoff targets and a post-session "Save as my 1RM" all accepted. A guard that
+// protects one of three consumers is a guard on the instance, not the class
+// (tests-node/effort-guard.test.mjs pins that every effort_value writer uses this).
+const _effortOrNull = v => {
+  if (!_hasNumVal(v)) return null
+  const e = parseFloat(v)
+  return e >= 0 && e <= 10 ? e : null
+}
+
 // Blank row shape for a fresh table set, per metric_type. Shared by _ensureTableRows (initial fill)
 // and addTableRow (appended set) so the shape literal isn't duplicated in two places.
 function _blankTableRow(ex) {
@@ -805,8 +823,9 @@ function _recomputeLiveE1RM(ex) {
   const tgt0 = ex.sets_json?.[0]
   if (!tgt0?.isTopSet) { ex._liveE1RM = null; return }
   const row = ex.tableRows?.[0]
-  if (!row?.done || !_hasNumVal(row.weight) || !row.reps || !_hasNumVal(row.effort)) { ex._liveE1RM = null; return }
-  ex._liveE1RM = _estimate1RM(row.weight, row.reps, { effortType: tgt0.effortType, effortValue: row.effort })
+  const effort = _effortOrNull(row?.effort)   // null for blank AND for an impossible value — see _effortOrNull
+  if (!row?.done || !_hasNumVal(row.weight) || !row.reps || effort === null) { ex._liveE1RM = null; return }
+  ex._liveE1RM = _estimate1RM(row.weight, row.reps, { effortType: tgt0.effortType, effortValue: effort })
 }
 
 function addTableRow() {
@@ -1018,19 +1037,16 @@ function renderStrengthTable(ex) {
   // consumer downstream of tableRows (volume calc, loggedSets, the save path) keeps working in kg/cm
   // exactly as before, untouched by this feature.
   // `min`/`max` bound the input (the effort cell had neither, while both of its siblings in the
-  // manual Log Session modal carry min="0" max="10").
+  // manual Log Session modal carry min="0" max="10"). They affect the spinner and :invalid styling
+  // only — HTML does not stop a typed -5 — so the real guard is _effortOrNull on every consumer.
   //
-  // `recompute` re-derives the live e1RM on CHANGE — on blur, not per keystroke, so it does not
-  // reintroduce the re-render-on-every-character cost oninput exists to avoid. Without it, typing
-  // an RPE AFTER ticking the set did nothing visible and the only recovery was to untick and
-  // re-tick, which nothing told you.
-  //
-  // The caller passes it ONLY for a row that is already done, and that restriction is load-bearing,
-  // not caution: on an unticked row the next thing the lifter does is tap ✓, and blurring the
-  // effort field re-renders the table out from under that tap — the button is replaced mid-click
-  // and the set never logs. Caught by seven previously-green tests going red on the first attempt
-  // at this fix. A ticked row has no such pending tap, so the re-render is free.
-  const inCell = (i, row, field, { mode = 'decimal', step = '', ph = '—', fmt = false, unit = null, min = null, max = null, recompute = false } = {}) => {
+  // There is deliberately NO change-handler that re-renders. Round 1 added one so that typing an RPE
+  // after ticking would refresh the e1RM, and it tore the table out from under any tap on another
+  // control: mousedown blurs the field, `change` fires, renderRunner() replaces the node under the
+  // pointer, and the click is never dispatched. It also made effort the only field that behaved that
+  // way — weight and reps do nothing until you re-tick either. The dead end is explained by the
+  // backoff row's note instead (see basisNote), which costs no re-render and no new code path.
+  const inCell = (i, row, field, { mode = 'decimal', step = '', ph = '—', fmt = false, unit = null, min = null, max = null } = {}) => {
     const toDisplay = v => unit === 'weight' ? weightToPref(v) : unit === 'jumpHeight' ? jumpHeightToPref(v) : v
     const parseFn = unit === 'weight' ? 'weightFromPref' : unit === 'jumpHeight' ? 'jumpHeightFromPref' : null
     const bind = fmt
@@ -1039,8 +1055,7 @@ function renderStrengthTable(ex) {
         ? `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=${parseFn}(this.value)`
         : `_runner.exercises[${_runner.exIdx}].tableRows[${i}].${field}=this.value`
     return `<input id="set-${i}-${field}" type="${fmt ? 'text' : 'number'}" inputmode="${mode}" ${step ? `step="${step}"` : ''} ${min !== null ? `min="${min}"` : ''} ${max !== null ? `max="${max}"` : ''} value="${escapeHtml(String(toDisplay(row[field]) ?? ''))}" placeholder="${escapeHtml(String(ph ?? ''))}"
-      oninput="${bind}"${recompute ? `
-      onchange="_recomputeLiveE1RM(_runner.exercises[${_runner.exIdx}]);renderRunner()"` : ''}
+      oninput="${bind}"
       style="flex:1;min-width:0;padding:8px 4px;font-size:16px;font-weight:700;text-align:center;border:1.5px solid ${row.done ? 'var(--border)' : 'var(--accent)'};border-radius:8px;background:var(--bg);color:var(--text);box-sizing:border-box;-moz-appearance:textfield">`
   }
   // Incomplete state used to render a transparent ✓ inside a bare grey box — invisible, though it is
@@ -1175,16 +1190,28 @@ function renderStrengthTable(ex) {
     // out of alignment with the header and with the other rows. Only inserted when the EXERCISE shows
     // the column at all — a plain exercise with no effort anywhere keeps its untouched two cells.
     const wantsPlaceholder = !wantsEffort && !!effortRx
-    // A topSet row with nothing to resolve against says WHY its target is blank, rather than leaving
-    // the lifter staring at an empty bar mid-session. The two messages are different on purpose:
-    // telling someone to log a set they already logged reads as the app not having noticed.
+    // A topSet row with nothing to resolve against says WHY its target is blank, and WHAT TO DO,
+    // rather than leaving the lifter staring at an empty bar mid-session. Three situations, three
+    // messages — telling someone to log a set they already logged reads as the app not having noticed:
+    //   1. the top set is not ticked yet            -> "Log the top set first"
+    //   2. ticked, but no usable effort was entered -> "Enter the top set's RPE (0–10), then tick it again"
+    //   3. ticked with a good effort, still no estimate (e.g. past the 12-rep cap) -> "Can't estimate"
+    // Case 2 is the dead end round 1 tried to remove by re-rendering on every effort edit — which tore
+    // the table out from under taps on other controls. Weight and reps have always needed a re-tick
+    // after an edit, so effort now has the same contract, and this line is what makes it discoverable.
+    // "Usable" is _effortOrNull's definition, so a typed 88 lands here too rather than on case 3.
     //
-    // The third case — row 0 is not a top set at all, so there is no set to log — also lands on
-    // "Log the top set first". It is reachable only from legacy or hand-edited sets_json, and the
-    // BUILDER already warns about it explicitly at authoring time (app-workouts.js's topSetWarning),
-    // which is where it can actually be fixed.
+    // If row 0 is not a top set at all there is no set to log; that also reads as case 1. It is
+    // reachable only from legacy or hand-edited sets_json, and the BUILDER already warns about it at
+    // authoring time (app-workouts.js's topSetWarning), which is where it can actually be fixed.
+    const topRow0 = ex.tableRows?.[0]
+    const topLogged = !!(ex.sets_json?.[0]?.isTopSet && topRow0?.done)
+    const basisNoteText = !topLogged ? 'Log the top set first'
+      : _effortOrNull(topRow0.effort) === null
+        ? `Enter the top set's ${ex.sets_json[0].effortType === 'rir' ? 'RIR' : 'RPE'} (0–10), then tick it again`
+        : "Can't estimate from this set"
     const basisNote = (usesTopSet && !basisRM && rowTgt0?.intensityMin)
-      ? `<div id="set-${i}-basis-note" style="font-size:var(--text-sm, 11px);color:var(--text-muted);padding:2px 0 0 28px">${ex.sets_json?.[0]?.isTopSet && ex.tableRows?.[0]?.done ? "Can't estimate from this set" : 'Log the top set first'}</div>`
+      ? `<div id="set-${i}-basis-note" style="font-size:var(--text-sm, 11px);color:var(--text-muted);padding:2px 0 0 28px">${basisNoteText}</div>`
       : ''
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">
         ${inSetNum(i, isCurrent)}
@@ -1192,7 +1219,7 @@ function renderStrengthTable(ex) {
           ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>`
           : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder, unit:'weight' })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
-        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10', min: 0, max: 10, recompute: !!row.done }) : wantsPlaceholder ? '<span style="flex:1" aria-hidden="true"></span>' : ''}
+        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10', min: 0, max: 10 }) : wantsPlaceholder ? '<span style="flex:1" aria-hidden="true"></span>' : ''}
         ${inDone(i, row, isCurrent)}${inDel(i)}
       </div>${basisNote}</div>`
   }).join('')
@@ -3000,6 +3027,19 @@ function discardRunner() {
 // correctable in-session; renaming has to happen from the saved log.
 function _loggedExercises() {
   if (!_runner) return []
+  // Refresh the derived state from the live table BEFORE filtering on it. inCell's oninput writes
+  // straight into tableRows and deliberately skips a re-render, so an edit made after the last tick
+  // is invisible to loggedSets until something re-syncs it — and this function feeds BOTH the finish
+  // screen and the save, whose caller comment says "they must not diverge". Round 1 put the re-sync
+  // only in saveRunnerSession, so a weight corrected from 100 to 110 without re-ticking showed 300 kg
+  // on the finish screen and stored 330 three seconds later, and a real PR could miss its badge while
+  // the database recorded it. Here, every reader gets the same answer by construction.
+  //
+  // _syncLoggedSetsFromTable ASSIGNS loggedSets (never pushes, so no double-counting) and keeps only
+  // rows with `done`, so this refreshes VALUES and cannot change which sets count as logged.
+  _runner.exercises.forEach(ex => {
+    if (ex.tableRows) { _syncLoggedSetsFromTable(ex); _recomputeLiveE1RM(ex) }
+  })
   const out = _runner.exercises.filter(e => e.loggedSets.length)
   out.forEach((e, i) => { if (!e.name || !String(e.name).trim()) e.name = `Exercise ${i + 1}` })
   return out
@@ -3012,17 +3052,8 @@ async function saveRunnerSession() {
   const notes     = document.getElementById('rf-notes')?.value.trim() || null
   const clientId  = _runner.clientId
   const date      = _runner.date
-  // Re-sync from the live table BEFORE anything reads loggedSets or _liveE1RM. inCell's oninput
-  // writes straight into tableRows and deliberately skips a re-render, so an edit made after the
-  // last tick was invisible here: the saved row kept the old weight while the post-session modal's
-  // heading read the new one off tableRows, above an estimate computed from the old one. One
-  // screen, two different numbers, both plausible. Found by multi-agent review 2026-09-30.
-  //
-  // _syncLoggedSetsFromTable keeps only rows with `done`, so this refreshes VALUES and never
-  // changes which sets count as logged — an untouched tick-state means an identical set list.
-  _runner.exercises.forEach(ex => {
-    if (ex.tableRows) { _syncLoggedSetsFromTable(ex); _recomputeLiveE1RM(ex) }
-  })
+  // The re-sync from the live table happens INSIDE _loggedExercises(), so this and the finish screen
+  // read the same values — see the comment there.
   const exercises = _loggedExercises()
   if (!exercises.length) { showToast('No sets logged — nothing to save.', 'warn', 3000); return }
 
@@ -3165,12 +3196,10 @@ async function saveRunnerSession() {
         // trips a CHECK fails the whole batch and the rollback deletes the entire session, not the
         // one field. Both RPE (0-10) and RIR (0-5) fit inside 0-10. Dropping the field keeps the
         // set; keeping it could cost the workout. Added after multi-agent review, 2026-09-30.
-        if (_hasNumVal(s.effort)) {
-          const e = parseFloat(s.effort)
-          if (e >= 0 && e <= 10) {
-            row.effort_type = s.effortType === 'rir' ? 'rir' : 'rpe'
-            row.effort_value = e
-          }
+        const effortVal = _effortOrNull(s.effort)
+        if (effortVal !== null) {
+          row.effort_type = s.effortType === 'rir' ? 'rir' : 'rpe'
+          row.effort_value = effortVal
         }
       }
       applyCardioMetrics(row)
@@ -3771,9 +3800,14 @@ async function saveWorkoutSession(clientId) {
         // _hasNumVal, not truthy: RIR 0 means "to failure" — a real, common prescription that a
         // truthy check silently discarded. Same falsy-zero shape as the weight guards above (Jake,
         // 2026-07-29), which was found at four sites in one bug; this was a fifth.
-        if (_hasNumVal(s.effort)) {
+        // Through the same guard as the runner save, for the same reason: this builds ONE batched
+        // workout_log_sets insert whose failure handler deletes the exercises AND the workout_logs
+        // row, so a single out-of-range value can cost a whole manually-logged session. Round 1
+        // guarded only the runner's copy; this was the other of exactly two writers.
+        const effortVal = _effortOrNull(s.effort)
+        if (effortVal !== null) {
           row.effort_type = block.effortMode === 'RIR' ? 'rir' : 'rpe'
-          row.effort_value = parseFloat(s.effort)
+          row.effort_value = effortVal
         }
         if (s.rest) row.notes = (row.notes || '') + `rest:${s.rest}`
       }

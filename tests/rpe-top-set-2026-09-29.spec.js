@@ -606,18 +606,21 @@ test.describe('RPE top set: review fixes (2026-09-30)', () => {
     expect(Number(rows[0].weight_kg), 'but the real set still saves').toBe(100)
   })
 
-  // FINDING (Agent C 3): typing the RPE AFTER ticking did nothing, because oninput skips the
-  // re-render — the only recovery was to untick and re-tick, and nothing said so.
-  test('entering the effort after the set is ticked recomputes the targets without a re-tick', async ({ page }) => {
+  // Round 1 answered "typing the RPE after ticking does nothing" by re-rendering on every effort
+  // edit. Round 2 showed that tears the table out from under a tap on ANY other control (see the
+  // round-2 describe below), and that it made effort the ONLY field that behaved this way: weight and
+  // reps also do nothing until you re-tick. So the mechanism is gone and the dead end is explained
+  // instead — this pins the explanation, and that re-ticking is what resolves it.
+  test('a top set ticked without an effort says what to do, and re-ticking resolves the targets', async ({ page }) => {
     await startRunnerWithFixture(page, { sets: [
       { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
       { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
     ] })
     await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
     await page.click('#set-0-done')                       // ticked with NO effort
-    await expect(page.locator('#set-1-basis-note')).toBeVisible()
+    await expect(page.locator('#set-1-basis-note')).toContainText("Enter the top set's RPE")
     await page.fill('#set-0-effort', '8')
-    await page.locator('#set-0-effort').blur()            // change, not input — no per-keystroke render
+    await page.click('#set-0-done'); await page.click('#set-0-done')   // untick, re-tick: the contract weight/reps have
     await expect(page.locator('#set-1-weight')).toHaveAttribute('placeholder', '80')
   })
 })
@@ -650,22 +653,26 @@ test.describe('builder: top-set review fixes (2026-09-30)', () => {
   // can fix it and the only person who never sees it. Jake's call (2026-09-30): WARN, not refuse.
   test('a top set with no prescribed effort warns the coach at authoring time', async ({ page }) => {
     await openTemplateBuilderWithFixture(page, { sets: 2 })
+    await expect(page.locator('#ts-topset-effort-warning'), 'no top set yet, so nothing to warn about').toHaveCount(0)
     await page.click('#ts-topset-0')
-    await expect(page.locator('#att-sets-container'))
-      .toContainText('Set 1 is a top set but has no RPE prescribed')
+    await expect(page.locator('#ts-topset-effort-warning')).toBeVisible()
+    await expect(page.locator('#ts-topset-effort-warning')).toContainText('Set 1 is a top set but has no RPE prescribed')
   })
 
-  // The warning must clear once the coach does the thing it asks for — a warning that never goes
-  // away is noise, and this project has measured alarm fatigue burying a real row before.
-  test('the no-effort warning clears once an RPE is prescribed', async ({ page }) => {
+  // The warning must clear once the coach does the thing it asks for — and it must do so WHILE
+  // TYPING. The effort inputs carry no change handler of their own, so the first version of this
+  // test called flushTemplateSets + renderTemplateSets by hand and a comment claimed every control
+  // does the same; the one control the warning is about does not, so the banner would have stayed
+  // up after the coach fixed it. This types into the real input and touches nothing else. A warning
+  // that never goes away is noise — this project has measured alarm fatigue burying a real row.
+  test('the no-effort warning clears as the coach types an RPE, with no other control touched', async ({ page }) => {
     await openTemplateBuilderWithFixture(page, { sets: 2 })
     await page.click('#ts-topset-0')
-    await expect(page.locator('#att-sets-container')).toContainText('Set 1 is a top set but has no RPE prescribed')
-    await page.fill('#ts-emin-0', '8')
-    // Same pair every control in this builder fires on change (see the `% of` select at
-    // app-workouts.js:2150) — flush the DOM into _templateSets, then re-render from it.
-    await page.evaluate(() => { flushTemplateSets('att-sets-container'); renderTemplateSets('att-sets-container', 'weight_reps') })
-    await expect(page.locator('#att-sets-container')).not.toContainText('Set 1 is a top set but has no RPE prescribed')
+    await expect(page.locator('#ts-topset-effort-warning')).toBeVisible()
+    await page.fill('#ts-emin-0', '8')                 // `input` only — nothing re-renders
+    await expect(page.locator('#ts-topset-effort-warning')).toBeHidden()
+    await page.fill('#ts-emin-0', '')
+    await expect(page.locator('#ts-topset-effort-warning'), 'erasing it must bring the warning back').toBeVisible()
   })
 })
 
@@ -817,5 +824,92 @@ test.describe('runner: backoff row reps ghost prefers today\'s prescription over
 
     expect(await page.getAttribute('#set-0-reps', 'placeholder'),
       'tier 1 is absent, so tier 2 (last session\'s 12) must win over tier 3 (the bare word)').toBe('12')
+  })
+})
+
+// ── Review round 2 (2026-10-01) ───────────────────────────────────────────────────────────────
+test.describe('RPE top set: review round 2 (2026-10-01)', () => {
+  test.beforeEach(async ({ page }) => { await loginAsPT(page) })
+  test.afterEach(async ({ page }) => { await cleanupFixture(page) })
+
+  // C2-1 (high). Round 1's fix re-rendered the table whenever a TICKED row's effort changed. But
+  // mousedown on any other control blurs the field first, `change` fires, renderRunner() replaces the
+  // node under the pointer, and the click is never dispatched — so the tap on a different set's ✓
+  // simply did nothing. Seven passing tests went red on the first, wider version of this fix; the
+  // narrowed version only shrank the blast radius to "after editing a ticked row's effort", which is
+  // the main flow it existed for. None of its own tests tapped anything else.
+  test("editing a ticked set's effort does not swallow a tap on another set's tick", async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8 }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    await page.fill('#set-1-weight', '80');  await page.fill('#set-1-reps', '8')
+    await page.fill('#set-0-effort', '9')              // edit the TICKED row; focus stays in it
+    await page.click('#set-1-done')                    // the tap that used to be swallowed
+    const done = await page.evaluate(() => _runner.exercises[0].tableRows[1].done)
+    expect(done, "set 2 must log: the tap landed on a live button, not on a node a re-render had just detached").toBe(true)
+  })
+
+  // C2-3 (high). _loggedExercises() feeds BOTH the finish screen and the save, and its own caller
+  // comment says "they must not diverge". Round 1 put the re-sync only in the save, so an edit made
+  // without re-ticking showed 300 kg on the finish screen and stored 330 three seconds later.
+  test('the finish screen and the saved set agree after an edit made without re-ticking', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    await page.fill('#set-0-weight', '110')            // edit, do NOT re-tick
+    await page.evaluate(() => showRunnerFinish())      // the screen, BEFORE anything has called the save
+    await expect(page.locator('#workout-runner'), '110 x 3 = 330, not the stale 100 x 3 = 300').toContainText('330')
+    const w = await page.evaluate(() => Number(_loggedExercises()[0].loggedSets[0].weight))
+    expect(w).toBe(110)
+  })
+
+  // C2-5 (medium). _clampRpe floors at 6 and caps at 10, so a typed -5 became "RPE 6" and 88 became
+  // "RPE 10": the database refused the value while the estimate, the chip, the backoff targets and a
+  // post-session "Save as my 1RM" all happily used the clamped one.
+  for (const bad of ['-5', '88']) {
+    test(`an impossible effort (${bad}) yields no estimate, no chip and no backoff target`, async ({ page }) => {
+      await startRunnerWithFixture(page, { sets: [
+        { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+        { repsMin: 8, intensityMin: 70, intensityBasis: 'topSet' }
+      ] })
+      await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+      await page.fill('#set-0-effort', bad);   await page.click('#set-0-done')
+      expect(await page.evaluate(() => _runner.exercises[0]._liveE1RM ?? null)).toBeNull()
+      await expect(page.locator('#ex-e1rm-chip')).toHaveCount(0)
+      await expect(page.locator('#set-1-basis-note')).toContainText("Enter the top set's RPE")
+    })
+  }
+})
+
+// ── Round 2, builder: the flow no earlier test used (2026-10-01) ────────────────────────────────
+test.describe('builder: Copy previous set after a top set (review round 2, 2026-10-01)', () => {
+  test.beforeEach(async ({ page }) => { await loginAsPT(page) })
+  test.afterEach(async ({ page }) => { await cleanupBuilderFixture(page) })
+
+  // The headline workflow: mark the top set, tap Copy previous set to make the backoff row, point it
+  // at "Today's top set", save. "Copy previous set" copies a whole row — isTopSet included — and the
+  // TOP SET pill exists only on row 0, so the copy had a flag nothing could clear. Round 1's fix 6
+  // nulled weight and % on any flagged row, so saving silently erased the 70%. Every earlier builder
+  // test seeded blank rows and never pressed Copy, which is how 28 green tests missed it.
+  test("the backoff row's percentage survives Copy previous set + save + reopen", async ({ page }) => {
+    await openTemplateBuilderWithFixture(page, { sets: 1 })
+    await page.click('#ts-topset-0')
+    await page.fill('#ts-emin-0', '8')                         // keep the no-effort warning out of it
+    await page.locator('button', { hasText: 'Copy previous set' }).click()
+    await page.selectOption('#ts-basis-1', 'topSet')
+    await page.fill('#ts-imin-1', '70')
+    await saveTemplate(page)
+    await reopenTemplate(page)
+    const sets = await page.evaluate(() => window._templateSets)
+    expect(sets.length).toBe(2)
+    expect(sets[0].isTopSet, 'row 0 is still the top set').toBe(true)
+    expect(sets[1].isTopSet, 'the copied flag must not persist on a row that cannot show or clear it').toBeFalsy()
+    expect(Number(sets[1].intensityMin), 'the 70% the coach typed must still be there').toBe(70)
+    expect(sets[1].intensityBasis).toBe('topSet')
   })
 })

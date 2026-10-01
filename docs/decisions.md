@@ -12,6 +12,22 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-01 — The runner's effort field does NOT re-render on edit; it follows the same "edit, then re-tick" contract as weight and reps.**
+Review round 1 found that typing an RPE *after* ticking the top set did nothing, and the first fix added an
+`onchange` that called `renderRunner()` on a ticked row's effort field. Round 2 showed why that cannot stay:
+mousedown on any other control blurs the field first, `change` fires, `renderRunner()` replaces the node under
+the pointer, and the click is never dispatched — so the tap on, say, the next set's ✓ simply did nothing
+(reproduced: with the old code that set stayed unlogged). A wider first version had already turned seven
+passing tests red. It also made effort the *only* field that behaved that way. **Rejected:** (a) re-render on
+change, for the reason above; (b) patching the chip and backoff placeholders in place on change, which would
+create a second code path computing the same display as the renderer — one fact in two fields — in the
+runner's hottest region. **Chosen:** no handler; the backoff row's note now says what to do ("Enter the top
+set's RPE (0–10), then tick it again"). The same rule governs the builder's "top set has no effort" warning,
+which is shown/hidden *in place* from `oninput` rather than by re-rendering the list. Do not add a
+change/blur handler that replaces DOM containing other controls. Related: `_effortOrNull`
+(`js/app-runner.js`) is the one definition of a storable effort value (0–10); every `effort_value` writer and
+the live estimate go through it, and `tests-node/effort-guard.test.mjs` pins that.
+
 **2026-09-30 — The preview server serves the checkout it was launched from, not a hardcoded path.**
 `.claude/launch.json` is git-TRACKED and its PowerShell server hardcoded `Join-Path
 'C:/Users/jaken/OneDrive/coachapp'`. Every git worktree therefore inherited it and served the MAIN
