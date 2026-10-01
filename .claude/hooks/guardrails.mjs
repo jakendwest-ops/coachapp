@@ -94,6 +94,37 @@ const bareCmd = cmd
   .replace(/'[^']*'/g, "''")
   .replace(/"[^"]*"/g, '""')
 
+// ─── WHICH working tree is this command in? (2026-10-01) ──────────────────────────────────────────────
+// REPO is where THIS HOOK lives (settings.json points at the main checkout's copy), not where the commit is. Every
+// git command below once ran with cwd: REPO, so a commit made from a git WORKTREE — which this project uses
+// routinely — was judged by the MAIN checkout's index: an unreviewed ownership/RLS diff staged in the worktree was
+// never seen, a staged .sql was never seen, a probe file in the worktree was never seen, and main's own dirt could
+// refuse a perfectly clean worktree commit. `inCoachApp` was also a string-PREFIX test on the path, so a worktree
+// OUTSIDE the main folder skipped the ownership rule altogether.
+//
+// The tree is now resolved from where the command is actually headed (an explicit `cd` wins, then the session cwd),
+// and "is this CoachApp?" is answered by git itself: a checkout of this repository — the main one or any worktree of
+// it — shares ONE git common dir with REPO. Anything else (another repo, not a repo, a path git cannot read)
+// resolves to null and every rule that needs a tree is SKIPPED: fail OPEN, never block on our own failure to find out
+// where we are (this hook has refused the legitimate user nine times already).
+// tests: .claude/hooks/guardrails.selftest.mjs, "rule 2e".
+const normPath = p => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+const cdTarget = (cmd.match(/(?:^|&&|;|\|)\s*cd\s+["']?([^"'&;|\n]+)["']?/) || [])[1]
+const gitIn = (args, cwd) => {
+  try { return execSync(`git ${args}`, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }
+  catch { return null }
+}
+// A bash `cd /c/Users/...` is an MSYS path Windows Node cannot use as a cwd; without this that rule silently skipped.
+const toWinPath = p => String(p || '').trim().replace(/^\/([a-zA-Z])(\/|$)/, '$1:/')
+const TREE = (() => {
+  const top = gitIn('rev-parse --show-toplevel', toWinPath(cdTarget || ev?.cwd || REPO))
+  if (!top) return null
+  const home = gitIn('rev-parse --path-format=absolute --git-common-dir', REPO)
+  const here = gitIn('rev-parse --path-format=absolute --git-common-dir', top)
+  return home && here && normPath(home) === normPath(here) ? top : null
+})()
+const inCoachApp = TREE !== null
+
 function pipesAway (c) {
   return /\|(?!\|)/.test(c)
 }
@@ -184,9 +215,9 @@ if (/\bgit\s+stash\b/.test(bareCmd) && !/\bgit\s+stash\s+(list|show)\b/.test(bar
 // Retires memory feedback-subagent-throwaway-file-cleanup. Subagents doing live diagnostics
 // leave zz-probe-*/_tmp-*/_debug-* specs behind, and the rule to check `git status` before
 // committing was prose that depended on remembering.
-if (/\bgit\s+commit\b/.test(bareCmd)) {
+if (/\bgit\s+commit\b/.test(bareCmd) && TREE) {
   try {
-    const junk = execSync('git status --porcelain', { cwd: REPO, encoding: 'utf8' })
+    const junk = execSync('git status --porcelain', { cwd: TREE, encoding: 'utf8' })
       .split(/\r?\n/)
       .map(l => l.slice(3).trim())
       .filter(f => /(^|\/)(zz-|_tmp-|_debug-|probe-)/i.test(f))
@@ -217,15 +248,10 @@ if (/\bgit\s+commit\b/.test(bareCmd)) {
 // NO review having run at all.
 const OWNERSHIP = /_verify[A-Z]|coach_id|client_id|auth\.uid|\bRLS\b|create\s+policy/i
 
-// WHICH repo is this commit actually in? The first version hardcoded REPO and ran `git diff` there
-// no matter where the command was headed — so committing in ~/.claude was refused because the
-// COACHAPP working tree happened to contain ownership code. Fourth false refusal from this hook, and
-// the only one that was a design fault rather than a pattern that was too broad: the guard asserted a
-// context it had never checked. An explicit `cd` in the command wins over the session cwd.
-const cdTarget = (cmd.match(/(?:^|&&|;|\|)\s*cd\s+["']?([^"'&;|\n]+)["']?/) || [])[1]
-const normPath = p => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-const effectiveCwd = normPath(cdTarget || ev?.cwd || REPO)
-const inCoachApp = effectiveCwd.startsWith(normPath(REPO))
+// WHICH repo is this commit actually in? Resolved ONCE, near the top of this file (TREE / inCoachApp). The first
+// version hardcoded REPO and ran `git diff` there no matter where the command was headed — so committing in
+// ~/.claude was refused because the COACHAPP working tree happened to contain ownership code (the fourth false
+// refusal); the second version, a string-prefix test on the path, then missed every git worktree (2026-10-01).
 
 if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
   let staged = ''
@@ -244,7 +270,7 @@ if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
     // blocking a clean commit because of someone else's half-finished edit is the
     // refuse-the-legitimate-user failure this project has already shipped once.
     const PATHS = '-- js/ scripts/ supabase/'
-    const run = a => execSync(`git diff ${a} ${PATHS}`, { cwd: REPO, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 })
+    const run = a => execSync(`git diff ${a} ${PATHS}`, { cwd: TREE, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 })
     try {
       staged = run('--cached')
       if (!staged.trim() && /\bgit\s+add\b/.test(bareCmd)) staged = run('HEAD')
@@ -316,11 +342,11 @@ if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
 // what counts as a schema change, and an over-broad guard that refuses legitimate work is this
 // OS's newest failure class (eight false refusals from RULE 2 alone).
 const SQL_MARKER = process.env.GUARDRAILS_SQL_MARKER || `${STATE}/sql-safety-ran`
-if (/\bgit\s+commit\b/.test(bareCmd)) {
+if (/\bgit\s+commit\b/.test(bareCmd) && TREE) {
   let sqlFiles = []
   try {
     const raw = process.env.GUARDRAILS_FAKE_STAGED_FILES ??
-      execSync('git diff --cached --name-only', { cwd: REPO, encoding: 'utf8' })
+      execSync('git diff --cached --name-only', { cwd: TREE, encoding: 'utf8' })
     sqlFiles = raw.split(/\r?\n/).filter(Boolean).filter(f => /\.sql$/i.test(f))
   } catch { /* if git cannot be read here, never block on a measurement failure */ }
 
@@ -379,7 +405,7 @@ const PRED_PATH = 'docs/predictions.jsonl'
 if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
   const readRepo = (envVar, gitArgs) => {
     if (process.env[envVar] !== undefined) return process.env[envVar]
-    try { return execSync(gitArgs, { cwd: REPO, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }) }
+    try { return execSync(gitArgs, { cwd: TREE, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
     catch { return null }
   }
 
@@ -449,9 +475,9 @@ if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
 // So this records. Until 2026-09-27 standing-behaviours.mjs surfaced the running tally every turn;
 // that hook was retired (each invocation opened a console window), so the data is recorded only,
 // in state/scope.jsonl. The threshold gets set when the data supports one, or never.
-if (/\bgit\s+commit\b/.test(bareCmd)) {
+if (/\bgit\s+commit\b/.test(bareCmd) && TREE) {
   try {
-    const files = execSync('git diff --cached --name-only', { cwd: REPO, encoding: 'utf8' })
+    const files = execSync('git diff --cached --name-only', { cwd: TREE, encoding: 'utf8' })
       .split(/\r?\n/).filter(Boolean)
     const modules = files.filter(f => /^js\/.*\.js$/.test(f))
     mkdirSync(STATE, { recursive: true })

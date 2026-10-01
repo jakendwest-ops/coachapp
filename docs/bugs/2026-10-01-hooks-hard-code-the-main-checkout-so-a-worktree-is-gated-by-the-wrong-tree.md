@@ -3,7 +3,7 @@ id: 2026-10-01-hooks-hard-code-the-main-checkout-so-a-worktree-is-gated-by-the-w
 status: open
 priority: high
 reported: 2026-10-01
-status_detail: "Found by Claude while linting from a git worktree on 2026-10-01, not reported by Jake. VERIFIED BY READING, NOT BY RUNNING: I did not fire a worktree commit with an ownership diff staged to watch the guard fail to refuse it. What I did check: guardrails.mjs runs git diff and git diff --cached with cwd REPO (lines 247, 323, 454) where REPO is a constant naming the main checkout, and os-lint.mjs reads REPO/docs/bugs. The substantive protection DID run on the RPE work (three reviewers, one of whom traced tenancy explicitly); the mechanical gate did not see it."
+status_detail: "HALF FIXED 2026-10-01. guardrails.mjs now judges a commit in the working tree it is made in (resolved from an explicit cd, then the event cwd, and accepted only if git says it shares REPO's common dir): guardrails.selftest.mjs rule 2e ran RED on the old hook (7 cases misbehaved) and GREEN on the new one (73/73), and a live hook run with an ownership line staged in this worktree returned deny. STILL OPEN: os-lint.mjs REPO is still the main checkout, so a worktree lints the main ledger. Found by Claude while linting from a worktree, not reported by Jake."
 closing_conditions: "A test that runs guardrails from a worktree cwd with an ownership-pattern diff staged THERE and asserts the commit is refused, RED before and GREEN after the hooks derive the repo from the event cwd (git rev-parse --show-toplevel) instead of a constant; and os-lint run from a worktree reads THAT worktree's docs/bugs. Naming the gap is not closing it."
 ---
 
@@ -36,6 +36,14 @@ Worktrees are now routine here (three exist), so the gate is skipped for a growi
 It also bit in practice, in the other direction: yesterday I committed a ledger row that the
 `closing-conditions` lint rejects, and never re-ran `os-lint` from the right place — so master carries a RED
 I introduced and did not see.
+
+## Progress
+
+- **guardrails.mjs — fixed 2026-10-01.** One `TREE` resolution; every git command about the commit runs in it;
+  rules 1c, 3 and 5 gained the CoachApp gate they lacked (an unrelated repo is skipped, fail open). Test:
+  `guardrails.selftest.mjs` "rule 2e" — real `git worktree add` repos, one outside the main folder and one nested
+  inside it, each case labelled "unseen" or "not refused". Old hook: 7 of the new cases fail. New hook: all 73 pass.
+- **os-lint.mjs — still open.** `REPO` is a constant, so `BUGS`, `STATUS` and the skill dirs read main.
 
 ## Suggested direction
 
