@@ -104,18 +104,31 @@ test.describe('Runner log-first layout (2026-09-28)', () => {
     expect(await page.evaluate(() => window.__calls)).toEqual(['picker:swap', 'picker:add', 'prefs'])
   })
 
-  test('the set table comes straight after the tabs — nothing sits between them', async ({ page }) => {
+  // UPDATED 2026-09-30 (Jake, round 3: "these boxes should move below the exercise number boxes, and
+  // again use the width of the page" — see js/app-runner.js's #wr-tabs comment for the full move).
+  // #wr-rx now deliberately sits in the gap this test polices; what it still guards is that NOTHING
+  // ELSE does (no Swap/Add row, no stats card — the things it was originally written to catch), that
+  // the boxes immediately follow the tabs rather than living back up in the title column, that they
+  // span the tabs' own full width rather than being squeezed into that column, and that the table is
+  // still reachable without scrolling.
+  test('the set table comes straight after the tabs, with only the full-width prescription boxes between them', async ({ page }) => {
     await startRunner(page)
     const m = await page.evaluate(() => {
       const tabs = document.getElementById('wr-tabs').getBoundingClientRect()
+      const rx = document.getElementById('wr-rx').getBoundingClientRect()
       const firstRow = document.querySelector('#workout-runner input[oninput*="tableRows[0].weight"]').getBoundingClientRect()
-      return { gap: firstRow.top - tabs.bottom, rowBottom: firstRow.bottom, vh: innerHeight }
+      return { rxGap: rx.top - tabs.bottom, afterRxGap: firstRow.top - rx.bottom, rowBottom: firstRow.bottom, vh: innerHeight, rxWidth: rx.width, tabsWidth: tabs.width }
     })
-    // Only the SET / KG / REPS header labels belong in this gap (about 50px). It was 252px: a Swap/Add row, a stats card
-    // and three prescription boxes. The lower bound stops a layout that overlaps the tabs from passing.
-    expect(m.gap, 'space between the tabs and the first set row').toBeGreaterThan(10)
-    expect(m.gap, 'space between the tabs and the first set row').toBeLessThan(75)
+    // #wr-rx follows the tabs immediately — just its own 8px top margin, not a Swap/Add row or a stats card.
+    expect(m.rxGap, 'the prescription boxes sit right under the tabs').toBeGreaterThanOrEqual(0)
+    expect(m.rxGap, 'the prescription boxes sit right under the tabs').toBeLessThan(20)
+    // Only the SET / KG / REPS header labels belong in the gap after the boxes (about 50px). It was 252px before
+    // 2026-09-28: a Swap/Add row, a stats card and three prescription boxes. The lower bound stops an overlap from passing.
+    expect(m.afterRxGap, 'space between the prescription boxes and the first set row').toBeGreaterThan(10)
+    expect(m.afterRxGap, 'space between the prescription boxes and the first set row').toBeLessThan(75)
     expect(m.rowBottom, 'the first set row is on screen without scrolling').toBeLessThan(m.vh * 0.5)
+    // "Use the width of the page" (Jake) — the same full width as the tabs strip, not the narrow title column it used to live in.
+    expect(Math.abs(m.rxWidth - m.tabsWidth), 'the prescription boxes span the same width as the tabs strip').toBeLessThan(2)
   })
 
   // RESTORED TO BOXES 2026-09-30 (Jake, on the merged RPE-autoregulation feature: "these used to be
@@ -280,6 +293,54 @@ test.describe('Runner log-first layout (2026-09-28)', () => {
     await expect(page.locator('#runner-stats-modal .modal-title')).toHaveText(evil)
     expect(await page.evaluate(() => window.__xss), 'nothing ran').toBeUndefined()
     expect(await page.locator('#workout-runner img, #runner-stats-modal img').count(), 'no image element was created from the name').toBe(0)
+  })
+})
+
+// Jake's fourth walkthrough round (2026-09-30), items 1 and 4. Items 2-3 (full-width, moved-below-tabs
+// boxes) are pinned above and in "the prescription sits under the title as bordered boxes...".
+test.describe('Runner header cleanup (2026-09-30)', () => {
+  test('"Exercise N of M" is gone — the numbered tabs already say it — but the timer stays', async ({ page }) => {
+    await startRunner(page)
+    await expect(page.locator('#workout-runner').getByText(/Exercise \d+ of \d+/), 'redundant now the tabs show it').toHaveCount(0)
+    await expect(page.locator('#wr-timer'), 'the timer is not swept away with it').toBeVisible()
+  })
+
+  // (review) FIXED 2026-09-30 (Jake: "there shouldn't be ghost text here unless a previous entry has
+  // been logged" — selected the Effort field specifically). The old placeholder was the scale's own
+  // static range ('1–10' / '0–5'), not real data; scoped to the Effort field only, per Jake's own
+  // answer narrowing this item (the reps/weight ghosts from the prior round are unchanged).
+  test('the effort ghost shows a real previous rating only when the scale matches — never a bare range hint', async ({ page }) => {
+    await loginAsClient(page)
+    await page.evaluate(() => {
+      window._unitPrefs = { ...(window._unitPrefs || {}), weight: 'kg' }
+      const rx = { repsMin: '8', effortType: 'rpe', effortMin: '7', effortMax: '8' }
+      _runner = {
+        clientId: 'layout-spec-effort', startTime: Date.now(), exIdx: 0,
+        lastSession: {
+          'No History': null,
+          'RPE Match': { date: '2026-09-25', sets: [{ set_number: 1, weight_kg: 60, reps_achieved: 8, effort_value: 7, effort_type: 'rpe' }] },
+          'Scale Mismatch': { date: '2026-09-25', sets: [{ set_number: 1, weight_kg: 60, reps_achieved: 8, effort_value: 2, effort_type: 'rir' }] },
+        },
+        exercises: ['No History', 'RPE Match', 'Scale Mismatch'].map((name, i) => ({
+          name, type: 'strength', metricType: 'weight_reps', targetSets: 1, sets_json: [rx],
+          loggedSets: [], exerciseId: null, order_index: i, restSecs: 60,
+        })),
+      }
+      renderRunner()
+    })
+    await expect(page.locator('#workout-runner button:text-is("End")')).toBeVisible()
+
+    // No prior entry at all -- nothing to ghost.
+    await expect(page.locator('#set-0-effort')).toHaveAttribute('placeholder', '')
+
+    // A matching RPE from last time -- the real number, not the old static '1–10' range hint.
+    await page.evaluate(() => runnerJumpTo(1))
+    await expect(page.locator('#set-0-effort')).toHaveAttribute('placeholder', '7')
+
+    // A prior entry exists but was logged in RIR while today prescribes RPE -- showing that "2" as an
+    // RPE would invert its meaning (RIR and RPE run in opposite directions), so it must stay blank.
+    await page.evaluate(() => runnerJumpTo(2))
+    await expect(page.locator('#set-0-effort')).toHaveAttribute('placeholder', '')
   })
 })
 

@@ -286,11 +286,13 @@ async function fetchRunnerLastSession(exName, exerciseId) {
   // to the exact-name match for rows logged before this exercise had a library link.
   // height_cm/distance_m added alongside weight_kg/reps_achieved (2026-07-29) — jump sets never
   // write weight_kg, so they were invisibly excluded from "last session" everywhere below.
+  // effort_value/effort_type added 2026-09-30 so the effort ghost (renderStrengthTable's
+  // ePlaceholder) can show a REAL previous rating instead of the scale's own bare bounds.
   let exRows = exerciseId
-    ? (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m)').eq('exercise_id', exerciseId).in('log_id', logIds)).data
+    ? (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m, effort_value, effort_type)').eq('exercise_id', exerciseId).in('log_id', logIds)).data
     : null
   if (!exRows?.length) {
-    exRows = (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m)').eq('exercise_name', exName).in('log_id', logIds)).data
+    exRows = (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m, effort_value, effort_type)').eq('exercise_name', exName).in('log_id', logIds)).data
   }
   if (!exRows?.length) { _runner.lastSession[exName] = null; return }
 
@@ -306,7 +308,7 @@ async function fetchRunnerLastSession(exName, exerciseId) {
   // likely the actual mechanism behind "Depth Jump last-session history doesn't show": a jump set
   // logged with height_cm:0 and no reps was invisible here even after it saved correctly.
   const sets = (best.workout_log_sets || [])
-    .filter(s => _hasNumVal(s.weight_kg) || _hasNumVal(s.reps_achieved) || _hasNumVal(s.height_cm) || _hasNumVal(s.distance_m))
+    .filter(s => _hasNumVal(s.weight_kg) || _hasNumVal(s.reps_achieved) || _hasNumVal(s.height_cm) || _hasNumVal(s.distance_m) || _hasNumVal(s.effort_value))
     .sort((a, b) => a.set_number - b.set_number)
 
   _runner.lastSession[exName] = sets.length ? { date, sets } : null
@@ -1182,6 +1184,13 @@ function renderStrengthTable(ex) {
     // instances of the falsy-zero bug class, and the RIR-0 test below depends on this being right.
     const wantsEffort = _hasNumVal(rowTgt0?.effortMin) || _hasNumVal(rowTgt0?.effortMax)
     const isRIR = rowTgt0?.effortType === 'rir'
+    // FIXED 2026-09-30 (Jake: "there shouldn't be ghost text here unless a previous entry has been
+    // logged"). The static '0–5'/'1–10' range hint carried no real data -- just the scale's own
+    // bounds, easy to mistake for a suggested number. Gated on the scale actually matching: a
+    // previous RIR rating shown as if it were today's RPE (or vice versa) would be the exact
+    // inversion hazard effort_type exists to prevent (2026-08-11) -- unlike weight/reps, a bare
+    // number here is meaningless without knowing which direction it runs.
+    const ePlaceholder = (prev?.effort_value != null && prev?.effort_type === (isRIR ? 'rir' : 'rpe')) ? String(prev.effort_value) : ''
     // Task 2 fix round 1 (2026-09-29, controller ruling on self-review finding #1): the feature's own
     // primary case — a prescribed top set followed by plain backoff sets — makes an exercise where
     // SOME rows render the effort cell and some don't. The header still grows the RIR/RPE column
@@ -1219,7 +1228,7 @@ function renderStrengthTable(ex) {
           ? `<div style="flex:1;text-align:center;font-size:var(--legacy-text-15, 15px);font-weight:700;color:var(--text)">BW</div>`
           : inCell(i, row, 'weight', { mode:'decimal', step:'0.5', ph:wPlaceholder, unit:'weight' })}
         ${inCell(i, row, 'reps', { mode:'numeric', ph:rPlaceholder })}
-        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: isRIR ? '0–5' : '1–10', min: 0, max: 10 }) : wantsPlaceholder ? '<span style="flex:1" aria-hidden="true"></span>' : ''}
+        ${wantsEffort ? inCell(i, row, 'effort', { mode:'decimal', step:'0.5', ph: ePlaceholder, min: 0, max: 10 }) : wantsPlaceholder ? '<span style="flex:1" aria-hidden="true"></span>' : ''}
         ${inDone(i, row, isCurrent)}${inDel(i)}
       </div>${basisNote}</div>`
   }).join('')
@@ -1290,17 +1299,14 @@ function renderRunner() {
       <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
           <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <span style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Exercise ${_runner.exIdx+1} of ${_runner.exercises.length}</span>
-              <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)">· <span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
+            <!-- "Exercise N of M" removed 2026-09-30 (Jake: "redundant... we can now see how many
+                 exercises there are due to the numbered boxes" — #wr-tabs below already shows it). -->
+            <div style="margin-bottom:4px">
+              <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)"><span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
             <div id="wr-title" style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
-            <!-- Enlarged 2026-09-30 alongside wr-rx (Jake: "these need to be made more clear"): 11px was
-                 easy to miss next to the now-boxed prescription below it. -->
             ${isTable && Number.isFinite(ex._liveE1RM) ? `<div style="margin-top:6px"><span id="ex-e1rm-chip" style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--accent);padding:4px 10px;border-radius:999px;background:rgba(99,102,241,.12)">Est. 1RM: ${fmtWeight(ex._liveE1RM, { spaced: true, decimals: 1 })}</span></div>` : ''}
-            ${isTable
-              ? _renderPrescriptionLine(ex)
-              : (ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
+            ${!isTable && (ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
             <!-- The set table has the Next bar at the bottom, which names the next exercise; cardio has no such bar. -->
             ${!isTable && nextEx ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:4px">Next: <span style="font-weight:600">${escapeHtml(nextEx.name)}</span></div>` : ''}
           </div>
@@ -1320,6 +1326,14 @@ function renderRunner() {
              is gone. A finished exercise you are ON keeps its green and gets a white inner ring, so "done"
              and "here" both show. -->
         ${_runner.exercises.length > 1 ? `<div id="wr-tabs" style="position:relative;display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px">${_runner.exercises.map((e,i)=>`<button type="button" onclick="runnerJumpTo(${i})" title="${escapeHtml(e.name||'Exercise '+(i+1))}${doneFlags[i]?' — done':''}"${i===_runner.exIdx?' aria-current="step"':''} style="flex-shrink:0;width:40px;height:40px;border-radius:var(--radius-sm, 8px);border:none;display:flex;align-items:center;justify-content:center;font-size:var(--text-base, 13px);font-weight:800;cursor:pointer;background:${doneFlags[i]?'var(--success)':i===_runner.exIdx?'var(--accent)':'var(--surface-2)'};color:${doneFlags[i]||i===_runner.exIdx?'#fff':'var(--text-muted)'};box-shadow:${doneFlags[i]&&i===_runner.exIdx?'inset 0 0 0 3px rgba(255,255,255,.85)':'none'}">${i+1}</button>`).join('')}</div>` : ''}
+        <!-- MOVED 2026-09-30 (Jake: "these boxes should fill the width of the row... and move below
+             the exercise number boxes"). Used to live inside the flex:1 title column above, which
+             only gets the width left over after the ⋯/End buttons -- #wr-tabs is a sibling of that
+             whole row instead, so it already spans the header's full width; moving wr-rx out to sit
+             alongside it (same padded header, same level) gives it that same full width for free,
+             rather than needing its own width override that would have fought the title column's
+             flex-basis. Also now the thing it was crowding when it still lived above (#wr-title).-->
+        ${isTable ? _renderPrescriptionLine(ex) : ''}
         ${_runner.restRemaining != null && _runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx ? `
         <div onclick="runnerJumpTo(${_runner._restForExIdx})" style="display:flex;align-items:center;gap:8px;margin-top:8px;min-height:44px;padding:10px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);border:1px solid var(--accent);cursor:pointer;box-sizing:border-box">
           <span style="font-size:var(--text-md, 12px);font-weight:600;color:var(--text-muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(_runner.exercises[_runner._restForExIdx]?.name || '')} — ${_runner._restPendingFire ? 'rest done' : `<span id="wr-rest-chip-countdown" style="font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums">${fmtRestCountdown(_runner.restRemaining)}</span> rest left`} · tap to return</span>

@@ -212,7 +212,10 @@ test.describe('Runner exercise tabs and Next exercise (2026-09-28)', () => {
   test('there is no Back button — the numbered tabs are the way back', async ({ page }) => {
     await startRunner(page)
     await page.evaluate(() => runnerJumpTo(1))
-    await expect(page.locator('#workout-runner').getByText('Exercise 2 of 4')).toBeVisible()
+    // Sanity: the jump actually landed on exercise 2 -- "Exercise N of M" itself was removed
+    // 2026-09-30 (Jake: redundant now the numbered tabs show position), so the active tab is now
+    // this test's own proof the render happened.
+    await expect(page.locator('#wr-tabs button[aria-current="step"]')).toHaveText('2')
     await expect(page.locator('#workout-runner button[onclick="runnerGoBack()"]'), 'this used to render whenever you were past the first exercise').toHaveCount(0)
     await page.locator('#workout-runner button[onclick="runnerJumpTo(0)"]').click()
     expect(await at(page), 'tapping tab 1 goes back to exercise 1').toBe(0)

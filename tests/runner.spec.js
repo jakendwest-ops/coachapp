@@ -323,8 +323,11 @@ test.describe('Workout runner (client)', () => {
     await wk.start()
     // Runner shows End button + at least one exercise label
     await expect(page.locator('button:text-is("End")')).toBeVisible({ timeout: 12000 })
-    // Exercise counter (e.g. "Exercise 1 of N") confirms runner is populated
-    await expect(page.locator('text=/Exercise \\d+ of \\d+/')).toBeVisible({ timeout: 8000 })
+    // "Exercise N of M" removed 2026-09-30 (Jake: redundant with the numbered tabs) -- #wr-title
+    // showing a REAL name, not its own 'Exercise name' placeholder fallback, is what "runner is
+    // populated" actually means now; it's also the thing this test's own name already promises.
+    await expect(page.locator('#wr-title')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('#wr-title')).not.toHaveText('Exercise name')
   })
 
   test('can log a strength set and see rest timer', async ({ page }) => {
@@ -859,7 +862,10 @@ test.describe('Workout runner (client)', () => {
       expect(state.exIdx).toBe(1)
       expect(state.firstExLogged).toBe(1)
       expect(state.name).toBe('[E2E] Draft Resume Test')
-      await expect(page.locator('text=/Exercise 2 of \\d+/')).toBeVisible({ timeout: 5000 })
+      // "Exercise 2 of N" removed 2026-09-30 -- state.exIdx above already proves the restore is
+      // correct; this is the UI-level half, now via the numbered tab that replaced that text
+      // (Jake: the tabs already say which exercise you're on).
+      await expect(page.locator('#wr-tabs button[aria-current="step"]')).toHaveText('2', { timeout: 5000 })
     } finally {
       await page.evaluate(() => { if (typeof discardRunner === 'function') discardRunner() })
       await page.evaluate((clientId) => localStorage.removeItem(`_runnerDraft_${clientId}`), clientId)
