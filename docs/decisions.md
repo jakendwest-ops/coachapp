@@ -12,6 +12,22 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-01 — Hooks and servers resolve the tree they are RUN in; a dev server is a network service; a cleared ticked set does not count.**
+Three choices from one day of fixing the tooling the RPE work exposed. (1) `guardrails.mjs` and `os-lint.mjs` named the
+main checkout in a constant, so a commit or a lint made from a git worktree was judged against the WRONG tree (the
+unreviewed-ownership block never saw a worktree's diff). Both now resolve the tree from the cwd and accept it only if git says
+it shares the main repo's common dir; anything else falls back to main / skips the rule (fail open — this hook has refused the
+legitimate user nine times). A lint of another tree is read-only for the shared size baselines (they ratchet DOWN; an older
+branch would re-pin the ceiling under main). The hooks themselves still run from main's copy (settings.json), so the fix is
+live only once it is on master. (2) `.claude/launch.json`'s server and the scratch Node server both served `/.env`; the latter
+bound every interface. Both now refuse dot segments, 8.3 short names, `:` streams and unlisted file types; the Node one is
+`scripts/preview-server.mjs` (loopback only, Host-checked), and ONE attack test runs against both. **Rejected:** a bare
+"deny paths starting with a dot" (misses `ENV~1`, found by trying it). Serving an OLDER module on purpose (a neuter run) now
+needs the explicit `ALLOW_SERVER_MODULE_MISMATCH=1`, because `global-setup` now compares every served script/stylesheet, not only
+index.html. (3) A ticked set whose reps or weight is cleared afterwards is dropped from the session AND un-ticked
+(`_rowIncompleteReason`, shared with the tick). **Rejected:** refusing at the edit (needs a re-render per keystroke, which
+round 1 showed tears the table from under taps). This one is Claude's call, flagged for Jake — it is the single place to flip.
+
 **2026-10-01 — The runner's effort field does NOT re-render on edit; it follows the same "edit, then re-tick" contract as weight and reps.**
 Review round 1 found that typing an RPE *after* ticking the top set did nothing, and the first fix added an
 `onchange` that called `renderRunner()` on a ticked row's effort field. Round 2 showed why that cannot stay:

@@ -163,6 +163,19 @@ await step(() => expectThrow('same index.html, a referenced module is not served
   tmpIndex(coachApp(100), { 'js/app-runner.js': 'present locally' })))
 await close(s)
 
+// 11-12. The one deliberate way past the module comparison — a red / neuter run serving an OLDER module on purpose.
+// It must excuse ONLY module bytes, never the index.html comparison, and it must be opt-in by name.
+s = await serve(withAssets({ '/js/app-runner.js': 'const x = "OTHER CHECKOUT"' }))
+process.env.ALLOW_SERVER_MODULE_MISMATCH = '1'
+await step(() => expectPass('modules differ but ALLOW_SERVER_MODULE_MISMATCH is set (a neuter run)',
+  tmpIndex(coachApp(100), { 'js/app-runner.js': 'const x = "THIS CHECKOUT"' })))
+await close(s)
+
+s = await serve((req, res) => { res.setHeader('content-type', 'text/html'); res.end(coachApp(96)) })
+await step(() => expectThrow('the same opt-in does NOT excuse a different index.html', 'WRONG DIRECTORY', tmpIndex(coachApp(100))))
+await close(s)
+delete process.env.ALLOW_SERVER_MODULE_MISMATCH
+
 for (const d of tmpDirs) { try { fs.rmSync(d, { recursive: true, force: true }) } catch {} }
 
 if (failures) {
@@ -174,5 +187,5 @@ if (failures) {
   // person reading 127 would go looking for a missing command rather than a failed check.
   process.exitCode = 1
 } else {
-  console.log('\nAll 10 states verified: it refuses eight distinct bad servers and accepts the good ones.')
+  console.log('\nAll 12 states verified: it refuses nine distinct bad servers and accepts the good ones.')
 }

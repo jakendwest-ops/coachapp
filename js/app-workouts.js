@@ -306,6 +306,12 @@ function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = 
     if (!lo && !hi) return null
     return (lo && hi && lo !== hi ? `${lo}–${hi}` : (lo || hi)) + unit
   }
+  // A prescribed effort, "RPE 8–9" / "RIR 0". Not range(): that one tests truthiness (`min || null`), which drops a real 0
+  // — RIR 0, "to failure" — for every caller; effort goes through _effortRange (app-core), where 0 is present.
+  const effortText = s => {
+    const r = _effortRange(s.effortMin, s.effortMax)
+    return r === null ? null : (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + r
+  }
   // Legacy key fallbacks (`s.rest`/`s.reps`/`s.rpe`) come from openTemplate's copy, which supported
   // an older sets_json shape the other copy had already dropped. Merged in rather than lost.
   // Rest can be stored as mm:ss OR as a bare seconds NUMBER (the old openTemplate had a typeof-number
@@ -348,8 +354,7 @@ function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = 
     // Jump. A "rep" here is a contact, so label it jumps rather than reps. Jump DISTANCE stays
     // metric-only (no toggle scoped for it yet); jump HEIGHT respects the preference.
     const target = s.targetHeightCm ? fmtJumpHeight(s.targetHeightCm) : s.targetDistanceM + 'm'
-    const jumpEffort = s.effortMin
-      ? (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + range(s.effortMin, s.effortMax) : null
+    const jumpEffort = effortText(s)
     const jumpReps = range(s.repsMin, s.repsMax)
     parts = [target, jumpReps ? jumpReps + ' jumps' : null, jumpEffort]
   } else {
@@ -369,9 +374,7 @@ function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = 
     // of _runnerTargetCols' label and of renderStrengthTable's basisRM (multi-agent review,
     // 2026-09-30 — the first fix taught one of the three and left these two behind).
     const intensity = range(s.intensityMin, s.intensityMax, s.intensityBasis === 'topSet' ? '% of top set' : '% 1RM')
-    const effort = s.effortMin
-      ? (s.effortType === 'rir' ? 'RIR ' : 'RPE ') + range(s.effortMin, s.effortMax)
-      : (s.rpe ? 'RPE ' + s.rpe : null)
+    const effort = effortText(s) ?? (s.rpe ? 'RPE ' + s.rpe : null)
     parts = [repsPart, weight, intensity, effort, s.tempo ? `@${s.tempo}` : null]
   }
   // Appended rather than folded into the reps token: on a unilateral lift BOTH the reps and the load
@@ -478,7 +481,10 @@ function _cleanTemplateSets(sets, derived, metricType) {
     intensityMin: isTop ? null : (s.intensityMin || null),
     intensityMax: isTop ? null : (s.intensityMax || null),
     restMin: s.restMin || null, restMax: s.restMax || null,
-    effortType: s.effortType || 'rpe', effortMin: s.effortMin || null, effortMax: s.effortMax || null,
+    // _hasNumVal, not `||`: a prescribed effort of 0 (RIR 0, "to failure") is real and `0 || null` is null.
+    effortType: s.effortType || 'rpe',
+    effortMin: _hasNumVal(s.effortMin) ? s.effortMin : null,
+    effortMax: _hasNumVal(s.effortMax) ? s.effortMax : null,
     tempo: s.tempo || null, countdown: s.countdown || null,
     duration: s.duration || null,
     // `distance` (km) is carried through untouched so legacy templates keep their original meaning;
@@ -2154,7 +2160,7 @@ function renderTemplateSets(containerId, type) {
           ${cell('Duration (mm:ss)', gmini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${escapeHtml(String(s.duration||'0:00'))}"`))}
           ${cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
-          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
       ` : isJump ? `
         <div class="ts-grid">
@@ -2163,7 +2169,7 @@ function renderTemplateSets(containerId, type) {
             : cell('Target distance (m)', gmini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${escapeHtml(String(s.targetDistanceM))}"`:'')))}
           ${cell('Jumps per set', gmini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${escapeHtml(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMax?` value="${escapeHtml(String(s.repsMax))}"`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
-          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
       ` : `
         <div class="ts-grid">
@@ -2174,7 +2180,7 @@ function renderTemplateSets(containerId, type) {
                above for why. */''}
           ${(s.bodyweight || (i === 0 && topSetActive)) ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
-          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="1" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
         ${/* Fix round 1 (Important finding 1): the FIRST version of this swapped out the whole
              "+ More targets" block for the note, which took Tempo and Countdown down with it even

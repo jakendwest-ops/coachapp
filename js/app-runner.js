@@ -709,12 +709,8 @@ function _prevSetsByIndex(ex) {
   return map
 }
 
-// A numeric value is "present" whenever it isn't null/undefined/''. A real 0 (a bodyweight-only
-// load, or a 0cm/0m jump attempt) must count as present — `!w`/`w &&` treat 0 as missing, which
-// silently blocked entry and then silently dropped the value on save. Found for weight (Jake,
-// 2026-07-29); the identical shape existed for jump height_cm/distance_m too, reported the same day
-// once the weight fix shipped and Jake tried 0 on a Depth Jump instead.
-const _hasNumVal = w => w != null && w !== ''
+// _hasNumVal ("a numeric value is present unless it is null/undefined/'' — a real 0 counts") moved to app-core.js
+// 2026-10-01 so the builder and the runner share one definition; the history of the 0-is-real bugs is written there.
 
 // The ONE definition of "an effort value we are willing to store or estimate from": a finite number
 // in 0..10, or null. Both RPE (1-10) and RIR (0-5) sit inside it, and 0 is REAL — RIR 0 is "to
@@ -760,6 +756,9 @@ function _syncLoggedSetsFromTable(ex) {
   const mt = _exMetricType(ex)
   // Index preserved BEFORE the filter: sets_json is keyed by real row position, so a skipped set
   // would otherwise shift every later row onto the wrong prescription.
+  // A ticked row whose required field was cleared afterwards is no longer a logged set: leave it out AND un-tick it, so
+  // the finish screen and the save agree (both read this) and the table stops claiming it is done. See _rowIncompleteReason.
+  ex.tableRows.forEach(r => { if (r.done && _rowIncompleteReason(ex, r)) r.done = false })
   ex.loggedSets = ex.tableRows
     .map((r, i) => ({ r, i }))
     .filter(({ r }) => r.done)
@@ -778,6 +777,22 @@ function _syncLoggedSetsFromTable(ex) {
     })
 }
 
+// The minimum a row must carry to COUNT as a logged set, as the toast text for what is missing — or null when it is
+// complete. ONE rule, used at tick time (toggleTableSet) and again whenever the live table is read back
+// (_syncLoggedSetsFromTable). It used to live only in the tick, so editing a TICKED row afterwards was unguarded: clearing
+// the reps saved a set with a weight and no reps, and clearing weight and reps with an effort kept saved an effort-only
+// junk row (2026-10-01). Tests: tests-node/ticked-row-edit.test.mjs.
+function _rowIncompleteReason(ex, row) {
+  const mt = _exMetricType(ex)
+  if (mt === 'unilateral') return (!row.leftReps && !row.rightReps) ? 'Enter reps first' : null
+  if (mt === 'timed_hold') return (!row.duration || row.duration === '0:00') ? 'Enter a duration first' : null
+  if (mt === 'jump_height') return !_hasNumVal(row.height_cm) ? 'Enter a height first' : null
+  if (mt === 'jump_distance') return !_hasNumVal(row.distance_m) ? 'Enter a distance first' : null
+  if (!row.reps) return 'Enter reps first'
+  if (!ex.bodyweight && !_hasNumVal(row.weight)) return 'Enter weight first'
+  return null
+}
+
 function toggleTableSet(rowIdx) {
   const ex = _runner.exercises[_runner.exIdx]
   const row = ex.tableRows?.[rowIdx]
@@ -791,19 +806,8 @@ function toggleTableSet(rowIdx) {
     // _syncLoggedSetsFromTable turns '' into null, saveRunnerSession then omits the value, and the
     // set is invisible to PB detection and shows '—' as next session's ghost text. Grey ghost text
     // reads like a value, so this is easy to do by accident.
-    const mt = _exMetricType(ex)
-    if (mt === 'unilateral') {
-      if (!row.leftReps && !row.rightReps) { showToast('Enter reps first', 'warn'); return }
-    } else if (mt === 'timed_hold') {
-      if (!row.duration || row.duration === '0:00') { showToast('Enter a duration first', 'warn'); return }
-    } else if (mt === 'jump_height') {
-      if (!_hasNumVal(row.height_cm)) { showToast('Enter a height first', 'warn'); return }
-    } else if (mt === 'jump_distance') {
-      if (!_hasNumVal(row.distance_m)) { showToast('Enter a distance first', 'warn'); return }
-    } else {
-      if (!row.reps) { showToast('Enter reps first', 'warn'); return }
-      if (!ex.bodyweight && !_hasNumVal(row.weight)) { showToast('Enter weight first', 'warn'); return }
-    }
+    const missing = _rowIncompleteReason(ex, row)
+    if (missing) { showToast(missing, 'warn'); return }
     _unlockAudio()
     _unlockSpeech()
     row.done = true
@@ -846,7 +850,17 @@ function deleteTableRow(rowIdx) {
   if (!ex.tableRows || ex.tableRows.length <= 1) return // always leave at least one row
   ex.tableRows.splice(rowIdx, 1)
   ex.targetSets = ex.tableRows.length
+  // Prescriptions are keyed by row POSITION (the ghost/target lookups, the top set at index 0, the effort scale a logged
+  // set is saved under — _syncLoggedSetsFromTable). Splicing only the rows made every later row inherit the prescription
+  // of the row above it, and deleting the TOP-SET row crowned the old row 1 as the top set: a live e1RM from a backoff
+  // set, backoff targets resolved from it, an effort_type read at the wrong index. Remove the deleted row's own
+  // prescription so each later row keeps ITS own — as a COPY, since sets_json came from the fetched template row. Left
+  // alone when there is no prescription at that index (an appended row) or only one for the whole exercise.
+  if (Array.isArray(ex.sets_json) && ex.sets_json.length > 1 && rowIdx < ex.sets_json.length) {
+    ex.sets_json = ex.sets_json.filter((_, i) => i !== rowIdx)
+  }
   _syncLoggedSetsFromTable(ex)
+  _recomputeLiveE1RM(ex)   // deleting the top set must also drop the chip it fed, not leave its estimate on screen
   renderRunner()
 }
 
@@ -933,7 +947,9 @@ function _buildTargetCols(tgt, ex) {
   }
   // Value carries the NUMBER only — the column's own label already says RPE or RIR, so prefixing
   // the value with it just says the same word twice ("RPE / RPE 8–9"). Jake, 2026-07-11.
-  if (tgt.effortMin) cols.push({ val: escapeHtml(tgt.effortMin+(tgt.effortMax&&tgt.effortMax!==tgt.effortMin?'–'+tgt.effortMax:'')), label: tgt.effortType==='rir'?'RIR':'RPE' })
+  // _effortRange, not a truthy test: a prescribed 0 (RIR 0, "to failure") is the most meaningful value on that scale.
+  const effortTxt = _effortRange(tgt.effortMin, tgt.effortMax)
+  if (effortTxt !== null) cols.push({ val: escapeHtml(effortTxt), label: tgt.effortType==='rir'?'RIR':'RPE' })
   if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: escapeHtml(tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:'')), label: 'REST' })
   if (tgt.tempo && takesLoad) cols.push({ val: escapeHtml(tgt.tempo), label: 'TEMPO' })
   return { cols, needsOneRM }
@@ -1210,12 +1226,15 @@ function renderStrengthTable(ex) {
     // after an edit, so effort now has the same contract, and this line is what makes it discoverable.
     // "Usable" is _effortOrNull's definition, so a typed 88 lands here too rather than on case 3.
     //
-    // If row 0 is not a top set at all there is no set to log; that also reads as case 1. It is
-    // reachable only from legacy or hand-edited sets_json, and the BUILDER already warns about it at
-    // authoring time (app-workouts.js's topSetWarning), which is where it can actually be fixed.
+    // A FOURTH situation: row 0 is not a top set at all, so there is no set to log and "Log the top set first" would send
+    // the lifter looking for something that does not exist. It is reachable from legacy or hand-edited sets_json (which
+    // the BUILDER warns about at authoring time, app-workouts.js's topSetWarning) and — since 2026-10-01 — by deleting the
+    // top-set row mid-session (deleteTableRow removes its prescription, so the backoffs are left with nothing to key on).
     const topRow0 = ex.tableRows?.[0]
-    const topLogged = !!(ex.sets_json?.[0]?.isTopSet && topRow0?.done)
-    const basisNoteText = !topLogged ? 'Log the top set first'
+    const hasTopSet = !!ex.sets_json?.[0]?.isTopSet
+    const topLogged = !!(hasTopSet && topRow0?.done)
+    const basisNoteText = !hasTopSet ? 'No top set left in this workout — enter the weight yourself'
+      : !topLogged ? 'Log the top set first'
       : _effortOrNull(topRow0.effort) === null
         ? `Enter the top set's ${ex.sets_json[0].effortType === 'rir' ? 'RIR' : 'RPE'} (0–10), then tick it again`
         : "Can't estimate from this set"

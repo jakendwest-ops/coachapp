@@ -23,7 +23,10 @@ curl -s http://localhost:3001/ | grep -o '<title>[^<]*</title>'
 - `<title>CoachApp</title>` → done, it's up. Use it.
 - Empty / connection refused → start it: run the **exact** `runtimeArgs` command from
   `C:/Users/jaken/OneDrive/coachapp/.claude/launch.json` (a PowerShell `HttpListener` on port 3001)
-  via Bash or PowerShell with `run_in_background: true`, then re-run the curl above.
+  via Bash or PowerShell with `run_in_background: true`, then re-run the curl above. **The root it serves is the
+  shell's cwd**, so from a git worktree start it with the worktree as the cwd — or use
+  `node scripts/preview-server.mjs . <port>` there (loopback only, refuses dotfiles). Never write a throwaway server: the one
+  used for worktree runs bound every interface and served `/.env`, i.e. the test accounts' passwords (2026-10-01).
 - Real HTML but the **wrong** `<title>` → a dead config (e.g. PTHub, ended) is being served. Remove that config
   from `.claude/launch.json` entirely — do not just reorder it — then restart. This step blocks until
   CoachApp *specifically* is confirmed serving.

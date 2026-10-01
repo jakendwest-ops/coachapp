@@ -1,9 +1,9 @@
 ---
 id: 2026-10-01-delete-top-set-row-shifts-prescriptions-onto-a-computed-load
-status: open
+status: closed
 priority: low
 reported: 2026-10-01
-status_detail: "Found by the multi-agent review of the RPE top-set work (2026-09-30 / 2026-10-01), not reported by Jake. Reported by Agent C (round 1); NOT independently re-verified. The index model (sets_json keyed by row position) is pre-existing; the RPE work widens its blast radius from a ghost placeholder to a computed training load and a saved effort_type."
+status_detail: "FIXED 2026-10-01 by tests that ran RED on the old code and GREEN on the new. tests-node/delete-table-row.test.mjs: 3 of 7 RED before (deleting the top-set row crowned the old row 1 and left its estimate; a middle delete shifted prescriptions; an RIR row logged as RPE), 7/7 after. tests/runner-edit-delete-2026-10-01.spec.js (real delete button): RED on the old modules because the estimate chip of the DELETED set stayed on screen, GREEN on the new. deleteTableRow removes the deleted row's own prescription (on a copy), recomputes the estimate, and the target note now says 'No top set left in this workout' instead of sending the lifter after a set that no longer exists. deleteTableRow is the only site that removes rows (grepped). Not Jake-reported."
 closing_conditions: "A test that deletes the top-set row in the runner and asserts no other row is treated as the top set (no estimate, no chip, no effort_type taken from the wrong prescription), RED before and GREEN after deleteTableRow keeps sets_json aligned with tableRows or the runner stops deriving anything from a shifted index."
 ---
 

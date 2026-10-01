@@ -1,9 +1,9 @@
 ---
 id: 2026-10-01-edits-after-a-tick-bypass-the-tick-time-required-field-guard
-status: open
+status: closed
 priority: low
 reported: 2026-10-01
-status_detail: "Found by the multi-agent review of the RPE top-set work (2026-09-30 / 2026-10-01), not reported by Jake. Verified by reading both functions (not run in a browser): toggleTableSet requires weight and reps at tick time, but the live-table re-sync now in _loggedExercises() reads whatever the fields hold at save. Made MORE reachable by the round-2 re-sync; the underlying gap (post-tick edits are unguarded) predates it."
+status_detail: "FIXED 2026-10-01 with a decision made by Claude and FLAGGED FOR JAKE: a ticked row that no longer satisfies the tick-time rule is not a logged set; it is left out of loggedSets (so the finish screen and the save agree) and un-ticked (so the table stops claiming it is done). One predicate, _rowIncompleteReason, now serves the tick and the read-back. Tests that ran RED on the old code and GREEN on the new: tests-node/ticked-row-edit.test.mjs (6 of 9 RED before, 9/9 after) and tests/runner-edit-delete-2026-10-01.spec.js (a half-cleared set was stored as a second row; now exactly one set). If Jake would rather the cleared set STAY counted, or be refused at the edit, this is the one place to change. Not Jake-reported."
 closing_conditions: "A test that ticks a set, then clears its reps (and separately its weight), saves, and asserts what is stored, RED before and GREEN after a decided behaviour: either refuse/untick a row that no longer satisfies the tick-time rule, or drop it from loggedSets so the finish screen and the save agree."
 ---
 
@@ -23,3 +23,11 @@ the source of truth, which is right for a correction but means a CLEARED field i
 
 All need a deliberate clear on an already-ticked row, so this is rare. It needs a DECISION (refuse, untick,
 or drop) rather than a guess, which is why it is a row and not a patch.
+
+## Fixed 2026-10-01
+
+The ledger wanted a decision (refuse, untick, or drop) rather than a guess. Chosen: **drop and untick at read-back**.
+Refusing at the edit would need a re-render per keystroke, which tore the table out from under taps in round 1; dropping at
+read-back keeps the finish screen and the save identical by construction. The un-tick is visible the next time the table is
+drawn. Cost: a lifter who clears a ticked set's reps and then finishes loses that set from the session without a prompt.
+That is a deliberate trade, named here so it can be reversed.

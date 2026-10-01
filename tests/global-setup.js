@@ -97,7 +97,8 @@ async function assertPreviewServer (base, localIndexPath = LOCAL_INDEX) {
       `    ${vers(body) || '(no module version tags found)'}\n\n` +
       `Usual cause: running from a git worktree while .claude/launch.json points at another root.\n` +
       `The server prints the directory it serves on startup — check that line, or set\n` +
-      `PREVIEW_SERVER_CMD to a PLAIN static server rooted in this directory (one that injects a\n` +
+      `PREVIEW_SERVER_CMD to a PLAIN static server rooted in this directory — \`node scripts/preview-server.mjs . 3001\`\n` +
+      `is one that refuses dotfiles and binds loopback only (one that injects a\n` +
       `live-reload snippet — live-server, browser-sync, vite — serves bytes that differ from the files\n` +
       `and will trip this same check).\n`
     )
@@ -136,6 +137,14 @@ async function assertPreviewServer (base, localIndexPath = LOCAL_INDEX) {
       different.push(`${rel} (${err.message})`)
     }
   }))
+  // The ONE deliberate way past the module comparison: a red / neuter run serves this tree's index.html over an OLDER
+  // copy of specific modules (scripts/preview-server.mjs OVERRIDE_DIR) to watch a test fail on the code it guards.
+  // Opt-in by name, loud, and it excuses only the module bytes — never the index.html comparison above.
+  if (different.length && process.env.ALLOW_SERVER_MODULE_MISMATCH) {
+    console.log(`  [preview-server] WARNING: serving ${different.length} file(s) that differ from this checkout (${different.join(', ')}) — ` +
+      'continuing only because ALLOW_SERVER_MODULE_MISMATCH is set. Results describe the SERVED code, not this checkout.')
+    return
+  }
   if (different.length) {
     throw new Error(
       `\n\nRIGHT APP, WRONG DIRECTORY on ${base} — index.html matches, the code does not\n` +
@@ -144,7 +153,8 @@ async function assertPreviewServer (base, localIndexPath = LOCAL_INDEX) {
       different.map(f => `    ${f}`).join('\n') + '\n\n' +
       `Usual cause: running from a git worktree while .claude/launch.json (or a server already\n` +
       `listening on this port) points at another root. The server prints the directory it serves on\n` +
-      `startup. A plain static server rooted in this directory is the fix; one that injects a\n` +
+      `startup. A plain static server rooted in this directory is the fix (\`node scripts/preview-server.mjs . 3001\`\n` +
+      `— loopback only, refuses dotfiles; do not write a throwaway one that binds every interface); one that injects a\n` +
       `live-reload snippet serves bytes that differ from the files and will trip this check too.\n`
     )
   }

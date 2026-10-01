@@ -30,3 +30,14 @@ carries no CORS headers, so a cross-origin page cannot read the body. It is a lo
 
 Note the safety against `..` traversal comes from http.sys canonicalising the path before the handler
 sees it, not from anything in this config — a port of the server to another runtime would lose it.
+
+## And the throwaway server I had been running instead (found 2026-10-01, same day)
+
+The Node server this worktree's suite had been using (a scratch file used through `PREVIEW_SERVER_CMD`) bound **every network
+interface** and served any file under the root: `GET /.env` returned the worktree's `.env` (the three E2E test accounts'
+emails and passwords) with HTTP 200 while it was running. It ran for hours on port 3002; `.git/config` was 404 only
+because a worktree's `.git` is a file. It is replaced by `scripts/preview-server.mjs`: loopback only, answers only a loopback
+`Host` header, same refusal rules as launch.json, and the one attack test (`scripts/check-launch-server.selftest.mjs`) now
+runs against BOTH servers: 12 cases RED on the old scratch server, green on the new one, each rule proven by a mutant that
+drops only it (dot segment, short name, `:` data stream, extension allowlist, Host). `checks.sh` rule 9s runs it on every
+push. Neuter runs that serve an older module on purpose now need the explicit, loud `ALLOW_SERVER_MODULE_MISMATCH=1`.

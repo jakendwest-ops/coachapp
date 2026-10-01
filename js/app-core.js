@@ -736,6 +736,25 @@ function escapeAttr(str) {
     .replace(/\r/g, '\\r'))
 }
 
+// A numeric value is "present" whenever it isn't null/undefined/''. A real 0 (a bodyweight-only
+// load, or a 0cm/0m jump attempt, or RIR 0 — "to failure") must count as present — `!w`/`w &&` treat 0
+// as missing, which silently blocked entry and then silently dropped the value on save. Found for weight
+// (Jake, 2026-07-29); the identical shape existed for jump height_cm/distance_m too, reported the same day
+// once the weight fix shipped and Jake tried 0 on a Depth Jump instead. Moved here from app-runner.js
+// 2026-10-01 so the builder (app-workouts) and the runner share ONE definition instead of each growing its own.
+const _hasNumVal = w => w != null && w !== ''
+
+// A PRESCRIBED effort as text: "8", "7–9", "0", "0–2", or null when neither end is set. The ONE formatter for the
+// builder's set summary, the jump summary and the runner's target bar — they each had their own truthy test
+// (`s.effortMin ? …`, `tgt.effortMin && …`, range()'s `min || null`), and all three dropped a real 0 (2026-10-01).
+// Takes numbers or the strings the builder inputs hand back. Tests: tests-node/effort-zero.test.mjs.
+const _effortRange = (min, max) => {
+  const lo = _hasNumVal(min) ? String(min) : null
+  const hi = _hasNumVal(max) ? String(max) : null
+  if (lo === null && hi === null) return null
+  return lo !== null && hi !== null && lo !== hi ? `${lo}–${hi}` : (lo ?? hi)
+}
+
 // Mount a modal/overlay, REPLACING any existing node with the same id.
 //
 // Several modals build their overlay, `await` a fetch, and only then append — a genuine race window,

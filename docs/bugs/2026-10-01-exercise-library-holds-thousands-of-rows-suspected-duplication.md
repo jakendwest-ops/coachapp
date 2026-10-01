@@ -1,9 +1,9 @@
 ---
 id: 2026-10-01-exercise-library-holds-thousands-of-rows-suspected-duplication
-status: open
+status: fixed-awaiting-jake
 priority: high
 reported: 2026-10-01
-status_detail: "REPORTED BY JAKE 2026-10-01 (mid-session, after I mentioned that the E2E PT account owns 6,275 exercises while the exercise picker returns only 200): 'the account shouldnt have nearly 7000 exercises, this appears to be a duplication bug'. Investigation not yet complete when this row was written (intake rule: the row exists before the work starts). What is MEASURED so far: the E2E PT account (a test account, not Jake's own) sees 6,275 exercises through RLS; a picker-style query returns 200."
+status_detail: "REPORTED BY JAKE 2026-10-01 (mid-session, after I mentioned that the E2E PT account owns 6,275 exercises while the exercise picker returns only 200): 'the account shouldnt have nearly 7000 exercises, this appears to be a duplication bug'. Investigation not yet complete when this row was written (intake rule: the row exists before the work starts). What is MEASURED so far: the E2E PT account (a test account, not Jake's own) sees 6,275 exercises through RLS; a picker-style query returns 200. UPDATE 2026-10-01: the cause was TEST DEBRIS (see Findings) and it is fixed at the source; five app-side duplication paths are fixed; the sixth (a database unique index) is NOT done and needs Jake to run SQL. Awaiting Jake's confirmation."
 closing_conditions: "Jake confirms, OR a test goes RED before and GREEN after the fix. Not closed by the picker/Library read being paged (that fixes what is VISIBLE, not why there are thousands of rows), and not closed by deleting the rows."
 ---
 
@@ -66,3 +66,24 @@ Its dry run says "exercises clean / No debris found" for an account holding 6,27
 6. Smaller: `.ilike('name', trimmed)` is used as an EQUALITY test, so a `_` or `%` in an exercise name acts
    as a wildcard and can match a different exercise.
 
+## Fixed 2026-10-01 (awaiting Jake)
+
+**The 6,275 rows.** Debris from `tests/runner.spec.js`, which created a timestamped exercise per run and had no cleanup, and
+from older specs using untagged names. Fixed at the source: its exercises are now tagged `[E2E]` and a file-level `afterEach`
+removes them (as the PT, in a separate context); the same for `log-session-zero`. `scripts/reap-e2e-debris.mjs` now matches the
+tagged AND the two legacy untagged prefixes, case-insensitively, pages its reads (it was blind past 200 rows), deletes in
+chunks, and warns when more than 500 rows are unmatched. It reaped **6,219** rows: the account went **6,275 -> 56**.
+Test: `tests-node/debris-patterns.test.mjs` plus the reaper's own guards (RLS-scoped, test-account check, name prefix, 2-hour age cutoff).
+
+**The real app paths** (numbered as above). (1) The picker no longer offers "+ Create new exercise" when an exact match exists,
+and `_createExerciseFromPicker` picks the existing one (or refuses if the lookup fails). (2) The picker and the Library read through
+`_fetchAllRows`; `exercises` is now in `check-unbounded-reads`'s watch list. (3) `saveNewExercise` refuses a duplicate (and says
+when the existing one is archived). (4) `_resolveExerciseIdForSave` uses `_findExerciseByName`, which returns `{row, error}` and
+orders deterministically, so two existing rows no longer breed a third. (6) `_likeEscape`: `_` and `%` in a name are literals.
+Also fixed, found on the way: the new-coach starter seed read the library unpaged and case-sensitively
+(`tests-node/starter-seed-names.test.mjs`). Tests: `tests/exercise-duplication-2026-10-01.spec.js`, `tests-node/exercise-lookup.test.mjs`.
+
+**Not done: (5) a database constraint.** Every check is still check-then-insert, so two taps in the same instant can still
+make a pair. A unique index on `(coach_id, is_personal, lower(btrim(name)))` would close it, but it FAILS to create if any
+account already holds a duplicate, so it needs a read-only duplicate check on the real data first, then a verified script, then
+Jake running it. That is a decision for Jake, not a patch; nothing about it is urgent now that the loop that fed it is closed.

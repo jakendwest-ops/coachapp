@@ -1,9 +1,9 @@
 ---
 id: 2026-10-01-rpe-top-set-has-no-solo-role-coverage
-status: open
+status: closed
 priority: low
 reported: 2026-10-01
-status_detail: "Found by the multi-agent review of the RPE top-set work (2026-09-30 / 2026-10-01), not reported by Jake. Verified: every test in tests/rpe-top-set-2026-09-29.spec.js logs in with loginAsPT and builds a coach-owned client (coach_id set). All three reviewers traced the production paths and found them solo-correct, so this is a missing PROOF, not a known break."
+status_detail: "CLOSED 2026-10-01 by a test proven able to fail. tests/rpe-e2e-roles-2026-10-01.spec.js has a solo journey (personal view: Library, build the top-set template, Start, log, End, Save, accept the 1RM) against window._soloClientId with the skip-if-absent pattern, and its cleanup never deletes the solo client record (cleanupJourney only deletes a client it was handed, and the solo test hands none). Deliberate break: with saveRunnerSession's solo fallback removed (coachId = clientRecord.coach_id, the exact four-times-shipped solo bug shape) the solo journey FAILED (the post-session modal never appeared because the save failed); with the code intact it passes. Not Jake-reported."
 closing_conditions: "One solo-account spec for the runner top-set path using window._soloClientId with the skip-if-absent pattern already used elsewhere, whose cleanup NEVER deletes the solo client record, RED before and GREEN after a deliberate break of the solo path."
 ---
 
