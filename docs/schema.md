@@ -179,6 +179,7 @@ converts.
 | `phase` | 2026-07-25 | text — interval phase label |
 | `pace_500m_secs` | 2026-08-08 | smallint + CHECK |
 | `stroke_rate_spm` | 2026-08-08 | smallint + CHECK |
+| `effort_type`, `effort_value` | RPE work | `effort_type` has a CHECK (`'rpe'` or `'rir'`; NULL passes). **`effort_value` has NO CHECK** — read from `pg_constraint` on the live project 2026-10-01 — so the app's 0–10 guard (`_effortOrNull`) is the only limit and is deliberately conservative. |
 
 **`metric_type`** — added 2026-07-18 to `workout_template_exercises` (text, not null, default
 `weight_reps`), with matching CHECK constraints on `exercises`, `workout_template_exercises` and
