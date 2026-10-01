@@ -13,12 +13,13 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: `$
 // The CALLER writes the tag prefix (the fixture-tagging gate wants "[E2E" in the spec's own code, where it can
 // see it) and this REFUSES anything that does not start with it: an untagged fixture cannot be reaped, and
 // that is how 6,275 exercises piled up. Enforced at run time, not merely satisfied textually.
-function journeyTag(prefix) {
+function journeyTag(prefix, exSuffix = 'Bench') {
   if (!String(prefix).startsWith('[E2E')) {
     throw new Error(`journeyTag: "${prefix}" must start with "[E2E" so scripts/reap-e2e-debris.mjs can find these rows`)
   }
   const tag = `${prefix} ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  return { tag, exName: `${tag} Bench`, tplName: `${tag} Template` }
+  // exSuffix lets a journey run with a HOSTILE exercise name; the tag stays first so cleanup still finds it.
+  return { tag, exName: `${tag} ${exSuffix}`, tplName: `${tag} Template` }
 }
 
 // From the page that lists templates: New template -> Add exercise -> pick it -> TOP SET, 3 reps @ RPE 8 ->
