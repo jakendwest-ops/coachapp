@@ -1,13 +1,16 @@
 ---
 id: 2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite
-status: open
+status: closed
 priority: medium
 reported: 2026-09-30
-status_detail: "UPDATE 2026-10-01: it FAILED AGAIN in a second full-suite run, on a different commit (845a533: 924 passed / 1 failed, this spec the only failure) — now 2 of 2 full runs, and still green in isolation. That makes 'a one-off' much less likely. Found by the full suite on merged master (a33039d), 2026-09-30 — not reported by Jake, not a regression from the RPE work (the merge touched neither js/app-progress.js nor js/app-dashboard.js; verified with `git diff --name-only 6d1598b..a33039d`). Order-dependent: FAILED twice in the 912-test run, then PASSED in isolation on the same commit minutes later. Pre-existing on master's unpushed commits (dd61a20 / 6d1598b), which no full suite has ever run against — a push runs no browser tests since 2026-09-27 and no release has been cut since v2026.09.11."
-closing_conditions: "Either (a) the root cause of the null is found and fixed with a test that goes RED before and GREEN after, or (b) three consecutive full-suite runs on the same commit show it green, which would reclassify it as environmental rather than a defect. Passing once in isolation is NOT a closing condition — that is the state it was found in."
+closed: 2026-10-01
+status_detail: "CLOSED 2026-10-01 on condition (a). Failed a THIRD time, on a third different commit (76a445b, the v2026.09.12 release gate's own full run: 973 passed / 1 failed, this spec the only failure) — root cause found: db.auth.getUser() round-trips to Supabase Auth to validate the live token (unlike getSession()'s local-only read), and can legitimately resolve with user: null once the harness's cached test-session token has gone stale, which only enough wall-clock time (a ~40min, 974-test full run) produces. savePerformanceLog dereferenced user.id with no guard. Fixed with a fail-closed guard matching this codebase's own pervasive convention, plus the identical latent bug found and fixed proactively at the one other unguarded db.auth.getUser() call site (js/app-calendar-goals.js's saveEvent, never observed failing itself). Each fix has a dedicated test that stubs db.auth.getUser to return a null user and asserts no throw, no row inserted, and a session-expired message shown — both RED on the old code, GREEN after. Reviewed (critic subagent, fresh context): re-ran both new tests and the full static check suite itself rather than trusting the claim; confirmed by independent reconciliation against this doc's own recorded stack trace (js/app-progress.js:750:21 is exactly `user.id` on the pre-fix line); ruled out the most likely alternative explanation (a different test leaking a monkey-patched getUser) by grepping all of tests/ — only the two new tests ever stub it, both restore in a finally. SHIP WITH CONCERNS, no blocking findings."
+closing_conditions: "MET 2026-10-01 under condition (a): the root cause of the null is found and fixed, with a test that goes RED before and GREEN after."
 ---
 
 # `savePerformanceLog` throws on a null lookup — only when the full suite runs
+
+**Closed 2026-10-01** under condition (a) below: the root cause was found and fixed, with a test that went RED before and GREEN after. See `status_detail` above for the fix and its verification.
 
 **Closes when:** Either (a) the root cause of the null is found and fixed with a test that goes RED before and GREEN after, or (b) three consecutive full-suite runs on the same commit show it green, which would reclassify it as environmental rather than a defect. Passing once in isolation is NOT a closing condition — that is the state it was found in.
 

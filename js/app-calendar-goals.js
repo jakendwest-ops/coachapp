@@ -421,6 +421,10 @@ async function saveEvent() {
 
   log.info('saveEvent', 'inserting event', { date, type, clientId })
   const { data: { user } } = await db.auth.getUser()
+  // Same fail-closed guard as savePerformanceLog (app-progress.js): a failed/expired session
+  // returns user: null here, and created_by: user.id below threw instead of telling the coach why
+  // nothing saved.
+  if (!user) { log.error('saveEvent', 'no authenticated user — session expired or invalid'); errorEl.textContent = 'Your session has expired — please sign in again.'; return }
   const { error } = await db.from('events').insert({
     title,
     date,

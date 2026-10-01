@@ -744,6 +744,10 @@ async function savePerformanceLog(clientId) {
 
   log.info('savePerformanceLog', 'inserting performance record', { clientId, category })
   const { data: { user } } = await db.auth.getUser()
+  // A failed/expired session returns user: null here (getUser() round-trips to validate the token,
+  // unlike getSession()'s local-only read) -- dereferencing user.id then threw and the record was
+  // silently never saved. Same fail-closed shape as the error branch two lines below.
+  if (!user) { log.error('savePerformanceLog', 'no authenticated user — session expired or invalid'); document.getElementById('perf-error') && (document.getElementById('perf-error').textContent = 'Your session has expired — please sign in again.'); return }
 
   const { error } = await db.from('performance_logs').insert({
     client_id: clientId,

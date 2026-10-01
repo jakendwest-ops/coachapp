@@ -169,6 +169,47 @@ test.describe('Personal Bests consolidation', () => {
     expect(r.row.notes, 'notes must persist through the real form').toBe('felt strong')
   })
 
+  // Closes docs/bugs/2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite.md.
+  // Root cause, found after three consecutive full-suite runs reproduced the same crash: getUser()
+  // round-trips to the server to validate the token (unlike getSession()'s local-only read) and can
+  // legitimately come back with no user -- a session that expired mid-run, in the harness's case.
+  // savePerformanceLog dereferenced user.id with no guard and threw, which silently discarded the
+  // save with no message instead of failing the way the rest of this codebase fails: closed, with a
+  // reason shown. Stubs db.auth.getUser directly, not clientId or _verifyClientAccess (which reads
+  // the cached currentUser, not a live call, so it is unaffected by this stub either way).
+  test('(review) savePerformanceLog fails closed, not with a crash, when getUser() returns no user', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(async () => {
+      if (!window._soloClientId) return { skip: true }
+      await switchView('solo')
+      await new Promise(res => setTimeout(res, 2500))
+      window._progressTab = 'Personal Bests'
+      await renderProgress(document.getElementById('main-content'))
+      await new Promise(res => setTimeout(res, 800))
+      const name = '[E2E-PB] null-user ' + Date.now()
+      document.getElementById('pl-category').value = 'cardio'
+      updatePerfUnits()
+      document.getElementById('pl-name').value = name
+      document.getElementById('pl-value').value = '24.5'
+      document.getElementById('pl-unit').value = 'min'
+      document.getElementById('pl-date').value = '2026-08-17'
+
+      const realGetUser = db.auth.getUser.bind(db.auth)
+      db.auth.getUser = async () => ({ data: { user: null } })
+      let threw = null
+      try { await savePerformanceLog(window._soloClientId) } catch (e) { threw = e.message } finally { db.auth.getUser = realGetUser }
+      await new Promise(res => setTimeout(res, 500))
+
+      const { data } = await db.from('performance_logs')
+        .select('id').eq('client_id', window._soloClientId).eq('name', name)
+      return { threw, rowCount: data?.length ?? -1, formError: document.getElementById('perf-error')?.textContent || '' }
+    })
+    test.skip(!!r.skip, 'no solo client record on this account')
+    expect(r.threw, 'a missing session must be handled, not thrown').toBeNull()
+    expect(r.rowCount, 'nothing is inserted without a real user').toBe(0)
+    expect(r.formError, 'the form says why, instead of silently doing nothing').toMatch(/session/i)
+  })
+
   // Companion to the test above: proves the OLD dashboard-tile path is genuinely gone, not just
   // untested — "only page that contains all of this data" means the dashboard no longer offers an
   // independent way to create one.
