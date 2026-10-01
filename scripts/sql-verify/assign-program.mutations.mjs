@@ -35,4 +35,8 @@ export const MUTATIONS = {
                   "raise exception 'assign_program: permission denied' using errcode = '42501';"]] },
   m14: { why: 'a zero-week phase counts as 0 planned weeks, not 1 (the JS used duration_weeks || 1)',
          pairs: [['case when ph.duration_weeks > 0 then ph.duration_weeks else 1 end', 'ph.duration_weeks']] },
+  // Added 2026-10-01 with the RPE top-set work. The verifier asserted sets_json survives, but NOTHING had ever
+  // broken it to prove that assertion could fail — a claim with no mutation is a claim nobody has watched fail.
+  m16: { why: "the copy drops sets_json: a client's copy of a top-set workout loses isTopSet / intensityBasis, so its backoff sets silently target a stored 1RM",
+         pairs: [['nullif(e.sets, 0), e.sets_json, nullif(e.notes', 'nullif(e.sets, 0), null, nullif(e.notes']] },
 }

@@ -44,6 +44,20 @@ const TA1 = '40000000-0000-4000-8000-000000000001', TA2 = '40000000-0000-4000-80
 const TS = '40000000-0000-4000-8000-000000000003', TB = '40000000-0000-4000-8000-000000000004'
 const TX = '40000000-0000-4000-8000-000000000005'
 const FAM = '50000000-0000-4000-8000-000000000001'
+
+// A real RPE top set and the backoff that targets a percentage of TODAY'S top set — not a toy value. This is what a
+// coach's workout looks like since the RPE work, and assignment must carry every one of these fields to the client's
+// copy: the runner reads sets_json[0].isTopSet and intensityBasis, and a copy that dropped them would hand the client a
+// workout whose backoff sets silently target a stored 1RM they may not have. (assign_program copies e.sets_json
+// verbatim; this pins that.)
+const TOPSET_SETS = [
+  { repsMin: '3', effortType: 'rpe', effortMin: '8', isTopSet: true, intensityBasis: 'stored' },
+  { repsMin: '8', intensityMin: '70', intensityBasis: 'topSet', isTopSet: false }
+]
+const TOPSET_JSON = JSON.stringify(TOPSET_SETS)
+// jsonb stores keys in its own order, so compare with keys sorted, never as raw strings.
+const canon = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a < b ? -1 : 1)) : x)
+
 await db.exec(`
   insert into public.clients (id, coach_id, user_id, full_name) values
     ('${CL}', '${A}', '${UC}', 'Client of coach A'), ('${SO}', null, '${US}', 'Solo user'),
@@ -59,7 +73,7 @@ await db.exec(`
     ('${TS}', '${US}', 'Solo session', null, false, null), ('${TB}', '${B}', 'B session', null, false, null),
     ('${TX}', '${A}', 'X session', null, false, null);
   insert into public.workout_template_exercises (template_id, exercise_name, exercise_type, metric_type, order_index, sets, sets_json, notes, superset_group, reps, one_rm_kg) values
-    ('${TA1}', 'Bench', 'strength', 'weight_reps', 0, 3, '[{"reps":5}]', 'pause at the bottom', 'A', 5, 100),
+    ('${TA1}', 'Bench', 'strength', 'weight_reps', 0, 3, '${TOPSET_JSON}', 'pause at the bottom', 'A', 5, 100),
     ('${TA1}', 'Plank', 'strength', 'timed_hold', 1, 0, null, '', '', null, null),
     ('${TA2}', 'Squat', 'strength', 'weight_reps', 0, 5, null, null, null, null, null),
     ('${TS}', 'Row', 'cardio', 'cardio', 0, 1, null, null, null, null, null),
@@ -120,7 +134,7 @@ ok(new Set(cpws.map(c => c.tid)).size === 3 && !cpws.some(c => [TA1, TA2].includ
 const ex = await rowsOf(`select exercise_name, metric_type, sets, sets_json, notes, superset_group, reps, one_rm_kg, order_index from public.workout_template_exercises
   where template_id = '${cpws[0].tid}' order by order_index`)
 ok(ex.length === 2 && ex[0].exercise_name === 'Bench' && ex[0].sets === 3 && ex[0].notes === 'pause at the bottom' && ex[0].superset_group === 'A'
-  && JSON.stringify(ex[0].sets_json) === '[{"reps":5}]' && ex[1].metric_type === 'timed_hold',
+  && canon(ex[0].sets_json) === canon(TOPSET_SETS) && ex[1].metric_type === 'timed_hold',
   'assign: exercises are copied with their sets, targets, notes, superset and metric type', ex)
 ok(ex[1].sets === null && ex[1].notes === null && ex[1].superset_group === null, 'assign: 0 sets and empty notes/superset become null, as the JS did', ex[1])
 ok(ex[0].reps === null && ex[0].one_rm_kg === null, 'assign: legacy reps / one_rm_kg are NOT copied, as the JS did not', ex[0])
