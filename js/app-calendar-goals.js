@@ -526,6 +526,11 @@ async function saveClientEvent() {
 }
 
 // ─── CLIENT GOALS ─────────────────────────────────────────────────────────────
+// Who may change the goals THEMSELVES — add, edit, delete, or add a milestone to one? A COACH (for their clients) and a SOLO user (for
+// themselves). A CLIENT tracks progress on goals their coach set — a check-in, a progress value, ticking a milestone — but does not add,
+// edit or delete the goal (Jake, 2026-10-01). Anything that is not exactly coach or solo (a client, an unknown role) gets no controls.
+const _canManageGoals = () => ['coach', 'solo'].includes(currentProfile?.role)
+
 async function renderClientGoals(clientId, el) {
   log.info('renderClientGoals', 'fetching goals', { clientId })
   el.innerHTML = '<div class="loading-state">Loading…</div>'
@@ -537,20 +542,21 @@ async function renderClientGoals(clientId, el) {
     .order('priority')
     .order('created_at')
 
-  if (error) { log.error('renderClientGoals', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  if (error) { log.error('renderClientGoals', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${escapeHtml(error.message)}</div>`; return }
   log.ok('renderClientGoals', `loaded ${goals.length} goals`)
 
+  const canManage = _canManageGoals()
   el.innerHTML = `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+    ${canManage ? `<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
       <button class="btn-primary" onclick="showAddGoalModal('${clientId}')">+ Add goal</button>
-    </div>
-    <div class="list">
+    </div>` : ''}
+    <div class="list" id="goals-view">
       ${goals.length === 0 ? `
         <div class="empty-state">
           <div class="empty-icon">🎯</div>
           <div class="empty-title">No goals yet</div>
-          <div class="empty-text">${currentProfile?.role === 'solo' ? 'Set a goal to give yourself a clear roadmap' : 'Set a goal to give this client a clear roadmap to success'}</div>
-          <button class="btn-primary" onclick="showAddGoalModal('${clientId}')">+ Add first goal</button>
+          <div class="empty-text">${currentProfile?.role === 'solo' ? 'Set a goal to give yourself a clear roadmap' : canManage ? 'Set a goal to give this client a clear roadmap to success' : 'Your coach sets your goals — they will show up here'}</div>
+          ${canManage ? `<button class="btn-primary" onclick="showAddGoalModal('${clientId}')">+ Add first goal</button>` : ''}
         </div>
       ` : goals.map(g => goalCard(g, clientId)).join('')}
     </div>
@@ -581,8 +587,8 @@ function goalCard(g, clientId) {
         ${progress !== null ? `
           <div style="margin-bottom:10px">
             <div style="display:flex;justify-content:space-between;font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:5px">
-              <span>${g.metric_label || 'Progress'}</span>
-              <span>${g.current_value ?? g.start_value} → ${g.target_value} ${g.metric_unit || ''}</span>
+              <span>${escapeHtml(g.metric_label || 'Progress')}</span>
+              <span>${escapeHtml(String(g.current_value ?? g.start_value))} → ${escapeHtml(String(g.target_value))} ${escapeHtml(g.metric_unit || '')}</span>
             </div>
             <div style="height:6px;background:var(--border);border-radius:var(--radius-full, 99px);overflow:hidden">
               <div style="height:100%;width:${Math.max(0, progress)}%;background:var(--accent);border-radius:99px;transition:width 0.4s"></div>
@@ -603,6 +609,7 @@ function goalCard(g, clientId) {
 
 // ─── ADD GOAL MODAL ───────────────────────────────────────────────────────────
 function showAddGoalModal(clientId) {
+  if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'add-goal-modal'
@@ -679,6 +686,7 @@ function showAddGoalModal(clientId) {
 }
 
 async function saveNewGoal(clientId) {
+  if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
   const title   = document.getElementById('ag-title').value.trim()
   const errorEl = document.getElementById('ag-error')
   if (!title) { errorEl.textContent = 'Title is required'; return }
@@ -743,7 +751,7 @@ async function openGoal(goalId, clientId) {
       </div>
       <div style="display:flex;gap:8px">
         <span class="badge badge-${g.status === 'active' ? 'accent' : g.status === 'completed' ? 'active' : 'inactive'}">${g.status}</span>
-        <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 12px" onclick="showEditGoalModal('${goalId}','${clientId}')">Edit</button>
+        ${_canManageGoals() ? `<button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 12px" onclick="showEditGoalModal('${goalId}','${clientId}')">Edit</button>` : ''}
       </div>
     </div>
 
@@ -751,16 +759,16 @@ async function openGoal(goalId, clientId) {
       <div class="card" style="margin-bottom:16px">
         <div class="card-body">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <span style="font-weight:600">${g.metric_label || 'Progress'}</span>
+            <span style="font-weight:600">${escapeHtml(g.metric_label || 'Progress')}</span>
             <span style="font-size:var(--legacy-text-22, 22px);font-weight:700;color:var(--accent)">${progress}%</span>
           </div>
           <div style="height:8px;background:var(--border);border-radius:var(--radius-full, 99px);overflow:hidden;margin-bottom:8px">
             <div style="height:100%;width:${Math.max(0, progress)}%;background:var(--accent);border-radius:99px"></div>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:var(--text-md, 12px);color:var(--text-muted)">
-            <span>Start: ${g.start_value} ${g.metric_unit || ''}</span>
-            <span>Current: <strong style="color:var(--text)">${g.current_value ?? '—'} ${g.metric_unit || ''}</strong></span>
-            <span>Target: ${g.target_value} ${g.metric_unit || ''}</span>
+            <span>Start: ${escapeHtml(String(g.start_value))} ${escapeHtml(g.metric_unit || '')}</span>
+            <span>Current: <strong style="color:var(--text)">${escapeHtml(String(g.current_value ?? '—'))} ${escapeHtml(g.metric_unit || '')}</strong></span>
+            <span>Target: ${escapeHtml(String(g.target_value))} ${escapeHtml(g.metric_unit || '')}</span>
           </div>
         </div>
       </div>
@@ -772,7 +780,7 @@ async function openGoal(goalId, clientId) {
       <div>
         <div class="section-header">
           <h3 class="section-title">Milestones</h3>
-          <button class="btn-primary" style="font-size:var(--text-md, 12px);padding:5px 10px" onclick="showAddMilestoneModal('${goalId}','${clientId}')">+ Add</button>
+          ${_canManageGoals() ? `<button class="btn-primary" style="font-size:var(--text-md, 12px);padding:5px 10px" onclick="showAddMilestoneModal('${goalId}','${clientId}')">+ Add</button>` : ''}
         </div>
         <div class="list" id="milestone-list">
           ${milestones.length === 0 ? `<div class="empty-state" style="padding:30px"><div class="empty-text">No milestones yet</div></div>` :
@@ -807,7 +815,7 @@ async function openGoal(goalId, clientId) {
                 <div class="card-body" style="padding:14px 16px">
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
                     <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${new Date(ci.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
-                    ${ci.current_value != null ? `<span style="font-weight:600;color:var(--accent)">${ci.current_value} ${g.metric_unit || ''}</span>` : ''}
+                    ${ci.current_value != null ? `<span style="font-weight:600;color:var(--accent)">${escapeHtml(String(ci.current_value))} ${escapeHtml(g.metric_unit || '')}</span>` : ''}
                   </div>
                   ${ci.notes ? `<div style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(ci.notes)}</div>` : ''}
                 </div>
@@ -844,6 +852,7 @@ function backToGoals(clientId) {
 
 // ─── MILESTONE MODAL ──────────────────────────────────────────────────────────
 function showAddMilestoneModal(goalId, clientId) {
+  if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'add-milestone-modal'
@@ -883,6 +892,7 @@ function showAddMilestoneModal(goalId, clientId) {
 }
 
 async function saveNewMilestone(goalId, clientId) {
+  if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
   const title   = document.getElementById('am-title').value.trim()
   const errorEl = document.getElementById('am-error')
   if (!title) { errorEl.textContent = 'Title is required'; return }
@@ -1011,7 +1021,7 @@ function showAddCheckInModal(goalId, clientId) {
       </div>
       <div class="field">
         <label class="field-label">Notes</label>
-        <textarea class="field-input" id="ci-notes" rows="3" style="resize:vertical" placeholder="How is the client progressing? Any observations…"></textarea>
+        <textarea class="field-input" id="ci-notes" rows="3" style="resize:vertical" placeholder="How is it going? Any observations…"></textarea>
       </div>
       <p class="modal-error" id="ci-error"></p>
       <div class="modal-footer">
@@ -1053,6 +1063,7 @@ async function saveCheckIn(goalId, clientId) {
 
 // ─── EDIT GOAL MODAL ──────────────────────────────────────────────────────────
 async function showEditGoalModal(goalId, clientId) {
+  if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
   const { data: g } = await db.from('goals').select('*').eq('id', goalId).single()
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
@@ -1109,6 +1120,7 @@ async function showEditGoalModal(goalId, clientId) {
 }
 
 async function saveEditGoal(goalId, clientId) {
+  if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
   const errorEl = document.getElementById('eg-error')
   const title   = document.getElementById('eg-title').value.trim()
   if (!title) { errorEl.textContent = 'Title is required'; return }
@@ -1135,6 +1147,7 @@ async function saveEditGoal(goalId, clientId) {
 }
 
 async function deleteGoal(goalId, clientId) {
+  if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
   if (!(await confirmDialog('Delete this goal and all its milestones and check-ins? This cannot be undone.', { title: 'Delete goal?', confirmLabel: 'Delete', danger: true }))) return
   log.info('deleteGoal', 'deleting goal', { goalId })
   // Rowcount check, matching delete1RM / deletePerfLog / deleteWeightLog (app-progress.js). The

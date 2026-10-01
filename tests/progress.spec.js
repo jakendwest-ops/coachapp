@@ -127,9 +127,10 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     // already find it; both expects poll for the rest, same as Phase 2's real-wait direction.
     await page.evaluate(() => { window._progressTab = 'Goals'; renderProgress(document.getElementById('main-content')) })
     await expect(page.locator('.chip-row .chip', { hasText: 'Goals' })).toHaveAttribute('aria-selected', 'true')
-    // "+ Add goal" only exists in renderClientGoals' own output — its presence here is proof this tab
-    // actually mounted that function into #progress-tab-content, not just showing a "Coming soon" shell.
-    await expect(page.locator('#progress-tab-content button:has-text("+ Add goal")')).toBeVisible({ timeout: 3000 })
+    // #goals-view only exists in renderClientGoals' own output — its presence here is proof this tab actually mounted that
+    // function into #progress-tab-content, not just showing a "Coming soon" shell. (It used to look for "+ Add goal", but a CLIENT
+    // is no longer offered that: the coach sets goals, the client tracks progress — Jake, 2026-10-01.)
+    await expect(page.locator('#progress-tab-content #goals-view')).toBeVisible({ timeout: 3000 })
   })
 
   test('Goals tab (2026-09-29): opening a goal from here actually opens it, not a dead click', async ({ page, browser }) => {

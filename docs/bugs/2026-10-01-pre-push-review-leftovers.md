@@ -3,22 +3,28 @@ id: 2026-10-01-pre-push-review-leftovers
 status: open
 priority: low
 reported: 2026-10-01
-status_detail: "The pre-push multi-agent review (2026-10-01; three reviewers over everything unpushed, including the other sessions' commits) found NO blocking issue and about 20 findings; everything checkable was fixed in the same push with a test that ran RED first. This row holds what was deliberately NOT fixed, so none of it lives only in a chat. One item needs Jake (the client Goals tab). Not Jake-reported."
-closing_conditions: "Jake decides item 1 (should a client see Add / Edit / Delete on goals), and each remaining item is either fixed with a test or consciously accepted in writing here. Reading this row is not a closing condition."
+status_detail: "The pre-push multi-agent review (2026-10-01; three reviewers over everything unpushed, including the other sessions' commits) found NO blocking issue and about 20 findings; everything checkable was fixed in the same push with a test that ran RED first. This row holds what was deliberately NOT fixed, so none of it lives only in a chat. The client Goals tab question was decided (item 1). Not Jake-reported."
+closing_conditions: "Each remaining item is either fixed with a test or consciously accepted in writing in this row. Naming them is not closing them."
 ---
 
 # What the pre-push review found that was not fixed in the same push
 
-**Closes when:** Jake decides item 1, and each remaining item is either fixed with a test or consciously accepted in writing in this row. Naming them is not closing them.
+**Closes when:** each remaining item is either fixed with a test or consciously accepted in writing in this row. Naming them is not closing them.
 
-## Needs Jake
+## Decided by Jake (2026-10-01)
 
-1. **A client sees "+ Add goal", Edit and Delete on the Goals tab, but goals RLS makes the COACH the only creator.**
-   The Goals tab (commit dd61a20, the second walkthrough) mounts `renderClientGoals` for a client. `tests/progress.spec.js` itself says a client
-   inserting a goal is refused "by design: the coach sets goals, the client tracks progress", yet the same file asserts "+ Add goal" is visible
-   to a client. Today: Add shows the raw RLS message; Edit used to vanish silently (fixed in this push: it now says "only the person who set
-   this goal can edit it"); Delete already had a rowcount check. Question for Jake: should a client see Add / Edit / Delete at all, or only
-   their own progress controls? Not verified: client RLS on `goals`, `goal_milestones` and `goal_check_ins` is not in the repo SQL.
+1. **Goals: a client does not add, edit or delete goals; a coach and a solo user do.** Jake's decision, built in the same push: the client's Goals tab and goal
+   detail no longer offer "+ Add goal", Edit, Delete or a milestone "+ Add" (`_canManageGoals`, one definition; every function behind them refuses too). A client keeps
+   the TRACKING controls (a check-in, a progress value, ticking a milestone). Tests: `tests/goals-client-readonly-2026-10-01.spec.js` (client sees none of the four,
+   keeps check-ins; coach and solo keep all; the same render as a client is the control) and `tests-node/goals-manage-role.test.mjs` (the role matrix, fail closed).
+
+## Noticed by the goals review (2026-10-01), not changed
+
+- **Weight goals are a different feature and were left alone.** A client can still set a Goal weight (the Body Weight tab, `clients.goal_weight_kg`), one tab from a Goals tab
+  that now says "Your coach sets your goals". Jake to say if that should go too.
+- **'View as' (owner account only):** `sudoAsClient` sets the role to client without re-applying the coach navigation, so until you exit it the goal controls are hidden
+  and a stale button would show "Only your coach can change your goals". Same pre-existing leak that makes `navigate('programs')` show "Page not found" in that mode.
+- **A coach with a failed profile fetch** (`currentProfile` null) now gets no goal controls (fail closed); elsewhere the app treats a missing role as coach.
 
 ## Answered by the live policy read (Jake pasted `pg_policies`, 2026-10-01)
 
@@ -56,6 +62,6 @@ closing_conditions: "Jake decides item 1 (should a client see Add / Edit / Delet
 
 A builder effort box that rendered a stored 0 as blank (and the next save erased it); a zero-kg load on a one-sided set lost in the read-back; the
 single-top-set delete hole; the picker saying "No exercises yet" over a failed read; renaming an exercise onto an existing name; an exercise name
-containing `*`; a silent no-op when a client edits a coach's goal; unescaped ids in the 1RM modal handler and the performance value on two dashboards;
+containing `*`; a client no longer has an Edit control at all (and the save path still reads its rowcount, for a coach or solo user whose goal someone else created); goal fields a coach types (metric label and unit) now escaped where they are shown; unescaped ids in the 1RM modal handler and the performance value on two dashboards;
 the PowerShell preview server being reachable over the LAN with a forged Host header (and the ledger line that said it was loopback-only); `git -C <path>
 commit` and quoted `cd` text fooling the commit gate; the module comparison passing over zero files.
