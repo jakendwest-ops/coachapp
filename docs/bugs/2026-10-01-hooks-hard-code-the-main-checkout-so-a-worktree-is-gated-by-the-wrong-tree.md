@@ -3,7 +3,7 @@ id: 2026-10-01-hooks-hard-code-the-main-checkout-so-a-worktree-is-gated-by-the-w
 status: closed
 priority: high
 reported: 2026-10-01
-status_detail: "FIXED 2026-10-01, both halves, each by a test that ran RED on the old code and GREEN on the new. guardrails.mjs judges a commit in the working tree it is made in: guardrails.selftest.mjs rule 2e (7 cases RED on the old hook, 73/73 on the new). os-lint.mjs lints the working tree it is run in and never writes the shared size baseline from another tree: os-lint.worktree.selftest.mjs (5 of 9 cases RED on the old code, 9/9 on the new). Both self-tests are now run by checks.sh in FULL mode (release), after being invoked by nothing. CAVEAT: settings.json points every hook at the MAIN checkout's copy, so a real session gets the fix only once this branch is merged to master. Found by Claude while linting from a worktree, not reported by Jake."
+status_detail: "FIXED 2026-10-01, both halves, each by a test that ran RED on the old code and GREEN on the new. guardrails.mjs judges a commit in the working tree it is made in: guardrails.selftest.mjs rule 2e (7 cases RED on the old hook, 73/73 on the new). os-lint.mjs lints the working tree it is run in and never writes the shared size baseline from another tree: os-lint.selftest.mjs (5 of 9 cases RED on the old code, 9/9 on the new). Both self-tests are now run by checks.sh in FULL mode (release), after being invoked by nothing. CAVEAT: settings.json points every hook at the MAIN checkout's copy, so a real session gets the fix only once this branch is merged to master. Found by Claude while linting from a worktree, not reported by Jake."
 closing_conditions: "A test that runs guardrails from a worktree cwd with an ownership-pattern diff staged THERE and asserts the commit is refused, RED before and GREEN after the hooks derive the repo from the event cwd (git rev-parse --show-toplevel) instead of a constant; and os-lint run from a worktree reads THAT worktree's docs/bugs. Naming the gap is not closing it."
 ---
 
@@ -46,7 +46,7 @@ I introduced and did not see.
 - **os-lint.mjs — fixed 2026-10-01.** `REPO` is resolved from the cwd under the same common-dir test (`MAIN_REPO`
   is the fallback, `OSLINT_REPO` / `OSLINT_MAIN_REPO` override). A worktree lint is read-only for the shared size
   baselines, which ratchet DOWN: an older branch measuring smaller docs would otherwise re-pin the one shared ceiling
-  below what main measures. Test: `os-lint.worktree.selftest.mjs`, real worktrees, with a positive control (the same
+  below what main measures. Test: `os-lint.selftest.mjs`, real worktrees, with a positive control (the same
   ledger row is absent from main). `--self-test` pins its children to main so a detached run launched from a worktree
   stays deterministic.
 - **Wiring.** `checks.sh` rule 9r runs both self-tests in FULL mode (release.mjs sets CI=true) when `~/.claude/state`

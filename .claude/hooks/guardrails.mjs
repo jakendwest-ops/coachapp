@@ -116,14 +116,18 @@ const gitIn = (args, cwd) => {
 }
 // A bash `cd /c/Users/...` is an MSYS path Windows Node cannot use as a cwd; without this that rule silently skipped.
 const toWinPath = p => String(p || '').trim().replace(/^\/([a-zA-Z])(\/|$)/, '$1:/')
-const TREE = (() => {
+// LAZY and memoised, on purpose. Resolving it costs three git spawns (~170 ms) and only a `git commit` needs the answer;
+// computed at the top of the file it taxed EVERY Bash command this hook sees (measured: the hook's self-test went from
+// 14 s to 30 s, past os-lint's 30 s limit). Every use below sits behind `/\bgit\s+commit\b/.test(bareCmd) &&`.
+let _treeMemo
+const treeOf = () => {
+  if (_treeMemo !== undefined) return _treeMemo
   const top = gitIn('rev-parse --show-toplevel', toWinPath(cdTarget || ev?.cwd || REPO))
-  if (!top) return null
+  if (!top) return (_treeMemo = null)
   const home = gitIn('rev-parse --path-format=absolute --git-common-dir', REPO)
   const here = gitIn('rev-parse --path-format=absolute --git-common-dir', top)
-  return home && here && normPath(home) === normPath(here) ? top : null
-})()
-const inCoachApp = TREE !== null
+  return (_treeMemo = home && here && normPath(home) === normPath(here) ? top : null)
+}
 
 function pipesAway (c) {
   return /\|(?!\|)/.test(c)
@@ -215,9 +219,9 @@ if (/\bgit\s+stash\b/.test(bareCmd) && !/\bgit\s+stash\s+(list|show)\b/.test(bar
 // Retires memory feedback-subagent-throwaway-file-cleanup. Subagents doing live diagnostics
 // leave zz-probe-*/_tmp-*/_debug-* specs behind, and the rule to check `git status` before
 // committing was prose that depended on remembering.
-if (/\bgit\s+commit\b/.test(bareCmd) && TREE) {
+if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
   try {
-    const junk = execSync('git status --porcelain', { cwd: TREE, encoding: 'utf8' })
+    const junk = execSync('git status --porcelain', { cwd: treeOf(), encoding: 'utf8' })
       .split(/\r?\n/)
       .map(l => l.slice(3).trim())
       .filter(f => /(^|\/)(zz-|_tmp-|_debug-|probe-)/i.test(f))
@@ -248,12 +252,12 @@ if (/\bgit\s+commit\b/.test(bareCmd) && TREE) {
 // NO review having run at all.
 const OWNERSHIP = /_verify[A-Z]|coach_id|client_id|auth\.uid|\bRLS\b|create\s+policy/i
 
-// WHICH repo is this commit actually in? Resolved ONCE, near the top of this file (TREE / inCoachApp). The first
+// WHICH repo is this commit actually in? Resolved lazily, once, near the top of this file (treeOf). The first
 // version hardcoded REPO and ran `git diff` there no matter where the command was headed — so committing in
 // ~/.claude was refused because the COACHAPP working tree happened to contain ownership code (the fourth false
 // refusal); the second version, a string-prefix test on the path, then missed every git worktree (2026-10-01).
 
-if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
+if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
   let staged = ''
   if (process.env.GUARDRAILS_FAKE_STAGED !== undefined) {
     staged = process.env.GUARDRAILS_FAKE_STAGED   // self-test injection point
@@ -270,7 +274,7 @@ if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
     // blocking a clean commit because of someone else's half-finished edit is the
     // refuse-the-legitimate-user failure this project has already shipped once.
     const PATHS = '-- js/ scripts/ supabase/'
-    const run = a => execSync(`git diff ${a} ${PATHS}`, { cwd: TREE, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 })
+    const run = a => execSync(`git diff ${a} ${PATHS}`, { cwd: treeOf(), encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 })
     try {
       staged = run('--cached')
       if (!staged.trim() && /\bgit\s+add\b/.test(bareCmd)) staged = run('HEAD')
@@ -342,11 +346,11 @@ if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
 // what counts as a schema change, and an over-broad guard that refuses legitimate work is this
 // OS's newest failure class (eight false refusals from RULE 2 alone).
 const SQL_MARKER = process.env.GUARDRAILS_SQL_MARKER || `${STATE}/sql-safety-ran`
-if (/\bgit\s+commit\b/.test(bareCmd) && TREE) {
+if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
   let sqlFiles = []
   try {
     const raw = process.env.GUARDRAILS_FAKE_STAGED_FILES ??
-      execSync('git diff --cached --name-only', { cwd: TREE, encoding: 'utf8' })
+      execSync('git diff --cached --name-only', { cwd: treeOf(), encoding: 'utf8' })
     sqlFiles = raw.split(/\r?\n/).filter(Boolean).filter(f => /\.sql$/i.test(f))
   } catch { /* if git cannot be read here, never block on a measurement failure */ }
 
@@ -402,10 +406,10 @@ if (/\bgit\s+commit\b/.test(bareCmd) && TREE) {
 // already CoachApp: it costs nothing, and it is the same guard against a future non-CoachApp row
 // os-lint's check already relies on.
 const PRED_PATH = 'docs/predictions.jsonl'
-if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
+if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
   const readRepo = (envVar, gitArgs) => {
     if (process.env[envVar] !== undefined) return process.env[envVar]
-    try { return execSync(gitArgs, { cwd: TREE, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
+    try { return execSync(gitArgs, { cwd: treeOf(), encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
     catch { return null }
   }
 
@@ -475,9 +479,9 @@ if (/\bgit\s+commit\b/.test(bareCmd) && inCoachApp) {
 // So this records. Until 2026-09-27 standing-behaviours.mjs surfaced the running tally every turn;
 // that hook was retired (each invocation opened a console window), so the data is recorded only,
 // in state/scope.jsonl. The threshold gets set when the data supports one, or never.
-if (/\bgit\s+commit\b/.test(bareCmd) && TREE) {
+if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
   try {
-    const files = execSync('git diff --cached --name-only', { cwd: TREE, encoding: 'utf8' })
+    const files = execSync('git diff --cached --name-only', { cwd: treeOf(), encoding: 'utf8' })
       .split(/\r?\n/).filter(Boolean)
     const modules = files.filter(f => /^js\/.*\.js$/.test(f))
     mkdirSync(STATE, { recursive: true })

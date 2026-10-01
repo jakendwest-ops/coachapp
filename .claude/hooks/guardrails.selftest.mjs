@@ -192,27 +192,36 @@ try {
       mkdirSync(join(main, '.claude', 'worktrees'), { recursive: true })
       g(main, 'worktree', 'add', '-q', '-b', 'wt-nested-br', nested)
 
-      for (const [label, tree] of [['OUTSIDE the main folder', outside], ['NESTED inside it', nested]]) {
+      // KEPT LEAN ON PURPOSE. os-lint runs this file at every SessionStart (its hook-selftests check, 30 s limit), and
+      // the first version of this block ran every case in both worktrees and added 16 s (14 s -> 30 s, over the limit —
+      // a false RED on a passing test). Each hook run costs ~0.7 s (node plus six git calls), so the full matrix runs in
+      // ONE worktree and the second layout (nested under the main folder, where the real worktrees live) runs only the
+      // two cases that distinguish it.
+      for (const [label, tree, full] of [['OUTSIDE the main folder', outside, true], ['NESTED inside it', nested, false]]) {
         // unseen: ownership staged in the worktree, main untouched and clean
         stage(tree, 'js/m.js', 'const a = 1\n' + OWN_LINE)
         say(commitIn(tree, main) === 'DENY', 'DENY ', `unreviewed ownership staged in a worktree ${label} is SEEN (main's clean index must not hide it)`)
 
-        // not refused: the same worktree, review marker present for this session
-        const marker = join(dir, `rev-${label.split(' ')[0]}`); writeFileSync(marker, 'S1')
-        say(commitIn(tree, main, { GUARDRAILS_MARKER: marker }) === 'ALLOW', 'ALLOW', `…and a review this session clears it, as in the main checkout (${label})`)
+        if (full) {
+          // not refused: the same worktree, review marker present for this session
+          const marker = join(dir, 'rev-wt'); writeFileSync(marker, 'S1')
+          say(commitIn(tree, main, { GUARDRAILS_MARKER: marker }) === 'ALLOW', 'ALLOW', `…and a review this session clears it, as in the main checkout (${label})`)
+        }
 
         // not refused: a worktree change with no ownership content
         g(tree, 'reset', '-q', '--hard')
         stage(tree, 'js/m.js', 'const a = 2\n')
         say(commitIn(tree, main) === 'ALLOW', 'ALLOW', `an ordinary worktree commit is not refused (${label})`)
 
-        // unseen: a staged .sql in the worktree needs sql-safety (rule 5 also read main's index)
-        g(tree, 'reset', '-q', '--hard')
-        mkdirSync(join(tree, 'scripts'), { recursive: true })
-        stage(tree, 'scripts/m.sql', 'select 1;\n')
-        say(commitIn(tree, main) === 'DENY', 'DENY ', `a staged .sql in a worktree is SEEN by rule 5 (${label})`)
-        g(tree, 'reset', '-q', '--hard'); rmSync(join(tree, 'scripts'), { recursive: true, force: true })
-        g(tree, 'clean', '-fdq')
+        if (full) {
+          // unseen: a staged .sql in the worktree needs sql-safety (rule 5 also read main's index)
+          g(tree, 'reset', '-q', '--hard')
+          mkdirSync(join(tree, 'scripts'), { recursive: true })
+          stage(tree, 'scripts/m.sql', 'select 1;\n')
+          say(commitIn(tree, main) === 'DENY', 'DENY ', `a staged .sql in a worktree is SEEN by rule 5 (${label})`)
+          g(tree, 'reset', '-q', '--hard'); rmSync(join(tree, 'scripts'), { recursive: true, force: true })
+          g(tree, 'clean', '-fdq')
+        }
       }
 
       // not refused: main's own dirt must not refuse a CLEAN worktree commit (rule 1c read main's status)
@@ -227,10 +236,8 @@ try {
       rmSync(join(outside, 'zz-probe-wt.js'))
       g(outside, 'reset', '-q', '--hard')
 
-      // not refused: ANOTHER repository is still not judged by CoachApp's rules (the original 2c property)
-      const other = mkRepo('unrelated-repo')
-      stage(other, 'js/m.js', 'const a = 1\n' + OWN_LINE)
-      say(commitIn(other, main) === 'ALLOW', 'ALLOW', 'ownership staged in an UNRELATED repo is not judged by the CoachApp gate')
+      // (ANOTHER repository still not being judged by CoachApp's rules is rule 2c's case, above — not repeated here:
+      // it needs a third repo and another hook run, and nothing in this change touches that property.)
 
       // an explicit `cd` into a worktree wins over the session cwd — the way these commits are actually issued
       stage(outside, 'js/m.js', 'const a = 1\n' + OWN_LINE)

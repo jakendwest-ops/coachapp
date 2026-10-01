@@ -14,7 +14,7 @@
 // which this project has shipped nine times) — and the worktree case has a POSITIVE CONTROL: the same file is
 // absent from the main checkout, so a hit can only have come from reading the worktree.
 //
-// Run: node .claude/hooks/os-lint.worktree.selftest.mjs     (exit 1 if any case misbehaves)
+// Run: node .claude/hooks/os-lint.selftest.mjs     (exit 1 if any case misbehaves)
 import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -48,7 +48,11 @@ const WT_ONLY = '2026-10-01-only-in-the-worktree.md'
 function lint (cwd, baseline, extraEnv = {}) {
   const r = spawnSync(process.execPath, [LINT, '--report'], {
     cwd, encoding: 'utf8', timeout: 120000,
-    env: { ...process.env, OSLINT_MAIN_REPO: MAIN, OSLINT_REPO: '', OSLINT_SIZE_BASELINE: baseline, OSLINT_NO_SELFTEST_LAUNCH: '1', ...extraEnv }
+    // OSLINT_HOOKS_DIR points at a folder that does not exist: os-lint's hook-selftests check RUNS every *.selftest.mjs it
+    // finds under the hooks dir, this file included, so a child that resolved the REAL hooks dir would run this test again
+    // from inside itself. (With the fixture as the repo it would not — there is no .claude/hooks there — but "would not,
+    // by the shape of the fixture" is not the same as "cannot".)
+    env: { ...process.env, OSLINT_MAIN_REPO: MAIN, OSLINT_REPO: '', OSLINT_SIZE_BASELINE: baseline, OSLINT_NO_SELFTEST_LAUNCH: '1', OSLINT_HOOKS_DIR: join(dir, 'no-hooks-here'), ...extraEnv }
   })
   return { out: (r.stdout || '') + (r.stderr || ''), code: r.status }
 }
@@ -56,6 +60,13 @@ function lint (cwd, baseline, extraEnv = {}) {
 let MAIN
 try {
   MAIN = mkRepo('main')
+  // A registered hook, the way the real settings.json does it: the command names the script by its MAIN-checkout path.
+  mkdirSync(join(MAIN, '.claude', 'hooks'), { recursive: true })
+  writeFileSync(join(MAIN, '.claude', 'hooks', 'probe.mjs'), '// a registered hook\n')
+  writeFileSync(join(MAIN, '.claude', 'settings.json'), JSON.stringify({
+    hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: `"node" "${MAIN.replace(/\\/g, '/')}/.claude/hooks/probe.mjs"` }] }] }
+  }))
+  g(MAIN, 'add', '-A'); g(MAIN, 'commit', '-qm', 'a registered hook')
   const wt = join(dir, 'wt')
   g(MAIN, 'worktree', 'add', '-q', '-b', 'wt-br', wt)
   writeFileSync(join(wt, 'docs', 'bugs', WT_ONLY), BUG('not-a-real-status'))
@@ -71,6 +82,20 @@ try {
   const fromMain = lint(MAIN, baseMain)
   say(!fromMain.out.includes(WT_ONLY), 'not misread', "POSITIVE CONTROL: run from the MAIN checkout, the worktree-only row is NOT reported — so the hit above came from reading the worktree")
   say(/all 1 bug files parse/.test(fromMain.out), 'not misread', 'run from the main checkout it still reads the main ledger (1 valid row)')
+
+  console.log('— settings.json registers MAIN\'s copy of a hook; a worktree\'s copy of it is registered too —')
+  // settings.json names every hook by its main-checkout path, by design (one place, so a worktree cannot quietly run a
+  // different gate). os-lint's wiring check compared the hooks dir it was LINTING with those paths, so from a worktree it
+  // reported every hook "registered in NO settings file": two false REDs at the top of every worktree session.
+  // OSLINT_HOOKS_DIR is unset here ('' — the harness above pins it elsewhere to keep this file from running itself).
+  const wired = lint(wt, join(dir, 'baseline-wired.json'), { OSLINT_HOOKS_DIR: '' })
+  say(/GREEN\s+hooks\s/.test(wired.out) && !wired.out.includes('registered in NO settings file'), 'not misread',
+    "from a worktree, main's registration of probe.mjs covers the worktree's copy of it (the wiring check is green)")
+  writeFileSync(join(wt, '.claude', 'hooks', 'rogue.mjs'), '// a script nothing registers\n')
+  const rogue = lint(wt, join(dir, 'baseline-rogue.json'), { OSLINT_HOOKS_DIR: '' })
+  say(rogue.out.includes('hooks/rogue.mjs exists on disk but is registered in NO settings file') && !rogue.out.includes('hooks/probe.mjs exists on disk'), 'seen',
+    "POSITIVE CONTROL: a script in the worktree that NO settings file registers is still reported — the mapping excuses only main's registered names")
+  rmSync(join(wt, '.claude', 'hooks', 'rogue.mjs'))
 
   console.log('— a tree that is not this repository is never read as if it were —')
   const other = mkRepo('unrelated')
