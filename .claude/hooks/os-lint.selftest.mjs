@@ -2,8 +2,7 @@
 //
 // THE BUG. os-lint.mjs named the main checkout in a constant, so a session started in a git worktree linted the
 // MAIN ledger: it could not see a bug row written in the worktree (nine of them, the day this was found) and told
-// the session nothing about them. Same class as guardrails.mjs, whose half is tested by guardrails.selftest.mjs
-// "rule 2e".
+// the session nothing about them. Same class as guardrails.mjs, whose half is tested by scripts/check-guardrails-worktree.selftest.mjs.
 //
 // Real repos, real `git worktree add`, the real os-lint.mjs run as a child — nothing stubbed, because stubbing the
 // resolution is exactly what would let a broken resolution pass. The fixture's "main checkout" is pointed at with

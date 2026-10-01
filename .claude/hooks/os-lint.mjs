@@ -42,7 +42,7 @@ const STATE    = `${HOME}/.claude/state`
 // only if git says that tree shares MAIN_REPO's common dir (the main checkout itself, or any worktree of it). Anything
 // else — another repo, not a repo, git unavailable — falls back to MAIN_REPO, the old behaviour: this hook never
 // refuses to run over a failure to find out where it is. OSLINT_REPO forces a root; '' means "resolve from the cwd".
-// tests: .claude/hooks/os-lint.selftest.mjs. The same class in guardrails.mjs: guardrails.selftest.mjs "rule 2e".
+// tests: .claude/hooks/os-lint.selftest.mjs. The same class in guardrails.mjs: scripts/check-guardrails-worktree.selftest.mjs.
 const MAIN_REPO = process.env.OSLINT_MAIN_REPO || `${HOME}/OneDrive/coachapp`
 const normTree = p => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 const gitOut = (args, cwd) => {

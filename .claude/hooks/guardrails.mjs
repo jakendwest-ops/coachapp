@@ -15,6 +15,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, rmSync, statSync } from 'node:fs'
 import { execSync } from 'node:child_process'
+import { dirname as dirnameP, join as joinP, resolve as resolveP } from 'node:path'
 
 // Every input is env-overridable. A check whose inputs cannot be substituted cannot be shown to
 // FAIL, and an untestable check is indistinguishable from a dead one — the dominant defect class
@@ -107,26 +108,46 @@ const bareCmd = cmd
 // it — shares ONE git common dir with REPO. Anything else (another repo, not a repo, a path git cannot read)
 // resolves to null and every rule that needs a tree is SKIPPED: fail OPEN, never block on our own failure to find out
 // where we are (this hook has refused the legitimate user nine times already).
-// tests: .claude/hooks/guardrails.selftest.mjs, "rule 2e".
+// tests: scripts/check-guardrails-worktree.selftest.mjs (real git worktrees; run at release by checks.sh rule 9r).
 const normPath = p => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 const cdTarget = (cmd.match(/(?:^|&&|;|\|)\s*cd\s+["']?([^"'&;|\n]+)["']?/) || [])[1]
-const gitIn = (args, cwd) => {
-  try { return execSync(`git ${args}`, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }
-  catch { return null }
+// Which repository does this path belong to — answered from the FILESYSTEM, not by spawning git. Walk up to the nearest
+// `.git`; a directory is the repository itself, a FILE is a worktree's pointer (`gitdir: <repo>/.git/worktrees/<name>`)
+// whose `commondir` file names the shared repository. Two checkouts of one repo share a common dir; that is the whole test.
+// Returns { top, common } or null. Spawn-free on purpose: git rev-parse costs ~60 ms a call, and three of them per
+// `git commit` showed up as +5 s on this hook's self-test, which os-lint runs at every session start.
+const repoOf = start => {
+  let d = resolveP(start)
+  for (let i = 0; i < 60; i++) {
+    const dotgit = joinP(d, '.git')
+    if (existsSync(dotgit)) {
+      try {
+        if (statSync(dotgit).isDirectory()) return { top: d, common: dotgit }
+        const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotgit, 'utf8'))
+        if (!m) return null
+        const gitdir = resolveP(d, m[1].trim())
+        let common = gitdir
+        try { common = resolveP(gitdir, readFileSync(joinP(gitdir, 'commondir'), 'utf8').trim()) } catch { /* a submodule: no commondir */ }
+        return { top: d, common }
+      } catch { return null }
+    }
+    const up = dirnameP(d)
+    if (up === d) return null
+    d = up
+  }
+  return null
 }
 // A bash `cd /c/Users/...` is an MSYS path Windows Node cannot use as a cwd; without this that rule silently skipped.
 const toWinPath = p => String(p || '').trim().replace(/^\/([a-zA-Z])(\/|$)/, '$1:/')
-// LAZY and memoised, on purpose. Resolving it costs three git spawns (~170 ms) and only a `git commit` needs the answer;
-// computed at the top of the file it taxed EVERY Bash command this hook sees (measured: the hook's self-test went from
-// 14 s to 30 s, past os-lint's 30 s limit). Every use below sits behind `/\bgit\s+commit\b/.test(bareCmd) &&`.
+// LAZY and memoised, on purpose: only a `git commit` needs the answer, so it is not worked out for any other command;
+// (the first version did it eagerly with three git spawns per run and the hook's self-test went from
+// 14 s to 30 s, past os-lint's old 30 s limit). Every use below sits behind `/\bgit\s+commit\b/.test(bareCmd) &&`.
 let _treeMemo
 const treeOf = () => {
   if (_treeMemo !== undefined) return _treeMemo
-  const top = gitIn('rev-parse --show-toplevel', toWinPath(cdTarget || ev?.cwd || REPO))
-  if (!top) return (_treeMemo = null)
-  const home = gitIn('rev-parse --path-format=absolute --git-common-dir', REPO)
-  const here = gitIn('rev-parse --path-format=absolute --git-common-dir', top)
-  return (_treeMemo = home && here && normPath(home) === normPath(here) ? top : null)
+  const here = repoOf(toWinPath(cdTarget || ev?.cwd || REPO))
+  const home = repoOf(REPO)
+  return (_treeMemo = here && home && normPath(here.common) === normPath(home.common) ? here.top : null)
 }
 
 function pipesAway (c) {

@@ -625,20 +625,22 @@ fi
 if ! node scripts/check-sign-out-path.mjs $FILES index.html; then
   fail "a sign-out bypasses signOutAndClearDrafts() -- see the lines above."
 fi
-# -- 9r. The two session hooks' own self-tests (FULL mode, on the machine the hooks run on) --
-# guardrails.selftest.mjs (the commit gate) and os-lint.selftest.mjs (which tree os-lint reads) were invoked by
-# NOTHING until 2026-10-01: both proved themselves red->green when written and then sat unrun, which is a guard nobody
-# can see fail. The commit gate judged a worktree commit by the MAIN checkout's index for as long as worktrees have been
-# used here, and no gate noticed. FULL-only because guardrails' self-test takes ~30 s; it runs in release.mjs (CI=true),
-# the gate before anything ships. Skipped where the hooks' state dir does not exist (GitHub Actions): they are
-# anchored to this machine's ~/.claude by design (settings.json points every hook at one copy).
+# -- 9r. The session hooks' own self-tests (FULL mode, on the machine the hooks run on) --
+# guardrails.selftest.mjs (the commit gate), scripts/check-guardrails-worktree.selftest.mjs (the commit gate, judged from a
+# git worktree) and os-lint.selftest.mjs (which tree os-lint reads) were invoked by NOTHING until 2026-10-01: they proved
+# themselves red->green when written and then sat unrun, which is a guard nobody can see fail. The commit gate judged a
+# worktree commit by the MAIN checkout's index for as long as worktrees have been used here, and no gate noticed. FULL-only
+# because they take ~40 s together; they run in release.mjs (CI=true), the gate before anything ships. Skipped where the
+# hooks' state dir does not exist (GitHub Actions): they are anchored to this machine's ~/.claude by design (settings.json
+# points every hook at one copy). The real-git worktree cases live in scripts/, NOT in .claude/hooks/, because os-lint runs
+# everything in hooks/ at every session start and a ~1 s-per-case matrix would be paid by every session.
 if [ "$FULL" = "1" ]; then
   if [ -d "$HOME/.claude/state" ]; then
     echo "Running the session hooks' self-tests..."
-    for t in guardrails.selftest.mjs os-lint.selftest.mjs; do
-      if ! node ".claude/hooks/$t" > /dev/null 2>&1; then
-        node ".claude/hooks/$t" 2>&1 | grep -E "FAIL|misbehaved|Error" | sed "s/^/    /"
-        fail ".claude/hooks/$t FAILED -- a hook no longer behaves as its own test says it must. See the lines above."
+    for t in .claude/hooks/guardrails.selftest.mjs scripts/check-guardrails-worktree.selftest.mjs .claude/hooks/os-lint.selftest.mjs; do
+      if ! node "$t" > /dev/null 2>&1; then
+        node "$t" 2>&1 | grep -E "FAIL|misbehaved|Error" | sed "s/^/    /"
+        fail "$t FAILED -- a hook no longer behaves as its own test says it must. See the lines above."
       fi
     done
   else
