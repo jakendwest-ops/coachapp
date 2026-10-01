@@ -9,7 +9,7 @@ closing_conditions: "Jake decides item 1 (should a client see Add / Edit / Delet
 
 # What the pre-push review found that was not fixed in the same push
 
-**Closes when:** Jake decides item 1, item 11 is answered by the `workout_logs` policy read and fixed or accepted, and each remaining item is either fixed with a test or consciously accepted in writing in this row. Naming them is not closing them.
+**Closes when:** Jake decides item 1, and each remaining item is either fixed with a test or consciously accepted in writing in this row. Naming them is not closing them.
 
 ## Needs Jake
 
@@ -32,15 +32,10 @@ closing_conditions: "Jake decides item 1 (should a client see Add / Edit / Delet
    exercise would be inserted with `coach_id` = the caller's own uid, which the `coaches manage own exercises` policy allows: it lands in the caller's own
    namespace, not anyone else's. A functional oddity (the coach would not see it), not a tenancy hole.
 
-## NEW from the same policy read — needs one more query from Jake
+## Moved out
 
-11. **A CLIENT's failed-save rollback may not be able to delete.** `saveRunnerSession` / `saveWorkoutSession` clean up a half-written session with
-    unchecked `delete()`s on `workout_log_exercises` and `workout_logs` (`js/app-runner.js` around the batched set insert). The pasted policies give a
-    client NO delete policy on `workout_log_exercises` or `workout_log_sets` (only coach `ALL` policies and the client INSERT/SELECT ones); the policies on
-    `workout_logs` itself were not in the paste. A policy-refused delete returns no error, so if a client's set insert ever fails (a CHECK, a network
-    drop mid-save) the rollback would leave a session row with exercises and no sets while the app says the save failed, and a retry would duplicate it.
-    Coach and solo are unaffected (their `ALL` policies cover the deletes). Needs the `workout_logs` policies read, then either a client DELETE policy
-    scoped like the INSERT ones, or a rollback that checks its rowcount and says so.
+11. **A client's failed-save rollback cannot delete** — confirmed by behaviour and now its own row:
+    `2026-10-01-client-failed-save-rollback-deletes-nothing.md`.
 
 ## Not fixed — small, named so they are not forgotten
 
