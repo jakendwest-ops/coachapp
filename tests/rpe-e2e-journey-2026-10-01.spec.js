@@ -39,7 +39,7 @@ test.afterEach(async ({ page }) => {
 test.describe('RPE top set — real-click journey (coach)', () => {
   test('build -> assign -> run -> save -> accept the 1RM, as a coach', async ({ page }) => {
     await loginAsPT(page)
-    const { tag, exName, tplName } = S.journeyTag('Coach')
+    const { tag, exName, tplName } = S.journeyTag('[E2E] RPE-Coach')
     // Fixtures only: a library exercise and a client of this test's own (never a borrowed one).
     const ids = await page.evaluate(async ({ tag, exName }) => {
       const { data: ex, error: exErr } = await db.from('exercises').insert({ coach_id: currentUser.id, name: exName, metric_type: 'weight_reps' }).select('id').single()

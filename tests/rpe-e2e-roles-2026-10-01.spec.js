@@ -43,7 +43,7 @@ test.afterEach(async ({ browser }) => {
 
 test.describe('RPE top set — client', () => {
   test('a coach builds it, a CLIENT runs it from their own page, and the 1RM saves against the client\'s own record', async ({ browser }) => {
-    const { tag, exName, tplName } = S.journeyTag('Client')
+    const { tag, exName, tplName } = S.journeyTag('[E2E] RPE-Client')
     const ptCtx = await browser.newContext()
     const clCtx = await browser.newContext()
     try {
@@ -99,7 +99,7 @@ test.describe('RPE top set — solo', () => {
     const soloId = await page.evaluate(() => window._soloClientId || null)
     test.skip(!soloId, 'no solo client record on this account')
 
-    const { tag, exName, tplName } = S.journeyTag('Solo')
+    const { tag, exName, tplName } = S.journeyTag('[E2E] RPE-Solo')
     await clickVisible(page, ['#vs-personal', '#mvs-personal'])
     await expect(page.locator('.solo-lower')).toBeVisible()
 

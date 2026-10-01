@@ -9,9 +9,15 @@ const { expect } = require('./fixtures')
 const SHOTS = process.env.E2E_SHOTS
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` }) }
 
-// A unique, [E2E]-tagged identity for one journey, so cleanup — and the reaper, if cleanup is skipped — can find it.
-function journeyTag(label) {
-  const tag = `[E2E] RPE-${label} ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+// A unique identity for one journey, so cleanup — and the reaper, if cleanup is skipped — can find it.
+// The CALLER writes the tag prefix (the fixture-tagging gate wants "[E2E" in the spec's own code, where it can
+// see it) and this REFUSES anything that does not start with it: an untagged fixture cannot be reaped, and
+// that is how 6,275 exercises piled up. Enforced at run time, not merely satisfied textually.
+function journeyTag(prefix) {
+  if (!String(prefix).startsWith('[E2E')) {
+    throw new Error(`journeyTag: "${prefix}" must start with "[E2E" so scripts/reap-e2e-debris.mjs can find these rows`)
+  }
+  const tag = `${prefix} ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   return { tag, exName: `${tag} Bench`, tplName: `${tag} Template` }
 }
 
