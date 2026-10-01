@@ -100,6 +100,7 @@ async function runTopSetSessionAndAccept1RM(page, { shotPrefix } = {}) {
 
   await page.locator('button[onclick="confirmEndRunner()"]').click()
   await expect(page.locator('#workout-runner')).toContainText('Workout complete')
+  await expect(page.locator('#wr-dropped-note'), 'every set here is complete, so there is nothing to warn about').toHaveCount(0)
   await page.locator('button[onclick="saveRunnerSession()"]').click()
   await expect(page.locator('#modal-post-session-1rm')).toBeVisible()
   await expect(page.locator('#psorm-estimate-0')).toContainText('115.9')

@@ -86,7 +86,7 @@ async function _markSeeded() {
 const _exerciseKey = n => String(n || '').trim().toLowerCase()
 function _indexExercisesByName(rows) {
   const m = new Map()
-  ;(rows || []).forEach(r => { const k = _exerciseKey(r.name); if (!m.has(k)) m.set(k, r.id) })   // first (oldest) wins
+  ;(rows || []).forEach(r => { const k = _exerciseKey(r.name); if (!m.has(k)) m.set(k, r.id) })   // first wins — the read is ordered by name, then id, so "first" means lowest id, not oldest
   return m
 }
 

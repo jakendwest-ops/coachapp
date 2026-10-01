@@ -176,6 +176,17 @@ await step(() => expectThrow('the same opt-in does NOT excuse a different index.
 await close(s)
 delete process.env.ALLOW_SERVER_MODULE_MISMATCH
 
+// 13. The pattern the module comparison relies on must still SEE this repo's real index.html. If index.html's quoting or paths
+// ever stop matching, the comparison would pass over zero files and report success (the multi-agent review's finding, 2026-10-01).
+await step(async () => {
+  const { moduleRefsOf } = require('../tests/global-setup.js')
+  const real = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', 'index.html'), 'utf8')
+  const refs = moduleRefsOf(real)
+  const js = refs.filter(r => r.startsWith('js/')), css = refs.filter(r => r.startsWith('css/'))
+  if (js.length < 9 || css.length < 1) throw new Error(`the real index.html yields ${js.length} js and ${css.length} css references (expected 9 and at least 1) — the module comparison has gone blind`)
+  console.log(`  PASS  the real index.html yields ${js.length} modules and ${css.length} stylesheet(s) — the module comparison has something to compare`)
+})
+
 for (const d of tmpDirs) { try { fs.rmSync(d, { recursive: true, force: true }) } catch {} }
 
 if (failures) {
@@ -187,5 +198,5 @@ if (failures) {
   // person reading 127 would go looking for a missing command rather than a failed check.
   process.exitCode = 1
 } else {
-  console.log('\nAll 12 states verified: it refuses nine distinct bad servers and accepts the good ones.')
+  console.log('\nAll 13 states verified: it refuses nine distinct bad servers, accepts the good ones, and the module pattern still sees the real index.html.')
 }

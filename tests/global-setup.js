@@ -25,6 +25,12 @@ const DEFAULT_BASE = 'http://localhost:3001'
 // fourth check below.
 const LOCAL_INDEX = require('path').join(__dirname, '..', 'index.html')
 
+// The scripts and stylesheets an index.html loads, as relative paths (query strings dropped). One definition: the check below
+// and its self-test both use it, so the self-test exercises the very pattern the check relies on.
+function moduleRefsOf (html) {
+  return [...new Set([...String(html).matchAll(/(?:src|href)="((?:js|css)\/[^"?#]+)[^"]*"/g)].map(m => m[1]))]
+}
+
 async function assertPreviewServer (base, localIndexPath = LOCAL_INDEX) {
   let res, body
   try {
@@ -119,7 +125,11 @@ async function assertPreviewServer (base, localIndexPath = LOCAL_INDEX) {
   const fs = require('fs')
   const path = require('path')
   const root = path.dirname(localIndexPath)
-  const refs = [...new Set([...local.matchAll(/(?:src|href)="((?:js|css)\/[^"?#]+)[^"]*"/g)].map(m => m[1]))]
+  const refs = moduleRefsOf(local)
+  // "Compared nothing" must not read as "compared and matched": if index.html's quoting or paths ever stop matching the
+  // pattern, this loop would pass silently over zero files. scripts/check-preview-server.selftest.mjs asserts the REAL
+  // index.html yields the nine modules and the stylesheet, so a pattern that has gone blind fails there.
+  if (!refs.length) console.log('  [preview-server] WARNING: no js/ or css/ references found in index.html — the module comparison compared NOTHING.')
   const different = []
   await Promise.all(refs.map(async rel => {
     let mine
@@ -309,3 +319,4 @@ module.exports = async () => {
 // Exported so scripts/check-preview-server.selftest.mjs can prove this check is capable of FAILING.
 // A precondition nobody has watched fail is indistinguishable from one that does nothing.
 module.exports.assertPreviewServer = assertPreviewServer
+module.exports.moduleRefsOf = moduleRefsOf

@@ -13,7 +13,7 @@
 // alarm fatigue is the failure mode this OS worries about most. Each rule targets one
 // incident that actually happened, not a category that might.
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, rmSync, statSync, realpathSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { dirname as dirnameP, join as joinP, resolve as resolveP } from 'node:path'
 
@@ -110,7 +110,46 @@ const bareCmd = cmd
 // where we are (this hook has refused the legitimate user nine times already).
 // tests: scripts/check-guardrails-worktree.selftest.mjs (real git worktrees; run at release by checks.sh rule 9r).
 const normPath = p => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-const cdTarget = (cmd.match(/(?:^|&&|;|\|)\s*cd\s+["']?([^"'&;|\n]+)["']?/) || [])[1]
+// Is this command a `git commit`? Also `git -C <path> commit` and `git -c k=v commit`: the natural way to commit in a worktree
+// from another cwd, which the plain `git commit` test never matched, so EVERY commit rule was skipped for it (multi-agent
+// review, 2026-10-01). Run on bareCmd (quoted text blanked), so a commit MESSAGE that says "git commit" is not a commit.
+const COMMIT_RE = /\bgit\s+((?:-[Cc]\s+\S+\s+)*)commit\b/
+const isCommit = COMMIT_RE.test(bareCmd)
+// Statements of a shell line, split on UNQUOTED `;` `&&` `||` `|` and newlines — so `echo "a; cd /tmp"` stays one statement.
+const splitStatements = str => {
+  const out = []; let cur = '', q = null
+  for (const c of String(str)) {
+    if (q) { cur += c; if (c === q) q = null; continue }
+    if (c === '"' || c === "'") { q = c; cur += c; continue }
+    if (c === ';' || c === '|' || c === '&' || c === '\n') { if (cur.trim()) out.push(cur.trim()); cur = ''; continue }
+    cur += c
+  }
+  if (cur.trim()) out.push(cur.trim())
+  return out
+}
+// A bash `cd /c/Users/...` is an MSYS path Windows Node cannot use as a cwd; without this that rule silently skipped.
+const toWinPath = p => String(p || '').trim().replace(/^\/([a-zA-Z])(\/|$)/, '$1:/')
+// The directory a commit is headed for: the session cwd, then every `cd` that PRECEDES the `git commit` applied in order
+// (relative ones against where the last one left us), then any `git -C <path>` on the commit itself. Text AFTER the commit
+// token — the -m message, a heredoc body — is never read: the first version scanned the whole raw command, so a message that
+// said "...; cd /tmp" silently skipped every commit rule, and `cd a && cd b` took the FIRST cd, not the last. Anything that
+// cannot be resolved here (~, $VAR, $(...)) or a directory that does not exist returns null: fail OPEN.
+const commitDir = () => {
+  const m = COMMIT_RE.exec(cmd)
+  if (!m) return null
+  const step = (base, t) => {
+    t = toWinPath(String(t || '').replace(/^["']|["']$/g, ''))
+    if (!t || /^[~$]|\$\(|`/.test(t)) return null
+    return resolveP(base, t)
+  }
+  let dir = ev?.cwd || REPO
+  for (const stmt of splitStatements(cmd.slice(0, m.index))) {
+    const c = /^cd\s+("[^"]*"|'[^']*'|\S+)\s*$/.exec(stmt)
+    if (c) { dir = step(dir, c[1]); if (!dir) return null }
+  }
+  for (const c of m[1].matchAll(/-C\s+(\S+)/g)) { dir = step(dir, c[1]); if (!dir) return null }
+  return existsSync(dir) ? dir : null
+}
 // Which repository does this path belong to — answered from the FILESYSTEM, not by spawning git. Walk up to the nearest
 // `.git`; a directory is the repository itself, a FILE is a worktree's pointer (`gitdir: <repo>/.git/worktrees/<name>`)
 // whose `commondir` file names the shared repository. Two checkouts of one repo share a common dir; that is the whole test.
@@ -137,17 +176,19 @@ const repoOf = start => {
   }
   return null
 }
-// A bash `cd /c/Users/...` is an MSYS path Windows Node cannot use as a cwd; without this that rule silently skipped.
-const toWinPath = p => String(p || '').trim().replace(/^\/([a-zA-Z])(\/|$)/, '$1:/')
 // LAZY and memoised, on purpose: only a `git commit` needs the answer, so it is not worked out for any other command;
 // (the first version did it eagerly with three git spawns per run and the hook's self-test went from
-// 14 s to 30 s, past os-lint's old 30 s limit). Every use below sits behind `/\bgit\s+commit\b/.test(bareCmd) &&`.
+// 14 s to 30 s, past os-lint's old 30 s limit). Every use below sits behind `isCommit &&`.
+// The two common dirs are compared by REAL path: a symlinked or junctioned checkout walks to a different spelling than the
+// gitdir file a worktree records, and the mismatch used to read as "another repository" and silently skip the rules.
+const realOf = p => { try { return realpathSync.native(p) } catch { return p } }
 let _treeMemo
 const treeOf = () => {
   if (_treeMemo !== undefined) return _treeMemo
-  const here = repoOf(toWinPath(cdTarget || ev?.cwd || REPO))
+  const dir = commitDir()
+  const here = dir ? repoOf(dir) : null
   const home = repoOf(REPO)
-  return (_treeMemo = here && home && normPath(here.common) === normPath(home.common) ? here.top : null)
+  return (_treeMemo = here && home && normPath(realOf(here.common)) === normPath(realOf(home.common)) ? here.top : null)
 }
 
 function pipesAway (c) {
@@ -240,7 +281,7 @@ if (/\bgit\s+stash\b/.test(bareCmd) && !/\bgit\s+stash\s+(list|show)\b/.test(bar
 // Retires memory feedback-subagent-throwaway-file-cleanup. Subagents doing live diagnostics
 // leave zz-probe-*/_tmp-*/_debug-* specs behind, and the rule to check `git status` before
 // committing was prose that depended on remembering.
-if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
+if (isCommit && treeOf()) {
   try {
     const junk = execSync('git status --porcelain', { cwd: treeOf(), encoding: 'utf8' })
       .split(/\r?\n/)
@@ -278,7 +319,7 @@ const OWNERSHIP = /_verify[A-Z]|coach_id|client_id|auth\.uid|\bRLS\b|create\s+po
 // ~/.claude was refused because the COACHAPP working tree happened to contain ownership code (the fourth false
 // refusal); the second version, a string-prefix test on the path, then missed every git worktree (2026-10-01).
 
-if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
+if (isCommit && treeOf()) {
   let staged = ''
   if (process.env.GUARDRAILS_FAKE_STAGED !== undefined) {
     staged = process.env.GUARDRAILS_FAKE_STAGED   // self-test injection point
@@ -367,7 +408,7 @@ if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
 // what counts as a schema change, and an over-broad guard that refuses legitimate work is this
 // OS's newest failure class (eight false refusals from RULE 2 alone).
 const SQL_MARKER = process.env.GUARDRAILS_SQL_MARKER || `${STATE}/sql-safety-ran`
-if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
+if (isCommit && treeOf()) {
   let sqlFiles = []
   try {
     const raw = process.env.GUARDRAILS_FAKE_STAGED_FILES ??
@@ -427,7 +468,7 @@ if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
 // already CoachApp: it costs nothing, and it is the same guard against a future non-CoachApp row
 // os-lint's check already relies on.
 const PRED_PATH = 'docs/predictions.jsonl'
-if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
+if (isCommit && treeOf()) {
   const readRepo = (envVar, gitArgs) => {
     if (process.env[envVar] !== undefined) return process.env[envVar]
     try { return execSync(gitArgs, { cwd: treeOf(), encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
@@ -500,7 +541,7 @@ if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
 // So this records. Until 2026-09-27 standing-behaviours.mjs surfaced the running tally every turn;
 // that hook was retired (each invocation opened a console window), so the data is recorded only,
 // in state/scope.jsonl. The threshold gets set when the data supports one, or never.
-if (/\bgit\s+commit\b/.test(bareCmd) && treeOf()) {
+if (isCommit && treeOf()) {
   try {
     const files = execSync('git diff --cached --name-only', { cwd: treeOf(), encoding: 'utf8' })
       .split(/\r?\n/).filter(Boolean)

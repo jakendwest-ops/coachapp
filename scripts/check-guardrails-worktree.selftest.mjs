@@ -17,7 +17,7 @@
 //
 // Run: node scripts/check-guardrails-worktree.selftest.mjs     (exit 1 if any case misbehaves)
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -110,6 +110,33 @@ try {
   // worktree is judged in that worktree (a resolver that only looked at the cwd itself would find no .git and fail open)
   stage(outside, 'js/m.js', 'const a = 1\n' + OWN_LINE)
   say(commitIn(join(outside, 'js'), main) === 'DENY', 'DENY', 'a commit issued from a SUBDIRECTORY of the worktree is judged in that worktree')
+  g(outside, 'reset', '-q', '--hard')
+
+  // ── the multi-agent review's findings on HOW the target tree is found (2026-10-01) ──────────────────────────────────────
+  // `git -C <worktree> commit` is the natural way to commit in a worktree from another cwd. The plain `git commit` test never
+  // matched it, so EVERY commit rule was skipped for it.
+  stage(outside, 'js/m.js', 'const a = 1\n' + OWN_LINE)
+  say(commitIn(main, main, {}, `git -C "${outside.split(String.fromCharCode(92)).join('/')}" commit -m x`) === 'DENY', 'DENY',
+    '`git -C <worktree> commit` from another cwd is judged in that worktree')
+  say(commitIn(outside, main, {}, 'git -c core.editor=true commit -m x') === 'DENY', 'DENY', '`git -c k=v commit` is still seen as a commit')
+
+  // A commit MESSAGE that happens to say "; cd /tmp" must not redirect the lookup: the whole raw command used to be scanned,
+  // the quoted text matched, the tree resolved to nowhere, and every rule was skipped — for any commit whose message did that.
+  say(commitIn(outside, main, {}, 'git commit -m "tidy; cd /tmp and move on"') === 'DENY', 'DENY', 'a "; cd /tmp" inside the commit message does not skip the rules')
+
+  // `cd a && cd b && git commit`: the LAST cd is where the commit happens (the first one used to win).
+  const slash = p => p.split(String.fromCharCode(92)).join('/')
+  say(commitIn(main, main, {}, `cd "${slash(main)}" && cd "${slash(outside)}" && git commit -m x`) === 'DENY', 'DENY', 'with two cds the LAST one decides the tree')
+
+  // A RELATIVE cd is resolved against the session cwd (the event's), not the hook process's own.
+  say(commitIn(dir, main, {}, 'cd wt-outside && git commit -m x') === 'DENY', 'DENY', 'a relative `cd` is resolved against the session cwd')
+
+  // A symlinked / junctioned path to the worktree: compared by REAL path, so it is judged rather than silently skipped.
+  const link = join(dir, 'link-outside')
+  let linked = false
+  try { symlinkSync(outside, link, 'junction'); linked = true } catch { /* no permission to make a link here — nothing to test */ }
+  if (linked) say(commitIn(link, main) === 'DENY', 'DENY', 'a commit made through a symlink/junction to the worktree is judged, not skipped')
+  else console.log('  [note] could not create a junction here — the symlink case cannot run')
   g(outside, 'reset', '-q', '--hard')
 
   // and a folder that is not inside any repository fails OPEN — the hook never refuses over its own failure to find out

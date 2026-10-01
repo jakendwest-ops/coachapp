@@ -98,3 +98,51 @@ describe('toggleTableSet still refuses an incomplete row (the shared predicate d
     assert.equal(f(mk('timed_hold', []), { duration: '0:00' }), 'Enter a duration first')
   })
 })
+
+describe('a set that was left out is SAID — _droppedTickedCount (Jake chose "warn", 2026-10-01)', () => {
+  test('counts a ticked set whose reps were cleared, once the read-back has dropped it', () => {
+    const ex = mk('weight_reps', [
+      { ...blank('weight_reps'), done: true, weight: '100', reps: '5' },
+      { ...blank('weight_reps'), done: true, weight: '80', reps: '' }          // ticked, then reps cleared
+    ])
+    setRunner([ex])
+    get('_loggedExercises')()                          // what the finish screen and the save both call
+    assert.equal(get('_droppedTickedCount')(), 1)
+  })
+
+  test('a set that was never ticked is not "left out"', () => {
+    const ex = mk('weight_reps', [
+      { ...blank('weight_reps'), done: true, weight: '100', reps: '5' },
+      { ...blank('weight_reps') }                      // an empty row the lifter never touched
+    ])
+    setRunner([ex])
+    get('_loggedExercises')()
+    assert.equal(get('_droppedTickedCount')(), 0, 'warning about a set nobody did would be noise, then ignored')
+  })
+
+  test('ticking it again on purpose clears the warning', () => {
+    const ex = mk('weight_reps', [{ ...blank('weight_reps'), done: true, weight: '80', reps: '' }])
+    setRunner([ex])
+    get('_loggedExercises')()
+    assert.equal(get('_droppedTickedCount')(), 1)
+    ex.tableRows[0].reps = '8'                         // the lifter retypes the reps...
+    run('_unlockAudio = function () {}; _unlockSpeech = function () {}; startRestTimer = function () {}')
+    get('toggleTableSet')(0)                           // ...and ticks it again
+    assert.equal(ex.tableRows[0].done, true)
+    assert.equal(get('_droppedTickedCount')(), 0)
+    assert.equal(ex.loggedSets.length, 1, 'and it counts again')
+  })
+
+  test('with no workout running there is nothing to count (the finish screen can call it safely)', () => {
+    run('_runner = null')
+    assert.equal(get('_droppedTickedCount')(), 0)
+  })
+
+  test('counts across exercises', () => {
+    const a = mk('weight_reps', [{ ...blank('weight_reps'), done: true, weight: '50', reps: '' }])
+    const b = mk('weight_reps', [{ ...blank('weight_reps'), done: true, weight: '', reps: '5' }])
+    setRunner([a, b])
+    get('_loggedExercises')()
+    assert.equal(get('_droppedTickedCount')(), 2)
+  })
+})

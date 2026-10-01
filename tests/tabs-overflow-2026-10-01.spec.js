@@ -26,7 +26,10 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(async ({ page }) => {
   if (!clientId) return
   const id = clientId; clientId = null
-  await page.evaluate(async id => { await db.from('clients').delete().eq('id', id).select('id') }, id).catch(err => console.warn('[tabs-overflow] CLEANUP FAILED — rows may be left in the test account:', err.message))
+  // Reads the rows back: an unchecked delete that is refused returns { data: [], error: null } and looks like it worked.
+  const removed = await page.evaluate(async id => { const { data, error } = await db.from('clients').delete().eq('id', id).select('id'); return { n: (data || []).length, error: error?.message || null } }, id)
+    .catch(err => ({ n: 0, error: String(err.message || err) }))
+  if (removed.n !== 1) console.warn(`[tabs-overflow] CLEANUP INCOMPLETE — expected to remove 1 fixture client, removed ${removed.n} (${removed.error || 'no error'}); rows may be left in the test account`)
 })
 
 // How far is the page area scrolled / able to scroll sideways, and is the strip its own scroller?

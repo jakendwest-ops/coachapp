@@ -25,7 +25,7 @@
     "toLocaleDateString(": {
       "pattern": "toLocaleDateString\\(",
       "scope": "js",
-      "count": 34,
+      "count": 33,
       "why": "Ten distinct option shapes across 36 sites, which is why dates render inconsistently between pages. Phase 3 introduces fmtDateGB(dateStr, shape)."
     },
     "role === 'solo'": {

@@ -23,7 +23,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { createServer, connect } from 'node:net'
 import { join, dirname } from 'node:path'
-import { tmpdir } from 'node:os'
+import { tmpdir, networkInterfaces } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -34,9 +34,9 @@ const NODE_SERVER = process.env.PREVIEW_SERVER || join(HERE, 'preview-server.mjs
 const freePort = () => new Promise((res, rej) => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)) }); s.on('error', rej) })
 
 // One raw request. A hung response (the server never closes it) is reported as such, not as a pass.
-function raw (port, target, { host = `localhost:${port}`, timeoutMs = 5000 } = {}) {
+function raw (port, target, { host = `localhost:${port}`, timeoutMs = 5000, address = '127.0.0.1' } = {}) {
   return new Promise(resolve => {
-    const s = connect(port, '127.0.0.1')
+    const s = connect(port, address)
     let buf = ''
     const done = (extra = {}) => { clearTimeout(t); s.destroy(); const m = /^HTTP\/1\.[01] (\d+)/.exec(buf); const [head, ...rest] = buf.split('\r\n\r\n'); resolve({ status: m ? Number(m[1]) : null, head, body: rest.join('\r\n\r\n'), ...extra }) }
     const t = setTimeout(() => done({ hung: true }), timeoutMs)
@@ -148,6 +148,15 @@ async function attack (target) {
       const ads = await raw(port, '/plain.html:secret.txt')
       say(!ads.hung && ads.status !== 200 && !ads.body.includes('SECRET-ADS'), `an alternate data stream behind an allowed extension: GET /plain.html:secret.txt -> ${ads.hung ? 'HUNG' : ads.status}, secret ${ads.body.includes('SECRET-ADS') ? 'LEAKED' : 'not in the body'}`)
     }
+    // A request from ANOTHER MACHINE that forges a loopback Host header. http.sys (the PowerShell server) listens on every
+    // interface and only matches the Host name, so `Host: localhost:PORT` over the LAN address was answered 200 (found by the
+    // multi-agent review, 2026-10-01). Simulated by connecting to this machine's own LAN address: the server then sees a
+    // non-loopback client. The Node server is not even listening there (connection refused), which is just as good a refusal.
+    const lan = Object.values(networkInterfaces()).flat().find(i => i && i.family === 'IPv4' && !i.internal)?.address
+    if (lan) {
+      const far = await raw(port, '/', { address: lan })
+      say(!far.hung && (far.connectError || far.status !== 200) && !far.body.includes('OK-INDEX'), `a request over the LAN address (${lan}) with a forged loopback Host is refused -> ${far.connectError ? 'connection refused' : far.hung ? 'HUNG' : far.status}`)
+    } else console.log('  [note] no LAN address on this machine — the non-loopback client case cannot run here')
     const rebind = await raw(port, '/', { host: 'evil.example' })
     say(!rebind.hung && rebind.status !== 200 && !rebind.body.includes('OK-INDEX'), `a request whose Host names another origin (DNS rebinding) is refused -> ${rebind.hung ? 'HUNG' : rebind.status}`)
 

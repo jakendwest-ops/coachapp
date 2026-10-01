@@ -83,6 +83,12 @@ orders deterministically, so two existing rows no longer breed a third. (6) `_li
 Also fixed, found on the way: the new-coach starter seed read the library unpaged and case-sensitively
 (`tests-node/starter-seed-names.test.mjs`). Tests: `tests/exercise-duplication-2026-10-01.spec.js`, `tests-node/exercise-lookup.test.mjs`.
 
+**Added after the pre-push review (same day).** A FOURTH writer to `exercises.name` had no guard: renaming an exercise (`saveEditExercise`) onto
+an existing name made a duplicate. It now looks first (only when the name actually changes, so editing the notes of one of an existing pair is not
+refused) and checks the update's rowcount. A name containing `*` no longer broadens the lookup past the limit (`_exerciseNamePattern`), and the
+picker says a failed library read FAILED instead of "No exercises yet" and offers no Create. Tests: `tests/review-fixes-2026-10-01.spec.js`,
+`tests-node/review-fixes-2026-10-01.test.mjs`.
+
 **Not done: (5) a database constraint.** Every check is still check-then-insert, so two taps in the same instant can still
 make a pair. A unique index on `(coach_id, is_personal, lower(btrim(name)))` would close it, but it FAILS to create if any
 account already holds a duplicate, so it needs a read-only duplicate check on the real data first, then a verified script, then

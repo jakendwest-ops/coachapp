@@ -582,7 +582,7 @@ async function renderClientDashboard(el) {
           ${!pbs.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No records yet.</p>` : pbs.slice(0,4).map(pb => `
             <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
               <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
-              <span style="font-size:var(--text-lg, 14px);font-weight:700">${pb.value} <span style="font-size:var(--text-sm, 11px);font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
+              <span style="font-size:var(--text-lg, 14px);font-weight:700">${escapeHtml(String(pb.value))} <span style="font-size:var(--text-sm, 11px);font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
             </div>`).join('')}
           ${pbs.length > 4 ? `<p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more</p>` : ''}
           <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
@@ -883,7 +883,7 @@ function _soloTileMyProgress(pbs) {
     ${!list.length ? `<p class="solo-tile-empty">No records yet. Tap to add one.</p>` : list.slice(0, 2).map(pb => `
       <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
         <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
-        <span style="font-size:var(--text-lg, 14px);font-weight:700">${pb.value} <span class="solo-tile-sub">${escapeHtml(pb.unit || '')}</span></span>
+        <span style="font-size:var(--text-lg, 14px);font-weight:700">${escapeHtml(String(pb.value))} <span class="solo-tile-sub">${escapeHtml(pb.unit || '')}</span></span>
       </div>`).join('')}
     ${list.length > 2 ? `<span class="solo-tile-sub">+${list.length - 2} more</span>` : ''}
   </div>`

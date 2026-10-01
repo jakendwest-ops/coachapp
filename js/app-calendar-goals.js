@@ -1114,7 +1114,10 @@ async function saveEditGoal(goalId, clientId) {
   if (!title) { errorEl.textContent = 'Title is required'; return }
 
   log.info('saveEditGoal', 'updating goal', { goalId })
-  const { error } = await db.from('goals').update({
+  // .select('id') + rowcount, as deleteGoal below has: the `created_by` anchor means an account that did not create this goal
+  // (a client opening the goal its COACH set) matches no row, and a policy-refused update returns { data: [], error: null } —
+  // the modal used to close and the old values repaint, so the edit vanished without a word (multi-agent review, 2026-10-01).
+  const { data: updated, error } = await db.from('goals').update({
     title,
     description:   document.getElementById('eg-desc').value.trim()    || null,
     status:        document.getElementById('eg-status').value,
@@ -1122,9 +1125,10 @@ async function saveEditGoal(goalId, clientId) {
     current_value: document.getElementById('eg-current').value         || null,
     target_value:  document.getElementById('eg-target').value          || null,
     updated_at:    new Date().toISOString()
-  }).eq('id', goalId).eq('created_by', currentUser.id)
+  }).eq('id', goalId).eq('created_by', currentUser.id).select('id')
 
   if (error) { log.error('saveEditGoal', 'update failed', error); errorEl.textContent = error.message; return }
+  if (!(updated || []).length) { errorEl.textContent = 'Not saved — only the person who set this goal can edit it.'; return }
   log.ok('saveEditGoal', 'goal updated', { goalId })
   closeModal('edit-goal-modal')
   openGoal(goalId, clientId)

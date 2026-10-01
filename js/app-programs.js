@@ -1944,11 +1944,8 @@ async function generatePhasePeriodization(phaseId, programId) {
       }
 
       const exs = (tmpl.workout_template_exercises || []).map(ex => {
-        const sets = (ex.sets_json || []).map(s => {
-          if (s.intensityMin == null && s.intensityMax == null) return s
-          const pct = _computePeriodizedPct(phase.periodization_type, config, week, phase.duration_weeks, bw.tier)
-          return pct == null ? s : { ...s, intensityMin: pct, intensityMax: pct }
-        })
+        const sets = (ex.sets_json || []).map(s => _applyWavePct(s,
+          () => _computePeriodizedPct(phase.periodization_type, config, week, phase.duration_weeks, bw.tier)))
         return {
           template_id: newTmpl.id, exercise_id: ex.exercise_id || null, exercise_name: ex.exercise_name,
           // metric_type MUST be carried. Omitting it made every generated week 2+ fall back to the
@@ -2206,6 +2203,19 @@ async function _cleanupPhaseWeeksBeyond(phaseId, maxWeek, programId) {
   // Found by multi-agent review 2026-07-11.
   await _deleteOwnedUnreferencedTemplates(staleMasterTemplateIds, programId, phaseId)
   return true
+}
+
+// Does the weekly percentage wave rewrite this set? Only a % of the STORED 1RM — that is what the wave numbers are. A set
+// pointed at "today's top set" (intensityBasis 'topSet') has a different base, and a wave number meant for a max would land on
+// a back-off set as, say, "95% of the top set" — nearly as heavy as the top set itself, chosen by nobody. Those sets keep the
+// percentage the coach typed, every week (Jake, 2026-10-01: "option 2"); the coach can still edit any week by hand.
+// `pctOf` is a function so the wave is only computed for a set that actually carries a percentage. Pure — tested in
+// tests-node/periodization-basis.test.mjs. Before 2026-10-01 this was inline in generatePhasePeriodization and basis-blind.
+function _applyWavePct(s, pctOf) {
+  if (s.intensityMin == null && s.intensityMax == null) return s
+  if (s.intensityBasis === 'topSet') return s
+  const pct = pctOf()
+  return pct == null ? s : { ...s, intensityMin: pct, intensityMax: pct }
 }
 
 function _computePeriodizedPct(type, config, week, totalWeeks, tier) {

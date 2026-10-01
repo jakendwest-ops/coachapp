@@ -1303,16 +1303,28 @@ async function saveEditExercise(id) {
   if (!name) { errorEl.textContent = 'Name is required'; return }
 
   log.info('saveEditExercise', 'updating exercise', { id })
-  const { error } = await db.from('exercises').update({
+  // RENAMING onto a name the library already has makes a duplicate — the FOURTH writer to exercises.name (Add, the picker's
+  // Create and auto-create-on-save all look first; this one did not — multi-agent review, 2026-10-01). Only a CHANGED name is
+  // checked: editing the notes of one of an existing pair must not be refused because its twin shares the name.
+  const { data: current, error: curErr } = await db.from('exercises').select('name, is_personal').eq('id', id).eq('coach_id', currentUser.id).maybeSingle()
+  if (curErr) { log.error('saveEditExercise', 'could not read the current name', curErr); errorEl.textContent = curErr.message; return }
+  if ((current?.name || '').trim().toLowerCase() !== name.toLowerCase()) {
+    const { row: clash, error: lookupErr } = await _findExerciseByName(currentUser.id, !!current?.is_personal, name)
+    if (lookupErr) { errorEl.textContent = 'Could not check your library — try again.'; return }
+    if (clash && clash.id !== id) { errorEl.textContent = `You already have an exercise called "${clash.name}"${clash.is_archived ? ' (archived)' : ''}.`; return }
+  }
+  // .select('id') + rowcount: a policy-refused update returns { data: [], error: null }, i.e. it looks like it worked.
+  const { data: updated, error } = await db.from('exercises').update({
     name,
     muscle_group:  document.getElementById('ee-muscle').value    || null,
     category:      document.getElementById('ee-category').value  || null,
     default_sets:  document.getElementById('ee-sets').value      || null,
     default_reps:  document.getElementById('ee-reps').value      || null,
     notes:         document.getElementById('ee-notes').value.trim() || null
-  }).eq('id', id).eq('coach_id', currentUser.id)
+  }).eq('id', id).eq('coach_id', currentUser.id).select('id')
 
   if (error) { log.error('saveEditExercise', 'update failed', error); errorEl.textContent = error.message; return }
+  if (!(updated || []).length) { log.error('saveEditExercise', 'update matched no row', { id }); errorEl.textContent = 'Not saved — you may not have permission to edit this exercise.'; return }
   log.ok('saveEditExercise', 'exercise updated', { id })
   closeModal('edit-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
@@ -2096,9 +2108,8 @@ function renderTemplateSets(containerId, type) {
   // session. The coach is the only one who can fix it and the only one who never sees it. Warn
   // rather than refuse (Jake, 2026-09-30) — same choice as topSetWarning above, so a half-built
   // template is never blocked from saving.
-  // Explicit presence test rather than a truthy one. The effort inputs carry min="1" so a
-  // prescribed 0 is not reachable through the UI today, but this project has shipped four
-  // falsy-zero bugs and a hand-edited or imported sets_json is not bound by the input's min.
+  // Explicit presence test rather than a truthy one. The effort inputs take min="0" (RIR 0, "to failure", is real),
+  // this project has shipped five falsy-zero bugs, and a hand-edited or imported sets_json can hold a numeric 0.
   const ts0 = window._templateSets?.[0]
   const tsEffortSet = [ts0?.effortMin, ts0?.effortMax].some(v => v !== null && v !== undefined && v !== '')
   const topSetNoEffort = topSetActive
@@ -2160,7 +2171,7 @@ function renderTemplateSets(containerId, type) {
           ${cell('Duration (mm:ss)', gmini(`ts-duration-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${escapeHtml(String(s.duration||'0:00'))}"`))}
           ${cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
-          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(_hasNumVal(s.effortMin)?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(_hasNumVal(s.effortMax)?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
       ` : isJump ? `
         <div class="ts-grid">
@@ -2169,7 +2180,7 @@ function renderTemplateSets(containerId, type) {
             : cell('Target distance (m)', gmini(`ts-jdist-${i}`, 'type="number" step="0.01" inputmode="decimal" placeholder="—"'+(s.targetDistanceM?` value="${escapeHtml(String(s.targetDistanceM))}"`:'')))}
           ${cell('Jumps per set', gmini(`ts-rmin-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMin?` value="${escapeHtml(String(s.repsMin))}"`:'')) + dash + gmini(`ts-rmax-${i}`,'type="number" inputmode="numeric" placeholder="—"'+(s.repsMax?` value="${escapeHtml(String(s.repsMax))}"`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
-          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(_hasNumVal(s.effortMin)?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(_hasNumVal(s.effortMax)?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
       ` : `
         <div class="ts-grid">
@@ -2180,7 +2191,7 @@ function renderTemplateSets(containerId, type) {
                above for why. */''}
           ${(s.bodyweight || (i === 0 && topSetActive)) ? '' : cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`,'type="text" placeholder="—"'+(s.weight?` ${weightInputAttrs(s.weight)}`:'')))}
           ${cell('Rest between sets', gmini(`ts-restmin-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMin||'0:00'))+'"') + dash + gmini(`ts-restmax-${i}`,'type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="'+escapeHtml(String(s.restMax||'0:00'))+'"'))}
-          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMin?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(s.effortMax?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
+          <div class="ts-cell effort"><div class="ts-toggle2">${etbtn('RPE','rpe')}${etbtn('RIR','rir')}</div><div class="ts-cell-inputs">${gmini(`ts-emin-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Min"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(_hasNumVal(s.effortMin)?` value="${escapeHtml(String(s.effortMin))}"`:''))}${dash}${gmini(`ts-emax-${i}`,'type="number" step="0.5" min="0" max="10" placeholder="Max"'+(i===0?' oninput="_syncTopSetEffortWarning()"':'')+(_hasNumVal(s.effortMax)?` value="${escapeHtml(String(s.effortMax))}"`:''))}</div></div>
         </div>
         ${/* Fix round 1 (Important finding 1): the FIRST version of this swapped out the whole
              "+ More targets" block for the note, which took Tempo and Countdown down with it even
@@ -2480,17 +2491,26 @@ const _likeEscape = s => String(s).replace(/[\\%_]/g, '\\$&')
 //  - NOT .maybeSingle(): that ERRORS when two rows match, the error was ignored, and "no row" led straight
 //    to an insert — so an existing duplicate begot a third. This takes the oldest and never errors on
 //    duplicates that already exist.
-//  - The pattern is escaped, then the result is compared for exact (trimmed, case-folded) equality again
-//    client-side. PostgREST also treats `*` as a wildcard, which escaping cannot remove, so the exact
-//    compare is what makes the match an EQUALITY rather than a pattern. limit(50) leaves room for a
-//    broadened match to sit ahead of the exact one.
+//  - The pattern is escaped (_exerciseNamePattern, which also narrows a `*`), then the result is compared
+//    for exact (trimmed, case-folded) equality again client-side, which is what makes the match an
+//    EQUALITY rather than a pattern. limit(50) leaves room for a broadened match to sit ahead of the exact one.
 //  - Returns { row, error }, and a caller that gets an error must NOT go on to insert: if we cannot tell
 //    whether the exercise exists, creating it blind is exactly how duplicates are made.
+// The ilike pattern for "this exact name": LIKE metacharacters escaped (_likeEscape), and a literal `*` turned into the
+// single-character wildcard `_`. PostgREST rewrites `*` to `%` in a like/ilike value and offers NO escape for it, so a name
+// such as "Curl*" used to match every exercise starting "Curl" — up to the limit(50), oldest first — and when the exact row sat
+// beyond them the exact compare never saw it and a duplicate was created (multi-agent review, 2026-10-01). `_` matches that
+// one character (including a real `*`), so the candidates are only names that differ from this one by single characters at the
+// asterisks, and the client-side exact compare then picks the real one. Pure — tests-node/exercise-lookup.test.mjs.
+function _exerciseNamePattern(name) {
+  return _likeEscape(name).replace(/\*/g, '_')
+}
+
 async function _findExerciseByName(coachId, isPersonal, name) {
   const trimmed = (name || '').trim()
   if (!trimmed || !coachId) return { row: null, error: null }
   const { data, error } = await db.from('exercises').select('id, name, is_archived, metric_type')
-    .eq('coach_id', coachId).eq('is_personal', isPersonal).ilike('name', _likeEscape(trimmed))
+    .eq('coach_id', coachId).eq('is_personal', isPersonal).ilike('name', _exerciseNamePattern(trimmed))
     .order('created_at').order('id').limit(50)
   if (error) { log.error('_findExerciseByName', 'lookup failed', error); return { row: null, error } }
   const want = trimmed.toLowerCase()
@@ -2563,9 +2583,13 @@ async function _openExercisePicker(coachId, onPick) {
   _exercisePickerState.coachId = coachId
   // Paged: the API silently returns at most 200 rows, so a plain read hid every exercise past row 200 from
   // BOTH the list and its search (the E2E account holds 6,275). Fails to null rather than a partial list.
-  const { data } = await _fetchAllRows(() => db.from('exercises').select('id, name, muscle_group, is_archived, metric_type', { count: 'exact' })
+  const { data, error: loadErr } = await _fetchAllRows(() => db.from('exercises').select('id, name, muscle_group, is_archived, metric_type', { count: 'exact' })
     .eq('coach_id', coachId).eq('is_personal', currentProfile?.role === 'solo').order('name').order('id'))
   if (!_exercisePickerState) return // closed before the fetch resolved
+  // A failed read must not look like an empty library: "No exercises yet — create your first one" over a library of
+  // thousands is exactly how a duplicate gets typed in. Say it failed, and offer no Create row (we cannot tell what exists).
+  if (loadErr) log.error('_openExercisePicker', 'library read failed', loadErr)
+  _exercisePickerState.loadFailed = !!loadErr
   _exercisePickerState.allExercises = data || []
   // Re-render using whatever is CURRENTLY typed, not '' — the user may have already started
   // typing while this fetch was in flight, and blindly re-rendering with an empty query would
@@ -2576,6 +2600,10 @@ async function _openExercisePicker(coachId, onPick) {
 function _renderExercisePickerResults(query) {
   const resultsEl = document.getElementById('exp-results')
   if (!resultsEl || !_exercisePickerState) return
+  if (_exercisePickerState.loadFailed) {
+    resultsEl.innerHTML = '<div id="exp-load-failed" class="loading-state" style="padding:20px 0">Could not load your exercises — close this and try again.</div>'
+    return
+  }
   const q = query.trim().toLowerCase()
   const all = _exercisePickerState.allExercises || []
   const filterList = list => q ? list.filter(e => e.name.toLowerCase().includes(q)) : list

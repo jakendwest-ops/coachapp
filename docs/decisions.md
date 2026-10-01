@@ -21,12 +21,16 @@ legitimate user nine times). A lint of another tree is read-only for the shared 
 branch would re-pin the ceiling under main). The hooks themselves still run from main's copy (settings.json), so the fix is
 live only once it is on master. (2) `.claude/launch.json`'s server and the scratch Node server both served `/.env`; the latter
 bound every interface. Both now refuse dot segments, 8.3 short names, `:` streams and unlisted file types; the Node one is
-`scripts/preview-server.mjs` (loopback only, Host-checked), and ONE attack test runs against both. **Rejected:** a bare
+`scripts/preview-server.mjs` (binds 127.0.0.1, Host-checked), and ONE attack test runs against both. launch.json's PowerShell server CANNOT bind loopback only
+(http.sys listens on every interface and matches only the Host NAME — measured by the pre-push review, a forged Host over the LAN got 200), so it
+refuses any client whose address is not loopback instead. **Rejected:** a bare
 "deny paths starting with a dot" (misses `ENV~1`, found by trying it). Serving an OLDER module on purpose (a neuter run) now
 needs the explicit `ALLOW_SERVER_MODULE_MISMATCH=1`, because `global-setup` now compares every served script/stylesheet, not only
 index.html. (3) A ticked set whose reps or weight is cleared afterwards is dropped from the session AND un-ticked
 (`_rowIncompleteReason`, shared with the tick). **Rejected:** refusing at the edit (needs a re-render per keystroke, which
-round 1 showed tears the table from under taps). This one is Claude's call, flagged for Jake — it is the single place to flip.
+round 1 showed tears the table from under taps). **Jake confirmed it, with a warning (option B):** the finish screen says a ticked
+set was left out and Save repeats it, so the drop is never silent. (4) The weekly percentage wave no longer rewrites a set pointed at
+"today's top set" (Jake: option 2): wave numbers are percentages of a max, and on a back-off set they became a load nobody chose.
 
 **2026-10-01 — The runner's effort field does NOT re-render on edit; it follows the same "edit, then re-tick" contract as weight and reps.**
 Review round 1 found that typing an RPE *after* ticking the top set did nothing, and the first fix added an

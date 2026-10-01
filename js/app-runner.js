@@ -758,12 +758,15 @@ function _syncLoggedSetsFromTable(ex) {
   // would otherwise shift every later row onto the wrong prescription.
   // A ticked row whose required field was cleared afterwards is no longer a logged set: leave it out AND un-tick it, so
   // the finish screen and the save agree (both read this) and the table stops claiming it is done. See _rowIncompleteReason.
-  ex.tableRows.forEach(r => { if (r.done && _rowIncompleteReason(ex, r)) r.done = false })
+  ex.tableRows.forEach(r => { if (r.done && _rowIncompleteReason(ex, r)) { r.done = false; r._dropped = true } })
   ex.loggedSets = ex.tableRows
     .map((r, i) => ({ r, i }))
     .filter(({ r }) => r.done)
     .map(({ r, i }) => {
-      if (mt === 'unilateral') return { leftWeight: r.leftWeight || null, leftReps: r.leftReps || null, rightWeight: r.rightWeight || null, rightReps: r.rightReps || null }
+      // Weights through _hasNumVal, not `||`: these cells store a NUMBER (weightFromPref), so a real 0 kg load is the number 0,
+      // and `0 || null` is null — the load vanished while the tick (which needs only reps) accepted the set. Reps stay `||`:
+      // 0 reps is not a set (multi-agent review, 2026-10-01).
+      if (mt === 'unilateral') return { leftWeight: _hasNumVal(r.leftWeight) ? r.leftWeight : null, leftReps: r.leftReps || null, rightWeight: _hasNumVal(r.rightWeight) ? r.rightWeight : null, rightReps: r.rightReps || null }
       if (mt === 'timed_hold') return { duration: r.duration || null, weight: _hasNumVal(r.weight) ? r.weight : null }
       if (mt === 'jump_height') return { height_cm: _hasNumVal(r.height_cm) ? r.height_cm : null, reps: r.reps || null }
       if (mt === 'jump_distance') return { distance_m: _hasNumVal(r.distance_m) ? r.distance_m : null, reps: r.reps || null }
@@ -793,6 +796,13 @@ function _rowIncompleteReason(ex, row) {
   return null
 }
 
+// How many sets were ticked and then emptied (reps/weight cleared), so _syncLoggedSetsFromTable un-ticked and dropped them.
+// Counted from the per-row flag that sync sets (and a fresh tick clears), not recomputed: by the time anyone asks, the row
+// is already un-ticked and looks identical to a set that was never done. Shown on the finish screen and again on Save.
+function _droppedTickedCount() {
+  return (_runner?.exercises || []).reduce((n, ex) => n + (ex.tableRows || []).filter(r => r._dropped && !r.done).length, 0)
+}
+
 function toggleTableSet(rowIdx) {
   const ex = _runner.exercises[_runner.exIdx]
   const row = ex.tableRows?.[rowIdx]
@@ -811,6 +821,7 @@ function toggleTableSet(rowIdx) {
     _unlockAudio()
     _unlockSpeech()
     row.done = true
+    row._dropped = false   // ticked again on purpose: no longer "left out"
     _syncLoggedSetsFromTable(ex)
     _recomputeLiveE1RM(ex)
     startRestTimer(ex.restSecs || 90)
@@ -858,6 +869,12 @@ function deleteTableRow(rowIdx) {
   // alone when there is no prescription at that index (an appended row) or only one for the whole exercise.
   if (Array.isArray(ex.sets_json) && ex.sets_json.length > 1 && rowIdx < ex.sets_json.length) {
     ex.sets_json = ex.sets_json.filter((_, i) => i !== rowIdx)
+  } else if (rowIdx === 0 && ex.sets_json?.[0]?.isTopSet) {
+    // A lone TOP-SET prescription: "one prescription for the whole exercise" does not hold for it — it is keyed to row 0
+    // (the top set is always row 0), and rows added with "+ Add set" have none. Deleting row 0 left it in place, so the
+    // first appended row slid into index 0 and was crowned the top set: the very bug the branch above exists to prevent
+    // (multi-agent review, 2026-10-01). With no top row left there is no top-set prescription, so drop it.
+    ex.sets_json = []
   }
   _syncLoggedSetsFromTable(ex)
   _recomputeLiveE1RM(ex)   // deleting the top set must also drop the chip it fed, not leave its estimate on screen
@@ -2850,6 +2867,9 @@ async function showRunnerFinish() {
 
   const duration  = fmtRunnerTime(startTime)
   const doneExs   = _loggedExercises()   // same definition the save uses — they must not diverge
+  // Counted AFTER the line above, because that call is what un-ticks a set whose reps/weight were cleared. Said out loud on
+  // the screen, so a set that quietly vanished from the session is never a surprise (Jake's pick, 2026-10-01: "warn").
+  const droppedN  = _droppedTickedCount()
   // Work rounds only, via _countableSets (app-progress) — the SAME filter My Progress applies, not a
   // hand-copied predicate, so the two surfaces cannot drift apart again. Warm-ups and cool-downs are
   // recorded but are not sets (Jake, 2026-07-25); counting them here meant an interval session read
@@ -2905,6 +2925,7 @@ async function showRunnerFinish() {
               <div style="font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Distance</div>
             </div>` : ''}
           </div>
+          ${droppedN ? `<div id="wr-dropped-note" role="status" style="margin-top:10px;padding:8px 10px;border:1.5px solid var(--warning, #f59e0b);background:rgba(245,158,11,.1);border-radius:var(--radius, 10px);font-size:var(--text-sm, 12px);line-height:1.35">⚠ ${droppedN} ticked set${droppedN > 1 ? 's were' : ' was'} left out — ${droppedN > 1 ? 'their' : 'its'} reps or weight ${droppedN > 1 ? 'were' : 'was'} blank. ${droppedN > 1 ? 'They are' : 'It is'} not counted above and will not be saved.</div>` : ''}
         </div>
 
         <div style="flex:1;overflow-y:auto;padding:16px">
@@ -3088,6 +3109,9 @@ async function saveRunnerSession() {
   // The re-sync from the live table happens INSIDE _loggedExercises(), so this and the finish screen
   // read the same values — see the comment there.
   const exercises = _loggedExercises()
+  // Said again at the moment of saving (the finish screen says it too): a ticked set that was emptied is not in this save.
+  const leftOut = _droppedTickedCount()
+  if (leftOut) showToast(`${leftOut} ticked set${leftOut > 1 ? 's' : ''} left out — reps or weight were blank`, 'warn', 5000)
   if (!exercises.length) { showToast('No sets logged — nothing to save.', 'warn', 3000); return }
 
   const saveBtn = document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')
@@ -3326,7 +3350,7 @@ function showPostSessionOneRMModal(clientId, candidates) {
             <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--accent)">${escapeHtml(c.name)} — ${fmtWeight(c.weight)} × ${c.reps} reps</div>
             <div id="psorm-estimate-${i}" style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">That puts your estimated 1RM at ≈ ${fmtWeight(c.estimate, { spaced: true, decimals: 1 })}</div>
             <div style="display:flex;gap:6px">
-              <button class="btn-primary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="_savePostSessionOneRM(${i},'${clientId}','${escapeAttr(c.name)}',${c.estimate},${c.exerciseId ? `'${c.exerciseId}'` : 'null'})">Save as my 1RM</button>
+              <button class="btn-primary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="_savePostSessionOneRM(${i},'${escapeAttr(clientId)}','${escapeAttr(c.name)}',${c.estimate},${c.exerciseId ? `'${escapeAttr(c.exerciseId)}'` : 'null'})">Save as my 1RM</button>
               <button class="btn-secondary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="document.getElementById('psorm-row-${i}').remove()">Skip</button>
             </div>
           </div>`).join('')}
