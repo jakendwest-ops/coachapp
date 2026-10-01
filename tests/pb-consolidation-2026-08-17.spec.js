@@ -151,7 +151,32 @@ test.describe('Personal Bests consolidation', () => {
       document.getElementById('pl-unit').value = 'min'
       document.getElementById('pl-date').value = '2026-08-17'
       document.getElementById('pl-notes').value = 'felt strong'
-      await savePerformanceLog(window._soloClientId)
+      // This is the one test in the whole suite that needs db.auth.getUser() (inside
+      // savePerformanceLog) to succeed against a LIVE, server-validated token, rather than relying
+      // on the cached currentUser/currentProfile globals everything else here uses. The injected
+      // session (tests/session-store.js) is a static snapshot taken once at the start of the whole
+      // run. Confirmed 2026-10-02: this exact test failed twice in a row in the full suite, each
+      // time with getUser() legitimately returning no user late in the run -- once as an unguarded
+      // crash (now fixed, see savePerformanceLog), once as the new guard's own "session expired"
+      // message, which is the guard working correctly. CORRECTION (critic review, same day): getUser()
+      // and getSession() are NOT asymmetric in this app's actual pinned supabase-js build (2.117.2) --
+      // both route through the same internal refresh-if-needed check, so calling getSession() first
+      // does not do what an earlier version of this comment claimed. refreshSession() IS unconditional
+      // (always attempts a refresh via the stored refresh token, no "already fresh enough" skip), so
+      // that is what forces a token we can be sure is current, if the refresh token itself is still
+      // good. If the refresh token has ALSO been invalidated (e.g. a global, non-'local'-scoped
+      // sign-out on the shared pt account elsewhere in this 975-test suite, which revokes server-side
+      // without affecting a JWT's local signature/exp validity -- the one write _verifyClientAccess
+      // makes just above would keep succeeding while getUser() alone would not), no refresh of any
+      // kind can recover it; only a real fresh login would. That deeper question is not settled here —
+      // the next full-suite run is the actual test of whether this helps. Captured BEFORE the
+      // refresh, not read fresh after: if the refresh resolves to a terminal SIGNED_OUT, the app's
+      // own onAuthStateChange handler (js/app-progress.js) nulls window._soloClientId, and reading it
+      // after would fail at savePerformanceLog's ownership guard instead of the intended "session
+      // expired" message -- still a clean failure either way, just a more confusing one to read.
+      const soloClientId = window._soloClientId
+      await db.auth.refreshSession()
+      await savePerformanceLog(soloClientId)
       await new Promise(res => setTimeout(res, 1500))
 
       const { data } = await db.from('performance_logs')
