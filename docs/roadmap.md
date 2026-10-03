@@ -25,7 +25,9 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   values against yet. Stages 1-3 (vocabulary, ratchet, conversion — 1,027→256 inline style literals)
   are done.
 - **UX cleanup pass — 3 of 4 areas shipped** (runner, builder, progress); dashboards (D2-D4: solo
-  bottom-nav restructure, dashboard filtering, PT stat-tile layout) not started, awaiting Jake's go.
+  bottom-nav restructure, dashboard filtering, PT stat-tile layout) not started. Jake (2026-10-03) widened this to a
+  full mobile rework of the dashboard as a landing page and hub, to be scoped with him after the two runner items
+  below — [the row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md).
 - **Runner walkthrough of 2026-09-28 (8 items) — ✅ shipped, `v2026.09.11`, live.** Items 1-6 (weekday on
   the program day list, no Back button, full exercise names, Next goes to what is still to do, green/purple
   tabs, "beat it" removed) and items 7-8 (the "log-first" layout: Swap/Add/Units behind a "⋯" sheet,
@@ -44,6 +46,11 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   for the account (supabase-js default scope `global`): signing out on one device leaves another looking signed in, then saves
   there fail with "session expired". `signOut({ scope: 'local' })` would change that; it also removes a whole class of test-suite
   problem. Not changed — it is a product and security call. Detail: [the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md).
+- **Runner follow-ups from Jake's 2026-10-03 note.** (1) No grey last-session hints on an RPE top-set exercise: fixed on
+  master, awaiting his look ([row](bugs/2026-10-03-runner-top-set-exercise-shows-last-sessions-weight-as-ghost-text.md)).
+  (2) The runner's Stats sheet to carry the data of the screenshot he sent and match My progress: the two screens have
+  drifted (they compute Est. 1RM differently), so the plan is ONE shared component, prototype first, nothing built
+  ([row](bugs/2026-10-03-runner-stats-sheet-shows-less-than-my-progress-and-computes-est-1rm-differently.md)).
 - **Solo/signup:** the data model and invite-based onboarding (an owner-gated Edge Function) are
   done. Genuine open public self-signup for new solo accounts remains a deliberate deferral, not
   scoped.
