@@ -236,14 +236,17 @@ test.describe('Runner exercise tabs and Next exercise (2026-09-28)', () => {
     })
   }
 
-  test('the last-session card no longer says "beat it"', async ({ page }) => {
+  // Was written against the live "vs last session" chips; those are gone (2026-10-03, the Stats sheet is the shared exercise
+  // card), so the guard now covers the "Last time" line that replaced them. The same words must stay out of the sheet too -
+  // that is pinned in tests/exercise-stats-shared-2026-10-03.spec.js, which reads the whole card.
+  test('the last-time line no longer says "beat it"', async ({ page }) => {
     await startRunner(page)
     const html = await page.evaluate(() => {
       const ex = _runner.exercises[0]
       _runner.lastSession[ex.name] = { date: '2026-09-25', sets: [{ set_number: 1, weight_kg: 60, reps_achieved: 8 }] }
-      return _renderRunnerVsLast(ex)
+      return _renderLastTimeCard(ex)
     })
-    expect(html.toLowerCase(), 'the card still renders').toContain('last session')
+    expect(html.toLowerCase(), 'the line still renders').toContain('last time')
     expect(html.toLowerCase()).not.toContain('beat it')
   })
 

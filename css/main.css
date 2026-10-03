@@ -990,3 +990,46 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .ts-cell-inputs { display: flex; align-items: center; gap: 4px; }
 .ts-cell-inputs input { width: 100%; min-width: 0; }
 .ts-cell.effort .ts-toggle2 { display: flex; margin-bottom: 4px; width: fit-content; }
+
+/* ─── Exercise stats card (2026-10-03) ──────────────────────────────────────────────
+   ONE card, two homes: the runner's Stats sheet and the My progress exercise cards both render it
+   (_mountExerciseStats in app-progress.js), so these classes are the whole look of "an exercise's numbers".
+   Tokens only. Design: the tappable prototype Jake approved 2026-10-03. */
+.xs-card { margin-bottom: 20px; padding: 14px; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--border); }
+.xs-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.xs-card-name { font-size: var(--text-lg); font-weight: 700; }
+.xs-card-badge { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.xs-sub { font-size: var(--text-sm); color: var(--text-muted); margin-bottom: 8px; }
+.xs-pills { display: flex; gap: 6px; overflow-x: auto; margin: 0 -2px 10px; padding: 2px; scrollbar-width: none; }
+.xs-pills::-webkit-scrollbar { display: none; }
+.xs-pill { flex-shrink: 0; border: 0; border-radius: var(--radius-md); padding: 6px 11px; font-size: var(--text-sm); font-weight: 700; cursor: pointer; background: var(--surface-2); color: var(--text-muted); }
+.xs-pill[aria-pressed="true"] { color: white; }
+.xs-chart { position: relative; height: 150px; }
+.xs-hint { font-size: var(--text-sm); color: var(--text-muted); margin: 6px 0 12px; }
+.xs-empty { padding: 14px 0; text-align: center; font-size: var(--text-base); color: var(--text-muted); }
+.xs-sel { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.xs-selname { font-size: var(--text-base); font-weight: 700; }
+.xs-vs { font-size: var(--text-sm); color: var(--text-muted); text-align: right; }
+.xs-strip { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, .8fr) minmax(0, .8fr); gap: 6px; }
+.xs-tile { background: var(--surface-2); border-radius: var(--radius); padding: 8px 0; text-align: center; min-width: 0; }
+.xs-tl { font-size: var(--text-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
+/* Scales down on a narrow phone: five tiles share one row, and a six-character volume (12,000) must fit the narrowest of them at 320px. */
+.xs-tv { font-size: clamp(var(--text-base), 4vw, var(--text-xl)); font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.xs-td { font-size: var(--text-xs); font-weight: 700; margin-top: 2px; min-height: 13px; white-space: nowrap; }
+.xs-up { color: var(--success); }
+.xs-dn { color: var(--danger); }
+.xs-eq { color: var(--text-muted); }
+.xs-note { font-size: var(--text-sm); color: var(--text-muted); margin-top: 8px; }
+.xs-sec { display: flex; justify-content: space-between; gap: 8px; margin: 18px 0 6px; font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+.xs-sec i { font-style: normal; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.xs-rec { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: var(--text-md); }
+.xs-rec span { min-width: 0; font-weight: 500; }
+.xs-rec small { display: block; margin-top: 1px; font-size: var(--text-sm); font-weight: 400; color: var(--text-muted); }
+.xs-rec b { flex-shrink: 0; font-weight: 700; text-align: right; }
+.xs-row { display: block; width: calc(100% + 16px); margin: 0 -8px; padding: 9px 8px; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: var(--radius-sm); color: inherit; cursor: pointer; font: inherit; }
+.xs-row[aria-current="true"] { background: var(--accent-light); }
+.xs-rt { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.xs-date { font-size: var(--text-md); font-weight: 700; }
+.xs-vol { flex-shrink: 0; font-size: var(--text-md); font-weight: 700; font-variant-numeric: tabular-nums; }
+.xs-sets { display: block; margin-top: 2px; font-size: var(--text-md); color: var(--text-muted); overflow-wrap: anywhere; }
+.xs-more { width: 100%; margin-top: 10px; padding: 10px; border: 0; border-radius: var(--radius); background: var(--surface-2); color: var(--text); font-size: var(--text-md); font-weight: 700; cursor: pointer; }

@@ -393,77 +393,28 @@ function _isPlainStrengthExercise(ex) {
   return ex.type !== 'cardio'
 }
 
-// ── Workstream C — live "vs last session" totals for the current exercise ────────────────────────
-// SetGraph-informed (our flat style + wording). weight_reps only: _runner.lastSession stores just
-// weight/reps, and current loggedSets are {weight,reps} for this type. Returns null when not
-// applicable (no previous session, nothing logged this session yet, or a non-weight_reps type).
-function _runnerVsLast(ex) {
+// ── "Last time": what gates the Last time line and its Stats sheet ────────────────────────────────────────────────────
+// Weight × reps exercises only, and only once there is a previous session to show. Returns { date, sets } (workout_log_sets-
+// shaped rows, from fetchRunnerLastSession) or null. The live "vs last session" chips that used to be built from this are gone
+// (2026-10-03): the Stats sheet's strip compares today with the last session using the same maths as My progress.
+function _runnerLastTime(ex) {
   if (!ex || _exMetricType(ex) !== 'weight_reps') return null
-  const prev = _runner?.lastSession?.[ex.name]?.sets
-  if (!prev?.length) return null // needs a previous session to compare against; shows from the moment you reach the exercise
-  const cur = ex.loggedSets || []
-  const num = v => parseFloat(v) || 0
-  const cv = { sets: cur.length, reps: cur.reduce((s, x) => s + (parseInt(x.reps) || 0), 0),
-    vol: cur.reduce((s, x) => s + num(x.weight) * (parseInt(x.reps) || 0), 0), top: Math.max(0, ...cur.map(x => num(x.weight))) }
-  const pv = { sets: prev.length, reps: prev.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0),
-    vol: prev.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0), top: Math.max(0, ...prev.map(x => num(x.weight_kg))) }
-  return { cur: cv, prev: pv, logged: cur.length > 0, date: _runner.lastSession[ex.name].date }
-}
-
-function _renderRunnerVsLast(ex) {
-  const d = _runnerVsLast(ex)
-  if (!d) return ''
-  const dateStr = _runnerShortDate(d.date)
-  // `cur`/`prev`/`diff`/`pct` are computed in canonical kg throughout — only the DISPLAYED numbers
-  // convert to the user's preference; percentage change is unit-invariant so it never needs converting.
-  const chip = (label, cur, prev, isWeight) => {
-    const unit = isWeight ? window._unitPrefs.weight : ''
-    // Round to 1 decimal FIRST (matches this chip's original always-rounded kg display), then convert
-    // — weightToPref passes a kg value through unchanged, so the kg case still shows exactly the same
-    // number it always did; only the lb case adds a second (harmless) round on the converted value.
-    const disp = v => isWeight ? weightToPref(Math.round(v * 10) / 10) : Math.round(v * 10) / 10
-    let bottom
-    if (!d.logged) {
-      // Before your first set this session: show last session's number as the target to beat.
-      bottom = `<span style="color:var(--text-muted)">last ${disp(prev)}${unit}</span>`
-    } else {
-      const diff = cur - prev, flat = Math.abs(diff) < 0.005, up = diff > 0
-      const pct = prev ? Math.round(Math.abs(diff) / prev * 100) : null
-      const col = flat ? 'var(--text-muted)' : (up ? '#16a34a' : '#ef4444')
-      bottom = flat ? `<span style="color:var(--text-muted)">—</span>`
-        : `<span style="color:${col}">${up ? '▲' : '▼'} ${up ? '+' : '−'}${disp(Math.abs(diff))}${unit}${pct != null ? ` (${pct}%)` : ''}</span>`
-    }
-    return `<div style="flex:1;min-width:0;text-align:center">
-      <div style="font-size:var(--text-2xs, 9px);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${label}</div>
-      <div style="font-size:var(--text-base, 13px);font-weight:800">${disp(cur)}${unit}</div>
-      <div style="font-size:var(--text-2xs, 9px);font-weight:700;white-space:nowrap">${bottom}</div></div>`
-  }
-  const heading = d.logged ? `vs last session · ${dateStr}` : `last session · ${dateStr}`
-  return `
-    <div style="margin-bottom:12px;padding:10px 12px;border-radius:var(--radius, 10px);background:var(--surface-2)">
-      <div style="font-size:var(--text-2xs, 9px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">${heading}</div>
-      <div style="display:flex;gap:6px">
-        ${chip('Volume', d.cur.vol, d.prev.vol, true)}
-        ${chip('Top', d.cur.top, d.prev.top, true)}
-        ${chip('Reps', d.cur.reps, d.prev.reps, false)}
-        ${chip('Sets', d.cur.sets, d.prev.sets, false)}
-      </div>
-    </div>`
+  const last = _runner?.lastSession?.[ex.name]
+  return last?.sets?.length ? last : null
 }
 
 // ── Last time → Stats (Jake's 2026-09-28 walkthrough, items 7-8) ─────────────────────────────────────────────
 // The stats card that sat at the top of the scroll area (Volume / Top / Reps / Sets vs last session) is now behind
 // one tappable line UNDER the set table: "Last time · 25 Sep — 3 × 8 @ 62.5 kg  [Stats]". The Stats pill is a filled
 // button with an icon on a tinted card, because a bare "›" was easy to miss and Jake asked for something that makes
-// it obvious you can click in. The sheet holds the card that used to be on the page, plus last session's sets, a
-// progress chart, and the heaviest lift ever. Same gate as before: weight × reps with a previous session.
+// it obvious you can click in. The sheet is the exercise stats card shared with My progress (below). Same gate as
+// before: weight × reps with a previous session.
 const _RUNNER_CHART_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>'
 
+// "25 Sept". A calendar DATE read in local time (new Date("2026-09-25") is UTC midnight, the 24th anywhere west of UTC - found
+// by review, 2026-09-28); the one implementation is _xsDate, shared with the exercise stats card.
 function _runnerShortDate(d) {
-  // workout_logs.date is a calendar DATE ("2026-09-25"). new Date("2026-09-25") is UTC midnight, which reads as the
-  // 24th anywhere west of UTC, so build it from its parts in local time instead. Found by review, 2026-09-28.
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d))
-  return (m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return _xsDate(d)
 }
 
 // "3 × 8 @ 62.5 kg" when every set matched, "3 sets, top 62.5 kg" when they didn't, reps only for bodyweight.
@@ -477,61 +428,44 @@ function _lastTimeSummary(sets) {
 }
 
 function _renderLastTimeCard(ex) {
-  const d = _runnerVsLast(ex)
-  if (!d) return ''
-  const dateStr = _runnerShortDate(d.date)
-  const summary = _lastTimeSummary(_runner.lastSession[ex.name].sets)
+  const last = _runnerLastTime(ex)
+  if (!last) return ''
+  const dateStr = _runnerShortDate(last.date)
+  const summary = _lastTimeSummary(last.sets)
   return `<button id="wr-lasttime" type="button" onclick="openRunnerStats()" aria-haspopup="dialog" aria-label="View stats for ${escapeHtml(ex.name)}. Last time ${escapeHtml(dateStr)}, ${escapeHtml(summary)}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;margin-top:14px;padding:10px 10px 10px 14px;background:var(--accent-light);border:1px solid rgba(99,102,241,.3);border-radius:var(--radius, 10px);text-align:left;cursor:pointer">
     <span style="min-width:0"><span style="display:block;font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Last time · ${escapeHtml(dateStr)}</span><span style="display:block;font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-top:2px">${escapeHtml(summary)}</span></span>
     <span aria-hidden="true" style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-height:40px;padding:0 14px 0 12px;border-radius:var(--radius-lg, 14px);background:var(--accent);color:#fff;font-size:var(--text-base, 13px);font-weight:700;box-shadow:0 1px 2px rgba(79,70,229,.35)">${_RUNNER_CHART_ICON}Stats</span></button>`
 }
 
-// The three things the chart can plot. Each takes one session's sets as [{kg, reps}] in canonical kg.
-const _RS_METRICS = {
-  top:  { label: 'Top set',  fn: sets => Math.max(...sets.map(s => s.kg)) },
-  e1rm: { label: 'Est. 1RM', fn: sets => Math.max(...sets.map(s => s.kg * (1 + s.reps / 30))) },   // Epley
-  vol:  { label: 'Volume',   fn: sets => sets.reduce((a, s) => a + s.kg * s.reps, 0) },
-}
-// canonical kg → the user's unit, as a NUMBER (weightToPref returns a string in lb).
-const _rsNum = kg => parseFloat(weightToPref(kg)) || 0
+// ── The Stats sheet: the SAME exercise card My progress shows (2026-10-03) ──────────────────────────────────────────────────
+// _mountExerciseStats (js/app-progress.js) draws it: measure pills, a chart you can tap, the selected session's numbers against
+// the one before, records named by SET, and every set of every session. One definition of the maths (_xsSessionMetrics /
+// _xsRecords), one chart, one look - so a number here and the same number on My progress cannot differ. Jake, 2026-10-03: "the
+// progress/stats page within the runner should have more data ... consistent with the 'my progress' page". The sheet used to be
+// a second implementation (12 sessions, plain Epley on every set, three measures, a bare "Heaviest ever"), which is how the two
+// came to disagree. Only the frame is runner-specific: the header, the loading / try-again states, and this workout's ticked
+// sets, which become a dashed 'Today' point and a first history row.
 
-// This session so far, from what's ticked. Only sets with both a weight and reps count as a data point.
-function _rsTodaySets(ex) {
-  return (ex.loggedSets || []).map(s => ({ kg: parseFloat(s.weight) || 0, reps: parseInt(s.reps) || 0 })).filter(s => s.kg > 0 && s.reps > 0)
-}
-
-// Recent sessions of ONE exercise, oldest first, at most 12. Reads the last 60 workouts (well inside the API's
-// 200-row cap), then only this exercise's rows in them, so a long history can never be silently cut mid-way. Matches
-// on exercise_id when there is one and falls back to the name, exactly as fetchRunnerLastSession does.
-async function _fetchRunnerExerciseHistory(ex) {
-  const { data: logs, error: logsErr } = await dbq('runnerStats:logs',
-    db.from('workout_logs').select('id, date').eq('client_id', _runner.clientId).order('date', { ascending: false }).limit(60),
-    { showUserError: false })
-  if (logsErr) throw logsErr
-  if (!logs?.length) return []
-  const dateOf = new Map(logs.map(l => [l.id, l.date]))
-  const ids = logs.map(l => l.id)
-  const read = async (col, val) => {
-    const { data, error } = await dbq('runnerStats:sets',
-      // unbounded-ok: this one exercise's rows inside the (at most 60) workouts read above, so a few dozen at most
-      db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved)').eq(col, val).in('log_id', ids),
-      { showUserError: false })
-    if (error) throw error
-    return data || []
-  }
-  let rows = ex.exerciseId ? await read('exercise_id', ex.exerciseId) : []
-  if (!rows.length) rows = await read('exercise_name', ex.name)
-  const byLog = new Map()   // one point per workout: an exercise done twice in one session is one point
-  for (const r of rows) {
-    const sets = (r.workout_log_sets || []).map(s => ({ kg: parseFloat(s.weight_kg) || 0, reps: parseInt(s.reps_achieved) || 0 })).filter(s => s.reps > 0)
-    if (sets.length) byLog.set(r.log_id, (byLog.get(r.log_id) || []).concat(sets))
-  }
-  return [...byLog].map(([id, sets]) => ({ date: dateOf.get(id), sets })).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(-12)
+// This workout's ticked sets for one exercise, in the shape the history rows have, so the card treats them like any other
+// session. `weight` is canonical kg (weightFromPref). The effort is range-guarded and carries its scale exactly as the save
+// does, because RIR and RPE run in opposite directions.
+function _rsTodayRows(ex) {
+  return (ex.loggedSets || []).map((s, i) => {
+    const effort = _effortOrNull(s.effort)
+    return {
+      set_number: i + 1,
+      weight_kg: s.weight !== 'BW' && _hasNumVal(s.weight) ? parseFloat(s.weight) : null,
+      reps_achieved: parseInt(s.reps) || 0,
+      effort_value: effort,
+      effort_type: effort !== null ? (s.effortType === 'rir' ? 'rir' : 'rpe') : null,
+    }
+  })
 }
 
 function openRunnerStats() {
   const ex = _runner?.exercises?.[_runner.exIdx]
-  if (!ex || !_runnerVsLast(ex)) return
+  const last = _runnerLastTime(ex)
+  if (!last) return
   document.getElementById('runner-stats-modal')?.remove()
   const overlay = document.createElement('div')
   overlay.id = 'runner-stats-modal'
@@ -542,25 +476,16 @@ function openRunnerStats() {
     <div class="modal" role="dialog" aria-label="${escapeHtml(ex.name)} stats">
       <div class="modal-header">
         <div style="min-width:0"><h2 class="modal-title">${escapeHtml(ex.name)}</h2>
-          <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">Last time · ${escapeHtml(_runnerShortDate(_runner.lastSession[ex.name].date))}</div></div>
+          <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">Last time · ${escapeHtml(_runnerShortDate(last.date))}</div></div>
         <button class="modal-close" onclick="closeRunnerStats()" aria-label="Close">✕</button>
       </div>
       <div id="rs-body"></div>
     </div>`
   mountModal(overlay)
-  // Per-open state. Late replies write into THIS object and only paint if it is still the current one, so closing
-  // and reopening (or moving to another exercise) can't paint an old exercise's chart into a new sheet.
-  const state = _runner._rs = { metric: _runner._rs?.metric || 'top', name: ex.name, history: undefined, heaviest: undefined }
-  _renderRunnerStatsBody()
-  _loadRunnerStatsData(state, ex)
-}
-
-// Destroys the sheet's chart, if any. Called BEFORE any write that replaces #rs-progress — replacing it builds a new
-// canvas, and _renderMetricChart only ever destroys a chart on the canvas it is given, so every measure tap used to
-// leave the previous Chart.js instance behind (the class js/app-progress.js:806 documents). try/catch because Chart.js
-// is a CDN script: if it failed to load there is simply nothing to destroy.
-function _destroyRunnerStatsChart() {
-  try { const c = document.getElementById('rs-chart'); if (c) Chart.getChart(c)?.destroy() } catch { /* no Chart.js: nothing to destroy */ }
+  // Per-open state. A late reply paints only if this object is still the current one, so closing and reopening (or moving to
+  // another exercise) can't paint an old exercise's card into a new sheet. The chosen measure outlives a close.
+  const state = _runner._rs = { metric: _runner._rs?.metric || null }
+  _loadRunnerStats(state, ex)
 }
 
 function closeRunnerStats() {
@@ -572,107 +497,39 @@ function closeRunnerStats() {
   try { chart?.destroy() } catch { /* already gone */ }
 }
 
-function _renderRunnerStatsBody() {
-  const host = document.getElementById('rs-body')
-  const ex = _runner?.exercises?.[_runner.exIdx]
-  if (!host || !ex) return
-  const sets = _runner.lastSession[ex.name].sets
-  const unit = window._unitPrefs.weight
-  const sec = (title) => `<div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:16px 0 6px">${title}</div>`
-  const cell = 'display:grid;grid-template-columns:40px 1fr 1fr 1fr;padding:7px 0;border-bottom:1px solid var(--border);font-size:var(--text-base, 13px);font-weight:600'
-  host.innerHTML = `
-    ${sec('Last session')}
-    <div id="rs-last-sets">
-      <div style="${cell};font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:700"><span>SET</span><span>${unit.toUpperCase()}</span><span>REPS</span><span>VOLUME</span></div>
-      ${sets.map(s => { const kg = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0
-        return `<div data-set style="${cell}"><span style="color:var(--accent);font-weight:800">${escapeHtml(String(s.set_number))}</span><span>${kg ? weightToPref(kg) : 'BW'}</span><span>${r || '—'}</span><span>${kg && r ? Math.round(_rsNum(kg * r)).toLocaleString('en-GB') : '—'}</span></div>` }).join('')}
-    </div>
-    ${sec('Today so far vs last time')}
-    <div id="rs-vs">${_renderRunnerVsLast(ex)}</div>
-    ${sec('Progress')}
-    <div id="rs-progress"></div>
-    <div id="rs-heaviest" style="display:none;justify-content:space-between;align-items:center;margin-top:12px;padding:10px 12px;border-radius:var(--radius, 10px);background:var(--surface-2)"></div>`
-  _renderRunnerStatsProgress()
-  _renderRunnerStatsHeaviest()
+// The sheet's one status line - loading, or failed with a way to try again - in place of the card. A failed read shows NO
+// numbers: records worked out from half a history would pass for the whole one.
+function _rsNote(msg, retry) {
+  const host = document.getElementById('rs-body'); if (!host) return
+  host.innerHTML = `<div class="xs-empty" data-rs-note>${escapeHtml(msg)}</div>${retry ? '<button type="button" class="xs-more" data-rs-retry onclick="retryRunnerStats()">Try again</button>' : ''}`
 }
 
-function _loadRunnerStatsData(state, ex) {
+function _loadRunnerStats(state, ex) {
   const live = () => _runner?._rs === state && document.getElementById('runner-stats-modal')
-  const cached = _runner.rsHistory?.[ex.name]
-  if (cached) { state.history = cached; _renderRunnerStatsProgress() }
-  else {
-    state.history = undefined
-    _fetchRunnerExerciseHistory(ex)
-      .then(h => { (_runner.rsHistory ||= {})[ex.name] = h; state.history = h })
-      .catch(() => { state.history = 'error' })
-      .finally(() => { if (live()) _renderRunnerStatsProgress() })
+  const paint = () => {
+    const sessions = _runner.rsHistory?.[ex.name]
+    if (!sessions) return _rsNote('Couldn’t load your progress.', true)
+    _mountExerciseStats(document.getElementById('rs-body'), { name: ex.name, metricType: 'weight_reps', sessions }, {
+      chartId: 'rs-chart',
+      todaySets: _rsTodayRows(ex),
+      getMetric: () => state.metric,
+      setMetric: m => { state.metric = m },
+    })
   }
-  // Heaviest lift ever — the same lookup the finish screen's PR check uses. A failure just leaves the row out.
-  _prBaseline(_runner.clientId, { name: ex.name, exerciseId: ex.exerciseId })
-    .then(kg => { state.heaviest = kg })
-    .catch(() => { state.heaviest = 0 })
-    .finally(() => { if (live()) _renderRunnerStatsHeaviest() })
-}
-
-function _renderRunnerStatsHeaviest() {
-  const el = document.getElementById('rs-heaviest')
-  const kg = _runner?._rs?.heaviest
-  if (!el) return
-  // style.display, not the `hidden` attribute: the row sets display:flex, and an author display beats [hidden].
-  if (!(kg > 0)) { el.style.display = 'none'; return }
-  el.style.display = 'flex'
-  el.innerHTML = `<span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Heaviest ever</span><span style="font-size:var(--text-lg, 14px);font-weight:800">${escapeHtml(fmtWeight(kg, { spaced: true }))}</span>`
-}
-
-function setRunnerStatsMetric(m) {
-  if (!_RS_METRICS[m] || !_runner?._rs) return
-  _runner._rs.metric = m
-  _renderRunnerStatsProgress()
-}
-
-function _renderRunnerStatsProgress() {
-  const host = document.getElementById('rs-progress')
-  const st = _runner?._rs
-  const ex = _runner?.exercises?.[_runner.exIdx]
-  if (!host || !st || !ex) return
-  _destroyRunnerStatsChart()
-  const note = (msg, retry) => { host.innerHTML = `<div style="padding:18px 0;text-align:center;font-size:var(--text-base, 13px);color:var(--text-muted)">${msg}${retry ? `<div><button type="button" onclick="retryRunnerStats()" style="margin-top:10px;padding:8px 14px;border:1px solid var(--border);border-radius:var(--radius-sm, 8px);background:var(--surface);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">Try again</button></div>` : ''}</div>` }
-  if (st.history === undefined) return note('Loading your progress…')
-  if (st.history === 'error') return note('Couldn’t load your progress.', true)
-  const today = _rsTodaySets(ex)
-  // Only sessions with a logged weight can be charted. A bodyweight exercise has none, and saying "a couple of
-  // workouts" would be wrong for it for ever.
-  const weighted = st.history.filter(s => s.sets.some(x => x.kg > 0))
-  if (st.history.length && !weighted.length && !today.length) return note('This exercise has no logged weight, so there is no weight progress to chart.')
-  if (weighted.length + (today.length ? 1 : 0) < 2) return note('Not enough sessions yet to draw a line. Your progress appears here after a couple of workouts.')
-  if (typeof Chart === 'undefined') return note('The chart could not load. Check your connection and reload the page.')
-
-  const m = _RS_METRICS[st.metric]
-  const conv = v => st.metric === 'vol' ? Math.round(_rsNum(v)) : Math.round(_rsNum(v) * 10) / 10
-  const histVals = weighted.map(s => conv(m.fn(s.sets)))
-  const labels = weighted.map(s => _runnerShortDate(s.date))
-  const series = [{ label: m.label, data: histVals.slice(), fill: true }]
-  if (today.length) {
-    labels.push('Today')
-    series[0].data.push(null)
-    const todayLine = new Array(histVals.length - 1).fill(null).concat([histVals[histVals.length - 1], conv(m.fn(today))])
-    series.push({ label: 'Today', data: todayLine, dashed: true, pointRadius: 5 })
-  }
-  host.innerHTML = `
-    <div role="group" aria-label="Chart measure" style="display:inline-flex;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:2px;margin-bottom:8px">
-      ${Object.entries(_RS_METRICS).map(([k, v]) => `<button type="button" data-rs-metric="${k}" aria-pressed="${st.metric === k}" onclick="setRunnerStatsMetric('${k}')" style="padding:6px 12px;border-radius:var(--radius-sm, 8px);font-size:var(--text-md, 12px);font-weight:700;cursor:pointer;background:${st.metric === k ? 'var(--surface)' : 'transparent'};color:${st.metric === k ? 'var(--text)' : 'var(--text-muted)'};box-shadow:${st.metric === k ? '0 1px 2px rgba(0,0,0,.08)' : 'none'}">${v.label}</button>`).join('')}
-    </div>
-    <div style="position:relative;height:180px"><canvas id="rs-chart" style="width:100%;height:100%"></canvas></div>`
-  try { _renderMetricChart('rs-chart', { labels, series, height: true, legend: false, tooltipUnit: window._unitPrefs.weight }) }
-  catch { note('The chart could not be drawn.') }
+  if (_runner.rsHistory?.[ex.name]) return paint()
+  _rsNote('Loading your progress…')
+  _fetchExerciseSessions(_runner.clientId, ex.name)
+    .then(h => { (_runner.rsHistory ||= {})[ex.name] = h })
+    // warn, not error: log.error toasts and reports, and the sheet already says it couldn't load, with a way to retry
+    .catch(e => log.warn('openRunnerStats', 'exercise history read failed', e))
+    .finally(() => { if (live()) paint() })
 }
 
 function retryRunnerStats() {
   const ex = _runner?.exercises?.[_runner.exIdx]
   if (!ex || !_runner._rs) return
   delete _runner.rsHistory?.[ex.name]
-  _loadRunnerStatsData(_runner._rs, ex)
-  _renderRunnerStatsProgress()
+  _loadRunnerStats(_runner._rs, ex)
 }
 
 // ── The "⋯" menu: Units, Swap, Add (2026-09-28) ─────────────────────────────────────────────────────────

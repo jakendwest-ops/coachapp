@@ -50,8 +50,9 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   problem. Not changed — it is a product and security call. Detail: [the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md).
 - **Runner follow-ups from Jake's 2026-10-03 note.** (1) No grey last-session hints on an RPE top-set exercise: fixed on
   master, awaiting his look ([row](bugs/2026-10-03-runner-top-set-exercise-shows-last-sessions-weight-as-ghost-text.md)).
-  (2) The runner's Stats sheet to carry the data of the screenshot he sent and match My progress: the two screens have
-  drifted (they compute Est. 1RM differently), so the plan is ONE shared component, prototype first, nothing built
+  (2) The runner's Stats sheet now carries the full data and matches My progress because they are the SAME card (one
+  component, one set of maths, one read): built 2026-10-03 from the prototype Jake reacted to (records are sets: "Heaviest set
+  117.5 kg × 3"), committed locally, awaiting his look
   ([row](bugs/2026-10-03-runner-stats-sheet-shows-less-than-my-progress-and-computes-est-1rm-differently.md)).
 - **Solo/signup:** the data model and invite-based onboarding (an owner-gated Edge Function) are
   done. Genuine open public self-signup for new solo accounts remains a deliberate deferral, not

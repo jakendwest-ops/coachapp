@@ -22,6 +22,10 @@ process/tracking debt below.
   templates on the main coach account (found while building that fix) was never separately cleaned
   up.
 - **My Progress Strength tab** uses a PostgREST `!inner` join not verified live with real data.
+- **Exercise stats card (2026-10-03):** the finish screen's PR check (`_prBaseline`) and the card's "Heaviest set" read the same
+  history through different queries (the check also matches by library id), so for a renamed lift they could in principle
+  disagree - not changed. My progress now draws a full card for every weight x reps exercise; if that proves too long a scroll
+  on a real history, the per-exercise read (`_fetchExerciseSessions`) is the building block for loading a card on demand.
 - **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted —
   a UX gap, not a correctness bug.
 - **Invite email** doesn't yet include PT branding/logo (Edge Function not updated for it).

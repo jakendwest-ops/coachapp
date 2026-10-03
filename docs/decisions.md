@@ -12,6 +12,30 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-03 — An exercise's numbers come from ONE card, one set of maths and one read; records are sets; an RPE top-set exercise shows no ghost text.**
+Jake's note of 2026-10-03: no grey last-session numbers on an RPE top-set exercise ("these fields should only be populated once the
+top set has been established"), and the runner's Stats sheet should carry the data of the screenshot he sent and be consistent with
+My progress. The Stats sheet and the My progress cards were two implementations that had drifted (plain Epley with no rep cap vs the
+app's one `_estimate1RM`; 12 sessions vs the whole history; three measures vs five; one record vs four; a logged RPE counted in the
+live chip but not in history), so the choice was between a parity test over two copies and one copy. *Chosen:* one copy -
+`_mountExerciseStats` (js/app-progress.js) draws the card on both screens; `_xsSessionMetrics` and `_xsRecords` are the only place
+the numbers are computed (`_metricPointsFor` and `_exerciseRecords` now read from them); `_fetchExerciseSessions` is the only read
+for the runner's sheet (paged past the API's 200-row cap, scoped to the person, matched on the exercise NAME exactly as
+`_buildExerciseSeries` groups it). Records are SETS (Jake's reaction to the prototype): "Heaviest set 117.5 kg x 3", and the
+estimated 1RM names the set it came from, so a 1RM above the heaviest weight explains itself. The estimated 1RM counts a logged
+RPE or RIR (one switch, `_XS_COUNT_EFFORT`), and a value with no scale is ignored rather than guessed, because the two scales run in
+opposite directions. A failed read shows a message and Try again and NO numbers: records worked out from half a history would pass
+for the whole one. *Not chosen:* matching on the exercise's library id (My progress groups by name, so the two screens would split a
+renamed lift differently); showing the last session's sets when the full history fails (same reason); a toast on failure
+(`log.error` toasts and reports, and the sheet already says it could not load). *Ghost text:* on an exercise whose first row is a top
+set, last session now feeds no placeholder at all, so the weight boxes stay empty until the top set is ticked and the backoff rows
+then show a percentage of today's top. *Consequences stated:* the finish screen's PR check (`_prBaseline`) still reads the history
+its own way (it also matches by library id), so for a renamed lift it could in principle disagree with "Heaviest set" - not changed;
+the runner's "Heaviest ever" row is gone because the records replace it; My progress now shows a full card for every weight x reps
+exercise, which is a longer page. *Verified:* 28 unit tests and 17 browser tests written for this, four deliberate breakages each
+failing the matching test, ten older tests ported, 211 tests across the 14 affected files green. *Not verified:* how it reads on a
+phone with real history. Row: [bugs/2026-10-03-runner-stats-sheet-shows-less-than-my-progress-and-computes-est-1rm-differently.md](bugs/2026-10-03-runner-stats-sheet-shows-less-than-my-progress-and-computes-est-1rm-differently.md).
+
 **2026-10-03 — A release tag is pushed only after GitHub's check on that commit is green; the saved test logins are kept young; a test that needs a live session signs in for real; the app's global Sign out is left alone.**
 Four choices from the night `v2026.09.12` was tagged, pushed and never deployed. (1) The deploy job has `needs: check`, and the
 check failed on GitHub (Node 22) while the dev machine (Node 24) was green, so the tag sat there undeployed with nothing saying so.

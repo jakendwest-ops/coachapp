@@ -1,5 +1,6 @@
 const { test, expect } = require('./fixtures')
 const { loginAsClient } = require('./helpers')
+const { installCappedApi } = require('./capped-api')
 
 // ─── Workout runner: the "log-first" layout and the tap-for-stats sheet (Jake's 2026-09-28 walkthrough, items 7-8) ───
 //
@@ -8,8 +9,9 @@ const { loginAsClient } = require('./helpers')
 // row sat 252px below the tabs. It now comes straight after them; Swap, Add and Units live behind a "⋯" button; the
 // prescription is one line under the title; and "Next exercise" is a bar at the bottom that is always there.
 // Item 8: "If user clicks into [last session] they should be able to view more stats for this exercise". The last-time
-// line is a clearly tappable Stats button that opens a sheet: last session's sets, today against last time, a progress
-// chart, and the heaviest lift ever.
+// line is a clearly tappable Stats button that opens a sheet. Since 2026-10-03 the sheet is the exercise stats card shared
+// with My progress (its figures are pinned in tests/exercise-stats-shared-2026-10-03.spec.js); the tests here keep what is the
+// RUNNER's own: the sheet opens over a live workout, leaves it alone, and treats an exercise name as text.
 //
 // Like runner-exercise-nav-2026-09-28.spec.js, everything is IN-MEMORY runner state (a hand-built `_runner`) with the
 // history reads stubbed — nothing is written to the database and there is no fixture to leak. Each test gets a fresh
@@ -55,20 +57,20 @@ const complete = (page, i) => page.evaluate((i) => {
   renderRunner()
 }, i)
 
-// Stubs the three reads the stats sheet makes (recent logs → this exercise's rows → heaviest ever). The app asks for
-// the NEWEST logs first and sorts the result itself, so the stub answers newest-first and the rows in reverse order:
-// deleting the app's sort would put the chart's dates the wrong way round.
-// `sessions`: [{ date, sets:[[kg, reps], ...] }] oldest first. `failLogs`: make the first read fail.
-const stubHistory = (page, { sessions, heaviest = 0, failLogs = false }) => page.evaluate(({ sessions, heaviest, failLogs }) => {
-  const q = (data, error = null) => { const o = { select: () => o, eq: () => o, in: () => o, order: () => o, limit: () => o, not: () => o, then: (res, rej) => Promise.resolve({ data, error }).then(res, rej) }; return o }
-  const logs = sessions.map((s, i) => ({ id: 'log' + i, date: s.date })).reverse()
-  const rows = sessions.map((s, i) => ({ log_id: 'log' + i, workout_log_sets: s.sets.map(([w, r], k) => ({ set_number: k + 1, weight_kg: w, reps_achieved: r })) })).reverse()
-  const real = db.from.bind(db)
-  db.from = (t) => t === 'workout_logs' ? (failLogs ? q(null, { message: 'boom', code: 'XX000' }) : q(logs))
-    : t === 'workout_log_exercises' ? q(rows)
-    : t === 'workout_log_sets' ? q(heaviest ? [{ weight_kg: heaviest }] : [])
-    : real(t)
-}, { sessions, heaviest, failLogs })
+// Stubs the ONE read the stats sheet makes: this exercise's whole history - the same read My progress groups its cards from
+// (_fetchExerciseSessions). It goes through tests/capped-api.js, so the API's 200-row cap, the `!inner` rule and the client /
+// exercise filters are real rather than assumed. `sessions`: [{ date, sets:[[kg, reps], ...] }] oldest first. The ids run
+// NEWEST-first (the oldest session gets the largest id), so the read hands the history back newest-first and only an explicit
+// sort by date puts the chart the right way round: deleting the app's sort fails the test that reads the chart.
+const stubHistory = async (page, { sessions }) => {
+  const { name, clientId } = await page.evaluate(() => ({ name: _runner.exercises[_runner.exIdx].name, clientId: _runner.clientId }))
+  const rows = sessions.map((s, i) => ({
+    id: 'row-' + String(sessions.length - i).padStart(4, '0'), exercise_name: name, metric_type: 'weight_reps',
+    workout_logs: { date: s.date, client_id: clientId },
+    workout_log_sets: s.sets.map(([w, r], k) => ({ set_number: k + 1, weight_kg: w, reps_achieved: r })),
+  }))
+  await installCappedApi(page, { workout_log_exercises: rows })
+}
 
 // Eight weekly sessions of a lift: top set climbs 50 → 62.5 kg. The last matches LAST above.
 const DATES = ['2026-08-07', '2026-08-14', '2026-08-21', '2026-08-28', '2026-09-04', '2026-09-11', '2026-09-18', '2026-09-25']
@@ -287,7 +289,7 @@ test.describe('Runner log-first layout (2026-09-28)', () => {
   test('(review) an exercise name is text, never markup — in the header, the card, the bar and the sheet', async ({ page }) => {
     const evil = '<img src=x onerror="window.__xss=1">'
     await startRunner(page, { names: [evil, 'Lay B'] })
-    await stubHistory(page, { sessions: SESSIONS, heaviest: 70 })
+    await stubHistory(page, { sessions: SESSIONS })
     await page.locator('#wr-lasttime').click()
     await expect(page.locator('#runner-stats-modal')).toBeVisible()
     await expect(page.locator('#runner-stats-modal .modal-title')).toHaveText(evil)
@@ -345,22 +347,17 @@ test.describe('Runner header cleanup (2026-09-30)', () => {
 })
 
 test.describe('Runner stats sheet (2026-09-28)', () => {
-  test('tapping Stats opens the sheet: last session, today vs last time, a progress chart, the heaviest lift — and a running rest is untouched', async ({ page }) => {
+  test('tapping Stats opens the sheet over a live workout: a running rest is untouched, and closing returns to the same runner', async ({ page }) => {
     await startRunner(page)
-    await stubHistory(page, { sessions: SESSIONS, heaviest: 70 })
+    await stubHistory(page, { sessions: SESSIONS })
     await page.evaluate(() => startRestTimer(60))
     await page.locator('#wr-lasttime').click()
     const sheet = page.locator('#runner-stats-modal')
     await expect(sheet).toBeVisible()
     await expect(sheet).toContainText('Lay A')
+    await expect(sheet.locator('[data-xs-tile]').first(), 'the shared exercise card, not a runner-only copy').toBeVisible()
 
-    // Last session's sets, one row each.
-    await expect(sheet.locator('#rs-last-sets [data-set]')).toHaveCount(3)
-    await expect(sheet.locator('#rs-last-sets')).toContainText('62.5')
-    // Today so far vs last time (nothing ticked yet, so it shows last session's numbers as the target).
-    await expect(sheet.locator('#rs-vs')).toContainText('last 1417.5kg')
-
-    // The chart: eight sessions, oldest first — the app sorts the newest-first answer itself.
+    // The chart: eight sessions, oldest first - the read comes back newest-first (see stubHistory), so this proves the sort.
     await expect.poll(async () => (await chartState(page))?.labels.length, { message: 'the chart draws once the history arrives' }).toBe(8)
     const top = await chartState(page)
     expect(top.labels[0], 'oldest session first').toBe('7 Aug')
@@ -369,100 +366,22 @@ test.describe('Runner stats sheet (2026-09-28)', () => {
     expect(top.sets[0][0], 'top set of the first session').toBeCloseTo(50, 1)
     expect(await chartCount(page), 'one chart').toBe(1)
 
-    await sheet.locator('[data-rs-metric="e1rm"]').click()
-    const e1 = await chartState(page)
-    expect(e1.sets[0][7], 'estimated 1RM: 62.5 × (1 + 8/30) = 79.17').toBeCloseTo(79.2, 1)
-    expect(await chartCount(page), 'switching measure replaces the chart; it must not leave the old one behind (review)').toBe(1)
-    await sheet.locator('[data-rs-metric="vol"]').click()
-    const vol = await chartState(page)
-    expect(vol.sets[0][7], 'volume: 60×8 + 62.5×8 + 62.5×7 = 1417.5, shown to the nearest whole kg').toBe(1418)
-    await sheet.locator('[data-rs-metric="top"]').click()
-    expect(await chartCount(page), 'and after a third switch').toBe(1)
-    await expect(sheet.locator('[data-rs-metric="top"]')).toHaveAttribute('aria-pressed', 'true')
-
-    await expect(sheet.locator('#rs-heaviest')).toContainText('70')
-
     // The rest kept counting while the sheet was open; closing returns to the same runner.
     expect(await page.evaluate(() => _runner.restRemaining != null)).toBe(true)
     await sheet.locator('.modal-close').click()
     await expect(page.locator('#runner-stats-modal')).toHaveCount(0)
     await expect(page.locator('#workout-runner button:text-is("End")'), 'the runner is still there underneath').toBeVisible()
-    expect(await chartCount(page), 'closing the sheet destroys its chart (review: this used to assert a lookup that could not fail)').toBe(0)
+    expect(await chartCount(page), 'closing the sheet destroys its chart').toBe(0)
     await page.evaluate(() => { try { clearTimer(_runner._restInterval) } catch {} })
   })
 
-  test('if the history cannot be read the sheet says so instead of hanging — and the rest of it still shows', async ({ page }) => {
+  test('the backdrop closes the sheet too', async ({ page }) => {
     await startRunner(page)
-    await stubHistory(page, { sessions: SESSIONS, failLogs: true })
+    await stubHistory(page, { sessions: SESSIONS })
     await page.locator('#wr-lasttime').click()
-    const sheet = page.locator('#runner-stats-modal')
-    await expect(sheet.locator('#rs-progress')).toContainText(/couldn.t load/i)
-    await expect(sheet.locator('#rs-last-sets [data-set]'), 'last session is already in memory, so it still shows').toHaveCount(3)
-    await expect(sheet.locator('#rs-progress button'), 'with a way to try again').toBeVisible()
-  })
-
-  test('today\'s numbers join the chart once a set is ticked', async ({ page }) => {
-    await startRunner(page)
-    await stubHistory(page, { sessions: SESSIONS, heaviest: 70 })
-    await page.evaluate(() => {
-      const ex = _runner.exercises[0]; _ensureTableRows(ex)
-      Object.assign(ex.tableRows[0], { weight: '65', reps: '6', done: true }); _syncLoggedSetsFromTable(ex); renderRunner()
-    })
-    await page.locator('#wr-lasttime').click()
-    await expect.poll(async () => (await chartState(page))?.labels.length).toBe(9)
-    const s = await chartState(page)
-    expect(s.labels[8], 'the ninth point is today').toBe('Today')
-    expect(s.sets.length, 'a second, dashed line joins the last session to today').toBe(2)
-    expect(s.sets[1][7], 'the dashed line starts at the last session (62.5)').toBeCloseTo(62.5, 1)
-    expect(s.sets[1][8], 'and ends at today\'s top set (65)').toBeCloseTo(65, 1)
-    expect(s.sets[0][8], 'the solid line has no point for today').toBeNull()
-  })
-
-  test('(review) the sheet works in pounds: values are converted, not concatenated', async ({ page }) => {
-    await startRunner(page, { unit: 'lb' })
-    await stubHistory(page, { sessions: SESSIONS, heaviest: 70 })
-    await expect(page.locator('#wr-lasttime')).toContainText('lb')
-    await page.locator('#wr-lasttime').click()
-    await expect.poll(async () => (await chartState(page))?.labels.length).toBe(8)
-    const s = await chartState(page)
-    expect(s.sets[0][7], '62.5 kg in pounds').toBeCloseTo(137.8, 0)
-    expect(s.sets[0].every(v => typeof v === 'number' && Number.isFinite(v)), 'every point is a real number').toBe(true)
-    await expect(page.locator('#rs-heaviest')).toContainText('154.3')
-    await expect(page.locator('#rs-last-sets')).toContainText('LB')
-  })
-
-  test('(review) a bodyweight exercise says why there is no chart, instead of "after a couple of workouts" for ever', async ({ page }) => {
-    await startRunner(page)
-    await page.evaluate(() => { _runner.lastSession['Lay A'] = { date: '2026-09-25', sets: [{ set_number: 1, weight_kg: null, reps_achieved: 10 }, { set_number: 2, weight_kg: null, reps_achieved: 9 }] } ; renderRunner() })
-    await stubHistory(page, { sessions: DATES.map(date => ({ date, sets: [[0, 10], [0, 9]] })) })
-    await page.locator('#wr-lasttime').click()
-    await expect(page.locator('#rs-progress')).toContainText(/no logged weight/i)
-    await expect(page.locator('#rs-progress canvas')).toHaveCount(0)
-  })
-
-  test('(review) if Chart.js goes missing after the chart is drawn, the ✕ still closes the sheet', async ({ page }) => {
-    // The trap the review found: closing destroyed the chart BEFORE removing the sheet, so a throw there (no Chart.js)
-    // left a z-index 1000 sheet over a live workout with no way out. It needs a chart to exist first, which is why the
-    // test below (Chart.js absent from the start, so no chart is ever drawn) cannot reach it.
-    await startRunner(page)
-    await stubHistory(page, { sessions: SESSIONS, heaviest: 70 })
-    await page.locator('#wr-lasttime').click()
-    await expect.poll(async () => (await chartState(page))?.labels.length).toBe(8)
-    await page.evaluate(() => { window.__chart = window.Chart; window.Chart = undefined })
-    await page.locator('#runner-stats-modal .modal-close').click()
-    await expect(page.locator('#runner-stats-modal'), 'the sheet closes even though tearing down the chart throws').toHaveCount(0)
-    await page.evaluate(() => { window.Chart = window.__chart })
-  })
-
-  test('(review) if Chart.js never loaded the sheet says so, and the ✕ still closes it', async ({ page }) => {
-    await startRunner(page)
-    await stubHistory(page, { sessions: SESSIONS, heaviest: 70 })
-    await page.evaluate(() => { window.__chart = window.Chart; window.Chart = undefined })
-    await page.locator('#wr-lasttime').click()
-    await expect(page.locator('#rs-progress')).toContainText(/could not load/i)
-    await page.locator('#runner-stats-modal .modal-close').click()
-    await expect(page.locator('#runner-stats-modal'), 'a throw while tearing down the chart must not leave the sheet stuck over the workout').toHaveCount(0)
-    await page.evaluate(() => { window.Chart = window.__chart })
+    await expect(page.locator('#runner-stats-modal')).toBeVisible()
+    await page.locator('#runner-stats-modal').click({ position: { x: 4, y: 4 } })
+    await expect(page.locator('#runner-stats-modal')).toHaveCount(0)
   })
 })
 

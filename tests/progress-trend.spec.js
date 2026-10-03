@@ -105,31 +105,33 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     expect(r.cardioMain).toBe('5 km')
   })
 
-  test('runner vs-last-session totals (Workstream C)', async ({ page }) => {
+  // The runner's "Last time" line and its Stats sheet share one gate (_runnerLastTime): a weight x reps exercise with a previous
+  // session. The live "vs last session" chips this used to feed were replaced by the shared exercise card (2026-10-03); the
+  // numbers they showed (volume, top set, reps, sets) are now computed by _xsSessionMetrics and pinned in
+  // tests-node/exercise-stats.test.mjs.
+  test('the runner\'s Last time line needs a weight x reps exercise with a previous session (_runnerLastTime)', async ({ page }) => {
     await loginAsPT(page)
-    await page.waitForTimeout(500)
     const r = await page.evaluate(() => {
-      _runner = { exIdx: 0, lastSession: { Bench: { date: '2026-07-01', sets: [{ weight_kg: 100, reps_achieved: 5 }, { weight_kg: 100, reps_achieved: 5 }] } } }
-      const ex = { name: 'Bench', metricType: 'weight_reps', loggedSets: [{ weight: '105', reps: '5' }, { weight: '105', reps: '5' }] }
-      return _runnerVsLast(ex)
+      _runner = { exIdx: 0, lastSession: {
+        Bench: { date: '2026-07-01', sets: [{ weight_kg: 100, reps_achieved: 5 }] },
+        Empty: { date: '2026-07-01', sets: [] },
+        Never: null,
+      } }
+      const wr = name => ({ name, metricType: 'weight_reps', loggedSets: [] })
+      const last = _runnerLastTime(wr('Bench'))
+      return {
+        date: last?.date, nSets: last?.sets.length,
+        unseen: _runnerLastTime(wr('Unseen')), never: _runnerLastTime(wr('Never')), empty: _runnerLastTime(wr('Empty')),
+        cardio: _runnerLastTime({ name: 'Bench', metricType: 'cardio', loggedSets: [] }), noEx: _runnerLastTime(null),
+      }
     })
-    expect(r.cur.vol).toBe(1050)
-    expect(r.prev.vol).toBe(1000)
-    expect(r.cur.top).toBe(105)
-    expect(r.prev.top).toBe(100)
-    expect(r.cur.reps).toBe(10)
-    expect(r.cur.sets).toBe(2)
-    expect(r.logged).toBe(true)
-
-    // Pre-log: the block still shows (last-session reference) the moment you reach the exercise.
-    const pre = await page.evaluate(() => {
-      _runner = { exIdx: 0, lastSession: { Bench: { date: '2026-07-01', sets: [{ weight_kg: 100, reps_achieved: 5 }] } } }
-      return _runnerVsLast({ name: 'Bench', metricType: 'weight_reps', loggedSets: [] })
-    })
-    expect(pre).not.toBeNull()
-    expect(pre.logged).toBe(false)
-    expect(pre.prev.top).toBe(100)
-    expect(pre.cur.sets).toBe(0)
+    expect(r.date).toBe('2026-07-01')
+    expect(r.nSets).toBe(1)
+    expect(r.unseen, 'never done before').toBeNull()
+    expect(r.never).toBeNull()
+    expect(r.empty, 'a previous session with no sets is not a previous session').toBeNull()
+    expect(r.cardio, 'weight x reps only').toBeNull()
+    expect(r.noEx).toBeNull()
   })
 
   test('aggregation buckets a >40-point window instead of plotting every point', async ({ page }) => {
@@ -219,7 +221,7 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     expect(r.jhChips).toEqual(['Height'])
   })
 
-  test('personal records: heaviest, best 1RM, best set (weight×reps), best session volume', async ({ page }) => {
+  test('personal records: heaviest set, best est. 1RM, biggest set (weight×reps), best session volume', async ({ page }) => {
     await loginAsPT(page)
     await page.waitForTimeout(500)
     const map = await page.evaluate(() => {
@@ -229,10 +231,12 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
       ] }
       return Object.fromEntries(_exerciseRecords(ex))
     })
-    expect(map['Heaviest weight']).toBe('100 kg')
-    expect(map['Best est. 1RM']).toBe('133 kg')      // 100×10 → 133.3
-    expect(map['Best set']).toBe('100 kg × 10')       // max weight×reps set
-    expect(map['Best session vol']).toBe('1,960 kg')  // heavier of the two sessions
+    // Renamed and re-worded 2026-10-03 (Jake): records are SETS. "Heaviest weight 100 kg" hid that it was 100 x 10 and left a
+    // 1RM above it looking like a mistake.
+    expect(map['Heaviest set']).toBe('100 kg × 10')        // two sets at 100 kg: the one with more reps is the heaviest set
+    expect(map['Best est. 1RM']).toBe('133 kg')            // 100×10 → 133.3
+    expect(map['Biggest set']).toBe('100 kg × 10')         // most weight × reps in one set
+    expect(map['Best session volume']).toBe('1,960 kg')    // heavier of the two sessions
   })
 
   test('Per-exercise view renders the range selector + a trend card for a logged session (smoke)', async ({ page }) => {

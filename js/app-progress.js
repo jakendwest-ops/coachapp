@@ -1933,6 +1933,67 @@ async function renderProgressWeight(el) {
 const _TREND_RANGES = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365, 'All': Infinity }
 
 
+// ── Exercise stats: ONE set of numbers behind the runner's Stats sheet AND the My progress cards (2026-10-03) ────────────
+// Jake: "This amount of data should also be consistent with the 'my progress' page." The two were separate
+// implementations that had already drifted: the runner sheet projected every set with plain Epley (100 kg for ONE rep read
+// 103.3, a 15-rep set was projected) while this page used _estimate1RM (a single is measured, nothing over 12 reps is
+// projected). Everything from here to _xsRecords is the single definition. tests-node/exercise-stats.test.mjs pins the
+// arithmetic; tests/exercise-stats-shared-2026-10-03.spec.js proves both screens print the same figures from the same rows.
+//
+// Does a logged RPE/RIR count toward the estimated 1RM? Jake, 2026-10-03: yes — so a top set of 3 at RPE 8 reads the same in
+// history as in the live Est. 1RM chip. One switch, so it can be flipped in exactly one place.
+const _XS_COUNT_EFFORT = true
+
+// The options _estimate1RM wants for one logged set, or undefined. A value with NO scale is ignored, never guessed: RIR and
+// RPE run in opposite directions, so reading an unlabelled 2 as either could invert it. _hasNumVal, not truthiness: a real 0
+// (RIR 0, "to failure") counts.
+function _xsEffortOpts(s, useEffort) {
+  if (!useEffort) return undefined
+  const scale = s.effort_type === 'rpe' || s.effort_type === 'rir' ? s.effort_type : null
+  return scale && _hasNumVal(s.effort_value) ? { effortType: scale, effortValue: s.effort_value } : undefined
+}
+
+// One session of one exercise -> the numbers. `sets` are workout_log_sets-shaped rows; warm-ups are dropped here
+// (_countableSets), so callers need not. Weights stay in canonical kg — only the DISPLAY converts.
+//   top / topReps  the heaviest set (a tie on weight goes to the set with more reps)
+//   e1rm / e1rmSrc the highest estimate and the SET it came from — not always the heaviest set, and naming it is what
+//                  stops a 1RM well above the heaviest weight from looking like a mistake
+function _xsSessionMetrics(sets, { useEffort = _XS_COUNT_EFFORT } = {}) {
+  const rows = _countableSets(sets)
+  const w = s => parseFloat(s.weight_kg) || 0
+  const r = s => parseInt(s.reps_achieved) || 0
+  const volume = rows.reduce((t, s) => t + w(s) * r(s), 0)
+  const reps = rows.reduce((t, s) => t + r(s), 0)
+  let top = null, src = null, best = 0
+  for (const s of rows) {
+    if (w(s) > 0 && (!top || w(s) > w(top) || (w(s) === w(top) && r(s) >= r(top)))) top = s
+    const est = _estimate1RM(s.weight_kg, s.reps_achieved, _xsEffortOpts(s, useEffort)) || 0
+    if (est > best) { best = est; src = s }
+  }
+  return { sets: rows.length, reps, volume, top: top ? w(top) : 0, topReps: top ? r(top) : 0, e1rm: best, e1rmSrc: src, intensity: reps ? volume / reps : 0 }
+}
+
+// All-time records for one exercise, each naming its SET and its date: heaviest set, best est. 1RM (with the set it came
+// from), biggest set (most weight x reps in one set — a different thing from the heaviest) and best session volume. Null when
+// nothing weighted was ever logged. `sessions` is [{ date, sets }]; an exact tie goes to the MORE RECENT session.
+function _xsRecords(sessions, { useEffort = _XS_COUNT_EFFORT } = {}) {
+  let heaviest = null, biggest = null, e1rm = null, volume = null
+  const ordered = (sessions || []).map((s, i) => [s, i]).sort((a, b) => (a[0].date < b[0].date ? -1 : a[0].date > b[0].date ? 1 : a[1] - b[1])).map(x => x[0])
+  for (const sess of ordered) {
+    const rows = _countableSets(sess.sets)
+    for (const s of rows) {
+      const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0
+      if (!(w > 0 && r > 0)) continue
+      if (!heaviest || w > heaviest.weight_kg || (w === heaviest.weight_kg && r >= heaviest.reps_achieved)) heaviest = { ...s, weight_kg: w, reps_achieved: r, date: sess.date }
+      if (!biggest || w * r >= biggest.weight_kg * biggest.reps_achieved) biggest = { ...s, weight_kg: w, reps_achieved: r, date: sess.date }
+    }
+    const m = _xsSessionMetrics(rows, { useEffort })
+    if (m.e1rm > 0 && (!e1rm || m.e1rm >= e1rm.value)) e1rm = { value: m.e1rm, src: m.e1rmSrc, date: sess.date }
+    if (m.volume > 0 && (!volume || m.volume >= volume.value)) volume = { value: m.volume, date: sess.date }
+  }
+  return { heaviest, e1rm, biggest, volume }
+}
+
 // One point per session, with only the keys relevant to the metric_type populated.
 function _metricPointsFor(ex) {
   const points = (ex.sessions || []).map(sess => {
@@ -1979,11 +2040,16 @@ function _metricPointsFor(ex) {
         p.bestDistance = Math.max(0, ...sets.map(x => num(x.distance_m)))
         break
       default: { // weight_reps (and any unknown → treat as weight_reps)
-        p.topWeight = Math.max(0, ...sets.map(x => num(x.weight_kg)))
-        p.e1rm      = Math.max(0, ...sets.map(x => _estimate1RM(x.weight_kg, x.reps_achieved) || 0))
-        p.volume    = sets.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0)
-        const totalReps = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
-        p.intensity = totalReps > 0 ? p.volume / totalReps : 0 // weighted avg weight per rep
+        // ONE definition of these numbers (2026-10-03): _xsSessionMetrics, shared with the runner's Stats sheet and the
+        // exercise card. This branch used its own copy, which did not count a logged RPE in the estimated 1RM.
+        const m = _xsSessionMetrics(sets)
+        p.topWeight = m.top
+        p.topReps   = m.topReps
+        p.e1rm      = m.e1rm
+        p.e1rmSrc   = m.e1rmSrc
+        p.volume    = m.volume
+        p.intensity = m.intensity // weighted avg weight per rep
+        const totalReps = m.reps
         // Reps as a metric in its own right (2026-08-16). A bodyweight set never writes weight_kg
         // (app-runner.js:2419), and num() maps that NULL to 0 rather than "missing" — so topWeight,
         // e1rm, volume AND intensity are all 0 for every pull-up or dip session ever logged. Reps is
@@ -2406,6 +2472,25 @@ async function renderProgressStrength(el) {
 
 // The person's exercises, each with every session — or NULL when the history could not be read. null, not []: [] renders as
 // "No sessions logged yet.", and a failed read must not look like a brand-new account (the convention _loadProgramBlocks uses).
+// The columns a logged exercise's history needs — ONE list for the whole-history read below and for _fetchExerciseSessions
+// (the runner's Stats sheet), so the two cannot select different data. A nested column list is an ALLOWLIST: `set_number`
+// (the embed has no inherent order) and the effort pair (which the estimated 1RM now counts) must be named or they are absent.
+const _EXERCISE_HISTORY_SELECT = 'exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(set_number, weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side, avg_watts, phase, effort_value, effort_type)'
+
+// ONE exercise's whole history for one client: [{ date, sets }], oldest first, paged so nothing is cut at the API's 200-row cap.
+// Matches on the exercise NAME, exactly as _buildExerciseSeries groups it ("series group by exercise_name, never a join"), so
+// the runner's Stats sheet and the My progress card are looking at the same rows. Throws on a failed read — a half history must
+// never pass for a whole one. Tests: tests/exercise-stats-shared-2026-10-03.spec.js.
+async function _fetchExerciseSessions(clientId, name) {
+  const { data, error } = await _fetchAllRows(() => db.from('workout_log_exercises')
+    .select(_EXERCISE_HISTORY_SELECT, { count: 'exact' })
+    .eq('workout_logs.client_id', clientId).eq('exercise_name', name).order('id'))
+  if (error) throw error
+  return (data || [])
+    .map(row => ({ date: row.workout_logs.date, sets: row.workout_log_sets || [] }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+}
+
 async function _buildExerciseSeries(clientId) {
   // Paged (_fetchAllRows, app-core.js): the API caps a response at 200 rows and says nothing when it truncates. This read is
   // ordered by NAME, so past about 200 logged exercise rows (roughly 11 weeks at three sessions a week) whole exercises
@@ -2415,7 +2500,7 @@ async function _buildExerciseSeries(clientId) {
     // `set_number` added 2026-08-15. A nested column list is an ALLOWLIST, and without it PostgREST
     // returns the sets in NO guaranteed order — fine while only aggregates were computed, wrong now
     // that each session renders its sets in sequence under the chart.
-    .select('exercise_name, metric_type, workout_logs!inner(date, client_id), workout_log_sets(set_number, weight_kg, reps_achieved, distance_m, duration_seconds, avg_hr, max_hr, height_cm, side, avg_watts, phase)', { count: 'exact' })
+    .select(_EXERCISE_HISTORY_SELECT, { count: 'exact' })
     .eq('workout_logs.client_id', clientId).order('exercise_name').order('id'))
   if (error) { log.error('_buildExerciseSeries', 'exercise history fetch failed', error); return null }
   const byName = {}
@@ -2445,7 +2530,7 @@ function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = 
 const _TREND_METRICS = {
   // Order matters: consumers take the FIRST metric that has data, so 'reps' sits last and is reached
   // only when every weight-derived metric is zero — i.e. a bodyweight-only exercise.
-  weight_reps: [['topWeight','Top weight','max',v=>fmtWeight(v)], ['e1rm','Est 1RM','max',v=>fmtWeight(Math.round(v))], ['volume','Volume','max',v=>fmtWeight(Math.round(v))], ['intensity','Intensity','mean',v=>`${Math.round(weightToPref(v)*10)/10} ${window._unitPrefs.weight}/rep`], ['reps','Total reps','max',v=>`${Math.round(v)} reps`]],
+  weight_reps: [['topWeight','Top set','max',v=>fmtWeight(v)], ['e1rm','Est 1RM','max',v=>fmtWeight(Math.round(v))], ['volume','Volume','max',v=>fmtWeight(Math.round(v))], ['intensity','Intensity','mean',v=>`${Math.round(weightToPref(v)*10)/10} ${window._unitPrefs.weight}/rep`], ['reps','Total reps','max',v=>`${Math.round(v)} reps`]],
   cardio: [
     ['totalDistance','Distance','max', v => fmtDistanceM(v)],
     ['totalDuration','Duration','max', v => fmtRestCountdown(v)],
@@ -2531,6 +2616,7 @@ function _chartTheme() {
   return {
     muted: pick('--text-muted', '#9ca3af'),
     accent: pick('--accent', '#6366f1'),
+    surface: pick('--surface', 'white'),   // the hollow centre of a selected chart point
     // Neutral grey at low alpha reads on both themes; the coach chart's rgba(0,0,0,.05) vanished on dark.
     grid: 'rgba(150,150,150,0.14)',
   }
@@ -2540,7 +2626,11 @@ function _chartTheme() {
 // `target` is a canvas id OR the canvas element itself — the per-session and per-exercise trend charts
 // render into anonymous canvases inside a freshly-built container, and giving them synthetic ids just to
 // satisfy this signature would be ceremony.
-function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange, legend, height, tooltipUnit, stepSize } = {}) {
+// Opt-in extras for a chart you can TAP (the exercise stats card, 2026-10-03) — every other caller leaves them out and gets
+// exactly what it always got: `selectedIndex()` returns the highlighted point (a hollow, larger dot — read on every draw, so
+// changing the selection needs only chart.update('none')); `onPick(index)` is called with the tapped point's index;
+// `tooltipLabel(ctx)` replaces the tooltip line.
+function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange, legend, height, tooltipUnit, stepSize, selectedIndex, onPick, tooltipLabel } = {}) {
   const el = typeof target === 'string' ? document.getElementById(target) : target
   if (!el || !Array.isArray(series) || !series.length) return null
   // Resolve by CANVAS, so an instance created by any path — including one this registry lost track of
@@ -2560,6 +2650,8 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
       labels: labels || [],
       datasets: series.map(s => {
         const colour = s.colour || t.accent
+        const baseR = s.pointRadius != null ? s.pointRadius : 3
+        const pickIdx = typeof selectedIndex === 'function' ? selectedIndex : null
         return {
           label: s.label || '',
           data: s.data,
@@ -2570,9 +2662,11 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
           borderDash: s.dashed ? [4, 3] : undefined,
           fill: !!s.fill,
           tension: 0.3,
-          pointRadius: s.pointRadius != null ? s.pointRadius : 3,
+          pointRadius: pickIdx ? (c => (c.dataIndex === pickIdx() ? 6 : baseR)) : baseR,
           pointHoverRadius: 5,
-          pointBackgroundColor: colour,
+          pointBackgroundColor: pickIdx ? (c => (c.dataIndex === pickIdx() ? t.surface : colour)) : colour,
+          pointBorderColor: colour,
+          pointBorderWidth: pickIdx ? (c => (c.dataIndex === pickIdx() ? 3 : 1)) : 1,
           spanGaps: !!s.spanGaps,
           yAxisID: s.axis === 'y2' ? 'y2' : 'y',
         }
@@ -2584,16 +2678,17 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
       animation: { duration: 250 },
       // Crosshair-style shared tooltip — the single biggest readability win from the coach chart.
       interaction: { mode: 'index', intersect: false },
+      ...(onPick ? { onClick: (e, els, ch) => { const hit = ch.getElementsAtEventForMode(e, 'index', { intersect: false }, false)[0]; if (hit) onPick(hit.index) } } : {}),
       plugins: {
         legend: { display: showLegend, labels: { font: { size: 11 }, color: t.muted, boxWidth: 20, usePointStyle: true } },
         tooltip: {
           callbacks: {
-            label: ctx => {
+            label: tooltipLabel || (ctx => {
               const v = ctx.parsed.y
               if (v == null) return null
               const body = ctx.dataset.yAxisID === 'y2' ? fmtY2(v) : fmtY(v)
               return (ctx.dataset.label ? ctx.dataset.label + ': ' : '') + body + (tooltipUnit && ctx.dataset.yAxisID !== 'y2' ? ` ${tooltipUnit}` : '')
-            },
+            }),
           },
         },
       },
@@ -2657,26 +2752,8 @@ function _exerciseRecords(ex) {
     const best = Math.max(0, ...flat.map(x => parseFloat(x.distance_m) || 0))
     return best > 0 ? [['Best distance', best.toFixed(2) + ' m']] : []
   }
-  const num = v => parseFloat(v) || 0
-  const allSets = _countableSets((ex.sessions || []).flatMap(s => s.sets || []))
-  const heaviest = Math.max(0, ...allSets.map(s => num(s.weight_kg)))
-  const best1rm  = Math.max(0, ...allSets.map(s => _estimate1RM(s.weight_kg, s.reps_achieved) || 0))
-  let bestSet = null // the single set with the highest weight×reps
-  for (const s of allSets) {
-    const w = num(s.weight_kg), r = parseInt(s.reps_achieved) || 0
-    if (w > 0 && r > 0 && (!bestSet || w * r > bestSet.vol)) bestSet = { w, r, vol: w * r }
-  }
-  let bestSessVol = 0
-  for (const sess of (ex.sessions || [])) {
-    const vol = _countableSets(sess.sets).reduce((t, s) => t + num(s.weight_kg) * (parseInt(s.reps_achieved) || 0), 0)
-    if (vol > bestSessVol) bestSessVol = vol
-  }
-  const rows = []
-  if (heaviest > 0)    rows.push(['Heaviest weight', fmtWeight(heaviest, { spaced: true })])
-  if (best1rm > 0)     rows.push(['Best est. 1RM', fmtWeight(Math.round(best1rm), { spaced: true })])
-  if (bestSet)         rows.push(['Best set', `${weightToPref(bestSet.w)} ${window._unitPrefs.weight} × ${bestSet.r}`])
-  if (bestSessVol > 0) rows.push(['Best session vol', Math.round(weightToPref(bestSessVol)).toLocaleString() + ' ' + window._unitPrefs.weight])
-  return rows
+  // Weight x reps: the shared records (2026-10-03) — each names its SET, so a 1RM above the heaviest weight explains itself.
+  return _xsRecordRows(_xsRecords(ex.sessions || [])).map(r => [r.label, r.value])
 }
 
 // The per-session breakdown under each trend chart. Jake, 2026-08-15: "Bench press shows 95kg on 6th
@@ -2719,6 +2796,222 @@ function _trendCardEmpty(ex) {
     ${_recordsBlockHtml(_exerciseRecords(ex))}</div>`
 }
 
+// ── The exercise stats card: the SAME card in the runner's Stats sheet and on My progress (2026-10-03) ─────────────────────
+// Measure pills, a chart you can tap, a strip of numbers for the selected session, records named by SET, and every set of every
+// session with its volume. The numbers come from _xsSessionMetrics / _xsRecords above — nothing here does its own maths, which
+// is how the two screens stay in step. State lives on the host element (host._xs); the one inline handler is _xsAct; the styles
+// are the .xs-* classes in css/main.css (tokens only). Design: the tappable prototype Jake approved 2026-10-03.
+//
+//   ex    { name, metricType, sessions: [{ date, sets }] }   sets are workout_log_sets-shaped rows
+//   opts  chartId    the canvas id (the runner keeps 'rs-chart')
+//         sinceMs    only sessions on/after this are charted and listed — the records stay all-time, like a personal best
+//         todaySets  rows ticked so far in the runner: a dashed 'Today' point and a first history row
+//         getMetric / setMetric   where the chosen measure is remembered between renders
+const _xsUnit = () => window._unitPrefs.weight
+// A NUMBER in the user's unit. weightToPref returns a STRING in lb (it exits through _stripTrailingZero), so arithmetic on it
+// must coerce — the same trap _rollingAvg documents.
+const _xsKg = kg => Number(weightToPref(kg)) || 0
+const _xsNum = v => String(Math.round(v * 10) / 10)
+const _xsInt = v => Math.round(v).toLocaleString('en-GB')
+const _xsW = kg => _xsNum(_xsKg(kg))
+
+// workout_logs.date is a calendar DATE ("2026-09-04"): new Date("2026-09-04") is UTC midnight, which reads as the 3rd anywhere
+// west of UTC. Built from its parts in local time instead. The ONE formatter for the card AND the runner's "Last time" line
+// (_runnerShortDate delegates here), so the two can never word the same day differently.
+function _xsDate(iso, long) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso))
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(iso)
+  return d.toLocaleDateString('en-GB', long ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short' })
+}
+
+// "@9" (RPE) or "@2 RIR": the scale travels with the number, because the two run in opposite directions.
+function _xsEffortText(s) {
+  if (!_hasNumVal(s.effort_value) || !(s.effort_type === 'rpe' || s.effort_type === 'rir')) return ''
+  return ' @' + (+s.effort_value) + (s.effort_type === 'rir' ? ' RIR' : '')
+}
+// "117.5×3 @9" for the history; "117.5 × 3 @9" where it sits in a sentence. A bodyweight set is just its reps.
+const _xsSetText = s => { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (w > 0 ? _xsW(w) + '×' + r : r + ' reps') + _xsEffortText(s) }
+const _xsSetSpaced = s => { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (w > 0 ? _xsW(w) + ' × ' + r : r + ' reps') + _xsEffortText(s) }
+
+// The five measures. Keys are the SAME keys _TREND_METRICS and the saved per-exercise choice use. `val` is the number charted;
+// `cap` is the words for the "Best ..." caption and the tooltip — and says WHICH SET a weight came from.
+const _XS_MEASURES = {
+  topWeight: { noun: 'top set',   dp: 1, val: m => _xsKg(m.top),       cap: m => `${_xsW(m.top)} ${_xsUnit()} × ${m.topReps}` },
+  e1rm:      { noun: 'est. 1RM',  dp: 1, val: m => _xsKg(m.e1rm),      cap: m => `${_xsInt(_xsKg(m.e1rm))} ${_xsUnit()}` + (m.e1rmSrc ? ` (from ${_xsSetSpaced(m.e1rmSrc)})` : '') },
+  volume:    { noun: 'volume',    dp: 0, val: m => _xsKg(m.volume),    cap: m => `${_xsInt(_xsKg(m.volume))} ${_xsUnit()}` },
+  intensity: { noun: 'intensity', dp: 1, val: m => _xsKg(m.intensity), cap: m => `${_xsNum(_xsKg(m.intensity))} ${_xsUnit()}/rep` },
+  reps:      { noun: 'reps',      dp: 0, val: m => m.reps,             cap: m => `${_xsInt(m.reps)} reps` },
+}
+
+// Everything the card needs, computed once per mount: the sessions (oldest first, empty ones dropped), the range-limited list,
+// today's pseudo-session, and the all-time records.
+function _xsPrepare(ex, opts) {
+  const counted = (ex.sessions || [])
+    .map((s, i) => ({ key: 'k' + i, date: s.date, sets: _countableSets([...(s.sets || [])].sort((a, b) => (a.set_number || 0) - (b.set_number || 0))) }))
+    .filter(s => s.sets.length)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  counted.forEach(s => { s.m = _xsSessionMetrics(s.sets) })
+  const todayRows = _countableSets(opts.todaySets || []).filter(r => (parseInt(r.reps_achieved) || 0) > 0)
+  return {
+    shown: opts.sinceMs ? counted.filter(s => new Date(s.date).getTime() >= opts.sinceMs) : counted,
+    today: todayRows.length ? { key: 'today', date: 'Today', sets: todayRows, m: _xsSessionMetrics(todayRows) } : null,
+    rec: _xsRecords(counted),
+  }
+}
+
+// The records as rows { id, label, value, sub } — each names its SET and its date. _exerciseRecords reads the same rows, so
+// the empty-range card and the full card cannot word a record differently.
+function _xsRecordRows(rec) {
+  const u = _xsUnit(), rows = []
+  if (rec.heaviest) rows.push({ id: 'heaviest', label: 'Heaviest set', value: `${_xsW(rec.heaviest.weight_kg)} ${u} × ${rec.heaviest.reps_achieved}`, sub: _xsDate(rec.heaviest.date, true) })
+  if (rec.e1rm)     rows.push({ id: 'e1rm', label: 'Best est. 1RM', value: `${_xsInt(_xsKg(rec.e1rm.value))} ${u}`, sub: `from ${_xsSetSpaced(rec.e1rm.src)} · ${_xsDate(rec.e1rm.date, true)}` })
+  if (rec.biggest)  rows.push({ id: 'biggest', label: 'Biggest set', value: `${_xsW(rec.biggest.weight_kg)} ${u} × ${rec.biggest.reps_achieved}`, sub: `most weight × reps · ${_xsDate(rec.biggest.date, true)}` })
+  if (rec.volume)   rows.push({ id: 'volume', label: 'Best session volume', value: `${_xsInt(_xsKg(rec.volume.value))} ${u}`, sub: _xsDate(rec.volume.date, true) })
+  return rows
+}
+function _xsRecsHtml(rec) {
+  const rows = _xsRecordRows(rec)
+  if (!rows.length) return ''
+  return `<div data-xs-recs><div class="xs-sec">Personal records</div>${rows.map(r =>
+    `<div class="xs-rec" data-xs-rec="${r.id}"><span>${escapeHtml(r.label)}<small>${escapeHtml(r.sub)}</small></span><b>${escapeHtml(r.value)}</b></div>`).join('')}</div>`
+}
+
+// The selected session: the one tapped, else the newest (today, in the runner, once a set is ticked).
+const _xsSelIndex = st => { const i = st.plotted.findIndex(s => s.key === st.sel); return i < 0 ? st.plotted.length - 1 : i }
+
+function _xsStripHtml(st) {
+  const i = _xsSelIndex(st), cur = st.plotted[i], prev = i > 0 ? st.plotted[i - 1] : null, today = cur.key === 'today'
+  const tiles = [
+    ['volume', 'Volume',  m => m.volume, m => (m.volume > 0 ? _xsInt(_xsKg(m.volume)) : '–'), x => _xsInt(_xsKg(x))],
+    ['top',    'Top set', m => m.top,    m => (m.top > 0 ? `${_xsW(m.top)}×${m.topReps}` : '–'), x => _xsNum(_xsKg(x))],
+    ['e1rm',   'Est. 1RM', m => m.e1rm,  m => (m.e1rm > 0 ? _xsInt(_xsKg(m.e1rm)) : '–'), x => _xsInt(_xsKg(x))],
+    ['sets',   'Sets',    m => m.sets,   m => String(m.sets), x => String(Math.round(x))],
+    ['reps',   'Reps',    m => m.reps,   m => String(m.reps), x => String(Math.round(x))],
+  ]
+  // Today's arrows are grey, not green and red: a half-finished workout against a whole one is not a drop.
+  const tile = ([id, label, raw, show, fmt]) => {
+    let d = ''
+    if (prev) {
+      const diff = raw(cur.m) - raw(prev.m), mag = fmt(Math.abs(diff))
+      // A change that rounds to nothing on screen is no change - never a red "▼ 0" (a 0.4 kg drift in an estimate shows as 0).
+      d = !(parseFloat(mag.replace(/,/g, '')) > 0) ? '<span class="xs-eq">–</span>' : `<span class="${today ? 'xs-eq' : diff > 0 ? 'xs-up' : 'xs-dn'}">${diff > 0 ? '▲' : '▼'} ${escapeHtml(mag)}</span>`
+    }
+    return `<div class="xs-tile" data-xs-tile="${id}"><div class="xs-tl">${label}</div><div class="xs-tv">${escapeHtml(show(cur.m))}</div><div class="xs-td">${d}</div></div>`
+  }
+  const title = today ? 'Today so far' : _xsDate(cur.date, true)
+  const vs = _xsUnit() + (prev ? ` · vs ${prev.key === 'today' ? 'today' : _xsDate(prev.date, true)}${today ? ' (full session)' : ''}` : '')
+  // Says in words WHICH set the 1RM is worked out from — the question Jake asked of the first prototype.
+  const src = cur.m.e1rmSrc
+  const rpe = src ? _effortToRPE(_xsEffortOpts(src, _XS_COUNT_EFFORT)) : null
+  const note = src ? `<div class="xs-note" data-xs-note>Est. 1RM works from your best set: ${escapeHtml(_xsSetSpaced(src))}${rpe != null && rpe < 10 ? ` (${src.effort_type === 'rir' ? 'RIR' : 'RPE'} counted)` : ''}.</div>` : ''
+  return `<div class="xs-sel"><span class="xs-selname" data-xs-selname>${escapeHtml(title)}</span><span class="xs-vs">${escapeHtml(vs)}</span></div><div class="xs-strip">${tiles.map(tile).join('')}</div>${note}`
+}
+
+function _xsHistHtml(st) {
+  const sel = st.plotted[_xsSelIndex(st)]
+  const rows = st.plotted.slice().reverse()   // newest first; Today, when there is one, leads
+  const base = 5 + (st.model.today ? 1 : 0)
+  const shown = st.showAll ? rows : rows.slice(0, base)
+  const row = r => `<button type="button" class="xs-row" data-xs-row="${r.key}"${r.key === sel.key ? ' aria-current="true"' : ''} onclick="_xsAct(this,'sel','${r.key}')">` +
+    `<span class="xs-rt"><span class="xs-date">${escapeHtml(r.key === 'today' ? 'Today · in progress' : _xsDate(r.date, true))}</span>${r.m.volume > 0 ? `<span class="xs-vol">${escapeHtml(_xsInt(_xsKg(r.m.volume)))} ${escapeHtml(_xsUnit())}</span>` : ''}</span>` +
+    `<span class="xs-sets">${escapeHtml(r.sets.map(_xsSetText).join(' · '))}</span></button>`
+  const more = rows.length > shown.length
+    ? `<button type="button" class="xs-more" data-xs-more onclick="_xsAct(this,'more')">Show all ${rows.length} sessions</button>`
+    : (st.showAll && rows.length > base ? '<button type="button" class="xs-more" data-xs-less onclick="_xsAct(this,\'less\')">Show fewer</button>' : '')
+  return `<div class="xs-sec">Sessions<i>${escapeHtml(_xsUnit())} × reps @ effort</i></div>${shown.map(row).join('')}${more}`
+}
+
+// Destroys the card's chart, if any. Called BEFORE the card's HTML is replaced: _renderMetricChart only ever destroys a chart
+// on the canvas it is given, so a rebuilt canvas would otherwise leave its predecessor running. try/catch because Chart.js is a
+// CDN script — if it never loaded there is nothing to destroy.
+function _xsDestroyChart(host) {
+  try { const c = host && host.querySelector('canvas'); if (c) Chart.getChart(c)?.destroy() } catch { /* no Chart.js: nothing to destroy */ }
+}
+
+function _mountExerciseStats(host, ex, opts = {}) {
+  if (!host) return
+  host.setAttribute('data-xs', '')
+  host._xs = { ex, opts, model: _xsPrepare(ex, opts), metric: opts.getMetric ? opts.getMetric() : null, sel: null, showAll: false, plotted: [], chart: null }
+  _xsRender(host)
+}
+
+function _xsRender(host) {
+  const st = host._xs, model = st.model
+  _xsDestroyChart(host)
+  st.chart = null
+  st.plotted = model.today ? model.shown.concat([model.today]) : model.shown
+  if (!st.plotted.length) {
+    host.innerHTML = `<div class="xs"><div class="xs-empty" data-xs-empty>No sessions in this range.</div>${_xsRecsHtml(model.rec)}</div>`
+    return
+  }
+  // Only measures with data become pills (a bodyweight lift has Reps and nothing else) — and the order puts Reps last, so a
+  // lift with any weight opens on its top set.
+  const avail = _metricsWithData(_TREND_METRICS.weight_reps, st.plotted.map(s => ({ topWeight: s.m.top, e1rm: s.m.e1rm, volume: s.m.volume, intensity: s.m.intensity, reps: s.m.reps })))
+  if (!avail.length) {
+    host.innerHTML = `<div class="xs"><div class="xs-empty">Nothing to chart yet.</div><div data-xs-hist>${_xsHistHtml(st)}</div></div>`
+    return
+  }
+  const key = avail.some(a => a[0] === st.metric) ? st.metric : avail[0][0]
+  const M = _XS_MEASURES[key]
+  const bestM = model.shown.length ? model.shown.map(s => s.m).reduce((a, b) => (M.val(b) >= M.val(a) ? b : a)) : null
+  const hasBest = !!bestM && M.val(bestM) > 0   // none of this measure in the history (only today has it): no caption beats "0 kg × 0"
+  const usable = st.plotted.filter(s => M.val(s.m) > 0).length
+  const chartNote = typeof Chart === 'undefined' ? 'The chart could not load. Check your connection and reload the page.'
+    : usable < 2 ? 'Not enough sessions yet to draw a line. It appears after a couple of workouts.' : ''
+  const pills = `<div class="xs-pills" role="group" aria-label="Chart measure">${avail.map(([k, label]) =>
+    `<button type="button" class="xs-pill" data-xs-metric="${k}" aria-pressed="${k === key}" onclick="_xsAct(this,'metric','${k}')"${k === key ? ` style="background:${_METRIC_COLORS[k] || 'var(--accent)'}"` : ''}>${escapeHtml(label)}</button>`).join('')}</div>`
+  host.innerHTML = '<div class="xs">' +
+    (hasBest ? `<div class="xs-sub" data-xs-caption>${escapeHtml(`Best ${M.noun}: ${M.cap(bestM)} · ${model.shown.length} session${model.shown.length === 1 ? '' : 's'}`)}</div>` : '') +
+    pills +
+    (chartNote
+      ? `<div class="xs-empty" data-xs-chartnote>${escapeHtml(chartNote)}</div>`
+      : `<div class="xs-chart"><canvas id="${escapeHtml(st.opts.chartId || 'xs-chart')}" data-xs-chart role="img" aria-label="${escapeHtml(M.noun)} for each session"></canvas></div><div class="xs-hint">Tap a point or a session to see its numbers.</div>`) +
+    `<div data-xs-strip>${_xsStripHtml(st)}</div>${_xsRecsHtml(model.rec)}<div data-xs-hist>${_xsHistHtml(st)}</div></div>`
+  if (!chartNote) {
+    try { st.chart = _xsDraw(host, key) }
+    catch { const wrap = host.querySelector('.xs-chart'); if (wrap) wrap.outerHTML = '<div class="xs-empty" data-xs-chartnote>The chart could not be drawn.</div>' }
+  }
+}
+
+function _xsDraw(host, key) {
+  const st = host._xs, M = _XS_MEASURES[key], colour = _METRIC_COLORS[key]
+  const canvas = host.querySelector('canvas'); if (!canvas) return null
+  const f = Math.pow(10, M.dp)
+  const val = s => { const v = M.val(s.m); return v > 0 ? Math.round(v * f) / f : null }   // a session with none of this measure leaves a gap, not a dip to zero
+  const hist = st.model.shown, today = st.model.today
+  const labels = hist.map(s => _xsDate(s.date)), data = hist.map(val)
+  const series = [{ label: M.noun, data: today ? data.concat([null]) : data, colour, fill: true, spanGaps: true }]
+  if (today) {
+    labels.push('Today')
+    const last = data.length - 1
+    series.push({ label: 'Today', data: data.map((v, i) => (i === last ? v : null)).concat([val(today)]), colour, dashed: true, pointRadius: 4, spanGaps: true })
+  }
+  return _renderMetricChart(canvas, {
+    labels, series, height: true, legend: false,
+    selectedIndex: () => _xsSelIndex(st),
+    onPick: i => { const s = st.plotted[i]; if (s) { st.sel = s.key; _xsRefreshSel(host) } },
+    tooltipLabel: c => { const s = st.plotted[c.dataIndex]; return s && c.parsed.y != null ? M.cap(s.m) : null },
+  })
+}
+
+// A different session was selected (or the list expanded): only the strip and the list change, plus the highlighted point.
+function _xsRefreshSel(host) {
+  const st = host._xs; if (!st || !st.plotted.length) return
+  const strip = host.querySelector('[data-xs-strip]'), hist = host.querySelector('[data-xs-hist]')
+  if (strip) strip.innerHTML = _xsStripHtml(st)
+  if (hist) hist.innerHTML = _xsHistHtml(st)
+  try { st.chart?.update('none') } catch { /* the chart is gone: the numbers above are still right */ }
+}
+
+function _xsAct(el, kind, val) {
+  const host = el.closest('[data-xs]'), st = host && host._xs
+  if (!st) return
+  if (kind === 'metric') { st.metric = val; if (st.opts.setMetric) st.opts.setMetric(val); _xsRender(host) }
+  else if (kind === 'sel') { st.sel = val; _xsRefreshSel(host) }
+  else if (kind === 'more') { st.showAll = true; _xsRefreshSel(host) }
+  else if (kind === 'less') { st.showAll = false; _xsRefreshSel(host) }
+}
+
 // Destroys the previous render's Chart.js instances before rebuilding — fires on every keystroke,
 // range change and metric-chip tap, so without this each would leak a full set of chart instances
 // bound to canvases the innerHTML rebuild below just detached.
@@ -2733,6 +3026,9 @@ function _renderPerfExerciseList(query) {
 
   // Pass 1 — compute what each card shows (range-filtered points, visible metric chips, active chip).
   const rendered = list.map((ex, i) => {
+    // Weight x reps cards are the shared exercise stats card (2026-10-03): pass 2 gives each a host, pass 3 mounts it. Every
+    // other type keeps the card below.
+    if (ex.metricType === 'weight_reps') return { ex, i, xs: true }
     const pts = _metricPointsFor(ex).points.filter(p => new Date(p.date).getTime() >= cutoff)
     const metrics = _metricsWithData(_TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps, pts)
     if (!metrics.length) return { ex, i, empty: true }
@@ -2751,6 +3047,7 @@ function _renderPerfExerciseList(query) {
 
   // Pass 2 — build the HTML (canvases must exist before Chart.js can bind to them).
   listEl.innerHTML = rendered.map(r => {
+    if (r.xs) return `<div class="xs-card"><div class="xs-card-head"><span class="xs-card-name">${escapeHtml(r.ex.name)}</span><span class="xs-card-badge">${_TREND_BADGE[r.ex.metricType] || 'Strength'}</span></div><div id="xs-host-${r.i}"></div></div>`
     if (r.empty) return _trendCardEmpty(r.ex)
     const vals = r.pts.map(p => p[r.activeKey]).filter(v => v > 0)
     const best = vals.length ? (r.active[4] ? Math.min(...vals) : Math.max(...vals)) : 0
@@ -2776,6 +3073,14 @@ function _renderPerfExerciseList(query) {
 
   // Pass 3 — draw the charts.
   rendered.forEach(r => {
+    if (r.xs) {
+      _mountExerciseStats(document.getElementById(`xs-host-${r.i}`), r.ex, {
+        chartId: `ps-chart-${r.i}`, sinceMs: cutoff,
+        getMetric: () => window._trendState.metricByEx[r.ex.name],
+        setMetric: m => { window._trendState.metricByEx[r.ex.name] = m },
+      })
+      return
+    }
     // !chartable means pass 2 deliberately rendered no canvas — the session list below carries the
     // detail instead. Skipping here keeps the two passes' decision in ONE place (pass 1's r.chartable)
     // rather than duplicating the >=2 rule in both, which is how they drifted apart originally.
