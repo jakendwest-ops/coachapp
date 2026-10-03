@@ -20,7 +20,8 @@ was tagged and pushed the same day but **never deployed** — GitHub's check fai
 self-test failure and the deploy job needs that check; v2026.09.13 is the same content plus the fix.
 Six commits sit on `master` after the tag — four follow-ups (test-login fix, an effort-only-sets fix in the
 runner, `release.mjs` waiting for GitHub's check before pushing a tag, a few widened test waits) and two docs
-updates — all CI-green, **not yet released**. Nothing is unpushed. The live site was re-checked on 2026-10-03:
+updates — all CI-green, **not yet released**. Two more commits (the top-set ghost-text fix, app-runner v111, and its
+docs) are committed locally and **not pushed**. The live site was re-checked on 2026-10-03:
 GitHub's Pages deployment is the tag's commit and all 11 files it serves are byte-identical to `v2026.09.13`.
 See [current-sprint.md](current-sprint.md).
 

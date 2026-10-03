@@ -31,6 +31,12 @@ session-expired guards now also log the server's reason (app-progress v73, app-c
 test waits. Validated by a complete run: 974 passed / 0 failed / 1 flaky (the known `progress-trend`) / 4
 skipped (44.2m). They ship with the next release — Jake's call when.
 
+**Committed locally after that, NOT pushed (2026-10-03, later):** `d6134e6` an RPE top-set exercise takes no ghost text
+from last session (app-runner v111; 188 runner/RPE tests green, static checks pass) and `ab4fd78` its docs. Awaiting
+Jake's look ([row](bugs/2026-10-03-runner-top-set-exercise-shows-last-sessions-weight-as-ghost-text.md)) and his say-so to
+push. Next on his list: the runner Stats sheet (prototype published, nothing built) and then the dashboard rework (to be
+scoped with him).
+
 **`v2026.09.11`**, cut 2026-09-28 — the workout runner rebuilt around Jake's 8-item phone walkthrough: tabs
 that show completion (green/purple, not position), "Next exercise" goes to what is still to do, no Back
 button, full exercise names, the "log-first" layout (set table straight under the tabs, Swap/Add/Units
