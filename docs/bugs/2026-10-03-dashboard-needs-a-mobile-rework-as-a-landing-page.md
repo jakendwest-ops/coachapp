@@ -40,5 +40,12 @@ https://claude.ai/artifact/TtFsmgxVWpB69zBt2DDJNJ
   streak and the week strip are derived, no new tables. **UNVERIFIED for coach:** "today's client sessions" and "weigh-ins
   this week" probably need new reads (the current coach tiles use the `coach_client_summary` view, which counts this week
   only) - check before building.
-- Open: what "streak" counts - weeks hitting the whole plan, sessions in a row, or sessions this month (switchable in the
-  prototype).
+- Decided 2026-10-03 (Jake's second form): streak = **weeks hitting the whole plan**; the coach reading is right ("go with
+  it"); **Goals come back** onto the page (Recent sessions and the Personal bests tile stay off).
+- Found while planning (2026-10-03): (1) the database holds what each client LOGGED, not what was PLANNED for today, so a
+  coach "x of y done" and "clients on a streak" need a new database view (SQL for Jake to run); the first coach version is
+  logged-only unless he chooses otherwise. Verified against `coach_client_summary` (program start and length, last weigh-in,
+  sessions in 7 and 28 days) - enough for "programs ending soon", "weigh-ins" and "trained this week" with no SQL.
+  (2) The app stores no session length, so "about 55 min" and "52 min" in the first prototype were removed.
+  (3) About 16 existing spec files mention the old dashboards (the biggest, `solo-dashboard-tiles-2026-08-30.spec.js`, 45
+  references) and will need updating. Build plan presented to Jake; awaiting an explicit "approved".
