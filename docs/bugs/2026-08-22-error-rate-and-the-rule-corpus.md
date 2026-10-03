@@ -134,3 +134,27 @@ covered — the corpus growing on a real gap is the system working, not evidence
 one corrects the first's count rather than adding a new data point. **Session 1's corrected count: one**
 error reached execution/a claim, in an already-covered class (the double `git push`), across the whole
 session. Two more sessions counted this same way, honestly, settle it.
+
+## 2026-10-03 — the release-and-follow-up session (2026-09-30 → 10-03): session 2 of 3
+
+Counted the way the row's metric asks: an error that reached a commit, a claim to Jake, or a shipped conclusion, in a
+class an existing memory already covers. **Count: one.**
+
+- **Reached a claim to Jake — the class [[feedback_no_speculative_fixes]] names ("a familiar failure shape is a
+  hypothesis, not a conclusion").** Four release runs died at exactly 40:00. I told Jake it was memory pressure / a
+  release too big to run, and asked him to close his editor and browser. The cause was my own `timeout: 2400000` on
+  the Bash call, enforced to the millisecond. The check that refutes that story is one command — compare the
+  background task's output file creation time with its last-write time — and I ran it only after the fourth death.
+
+Not counted, because each stopped short of the bar: a draft comment claiming `getSession()` refreshes where
+`getUser()` does not (a critic checked the pinned supabase-js build and refuted it before the commit); a sibling spec
+still asserting the removed "Exercise N of M" text (critic, pre-commit); the SOLO test's null-user crash (the release
+gate's own run caught it before any tag); commit `6b3e7ca`, an ineffective fix whose message said in plain words that
+it was unproven and even named the real cause (a global sign-out) as a possibility — it cost one full-suite gate run
+(~50 min), not a false claim; and a throwaway debug-branch push the permission classifier refused (nothing left the
+machine).
+
+**A trigger this time, not only a rule:** before telling Jake a cause, write down the one command that would refute it
+and run that first; if there is none, say "my guess, not checked". Added to `feedback_no_speculative_fixes` as a dated
+recurrence. This is session 2 of 3; the counting is mine alone and carries this row's own blind-spot caveat. The row
+stays open.

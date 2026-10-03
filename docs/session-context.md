@@ -5,7 +5,7 @@ point-in-time file, not a live feed.** For anything time-sensitive, run the `/he
 instead — it reads the repo's live docs and checks current state every session. This file is for a
 fast read when that ritual hasn't been run, or for a non-Claude-Code reader.
 
-Snapshot date: 2026-09-30.
+Snapshot date: 2026-10-03.
 
 ## Project Summary
 
@@ -18,9 +18,11 @@ and build/assign/track workout programmes, with coach/client/solo roles. See
 Last shipped: **`v2026.09.13`** (2026-10-03, tagged, deployed and verified on the live site). `v2026.09.12`
 was tagged and pushed the same day but **never deployed** — GitHub's check failed on a Node-22-only
 self-test failure and the deploy job needs that check; v2026.09.13 is the same content plus the fix.
-Four follow-up commits sit on `master` after the tag, CI-green, **not yet released** (test-login fix, an
-effort-only-sets fix in the runner, `release.mjs` waiting for GitHub's check before pushing a tag). Nothing
-is unpushed. See [current-sprint.md](current-sprint.md).
+Six commits sit on `master` after the tag — four follow-ups (test-login fix, an effort-only-sets fix in the
+runner, `release.mjs` waiting for GitHub's check before pushing a tag, a few widened test waits) and two docs
+updates — all CI-green, **not yet released**. Nothing is unpushed. The live site was re-checked on 2026-10-03:
+GitHub's Pages deployment is the tag's commit and all 11 files it serves are byte-identical to `v2026.09.13`.
+See [current-sprint.md](current-sprint.md).
 
 **RPE top-set autoregulation is live (in `v2026.09.13`).**
 A coach marks set 1 as the top set with a prescribed RPE; the runner captures the effort actually hit,
@@ -45,7 +47,8 @@ Node 22 while this machine runs Node 24; "pushed" is not "deployed" — check `g
   R1 = close the open HIGH programme rows, fix the inverted stress/soreness colours, runner wake lock.
 - **What only Jake can unblock:** SQL to run when scripts exist (R2, R3), the plan's yes/no questions (photos,
   AMRAP/EMOM, pre-fill, whether week-structure edits should ask before changing clients' plans, a PR badge), an
-  on-phone wake-lock check, and the ledger's confirmation backlog.
+  on-phone wake-lock check, the read-only `pg_policies` query that unblocks the solo-milestones fix, and the
+  ledger's confirmation backlog.
 - GDPR consent capture is closer to done than the ledger status implies — see [roadmap.md](roadmap.md)'s
   correction.
 
@@ -68,8 +71,9 @@ repeated here so there is no third copy to drift.
 
 ## Immediate Next Actions
 
-1. Decide whether to push the three local commits (a push runs the pre-push checks and publishes them; nothing
-   deploys without a `v*` tag).
+1. Decide when to release the follow-up commits on `master` (pushed and CI-green but not live — a `v*` tag
+   deploys them via `node scripts/release.mjs <version>`, which needs a 2 h Bash timeout), and whether Sign out
+   should end only this device's session ([the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md)).
 2. Read the plan's "START HERE", answer its questions, then start R1 at rank 1 (ownership work —
    `multi-agent-review` before that commit).
 3. Housekeeping still open: the ungraded-prediction backlog and duplicate ids —

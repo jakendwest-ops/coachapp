@@ -43,7 +43,7 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
 - **Open product question for Jake (2026-10-03):** should Sign out end only *this device's* session? Today it ends every session
   for the account (supabase-js default scope `global`): signing out on one device leaves another looking signed in, then saves
   there fail with "session expired". `signOut({ scope: 'local' })` would change that; it also removes a whole class of test-suite
-  problem. Not changed — it is a product and security call. Detail: [the bug record](bugs/2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite.md).
+  problem. Not changed — it is a product and security call. Detail: [the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md).
 - **Solo/signup:** the data model and invite-based onboarding (an owner-gated Edge Function) are
   done. Genuine open public self-signup for new solo accounts remains a deliberate deferral, not
   scoped.

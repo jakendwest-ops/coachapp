@@ -20,12 +20,14 @@ can no longer add/edit/delete goals), session-expired guards on Personal Bests a
 Bests as the one page for all personal records, and the second 2026-09-28 note's six items. Full suite 971
 passed / 0 failed / 0 flaky / 5 skipped (50.2m). Detail: [releases/v2026.09.13.md](releases/v2026.09.13.md)
 and [releases/v2026.09.12.md](releases/v2026.09.12.md) (the content record).
+Re-checked against the live site on 2026-10-03: GitHub's Pages deployment is the tag's commit (`103ac2f`) and all
+11 files the site serves are byte-identical to the tag.
 
-**On master after the tag, CI-green, NOT yet released** (4 commits, `c8d1cab`..`c9a8d0f`): the quarantined
+**On master after the tag, CI-green, NOT yet released** (4 commits, `c8d1cab`..`c9a8d0f`, plus 2 docs commits): the quarantined
 `pb-consolidation` SOLO test is fixed and un-quarantined (root cause: the suite's sign-out specs revoke the
 shared test login); saved test sessions are re-captured when older than 25 min; a previous set that is only an
-effort rating no longer counts as "last session" (app change: app-runner v110, app-progress v73,
-app-calendar-goals v29); `release.mjs --push` now waits for GitHub's check before pushing the tag; a few widened
+effort rating no longer counts as "last session" (app-runner v110 — the only user-visible change); the
+session-expired guards now also log the server's reason (app-progress v73, app-calendar-goals v29); `release.mjs --push` now waits for GitHub's check before pushing the tag; a few widened
 test waits. Validated by a complete run: 974 passed / 0 failed / 1 flaky (the known `progress-trend`) / 4
 skipped (44.2m). They ship with the next release — Jake's call when.
 
@@ -49,7 +51,7 @@ shipped in `v2026.09.13`'s content (template-builder buttons, interval countdown
 "My progress" tile, merged current-program strip, a Goals tab on Progress); his runner rounds of 2026-09-30 and
 2026-10-01 (ghost text, the full-width prescription boxes under the tabs, "Exercise N of M" removed) are shipped too.
 Open questions waiting on Jake: whether the app's **Sign out should end only this device's session** (today it ends
-every one — see [the bug record](bugs/2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite.md));
+every one — see [the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md));
 and when to release the four follow-up commits above.
 
 ## Next: the release plans
@@ -57,12 +59,6 @@ and when to release the four follow-up commits above.
 A four-area product review (2026-09-19) produced a ranked 20-item backlog and detailed plans for five small
 releases; R1, R2a and R2b are done (shipped across v2026.09.7-v2026.09.9), the rest not started:
 [superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md).
-
-## Recent commits (`git log --oneline -8`)
-
-`c9a8d0f` waits widened + v2026.09.13 marked live, `72fe1e4` release.mjs waits for GitHub's check, `bd60414`
-effort-only sets / auth-error logging, `c8d1cab` SOLO test un-quarantined + session refresh, `103ac2f`/`ee45bae`
-v2026.09.13 (notes / the CI fix), `1035f63` v2026.09.12 (never deployed).
 
 ## Requires Validation
 

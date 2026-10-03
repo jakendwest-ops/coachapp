@@ -115,3 +115,6 @@ share the same refresh logic in the pinned supabase-js 2.117.2, so there was nev
 (the refresh token was revoked too); freeing memory on the dev machine; retrying. The four release runs that died at "exactly 40:00"
 were a separate problem: the assistant had given those runs a 40-minute timeout, shorter than the 47–59-minute suite (all four
 output files show launch-to-last-write of exactly 40.0 minutes).
+
+**Update 2026-10-03 (save):** the open Sign-out question above is now its own row, so `os-lint` can see it while this
+record stays closed: [2026-10-03-sign-out-ends-every-device-session.md](2026-10-03-sign-out-ends-every-device-session.md).

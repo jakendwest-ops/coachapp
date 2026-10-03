@@ -107,6 +107,12 @@ outright) — don't duplicate that detail here.
 with a still-overdue one (`pth-034`, `pth-090`, `pth-109`) — ambiguous for Rule 6's id-keyed logic.
 Needs Jake's own pass; not something code evidence can resolve.
 
+**New, unfixed (2026-10-03):** GitHub's checks run Node 22 (`.github/workflows/deploy.yml`) while this machine runs
+Node 24, and nothing pins either. That gap already cost a release: `v2026.09.12` was tagged but never deployed
+because a self-test passed on 24 and failed on 22. `scripts/checks.sh` now prints the local version and a `[note]`
+when the majors differ, but a note is not a gate. The fix is a one-line choice (pin both to the same major, or run
+the local suite under the CI version); not done, because it touches `.github/` and so belongs in a release.
+
 ## Minor hygiene debt
 
 A handful of stray debug artifacts sit at repo root (debug PNGs, a PDF, `modal-preview.html`),
