@@ -16,13 +16,15 @@
 // SEQUENCE (since 2026-09-27, one command): commit the notes with {{AUTO:VERIFICATION}} where the numbers go
 // (docs/releases/TEMPLATE.md has it), then `node scripts/release.mjs vX --push` — it runs every gate and the full
 // suite, fills the numbers in, commits the notes, tags and pushes. The older path still works: `--record`, write the
-// numbers by hand, then run again to tag. (Until 2026-09-27 a
+// numbers by hand, then run again to tag. --push pushes master, WAITS for GitHub's code-quality check on that commit, and only
+// then pushes the tag (scripts/lib/ci-verdict.mjs): the deploy needs that check, so a red one means no deploy (v2026.09.12). (Until 2026-09-27 a
 // push first started a CI browser run on the shared test account and the suite refused to start
 // alongside it; CI no longer runs browser tests, so the order no longer matters for that.)
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
 import { execFileSync, execSync, spawn } from 'node:child_process'
 import { headFingerprint, readRecorded, REVIEW_PATHS as FINGERPRINT_PATHS } from './lib/review-fingerprint.mjs'
+import { waitForGreenCheck, mayPushTag } from './lib/ci-verdict.mjs'
 import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -355,12 +357,38 @@ if (notesWantAuto) {
 git('tag', '-a', version, tagAt, '-m', `Release ${version}`)
 console.log(`\n  Tagged ${version} at ${tagAt.slice(0, 7)}.`)
 
+// The deploy job has `needs: check` (deploy.yml), so a tag whose GitHub check is red is pushed, announced, and never deploys --
+// v2026.09.12 (2026-10-03): the whole local gate passed, the tag went up, a Node-22-only failure kept GitHub's check red, nothing
+// shipped and nothing said so. So push master FIRST (a branch push runs the same checks and cannot deploy), wait for that run, and
+// push the tag only if it passed. `gh` missing, signed out, or silent for 20 minutes means "could not confirm": the tag stays LOCAL
+// and the script says how to finish -- never "push anyway". The wait loop, the verdict and the can-push decision live in
+// scripts/lib/ci-verdict.mjs, where tests-node drives every path with a fake GitHub; tests-node/ci-verdict.test.mjs also pins the
+// shape of the call site below (the tag push directly behind the guard).
+// `tagAt` is a full 40-character sha: `gh run list --commit` finds nothing for an abbreviated one. --workflow keeps another
+// push-triggered workflow, if one is ever added, from masking a red check.
+const askGithubForCheck = (sha) => async () => JSON.parse(execFileSync('gh',
+  ['run', 'list', '--workflow', 'deploy.yml', '--commit', sha, '--branch', 'master', '--event', 'push',
+    '--json', 'databaseId,status,conclusion', '--limit', '10'],
+  { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] }))
+
 if (doPush) {
   execFileSync('git', ['push', 'origin', 'master'], { stdio: 'inherit' })
+  console.log(`\n  Master pushed. Waiting for GitHub's code-quality check on ${tagAt.slice(0, 7)} before pushing the tag...`)
+  const ci = await waitForGreenCheck({ ask: askGithubForCheck(tagAt), sleep: ms => new Promise(r => setTimeout(r, ms)), log: console.log })
+  if (!mayPushTag(ci)) {
+    console.log(`\n  ✗ NOT pushing the tag: ${ci.state === 'red' ? "GitHub's check is RED" : "could not confirm GitHub's check"} — ${ci.why}.`)
+    console.log(`    ${version} exists LOCALLY at ${tagAt.slice(0, 7)} only, and a tag that fails this check never deploys.`)
+    console.log(`    Look:  gh run view ${ci.runId || '<run id>'} --log-failed`)
+    console.log(`    If it was only a hiccup and the check is now green, push the tag:  git push origin ${version}`)
+    console.log(`    If the fix needs a new commit, cut the NEXT version instead (git tag -d ${version} first): ${version}'s notes are already`)
+    console.log(`    filled in and pushed for the old commit, so running this script again under the same number would keep stale numbers.\n`)
+    process.exit(1)
+  }
   execFileSync('git', ['push', 'origin', version], { stdio: 'inherit' })
-  console.log(`\n  Pushed. The tag triggers the deploy job — watch it:  gh run watch\n`)
+  console.log(`\n  Pushed. GitHub's check was green; the tag now triggers the deploy job — confirm it went out:  gh run watch\n`)
 } else {
   console.log(`\n  NOT pushed. Deploying is deliberate. To ship it:\n`)
-  console.log(`    git push origin master && git push origin ${version}\n`)
-  console.log(`  The tag is what triggers the deploy; pushing master alone only runs the checks.\n`)
+  console.log(`    git push origin master   # then wait until  gh run list --limit 2  shows the check green`)
+  console.log(`    git push origin ${version}\n`)
+  console.log(`  The tag is what triggers the deploy, and the deploy needs GitHub's check green; pushing master alone only runs the checks.\n`)
 }

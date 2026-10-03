@@ -52,7 +52,12 @@ Live: https://jakendwest-ops.github.io/coachapp
   `{{AUTO:VERIFICATION}}` line in, and commit it. The script REFUSES unless the tree is clean, you are on
   master, the tag is new, a `multi-agent-review` saw this code, `checks.sh` passes, and the FULL suite is
   green on this code. It then fills in the suite numbers, commits the notes, tags, and (with `--push`)
-  pushes master and the tag, which deploys. Without `--push` it stops at the local tag.
+  pushes master, WAITS for GitHub's code-quality check on that commit, and pushes the tag only if the check
+  is green (the deploy job `needs: check`, so a tag pushed over a red check never deploys — v2026.09.12);
+  otherwise it exits 1 with the tag left local. Without `--push` it stops at the local tag.
+  "Pushed" is not "deployed": after a release, confirm with `gh run list --limit 4` that the deploy job
+  succeeded. **The full suite takes 47–59 min**: from Claude Code's Bash tool run it with
+  `run_in_background: true` and `timeout: 7200000` — a background call is killed at exactly its timeout.
 
 ## The 9 modules (`js/`)
 

@@ -28,6 +28,11 @@ echo ""
 echo "=== CoachApp pre-push bug check ==="
 # CI runs Node 22 and the dev machine Node 24 (nothing pins either); that mismatch hid a Node-22-only failure for two days.
 echo "  (node $(node --version))"
+ci_node=$(sed -n 's/^ *node-version: *\([0-9][0-9]*\).*/\1/p' .github/workflows/deploy.yml 2>/dev/null | head -1)
+local_node=$(node --version | sed 's/^v\([0-9]*\).*/\1/')
+if [ -n "$ci_node" ] && [ "$ci_node" != "$local_node" ]; then
+  echo "  [note] GitHub's check runs Node $ci_node and this machine Node $local_node: a failure that only happens on Node $ci_node shows up on GitHub first, not here."
+fi
 echo ""
 
 # -- 0. JS syntax check --
