@@ -127,18 +127,25 @@ test.describe('Personal Bests consolidation', () => {
   // 1RM grid (savePerformanceLog, #pb-performance-section) — this test now proves THAT path end to end,
   // keeping the original's actual intent (solo can genuinely write a performance_logs row, not just a
   // unit that tolerates a missing field) rather than the specific UI it used to go through.
-  // QUARANTINED 2026-10-02 (test.fixme, not deleted or weakened) -- docs/bugs/2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite.md.
-  // Failed the SAME way 4 times across 4 separate full-suite runs, always late in a ~40min/975-test
-  // run, always this exact test. The crash this test originally caught IS fixed (savePerformanceLog's
-  // null-user guard, below) and stays fixed; what's quarantined is this test's own dependency on the
-  // shared, once-per-run injected session (tests/session-store.js) still being genuinely LIVE-valid
-  // that late in a run -- an unconditional db.auth.refreshSession() right before the write path did
-  // NOT fix it (4th failure, same symptom), which rules out "just needs a refresh" and points at
-  // something the bug doc's reopened status_detail lays out in full. Re-enable by removing .fixme
-  // once the bug doc's closing conditions are met -- do not just delete this comment and re-enable
-  // blind; the next full-suite run failing here again is the actual signal, not a vibe.
-  test.fixme('SOLO: the real write path (Progress -> Personal Bests) actually writes a row', async ({ page }) => {
-    await loginAsPT(page)
+  // Root cause of the four full-suite failures this test had (quarantined 2026-10-02, found and fixed 2026-10-03; ledger:
+  // docs/bugs/2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite.md). Several specs click the real Sign out
+  // button as the PT (auth.spec.js 'PT can sign out' and app-audit-quickfixes-2026-09-27.spec.js both sort before this file; so does
+  // a local, untracked probe _debug-adhoc-audit.spec.js on a machine that has it), and the app calls db.auth.signOut() with
+  // supabase-js's default scope 'global', which revokes EVERY session of the shared PT account on the server. The session injected
+  // into every later test (tests/session-store.js) is then dead but still LOOKS alive: the app shell renders from the local token
+  // and PostgREST reads keep working until the JWT expires (they check its signature, not the session), which is why
+  // _verifyClientAccess's read just before the failing call always succeeded. db.auth.getUser() asks the auth server, and
+  // savePerformanceLog is the only call of that kind a test reaches with a live injected session (saveEvent also calls it, and
+  // updateUser is called elsewhere, but their specs stub them). A refresh cannot help (the refresh token is revoked too:
+  // db.auth.refreshSession() before the write was tried and failed identically), so this test signs in for real. injectSession reads
+  // NO_SESSION_REUSE on every call and the suite runs one test at a time, so setting it around this one login cannot leak into
+  // another test; the previous value is put back, so a whole run started with NO_SESSION_REUSE=1 keeps it.
+  // Reproduces in ~25 s with this fix switched off: `npx playwright test tests/auth.spec.js tests/pb-consolidation-2026-08-17.spec.js
+  // -g "PT can sign out|SOLO: the real write path"` fails with "Your session has expired"; the SOLO test alone passes.
+  test('SOLO: the real write path (Progress -> Personal Bests) actually writes a row', async ({ page }) => {
+    const priorNoReuse = process.env.NO_SESSION_REUSE
+    process.env.NO_SESSION_REUSE = '1'
+    try { await loginAsPT(page) } finally { if (priorNoReuse === undefined) delete process.env.NO_SESSION_REUSE; else process.env.NO_SESSION_REUSE = priorNoReuse }
     const r = await page.evaluate(async () => {
       if (!window._soloClientId) return { skip: true }
       await switchView('solo')
@@ -161,32 +168,7 @@ test.describe('Personal Bests consolidation', () => {
       document.getElementById('pl-unit').value = 'min'
       document.getElementById('pl-date').value = '2026-08-17'
       document.getElementById('pl-notes').value = 'felt strong'
-      // This is the one test in the whole suite that needs db.auth.getUser() (inside
-      // savePerformanceLog) to succeed against a LIVE, server-validated token, rather than relying
-      // on the cached currentUser/currentProfile globals everything else here uses. The injected
-      // session (tests/session-store.js) is a static snapshot taken once at the start of the whole
-      // run. Confirmed 2026-10-02: this exact test failed twice in a row in the full suite, each
-      // time with getUser() legitimately returning no user late in the run -- once as an unguarded
-      // crash (now fixed, see savePerformanceLog), once as the new guard's own "session expired"
-      // message, which is the guard working correctly. CORRECTION (critic review, same day): getUser()
-      // and getSession() are NOT asymmetric in this app's actual pinned supabase-js build (2.117.2) --
-      // both route through the same internal refresh-if-needed check, so calling getSession() first
-      // does not do what an earlier version of this comment claimed. refreshSession() IS unconditional
-      // (always attempts a refresh via the stored refresh token, no "already fresh enough" skip), so
-      // that is what forces a token we can be sure is current, if the refresh token itself is still
-      // good. If the refresh token has ALSO been invalidated (e.g. a global, non-'local'-scoped
-      // sign-out on the shared pt account elsewhere in this 975-test suite, which revokes server-side
-      // without affecting a JWT's local signature/exp validity -- the one write _verifyClientAccess
-      // makes just above would keep succeeding while getUser() alone would not), no refresh of any
-      // kind can recover it; only a real fresh login would. That deeper question is not settled here —
-      // the next full-suite run is the actual test of whether this helps. Captured BEFORE the
-      // refresh, not read fresh after: if the refresh resolves to a terminal SIGNED_OUT, the app's
-      // own onAuthStateChange handler (js/app-progress.js) nulls window._soloClientId, and reading it
-      // after would fail at savePerformanceLog's ownership guard instead of the intended "session
-      // expired" message -- still a clean failure either way, just a more confusing one to read.
-      const soloClientId = window._soloClientId
-      await db.auth.refreshSession()
-      await savePerformanceLog(soloClientId)
+      await savePerformanceLog(window._soloClientId)
       await new Promise(res => setTimeout(res, 1500))
 
       const { data } = await db.from('performance_logs')
@@ -204,14 +186,13 @@ test.describe('Personal Bests consolidation', () => {
     expect(r.row.notes, 'notes must persist through the real form').toBe('felt strong')
   })
 
-  // Closes docs/bugs/2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite.md.
-  // Root cause, found after three consecutive full-suite runs reproduced the same crash: getUser()
-  // round-trips to the server to validate the token (unlike getSession()'s local-only read) and can
-  // legitimately come back with no user -- a session that expired mid-run, in the harness's case.
-  // savePerformanceLog dereferenced user.id with no guard and threw, which silently discarded the
-  // save with no message instead of failing the way the rest of this codebase fails: closed, with a
-  // reason shown. Stubs db.auth.getUser directly, not clientId or _verifyClientAccess (which reads
-  // the cached currentUser, not a live call, so it is unaffected by this stub either way).
+  // The app-side half of docs/bugs/2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite.md.
+  // getUser() asks the auth server (getSession() only reads the token stored on this device), so it legitimately comes back with no
+  // user when the session was REVOKED -- the harness's sign-out specs do that to the shared PT session; in real use, signing out on
+  // another device does (the app's sign-out is global). savePerformanceLog dereferenced user.id with no guard and threw, which
+  // silently discarded the save with no message instead of failing the way the rest of this codebase fails: closed, with a reason
+  // shown. Stubs db.auth.getUser directly, not clientId or _verifyClientAccess (which reads the cached currentUser, not a live call,
+  // so it is unaffected by this stub either way).
   test('(review) savePerformanceLog fails closed, not with a crash, when getUser() returns no user', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(async () => {
