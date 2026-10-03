@@ -571,7 +571,9 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     await expect(page.locator('button:has-text("Duplicate week")')).toBeVisible({ timeout: 4000 })
     await page.click('button:has-text("Duplicate week")')
     await page.click('#dup-week-modal button:has-text("1×")')
-    await expect(page.locator('.week-tab[data-week="2"]')).toBeVisible({ timeout: 8000 })
+    // 20 s, was 8 s: duplicating a week copies every day's workout assignment (several writes) before the tab appears, and the
+    // 2026-10-03 release gate saw this fail once on a slow run and pass on retry.
+    await expect(page.locator('.week-tab[data-week="2"]')).toBeVisible({ timeout: 20000 })
 
     const weeks = await page.evaluate(async (phaseId) => {
       const { data } = await db.from('program_phase_workouts').select('week_number, template_id').eq('phase_id', phaseId)

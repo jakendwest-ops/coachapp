@@ -33,7 +33,9 @@ async function pickOrCreateExercise(page, namePrefix) {
   await expect(page.locator('#exercise-picker-modal')).toBeVisible({ timeout: 5000 })
   await page.fill('#exp-search', name)
   await page.getByText('Create new exercise', { exact: false }).click()
-  await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
+  // 10 s, was 3 s: creating now looks the name up first and then inserts (_createExerciseFromPicker, two round trips); the
+  // 2026-10-03 release gate saw this fail once on a slow run and pass on retry.
+  await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 10000 })
   await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
   return name
 }
@@ -782,7 +784,7 @@ test.describe('Workout runner (client)', () => {
     await expect(page.getByText('Create new exercise', { exact: false })).toBeVisible()
     await page.getByText('Create new exercise', { exact: false }).click()
 
-    await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.locator('#exercise-picker-modal')).not.toBeVisible({ timeout: 10000 })
     await expect(page.locator('#add-to-template-modal')).toBeVisible({ timeout: 5000 })
     await expect(page.locator('#att-name-display')).toHaveText(name)
     await page.locator('#add-to-template-modal .modal-close').click()
