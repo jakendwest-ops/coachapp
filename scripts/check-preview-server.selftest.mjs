@@ -3,7 +3,7 @@
 // The dominant bug class in this project is a safeguard that reports success while doing nothing
 // (see the Vault memory `feedback_reports_success_doing_nothing`). A precondition that has only
 // ever been seen to PASS is indistinguishable from one that is structurally incapable of failing.
-// So this drives it through all six states on real HTTP servers, on a spare port:
+// So this drives it through every state below (thirteen cases in all) on real HTTP servers, each on its own spare port:
 //
 //   1. nothing listening             -> must throw "UNREACHABLE"
 //   2. a 500                         -> must throw "RETURNED HTTP"
@@ -32,13 +32,19 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { assertPreviewServer } = require('../tests/global-setup.js')
 
-const PORT = 34117 // deliberately NOT 3001 — this must never collide with a real preview server
-const BASE = `http://localhost:${PORT}`
+const PORT = 34117 // deliberately NOT 3001 — this must never collide with a real preview server; nothing ever listens here
+let BASE = `http://127.0.0.1:${PORT}` // case 1 relies on this port being dead; serve() re-points BASE at each new server
 
+// Every server gets its OWN ephemeral port and answers `Connection: close`. This file used to reuse one port for eleven servers
+// in a row. Node 22's fetch (undici 6.x) then wrote the next case's first request onto a keep-alive socket the server just
+// closed and got `read ECONNRESET`, reported as PREVIEW SERVER UNREACHABLE for cases 8, 10 and 12 (the cases right after one
+// that made two requests). That reproduces on ANY OS under Node 22; Node 24 (undici 7) happens not to, so CI (Node 22) was red
+// from 2026-10-01 to 2026-10-03 while every run on the Windows dev machine (Node 24) was green. A fresh origin per server
+// leaves nothing to reuse.
 function serve (handler) {
   return new Promise(resolve => {
-    const s = http.createServer(handler)
-    s.listen(PORT, () => resolve(s))
+    const s = http.createServer((req, res) => { res.setHeader('connection', 'close'); handler(req, res) })
+    s.listen(0, '127.0.0.1', () => { BASE = `http://127.0.0.1:${s.address().port}`; resolve(s) })
   })
 }
 const close = s => new Promise(resolve => s.close(resolve))
@@ -198,5 +204,5 @@ if (failures) {
   // person reading 127 would go looking for a missing command rather than a failed check.
   process.exitCode = 1
 } else {
-  console.log('\nAll 13 states verified: it refuses nine distinct bad servers, accepts the good ones, and the module pattern still sees the real index.html.')
+  console.log('\nAll 13 states verified: it refuses eight distinct bad servers, accepts the good ones, and the module pattern still sees the real index.html.')
 }

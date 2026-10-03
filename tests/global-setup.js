@@ -41,7 +41,7 @@ async function assertPreviewServer (base, localIndexPath = LOCAL_INDEX) {
       `\n\nPREVIEW SERVER UNREACHABLE at ${base}\n` +
       `This is NOT a test failure — no test has run yet.\n` +
       `Start the CoachApp entry in .claude/launch.json, or let Playwright's webServer start it.\n` +
-      `Underlying error: ${err.message}\n`
+      `Underlying error: ${err.message}${err.cause ? ` (${err.cause.code || err.cause.name}: ${err.cause.message})` : ''}\n`
     )
   }
 

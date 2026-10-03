@@ -26,6 +26,8 @@ warn() {
 
 echo ""
 echo "=== CoachApp pre-push bug check ==="
+# CI runs Node 22 and the dev machine Node 24 (nothing pins either); that mismatch hid a Node-22-only failure for two days.
+echo "  (node $(node --version))"
 echo ""
 
 # -- 0. JS syntax check --
@@ -665,8 +667,11 @@ fi
 # The suite's server precondition (tests/global-setup.js) used to be self-tested only on the CHECKS_SMOKE=1 path, i.e. almost
 # never. It is pure node on a spare port (~2 s) and now covers "right index.html, another checkout's modules", so it runs
 # on every push.
-if ! node scripts/check-preview-server.selftest.mjs > /dev/null 2>&1; then
-  node scripts/check-preview-server.selftest.mjs 2>&1 | grep -E "FAIL|failure" | sed "s/^/    /"
+echo "Checking the suite's server precondition (its self-test)..."
+# Captured ONCE and printed whole on failure: re-running it, and grepping for FAIL, hid the real error text for two days (CI red
+# 2026-10-01 to 2026-10-03) and could show a passing second run under a FAILED banner.
+if ! selftest_out=$(node scripts/check-preview-server.selftest.mjs 2>&1); then
+  printf '%s\n' "$selftest_out" | sed "s/^/    /"
   fail "check-preview-server self-test FAILED -- the suite's server precondition can no longer be trusted: a worktree could run against another checkout's code and report green."
 fi
 # -- 10. Playwright smoke tests --
