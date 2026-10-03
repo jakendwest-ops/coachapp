@@ -1122,8 +1122,23 @@ function renderStrengthTable(ex) {
   // row map needs both to decide between a real effort cell, an empty placeholder, or nothing.
   const effortRx = mt === 'weight_reps' ? ex.sets_json?.find(s => _hasNumVal(s?.effortMin) || _hasNumVal(s?.effortMax)) : null
 
+  // Last session never feeds a ghost on a TOP-SET exercise (Jake, 2026-10-03, with a screenshot of three weight boxes all
+  // reading "130": "There shouldnt be ghost text in runner when using RPE top sets. These fields should only be populated
+  // once the top set has been established."). The top set's weight is not prescribed -- it is whatever the lifter works up
+  // to at the prescribed RPE -- and the backoff weights are a percentage of TODAY's top set, so last session's number for
+  // the same set position is not a reference, it is a wrong answer in grey. A backoff row says so itself ("Log the top set
+  // first") and its target arrives, via oneRMPh, when the top set is ticked.
+  // What stays: the coach's PRESCRIBED reps (the plan, not history). What goes: the weight ghost -- history AND the unit
+  // word, because a top-set weight box stays empty until there is something true to put in it -- the reps fallback to last
+  // session, and the effort ghost.
+  // Gated exactly as the builder gates the pill (app-workouts.js: `i === 0 && metricType === 'weight_reps' && s.isTopSet`):
+  // toggling the metric type preserves a stale isTopSet flag, and an exercise that is no longer a top-set exercise keeps
+  // its ghosts. This was ALREADY the stated intent two lines into the row below ("an honest blank beats a plausible stale
+  // number") -- the fall-through to last session's weight is what contradicted it.
+  const topSetExercise = mt === 'weight_reps' && !!ex.sets_json?.[0]?.isTopSet
+
   const rows = ex.tableRows.map((row, i) => {
-    const prev = prevMap[i]
+    const prev = topSetExercise ? undefined : prevMap[i]
     // The %1RM-derived load, computed once for every metric_type. The target bar shows the PERCENTAGE
     // (2026-07-23) so this ghost is the only place the actual kg appears — it must therefore reach
     // unilateral too, not just weight_reps. A bodyweight set renders 'BW' and has no input to ghost,
@@ -1199,7 +1214,8 @@ function renderStrengthTable(ex) {
     // weight_reps (default) — behaviour unchanged incl. ghost placeholders (les 2026-07-11: no pre-fill).
     // Fall back to the unit / "reps" rather than a bare em-dash (R3, 2026-09-07): an empty field
     // showing "—" reads as disabled. Ghost values from last session / %1RM still win when present.
-    const wPlaceholder = oneRMPh || (prev?.weight_kg != null ? weightToPref(prev.weight_kg) : '') || window._unitPrefs.weight
+    // topSetExercise: oneRMPh or nothing -- see where it is declared. (`prev` is already undefined for these rows.)
+    const wPlaceholder = topSetExercise ? oneRMPh : (oneRMPh || (prev?.weight_kg != null ? weightToPref(prev.weight_kg) : '') || window._unitPrefs.weight)
     // FIXED 2026-09-30 (Jake: "the ghost reps... are still showing the reps from the previous
     // session, which could be confusing"). This used to be prev-only, unlike wPlaceholder right above
     // it: a backoff row's own prescribed repsMin never won, so its reps ghost could show last
