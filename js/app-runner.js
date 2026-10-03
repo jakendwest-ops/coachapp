@@ -307,8 +307,12 @@ async function fetchRunnerLastSession(exName, exerciseId) {
   // save-side guards, found via the blast-radius sweep for that fix, 2026-07-30. This is very
   // likely the actual mechanism behind "Depth Jump last-session history doesn't show": a jump set
   // logged with height_cm:0 and no reps was invisible here even after it saved correctly.
+  // A set that is ONLY an effort rating is not a previous set: the runner has not saved one since 2026-10-01 (ticking needs reps,
+  // see _rowIncompleteReason) and the old manual Log Session form still can, so history may hold some; counting it inflated the
+  // "Sets" stat and made the Last-time line read "1 × 0 reps". A set with real work AND an effort passes the test below and keeps
+  // its effort_value/effort_type for the effort ghost.
   const sets = (best.workout_log_sets || [])
-    .filter(s => _hasNumVal(s.weight_kg) || _hasNumVal(s.reps_achieved) || _hasNumVal(s.height_cm) || _hasNumVal(s.distance_m) || _hasNumVal(s.effort_value))
+    .filter(s => _hasNumVal(s.weight_kg) || _hasNumVal(s.reps_achieved) || _hasNumVal(s.height_cm) || _hasNumVal(s.distance_m))
     .sort((a, b) => a.set_number - b.set_number)
 
   _runner.lastSession[exName] = sets.length ? { date, sets } : null

@@ -743,11 +743,13 @@ async function savePerformanceLog(clientId) {
   if (!category || !date || !name || !value || !unit) { showToast('Please fill in all required fields.', 'warn', 3000); return }
 
   log.info('savePerformanceLog', 'inserting performance record', { clientId, category })
-  const { data: { user } } = await db.auth.getUser()
-  // A failed/expired session returns user: null here (getUser() round-trips to validate the token,
-  // unlike getSession()'s local-only read) -- dereferencing user.id then threw and the record was
-  // silently never saved. Same fail-closed shape as the error branch two lines below.
-  if (!user) { log.error('savePerformanceLog', 'no authenticated user — session expired or invalid'); document.getElementById('perf-error') && (document.getElementById('perf-error').textContent = 'Your session has expired — please sign in again.'); return }
+  const { data: { user }, error: authErr } = await db.auth.getUser()
+  // getUser() asks the auth SERVER, where getSession() only reads the token stored on this device, so it comes back with no user
+  // when the session was revoked -- e.g. signed out on another device, whose sign-out ends every session -- even though this tab
+  // still looks signed in and its other reads keep working until the token expires. Dereferencing user.id then threw and the
+  // record was silently never saved; now it says why and stops (the server's reason goes to the log). Same shape as the error
+  // branch below.
+  if (!user) { log.error('savePerformanceLog', 'no authenticated user — session expired or revoked', authErr); document.getElementById('perf-error') && (document.getElementById('perf-error').textContent = 'Your session has expired — please sign in again.'); return }
 
   const { error } = await db.from('performance_logs').insert({
     client_id: clientId,
