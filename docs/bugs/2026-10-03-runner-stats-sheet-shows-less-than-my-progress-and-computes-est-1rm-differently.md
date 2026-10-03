@@ -20,3 +20,16 @@ test-first -> `multi-agent-review` before the push.
 Prototype (private page, example data, not the real app): https://claude.ai/artifact/6UH1ZcoNVbQvxZ8wCMb64T - one component
 shown in the runner sheet and on a My progress card, with the open choices as switches (every set vs grouped, volume per
 session, change vs previous, Est. 1RM using the logged RPE, workout in progress).
+
+## Jake's first reaction to the prototype (2026-10-03)
+
+"The heaviest weight is just the weight, and the e1RM is significantly higher than this (I'm assuming this is because the
+heaviest weight was 117 for reps, not a single rep). I think the heaviest weight needs a more clear name, like 'heaviest
+set' and then it would be 117 x 3, and then that makes the e1rm more clear to the user."
+
+Applied in prototype v2: records are SETS, each with its date - "Heaviest set 117.5 kg x 3" (a tie on weight goes to the set
+with more reps), "Best est. 1RM 132 kg, from 117.5 x 3 @9", "Biggest set" (was "Best set": most weight x reps, renamed so it
+does not clash with "Heaviest set") and "Best session volume". The strip's "Top" tile is now "Top set 107.5x4"; a line under
+the strip names the set the 1RM comes from; chart tooltips show the set; the chart measure "Top weight" is "Top set". In the
+real app this also fixes My progress's existing "Heaviest weight" row and the runner's "Heaviest ever", because both will
+come from the one component. Open: Jake has not yet confirmed the name "Biggest set".
