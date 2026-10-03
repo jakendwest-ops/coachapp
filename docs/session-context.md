@@ -15,21 +15,27 @@ and build/assign/track workout programmes, with coach/client/solo roles. See
 
 ## Current Release Cycle
 
-Last shipped: `v2026.09.11` (2026-09-28, tagged and deployed — the runner rebuild). **Eight commits sit
-on `master` unpushed**, including the Personal Bests page and the second 2026-09-28 walkthrough batch. See
-[current-sprint.md](current-sprint.md).
+Last shipped: **`v2026.09.13`** (2026-10-03, tagged, deployed and verified on the live site). `v2026.09.12`
+was tagged and pushed the same day but **never deployed** — GitHub's check failed on a Node-22-only
+self-test failure and the deploy job needs that check; v2026.09.13 is the same content plus the fix.
+Four follow-up commits sit on `master` after the tag, CI-green, **not yet released** (test-login fix, an
+effort-only-sets fix in the runner, `release.mjs` waiting for GitHub's check before pushing a tag). Nothing
+is unpushed. See [current-sprint.md](current-sprint.md).
 
-**RPE top-set autoregulation is merged to `master` and has been through two multi-agent review rounds.**
+**RPE top-set autoregulation is live (in `v2026.09.13`).**
 A coach marks set 1 as the top set with a prescribed RPE; the runner captures the effort actually hit,
 estimates a live e1RM from the RTS chart rather than Epley, and backoff sets target a percentage of *that*
 instead of a stored 1RM that may be months old. Spec and plan:
 [superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md](superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md),
 [superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md](superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md).
-Round 1 found 8 defects, round 2 (of round 1's fixes) found a data-loss regression in one of them; the
-round-2 fixes sit on the `worktree-rpe-top-set` branch, **not yet merged**, because another session was
-editing `js/app-runner.js` in the shared checkout at the time. Nothing is pushed. Jake has looked at it in
-a real session (the runner layout commit says so) but has not signed it off; nine open ledger rows from the
-reviews are in `docs/bugs/` dated 2026-10-01.
+It went through three multi-agent review rounds (round 1: 8 defects; round 2, of round 1's fixes, found a
+data-loss regression; a pre-push round found more) and Jake's own walkthrough rounds. Nine open ledger rows
+from the reviews are in `docs/bugs/` dated 2026-10-01.
+
+**Test-harness facts worth knowing (learned the hard way, 2026-10-03):** the full suite takes 47-59 min and
+needs a 2 h Bash timeout; specs that click Sign out as the PT revoke the shared saved login for the rest of
+the run (the app's sign-out is global), so a test that needs a live session must sign in for real; CI runs
+Node 22 while this machine runs Node 24; "pushed" is not "deployed" — check `gh run list`.
 
 ## Current Priorities
 

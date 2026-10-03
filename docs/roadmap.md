@@ -33,16 +33,17 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   tappable "Last time → Stats" sheet with a progress chart). Not yet checked against Jake's real workout
   history or a real assigned program (see [releases/v2026.09.11.md](releases/v2026.09.11.md)). Decisions:
   [decisions.md](decisions.md), 2026-09-28.
-- **Second 2026-09-28 note from Jake — six items, 2 of 6 built.** ✅ Interval "Initial countdown" now reads
-  `0:00` like its siblings, closed on rule-(b) evidence
-  ([ledger](bugs/2026-09-28-interval-initial-countdown-is-the-only-time-field-not-in-0-00-format.md)). ✅ Solo
-  dashboard's "Next up" tile renamed to "My calendar" (function/ids unchanged, label only). Both committed
-  locally, not yet released. Not started: template builder Edit/Remove buttons too big
-  ([ledger](bugs/2026-09-28-template-builder-edit-and-remove-buttons-squeeze-the-set-text.md), needs Jake's
-  call on the fix shape); replace the solo dashboard's Benchmarks card with a "My progress" tile linking to
-  the Progress page; merge the "Current program" strip and the next-session tile, which duplicate each other;
-  and clarify "Goals does not have its own page" — a `goals` route exists (added 2026-08-30) but is reachable
-  only from the dashboard tile, so what Jake wants there is an open question.
+- **Shipped 2026-10-03 as `v2026.09.13` (live, verified) — [releases/v2026.09.13.md](releases/v2026.09.13.md), with the content
+  record in [releases/v2026.09.12.md](releases/v2026.09.12.md) (that tag was pushed but never deployed):** RPE top-set
+  autoregulation; the runner's third and fourth walkthrough rounds; the client failed-save rollback (migration applied by Jake
+  2026-10-01); Goals permissions (a client can no longer add/edit/delete goals); Personal Bests as the one page for all records;
+  and **all six items of Jake's second 2026-09-28 note** (interval countdown format, "My calendar", template-builder buttons,
+  "My progress" tile, merged current-program strip, a Goals tab on Progress). Four follow-up commits are on master, CI-green and
+  not yet released — see [current-sprint.md](current-sprint.md).
+- **Open product question for Jake (2026-10-03):** should Sign out end only *this device's* session? Today it ends every session
+  for the account (supabase-js default scope `global`): signing out on one device leaves another looking signed in, then saves
+  there fail with "session expired". `signOut({ scope: 'local' })` would change that; it also removes a whole class of test-suite
+  problem. Not changed — it is a product and security call. Detail: [the bug record](bugs/2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite.md).
 - **Solo/signup:** the data model and invite-based onboarding (an owner-gated Edge Function) are
   done. Genuine open public self-signup for new solo accounts remains a deliberate deferral, not
   scoped.

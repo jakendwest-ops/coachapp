@@ -4,10 +4,30 @@
 run sprints — it runs on a **tag-gated release cycle** (`docs/releases/*.md`, `scripts/release.mjs`,
 [decisions.md](decisions.md)). Everything below describes that cycle.
 
-**Snapshot taken:** 2026-09-28, from `git status`, `git log`, `git tag -l` and `docs/releases/`. A
+**Snapshot taken:** 2026-10-03, from `git status`, `git log`, `git tag -l`, `gh run list` and `docs/releases/`. A
 point-in-time snapshot — re-run those commands rather than trusting this file for anything time-sensitive.
 
 ## Last shipped (tagged + deployed)
+
+**`v2026.09.13`**, cut 2026-10-03 — **live, verified on the live site** (GitHub run 37112719334). It carries
+everything in `v2026.09.12` plus the CI fix that let it deploy: **`v2026.09.12` was tagged and pushed on
+2026-10-03 but NEVER deployed**, because GitHub's code-quality check failed on a Node-22-only failure in
+`scripts/check-preview-server.selftest.mjs` (CI runs Node 22, the dev machine Node 24) and the deploy job needs
+that check. Content, 51 commits since v2026.09.11: RPE top-set autoregulation (mark a top set, live estimated
+1RM, backoff sets as a % of today's top set), the runner's third and fourth walkthrough rounds, the client
+failed-save rollback (database migration applied by Jake 2026-10-01), the Goals permissions change (a client
+can no longer add/edit/delete goals), session-expired guards on Personal Bests and calendar saves, Personal
+Bests as the one page for all personal records, and the second 2026-09-28 note's six items. Full suite 971
+passed / 0 failed / 0 flaky / 5 skipped (50.2m). Detail: [releases/v2026.09.13.md](releases/v2026.09.13.md)
+and [releases/v2026.09.12.md](releases/v2026.09.12.md) (the content record).
+
+**On master after the tag, CI-green, NOT yet released** (4 commits, `c8d1cab`..`c9a8d0f`): the quarantined
+`pb-consolidation` SOLO test is fixed and un-quarantined (root cause: the suite's sign-out specs revoke the
+shared test login); saved test sessions are re-captured when older than 25 min; a previous set that is only an
+effort rating no longer counts as "last session" (app change: app-runner v110, app-progress v73,
+app-calendar-goals v29); `release.mjs --push` now waits for GitHub's check before pushing the tag; a few widened
+test waits. Validated by a complete run: 974 passed / 0 failed / 1 flaky (the known `progress-trend`) / 4
+skipped (44.2m). They ship with the next release — Jake's call when.
 
 **`v2026.09.11`**, cut 2026-09-28 — the workout runner rebuilt around Jake's 8-item phone walkthrough: tabs
 that show completion (green/purple, not position), "Next exercise" goes to what is still to do, no Back
@@ -24,17 +44,13 @@ are the record.
 
 ## In flight, not yet built
 
-**Jake sent a second set of six items the same day (2026-09-28), after the runner walkthrough above.**
-Not started:
-1. Template builder: the Edit and Remove buttons are too big and squeeze the set text onto separate lines —
-   [ledger row](bugs/2026-09-28-template-builder-edit-and-remove-buttons-squeeze-the-set-text.md). Needs
-   Jake's call on icon buttons vs. a second row.
-2. Interval editor "Initial countdown" should read `0:00` like its sibling fields —
-   [ledger row](bugs/2026-09-28-interval-initial-countdown-is-the-only-time-field-not-in-0-00-format.md).
-3. Solo dashboard, four changes, none designed yet: rename "Next up" to "My calendar"; replace the
-   Benchmarks card with a "My progress" tile linking to the Progress page; merge the "Current program" strip
-   with the next-session tile (they duplicate each other); and a `goals` page exists but is reachable only
-   from a dashboard tile (not in navigation) — Jake has not yet said which fix he wants.
+Nothing from Jake's walkthroughs is outstanding. The six items of his second 2026-09-28 note are all built and
+shipped in `v2026.09.13`'s content (template-builder buttons, interval countdown format, "My calendar" rename,
+"My progress" tile, merged current-program strip, a Goals tab on Progress); his runner rounds of 2026-09-30 and
+2026-10-01 (ghost text, the full-width prescription boxes under the tabs, "Exercise N of M" removed) are shipped too.
+Open questions waiting on Jake: whether the app's **Sign out should end only this device's session** (today it ends
+every one — see [the bug record](bugs/2026-09-30-pb-consolidation-solo-write-path-fails-only-in-the-full-suite.md));
+and when to release the four follow-up commits above.
 
 ## Next: the release plans
 
@@ -44,14 +60,15 @@ releases; R1, R2a and R2b are done (shipped across v2026.09.7-v2026.09.9), the r
 
 ## Recent commits (`git log --oneline -8`)
 
-`c1c46d5` docs(release) v2026.09.11 notes, `657e912`/`a2365a3` runner rebuild (above), `8a0a631`/`5d8a432`
-v2026.09.10 release, `b88ec86` waitForTimeout ratchet bump, `4d7fb9a` `backToGoals` comment correction,
-`13b2699` error-rate row's first measurement.
+`c9a8d0f` waits widened + v2026.09.13 marked live, `72fe1e4` release.mjs waits for GitHub's check, `bd60414`
+effort-only sets / auth-error logging, `c8d1cab` SOLO test un-quarantined + session refresh, `103ac2f`/`ee45bae`
+v2026.09.13 (notes / the CI fix), `1035f63` v2026.09.12 (never deployed).
 
 ## Requires Validation
 
-- Everything above reflects `git`/filesystem state at 2026-09-28. Re-run `git status`, `git tag -l`, and
-  check `docs/releases/` for anything newer before relying on this file.
+- Everything above reflects `git`/filesystem state at 2026-10-03. Re-run `git status`, `git tag -l`, `gh run list`
+  and check `docs/releases/` for anything newer before relying on this file. "Pushed" is not "deployed": confirm
+  the deploy job in `gh run list`.
 - The Stats sheet (v2026.09.11) and the weekday day list have not been checked against Jake's real workout
   history or a real assigned program — both were tested against stubbed/mock data. See
   [releases/v2026.09.11.md](releases/v2026.09.11.md)'s Verification section.
