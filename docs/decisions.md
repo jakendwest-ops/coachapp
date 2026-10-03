@@ -12,6 +12,22 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-03 — A release tag is pushed only after GitHub's check on that commit is green; the saved test logins are kept young; a test that needs a live session signs in for real; the app's global Sign out is left alone.**
+Four choices from the night `v2026.09.12` was tagged, pushed and never deployed. (1) The deploy job has `needs: check`, and the
+check failed on GitHub (Node 22) while the dev machine (Node 24) was green, so the tag sat there undeployed with nothing saying so.
+`release.mjs --push` now pushes master, waits for GitHub's code-quality run on that exact commit, and pushes the tag only on a clear
+green; a red, missing or unreadable check leaves the tag local and exits 1 (`scripts/lib/ci-verdict.mjs`, with its I/O injected and
+tested against a fake GitHub). **Rejected:** pushing both at once and telling the person to look (what failed); making CI and the
+dev machine run the same Node first (right, but a tooling-wide change — recommended, not done; `checks.sh` now prints a note when the
+majors differ). (2) The suite's sign-out specs revoke the shared PT login on the server (the app's `signOut()` is supabase-js's default
+scope `global`), and a revoked login still looks alive, so only a call that asks the auth server notices. A test that needs a live
+session signs in for real (`NO_SESSION_REUSE` around its login, previous value restored); `session-store.js` also re-captures a role's
+saved session once it is 25 min old, because its access token lives 60 min and the suite takes 47–59. **Rejected:** a refresh
+(a revoked refresh token cannot be refreshed — tried, failed); quarantining the test for good. (3) **Left alone, for Jake:** whether
+Sign out should end only the current device. `signOut({ scope: 'local' })` would, and would remove this class of test problem at its
+root, but ending every session is a product and security choice. (4) Long runs from Claude Code's Bash tool: a background call is
+killed at exactly its `timeout`, so give `release.mjs` 7200000 (CLAUDE.md says so now).
+
 **2026-10-01 — Hooks and servers resolve the tree they are RUN in; a dev server is a network service; a cleared ticked set does not count.**
 Three choices from one day of fixing the tooling the RPE work exposed. (1) `guardrails.mjs` and `os-lint.mjs` named the
 main checkout in a constant, so a commit or a lint made from a git worktree was judged against the WRONG tree (the
