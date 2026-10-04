@@ -451,9 +451,9 @@ async function delete1RM(id, clientId) {
   _refresh1RMs(clientId)
 }
 
-// ONE definition of "best" for a performance_logs record. Callers: renderClientPerformance (the coach's
-// Performance tab) and, through _perfBestsByName (app-dashboard.js), the Benchmarks card on BOTH the
-// client and the solo dashboard. (The Benchmarks tab's renderProgressPBs was a third until 2026-09-19.)
+// ONE definition of "best" for a performance_logs record. Caller: renderClientPerformance (the coach's
+// Performance tab). It was also reached through _perfBestsByName (app-dashboard.js) by the Benchmarks card on BOTH the client and the
+// solo dashboard until the 2026-10-03 dashboard rework removed that card, and by the Benchmarks tab's renderProgressPBs until 2026-09-19.
 // Every one of those queries orders by `date desc` and used to take the FIRST row — i.e. the most
 // recently logged entry — and render it beside a gold "PB" badge. So a lighter/slower entry logged more
 // recently displayed as the personal best. "Best" depends on the UNIT: for TIME units (min/sec — cardio
@@ -2932,7 +2932,11 @@ function _xsHistHtml(st) {
 // on the canvas it is given, so a rebuilt canvas would otherwise leave its predecessor running. try/catch because Chart.js is a
 // CDN script — if it never loaded there is nothing to destroy.
 function _xsDestroyChart(host) {
-  try { const c = host && host.querySelector('canvas'); if (c) Chart.getChart(c)?.destroy() } catch { /* no Chart.js: nothing to destroy */ }
+  try {
+    const c = host && host.querySelector('canvas'), chart = c && Chart.getChart(c)
+    // Filtered out of the registry BY THE CHART: destroy() clears chart.canvas, so a filter on its canvas would never match it.
+    if (chart) { chart.destroy(); _activeCharts = _activeCharts.filter(ch => ch !== chart) }
+  } catch { /* no Chart.js: nothing to destroy */ }
 }
 
 function _mountExerciseStats(host, ex, opts = {}) {
@@ -3049,6 +3053,12 @@ let _perfView = null
 // A Map, not an object: an exercise can be called anything, and `'constructor' in {}` is true.
 const _perfOpenMap = () => (window._trendState.open ||= new Map())
 
+// The folded line of a weight x reps card: the card's own caption for the measure it is on, else how many sessions it has.
+function _perfXsSummary(model, metric) {
+  const n = model.shown.length
+  return _xsCaption(model, metric) || (n ? `${n} session${n === 1 ? '' : 's'}` : 'No sessions in this range')
+}
+
 // A card's shell: a real button (name, one-line best, badge, chevron) over the body. `body` is '' for a folded card.
 function _perfShell(r, body) {
   return `<div class="xs-card pf-card${r.open ? ' is-open' : ''}" data-pf-card="${r.i}">` +
@@ -3063,8 +3073,10 @@ function _perfShell(r, body) {
 // animation loop running.
 function _perfFree(el) {
   el.querySelectorAll('canvas').forEach(c => {
-    try { Chart.getChart(c)?.destroy() } catch { /* no Chart.js: nothing to destroy */ }
-    _activeCharts = _activeCharts.filter(ch => ch.canvas !== c)
+    let chart = null
+    try { chart = Chart.getChart(c); chart?.destroy() } catch { /* no Chart.js: nothing to destroy */ }
+    // By the chart itself, not its canvas: destroy() clears chart.canvas, so a filter on the canvas would never match a chart just destroyed.
+    if (chart) _activeCharts = _activeCharts.filter(ch => ch !== chart)
   })
 }
 
@@ -3127,8 +3139,7 @@ function _renderPerfExerciseList(query) {
         setMetric: m => { window._trendState.metricByEx[ex.name] = m },
       }
       const model = _xsPrepare(ex, opts)
-      const n = model.shown.length
-      return { ex, i, xs: true, open, opts: { ...opts, model }, summary: _xsCaption(model, opts.getMetric()) || (n ? `${n} session${n === 1 ? '' : 's'}` : 'No sessions in this range') }
+      return { ex, i, xs: true, open, opts: { ...opts, model }, summary: _perfXsSummary(model, opts.getMetric()) }
     }
     const pts = _metricPointsFor(ex).points.filter(p => new Date(p.date).getTime() >= cutoff)
     const metrics = _metricsWithData(_TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps, pts)
@@ -3227,8 +3238,6 @@ function _renderPerfExerciseList(query) {
       yFormat: v => r.active[3](_tickNum(v)),
     })
   }
-  rendered.forEach(r => { if (r.open && !r.empty) drawCard(r) })
-
   // One card's tap: bring that card alone in line with its state. The other cards' charts are left running.
   const sync = r => {
     const card = listEl.querySelector(`[data-pf-card="${r.i}"]`); if (!card) return
@@ -3237,10 +3246,17 @@ function _renderPerfExerciseList(query) {
     card.querySelector('.pf-head').setAttribute('aria-expanded', String(r.open))
     body.hidden = !r.open
     if (r.open) { body.innerHTML = bodyHtml(r); drawCard(r) }
-    else { _perfFree(body); body.innerHTML = '' }
+    else {
+      _perfFree(body); body.innerHTML = ''
+      // A measure pill tapped while the card was open changed what its caption says; the folded line follows it.
+      if (r.xs) { r.summary = _perfXsSummary(r.opts.model, r.opts.getMetric()); const sum = card.querySelector('.pf-sum'); if (sum) sum.textContent = r.summary }
+    }
   }
   _perfView = { rows: rendered, sync, total: all.length, shown: list.length }
   _perfSyncAll()
+  // Drawn last, once the list's state is in place: a chart that throws (Chart.js never loaded) must not leave the new cards on screen with
+  // taps still wired to the previous list.
+  rendered.forEach(r => { if (r.open && !r.empty) drawCard(r) })
 }
 
 // renderProgressCardio removed 2026-07-19 (B5): cardio now has a proper metric_type trend card in

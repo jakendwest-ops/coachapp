@@ -1104,6 +1104,10 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .dash-card-sub { font-size: var(--text-md); color: var(--text-muted); font-weight: 600; text-align: right; }
 .dash-card-sub b { color: var(--text); }
 .dash-link { display: block; font-family: inherit; font-size: var(--text-md); font-weight: 700; color: var(--accent); border: 0; background: none; padding: 8px 0 0; cursor: pointer; }
+/* "View as client" (the owner previewing a client's dashboard): Progress, Workouts and Calendar are not "view as" aware - they show the OWNER'S OWN
+   record - so the cards and buttons that lead there are inert while it is on, rather than quietly opening the wrong person's page. */
+.dash-sudo .dash-tap { pointer-events: none; cursor: default; }
+.dash-sudo .dash-link, .dash-sudo .dash-nav { display: none; }
 .dash-empty { font-size: var(--text-base); color: var(--text-muted); margin: 0; }
 .dash-checkin { margin-bottom: 12px; padding: 14px; }
 .dash-checkin .card-title { font-size: var(--text-lg); font-weight: 700; }

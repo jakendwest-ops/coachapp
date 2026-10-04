@@ -252,3 +252,80 @@ describe('_renderWorkoutsHeroHtml — names are text, never markup', () => {
     assert.match(get('_renderWorkoutsHeroHtml')({ title: 'T', meta: 'M', action: 'a()', btnLabel: 'Go' }), />Up next</)
   })
 })
+
+// ─── Follow-ups from the pre-push multi-agent review of 2026-10-04 ──────────────────────────────────────────────────────────────
+
+describe('_dashProgramEnd — the day a program runs out, the way the calendar counts it (review: the coach tile was up to 6 days late)', () => {
+  const end = (start, weeks) => get('_dashProgramEnd')(start, weeks)
+
+  test('a Monday start ends on the Sunday 4 weeks later', () => {
+    assert.equal(end('2026-09-28', 4), '2026-10-25')
+  })
+  test('a Thursday start ends on the SAME Sunday: week 1 is the Monday-to-Sunday week it falls in (seven days after the start said 28 Oct)', () => {
+    assert.equal(end('2026-10-01', 4), '2026-10-25')
+  })
+  test('a Sunday start has one day in its first week, and still ends on the Sunday 4 weeks on', () => {
+    assert.equal(end('2026-10-04', 4), '2026-10-25')
+  })
+  test('one week from a Monday is that Sunday', () => {
+    assert.equal(end('2026-09-28', 1), '2026-10-04')
+  })
+  test('an unusable start or length is null, never "NaN-NaN-NaN"', () => {
+    for (const [s, w] of [[null, 4], ['', 4], ['not a date', 4], ['2026-09-28', 0], ['2026-09-28', null], ['2026-09-28', 'x'], ['2026-09-28', -2]]) assert.equal(end(s, w), null, `${s} / ${w}`)
+  })
+  test('it agrees with the calendar: the last dated session of a program is on or before this day, in the same week', () => {
+    // 3 weeks from Thursday 17 Sep, sessions on Mon and Thu: the calendar's last session is Thu 1 Oct, in week 3 (Mon 28 Sep - Sun 4 Oct).
+    const cp = { start_date: '2026-09-17', programs: { program_phases: [{ id: 'p', name: 'B', duration_weeks: 3, order_index: 0, program_phase_workouts: [
+      { id: 'a', day_of_week: 1, session_order: 1, week_number: 1 }, { id: 'b', day_of_week: 4, session_order: 1, week_number: 1 }] }] } }
+    const dates = Object.keys(get('_programWorkoutsByDate')(cp, {})).sort()
+    assert.equal(dates.at(-1), '2026-10-01')
+    assert.equal(end('2026-09-17', 3), '2026-10-04', 'the Sunday of the same week')
+    assert.ok(dates.at(-1) <= end('2026-09-17', 3))
+  })
+})
+
+describe('_dashSessionName — the name a dashboard shows for a planned session (review: the Today card read "Upper Body — W2")', () => {
+  const name = pw => get('_dashSessionName')(pw)
+  const pw = n => ({ workout_templates: n === undefined ? undefined : { name: n } })
+
+  test('a periodised week\'s copy loses its " — W2": the Workouts card and the calendar hide it too', () => {
+    assert.equal(name(pw('Upper Body — W2')), 'Upper Body')
+    assert.equal(name(pw('Squat + Threshold — W10')), 'Squat + Threshold')
+  })
+  test('a plain name is untouched, and a missing one reads "Session"', () => {
+    assert.equal(name(pw('Upper Body')), 'Upper Body')
+    assert.equal(name(pw(undefined)), 'Session')
+    assert.equal(name(pw('')), 'Session')
+    assert.equal(name({}), 'Session')
+  })
+  test('the Today card\'s title joins two sessions with the suffix stripped from each', () => {
+    const day = { planned: [pw('Squat — W3'), pw('Threshold — W3')] }
+    assert.equal(get('_dashPlanNames')(day), 'Squat + Threshold')
+  })
+  test('the calendar card\'s sessions are stripped the same way', () => {
+    const rows = get('_soloUpcoming')([], { '2026-10-05': [{ workout_templates: { name: 'Upper Body — W2' }, _clientTemplateId: 't1' }] }, '2026-10-03')
+    assert.equal(rows[0].title, 'Upper Body')
+  })
+})
+
+describe('the Up next card when no dated session is left but the program has weeks to run (review: it said "Program complete" in week 5 of 6)', () => {
+  // A 6-week phase whose Mon/Thu sessions were only generated for weeks 1-4 (the phase was lengthened afterwards), started Mon 28 Sep.
+  const rows = [1, 2, 3, 4].flatMap(w => [row('a' + w, 1, w), row('b' + w, 4, w)])
+  const lengthened = assign('2026-09-28', [phase('p1', 'Block', 6, rows)])
+  const clones = Object.fromEntries(rows.map(r => [r.id, { templateId: 'c-' + r.id, name: 'Session ' + r.id }]))
+
+  test('in week 5 of 6 with nothing set up it says so, instead of "complete"', () => {
+    const h = hero(lengthened, clones, { todayStr: '2026-10-26', logs: [] })
+    assert.equal(h.eyebrow, 'Up next')
+    assert.match(h.meta, /No more sessions are set up yet/)
+    assert.equal(h.action, "startWorkoutRunner('c1')")
+    assert.equal(get('_dashProgramInfo')(lengthened, '2026-10-26').week, 5)
+  })
+  test('once the last week has been reached it IS complete', () => {
+    const h = hero(lengthened, clones, { todayStr: '2026-11-09', logs: [] })   // Monday of week 7
+    assert.equal(h.eyebrow, 'Program complete')
+  })
+  test('a finished 4-week program still reads complete (the tile clamps at week 4 of 4)', () => {
+    assert.equal(hero(PROGRAM, CLONES, { todayStr: '2026-10-26', logs: [] }).eyebrow, 'Program complete')
+  })
+})

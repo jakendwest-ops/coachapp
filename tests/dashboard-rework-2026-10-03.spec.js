@@ -71,8 +71,8 @@ const summaryRow = (id, name, over = {}) => ({
 })
 function coachTables(uid, { quietToday = false } = {}) {
   const summaries = [
-    summaryRow('c1', 'Priya M', { sessions_7d: 3, last_session_date: TODAY, last_weigh_in_date: addDays(TODAY, -1), program_name: 'Operation Strength', program_weeks: 12, program_start: addDays(TODAY, 12 - 83) }),   // ends in 12 days
-    summaryRow('c2', 'Sam K', { sessions_7d: 2, last_session_date: TODAY, last_weigh_in_date: TODAY, program_name: 'Hypertrophy block', program_weeks: 8, program_start: addDays(TODAY, 5 - 55) }),        // ends in 5 days
+    summaryRow('c1', 'Priya M', { sessions_7d: 3, last_session_date: TODAY, last_weigh_in_date: addDays(TODAY, -1), program_name: 'Operation Strength', program_weeks: 12, program_start: '2026-07-20' }),   // started on a Monday: its last week ends on Sunday 11 Oct, in 8 days
+    summaryRow('c2', 'Sam K', { sessions_7d: 2, last_session_date: TODAY, last_weigh_in_date: TODAY, program_name: 'Hypertrophy block', program_weeks: 8, program_start: '2026-08-10' }),        // started on a Monday: ends on Sunday 4 Oct, tomorrow
     summaryRow('c3', 'Dan R', { sessions_7d: 0, last_session_date: addDays(TODAY, -12), last_weigh_in_date: addDays(TODAY, -9) }),
     summaryRow('c4', 'Lena W', { sessions_7d: 1, last_session_date: addDays(TODAY, -3), last_weigh_in_date: addDays(TODAY, -2), program_name: 'Base', program_weeks: 12, program_start: addDays(TODAY, -20) }),
     summaryRow('c5', 'Tom B'),                                                                                                                                                                          // never trained
@@ -171,6 +171,56 @@ test.describe('the client and solo dashboard', () => {
     await page.evaluate(() => { window.__started = null; window.startWorkoutRunner = (...a) => { window.__started = a } })
     await page.locator('#dash-hero .dash-btn-primary').click()
     expect(await page.evaluate(() => window.__started), 'client id, then the clone template id (ct-..., not the master t-...)').toEqual(['dash-c1', 'ct-pw-6'])
+  })
+
+  test('(review) a periodised week\'s copy loses its " — W2" on the Today card, like Up next and the calendar', async ({ page }) => {
+    const uid = await page.evaluate(() => currentUser.id)
+    const t = ownTables('dash-c1', uid)
+    t.client_programs[0].programs.program_phases[0].program_phase_workouts.find(p => p.day_of_week === 6).workout_templates.name = 'Squat + Threshold — W3'
+    await install(page, t)
+    await render(page, 'renderClientDashboard')
+    expect((await read(page)).hero.title).toBe('Squat + Threshold')
+  })
+
+  test('(review) "view as client": the cards that lead to pages showing the OWNER\'S OWN record are inert, the session buttons still work', async ({ page }) => {
+    // Progress, Workouts and Calendar are not "view as" aware (_getCurrentClientId has no sudo branch), so while the owner previews a client the weight,
+    // goals, calendar and program cards must not open them: it would show - and let the owner log into - the wrong person's record.
+    const uid = await page.evaluate(() => currentUser.id)
+    await page.evaluate(() => { window._sudoClientId = 'dash-c1'; window._sudoClientName = 'Priya M'; window.__started = null; window.startWorkoutRunner = (...a) => { window.__started = a } })
+    await install(page, ownTables('dash-c1', uid))
+    await render(page, 'renderClientDashboard')
+    await expect(page.locator('#dash-root')).toHaveClass(/dash-sudo/)
+    await expect(page.locator('.dash-banner-sudo')).toContainText('Viewing as Priya M')
+    const r = await page.evaluate(() => {
+      const shown = el => !!el && getComputedStyle(el).display !== 'none'
+      return {
+        taps: ['#dash-weight', '#dash-calendar', '#dash-goals', '#dash-program'].map(sel => getComputedStyle(document.querySelector(sel)).pointerEvents),
+        links: [...document.querySelectorAll('#dash-root .dash-link')].map(shown),
+        nav: [...document.querySelectorAll('#dash-root .dash-nav')].map(shown),
+        start: shown(document.querySelector('#dash-hero .dash-btn-primary')),
+      }
+    })
+    expect(r.taps, 'no tap on a card reaches a page that would show the owner\'s own weight, goals, calendar or workouts').toEqual(['none', 'none', 'none', 'none'])
+    expect(r.links.length, 'the cards do carry their links...').toBeGreaterThan(0)
+    expect(r.links.every(v => v === false), '...hidden while viewing as someone else').toBe(true)
+    expect(r.nav.length, 'the View program button is in the markup...').toBeGreaterThan(0)
+    expect(r.nav.every(v => v === false), '...and hidden').toBe(true)
+    expect(r.start, 'Start workout still starts the CLIENT\'S session').toBe(true)
+    await page.locator('#dash-hero .dash-btn-primary').click()
+    expect(await page.evaluate(() => window.__started)).toEqual(['dash-c1', 'ct-pw-6'])
+  })
+
+  test('(review) outside "view as" every card is tappable and nothing is hidden', async ({ page }) => {
+    await withData(page)
+    const r = await page.evaluate(() => ({
+      taps: ['#dash-weight', '#dash-calendar', '#dash-goals', '#dash-program'].map(sel => getComputedStyle(document.querySelector(sel)).pointerEvents),
+      links: [...document.querySelectorAll('#dash-root .dash-link')].map(el => getComputedStyle(el).display !== 'none'),
+      nav: [...document.querySelectorAll('#dash-root .dash-nav')].map(el => getComputedStyle(el).display !== 'none'),
+      sudoClass: document.getElementById('dash-root').classList.contains('dash-sudo'),
+    }))
+    expect(r.sudoClass).toBe(false)
+    expect(r.taps).toEqual(['auto', 'auto', 'auto', 'auto'])
+    expect(r.links.every(Boolean) && r.nav.every(Boolean)).toBe(true)
   })
 
   test('tapping a day swaps the Today card in place - no new read - and the same day again, or Back to today, returns', async ({ page }) => {
@@ -450,17 +500,32 @@ test.describe('the coach dashboard', () => {
     expect(r.bars.filter(b => b.pressed === 'true').map(b => b.day), 'the pressed bar is the one the Today card shows').toEqual(['Sat'])
 
     expect(r.trained, '4 of 6 clients logged a session in the last 7 days').toContain('4 of 6')
-    expect(r.ending, 'Sam K ends in 5 days, Priya M in 12').toContain('2 soon')
+    expect(r.ending, 'Sam K ends tomorrow, Priya M in 8 days').toContain('2 soon')
     expect(r.attentionNames, 'someone who never trained comes first, then the longest gap').toEqual(['Tom B', 'Dan R'])
     expect(r.attention).toContain('No sessions yet')
     expect(r.attention).toContain('Last trained Mon 21 Sept')
     expect(r.weighins).toContain('4 of 6 this week')
     expect(r.weighins).toContain('Sam K')
     expect(r.weighins).toContain('91.2 kg')
-    expect(r.coming).toMatch(/Sam K · program ends\s*Hypertrophy block\s*In 5 days/)
-    expect(r.coming).toMatch(/Priya M · program ends\s*Operation Strength\s*In 12 days/)
+    expect(r.coming).toMatch(/Sam K · program ends\s*Hypertrophy block\s*Tomorrow/)
+    expect(r.coming).toMatch(/Priya M · program ends\s*Operation Strength\s*In 8 days/)
     expect(r.goals).toContain('Bench 100 kg')
     expect(r.goals).toContain('Sam K · In 7 days')
+  })
+
+  test('(review) "Programs ending" counts the way the calendar does: a program that started on a Thursday ends on the Sunday of its last week', async ({ page }) => {
+    const uid = await page.evaluate(() => currentUser.id)
+    const t = coachTables(uid)
+    // Three weeks from Thursday 17 Sep: the client's calendar runs out on Sunday 4 Oct (week 3 is Mon 28 Sep - Sun 4 Oct). Counting seven-day blocks
+    // from the start date said Wednesday 7 Oct - three days after the calendar was empty.
+    t.coach_client_summary.push(summaryRow('c7', 'Zed T', { sessions_7d: 1, last_session_date: TODAY, last_weigh_in_date: TODAY, program_name: 'Three weeks', program_weeks: 3, program_start: '2026-09-17' }))
+    t.clients.push({ id: 'c7', full_name: 'Zed T', status: 'active', coach_id: uid })
+    await install(page, t)
+    await render(page, 'renderDashboard')
+    const r = await coachRead(page)
+    expect(r.coming).toMatch(/Zed T · program ends\s*Three weeks\s*Tomorrow/)
+    expect(r.coming, 'not "In 4 days"').not.toMatch(/Zed T · program ends\s*Three weeks\s*In 4 days/)
+    expect(r.ending, 'Sam K, Zed T and Priya M all end inside the fortnight').toContain('3 soon')
   })
 
   test('a quiet morning: a calm card that says so, and still points at the clients who need a nudge', async ({ page }) => {

@@ -183,6 +183,32 @@ test.describe('My progress: fold-up exercise cards (2026-10-04)', () => {
     expect((await state(page)).map(c => c.open), 'with the whole list back everything is folded again: the automatic opening was only for the lone result').toEqual([false, false, false, false])
   })
 
+  test('(review) the folded line follows the measure the open card was switched to', async ({ page }) => {
+    await showMyProgress(page)
+    await head(page, 'Lay A').click()
+    const pill = page.locator('#pf-host [data-pf-card="0"] [data-xs-metric="e1rm"]')
+    await expect(pill).toBeVisible()
+    await pill.click()
+    await head(page, 'Lay A').click()                                    // fold it again
+    expect((await state(page))[0].sum, 'the line now describes the estimated 1RM, as the card will when it is reopened').toMatch(/^Best est\. 1RM: /)
+    await head(page, 'Lay A').click()
+    await expect(page.locator('#pf-host [data-pf-card="0"] [data-xs-caption]')).toContainText('Best est. 1RM')
+  })
+
+  test('(review) opening, folding and switching measure never grow the chart registry (destroy() clears chart.canvas, so the registry must be filtered by the chart)', async ({ page }) => {
+    await showMyProgress(page)
+    const registry = () => page.evaluate(() => _activeCharts.length)
+    const before = await registry()
+    for (let k = 0; k < 4; k++) { await head(page, 'Lay A').click(); await head(page, 'Lay A').click() }
+    expect(await registry(), 'a folded card\'s destroyed chart is gone from the registry').toBe(before)
+    await head(page, 'Lay A').click()
+    const open = await registry()
+    expect(open).toBe(before + 1)
+    await page.locator('#pf-host [data-pf-card="0"] [data-xs-metric="volume"]').click()
+    await page.locator('#pf-host [data-pf-card="0"] [data-xs-metric="e1rm"]').click()
+    expect(await registry(), 'a measure pill replaces the card\'s chart; the old one leaves the registry').toBe(open)
+  })
+
   test('a card is a real button for the keyboard: Enter opens it, Space folds it, and the state is announced', async ({ page }) => {
     await showMyProgress(page)
     const h = head(page, 'Lay B')

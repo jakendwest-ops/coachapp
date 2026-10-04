@@ -679,8 +679,15 @@ function _buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr, logs
   const byDate = _programWorkoutsByDate(activeAssignment, cpwMap)
   if (Object.keys(byDate).length) {
     const next = _dashNextSession(byDate, logs, today)
-    // Every dated session is behind us: the program is finished. Pointing at one of its old sessions would be wrong.
-    if (!next) return { eyebrow: 'Program complete', title: prog.name || 'Your program', meta: 'Start a freeform session below, or move on to your next program.', action: freeform, btnLabel: 'Start a session' }
+    // No dated session left. If the program's last week has been reached it is finished, and pointing at one of its old sessions would be
+    // wrong. If weeks remain (a phase lengthened without generating its new weeks) nothing is set up for them yet - that is not "complete".
+    if (!next) {
+      const info = _dashProgramInfo(activeAssignment, today)
+      if (info && info.totalWeeks && info.week < info.totalWeeks) {
+        return { eyebrow: 'Up next', title: prog.name || 'Your program', meta: 'No more sessions are set up yet. Start a freeform session below.', action: freeform, btnLabel: 'Start a session' }
+      }
+      return { eyebrow: 'Program complete', title: prog.name || 'Your program', meta: 'Start a freeform session below, or move on to your next program.', action: freeform, btnLabel: 'Start a session' }
+    }
     const first = next.sessions[0]
     return card(first, next.ds === today ? 'Today' : _dashFormatDate(next.ds), first._phaseName, first._weekInPhase, next.sessions.length - 1)
   }

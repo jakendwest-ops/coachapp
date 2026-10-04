@@ -48,6 +48,13 @@ function _dashEventColour(type) {
   return (typeof EVENT_COLOURS !== 'undefined' && EVENT_COLOURS[type]?.dot) || 'var(--text-muted)'
 }
 
+// A planned session's name for display. A periodised week's copy of "Upper Body" is stored as "Upper Body — W2"; the Workouts card and the
+// calendar already hide the suffix, and the dashboard now does too, so the three name the same workout (found by review, 2026-10-04: the Today
+// card read "Upper Body — W2" while Up next read "Upper Body").
+function _dashSessionName(pw) {
+  return (pw.workout_templates?.name || 'Session').replace(/ — W\d+/, '')
+}
+
 // Merge calendar events and programmed sessions into ONE date-ordered timeline. No function in the
 // app did this: renderCalendar keeps the two in separate maps and merges them only visually inside a
 // grid cell, which is why showClientDayDetail still says "Rest day" on a date that has an event.
@@ -59,7 +66,7 @@ function _soloUpcoming(events, progByDate, todayStr) {
   Object.keys(progByDate || {}).forEach(ds => {
     if (ds < todayStr) return
     ;(progByDate[ds] || []).forEach(pw => out.push({
-      date: ds, kind: 'session', title: pw.workout_templates?.name || 'Session',
+      date: ds, kind: 'session', title: _dashSessionName(pw),
       colour: 'var(--accent)', templateId: pw._clientTemplateId || null
     }))
   })
@@ -207,6 +214,15 @@ function _dashProgramInfo(cp0, todayStr) {
   return { name: prog.name || 'Your program', phase: current ? current.name : '', week, totalWeeks: total, pct: total ? Math.round(week / total * 100) : 0 }
 }
 
+// The last day of a program that has run `weeks` weeks from `startYmd`, counted the way the calendar places its sessions: week 1 is the
+// Monday-to-Sunday week the start date falls in, so the program ends on the SUNDAY of its last week - not `weeks` x 7 days from the start
+// date itself. The coach's "Programs ending" tile used the second reading, so for a Thursday start it named a date 3 days after the client's
+// calendar went empty (found by review, 2026-10-04). null when the start date or the length is unusable.
+function _dashProgramEnd(startYmd, weeks) {
+  const monday = startYmd ? _dashMonday(startYmd) : null
+  return monday && Number(weeks) > 0 ? _dashAddDays(monday, Number(weeks) * 7 - 1) : null
+}
+
 // ─── Dashboard views: markup builders (pure strings) ───────────────────────────────────────────────────────────────────────
 // Solo, client and coach share the skeleton - greeting, a Today card, the week, two number tiles, then cards - so the builders
 // below are shared. Every piece of user text goes through escapeHtml; ids inside inline handlers through escapeAttr.
@@ -223,7 +239,7 @@ const _dashPlural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 // Buttons. The handler is spelled out in each builder and never passed in as a string: scripts/check-handler-targets.mjs can only verify
 // an inline handler whose NAME is in the source, so a computed one would silently stop working the day its target was renamed.
 const _dashBack = () => '<button type="button" class="dash-btn dash-btn-ghost" onclick="_dashPickDay(null)">Back to today</button>'
-const _dashToProgram = (cls, label) => `<button type="button" class="dash-btn ${cls}" onclick="navigate('workouts')">${label}</button>`
+const _dashToProgram = (cls, label) => `<button type="button" class="dash-btn ${cls} dash-nav" onclick="navigate('workouts')">${label}</button>`
 const _dashStart = (cid, tid) => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}','${tid}')">▶ Start workout</button>`
 const _dashLogWorkout = cid => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}')">Log a workout</button>`
 const _dashViewSession = (id, cid) => `<button type="button" class="dash-btn dash-btn-primary" onclick="openWorkoutLog('${id}','${cid}')">View session</button>`
@@ -236,7 +252,7 @@ const _dashAttention = n => `<button type="button" class="dash-btn dash-btn-ghos
 function _dashOpenWeight() { window._progressTab = 'Body Weight'; navigate('progress') }
 function _dashOpenGoals(isClient) { if (isClient) window._progressTab = 'Goals'; navigate(isClient ? 'progress' : 'goals') }
 // "Squat + Threshold": the sessions planned on a day.
-const _dashPlanNames = day => day.planned.map(p => p.workout_templates?.name || 'Session').join(' + ')
+const _dashPlanNames = day => day.planned.map(_dashSessionName).join(' + ')
 
 // The Today card for one day of the week - today, or the day the person tapped on the strip. It is the only saturated block on
 // the page, so it is what the eye lands on; on a rest day, a finished day or any other day it goes calm.
@@ -462,12 +478,12 @@ async function renderDashboard(el) {
     .sort((a, b) => (summary[a.id]?.last_session_date || '').localeCompare(summary[b.id]?.last_session_date || ''))
   const trained = summariesUnavailable ? null : active.length - needAttention.length
 
-  // Programs whose last day falls in the next 14 days. The end is start + weeks*7 - 1 (the program's final day).
+  // Programs whose last day falls in the next 14 days. The end is the Sunday of the program's last week (_dashProgramEnd), where the calendar runs out.
   const ending = summariesUnavailable ? [] : active.map(c => {
     const s = summary[c.id]
     if (!s?.program_start || !(Number(s.program_weeks) > 0)) return null
-    const endDs = _dashAddDays(s.program_start, Number(s.program_weeks) * 7 - 1)
-    return endDs >= todayStr && endDs <= in14Str ? { id: c.id, name: c.full_name, program: s.program_name, endDs } : null
+    const endDs = _dashProgramEnd(s.program_start, s.program_weeks)
+    return endDs && endDs >= todayStr && endDs <= in14Str ? { id: c.id, name: c.full_name, program: s.program_name, endDs } : null
   }).filter(Boolean).sort((a, b) => a.endDs.localeCompare(b.endDs))
 
   // The newest weigh-in per client, newest first (the read is already newest-first).
@@ -742,7 +758,7 @@ async function _dashRenderOwn(el, role) {
   _destroyManagedCharts()
 
   el.innerHTML = `
-    <div class="dash" id="dash-root" data-dash="${role}">
+    <div class="dash${isSudo ? ' dash-sudo' : ''}" id="dash-root" data-dash="${role}">
       ${_fetchFailureBanner(_failedFetches(d.failed), page)}
       ${isSudo ? `<div class="dash-banner dash-banner-sudo"><span>👁 Viewing as ${escapeHtml(window._sudoClientName || 'Client')}</span><button type="button" onclick="exitSudo()">Exit ✕</button></div>` : ''}
       <header class="dash-head">
