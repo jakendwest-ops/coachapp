@@ -60,10 +60,11 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   now points at the right one, because it used to ignore what was already logged
   ([row](bugs/2026-10-04-workouts-up-next-card-does-not-name-the-workout.md)); the program-week count is made to agree with the
   calendar ([row](bugs/2026-10-04-program-week-counts-from-start-date-but-the-calendar-counts-monday-weeks.md)). (3) The runner's Last
-  time panel shows the top set ([row](bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md)). Items 1-3 approved 2026-10-04.
-  (4) The program page gets the dashboard treatment - scoped with Jake (fold-up phases; everything on the list bugs him), prototype
-  next ([row](bugs/2026-10-04-program-page-needs-a-ui-rework.md)). (5) Periodization gains an RPE method beside %, one or the other
-  per phase ([row](bugs/2026-10-04-periodization-has-no-rpe-method.md)); shown in the same prototype. Nothing from 4-5 is built.
+  time panel shows the top set ([row](bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md)). Items 1-3 approved and BUILT 2026-10-04, committed
+  locally, awaiting his look on a phone. (4) The program page gets the dashboard treatment - scoped with Jake (fold-up phases; everything
+  on the list bugs him); tappable prototype up for his reaction (https://claude.ai/artifact/JQZDoiQAhpgWBxfJKPHgjr) ([row](bugs/2026-10-04-program-page-needs-a-ui-rework.md)).
+  (5) Periodization gains an RPE method beside %, one or the other per phase
+  ([row](bugs/2026-10-04-periodization-has-no-rpe-method.md)); in the same prototype. Nothing from 4-5 is built.
 - **Solo/signup:** the data model and invite-based onboarding (an owner-gated Edge Function) are
   done. Genuine open public self-signup for new solo accounts remains a deliberate deferral, not
   scoped.

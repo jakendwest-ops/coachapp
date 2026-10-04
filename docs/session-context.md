@@ -22,7 +22,10 @@ Six commits sit on `master` after the tag — four follow-ups (test-login fix, a
 runner, `release.mjs` waiting for GitHub's check before pushing a tag, a few widened test waits) and two docs
 updates — all CI-green, **not yet released**. Local commits that are **not pushed**: the top-set ghost-text fix (app-runner v111) and its docs,
 the shared exercise stats card that the runner's Stats sheet and My progress now both use (app-progress v74, app-runner v112), and the
-dashboard rework - one landing-page skeleton for the personal, client and coach dashboards (app-dashboard v29, css v25). The live site was re-checked on 2026-10-03:
+dashboard rework - one landing-page skeleton for the personal, client and coach dashboards (app-dashboard v29, css v25), and Jake's 2026-10-04 items 1-3 (fold-up
+exercise cards on My progress, the Workouts "Up next" card naming the next workout with Monday-to-Sunday program weeks, the Last time panel's top set;
+app-progress v76, app-runner v113, app-workouts v145, app-dashboard v30, app-calendar-goals v30, css v26); his items 4-5 (the program page, an RPE method for
+periodization) are scoped with a prototype up and not built. The live site was re-checked on 2026-10-03:
 GitHub's Pages deployment is the tag's commit and all 11 files it serves are byte-identical to `v2026.09.13`.
 See [current-sprint.md](current-sprint.md).
 

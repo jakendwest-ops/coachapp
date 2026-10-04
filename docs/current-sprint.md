@@ -42,6 +42,16 @@ push; they were self-reviewed, and the pre-push `multi-agent-review` has NOT bee
 32 unit tests, 29 new browser tests, 43 older tests ported or retired, the 21
 dashboard-related spec files green (214 tests), static checks pass, five ratchet baselines lowered; also awaiting his look
 ([row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md)) and not yet reviewed by `multi-agent-review`.
+(4) Jake's 2026-10-04 note, items 1-3 (also awaiting his look, also not yet reviewed by `multi-agent-review`): the Per-exercise list on
+My progress folds up, with a Collapse all / Expand all button and charts only for open cards (app-progress v76, css v26); the Workouts
+"Up next" card names the next workout and points at the right one - today's session while it is not logged, else the next planned -
+with program weeks counted Monday to Sunday like the calendar (app-workouts v145, app-dashboard v30, app-calendar-goals v30); and
+the Last time panel shows the top set (app-progress v75, app-runner v113). 43 new unit tests, 29 new browser tests, 27 deliberate
+breakages each caught, the specs around each change green, static checks pass
+([fold-up](bugs/2026-10-04-my-progress-exercise-cards-cannot-be-collapsed.md), [Up next](bugs/2026-10-04-workouts-up-next-card-does-not-name-the-workout.md),
+[Last time](bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md)). Items 4-5 of that note (the program page; an RPE method
+for periodization) are scoped, with a prototype up for his reaction ([program page](bugs/2026-10-04-program-page-needs-a-ui-rework.md),
+[periodization](bugs/2026-10-04-periodization-has-no-rpe-method.md)); nothing of them is built.
 
 **`v2026.09.11`**, cut 2026-09-28 — the workout runner rebuilt around Jake's 8-item phone walkthrough: tabs
 that show completion (green/purple, not position), "Next exercise" goes to what is still to do, no Back

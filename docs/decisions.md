@@ -12,6 +12,51 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-04 — "Up next" names the session you would do next and agrees with the dashboard; program weeks are Monday-to-Sunday like the calendar; the Last time panel shows the top set; My progress cards fold up and only open ones draw a chart; the program page gets fold-up phases and periodization gains an RPE method (scoped, prototype next).**
+Jake's note of 2026-10-04 had five items; three were small enough to approve from a before-and-after sketch and two were scoped with him
+the way the dashboard was (a short form, then a tappable prototype, then his "approved"). *Up next (Workouts page).* He asked for the
+workout's name. Reading the code showed the card (`_buildWorkoutsHero`) took the FIRST session of the current program week and ignored
+both today's date and what was already logged, so after Monday's workout it still pointed at Monday's and a name would sometimes have
+named the wrong workout. *Chosen:* the dashboard's reading of a day - a planned session TODAY that is not logged yet, otherwise the
+first planned session after today (`_dashNextSession`) - found with the calendar's own date map (`_programWorkoutsByDate`, which now
+also records each session's phase and its week of that phase). The card says "Up next - Today" or "Up next - Mon 5 Oct", names the
+workout (a periodised week copy's " - W2" suffix is not shown), says "Program - Phase - Week N" and "+1 more today" when two sessions
+share the day, and Start launches the client's OWN copy. When every dated session is behind us it says "Program complete" and offers a
+freeform session; with no start date there is no dated plan and the old reading is kept, with the name. *Not chosen:* just adding the
+name to the old card; offering the second session of a two-a-day once the first is logged (the dashboard counts a day as done once
+anything is logged on it, and one rule on both screens matters more than that edge). *Program weeks:* the calendar anchors week 1 to
+the MONDAY of the start date's week, but the dashboard's "Wk N of M" tile and the old card counted seven-day blocks from the start
+date, so for a program that started mid-week they disagreed for a few days of every week (my slip in the dashboard commit);
+`_programWeeksElapsed` now counts Monday-to-Sunday weeks and both use it. *Last time panel:* it now says "Top set 23 kg x 5" (with
+"@9" for a logged RPE, "@2 RIR" for RIR, "12 reps" for a bodyweight lift) under "Last time - 29 Sept - 2 sets". "Top set" is the Stats
+card's definition (the heaviest set, a tie going to more reps, warm-ups never counted), so the two cannot disagree; the read behind the
+panel now asks for each set's phase, which is what lets a warm-up be told from a working set. *Fold-up cards (My progress, Per
+exercise):* every exercise was a card about 800px tall and every chart was drawn at once. Cards now start FOLDED (name and the card's
+own one-line best, via the shared `_xsCaption`), open with a tap, and a Collapse all / Expand all button sits above the list; only an
+open card has a body or a chart. Which cards are open is kept while the page is in use (a Map by exercise name in
+`window._trendState.open`) so the search box, the range select and the measure pills do not close them; a search that finds exactly one
+exercise opens it, but that automatic opening is not remembered and a card the person folded stays folded. Toggling touches ONE card;
+the full list re-render (search, range, pills) is unchanged. *Not chosen:* re-rendering the whole list on every tap (it would redraw
+the other open cards' charts); remembering open cards across visits (browser storage for a convenience nobody asked for);
+folding the cards inside the runner's Stats sheet (it shows one exercise). *Scoped, not built:* the program page - Jake said all four of
+too much scrolling, too many buttons, no overview and a cluttered top bother him, and chose fold-up phase cards (the Workouts page's
+pattern); and periodization gets a "% of 1RM | RPE" tab, ONE method per phase (his answer: one or the other). The RPE method is
+proposed as: Linear (start RPE to end RPE in half points, with an optional deload week) and Undulating (a Heavy / Moderate / Light RPE),
+stepping the RPE target of every Week-1 set that has one and leaving weights, reps and "% of top set" back-offs as typed; a set written
+in RIR converts (RIR = 10 - RPE); stored in the phase's untyped `periodization_config` so no database change is needed and every
+existing phase stays on %. Prototype for his reaction: https://claude.ai/artifact/JQZDoiQAhpgWBxfJKPHgjr (a private page with example data). *Found and not fixed:* the runner
+stamps a session with the UTC calendar day while every reader compares with the local day - harmless for a UK user except between
+midnight and 1 am in summer, wrong every evening for anyone west of UTC; it changes saved data, so it has its own row. *Test hygiene:*
+three existing tests counted every Chart on the page and broke when the test account's weigh-ins were re-seeded (the dashboard's
+sparkline sits behind the runner), so they now count the charts of the card under test. *Verified:* 43 new unit tests and
+29 new browser tests; twenty-seven deliberate breakages (six, eleven and ten across the three builds)
+each failing the matching test; the specs around each change green (the 26, 34 and 32 spec files around the three changes). *Not verified:* how any of it
+reads on a phone with real data; `multi-agent-review` has not been run. Rows: [bugs/2026-10-04-my-progress-exercise-cards-cannot-be-collapsed.md](bugs/2026-10-04-my-progress-exercise-cards-cannot-be-collapsed.md),
+[bugs/2026-10-04-workouts-up-next-card-does-not-name-the-workout.md](bugs/2026-10-04-workouts-up-next-card-does-not-name-the-workout.md),
+[bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md](bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md),
+[bugs/2026-10-04-program-page-needs-a-ui-rework.md](bugs/2026-10-04-program-page-needs-a-ui-rework.md),
+[bugs/2026-10-04-periodization-has-no-rpe-method.md](bugs/2026-10-04-periodization-has-no-rpe-method.md).
+
 **2026-10-04 — The dashboard is one landing-page skeleton for solo, client and coach; the Today card is the only saturated block; the streak counts weeks that hit the whole plan; the coach's first version is logged-only.**
 Jake's note of 2026-10-03: "The whole dashboard needs a rework for mobile view, as nothing really flows or stands out as a dashboard
 or makes it feel like this is landing page and hub of your account." Scoped with him through a short form and a tappable prototype
