@@ -140,6 +140,12 @@ because a self-test passed on 24 and failed on 22. `scripts/checks.sh` now print
 when the majors differ, but a note is not a gate. The fix is a one-line choice (pin both to the same major, or run
 the local suite under the CI version); not done, because it touches `.github/` and so belongs in a release.
 
+**New, unfixed (2026-10-04):** `tests/progress-trend.spec.js:5` (the resting-HR chart on the Body weight tab) is a
+fixed-sleep race: it waits one second after rendering and then counts `#resting-hr-chart`. It failed once in the v2026.09.14
+release run and passed on its retry (it is the `progress-trend` flake the 2026-10-03 notes mention). Nothing in that release touches
+the Body tab. The fix is small and belongs in a release with other test work: replace the sleeps with
+`await expect(page.locator('#resting-hr-chart')).toHaveCount(1)`, which retries.
+
 ## Minor hygiene debt
 
 A handful of stray debug artifacts sit at repo root (debug PNGs, a PDF, `modal-preview.html`),

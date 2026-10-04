@@ -15,19 +15,13 @@ and build/assign/track workout programmes, with coach/client/solo roles. See
 
 ## Current Release Cycle
 
-Last shipped: **`v2026.09.13`** (2026-10-03, tagged, deployed and verified on the live site). `v2026.09.12`
-was tagged and pushed the same day but **never deployed** — GitHub's check failed on a Node-22-only
-self-test failure and the deploy job needs that check; v2026.09.13 is the same content plus the fix.
-Six commits sit on `master` after the tag — four follow-ups (test-login fix, an effort-only-sets fix in the
-runner, `release.mjs` waiting for GitHub's check before pushing a tag, a few widened test waits) and two docs
-updates — all CI-green, **not yet released**. Local commits that are **not pushed**: the top-set ghost-text fix (app-runner v111) and its docs,
-the shared exercise stats card that the runner's Stats sheet and My progress now both use (app-progress v74, app-runner v112), and the
-dashboard rework - one landing-page skeleton for the personal, client and coach dashboards (app-dashboard v29, css v25), and Jake's 2026-10-04 items 1-3 (fold-up
-exercise cards on My progress, the Workouts "Up next" card naming the next workout with Monday-to-Sunday program weeks, the Last time panel's top set;
-app-progress v76, app-runner v113, app-workouts v145, app-dashboard v30, app-calendar-goals v30, css v26); his items 4-5 (the program page, an RPE method for
-periodization) are scoped with a prototype up and not built. The live site was re-checked on 2026-10-03:
-GitHub's Pages deployment is the tag's commit and all 11 files it serves are byte-identical to `v2026.09.13`.
-See [current-sprint.md](current-sprint.md).
+Last shipped: **`v2026.09.14`** (2026-10-04, tagged, deployed and verified on the live site: the check and the deploy job green, the changed
+files byte-identical to the tag). Full suite 1056 passed / 1 flaky (`progress-trend.spec.js:5`, passed on retry) / 4 skipped. It carries
+everything that had been waiting since `v2026.09.13`: the shared exercise stats card, the top-set ghost-text fix, the dashboard rework, Jake's
+2026-10-04 items 1-3 (fold-up exercise cards on My progress, the Workouts "Up next" card naming the next workout, the Last time panel's top
+set) and the pre-push review's follow-ups. All of it awaits Jake's look on a phone. In flight, **not on master yet**: his items 4-5 (the
+program-page rework and an RPE method for periodization), approved 2026-10-04 and being built on the branch `feat/program-page-rpe` in a
+worktree. See [current-sprint.md](current-sprint.md).
 
 **RPE top-set autoregulation is live (in `v2026.09.13`).**
 A coach marks set 1 as the top set with a prescribed RPE; the runner captures the effort actually hit,
