@@ -34,6 +34,21 @@ process/tracking debt below.
   `saveGoalProgress`, `toggleClientMilestone`, `showClientWeightForm` (the forms they served moved to Progress and Goals). Some are
   still exercised by tests that pin their ownership checks (tests/own-client-writes-2026-08-21.spec.js), so remove them together
   with those tests rather than one at a time.
+- **Carried from the 2026-10-04 pre-push review (all non-blocking, none fixed):** (1) The coach dashboard's "Goals due soon" read has no
+  coach or client anchor, so only the database's permissions scope it (the page it replaced did the same; probed RLS-safe on 2026-08-02,
+  coach against coach only, solo-owned rows not probed). Adding `.in('client_id', ids)` would silently drop goals past 200 clients, because
+  `ids` comes from the capped `clients` read. (2) The Up next button puts raw client and template ids in its inline handler (the shape
+  it always had; both are uuids, so not exploitable). (3) The Stats sheet matches an exercise's history by NAME only (deliberate: it and
+  My progress cannot then disagree) while the Last time panel matches by exercise id first, so an exercise id logged under two names would
+  show a "Last time" the card does not list. (4) Dead code the dashboard rework left: `_pbFormHtml`, `_PB_FORM_CATEGORIES`, `_pbUnitOptions`
+  and `_pbSyncUnits` (app-core.js) have no caller; remove them with the handlers listed above. (5) "View as client" only works on the
+  dashboard: `_getCurrentClientId()` has no view-as branch, so Progress, Workouts and Calendar show the owner's own record. The dashboard's
+  cards that lead there are inert while it is on (fixed in the same release), but making view-as work app-wide needs a banner on every page;
+  sign-out does not clear the view-as globals (the old dashboard behaved the same). Row: [bugs/2026-10-04-view-as-client-only-works-on-the-dashboard.md](bugs/2026-10-04-view-as-client-only-works-on-the-dashboard.md).
+  (6) `_renderMetricChart` filters the chart registry by `chart.canvas`, which Chart.js clears on destroy(), so a re-drawn chart's
+  predecessor lingers in `_activeCharts` until the next `_destroyManagedCharts()` (harmless: destroy is idempotent). The fold-up code filters
+  by the chart itself; the older call was left alone. (7) A phase with `duration_weeks` of 0 or null reads 0 weeks on the dashboard tile and
+  1 week on the calendar; the app's own forms refuse it, so only a direct database edit could produce it.
 - **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted —
   a UX gap, not a correctness bug.
 - **Invite email** doesn't yet include PT branding/logo (Edge Function not updated for it).

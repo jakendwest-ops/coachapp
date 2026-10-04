@@ -37,12 +37,12 @@ runner's Stats sheet and the My progress exercise cards are now one component wi
 v74, app-runner v112, css v24): 28 new unit tests, 17 new browser tests, ten old tests ported, the 14 affected spec files plus
 the new one green (211 tests), static checks pass. Both await Jake's look on a phone ([ghost-text row](bugs/2026-10-03-runner-top-set-exercise-shows-last-sessions-weight-as-ghost-text.md),
 [stats row](bugs/2026-10-03-runner-stats-sheet-shows-less-than-my-progress-and-computes-est-1rm-differently.md)) and his say-so to
-push; they were self-reviewed, and the pre-push `multi-agent-review` has NOT been run on them yet. (3) The dashboard rework
+push; they were self-reviewed and then went through the pre-push `multi-agent-review` on 2026-10-04 (no blocking findings). (3) The dashboard rework
 (2026-10-04): one landing-page skeleton for the personal, coached-client and coach dashboards (app-dashboard v29, css v25) -
 32 unit tests, 29 new browser tests, 43 older tests ported or retired, the 21
 dashboard-related spec files green (214 tests), static checks pass, five ratchet baselines lowered; also awaiting his look
-([row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md)) and not yet reviewed by `multi-agent-review`.
-(4) Jake's 2026-10-04 note, items 1-3 (also awaiting his look, also not yet reviewed by `multi-agent-review`): the Per-exercise list on
+([row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md)) and reviewed 2026-10-04 by multi-agent-review (diff mode: security and tenant scoping, solo-mode correctness, duplicates and regressions, plus a verifier pass; no blocking findings, follow-ups in docs/decisions.md).
+(4) Jake's 2026-10-04 note, items 1-3 (also awaiting his look, also reviewed 2026-10-04 by multi-agent-review (diff mode: security and tenant scoping, solo-mode correctness, duplicates and regressions, plus a verifier pass; no blocking findings, follow-ups in docs/decisions.md)): the Per-exercise list on
 My progress folds up, with a Collapse all / Expand all button and charts only for open cards (app-progress v76, css v26); the Workouts
 "Up next" card names the next workout and points at the right one - today's session while it is not logged, else the next planned -
 with program weeks counted Monday to Sunday like the calendar (app-workouts v145, app-dashboard v30, app-calendar-goals v30); and

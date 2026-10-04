@@ -12,6 +12,33 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-04 — The pre-push multi-agent review found nothing blocking and twelve smaller points: eight fixed before the release, four carried; and that review is a hard gate in `release.mjs`, not an option.**
+Jake said "push/deploy". I had told him the pre-push review would run "only if you ask" - wrong: `scripts/release.mjs` (gate 5) refuses to
+tag until a review has recorded the exact code (`scripts/lib/review-fingerprint.mjs --record`, the last step of the pinned skill), and the
+marker on disk predated the whole 2026-10-03/04 stack. So the pinned skill ran in diff mode over the 14 unpushed commits: three reviewers
+with fixed angles (security and tenant scoping; solo-mode correctness across coach, client and solo; duplicates, render-safety and
+regressions) and a verifier pass done by me against the cited lines. The reviewers were interrupted once by Jake's usage limit and resumed
+from their saved context; the repo was checked untouched in between. *Result:* no blocking finding in any angle. *Fixed before the
+release (each with a test written first and a deliberate breakage that fails it):* the coach dashboard's "Programs ending" counted
+weeks x 7 days from the start date, so a Thursday start named a date 3 days after the client's calendar was empty (a Sunday start, 6
+days) - the same slip as the program tile, now `_dashProgramEnd`; the Today card and the calendar card showed a periodised week's copy
+name ("Upper Body — W2") while Up next showed "Upper Body" - one `_dashSessionName` for all three; "view as client" (owner only) left the
+dashboard's weight, goals, calendar and program cards opening Progress, Workouts and Calendar, which show the OWNER's own record - those
+cards and buttons are inert while it is on (CSS `.dash-sudo`); "Program complete" appeared in week 5 of 6 when a lengthened phase had no
+sessions generated for the new weeks - it now says "No more sessions are set up yet" until the last week is reached; the folded
+exercise line went stale after a measure pill was tapped on the open card; `_perfView` is now set before any chart is drawn; the chart
+registry is filtered by the chart (Chart.js clears `chart.canvas` on destroy, so filtering by canvas never matched); a stale comment.
+*Carried (docs/technical-debt.md):* the coach "Goals due soon" read is scoped by database permissions alone (unchanged from the page it
+replaced; anchoring it would silently drop goals past 200 clients); raw ids in the Up next button's handler (uuids, the pre-existing
+shape); the Stats sheet matches history by exercise name while Last time matches by exercise id first; dead code the dashboard rework
+left (`_pbFormHtml` and its helpers). Also filed: view-as only works on the dashboard
+([bugs/2026-10-04-view-as-client-only-works-on-the-dashboard.md](bugs/2026-10-04-view-as-client-only-works-on-the-dashboard.md)). *Honest limits:* the reviewers
+are the same model as the author, so the review reduces anchoring, not shared blind spots (most likely "the live security rules are
+right", which neither side can see from the repo); none of them ran the browser; the fixes above were verified by tests and
+deliberate breakages and were NOT re-reviewed by the agents. *Process:* the pinned skill now lives only in the CoachApp repo
+(`.claude/skills/multi-agent-review/SKILL.md`; the copy under `~/.claude/skills` that an older note points to is gone), so it is not
+registered in a session whose folder is the Vault - follow it by reading the file.
+
 **2026-10-04 — "Up next" names the session you would do next and agrees with the dashboard; program weeks are Monday-to-Sunday like the calendar; the Last time panel shows the top set; My progress cards fold up and only open ones draw a chart; the program page gets fold-up phases and periodization gains an RPE method (scoped, prototype next).**
 Jake's note of 2026-10-04 had five items; three were small enough to approve from a before-and-after sketch and two were scoped with him
 the way the dashboard was (a short form, then a tappable prototype, then his "approved"). *Up next (Workouts page).* He asked for the
@@ -51,7 +78,7 @@ three existing tests counted every Chart on the page and broke when the test acc
 sparkline sits behind the runner), so they now count the charts of the card under test. *Verified:* 43 new unit tests and
 29 new browser tests; twenty-seven deliberate breakages (six, eleven and ten across the three builds)
 each failing the matching test; the specs around each change green (the 26, 34 and 32 spec files around the three changes). *Not verified:* how any of it
-reads on a phone with real data; `multi-agent-review` has not been run. Rows: [bugs/2026-10-04-my-progress-exercise-cards-cannot-be-collapsed.md](bugs/2026-10-04-my-progress-exercise-cards-cannot-be-collapsed.md),
+reads on a phone with real data; `multi-agent-review` ran on 2026-10-04 before the push (diff mode, three angles and a verifier: no blocking findings; its follow-ups are listed below). Rows: [bugs/2026-10-04-my-progress-exercise-cards-cannot-be-collapsed.md](bugs/2026-10-04-my-progress-exercise-cards-cannot-be-collapsed.md),
 [bugs/2026-10-04-workouts-up-next-card-does-not-name-the-workout.md](bugs/2026-10-04-workouts-up-next-card-does-not-name-the-workout.md),
 [bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md](bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md),
 [bugs/2026-10-04-program-page-needs-a-ui-rework.md](bugs/2026-10-04-program-page-needs-a-ui-rework.md),
@@ -87,7 +114,7 @@ greeting now escapes the name (the client page printed it raw). *Found by the ol
 exemption (a blanket destroy would kill the other cards' charts), not a destroy. *Verified:* 32 unit tests and 29
 browser tests written for this, seven deliberate breakages each failing the matching test, 43 older tests across
 12 files ported or retired with the cards they pinned, and the 21 dashboard-related spec files (214
-tests) green. *Not verified:* how it reads on a phone with real data; `multi-agent-review` has not been run. Row: [bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md).
+tests) green. *Not verified:* how it reads on a phone with real data; `multi-agent-review` ran on 2026-10-04 before the push (diff mode, three angles and a verifier: no blocking findings; its follow-ups are listed below). Row: [bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md).
 
 **2026-10-03 — An exercise's numbers come from ONE card, one set of maths and one read; records are sets; an RPE top-set exercise shows no ghost text.**
 Jake's note of 2026-10-03: no grey last-session numbers on an RPE top-set exercise ("these fields should only be populated once the
