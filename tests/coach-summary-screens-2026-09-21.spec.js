@@ -4,6 +4,13 @@ const { installCappedApi, restoreCappedApi, cappedApiCalls } = require('./capped
 
 // ─── The coach dashboard and the client list read the per-client summary (R2b, 2026-09-21) ────────────────
 //
+// REWORKED 2026-10-03: the coach dashboard is now the shared landing-page skeleton (Today card, the week as bars, a "Trained this
+// week" tile, a "Needs attention" list). The invariants this file pinned all still hold and are re-expressed on the new page: the
+// numbers come from the PAGED per-client summary (never a slice of the logs), only ACTIVE clients are counted or chased, a failed
+// read shows "—" and never zero, and a list past 200 rows pages without dropping or repeating anyone. What is retired: the
+// "Total clients / Sessions this week / Active goals" strip, the per-client adherence list with its At risk filter, and the recent
+// activity feed - all replaced by the cards above.
+//
 // Both screens used to work out "who trained" from a SLICE of workout_logs, and the API silently cuts every response at
 // 200 rows:
 //   - the dashboard read this MONTH's logs, newest 100 — so past ~33 clients at three sessions a week the oldest days
@@ -52,9 +59,13 @@ test.describe('the coach dashboard and the client list read the per-client summa
     const r = await page.evaluate(async () => {
       const el = document.createElement('div'); document.body.appendChild(el)
       await renderDashboard(el)
-      const tile = (label) => { const l = [...el.querySelectorAll('div')].find(d => d.children.length === 0 && d.textContent.trim() === label); return l?.previousElementSibling?.textContent.trim() ?? null }
-      const rows = Object.fromEntries([...el.querySelectorAll('.compliance-row')].map(r => [r.children[0].textContent.trim(), r.children[1].textContent.trim()]))
-      return { text: el.textContent, total: tile('Total clients'), week: tile('Sessions this week'), rows, rowCount: Object.keys(rows).length, sessionsInFeed: (el.textContent.match(/Session logged/g) || []).length }
+      const t = (sel) => { const e = el.querySelector(sel); return e ? e.textContent.replace(/\s+/g, ' ').trim() : null }
+      return {
+        text: el.textContent,
+        trained: t('#dash-trained'), ending: t('#dash-ending'), weekSub: t('#dash-week .dash-card-sub'), attention: t('#dash-attn'),
+        attentionNames: [...el.querySelectorAll('#dash-attn .dash-row-main b')].map(b => b.textContent),
+        attentionButton: [...el.querySelectorAll('#dash-hero .dash-btn')].map(b => b.textContent.trim()).find(x => /need attention/.test(x)) || null,
+      }
     })
     r.calls = await cappedApiCalls(page)
     return r
@@ -81,102 +92,103 @@ test.describe('the coach dashboard and the client list read the per-client summa
 
   test.beforeEach(async ({ page }) => { await loginAsPT(page); await page.clock.setFixedTime(NOW) })
 
-  // ── the dashboard ───────────────────────────────────────────────────────────────────────────────────────
-  test('DASHBOARD: "This week\'s sessions" is what the summaries say, not what fits in a slice of the logs', async ({ page }) => {
+  // ── the dashboard ──────────────────────────────────────────────────────────────────────────────────�
+  test('DASHBOARD: "Trained this week" is what the summaries say, not what fits in a slice of the logs', async ({ page }) => {
     const me = await myId(page)
     const N = 40
-    // Client i trained (i % 4) times this week (0..3) — 60 sessions in all. The logs table holds 300 rows, all client 0's,
-    // so a read of "the newest 100 logs" would see ONE client and call the other 39 inactive.
+    // Client i trained (i % 4) times this week (0..3): 30 of the 40 trained at least once, 10 did not. The logs table holds 300 rows,
+    // all client 0's and none with an exercise in it, so a count built from "the newest logs" would see ONE client (or none).
     const r = await dashboard(page, {
       clients: many(N, (i) => roster(me, i)),
       coach_client_summary: many(N, (i) => summary(i, { sessions_7d: i % 4 })),
       workout_logs: many(300, () => ({ client_id: pid(0), date: daysAgo(0), created_at: NOW.toISOString() })),
       weight_logs: [], goals: [],
     })
-    const want = (i) => (i % 4 === 0 ? 'No sessions' : `${i % 4} session${i % 4 === 1 ? '' : 's'}`)
-    const wrong = Object.entries(r.rows).filter(([n, label]) => label !== want(Number(n.slice(-3))))
-    expect.soft(wrong, 'every one of the 40 clients shows the number of sessions the summary gave').toEqual([])
-    expect.soft(r.rowCount, 'and all 40 are listed').toBe(N)
-    expect.soft(r.week, 'the "Sessions this week" tile is the sum of every client\'s week (10 x (0+1+2+3) = 60)').toBe('60')
-    expect.soft(r.total, 'the "Total clients" tile is the roster\'s HEAD count (a count with no rows)').toBe('40')
-    expect(r.text, 'the counts in the header: 10 clients have none, 20 have two or more').toMatch(/10 at risk\s*·\s*20 on track/)
-    expect(Math.max(...r.calls.filter(c => c.table === 'workout_logs').map(c => c.returned), 0), 'the session logs are read only for the small activity list, never as the source of the counts').toBeLessThanOrEqual(20)
+    expect.soft(r.trained, 'the tile is the summaries\' count: 30 of 40 clients trained').toContain('30 of 40')
+    expect.soft(r.attentionButton, 'the 10 who did not are the ones to chase').toBe('10 need attention')
+    expect.soft(r.attentionNames.length, 'the list shows the first five...').toBe(5)
+    expect.soft(r.attention, '...and says how many more').toContain('+5 more')
+    expect(r.weekSub, 'and the week\'s bars come from real sessions only (the 300 empty starts are not sessions)').toBe('0 sessions logged')
   })
 
-  test('PARITY: the total counts EVERY client, the adherence list and "at risk" only ACTIVE ones — as before', async ({ page }) => {
+  test('PARITY: only ACTIVE clients are counted or chased; an inactive client is neither', async ({ page }) => {
     const me = await myId(page)
     const r = await dashboard(page, {
       clients: [roster(me, 0), roster(me, 1), roster(me, 2, { status: 'inactive' })],
       coach_client_summary: [summary(0, { sessions_7d: 0 }), summary(1, { sessions_7d: 2 }), summary(2, { sessions_7d: 3, status: 'inactive' })],
       workout_logs: [], weight_logs: [], goals: [],
     })
-    expect.soft(r.week, 'the inactive client\'s 3 sessions are in the total (0 + 2 + 3)').toBe('5')
-    expect.soft(r.total, 'and the inactive client is one of the 3 in "Total clients"').toBe('3')
-    expect.soft(Object.keys(r.rows).sort(), 'only the two ACTIVE clients are listed').toEqual([nm(0), nm(1)])
-    expect(r.text, 'one active client at risk, one on track — the inactive one is neither').toMatch(/1 at risk\s*·\s*1 on track/)
+    expect.soft(r.trained, 'two active clients, one of them trained - the inactive client is neither counted nor in the total').toContain('1 of 2')
+    expect.soft(r.attentionNames, 'only the active client with no session is chased').toEqual([nm(0)])
+    expect(r.attentionButton).toBe('1 need attention')
   })
 
-  test('DASHBOARD: a failed summary read says so — the numbers are unavailable, never zero', async ({ page }) => {
+  test('DASHBOARD: a failed summary read says so - the numbers are unavailable, never zero', async ({ page }) => {
     const me = await myId(page)
     const r = await dashboard(page, {
       clients: [roster(me, 0), roster(me, 1)], coach_client_summary: FAILING,
       workout_logs: [], weight_logs: [], goals: [],
     })
     expect.soft(r.text, 'the failure banner names it').toContain('session summaries')
-    expect.soft(r.week, 'the tile does not claim zero sessions').toBe('—')
-    expect.soft(r.text, 'the card does not say the clients are at risk or have no sessions').not.toMatch(/No sessions|at risk/)
-    expect(r.text, 'nor that there are no clients').not.toContain('No active clients')
+    expect.soft(r.trained, 'the tile does not claim zero trained').toContain('—')
+    expect.soft(r.ending, 'nor that no program is ending').toContain('—')
+    expect.soft(r.attention, 'and nobody is accused of not training').toBeNull()
+    expect(r.text, 'nor is the roster called empty').not.toContain('No clients yet')
   })
 
-  test('DASHBOARD: past 200 clients the week\'s total still adds up every row (the API cap applies to a view too)', async ({ page }) => {
+  test('DASHBOARD: past 200 clients the count still adds up every row (the API cap applies to a view too)', async ({ page }) => {
     const me = await myId(page)
     const r = await dashboard(page, {
       clients: many(3, (i) => roster(me, i)),
       coach_client_summary: many(250, (i) => summary(i, { sessions_7d: 1 })),
       workout_logs: [], weight_logs: [], goals: [],
     })
-    expect(r.week, '250 clients x 1 session, not the 200 that fit in one response').toBe('250')
+    expect(r.trained, '250 clients who each trained, not the 200 that fit in one response').toContain('250 of 250')
   })
 
   test('DASHBOARD: clients who share a name still page without dropping or repeating any (the read orders by a unique key too)', async ({ page }) => {
     const me = await myId(page)
     // 250 summary rows with ONE name between them. A page boundary through a run of ties is exactly where ORDER BY name alone
-    // lets the server hand one row out twice and skip another — silently, with the right row COUNT. (The stand-in re-shuffles
+    // lets the server hand one row out twice and skip another - silently, with the right row COUNT. (The stand-in re-shuffles
     // ties on every request, as an unordered Postgres is free to.)
     const r = await dashboard(page, {
       clients: [roster(me, 0)],
       coach_client_summary: many(250, (i) => summary(i, { full_name: 'Same Name', sessions_7d: 1 })),
       workout_logs: [], weight_logs: [], goals: [],
     })
-    expect(r.week, 'every one of the 250 rows counted exactly once').toBe('250')
+    expect(r.trained, 'every one of the 250 rows counted exactly once').toContain('250 of 250')
   })
 
-  test('DASHBOARD: "Recent activity — Last 7 days" lists only the last 7 days of sessions', async ({ page }) => {
-    // (The page's "now" is fixed in beforeEach.) The old read took the whole month, so a session from 9 days ago appeared
-    // under a heading that says "Last 7 days".
+  test('DASHBOARD: the week\'s bars count only this week - a session from 9 days ago is in none of them', async ({ page }) => {
+    // (The page's "now" is fixed in beforeEach: Tuesday 15 Sep, so this week began on Monday the 14th.) The old "Recent activity -
+    // Last 7 days" list had the same promise: a session from 9 days ago must not appear under it.
     const me = await myId(page)
+    const exercised = [{ id: 'x1' }]
     const r = await dashboard(page, {
       clients: [roster(me, 0)], coach_client_summary: [summary(0, { sessions_7d: 1 })],
-      workout_logs: [{ client_id: pid(0), date: '2026-09-14', created_at: '2026-09-14T09:00:00Z' }, { client_id: pid(0), date: '2026-09-06', created_at: '2026-09-06T09:00:00Z' }],
-      weight_logs: [], goals: [],
-    })
-    expect(r.sessionsInFeed, 'the session from yesterday, not the one from 9 days ago').toBe(1)
-  })
-
-  test('DASHBOARD: a session logged just now for an EARLIER day still reaches the activity list, past 25 newer-dated ones', async ({ page }) => {
-    const me = await myId(page)
-    // 25 sessions dated today (logged 6 hours ago) and one BACKFILLED for 4 days ago but logged just now. Pooled by `date` the
-    // backfill is the 26th of 26 and falls outside the 20 the read takes; the list sorts and labels by when things were
-    // LOGGED, so it belongs at the top.
-    const r = await dashboard(page, {
-      clients: [roster(me, 0)], coach_client_summary: [summary(0, { sessions_7d: 26 })],
       workout_logs: [
-        ...many(25, () => ({ client_id: pid(0), date: daysAgo(0), created_at: new Date(NOW.getTime() - 6 * 3600000).toISOString() })),
-        { client_id: pid(0), date: daysAgo(4), created_at: NOW.toISOString() },
+        { id: 'w1', client_id: pid(0), name: 'Yesterday', date: '2026-09-14', created_at: '2026-09-14T09:00:00Z', workout_log_exercises: exercised },
+        { id: 'w2', client_id: pid(0), name: 'Nine days ago', date: '2026-09-06', created_at: '2026-09-06T09:00:00Z', workout_log_exercises: exercised },
       ],
       weight_logs: [], goals: [],
     })
-    expect(r.text, 'the backfill, logged "just now", is in the list').toContain('just now')
+    expect(r.weekSub, 'the session from yesterday, not the one from 9 days ago').toBe('1 session logged')
+  })
+
+  test('DASHBOARD: a session logged just now for an EARLIER day still lands in its own day, past 25 newer-dated ones', async ({ page }) => {
+    const me = await myId(page)
+    // 25 sessions dated today (logged 6 hours ago) and one BACKFILLED for yesterday but logged just now. Taken as "the newest 20
+    // rows" the backfill is the 26th of 26 and falls outside; the bars read every session in the week, so it belongs to Monday.
+    const ex = [{ id: 'x1' }]
+    const r = await dashboard(page, {
+      clients: [roster(me, 0)], coach_client_summary: [summary(0, { sessions_7d: 26 })],
+      workout_logs: [
+        ...many(25, (k) => ({ id: 'today-' + k, client_id: pid(0), name: 'Today', date: daysAgo(0), created_at: new Date(NOW.getTime() - 6 * 3600000).toISOString(), workout_log_exercises: ex })),
+        { id: 'backfill', client_id: pid(0), name: 'Backfill', date: daysAgo(1), created_at: NOW.toISOString(), workout_log_exercises: ex },
+      ],
+      weight_logs: [], goals: [],
+    })
+    expect(r.weekSub, 'all 26 are counted, the backfill included').toBe('26 sessions logged')
   })
 
   // ── the client list ─────────────────────────────────────────────────────────────────────────────────────
@@ -254,7 +266,8 @@ test.describe('the coach dashboard and the client list read the per-client summa
     const bad = '<img src=x onerror="window.__xss=1">'
     const tables = { clients: [roster(me, 0, { full_name: bad })], coach_client_summary: [summary(0, { full_name: bad, sessions_7d: 1, last_session_date: daysAgo(1) })], workout_logs: [], weight_logs: [], goals: [] }
     const l = await clientList(page, tables)
-    const d = await dashboard(page, tables)
+    // On the dashboard a client with no session this week is listed under "Needs attention" - that is where the name is printed.
+    const d = await dashboard(page, { ...tables, coach_client_summary: [summary(0, { full_name: bad, sessions_7d: 0, last_session_date: daysAgo(10) })] })
     expect.soft(l.imgs, 'list: no element was made from it').toBe(0)
     expect.soft(l.text, 'list: it is shown as text').toContain(bad)
     expect.soft(d.text).toContain(bad)   // shown as text

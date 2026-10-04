@@ -1,24 +1,24 @@
 const { test, expect } = require('./fixtures')
 const { loginAsPT } = require('./helpers')
+const { installCappedApi, restoreCappedApi, cappedApiCalls } = require('./capped-api')
 
-// ─── Solo dashboard "at a glance" tiles (2026-08-30) ────────────────────────────
+// ─── The personal ("solo") dashboard: its cards (2026-08-30; rebuilt 2026-10-03) ───────────────────────────────
 //
-// WHY THIS FILE EXISTS. Before the redesign, renderSoloDashboard had almost no coverage: the only
-// assertion on its output anywhere was solo-account.spec.js's ".solo-stats must be visible on
-// mobile". The whole template could be rewritten and the suite stayed green.
+// WHY THIS FILE EXISTS. Before the 2026-08-30 redesign, renderSoloDashboard had almost no coverage: the only assertion on its output
+// anywhere was solo-account.spec.js's "must be visible on mobile". The whole template could be rewritten and the suite stayed green.
 //
-// Most tests here drive the TILE BUILDERS DIRECTLY. They are pure functions of their arguments, so
-// this needs no seeded rows, cannot strand fixtures on Jake's live account, and — the real point —
-// can exercise states the live account does not currently have (an empty weight history, a
-// periodised phase, an lb preference). The two that must prove real navigation are integration
-// tests and skip without a solo record, matching solo-account.spec.js.
+// REBUILT 2026-10-03 for the dashboard rework (Jake: "nothing really flows or stands out as a dashboard"): solo, client and coach now
+// share one skeleton - a Today card, the week strip, a streak and a program tile, then body weight, calendar and goals
+// (tests/dashboard-rework-2026-10-03.spec.js drives whole pages; this file pins the BUILDERS and the rules that outlive any layout).
+// What was RETIRED with the cards it pinned, so nobody re-adds it thinking it was lost: the "Recent sessions" card and the "My progress"
+// personal-bests tile are off the page (Jake chose what stays: Goals stays, Recent sessions and personal bests do not), and the merged
+// "Next session" tile's eyebrow / no-View-program rule - the Today card now has a View program button on purpose.
 //
-// The builders are asserted through the SHIPPED functions, never re-implemented here: a test that
-// re-types the markup would pass whether or not the source is correct.
+// Most tests drive the BUILDERS DIRECTLY. They are pure functions of their arguments, so this needs no seeded rows, cannot strand
+// fixtures on Jake's live account, and can exercise states the live account does not have (an empty weight history, a periodised
+// phase, an lb preference). The builders are asserted through the SHIPPED functions, never re-implemented here.
 
-const D = n => `(() => { const d = new Date(Date.now() + (${n}) * 86400000); return _ymdLocal(d) })()`
-
-test.describe('solo dashboard tiles', () => {
+test.describe('solo dashboard cards', () => {
   let soloAvailable = false
 
   test.beforeEach(async ({ page }) => {
@@ -27,138 +27,126 @@ test.describe('solo dashboard tiles', () => {
     soloAvailable = await page.evaluate(() => !!window._soloClientId)
   })
 
-  // ── 1. All four tiles, populated ──────────────────────────────────────────────
-  test('all four tiles render, each with a title and a navigation target', async ({ page }) => {
+  // ── 1. Every card carries a title and a navigation target a solo user may reach ───────────────────────────────
+  test('every card has a title and a navigation target on a page a solo user may reach', async ({ page }) => {
     const r = await page.evaluate(() => {
       const today = _ymdLocal(new Date())
       const d = n => _ymdLocal(new Date(Date.now() + n * 86400000))
       const html = [
-        _soloTileWeight([{ date: d(-1), weight_kg: 82.4 }, { date: d(-3), weight_kg: 82.8 }], today),
-        _soloTileNextSession([{ date: d(0), kind: 'session', title: 'Upper A', templateId: 'clone-1' }], 'c1', today),
-        _soloTileNextUp([{ date: d(1), kind: 'event', title: 'Massage', colour: 'var(--warning)' }], today),
-        _soloTileRecent([{ id: 's1', name: 'Push Day', date: d(-1), workout_log_exercises: [1, 2] }], 'c1')
+        _dashWeightHtml([{ date: d(-1), weight_kg: 82.4 }, { date: d(-3), weight_kg: 82.8 }]),
+        _dashCalendarHtml([{ date: d(1), kind: 'event', title: 'Massage', colour: 'var(--warning)' }], today),
+        _dashGoalsHtml([{ id: 'g', title: 'Bench', target_date: d(20), start_value: 1, current_value: 2, target_value: 3, goal_milestones: [] }], today, false),
+        _dashTilesHtml({ weeks: 2, capped: false }, { name: 'P', phase: 'Phase 1', week: 2, totalWeeks: 8, pct: 25 }, true),
       ].join('')
       const box = document.createElement('div')
       box.innerHTML = html
+      // Tap every tappable card with navigate() stubbed: where each one goes is what a person gets, not what an attribute says.
+      const visited = []
+      const realNav = window.navigate
+      window._progressTab = null
+      window.navigate = (p) => visited.push([p, window._progressTab || null])
+      try { box.querySelectorAll('.dash-tap').forEach(el => el.click()) } finally { window.navigate = realNav }
       return {
-        tiles: box.querySelectorAll('.solo-tile').length,
-        titles: [...box.querySelectorAll('.card-title')].map(e => e.textContent.trim()),
-        targets: [...box.querySelectorAll('.solo-tile')].map(e => e.getAttribute('onclick'))
+        cards: box.querySelectorAll('.dash-card').length,
+        titles: [...box.querySelectorAll('.dash-card-title')].map(e => e.textContent.trim()),
+        visited,
       }
     })
-    expect(r.tiles, 'four tiles').toBe(4)
+    expect(r.cards, 'weight, calendar, goals, streak and program').toBe(5)
     // Jake, 2026-09-28: "This tile should be 'my calendar' not 'next up'".
-    expect(r.titles).toEqual(['Weight', 'Next session', 'My calendar', 'Recent sessions'])
-    // Every destination must be one of soloPages (app-core.js:733). navigate() does NOT role-gate,
-    // so a typo'd or coach-only page would render the wrong dashboard rather than being refused.
-    const solo = ['solo-dashboard', 'workouts', 'library', 'programs', 'calendar', 'progress', 'settings']
-    r.targets.forEach(t => {
-      const m = /navigate\('([a-z-]+)'\)/.exec(t || '')
-      expect(m, `every tile must carry a navigate() target, got: ${t}`).toBeTruthy()
-      expect(solo, `${m[1]} is not a page a solo user may reach`).toContain(m[1])
-    })
-    // 2026-09-09: the Weight tile must NAME its Progress tab — _progressTab persists within an SPA
-    // session, so without this it lands on whichever tab was last open.
-    expect(r.targets[0], 'the Weight tile lands on Body Weight, not "wherever you were"')
-      .toContain("_progressTab='Body Weight'")
+    expect(r.titles).toEqual(['Body weight', 'My calendar', 'Goals'])
+    // Every destination must be one of soloPages (app-core.js). navigate() does NOT role-gate, so a typo'd or coach-only page would
+    // render the wrong dashboard rather than being refused.
+    const solo = ['solo-dashboard', 'workouts', 'library', 'programs', 'calendar', 'progress', 'goals', 'settings']
+    expect(r.visited.length, 'weight, calendar, goals and the program tile are tappable and each navigates once').toBe(4)
+    r.visited.forEach(([page]) => expect(solo, `${page} is not a page a solo user may reach`).toContain(page))
+    expect(r.visited.map(v => v[0]), 'weight -> Progress, calendar -> Calendar, goals -> Goals, program -> Workouts').toEqual(['progress', 'calendar', 'goals', 'workouts'])
+    // 2026-09-09: the Weight card must NAME its Progress tab - _progressTab persists within an SPA session, so without this it
+    // lands on whichever tab was last open.
+    expect(r.visited[0][1], 'the weight card lands on Body Weight, not "wherever you were"').toBe('Body Weight')
   })
 
-  // ── 2. Real navigation, not just an attribute ─────────────────────────────────
-  test('clicking a tile actually lands on its page', async ({ page }) => {
+  // ── 2. Real navigation, not just an attribute ──────────────────────────────────────────────────────────────────
+  test('tapping a card actually lands on its page', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.evaluate(() => switchView('solo'))
-    await page.waitForTimeout(1200)
-    // Asserting currentPage, not the onclick string — an attribute can be present and still not
-    // navigate, which is the whole failure mode of a "clickable" tile.
-    await page.locator('.solo-tiles .solo-tile').first().click()
-    await page.waitForTimeout(900)
-    expect(await page.evaluate(() => currentPage)).toBe('progress')
+    await expect(page.locator('#dash-root[data-dash="solo"]')).toBeVisible()
+    // Asserting currentPage, not the onclick string - an attribute can be present and still not navigate, which is the whole
+    // failure mode of a "clickable" card.
+    await page.locator('#dash-weight').click()
+    await expect.poll(() => page.evaluate(() => currentPage)).toBe('progress')
   })
 
-  // ── 3. Weight delta: absolute, correct direction, and ROUNDED — in kg AND lb ──
+  // ── 3. Weight delta: absolute, correct direction, and ROUNDED - in kg AND lb ───────────────────────────────────
   for (const unit of ['kg', 'lb']) {
-    test(`weight tile shows an absolute, rounded delta at the ${unit} preference`, async ({ page }) => {
+    test(`the weight card shows an absolute, rounded change at the ${unit} preference`, async ({ page }) => {
       const r = await page.evaluate((u) => {
         const before = window._unitPrefs.weight
         try {
           window._unitPrefs.weight = u
-          const today = _ymdLocal(new Date())
           const d = n => _ymdLocal(new Date(Date.now() + n * 86400000))
-          const down = _soloTileWeight([{ date: d(-1), weight_kg: 82.4 }, { date: d(-3), weight_kg: 82.8 }], today)
-          const up   = _soloTileWeight([{ date: d(-1), weight_kg: 83.2 }, { date: d(-3), weight_kg: 82.8 }], today)
-          const flat = _soloTileWeight([{ date: d(-1), weight_kg: 82.8 }, { date: d(-3), weight_kg: 82.8 }], today)
+          const down = _dashWeightHtml([{ date: d(-1), weight_kg: 82.4 }, { date: d(-3), weight_kg: 82.8 }])
+          const up   = _dashWeightHtml([{ date: d(-1), weight_kg: 83.2 }, { date: d(-3), weight_kg: 82.8 }])
+          const flat = _dashWeightHtml([{ date: d(-1), weight_kg: 82.8 }, { date: d(-3), weight_kg: 82.8 }])
           return { down, up, flat }
         } finally { window._unitPrefs.weight = before }
       }, unit)
 
       expect(r.down, 'a loss must show a down arrow').toContain('↓')
       expect(r.up, 'a gain must show an up arrow').toContain('↑')
-      expect(r.flat, 'an unchanged weight must say so, not show a 0 delta').toContain('no change')
+      expect(r.flat, 'an unchanged weight must say so, not show a 0 change').toContain('no change')
 
-      // THE regression guard. fmtWeight only rounds when asked, and weightToPref returns the raw
-      // float for kg, so 82.8 - 82.4 rendered as "0.3999999999999915 kg" on screen. Same binary
-      // float class as the "20.800000000000004%" axis label _tickNum was written for.
+      // THE regression guard. fmtWeight only rounds when asked, and weightToPref returns the raw float for kg, so 82.8 - 82.4
+      // rendered as "0.3999999999999915 kg" on screen. Same binary float class as the "20.800000000000004%" axis label
+      // _tickNum was written for.
       const floaty = /\d\.\d{4,}/
-      expect(floaty.test(r.down), `unrounded float in the delta: ${r.down.match(floaty)}`).toBe(false)
-      expect(floaty.test(r.up), 'unrounded float in the delta').toBe(false)
-      // And it must be an ABSOLUTE change in the user's unit, not a percentage — _deltaBadge exists
-      // but returns a percentage, which would disagree with the Weight page and the old card.
+      expect(floaty.test(r.down), `unrounded float in the change: ${r.down.match(floaty)}`).toBe(false)
+      expect(floaty.test(r.up), 'unrounded float in the change').toBe(false)
+      // And it must be an ABSOLUTE change in the user's unit, not a percentage - _deltaBadge exists but returns a percentage, which
+      // would disagree with the Weight page.
       expect(r.down).toContain(unit)
-      expect(r.down, 'the delta must not be expressed as a percentage').not.toContain('%')
+      expect(r.down, 'the change must not be expressed as a percentage').not.toContain('%')
     })
   }
 
-  // ── 4. Start must use the CLIENT'S CLONE template id ──────────────────────────
-  test('next-session Start passes the clone template id, and is a separate control', async ({ page }) => {
+  // ── 4. Start must use the CLIENT'S CLONE template id ───────────────────────────────────────────────────────────
+  test('the Today card\'s Start launches the clone template id, and the card itself is not a tap target', async ({ page }) => {
     const r = await page.evaluate(() => {
       const today = _ymdLocal(new Date())
-      const withClone = _soloTileNextSession(
-        [{ date: today, kind: 'session', title: 'Upper A', templateId: 'CLONE-123' }], 'client-9', today)
-      const noClone = _soloTileNextSession(
-        [{ date: today, kind: 'session', title: 'Upper A', templateId: null }], 'client-9', today)
-      return { withClone, noClone }
+      const day = tid => ({ ds: today, label: 'Sat', num: 3, today: true, kind: 'plan', done: [], planned: [{ workout_templates: { name: 'Upper A' }, _clientTemplateId: tid }] })
+      const ctx = d => ({ role: 'solo', clientId: 'client-9', todayStr: today, days: [d], hasProgram: true, program: null, next: null })
+      const dWith = day('CLONE-123'), dWithout = day(null)
+      return { withClone: _dashHeroHtml(dWith, ctx(dWith)), noClone: _dashHeroHtml(dWithout, ctx(dWithout)) }
     })
     expect(r.withClone).toContain("startWorkoutRunner('client-9','CLONE-123')")
-    // stopPropagation is load-bearing: without it a Start tap ALSO fires the tile's navigate, and a
-    // mis-tap would begin a real session — the runner writes a resume draft, so that is not free to undo.
-    expect(r.withClone, 'Start must not also trigger the tile navigation').toContain('event.stopPropagation()')
-    // No clone id means no runnable template. Offering Start would launch the master phase-slot
-    // template, which is not what the athlete's plan says.
+    // A mis-tap must never begin a real session (the runner writes a resume draft, so that is not free to undo): only the BUTTON
+    // starts one, the section around it is not clickable.
+    expect(r.withClone, 'the Today card is not itself a click target').not.toMatch(/<section[^>]*onclick/)
+    // No clone id means no runnable template. Offering Start would launch the master phase-slot template, which is not what the
+    // athlete's plan says: Workouts is where that session can be started.
     expect(r.noClone, 'no Start button without a clone id').not.toContain('startWorkoutRunner')
+    expect(r.noClone).toContain('Open Workouts')
   })
 
-  // ── 4b. Current-program strip merged into this tile (Jake, 2026-09-28: "'Current program' and
-  //        'next session' panels do the same thing. Combine the 2 to reduce the clutter") ─────────
-  test('a 4th arg puts the program/phase as an eyebrow above the session name, and drops no existing behaviour', async ({ page }) => {
+  // ── 4b. The program and phase name the Today card (Jake, 2026-09-28: "'Current program' and 'next session' panels do the same thing") ─
+  test('the Today card names the program above the session, and says nothing about one when there is none', async ({ page }) => {
     const r = await page.evaluate(() => {
       const today = _ymdLocal(new Date())
-      const withProg = _soloTileNextSession(
-        [{ date: today, kind: 'session', title: 'Upper A', templateId: 'clone-1' }], 'c1', today,
-        { name: 'Hypertrophy Block', meta: 'Accumulation · Week 3' })
-      const noProg = _soloTileNextSession(
-        [{ date: today, kind: 'session', title: 'Upper A', templateId: 'clone-1' }], 'c1', today, null)
-      // The 3 existing call sites above (tests 1 and 4) never pass a 4th argument at all — confirms
-      // the new parameter is additive and doesn't change their behaviour.
-      const omitted = _soloTileNextSession(
-        [{ date: today, kind: 'session', title: 'Upper A', templateId: 'clone-1' }], 'c1', today)
-      return { withProg, noProg, omitted }
+      const day = { ds: today, label: 'Sat', num: 3, today: true, kind: 'plan', done: [], planned: [{ workout_templates: { name: 'Upper A' }, _clientTemplateId: 'clone-1' }] }
+      const ctx = (role, program) => ({ role, clientId: 'c1', todayStr: today, days: [day], hasProgram: !!program, program, next: null })
+      return {
+        solo: _dashHeroHtml(day, ctx('solo', { name: 'Hypertrophy Block' })),
+        client: _dashHeroHtml(day, ctx('client', { name: 'Hypertrophy Block' })),
+        none: _dashHeroHtml(day, ctx('solo', null)),
+      }
     })
-    expect(r.withProg, 'shows the program name').toContain('Hypertrophy Block')
-    expect(r.withProg, 'shows the phase/week meta').toContain('Accumulation · Week 3')
-    // Position: the eyebrow must read above the session name in the markup, not after it — that's
-    // what makes it read as "which program this session belongs to", not an unrelated footer line.
-    expect(r.withProg.indexOf('Hypertrophy Block'), 'eyebrow comes before the session name')
-      .toBeLessThan(r.withProg.indexOf('Upper A'))
-    expect(r.noProg, 'no eyebrow markup when nothing is assigned').not.toContain('solo-strip-eyebrow')
-    expect(r.omitted, 'omitting the 4th arg entirely behaves the same as passing null').not.toContain('solo-strip-eyebrow')
-    // The merge dropped the strip's own "View program" button — the WHOLE tile already navigates to
-    // Workouts (onclick="navigate('workouts')" on the outer div), so nothing is lost, only de-duplicated.
-    expect(r.withProg, 'no separate View program button — the tile itself is the click target now')
-      .not.toContain('View program')
-    expect(r.withProg).toContain("navigate('workouts')")
+    expect(r.solo).toContain('Today · Hypertrophy Block')
+    expect(r.client, 'a coached client is told what is "up next"').toContain('Up next · Hypertrophy Block')
+    expect(r.none).toContain('>Today<')
+    expect(r.solo.indexOf('Hypertrophy Block'), 'the program reads above the session name').toBeLessThan(r.solo.indexOf('Upper A'))
   })
 
-  // ── 5. A periodised phase must resolve to the RIGHT week ──────────────────────
+  // ── 5. A periodised phase must resolve to the RIGHT week ───────────────────────────────────────────────────────
   test('_programWorkoutsByDate places week 2 sessions on week 2, not week 1', async ({ page }) => {
     const r = await page.evaluate(() => {
       // Monday of a fixed past week, so the assertion does not drift with the day it runs.
@@ -180,23 +168,19 @@ test.describe('solo dashboard tiles', () => {
         clone: (map['2026-08-10'] || [])[0]?._clientTemplateId
       }
     })
-    // Without week_number in the query (it was absent from the solo dashboard's until 2026-08-30)
-    // both rows land on every week and this collapses.
+    // Without week_number in the query both rows land on every week and this collapses.
     expect(r.wk1, 'week 1 gets only its own session').toEqual(['Week1 Mon'])
-    expect(r.wk2, 'week 2 gets only its own session — not week 1 repeated').toEqual(['Week2 Mon'])
+    expect(r.wk2, 'week 2 gets only its own session - not week 1 repeated').toEqual(['Week2 Mon'])
     expect(r.clone, 'the clone id must be attached for Start').toBe('c-b')
   })
 
-  // The test above feeds week_number in its FIXTURE, so it proves the resolver works while saying
-  // nothing about whether the dashboard actually SELECTS that column. It did not until 2026-08-30,
-  // and without it every week of a periodised phase collapses onto week 1 with no error anywhere.
-  // A source assertion is the honest guard for a query column: there is no behavioural way to see a
-  // missing select without a periodised programme seeded on the live account.
-  test('the solo dashboard query selects the columns the tiles depend on', async ({ page }) => {
-    const src = await page.evaluate(() => renderSoloDashboard.toString())
-    // Isolate the client_programs query, so a week_number appearing in some OTHER select cannot
-    // satisfy this. Plain string slicing rather than a regex: the thing guarded is one substring,
-    // and a regex here would just be a second thing that can be wrong.
+  // The test above feeds week_number in its FIXTURE, so it proves the resolver works while saying nothing about whether the dashboard
+  // actually SELECTS that column. A source assertion is the honest guard for a query column: there is no behavioural way to see a
+  // missing select without a periodised programme seeded on the live account. The read is _dashLoadOwn since the 2026-10-03 rework
+  // (one loader for the solo AND client pages - the client's copy had been missing week_number and id).
+  test('the dashboard query selects the columns the cards depend on', async ({ page }) => {
+    const src = await page.evaluate(() => _dashLoadOwn.toString())
+    // Isolate the client_programs query, so a week_number appearing in some OTHER select cannot satisfy this.
     const at = src.indexOf("from('client_programs')")
     expect(at, 'could not find the client_programs query').toBeGreaterThan(-1)
     const q = src.slice(at, at + 400)   // the query is one long line; 400 chars covers it
@@ -205,29 +189,25 @@ test.describe('solo dashboard tiles', () => {
     expect(src, 'the clone map must be fetched from client_program_workouts').toContain('client_program_workouts')
   })
 
-  // ── 6. The chart must not leak across repaints ────────────────────────────────
-  // ORDERING GUARD. The behavioural version of this test below is VACUOUS on an account with no
-  // weigh-ins: _renderMetricChart only runs when weights exist, so 'the count did not grow' is a
-  // pass over ZERO charts. Verified by neutering — removing _destroyManagedCharts() left it GREEN.
-  // This assertion always runs and always bites.
+  // ── 6. The chart must not leak across repaints ──────────────────────────────────────────────────────────────────
+  // ORDERING GUARD. The behavioural version of this test below is VACUOUS on an account with no weigh-ins: _renderMetricChart only
+  // runs when weights exist, so 'the count did not grow' is a pass over ZERO charts. This assertion always runs and always bites.
   test('_destroyManagedCharts runs, and runs BEFORE the innerHTML replace', async ({ page }) => {
-    const src = await page.evaluate(() => renderSoloDashboard.toString())
+    const src = await page.evaluate(() => _dashRenderOwn.toString())
     const destroy = src.indexOf('_destroyManagedCharts()')
     const paint = src.indexOf('el.innerHTML = `')
-    expect(destroy, 'renderSoloDashboard must destroy managed charts').toBeGreaterThan(-1)
+    expect(destroy, 'the dashboard render must destroy managed charts').toBeGreaterThan(-1)
     expect(paint, 'could not find the innerHTML replace').toBeGreaterThan(-1)
-    // Order matters: this replaces the whole subtree, detaching the canvas. Both of
-    // _renderMetricChart's own guards then resolve against the NEW element and miss the old
-    // instance, which lives on with its listeners and animation loop running. That is
-    // bugs/2026-08-17-renderclientweight-leaks-a-chart-on-every-save, and this dashboard repaints
-    // on every write via _renderOwnDashboard.
+    // Order matters: this replaces the whole subtree, detaching the canvas. Both of _renderMetricChart's own guards then resolve
+    // against the NEW element and miss the old instance, which lives on with its listeners and animation loop running. That is
+    // bugs/2026-08-17-renderclientweight-leaks-a-chart-on-every-save, and this dashboard repaints on every write.
     expect(destroy, 'destroy must come BEFORE the repaint').toBeLessThan(paint)
   })
 
   test('repainting the dashboard does not accumulate live charts', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.evaluate(() => switchView('solo'))
-    await page.waitForTimeout(1200)
+    await expect(page.locator('#dash-root[data-dash="solo"]')).toBeVisible()
     const r = await page.evaluate(async () => {
       const el = document.getElementById('main-content')
       const seen = []
@@ -238,39 +218,44 @@ test.describe('solo dashboard tiles', () => {
       }
       return { seen, everCharted: seen.some(n => n > 0) }
     })
-    // NON-ZERO DENOMINATOR. Without a weigh-in no chart is ever created and this proves nothing —
-    // say so out loud rather than reporting a green that means 'there was nothing to leak'.
-    test.skip(!r.everCharted, 'no weigh-ins on this account, so no chart is created — see the ordering guard above')
+    // NON-ZERO DENOMINATOR. Without a weigh-in no chart is ever created and this proves nothing - say so out loud rather than
+    // reporting a green that means 'there was nothing to leak'. (tests/dashboard-rework-2026-10-03.spec.js proves it with data.)
+    test.skip(!r.everCharted, 'no weigh-ins on this account, so no chart is created - see the ordering guard above')
     expect(Math.max(...r.seen), 'live charts grew across repaints: ' + r.seen.join(',')).toBeLessThanOrEqual(1)
   })
 
-  // ── 7. Empty states must render a tile, not crash ─────────────────────────────
-  test('every tile has an empty state and none of them throws', async ({ page }) => {
+  // ── 7. Empty states must render a card, not crash ───────────────────────────────────────────────────────────────
+  test('every card has an empty state and none of them throws', async ({ page }) => {
     const r = await page.evaluate(() => {
       const today = _ymdLocal(new Date())
       const out = {}
-      try { out.weight = _soloTileWeight([], today) } catch (e) { out.weightErr = String(e) }
-      try { out.weightNull = _soloTileWeight(null, today) } catch (e) { out.weightNullErr = String(e) }
-      try { out.next = _soloTileNextSession([], 'c1', today) } catch (e) { out.nextErr = String(e) }
-      try { out.up = _soloTileNextUp([], today) } catch (e) { out.upErr = String(e) }
-      try { out.recent = _soloTileRecent(null, 'c1') } catch (e) { out.recentErr = String(e) }
-      try { out.myProgress = _soloTileMyProgress(null) } catch (e) { out.myProgressErr = String(e) }
+      const day = { ds: today, label: 'Sat', num: 3, today: true, kind: 'rest', done: [], planned: [] }
+      const ctx = { role: 'solo', clientId: 'c1', todayStr: today, days: [day], hasProgram: false, program: null, next: null }
+      try { out.weight = _dashWeightHtml([]) } catch (e) { out.weightErr = String(e) }
+      try { out.weightNull = _dashWeightHtml(null) } catch (e) { out.weightNullErr = String(e) }
+      try { out.calendar = _dashCalendarHtml([], today) } catch (e) { out.calendarErr = String(e) }
+      try { out.calendarNull = _dashCalendarHtml(null, today) } catch (e) { out.calendarNullErr = String(e) }
+      try { out.goals = _dashGoalsHtml([], today, false) } catch (e) { out.goalsErr = String(e) }
+      try { out.goalsNull = _dashGoalsHtml(null, today, false) } catch (e) { out.goalsNullErr = String(e) }
+      try { out.hero = _dashHeroHtml(day, ctx) } catch (e) { out.heroErr = String(e) }
+      try { out.tiles = _dashTilesHtml({ weeks: 0, capped: false }, null, true) } catch (e) { out.tilesErr = String(e) }
+      try { out.week = _dashWeekHtml(_dashWeekDays(today, {}, []), { done: 0, planned: 0 }, null) } catch (e) { out.weekErr = String(e) }
       try { out.progNull = JSON.stringify(_programWorkoutsByDate(null, null)) } catch (e) { out.progErr = String(e) }
       return out
     })
-    ;['weightErr', 'weightNullErr', 'nextErr', 'upErr', 'recentErr', 'myProgressErr', 'progErr'].forEach(k =>
+    ;['weightErr', 'weightNullErr', 'calendarErr', 'calendarNullErr', 'goalsErr', 'goalsNullErr', 'heroErr', 'tilesErr', 'weekErr', 'progErr'].forEach(k =>
       expect(r[k], `${k} should not be set`).toBeUndefined())
-    expect(r.weight).toContain('solo-tile-empty')
-    expect(r.next).toContain('solo-tile-empty')
-    expect(r.up).toContain('solo-tile-empty')
-    expect(r.recent).toContain('solo-tile-empty')
-    expect(r.myProgress).toContain('solo-tile-empty')
+    for (const k of ['weight', 'weightNull', 'calendar', 'calendarNull', 'goals', 'goalsNull']) expect(r[k], `${k} says it is empty`).toContain('dash-empty')
+    expect(r.goals, 'an empty goals card still links through').toContain('_dashOpenGoals(false)')
+    expect(r.weight, 'and so does an empty weight card').toContain('_dashOpenWeight()')
+    expect(r.hero).toContain('Nothing planned')
+    expect(r.tiles).toContain('None')
     // {} not null: callers iterate the result, and a null would move the failure into their loop.
     expect(r.progNull).toBe('{}')
   })
 
-  // ── 8. The merged timeline: events AND programmed days, in date order ─────────
-  test('the Next-up timeline merges calendar events with programmed sessions', async ({ page }) => {
+  // ── 8. The merged timeline: events AND programmed days, in date order ──────────────────────────────────────────
+  test('the calendar timeline merges calendar events with programmed sessions', async ({ page }) => {
     const r = await page.evaluate(() => {
       const today = _ymdLocal(new Date())
       const d = n => _ymdLocal(new Date(Date.now() + n * 86400000))
@@ -281,14 +266,14 @@ test.describe('solo dashboard tiles', () => {
         today)
       return merged.map(m => `${m.kind}:${m.title}`)
     })
-    // Date-ordered across BOTH sources — nothing in the app merged them before; renderCalendar keeps
-    // two separate maps and combines them only visually inside a grid cell.
+    // Date-ordered across BOTH sources - nothing in the app merged them before; renderCalendar keeps two separate maps and combines
+    // them only visually inside a grid cell.
     expect(r).toEqual(['session:Upper A', 'event:Massage'])
-    expect(r.join(','), 'a past session must not appear in "next up"').not.toContain('Old session')
+    expect(r.join(','), 'a past session must not appear in "my calendar"').not.toContain('Old session')
   })
 
-  // ── 9. Goals tile + the new goals route ──────────────────────────────────────
-  test('goals tile summarises, links to the goals page, and computes progress', async ({ page }) => {
+  // ── 9. Goals card + the goals route ────────────────────────────────────────────────────────────────────────────
+  test('the goals card summarises, links to the goals page, and computes progress', async ({ page }) => {
     const r = await page.evaluate(() => {
       const today = _ymdLocal(new Date())
       const d = n => _ymdLocal(new Date(Date.now() + n * 86400000))
@@ -297,28 +282,37 @@ test.describe('solo dashboard tiles', () => {
         { id: 'g2', title: 'Sub-20 5k', target_date: d(3), start_value: 24, current_value: 21.5, target_value: 20, goal_milestones: [] },
         { id: 'g3', title: 'No deadline', target_date: null, start_value: 0, current_value: 5, target_value: 10, goal_milestones: [] }
       ]
+      // Where the card goes is a function, so check what it DOES: a solo user lands on the Goals page, a coached client (who has
+      // no goals route) on Progress > Goals.
+      const nav = []
+      const realNav = window.navigate
+      window.navigate = (p) => nav.push([p, window._progressTab || null])
+      try { window._progressTab = null; _dashOpenGoals(false); _dashOpenGoals(true) } finally { window.navigate = realNav }
       return {
-        populated: _soloTileGoals(goals, today),
-        empty: _soloTileGoals([], today),
-        nullish: _soloTileGoals(null, today),
+        nav,
+        populated: _dashGoalsHtml(goals, today, false),
+        client: _dashGoalsHtml(goals, today, true),
+        empty: _dashGoalsHtml([], today, false),
+        nullish: _dashGoalsHtml(null, today, false),
         pctRange: _goalPct(goals[0]),
         pctRatio: _goalPct({ current_value: 5, target_value: 10, goal_milestones: [] }),
         pctMilestones: _goalPct({ goal_milestones: [{ completed_at: 'x' }, { completed_at: null }] }),
         pctDivZero: _goalPct({ start_value: 10, current_value: 10, target_value: 10, goal_milestones: [] })
       }
     })
-    expect(r.populated, 'the tile must link to the goals page').toContain("navigate('goals')")
-    expect(r.populated, 'headline count').toContain('3')
-    // Soonest deadline first, so the headline number is followed by what is actually due.
-    expect(r.populated.indexOf('Sub-20 5k'), 'the nearer deadline must come first')
-      .toBeLessThan(r.populated.indexOf('Bench 120kg'))
-    // A goal with no target_date sorts last but is still counted — not silently dropped.
+    expect(r.populated, 'the card opens the goals UI').toContain('_dashOpenGoals(false)')
+    expect(r.client, 'and a coached client\'s card opens it their way').toContain('_dashOpenGoals(true)')
+    expect(r.nav, 'solo: the Goals page; client: Progress, on its Goals tab').toEqual([['goals', null], ['progress', 'Goals']])
+    expect(r.populated, 'headline count').toContain('<b>3</b> active')
+    // Soonest deadline first, so the card shows what is actually due.
+    expect(r.populated.indexOf('Sub-20 5k'), 'the nearer deadline must come first').toBeLessThan(r.populated.indexOf('Bench 120kg'))
+    // A goal with no target_date sorts last but is still counted - not silently dropped.
     expect(r.populated).toContain('+1 more')
-    expect(r.empty, 'empty state still links through').toContain("navigate('goals')")
-    expect(r.empty).toContain('solo-tile-empty')
-    expect(r.nullish, 'null must not throw').toContain('solo-tile-empty')
+    expect(r.empty, 'empty state still links through').toContain('_dashOpenGoals(false)')
+    expect(r.empty).toContain('dash-empty')
+    expect(r.nullish, 'null must not throw').toContain('dash-empty')
 
-    // 100 -> 112 of a 100..120 range is 60%, NOT 93% (112/120) — the start value matters.
+    // 100 -> 112 of a 100..120 range is 60%, NOT 93% (112/120) - the start value matters.
     expect(r.pctRange, 'start->target range').toBe(60)
     expect(r.pctRatio, 'bare current/target ratio when there is no start').toBe(50)
     expect(r.pctMilestones, 'falls back to completed milestones').toBe(50)
@@ -326,52 +320,24 @@ test.describe('solo dashboard tiles', () => {
     expect(Number.isFinite(r.pctDivZero), 'start === target must not produce NaN').toBe(true)
   })
 
-  // ── 9b. Benchmarks card replaced by a small "My progress" preview (Jake, 2026-09-28: "Benchmarks
-  //        can be removed from this page and replaced with my progress and being linked to that
-  //        page.") — decision: "Small preview, same idea as today". Went through two corrections the
-  //        same weekend, both from real findings, worth keeping visible:
-  //          2026-09-29 (multi-agent review): v1 dropped the dashboard's own +Log record form on the
-  //          wrong assumption that Personal Bests already covered this data. It didn't yet (it rendered
-  //          renderClient1RMs only — barbell 1RMs, a different table from this card's performance_logs)
-  //          — v1 broke tests/pb-consolidation-2026-08-17.spec.js's SOLO write-path test. Restored the
-  //          form as v2, as a stopgap, flagging the mismatch to Jake.
-  //          2026-09-30 (Jake): "personal bests page should be the only page that contains all of this
-  //          data." Personal Bests now mounts renderClientPerformance too (js/app-progress.js), which
-  //          genuinely does cover this card's data — so v3 (here) removes the form again, this time
-  //          correctly. tests/pb-consolidation-2026-08-17.spec.js proves the destination actually has
-  //          the write path now; this test only needs to prove the dashboard side.
-  test('My progress tile: small preview, no independent form — the real write path lives on Personal Bests now', async ({ page }) => {
-    const r = await page.evaluate(() => {
-      const pbs = [
-        { name: 'Deadlift', value: 140, unit: 'kg' },
-        { name: 'Bench Press', value: 100, unit: 'kg' },
-        { name: '5k run', value: 22.5, unit: 'min' },
-      ]
-      return {
-        populated: _soloTileMyProgress(pbs),
-        empty: _soloTileMyProgress([]),
-        nullish: _soloTileMyProgress(null),
-      }
-    })
-    expect(r.populated, 'renamed from Benchmarks').toContain('My progress')
-    expect(r.populated, 'not the old name').not.toContain('Benchmarks')
-    // Small preview: 2 of the 3 fixture PBs, not all of them.
-    expect(r.populated).toContain('Deadlift')
-    expect(r.populated).toContain('Bench Press')
-    expect(r.populated, 'a small preview, not the full list').not.toContain('5k run')
-    expect(r.populated).toContain('+1 more')
-    // No independent write path any more — Personal Bests is the only page with one, per Jake's
-    // 2026-09-30 instruction. tests/pb-consolidation-2026-08-17.spec.js's own "no longer hosts its own
-    // PB form" test proves this same fact end to end against the real rendered dashboard.
-    expect(r.populated, 'no +Log record button on this tile any more').not.toContain('Log record')
-    expect(r.populated, 'no inline form host either — it only ever existed for that button').not.toContain('client-pb-form')
-    // The whole card links to Progress -> Personal Bests — safe now that there's no form inside it to
-    // fight over clicks with (no stopPropagation needed anywhere).
-    expect(r.populated).toContain("navigate('progress')")
-    expect(r.populated, "must land on Personal Bests, not wherever Progress was last left").toContain("_progressTab='Personal Bests'")
-    expect(r.empty, 'empty state still links through').toContain("navigate('progress')")
-    expect(r.empty).toContain('solo-tile-empty')
-    expect(r.nullish, 'null must not throw').toContain('solo-tile-empty')
+  // ── 9b. Personal bests are off the dashboard (Jake, 2026-10-03: Goals stay, Recent sessions and personal bests do not) ──
+  // History worth keeping visible: the Benchmarks card became a "My progress" tile (2026-09-28), lost its +Log record form to the
+  // Personal Bests page (2026-09-30), and is now gone from the dashboard altogether. The page that owns the records and their write
+  // path is Personal Bests (tests/pb-consolidation-2026-08-17.spec.js proves it). This pins the dashboard side: it neither READS
+  // performance_logs nor shows a records preview - tests/capped-api.js throws on a table it was not given, so a dashboard that still
+  // read it would fail here rather than quietly pass.
+  test('the dashboard no longer reads or shows personal bests - the Personal Bests page owns them', async ({ page }) => {
+    await installCappedApi(page, { goals: [], events: [], weight_logs: [], client_programs: [], client_program_workouts: [], workout_logs: [] })
+    try {
+      const html = await page.evaluate(async () => {
+        const prev = window._soloClientId
+        window._soloClientId = 'solo-guard'
+        try { const el = document.createElement('div'); document.body.appendChild(el); await renderSoloDashboard(el); return el.innerHTML } finally { window._soloClientId = prev }
+      })
+      expect(html, 'rendered (a read of an unknown table would have thrown)').toContain('dash-root')
+      for (const gone of ['Log record', 'client-pb-form', 'Benchmarks', 'Personal bests', 'Recent sessions']) expect(html, `${gone} is not on the dashboard`).not.toContain(gone)
+      expect((await cappedApiCalls(page)).map(c => c.table), 'no read of performance_logs').not.toContain('performance_logs')
+    } finally { await restoreCappedApi(page) }
   })
 
   test('a solo user can reach the goals page, and it carries the real goals UI', async ({ page }) => {
@@ -383,19 +349,19 @@ test.describe('solo dashboard tiles', () => {
     const r = await page.evaluate(() => ({
       page: currentPage,
       h1: document.querySelector('h1')?.textContent,
-      // Every function in the goals module re-renders into #tab-content (openGoal, backToGoals,
-      // deleteGoal). Without that id present, add/edit/delete would silently no-op after the first
-      // paint — the exact shape of the 2026-07-08 "+ Log weight" bug on the Progress page.
+      // Every function in the goals module re-renders into #tab-content (openGoal, backToGoals, deleteGoal). Without that id present,
+      // add/edit/delete would silently no-op after the first paint - the exact shape of the 2026-07-08 "+ Log weight" bug on the
+      // Progress page.
       tabContent: !!document.getElementById('tab-content'),
       addBtn: !!document.querySelector('[onclick^="showAddGoalModal"]')
     }))
     expect(r.page).toBe('goals')
     expect(r.h1).toContain('Goals')
     expect(r.tabContent, '#tab-content must exist or the goals UI cannot re-render itself').toBe(true)
-    expect(r.addBtn, 'a solo user must be able to CREATE a goal — they could not before this route').toBe(true)
+    expect(r.addBtn, 'a solo user must be able to CREATE a goal - they could not before this route').toBe(true)
   })
 
-  // ── 10. The chart-destroy CLASS, not just the one new instance ────────────────
+  // ── 10. The chart-destroy CLASS, not just the one new instance ──────────────────────────────────────────────────
   test('every chart entry point destroys managed charts first', async ({ page }) => {
     const src = await page.evaluate(async () => {
       const r = await fetch('/js/app-progress.js')
@@ -405,22 +371,25 @@ test.describe('solo dashboard tiles', () => {
     const lines = src.split(/\r?\n/)
     const callers = []
 
-    // EXEMPT, each with a reason checked against the code — not a convenience list.
-    // _destroyManagedCharts() destroys EVERY managed chart, so the rule is NOT "every caller must
-    // call it". It applies to callers that REBUILD A SUBTREE CONTAINING OTHER CHARTS — full-page
-    // renders. In a caller that ADDS a chart beside existing ones, calling it would destroy the
-    // others: a bug in the opposite direction, and exactly the guard-refuses-the-legitimate-user
-    // shape this project keeps hitting. Both exemptions were read before being granted.
+    // EXEMPT, each with a reason checked against the code - not a convenience list.
+    // _destroyManagedCharts() destroys EVERY managed chart, so the rule is NOT "every caller must call it". It applies to callers that
+    // REBUILD A SUBTREE CONTAINING OTHER CHARTS - full-page renders. In a caller that ADDS a chart beside existing ones, calling it
+    // would destroy the others: a bug in the opposite direction, and exactly the guard-refuses-the-legitimate-user shape this
+    // project keeps hitting. Each exemption below was read before being granted.
     const EXEMPT = {
-      // Toggles a panel's display and renders into a canvas that PERSISTS in the DOM. Nothing is
-      // detached, and _renderMetricChart's own Chart.getChart(el).destroy() already handles
-      // re-rendering into the same canvas. A blanket destroy would kill every other open panel.
+      // Toggles a panel's display and renders into a canvas that PERSISTS in the DOM. Nothing is detached, and _renderMetricChart's
+      // own Chart.getChart(el).destroy() already handles re-rendering into the same canvas. A blanket destroy would kill every
+      // other open panel.
       togglePerfHistory: true,
-      // Replaces only its OWN small container (container.innerHTML = '<canvas></canvas>'). A blanket
-      // destroy would take out siblings. It DOES leak narrowly on repeated expand/collapse, but the
-      // correct fix is destroying the chart that was in THAT container — filed as its own row rather
-      // than bent to fit this rule.
-      _expandPerfSessionExercise: true
+      // Replaces only its OWN small container (container.innerHTML = '<canvas></canvas>'). A blanket destroy would take out siblings.
+      // It DOES leak narrowly on repeated expand/collapse, but the correct fix is destroying the chart that was in THAT container -
+      // filed as its own row rather than bent to fit this rule.
+      _expandPerfSessionExercise: true,
+      // The exercise stats card (2026-10-03). _xsRender rebuilds only ITS OWN host element, and calls _xsDestroyChart(host) on that
+      // card's chart BEFORE replacing the host's HTML; _xsDraw then draws into the fresh canvas. A blanket destroy here would kill the
+      // charts of every OTHER exercise card on the My progress page each time one card's measure pill is tapped. The full-list
+      // render that does rebuild the whole page (_renderPerfExerciseList) calls _destroyManagedCharts() itself.
+      _xsDraw: true
     }
 
     lines.forEach((l, i) => {
@@ -438,7 +407,7 @@ test.describe('solo dashboard tiles', () => {
     // Non-zero denominator: if the scan finds no callers at all it would pass vacuously.
     const total = lines.filter(l => /_renderMetricChart\(/.test(l) && !/^function _renderMetricChart/.test(l)).length
     expect(total, 'the scan must actually find chart callers').toBeGreaterThan(5)
-    expect(callers, 'these render a chart into a rebuilt DOM without destroying the previous one — '
+    expect(callers, 'these render a chart into a rebuilt DOM without destroying the previous one - '
       + 'both of _renderMetricChart\'s own guards resolve against the NEW canvas and miss the old '
       + 'instance, which lives on with its listeners and animation loop running').toEqual([])
   })

@@ -12,6 +12,38 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-04 — The dashboard is one landing-page skeleton for solo, client and coach; the Today card is the only saturated block; the streak counts weeks that hit the whole plan; the coach's first version is logged-only.**
+Jake's note of 2026-10-03: "The whole dashboard needs a rework for mobile view, as nothing really flows or stands out as a dashboard
+or makes it feel like this is landing page and hub of your account." Scoped with him through a short form and a tappable prototype
+(all three dashboards together; today first, then the week; body weight, streak, program progress and calendar; Goals stay; the
+PT | Personal switch keeps floating; coach version "go with it"). *Chosen:* greeting, a Today card (the only saturated block, calm on
+a rest day, a finished day or any other day), the week as seven tappable days (coach: bars of sessions logged), two quiet tiles
+(streak and program; coach: trained this week and programs ending), then body weight, My calendar and Goals (coach: Needs attention,
+Weigh-ins, Coming up, Goals due soon). Tapping a day swaps the Today card in place with no read. *The streak:* Monday-Sunday weeks;
+inside the program's span every planned session must be logged and a week with none planned is skipped; outside it (before it began,
+after it ended, or with no program) one session keeps it alive, so a finished program cannot let a long-idle person keep a streak;
+this week counts once complete and is ignored until then (a Wednesday is not a missed week); 52 weeks of lookback. Solo and client now
+share ONE loader (`_dashLoadOwn`) - the client's copy lacked `week_number` and `id`, so a periodised phase collapsed onto week 1 and
+Start could not resolve the clone - and read a year of sessions in pages. *Coach is logged-only:* the database knows what each client
+LOGGED, not what was PLANNED, so there is no "2 of 5 done"; that needs a new database view (SQL for Jake) and is a follow-up. Every
+coach count comes from the paged per-client summary, because the `clients` read is cut at the API's 200 rows (the old "Total clients"
+tile used a HEAD count for the same reason). *Not chosen:* a time-of-day greeting - the login helpers wait for an `h1` reading "Hi,"
+(client) or "Welcome back" (coach) on 462 call sites, so those greetings are a contract; separate designs per role; durations or
+exercise counts on the Today card (the app stores neither for a planned session); keeping the coach's adherence list and activity feed
+(replaced by Needs attention; the per-client list lives on Clients); a session "Preview" (none exists - View program opens Workouts).
+*Removed from the dashboards, Jake's choice:* Recent sessions, the personal bests / Benchmarks card and its read of `performance_logs`
+(those live on Progress > Personal Bests), the stats strip, and the client page's inline weight / record / goal-update forms (they live
+on Progress and Goals; the weekly check-in form stays). *Consequences stated:* every inline handler on the page is a literal - a button
+builder spells its handler out, `_dashOpenWeight` / `_dashOpenGoals` are named functions - so the handler checker can still verify
+them (its dynamic-handler baseline fell 7 to 6); the style-literal, date-format, loading-text and fixed-sleep baselines were lowered; the
+PT | Personal switch no longer hides the last card on ANY page (`.main-content` gets extra bottom padding when it is shown); the
+greeting now escapes the name (the client page printed it raw). *Found by the old suite while porting - a latent miss from the Stats commit, fixed here:* the
+"every chart entry point destroys managed charts first" guard flagged the exercise card's chart draw; the right answer was a documented
+exemption (a blanket destroy would kill the other cards' charts), not a destroy. *Verified:* 32 unit tests and 29
+browser tests written for this, seven deliberate breakages each failing the matching test, 43 older tests across
+12 files ported or retired with the cards they pinned, and the 21 dashboard-related spec files (214
+tests) green. *Not verified:* how it reads on a phone with real data; `multi-agent-review` has not been run. Row: [bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md).
+
 **2026-10-03 — An exercise's numbers come from ONE card, one set of maths and one read; records are sets; an RPE top-set exercise shows no ghost text.**
 Jake's note of 2026-10-03: no grey last-session numbers on an RPE top-set exercise ("these fields should only be populated once the
 top set has been established"), and the runner's Stats sheet should carry the data of the screenshot he sent and be consistent with

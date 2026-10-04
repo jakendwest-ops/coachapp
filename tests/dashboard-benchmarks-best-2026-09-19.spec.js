@@ -1,26 +1,26 @@
-// Dashboard Benchmarks card: which record is shown as a name's "best" (bug row 2026-09-19).
+// Personal bests: which record is shown as a name's "best" (bug row 2026-09-19; retargeted 2026-10-03).
 //
-// WHY THIS FILE EXISTS. The Progress → Benchmarks tab was deleted on 2026-09-19, which made the dashboard
-// Benchmarks card the ONLY client-facing view of performance_logs. That card chose each name's "best" by
-// comparing raw `value`s, with the direction picked by CATEGORY (cardio = lower, everything else =
-// higher). The coach's Performance tab picks by converted value with the direction picked by UNIT
-// (_bestPerfLog). Until the tab went, the two were shown side by side and the wrong one was visible; once
-// it went, nothing contradicted the card.
+// WHY THIS FILE EXISTS. The Progress → Benchmarks tab was deleted on 2026-09-19, which made the dashboard Benchmarks card the ONLY
+// client-facing view of performance_logs. That card chose each name's "best" by comparing raw `value`s, with the direction picked by
+// CATEGORY (cardio = lower, everything else = higher). The coach's Performance tab picks by converted value with the direction picked
+// by UNIT (_bestPerfLog). Until the tab went, the two were shown side by side and the wrong one was visible; once it went, nothing
+// contradicted the card.
 //
 //   mixed units      100 kg then 220 lbs (about 99.8 kg)   card showed 220 lbs
 //   benchmark time   200 sec then 180 sec                   card showed 200 (the slower time)
 //   cardio distance  5 km then 10 km                        card showed 5 km (lower-is-better on a distance)
 //
-// These drive the REAL card: seed rows for the logged-in client, re-render the dashboard, read what the
-// card prints. Rows are dated today and yesterday, not fixed past dates, because the card keeps only the
-// four most recently logged names — a row dated months ago would fall off it on any account with newer
-// records and the test would fail for the wrong reason.
+// RETARGETED 2026-10-03. The dashboard no longer shows personal bests at all (Jake: Goals stay, Recent sessions and personal bests do
+// not), so the card these drove is gone. The RULE it pinned is not: Progress -> Personal Bests lists every record by category and
+// stamps each name's best with a "PB" badge, chosen by the same _bestPerfLog. These drive that page for real - seed rows for the
+// logged-in client, render renderClientPerformance, read the PB value printed beside the name - so the cases below still mean what
+// they meant. (The dashboard side - that it neither reads nor shows them - is pinned in solo-dashboard-tiles-2026-08-30.spec.js.)
 const { test, expect } = require('./fixtures')
 const { loginAsPT, loginAsClient } = require('./helpers')
 
 const ymd = daysAgo => new Date(Date.now() - daysAgo * 86400000).toLocaleDateString('en-CA')
 
-// Each case seeds two rows under ONE name (older first) and states the value the card must print.
+// Each case seeds two rows under ONE name (older first) and states the value the page must print.
 // 220 lbs = 99.79 kg, so 100 kg is the heavier lift; 30 in = 76.2 cm, so it beats 60 cm.
 const CASES = [
   { key: 'kg-lbs', category: 'strength', show: '100 kg',
@@ -42,17 +42,17 @@ const CASES = [
     rows: [{ value: 25, unit: 'min', daysAgo: 1 }, { value: 24, unit: 'min', daysAgo: 0 }] },
 ]
 
-// Parameterised by title since 2026-09-30: dd61a20 replaced the SOLO dashboard's Benchmarks card
-// with a "My progress" tile (Jake, 2026-09-28: "Benchmarks can be removed from this page"). The
-// CLIENT dashboard still has Benchmarks. Same row markup in both, so only the title differs.
-const cardByTitle = (page, title) =>
-  page.locator('.dashboard-card', { has: page.locator('h2.card-title', { hasText: title }) })
-const benchmarksCard = page => cardByTitle(page, 'Benchmarks')
-
-// The value cell for ONE fixture name. Each card row is an inline-flex div holding [name] and [value + unit].
-const shownValueIn = (card, name) =>
-  card.locator('div[style*="display:flex"]', { hasText: name }).locator('span').nth(1)
-const shownValue = (page, name) => shownValueIn(benchmarksCard(page), name)
+// Renders the Personal Bests record list for one client into a scratch host and returns the row for ONE fixture name. Each record
+// group is a summary row (onclick togglePerfHistory) holding [name + entry count] and [best value + unit, "PB" badge].
+async function recordsFor(page, clientId) {
+  await page.evaluate(async (clientId) => {
+    document.getElementById('pb-best-host')?.remove()
+    const host = document.createElement('div'); host.id = 'pb-best-host'; document.body.appendChild(host)
+    await renderClientPerformance(clientId, host)
+  }, clientId)
+  return page.locator('#pb-best-host')
+}
+const bestIn = (host, name) => host.locator('div[onclick^="togglePerfHistory"]', { hasText: name }).locator('span').first()
 
 async function seedRows(page, clientId, name, category, rows) {
   const err = await page.evaluate(async ({ clientId, name, category, rows }) => {
@@ -75,7 +75,7 @@ async function removeRows(page, clientId, name) {
     return { err: error ? error.message : null, remaining: (left || []).length }
   }, { clientId, name })
   expect(r.err, 'cleanup delete errored').toBeNull()
-  expect(r.remaining, 'cleanup left rows behind — RLS likely refused the DELETE, and this test is stranding rows in the real database').toBe(0)
+  expect(r.remaining, 'cleanup left rows behind - RLS likely refused the DELETE, and this test is stranding rows in the real database').toBe(0)
 }
 
 const ownClientId = page => page.evaluate(async () => {
@@ -83,7 +83,7 @@ const ownClientId = page => page.evaluate(async () => {
   return data.id
 })
 
-test.describe('dashboard Benchmarks card — best record per name', () => {
+test.describe('Personal Bests page - best record per name', () => {
   for (const c of CASES) {
     test(`CLIENT: ${c.title}`, async ({ page }) => {
       await loginAsClient(page)
@@ -91,57 +91,47 @@ test.describe('dashboard Benchmarks card — best record per name', () => {
       const name = `[E2E-PB] ${c.key} ${Date.now()}`
       try {
         await seedRows(page, clientId, name, c.category, c.rows)
-        // The dashboard was drawn at login, before these rows existed. _renderOwnDashboard does not return
-        // the render promise, so call the renderer itself and return its promise: evaluate then awaits the
-        // whole render and the assertion below needs no sleep.
-        await page.evaluate(() => renderClientDashboard(document.getElementById('main-content')))
-        await expect(shownValue(page, name)).toHaveText(c.show)
+        // renderClientPerformance returns its render promise, so evaluate awaits the whole render and no sleep is needed.
+        const host = await recordsFor(page, clientId)
+        await expect(bestIn(host, name)).toHaveText(c.show)
       } finally {
         await removeRows(page, clientId, name)
       }
     })
   }
 
-  // `unit` is a free-text column and _perfBaseValue looked it up as an OBJECT KEY, so a row whose unit is
-  // "__proto__" made the plain lookup return Object.prototype (truthy, not callable) and throw. That was
-  // survivable while only the coach's Performance tab called _bestPerfLog; now both dashboards do, and a
-  // throw there leaves the page every client lands on stuck on "Loading…". The app's own form only offers
-  // a category's units, so planting this takes a direct API write — but the home page should not be one
-  // bad row away from dead. Every other unknown unit ('Kg', '5km') is a plain miss and never threw.
-  test('CLIENT: a record with a hostile unit ("__proto__") does not stop the dashboard drawing', async ({ page }) => {
+  // `unit` is a free-text column and _perfBaseValue looked it up as an OBJECT KEY, so a row whose unit is "__proto__" made the plain
+  // lookup return Object.prototype (truthy, not callable) and throw. That was survivable while only the coach's Performance tab
+  // called _bestPerfLog; the page every client uses to see their records calls it too, and a throw there leaves it stuck on
+  // "Loading…". The app's own form only offers a category's units, so planting this takes a direct API write - but a records page
+  // should not be one bad row away from dead. Every other unknown unit ('Kg', '5km') is a plain miss and never threw.
+  test('CLIENT: a record with a hostile unit ("__proto__") does not stop the records page drawing', async ({ page }) => {
     await loginAsClient(page)
     const clientId = await ownClientId(page)
     const name = `[E2E-PB] hostile-unit ${Date.now()}`
     try {
       await seedRows(page, clientId, name, 'cardio', [{ value: 5, unit: '__proto__', daysAgo: 0 }])
-      await page.evaluate(() => renderClientDashboard(document.getElementById('main-content')))
-      await expect(benchmarksCard(page)).toContainText(name)
+      const host = await recordsFor(page, clientId)
+      await expect(host).toContainText(name)
     } finally {
       await removeRows(page, clientId, name)
     }
   })
 
-  // The solo dashboard shows the same best-record-per-name rule, but since dd61a20 it does so through
-  // the "My progress" tile rather than a Benchmarks card. The RULE is unchanged and still worth pinning
-  // — the tile renders the same pbMap-derived values — so this is retargeted, not deleted. Skips without
-  // a solo client record, exactly like solo-account.spec.js.
-  //
-  // NOTE: the tile shows only the first TWO records (_soloTileMyProgress slices to 2) where the old card
-  // showed four. The fixture row is dated today, so it sorts to the front; if this ever goes flaky on an
-  // account with several same-day records, that slice is the reason.
-  test('SOLO: the personal dashboard uses the same rule — 60 cm then 30 in (76.2 cm) shows 30 in', async ({ page }) => {
+  // The solo record uses the same page and the same rule. Skips without a solo client record, exactly like solo-account.spec.js.
+  test('SOLO: the personal records page uses the same rule - 60 cm then 30 in (76.2 cm) shows 30 in', async ({ page }) => {
     await loginAsPT(page)
     const soloId = await page.evaluate(() => window._soloClientId || null)
     test.skip(!soloId, 'no solo client record on this account')
     await page.evaluate(() => switchView('solo'))
     // Let the render switchView starts finish BEFORE seeding, so it cannot land after ours with stale data.
-    await expect(page.locator('.solo-lower')).toBeVisible()
+    await expect(page.locator('#dash-root[data-dash="solo"]')).toBeVisible()
     const name = `[E2E-PB] solo-cm-in ${Date.now()}`
     try {
       await seedRows(page, soloId, name, 'body_metric',
         [{ value: 60, unit: 'cm', daysAgo: 1 }, { value: 30, unit: 'in', daysAgo: 0 }])
-      await page.evaluate(() => renderSoloDashboard(document.getElementById('main-content')))
-      await expect(shownValueIn(cardByTitle(page, 'My progress'), name)).toHaveText('30 in')
+      const host = await recordsFor(page, soloId)
+      await expect(bestIn(host, name)).toHaveText('30 in')
     } finally {
       await removeRows(page, soloId, name)
     }

@@ -1033,3 +1033,129 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .xs-vol { flex-shrink: 0; font-size: var(--text-md); font-weight: 700; font-variant-numeric: tabular-nums; }
 .xs-sets { display: block; margin-top: 2px; font-size: var(--text-md); color: var(--text-muted); overflow-wrap: anywhere; }
 .xs-more { width: 100%; margin-top: 10px; padding: 10px; border: 0; border-radius: var(--radius); background: var(--surface-2); color: var(--text); font-size: var(--text-md); font-weight: 700; cursor: pointer; }
+
+/* ─── Dashboard: one landing page and hub for all three roles (2026-10-03) ─────────────────────────────────────────────────
+   Jake: "nothing really flows or stands out as a dashboard or makes it feel like this is the landing page and hub of your account."
+   ONE skeleton - greeting, a Today card, the week as a strip, two number tiles, then body weight, calendar and goals - for solo,
+   client and coach (renderSoloDashboard / renderClientDashboard / renderDashboard in js/app-dashboard.js). The Today card is the ONLY
+   saturated block on the page, so it is what the eye lands on; everything else is quiet. Tokens only: the style-literal ratchet counts
+   hex colours and px font sizes / radii, so this block adds none. Design: the tappable prototype Jake approved 2026-10-03. */
+.dash { max-width: 720px; margin: 0 auto; }
+.dash-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin: 4px 0 16px; }
+.dash-eyebrow { font-size: var(--text-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.dash-greet { font-size: var(--text-4xl); font-weight: 800; line-height: 1.15; margin: 2px 0; overflow-wrap: anywhere; }
+.dash-date { font-size: var(--text-base); color: var(--text-muted); }
+.dash-logo { height: 40px; width: auto; max-width: 120px; object-fit: contain; border-radius: var(--radius-sm); flex-shrink: 0; }
+.dash-icons { display: flex; gap: 8px; flex-shrink: 0; }
+.dash-icon { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.dash-icon svg { width: 20px; height: 20px; }
+
+/* The Today card. Calm on a rest day, a finished day, or any day that is not today. */
+.dash-hero { background: var(--accent); color: white; border-radius: var(--radius-lg); padding: 20px; margin-bottom: 12px; }
+.dash-hero-calm { background: var(--accent-light); color: var(--accent-hover); }
+.dash-hero-eyebrow { font-size: var(--text-sm); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; opacity: .85; overflow-wrap: anywhere; }
+.dash-hero-title { font-size: var(--text-4xl); font-weight: 800; line-height: 1.15; margin: 6px 0 4px; overflow-wrap: anywhere; }
+.dash-hero-meta { font-size: var(--text-base); opacity: .9; margin-bottom: 16px; overflow-wrap: anywhere; }
+.dash-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.dash-btn { min-height: 46px; padding: 0 16px; border-radius: var(--radius); border: 0; font-family: inherit; font-size: var(--text-xl); font-weight: 800; cursor: pointer; }
+.dash-btn-primary { background: white; color: var(--accent); }
+.dash-hero-calm .dash-btn-primary { background: var(--accent); color: white; }
+.dash-btn-ghost { background: transparent; color: inherit; border: 1.5px solid; font-size: var(--text-lg); font-weight: 700; }
+
+/* Coach: the sessions clients logged, as rows inside the Today card. */
+.dash-hrows { margin: 8px 0 14px; display: flex; flex-direction: column; gap: 6px; }
+.dash-hrow { display: flex; align-items: center; gap: 10px; width: 100%; background: rgba(255,255,255,.14); color: inherit; border: 0; border-radius: var(--radius); padding: 9px 10px; text-align: left; font-family: inherit; cursor: pointer; }
+.dash-av { width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center; font-size: var(--text-sm); font-weight: 800; flex-shrink: 0; }
+.dash-hrow-main { min-width: 0; flex: 1; }
+.dash-hrow-main b { display: block; font-size: var(--text-base); font-weight: 700; overflow-wrap: anywhere; }
+.dash-hrow-main i { display: block; font-style: normal; font-size: var(--text-sm); opacity: .8; overflow-wrap: anywhere; }
+.dash-hrow-st { margin-left: auto; font-size: var(--text-sm); font-weight: 800; padding: 4px 9px; border-radius: var(--radius-full); background: rgba(255,255,255,.2); flex-shrink: 0; }
+
+/* A notice: the weekly check-in is due; or "viewing as" for the owner. */
+.dash-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--warning-light); border: 1px solid var(--warning); color: var(--text); border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 12px; font-size: var(--text-base); font-weight: 600; }
+.dash-banner button { border: 0; background: var(--warning); color: white; font-family: inherit; font-weight: 800; font-size: var(--text-md); padding: 8px 12px; border-radius: var(--radius-sm); cursor: pointer; flex-shrink: 0; }
+.dash-banner-sudo { background: var(--warning); color: white; }
+.dash-banner-sudo button { background: rgba(0,0,0,.18); }
+
+/* Cards. .dash-tap ones are tappable as a whole (and also carry a real button for the keyboard). */
+.dash-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 12px; min-width: 0; }
+.dash-tap { cursor: pointer; }
+.dash-tap:hover { border-color: var(--accent); }
+.dash-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.dash-card-title { font-size: var(--text-lg); font-weight: 700; margin: 0; }
+.dash-card-sub { font-size: var(--text-md); color: var(--text-muted); font-weight: 600; text-align: right; }
+.dash-card-sub b { color: var(--text); }
+.dash-link { display: block; font-family: inherit; font-size: var(--text-md); font-weight: 700; color: var(--accent); border: 0; background: none; padding: 8px 0 0; cursor: pointer; }
+.dash-empty { font-size: var(--text-base); color: var(--text-muted); margin: 0; }
+.dash-checkin { margin-bottom: 12px; padding: 14px; }
+.dash-checkin .card-title { font-size: var(--text-lg); font-weight: 700; }
+.dash-checkin .card-header { margin-bottom: 10px; }
+
+/* The week: seven tappable days (client, solo) or seven bars (coach). */
+.dash-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; }
+.dash-day { border: 0; background: none; padding: 4px 0; cursor: pointer; color: inherit; border-radius: var(--radius); font-family: inherit; }
+.dash-day[aria-pressed="true"] { background: var(--accent-light); }
+.dash-dn { display: block; font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.dash-dd { display: block; font-size: var(--text-sm); color: var(--text-muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.dash-dc { width: min(34px, 100%); aspect-ratio: 1; border-radius: 50%; margin: 5px auto 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-md); font-weight: 800; box-sizing: border-box; }
+.dash-dc svg { width: 16px; height: 16px; }
+.dash-dc-done { background: var(--success); color: white; }
+.dash-dc-plan { background: var(--accent); color: white; }
+.dash-dc-later { border: 2px dashed var(--text-muted); color: var(--text-muted); }
+.dash-dc-rest { background: var(--surface-2); color: var(--text-muted); }
+.dash-dc-miss { background: var(--danger-light); border: 1.5px solid var(--danger); color: var(--danger); }
+.dash-day-today .dash-dc { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.dash-day-today .dash-dd { color: var(--accent); font-weight: 800; }
+.dash-legend { font-size: var(--text-sm); color: var(--text-muted); margin-top: 10px; }
+.dash-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; align-items: end; }
+.dash-bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; border: 0; background: none; padding: 4px 0; border-radius: var(--radius); cursor: pointer; color: inherit; font-family: inherit; }
+.dash-bar-col[aria-pressed="true"] { background: var(--accent-light); }
+.dash-bar-track { width: 20px; height: 46px; background: var(--surface-2); border-radius: var(--radius-xs); display: flex; align-items: flex-end; overflow: hidden; }
+.dash-bar-track i { display: block; width: 100%; background: var(--success); }
+.dash-bar-today .dash-bar-track i { background: var(--accent); }
+.dash-bn { font-size: var(--text-sm); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Two quiet number tiles. The figure scales down on a narrow phone so "Wk 12 of 12" never wraps into its caption. */
+.dash-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.dash-two > .dash-card { margin: 0; }
+.dash-ico { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+.dash-flame { display: flex; color: var(--warning); }
+.dash-flame svg { width: 16px; height: 16px; }
+.dash-big { font-size: clamp(var(--text-3xl), 7vw, var(--text-display)); font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; margin-top: 8px; }
+.dash-big small { font-size: var(--text-base); font-weight: 700; color: var(--text-muted); }
+.dash-sub { font-size: var(--text-md); color: var(--text-muted); margin: 4px 0 0; overflow-wrap: anywhere; }
+.dash-meter { height: 6px; border-radius: var(--radius-xs); background: var(--surface-2); margin-top: 6px; overflow: hidden; }
+.dash-meter i { display: block; height: 100%; background: var(--accent); }
+
+/* Body weight. The sparkline reuses .solo-spark (a fixed-height box Chart.js draws into). */
+.dash-wv { display: flex; align-items: baseline; gap: 6px; }
+.dash-wv b { font-size: var(--text-display); font-weight: 800; line-height: 1; }
+.dash-wv span { font-size: var(--text-lg); font-weight: 700; color: var(--text-muted); }
+.dash-delta { font-size: var(--text-md); color: var(--text-muted); margin: 4px 0 6px; }
+.dash-delta b { color: var(--text); }
+
+/* Rows: calendar entries, programs ending, clients needing attention; and the plain label-and-value rows. */
+.dash-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 0; border: 0; border-top: 1px solid var(--border); background: none; color: inherit; text-align: left; font-family: inherit; }
+.dash-card-head + .dash-row { border-top: 0; }
+.dash-row-btn { cursor: pointer; }
+.dash-pip { width: 4px; align-self: stretch; border-radius: var(--radius-xs); background: var(--accent); flex-shrink: 0; }
+.dash-pip-danger { background: var(--danger); }
+.dash-row-main { min-width: 0; flex: 1; }
+.dash-row-main b { display: block; font-size: var(--text-base); font-weight: 700; overflow-wrap: anywhere; }
+.dash-row-main i { display: block; font-style: normal; font-size: var(--text-md); color: var(--text-muted); overflow-wrap: anywhere; }
+.dash-pill { margin-left: auto; font-style: normal; font-size: var(--text-sm); font-weight: 800; color: var(--accent); background: var(--accent-light); padding: 3px 8px; border-radius: var(--radius-full); flex-shrink: 0; }
+.dash-goal { padding: 8px 0; border-top: 1px solid var(--border); }
+.dash-card-head + .dash-goal { border-top: 0; }
+.dash-goal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.dash-goal-head b { font-size: var(--text-base); font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.dash-goal-head span { font-size: var(--text-md); color: var(--text-muted); font-weight: 700; flex-shrink: 0; }
+.dash-grow { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.dash-card-head + .dash-grow { border-top: 0; }
+.dash-grow b { font-size: var(--text-base); font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.dash-grow span { font-size: var(--text-md); color: var(--text-muted); font-weight: 600; text-align: right; }
+
+/* The PT | Personal switch floats 4px above the bottom bar (position: fixed). Without room under the content the last card on every
+   page ended up hidden behind it; the page now ends clear above it. Only for the account that shows the switch (.mvs-on). */
+@media (max-width: 900px) {
+  .app-shell:has(#mobile-view-switcher.mvs-on) .main-content { padding-bottom: calc(var(--bottom-nav-h) + 76px); }
+}

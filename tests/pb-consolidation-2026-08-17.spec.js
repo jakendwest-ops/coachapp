@@ -295,33 +295,36 @@ test.describe('Personal Bests consolidation', () => {
     expect(r.threw, 'must resolve quietly, not throw: ' + r.message).toBe(false)
   })
 
-  // Restores the client-role coverage that went with the Benchmarks tab (2026-09-19): the deleted "Log
-  // record button opens the form" test was the only one that drove a CLIENT's PB form, and the solo test
-  // above is the only other end-to-end save. This drives the real button and the real save on the
-  // client dashboard, and checks the card redraws with the new row.
-  test('CLIENT: the dashboard "+ Log record" opens the form, and saving writes a row and redraws the card', async ({ page }) => {
-    await loginAsClient(page)
+  // Restores the client-role coverage that went with the Benchmarks tab (2026-09-19): the deleted "Log record button opens the form"
+  // test was the only one that drove a CLIENT's PB form, and the solo test above is the only other end-to-end save. Moved off the
+  // dashboard on 2026-10-03 (the Benchmarks card and its "+ Log record" button are gone; Jake: personal bests live on Personal
+  // Bests): this drives the real form and the real save on Progress -> Personal Bests as a CLIENT, and checks the page redraws with
+  // the new row. Signs in for real for the reason the SOLO test above spells out: savePerformanceLog asks the auth server who the
+  // user is (getUser), so a revoked saved session would fail it for a reason that has nothing to do with this test.
+  test('CLIENT: the real write path (Progress -> Personal Bests) writes a row and the page shows it', async ({ page }) => {
+    const priorNoReuse = process.env.NO_SESSION_REUSE
+    process.env.NO_SESSION_REUSE = '1'
+    try { await loginAsClient(page) } finally { if (priorNoReuse === undefined) delete process.env.NO_SESSION_REUSE; else process.env.NO_SESSION_REUSE = priorNoReuse }
     const name = '[E2E-PB] Client 5k ' + Date.now()
     const clientId = await page.evaluate(async () => {
       const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
       return data.id
     })
-    const card = page.locator('.dashboard-card', { has: page.locator('h2.card-title', { hasText: 'Benchmarks' }) })
     try {
-      await expect(page.locator('#client-pb-form')).toBeHidden()
-      await card.getByRole('button', { name: '+ Log record' }).click()
-      await expect(page.locator('#client-pb-form')).toBeVisible()
-      await page.evaluate((n) => {
-        document.getElementById('cpb-name').value = n
-        document.getElementById('cpb-category').value = 'cardio'
-        _pbSyncUnits()
-        document.getElementById('cpb-value').value = '24.5'
-        document.getElementById('cpb-unit').value = 'min'
-        // Today, so it is the newest row and lands inside the card's four-record cut.
-        document.getElementById('cpb-date').value = new Date().toLocaleDateString('en-CA')
-      }, name)
-      await page.evaluate(id => saveClientPB(id), clientId)
-      await expect(card.locator(`text=${name}`)).toBeVisible({ timeout: 5000 })   // saved AND the card redrew
+      await page.evaluate(async () => { window._progressTab = 'Personal Bests'; await renderProgress(document.getElementById('main-content')) })
+      await expect(page.locator('#pb-performance-section')).toBeVisible({ timeout: 8000 })
+      await expect(page.locator('#pl-name')).toBeVisible()
+      await page.evaluate(async ({ n, clientId }) => {
+        document.getElementById('pl-category').value = 'cardio'
+        updatePerfUnits()
+        document.getElementById('pl-name').value = n
+        document.getElementById('pl-value').value = '24.5'
+        document.getElementById('pl-unit').value = 'min'
+        document.getElementById('pl-date').value = new Date().toLocaleDateString('en-CA')
+        await savePerformanceLog(clientId)
+      }, { n: name, clientId })
+      await expect(page.locator('#pb-performance-section').getByText(name)).toBeVisible({ timeout: 8000 })   // saved AND the page redrew
+      await expect(page.locator('#perf-error')).toHaveText('')
     } finally {
       // Verify the cleanup actually cleaned: an RLS-denied delete removes 0 rows and returns no error.
       const cleanup = await page.evaluate(async ({ clientId, name }) => {
@@ -330,7 +333,7 @@ test.describe('Personal Bests consolidation', () => {
         return { err: error ? error.message : null, remaining: (left || []).length }
       }, { clientId, name })
       expect(cleanup.err, 'cleanup delete errored').toBeNull()
-      expect(cleanup.remaining, 'cleanup deleted nothing — RLS likely denies a client DELETE on performance_logs, and this test would strand rows').toBe(0)
+      expect(cleanup.remaining, 'cleanup deleted nothing - RLS likely denies a client DELETE on performance_logs, and this test would strand rows').toBe(0)
     }
   })
 

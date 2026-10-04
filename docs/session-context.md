@@ -21,7 +21,8 @@ self-test failure and the deploy job needs that check; v2026.09.13 is the same c
 Six commits sit on `master` after the tag — four follow-ups (test-login fix, an effort-only-sets fix in the
 runner, `release.mjs` waiting for GitHub's check before pushing a tag, a few widened test waits) and two docs
 updates — all CI-green, **not yet released**. Local commits that are **not pushed**: the top-set ghost-text fix (app-runner v111) and its docs,
-and the shared exercise stats card that the runner's Stats sheet and My progress now both use (app-progress v74, app-runner v112). The live site was re-checked on 2026-10-03:
+the shared exercise stats card that the runner's Stats sheet and My progress now both use (app-progress v74, app-runner v112), and the
+dashboard rework - one landing-page skeleton for the personal, client and coach dashboards (app-dashboard v29, css v25). The live site was re-checked on 2026-10-03:
 GitHub's Pages deployment is the tag's commit and all 11 files it serves are byte-identical to `v2026.09.13`.
 See [current-sprint.md](current-sprint.md).
 

@@ -8,15 +8,16 @@ test.describe('Client workout flow', () => {
 
   test('client dashboard loads with hero card', async ({ page }) => {
     await expect(page.locator('h1')).toContainText('Hi,')
-    await expect(page.locator('text=UP NEXT')).toBeVisible()
+    // Reworked 2026-10-03: the card's wording changes with the day ("Up next", "Today"), so it is found by its id.
+    await expect(page.locator('#dash-hero')).toBeVisible()
   })
 
-  test('client dashboard shows a "Current program" header with a View program button, when a program is assigned (2026-07-05)', async ({ page }) => {
-    const hasProgram = await page.locator('text=Current program').isVisible({ timeout: 3000 }).catch(() => false)
+  test('client dashboard shows the current program as a tile that opens Workouts, when a program is assigned (reworked 2026-10-03; was a "Current program" header)', async ({ page }) => {
+    const tile = page.locator('#dash-program')
+    const hasProgram = await tile.locator('.dash-meter').isVisible({ timeout: 3000 }).catch(() => false)
     test.skip(!hasProgram, 'No program assigned to this test client')
-    await expect(page.locator('text=Current program')).toBeVisible()
-    await expect(page.locator('button:has-text("View program")')).toBeVisible()
-    await page.locator('button:has-text("View program")').click()
+    await expect(tile).toContainText('Wk')
+    await tile.click()
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
   })
 
@@ -652,15 +653,16 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     }
   })
 
-  test('a logged personal best actually appears on the dashboard Benchmarks card (regression, 2026-07-12)', async ({ page }) => {
+  test('a logged personal best actually appears on the Personal Bests page (regression, 2026-07-12; read off the dashboard until 2026-10-03)', async ({ page }) => {
     // 2026-07-12: every personal best anyone ever logged was saved correctly and then NEVER DISPLAYED.
-    // The Progress → Benchmarks tab's query embedded `performance_exercises(name, category, unit)` — a
-    // table that does not exist — so PostgREST rejected the whole query, the error was discarded, and
+    // The Progress -> Benchmarks tab's query embedded `performance_exercises(name, category, unit)` - a
+    // table that does not exist - so PostgREST rejected the whole query, the error was discarded, and
     // the page fell through to its empty state. The columns were plain fields on performance_logs all
-    // along — exactly what saveClientPB writes. Found by the RLS audit.
-    // 2026-09-19: that tab was deleted. The dashboard Benchmarks card is now the only client-facing
-    // reader of performance_logs, so the same claim is pinned there: a row the client wrote is a row
-    // the client can see. It also keeps the client INSERT / SELECT / DELETE round-trip covered.
+    // along - exactly what the form writes. Found by the RLS audit.
+    // 2026-09-19: that tab was deleted and the dashboard Benchmarks card was the only client-facing reader.
+    // 2026-10-03: the card is off the dashboard too (Jake: personal bests do not belong there); the page that owns the records is
+    // Progress -> Personal Bests, so the same claim is pinned THERE: a row the client wrote is a row the client can see. It also
+    // keeps the client INSERT / SELECT / DELETE round-trip covered.
     const clientId = await page.evaluate(async () => {
       const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
       return data.id
@@ -674,20 +676,17 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       })
       return error ? error.message : null
     }, clientId)
-    expect(insertErr).toBeNull() // the WRITE was never the problem — only the read
+    expect(insertErr).toBeNull() // the WRITE was never the problem - only the read
 
     try {
-      // Re-render the dashboard: it was drawn at login, before the row above existed.
-      await page.evaluate(() => navigate('client-dashboard', 'replace'))
-      await page.waitForTimeout(1500)
-      // Scoped to the Benchmarks card. The row is dated today, so it sorts first and lands inside
-      // the card's top-4 cut.
-      const card = page.locator('.dashboard-card', { has: page.locator('h2.card-title', { hasText: 'Benchmarks' }) })
-      await expect(card.locator('text=[E2E] PB Deadlift')).toBeVisible({ timeout: 5000 })
-      await expect(card.locator('text=No records yet.')).toHaveCount(0)
+      // Open Progress -> Personal Bests: it reads performance_logs (paged) and lists every record by category.
+      await page.evaluate(async () => { window._progressTab = 'Personal Bests'; await renderProgress(document.getElementById('main-content')) })
+      const section = page.locator('#pb-performance-section')
+      await expect(section).toBeVisible({ timeout: 8000 })
+      await expect(section.locator('text=[E2E] PB Deadlift')).toBeVisible({ timeout: 8000 })
     } finally {
-      // Verify the cleanup actually cleaned. A working INSERT does not imply a working DELETE — they
-      // are separate RLS policies — and an RLS-denied delete removes 0 rows while returning NO error.
+      // Verify the cleanup actually cleaned. A working INSERT does not imply a working DELETE - they
+      // are separate RLS policies - and an RLS-denied delete removes 0 rows while returning NO error.
       // Left unchecked, this test would quietly strand a row in the real performance_logs table on
       // every single suite run, and still pass (a second row just groups under the same name).
       const cleanup = await page.evaluate(async (clientId) => {
@@ -698,7 +697,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
         return { err: error ? error.message : null, remaining: (left || []).length }
       }, clientId)
       expect(cleanup.err, 'cleanup delete errored').toBeNull()
-      expect(cleanup.remaining, 'cleanup deleted nothing — RLS likely denies DELETE on performance_logs for a client, and this test has been stranding rows in the real database').toBe(0)
+      expect(cleanup.remaining, 'cleanup deleted nothing - RLS likely denies DELETE on performance_logs for a client, and this test has been stranding rows in the real database').toBe(0)
     }
   })
 })

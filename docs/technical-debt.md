@@ -26,6 +26,14 @@ process/tracking debt below.
   history through different queries (the check also matches by library id), so for a renamed lift they could in principle
   disagree - not changed. My progress now draws a full card for every weight x reps exercise; if that proves too long a scroll
   on a real history, the per-exercise read (`_fetchExerciseSessions`) is the building block for loading a card on demand.
+- **Dashboard rework (2026-10-04):** (1) the coach's Today card is logged-only; "2 of 5 done" and "clients on a streak" need a new
+  database view of what was PLANNED (SQL for Jake to run) - a follow-up if he wants it. (2) The coach page's logs and weigh-ins reads
+  are scoped by the `clients` read, which the API cuts at 200 rows (the counts come from the paged summary, so they are right; the
+  bars and weigh-in list would miss client 201 onward) - the same open item as the unbounded `clients` reads under Known gaps.
+  (3) The rework left handlers with no caller on the dashboards: `showClientPBForm`, `saveClientPB`, `showGoalProgressForm`,
+  `saveGoalProgress`, `toggleClientMilestone`, `showClientWeightForm` (the forms they served moved to Progress and Goals). Some are
+  still exercised by tests that pin their ownership checks (tests/own-client-writes-2026-08-21.spec.js), so remove them together
+  with those tests rather than one at a time.
 - **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted —
   a UX gap, not a correctness bug.
 - **Invite email** doesn't yet include PT branding/logo (Edge Function not updated for it).

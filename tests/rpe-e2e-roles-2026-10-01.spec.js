@@ -101,7 +101,7 @@ test.describe('RPE top set — solo', () => {
 
     const { tag, exName, tplName } = S.journeyTag('[E2E] RPE-Solo')
     await clickVisible(page, ['#vs-personal', '#mvs-personal'])
-    await expect(page.locator('.solo-lower')).toBeVisible()
+    await expect(page.locator('#dash-root[data-dash="solo"]')).toBeVisible()
 
     const exId = await page.evaluate(async (exName) => {
       const { data, error } = await db.from('exercises').insert({ coach_id: currentUser.id, is_personal: true, name: exName, metric_type: 'weight_reps' }).select('id').single()

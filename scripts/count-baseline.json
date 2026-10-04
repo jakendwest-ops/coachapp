@@ -19,13 +19,13 @@
     "Loading ellipsis": {
       "pattern": "Loading…",
       "scope": "js",
-      "count": 23,
+      "count": 22,
       "why": "23 copies of the same loading string (comments stripped). Same story as empty-state: a _loading() builder in Phase 6."
     },
     "toLocaleDateString(": {
       "pattern": "toLocaleDateString\\(",
       "scope": "js",
-      "count": 33,
+      "count": 29,
       "why": "Ten distinct option shapes across 36 sites, which is why dates render inconsistently between pages. Phase 3 introduces fmtDateGB(dateStr, shape)."
     },
     "role === 'solo'": {
@@ -43,7 +43,7 @@
     "waitForTimeout(": {
       "pattern": "waitForTimeout\\(",
       "scope": "tests",
-      "count": 120,
+      "count": 115,
       "why": "Fixed sleeps in the E2E suite -- pure wall-clock cost on a 35-minute run, and each one is either too short (flaky) or too long (slow). Phase 2 converts them to real waits. Raised by exactly 1 on 2026-09-16: tests/template-draft-save-2026-09-13.spec.js's partial-failure-recovery test waits out a real, un-awaited network round-trip (a propagation-triggered openTemplate() repaint) to prove openTemplate's new dirty-draft guard holds under real timing, not just a fast read beating a slow repaint -- there is no positive DOM/JS signal to poll for since the test is proving an absence (nothing changes). Raised by exactly 1 again on 2026-09-28: tests/template-editor-post-save-navigate-clobber-2026-09-28.spec.js proves the same class of abandoned repaint (this time landing after a successful Save + immediate navigate-away, not a failed one) does not clobber the page the user is actually on -- same reasoning, no positive signal to poll for."
     },
     "swallowed catch": {

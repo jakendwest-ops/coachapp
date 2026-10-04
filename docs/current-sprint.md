@@ -37,8 +37,11 @@ runner's Stats sheet and the My progress exercise cards are now one component wi
 v74, app-runner v112, css v24): 28 new unit tests, 17 new browser tests, ten old tests ported, the 14 affected spec files plus
 the new one green (211 tests), static checks pass. Both await Jake's look on a phone ([ghost-text row](bugs/2026-10-03-runner-top-set-exercise-shows-last-sessions-weight-as-ghost-text.md),
 [stats row](bugs/2026-10-03-runner-stats-sheet-shows-less-than-my-progress-and-computes-est-1rm-differently.md)) and his say-so to
-push; they were self-reviewed, and the pre-push `multi-agent-review` has NOT been run on them yet. Next: the dashboard rework
-(approved, being built).
+push; they were self-reviewed, and the pre-push `multi-agent-review` has NOT been run on them yet. (3) The dashboard rework
+(2026-10-04): one landing-page skeleton for the personal, coached-client and coach dashboards (app-dashboard v29, css v25) -
+32 unit tests, 29 new browser tests, 43 older tests ported or retired, the 21
+dashboard-related spec files green (214 tests), static checks pass, five ratchet baselines lowered; also awaiting his look
+([row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md)) and not yet reviewed by `multi-agent-review`.
 
 **`v2026.09.11`**, cut 2026-09-28 — the workout runner rebuilt around Jake's 8-item phone walkthrough: tabs
 that show completion (green/purple, not position), "Next exercise" goes to what is still to do, no Back

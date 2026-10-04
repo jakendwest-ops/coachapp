@@ -26,635 +26,8 @@ function _fetchFailureBanner (failed, page) {
     </div>`
 }
 
-async function renderDashboard(el) {
-  log.info('renderDashboard', 'fetching dashboard data')
-  el.innerHTML = '<div class="loading-state">Loading…</div>'
-
-  const sevenDaysAgo   = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000).toISOString()
-  const fourteenDaysOn = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  const todayStr       = new Date().toISOString().split('T')[0]
-  // The UTC date of now-7d: the SAME cut-off coach_client_summary uses for sessions_7d, and the activity list's window.
-  const weekAgoStr     = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
-  // Fetch coach's client IDs first so all queries are correctly scoped
-  const { data: coachClients, error: coachClientsErr } = await db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).order('full_name')
-  const coachClientIds = (coachClients || []).map(c => c.id)
-
-  const [
-    { count: clientCount, error: clientCountErr },
-    { count: goalCount, error: goalCountErr },
-    { data: recentWeights, error: recentWeightsErr },
-    { data: recentWorkouts, error: recentWorkoutsErr },
-    { data: upcomingGoals, error: upcomingGoalsErr },
-    { data: summaries, error: summariesErr }
-  ] = await Promise.all([
-    db.from('clients').select('*', { count: 'exact', head: true }).eq('coach_id', currentUser.id),
-    db.from('goals').select('*', { count: 'exact', head: true }).eq('status', 'active').in('client_id', coachClientIds),
-    coachClientIds.length ? db.from('weight_logs').select('client_id, created_at, weight_kg').in('client_id', coachClientIds).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30) : { data: [] },
-    coachClientIds.length ? db.from('workout_logs').select('client_id, date, created_at').in('client_id', coachClientIds).gte('date', weekAgoStr).order('created_at', { ascending: false }).limit(20) : { data: [] },
-    db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', fourteenDaysOn).order('target_date').limit(5),
-    // One row per client, computed in the database (scripts/add-coach-client-summary-2026-09-20.sql). PAGED: the API caps
-    // every response at 200 rows and that applies to a view too, so a bare read would silently drop the 201st client.
-    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, sessions_7d', { count: 'exact' }).order('full_name').order('client_id'))
-  ])
-
-  const _failed = _failedFetches({
-    'your clients': coachClientsErr || clientCountErr,
-    'active goals': goalCountErr,
-    'recent weigh-ins': recentWeightsErr,
-    'recent sessions': recentWorkoutsErr,
-    'upcoming goals': upcomingGoalsErr,
-    'session summaries': summariesErr,
-  })
-
-  const activeClients = (coachClients || []).filter(c => c.status === 'active')
-
-  const clientMap = {}
-  ;(activeClients || []).forEach(c => { clientMap[c.id] = c.full_name })
-
-  // Activity feed — merge weight + workout logs, sort newest first. The sessions are pooled by created_at (as the weigh-ins
-  // are) because that is the key this sort and the "Xh ago" label use: pooled by `date`, a session logged just now for an
-  // earlier day, or one of many dated the same day, could fall outside the 20 and never reach the top 8.
-  const feed = [
-    ...(recentWeights  || []).map(w => ({ type: 'weight',  client_id: w.client_id, logged_at: w.created_at, detail: fmtWeight(w.weight_kg, { spaced: true }) })),
-    ...(recentWorkouts || []).map(w => ({ type: 'session', client_id: w.client_id, logged_at: w.created_at || w.date, detail: 'Session logged' }))
-  ].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at)).slice(0, 8)
-
-  // Compliance — sessions this week per active client, from the database's own count (coach_client_summary). This used to
-  // be counted from the current MONTH's logs, newest 100: past ~33 clients at three sessions a week the oldest days
-  // dropped out and active clients read "At risk", and on UTC days 1-7 of every month last month's sessions were invisible
-  // altogether. (The "quiet clients" set that sat here was computed from the same slice and never rendered; it is gone.)
-  // When the summaries could not be read the numbers are UNAVAILABLE, not zero — the card and the tile say so.
-  const summariesUnavailable = !!summariesErr
-  const sessionsById = {}
-  ;(summaries || []).forEach(r => { sessionsById[r.client_id] = Number(r.sessions_7d) || 0 })
-  const complianceRows = summariesUnavailable ? [] : (activeClients || [])
-    .map(c => ({ ...c, sessions: sessionsById[c.id] || 0 }))
-    .sort((a, b) => a.sessions - b.sessions) // fewest first
-
-  // Every client's sessions, active or not — as this tile always counted them.
-  const sessionsThisWeekTotal = summariesUnavailable ? '—' : Object.values(sessionsById).reduce((a, b) => a + b, 0)
-
-  const firstName = currentProfile?.full_name?.split(' ')[0] || 'Coach'
-  const today     = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-
-  function timeAgo(iso) {
-    const diff = Date.now() - new Date(iso)
-    const h = Math.floor(diff / 3600000)
-    const d = Math.floor(diff / 86400000)
-    if (h < 1)  return 'just now'
-    if (h < 24) return `${h}h ago`
-    if (d === 1) return 'yesterday'
-    return `${d}d ago`
-  }
-
-  function daysUntil(dateStr) {
-    const diff = new Date(dateStr + 'T00:00:00') - new Date(todayStr + 'T00:00:00')
-    const d = Math.round(diff / 86400000)
-    if (d === 0) return 'today'
-    if (d === 1) return 'tomorrow'
-    return `in ${d} days`
-  }
-
-  el.innerHTML = `
-    ${_fetchFailureBanner(_failed, 'dashboard')}
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">Welcome back, ${escapeHtml(firstName)}</h1>
-        <p class="page-subtitle">${window._branding?.businessName ? escapeHtml(window._branding.businessName) + ' · ' : ''}${today}</p>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn-primary" onclick="showAddClientModal()">+ Add client</button>
-        <button class="btn-secondary" onclick="navigate('workouts')">Build a workout</button>
-      </div>
-    </div>
-
-    <div class="pt-stats">
-      ${[
-        [clientCount ?? 0, 'Total clients'],
-        [sessionsThisWeekTotal, 'Sessions this week'],
-        [goalCount ?? 0, 'Active goals'],
-      ].map(([val, label]) => `
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:14px 16px">
-          <div style="font-size:var(--legacy-text-26, 26px);font-weight:700;color:var(--text)">${val}</div>
-          <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:3px">${label}</div>
-        </div>`).join('')}
-    </div>
-
-    <div class="dashboard-split-grid">
-
-      <!-- Left: recent activity -->
-      <div class="dashboard-card">
-        <div class="card-header">
-          <h2 class="card-title">Recent activity</h2>
-          <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Last 7 days</span>
-        </div>
-        ${feed.length === 0 ? `
-          <p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No activity in the last 7 days.</p>
-        ` : feed.map(f => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-            <div style="display:flex;align-items:center;gap:10px">
-              <div style="width:32px;height:32px;border-radius:var(--radius-sm, 8px);background:var(--bg-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-accent)" stroke-width="2" style="width:15px;height:15px"><path d="${f.type === 'weight' ? 'M3 6h18M3 12h18M3 18h18' : 'M6 5h12M6 12h12M6 19h12'}"/></svg>
-              </div>
-              <div>
-                <div style="font-size:var(--text-base, 13px);font-weight:600;cursor:pointer" onclick="openClient('${f.client_id}')">${escapeHtml(clientMap[f.client_id] || 'Unknown')}</div>
-                <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted)">${f.type === 'weight' ? f.detail : 'Session logged'}</div>
-              </div>
-            </div>
-            <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);white-space:nowrap">${timeAgo(f.logged_at)}</div>
-          </div>
-        `).join('')}
-      </div>
-
-      <!-- Right: compliance + goals -->
-      <div style="display:flex;flex-direction:column;gap:16px">
-
-        <div class="dashboard-card">
-          <div class="card-header">
-            <div>
-              <h2 class="card-title">This week's sessions</h2>
-              ${complianceRows.length > 0 ? (() => {
-                const atRisk = complianceRows.filter(c => c.sessions === 0).length
-                const onTrack = complianceRows.filter(c => c.sessions >= 2).length
-                const parts = []
-                if (atRisk > 0) parts.push(`<span style="color:var(--danger);font-weight:600">${atRisk} at risk</span>`)
-                if (onTrack > 0) parts.push(`<span style="color:var(--success);font-weight:600">${onTrack} on track</span>`)
-                return parts.length ? `<p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${parts.join(' · ')}</p>` : ''
-              })() : ''}
-            </div>
-            <div style="display:flex;gap:4px" id="compliance-filter-btns">
-              ${['All','At risk','Active'].map((f,i) => `<button onclick="filterCompliance('${f}')" id="cf-${f.replace(' ','-')}" style="padding:3px 9px;border-radius:12px;border:1px solid var(--border);background:${i===0?'var(--accent)':'transparent'};color:${i===0?'#fff':'var(--text-muted)'};font-size:11px;font-weight:600;cursor:pointer">${f}</button>`).join('')}
-            </div>
-          </div>
-          <div id="compliance-rows">
-            ${summariesUnavailable ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">Couldn't load this week's sessions — see the notice above.</p>` : complianceRows.length === 0 ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No active clients.</p>` :
-              complianceRows.map(c => {
-                const dot = c.sessions === 0 ? 'var(--danger)' : c.sessions === 1 ? 'var(--warning)' : 'var(--success)'
-                const label = c.sessions === 0 ? 'No sessions' : `${c.sessions} session${c.sessions !== 1 ? 's' : ''}`
-                const zone = c.sessions === 0 ? 'at-risk' : 'active'
-                return `
-                <div class="compliance-row" data-zone="${zone}" style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <div style="width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0"></div>
-                    <div style="font-size:var(--text-base, 13px);font-weight:500;cursor:pointer" onclick="openClient('${c.id}')">${escapeHtml(c.full_name)}</div>
-                  </div>
-                  <span style="font-size:11.5px;font-weight:600;color:${dot}">${label}</span>
-                </div>`
-              }).join('')}
-          </div>
-        </div>
-
-        <div class="dashboard-card">
-          <div class="card-header">
-            <h2 class="card-title">Goals due soon</h2>
-            <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Next 14 days</span>
-          </div>
-          ${!upcomingGoals?.length ? `
-            <p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No goals due in the next 14 days.</p>
-          ` : upcomingGoals.map(g => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
-              <div>
-                <div style="font-size:var(--text-base, 13px);font-weight:500">${escapeHtml(g.title)}</div>
-                <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted)">${escapeHtml(g.clients?.full_name || '')}</div>
-              </div>
-              <div style="font-size:var(--legacy-text-11-5, 11.5px);font-weight:600;color:var(--accent);white-space:nowrap">${daysUntil(g.target_date)}</div>
-            </div>
-          `).join('')}
-        </div>
-
-      </div>
-    </div>
-  `
-}
-
-function filterCompliance(filter) {
-  document.querySelectorAll('[id^="cf-"]').forEach(b => {
-    const active = b.id === `cf-${filter.replace(' ', '-')}`
-    b.style.background = active ? 'var(--accent)' : 'transparent'
-    b.style.color = active ? '#fff' : 'var(--text-muted)'
-  })
-  document.querySelectorAll('.compliance-row').forEach(row => {
-    const show = filter === 'All' || row.dataset.zone === filter.toLowerCase().replace(' ', '-')
-    row.style.display = show ? '' : 'none'
-  })
-}
-
-// ─── CLIENT DASHBOARD ─────────────────────────────────────────────────────────
-// ─── SUDO (impersonation) ─────────────────────────────────────────────────────
-function sudoAsClient(clientId, clientName) {
-  if (!_isOwnerAccount()) return
-  window._sudoClientId   = clientId
-  window._sudoClientName = clientName
-  window._sudoFromRole   = currentProfile?.role || 'coach'
-  currentProfile = { ...currentProfile, role: 'client' }
-  navigate('client-dashboard')
-}
-function exitSudo() {
-  currentProfile = { ...currentProfile, role: window._sudoFromRole || 'coach' }
-  delete window._sudoClientId
-  delete window._sudoClientName
-  delete window._sudoFromRole
-  navigate('dashboard')
-}
-
-async function renderClientDashboard(el) {
-  log.info('renderClientDashboard', 'fetching data', { userId: currentUser.id })
-  el.innerHTML = '<div class="loading-state">Loading…</div>'
-
-  const todayStr = new Date().toISOString().split('T')[0]
-  const isSudo = !!window._sudoClientId
-
-  let clientId, firstName
-
-  if (isSudo) {
-    clientId  = window._sudoClientId
-    firstName = (window._sudoClientName || 'Client').split(' ')[0]
-  } else {
-    // Find coached client record (coach_id is not null = has a PT)
-    const { data: clientRow, error: clientErr } = await db
-      .from('clients')
-      .select('id, full_name, coach_id')
-      .eq('user_id', currentUser.id)
-      .not('coach_id', 'is', null)
-      .maybeSingle()
-
-    if (clientErr || !clientRow) {
-      log.error('renderClientDashboard', 'client record not found', clientErr)
-      el.innerHTML = '<div class="loading-state">Unable to load your profile. Please contact your coach.</div>'
-      return
-    }
-
-    clientId  = clientRow.id
-  }
-
-  const [
-    { data: goals, error: goalsErr },
-    { data: events, error: eventsErr },
-    { data: weights, error: weightsErr },
-    { data: perfLogs, error: perfLogsErr },
-    { data: assignedPrograms, error: assignedProgramsErr },
-    { data: recentSessions, error: recentSessionsErr },
-    { data: checkIns, error: checkInsErr },
-  ] = await Promise.all([
-    db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
-    db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
-    db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(5),
-    // Paged (_fetchAllRows, app-core.js): _perfBestsByName picks each exercise's best from whatever rows arrive, and a
-    // plain read delivers only the newest 200 — so an exercise not logged within the last 200 entries vanished from
-    // this tile, and a record older than that was never a candidate for "best".
-    _fetchAllRows(() => db.from('performance_logs').select('name, category, value, unit, date', { count: 'exact' }).eq('client_id', clientId).order('date', { ascending: false }).order('id', { ascending: false })),
-    db.from('client_programs').select('start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
-    db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(15),
-    db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
-  ])
-
-  // Latest weight + trend
-  const latestWeight = weights?.[0] ?? null
-  const prevWeight   = weights?.[1] ?? null
-  let weightTrend = '→'
-  if (latestWeight && prevWeight) {
-    if (latestWeight.weight_kg < prevWeight.weight_kg) weightTrend = '↓'
-    else if (latestWeight.weight_kg > prevWeight.weight_kg) weightTrend = '↑'
-  }
-  const trendColour = weightTrend === '↓' ? 'var(--success)' : weightTrend === '↑' ? 'var(--danger)' : 'var(--text-muted)'
-
-  // PBs — one best record per name; _perfBestsByName owns the rule (units converted, direction by unit)
-  const pbs = _perfBestsByName(perfLogs)
-
-  // Event type label + colour
-  function eventStyle(type) {
-    const map = {
-      session:     { label: 'PT Session',   colour: 'var(--accent)' },
-      review:      { label: 'Review',       colour: 'var(--warning)' },
-      competition: { label: 'Competition',  colour: 'var(--danger)' },
-      holiday:     { label: 'Holiday',      colour: 'var(--success)' },
-      gym:         { label: 'Gym',          colour: '#3b82f6' }, /* TODO(Jake): no design token for this blue */
-      other:       { label: 'Event',        colour: 'var(--text-muted)' },
-    }
-    return map[type] || map.other
-  }
-
-  function formatDate(dateStr) {
-    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-  }
-
-  function daysUntil(dateStr) {
-    const diff = new Date(dateStr + 'T00:00:00') - new Date(todayStr + 'T00:00:00')
-    const d = Math.round(diff / 86400000)
-    if (d === 0) return 'Today'
-    if (d === 1) return 'Tomorrow'
-    return `In ${d} days`
-  }
-
-  if (!isSudo) firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
-
-  // D3 (2026-09-07): the runner/save path can leave a 0-exercise workout_log (an abandoned start,
-  // or a test probe) — those were showing as "probe · 0 exercises" rows here. Over-fetch and drop
-  // the empties for display only. Whether the source should stop creating them is a separate
-  // ledger row, not this pass.
-  const loggedSessions = (recentSessions || []).filter(s => (s.workout_log_exercises?.length || 0) > 0).slice(0, 5)
-
-  const lastCheckIn = checkIns?.[0] || null
-  const daysSinceCheckIn = lastCheckIn ? Math.floor((Date.now() - new Date(lastCheckIn.created_at)) / 86400000) : null
-  const checkInDue = daysSinceCheckIn === null || daysSinceCheckIn >= 7
-
-  // Hero card: find current phase from assigned program
-  let cHeroTitle = 'No program assigned', cHeroMeta = 'Ask your PT to assign a training program.', cHeroBtnLabel = 'Log a session', cHeroAction = `startWorkoutRunner('${clientId}')`
-  if (assignedPrograms?.[0]) {
-    const prog = assignedPrograms[0].programs
-    const startDate = new Date(assignedPrograms[0].start_date + 'T00:00:00')
-    const weeksSinceStart = Math.max(0, Math.floor((Date.now() - startDate) / (7 * 24 * 60 * 60 * 1000)))
-    const phases = (prog.program_phases || []).sort((a, b) => a.order_index - b.order_index)
-    let cumWeeks = 0, currentPhase = phases[phases.length - 1] || null
-    for (const p of phases) { cumWeeks += p.duration_weeks; if (weeksSinceStart < cumWeeks) { currentPhase = p; break } }
-    cHeroTitle = prog.name || 'Your program'
-    cHeroMeta = currentPhase ? currentPhase.name + ' · Week ' + (weeksSinceStart + 1) : (prog.description || '')
-    cHeroBtnLabel = 'View workouts'
-    cHeroAction = `navigate('workouts')`
-  }
-
-  const _failed = _failedFetches({
-    'your goals': goalsErr,
-    'upcoming events': eventsErr,
-    'weight history': weightsErr,
-    'personal bests': perfLogsErr,
-    'your programme': assignedProgramsErr,
-    'recent sessions': recentSessionsErr,
-    'check-ins': checkInsErr,
-  })
-
-  el.innerHTML = `
-    ${_fetchFailureBanner(_failed, 'client-dashboard')}
-    ${isSudo ? `
-    <div style="background:var(--warning, #f59e0b);color:#fff;border-radius:var(--radius, 10px);padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
-      <span style="font-size:var(--text-base, 13px);font-weight:700">👁 Viewing as ${escapeHtml(window._sudoClientName || 'Client')}</span>
-      <button onclick="exitSudo()" style="background:rgba(0,0,0,.18);border:none;color:#fff;font-size:var(--text-md, 12px);font-weight:700;padding:5px 12px;border-radius:6px;cursor:pointer">Exit ✕</button>
-    </div>` : ''}
-
-    ${window._branding?.logoUrl || window._branding?.businessName ? `
-    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);margin-bottom:16px">
-      ${window._branding.logoUrl ? `<img src="${window._branding.logoUrl}" alt="${escapeHtml(window._branding.businessName) || ''}" style="height:44px;width:auto;max-width:120px;object-fit:contain;border-radius:6px">` : ''}
-      <div>
-        ${window._branding.businessName ? `<div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text)">${escapeHtml(window._branding.businessName)}</div>` : ''}
-        <div style="font-size:var(--text-md, 12px);color:var(--text-muted)">Coached by your PT</div>
-      </div>
-    </div>` : ''}
-
-    <div class="page-header" style="margin-bottom:16px">
-      <div>
-        <h1 class="page-title">Hi, ${firstName}</h1>
-        <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin-top:2px">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-      </div>
-    </div>
-
-    <!-- Current program header -->
-    ${assignedPrograms?.[0] ? `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius, 10px);padding:12px 16px;margin-bottom:12px">
-      <div style="min-width:0">
-        <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Current program</div>
-        <div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(cHeroTitle)}</div>
-      </div>
-      <button onclick="navigate('workouts')" class="btn-secondary" style="font-size:var(--text-md, 12px);padding:6px 14px;flex-shrink:0">View program</button>
-    </div>` : ''}
-
-    <!-- Hero card -->
-    <div style="background:var(--accent);border-radius:var(--radius-md, 12px);padding:18px 20px;margin-bottom:16px;color:#fff">
-      <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
-      <div style="font-size:var(--legacy-text-19, 19px);font-weight:700;margin-bottom:3px">${cHeroTitle}</div>
-      <div style="font-size:var(--text-base, 13px);opacity:.8;margin-bottom:14px">${cHeroMeta}</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button onclick="${cHeroAction}" style="padding:8px 20px;border-radius:var(--radius-sm, 8px);background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">${cHeroBtnLabel} →</button>
-        ${checkInDue ? `<button onclick="document.getElementById('checkin-card').scrollIntoView({behavior:'smooth'})" style="padding:8px 16px;border-radius:var(--radius-sm, 8px);background:rgba(245,158,11,.25);color:#fff;border:1.5px solid rgba(245,158,11,.5);font-size:var(--text-base, 13px);font-weight:600;cursor:pointer">Check-in due</button>` : ''}
-      </div>
-    </div>
-
-    <div class="dashboard-split-grid">
-
-      <!-- Left: goals + recent sessions -->
-      <div style="display:flex;flex-direction:column;gap:16px">
-
-        <div class="dashboard-card">
-          <div class="card-header"><h2 class="card-title">Goals</h2></div>
-          ${!goals?.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No active goals yet.</p>` : goals.map(goal => {
-            const milestones = (goal.goal_milestones || []).sort((a, b) => a.order - b.order)
-            const done = milestones.filter(m => m.completed_at).length
-            const pct = (() => {
-              const sv = parseFloat(goal.start_value), cv = parseFloat(goal.current_value), tv = parseFloat(goal.target_value)
-              if (!isNaN(sv) && !isNaN(cv) && !isNaN(tv) && sv !== tv) return Math.min(100, Math.max(0, Math.round(((cv - sv) / (tv - sv)) * 100)))
-              if (!isNaN(cv) && !isNaN(tv) && tv !== 0) return Math.min(100, Math.max(0, Math.round((cv / tv) * 100)))
-              return milestones.length ? Math.round((done / milestones.length) * 100) : 0
-            })()
-            const daysLeft = goal.target_date ? daysUntil(goal.target_date) : null
-            return `
-            <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-                <div style="font-size:var(--text-lg, 14px);font-weight:600">${escapeHtml(goal.title)}</div>
-                ${daysLeft ? `<span style="font-size:var(--text-sm, 11px);color:var(--text-muted);white-space:nowrap;margin-left:8px">${daysLeft}</span>` : ''}
-              </div>
-              ${goal.target_value != null ? `
-              <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <span>Current: <strong style="color:var(--text)">${goal.current_value ?? '—'}</strong> → Target: <strong style="color:var(--accent)">${goal.target_value}</strong></span>
-                <button onclick="showGoalProgressForm('${goal.id}',${goal.current_value ?? ''})" style="font-size:var(--text-sm, 11px);color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;padding:0">Update</button>
-              </div>
-              <div id="gpf-${goal.id}" style="display:none;margin-bottom:6px">
-                <div style="display:flex;gap:6px;align-items:center">
-                  <input type="number" id="gpf-val-${goal.id}" class="field-input" style="width:100px;padding:4px 8px;font-size:var(--text-xl, 16px)" step="0.1" placeholder="New value">
-                  <button class="btn-primary" style="font-size:var(--text-md, 12px);padding:4px 12px" onclick="saveGoalProgress('${goal.id}')">Save</button>
-                  <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="document.getElementById('gpf-${goal.id}').style.display='none'">Cancel</button>
-                </div>
-                <p id="gpf-err-${goal.id}" style="color:var(--danger);font-size:var(--text-sm, 11px);margin:4px 0 0"></p>
-              </div>` : ''}
-              <div style="height:4px;background:var(--surface-2);border-radius:var(--radius-xs, 4px);overflow:hidden;margin-bottom:6px">
-                <div style="height:100%;width:${pct}%;background:var(--accent);border-radius:4px"></div>
-              </div>
-              ${milestones.length ? `
-              <div style="display:flex;flex-wrap:wrap;gap:5px">
-                ${milestones.map(m => `
-                  <button onclick="toggleClientMilestone('${m.id}')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:20px;border:none;cursor:pointer;background:${m.completed_at ? 'var(--accent)' : 'var(--surface-2)'};color:${m.completed_at ? '#fff' : 'var(--text-muted)'}">
-                    ${m.completed_at ? '✓' : '○'} ${escapeHtml(m.title)}
-                  </button>`).join('')}
-              </div>` : ''}
-            </div>`
-          }).join('')}
-        </div>
-
-        <div class="dashboard-card">
-          <div class="card-header">
-            <h2 class="card-title">Recent sessions</h2>
-            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="startWorkoutRunner('${clientId}')">▶ Start</button>
-          </div>
-          ${!loggedSessions.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No sessions logged yet.</p>` : `
-          <div class="list">
-            ${loggedSessions.map(s => {
-              const dateStr = new Date(s.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-              const exCount = s.workout_log_exercises?.length || 0
-              return `
-              <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${s.id}','${clientId}')">
-                <div style="width:36px;height:36px;border-radius:var(--legacy-radius-9, 9px);background:var(--bg-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-accent)" stroke-width="2" style="width:15px;height:15px"><path d="M6 5h12M6 12h12M6 19h12"/></svg>
-                </div>
-                <div class="row-info">
-                  <div class="row-name">${escapeHtml(s.name)}</div>
-                  <div class="row-meta">${dateStr} · ${exCount} exercise${exCount !== 1 ? 's' : ''}</div>
-                </div>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
-              </div>`
-            }).join('')}
-          </div>`}
-        </div>
-
-      </div>
-
-      <!-- Right: weight + events + PBs + check-in -->
-      <div style="display:flex;flex-direction:column;gap:16px">
-
-        <!-- Weight -->
-        <div class="dashboard-card">
-          <div class="card-header">
-            <h2 class="card-title">Weight</h2>
-            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log</button>
-          </div>
-        ${latestWeight ? `
-          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
-            <span style="font-size:var(--text-display, 32px);font-weight:700">${weightToPref(latestWeight.weight_kg)}</span>
-            <span style="font-size:var(--text-xl, 16px);color:var(--text-muted)">${window._unitPrefs.weight}</span>
-            <span style="font-size:22px;color:${trendColour};margin-left:4px">${weightTrend}</span>
-          </div>
-          <p style="font-size:var(--text-md, 12px);color:var(--text-muted)">Logged ${formatDate(latestWeight.date)}</p>
-          ${prevWeight ? `<p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">Previous: ${fmtWeight(prevWeight.weight_kg, { spaced: true })}</p>` : ''}
-        ` : `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No weight logged yet.</p>`}
-        <div id="client-weight-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-            <div>
-              <label class="form-label">Date</label>
-              <input type="date" id="cwf-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
-            </div>
-            <div>
-              <label class="form-label">Weight (${window._unitPrefs.weight})</label>
-              <input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300">
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-            <div>
-              <label class="form-label">Body fat % <span style="color:var(--text-muted)">(optional)</span></label>
-              <input type="number" id="cwf-bf" class="form-input" placeholder="e.g. 19.5" step="0.1" min="1" max="60">
-            </div>
-            <div>
-              <label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label>
-              <input type="text" id="cwf-notes" class="form-input" placeholder="Any notes…">
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-            <div>
-              <label class="form-label">Resting HR (bpm) <span style="color:var(--text-muted)">(optional)</span></label>
-              <input type="number" inputmode="numeric" id="cwf-resting-hr" class="form-input" placeholder="e.g. 58" step="1" min="20" max="250">
-            </div>
-          </div>
-          <p id="cwf-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 6px"></p>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
-            <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
-          </div>
-        </div>
-      </div>
-
-        <div class="dashboard-card">
-          <div class="card-header"><h2 class="card-title">Upcoming</h2></div>
-          ${!events?.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No upcoming events.</p>` : events.map(ev => {
-            const s = eventStyle(ev.type)
-            return `
-            <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
-              <div style="width:3px;min-width:3px;height:34px;border-radius:2px;background:${s.colour};margin-top:2px"></div>
-              <div>
-                <div style="font-size:var(--text-base, 13px);font-weight:500">${escapeHtml(ev.title)}</div>
-                <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-top:1px">${s.label} · ${formatDate(ev.date)} · ${daysUntil(ev.date)}</div>
-              </div>
-            </div>`
-          }).join('')}
-        </div>
-
-        <div class="dashboard-card">
-          <div class="card-header">
-            <h2 class="card-title">Benchmarks</h2>
-            <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientPBForm('${clientId}')">+ Log record</button>
-          </div>
-          ${!pbs.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No records yet.</p>` : pbs.slice(0,4).map(pb => `
-            <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
-              <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
-              <span style="font-size:var(--text-lg, 14px);font-weight:700">${escapeHtml(String(pb.value))} <span style="font-size:var(--text-sm, 11px);font-weight:400;color:var(--text-muted)">${escapeHtml(pb.unit)}</span></span>
-            </div>`).join('')}
-          ${pbs.length > 4 ? `<p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:8px">+${pbs.length - 4} more</p>` : ''}
-          <div id="client-pb-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-            ${_pbFormHtml(clientId)}
-          </div>
-        </div>
-
-        <div class="dashboard-card" id="checkin-card">
-          <div class="card-header">
-            <h2 class="card-title">Weekly check-in</h2>
-            ${lastCheckIn ? `<span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${daysSinceCheckIn === 0 ? 'Submitted today' : daysSinceCheckIn + 'd ago'}</span>` : ''}
-          </div>
-          ${!checkInDue && lastCheckIn ? `
-            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px">
-              ${[['Sleep',lastCheckIn.sleep],['Energy',lastCheckIn.energy],['Stress',lastCheckIn.stress],['Soreness',lastCheckIn.soreness]].map(([label,val])=>`
-              <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:8px">
-                <div style="font-size:var(--text-2xl, 18px);font-weight:700;color:var(--accent)">${val}/5</div>
-                <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${label}</div>
-              </div>`).join('')}
-            </div>
-            ${lastCheckIn.notes ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 10px">${escapeHtml(lastCheckIn.notes)}</p>` : ''}
-            <button onclick="document.getElementById('checkin-form').style.display='block'" class="btn-secondary" style="font-size:var(--text-base, 13px)">Submit new check-in</button>
-          ` : `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 10px">${checkInDue ? 'Your weekly check-in is due. Let your coach know how you\'re feeling.' : 'No check-ins yet.'}</p>`}
-          <div id="checkin-form" style="${checkInDue ? '' : 'display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)'}">
-            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px">
-              ${[['sleep','Sleep (1–5)'],['energy','Energy (1–5)'],['stress','Stress (1–5)'],['soreness','Soreness (1–5)']].map(([id,label])=>`
-              <div>
-                <label class="field-label">${label}</label>
-                <input type="range" id="ci-${id}" min="1" max="5" step="1" value="${lastCheckIn?.[id]||3}" class="field-input" style="padding:6px 0">
-                <div style="display:flex;justify-content:space-between;font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px"><span>Low</span><span>High</span></div>
-              </div>`).join('')}
-            </div>
-            <div class="field">
-              <label class="field-label">Notes for your coach <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
-              <textarea id="ci-notes" class="field-input" rows="2" placeholder="How's training feeling? Any injuries or concerns?">${escapeHtml(lastCheckIn?.notes||'')}</textarea>
-            </div>
-            <p id="ci-error" style="color:var(--danger);font-size:var(--text-md, 12px);margin:4px 0"></p>
-            <button onclick="saveClientCheckIn('${clientId}')" class="btn-primary" style="margin-top:8px">Submit check-in</button>
-          </div>
-        </div>
-
-      </div>
-    </div>`
-
-  log.ok('renderClientDashboard', 'rendered', { clientId, goals: goals?.length, events: events?.length, pbs: pbs.length })
-}
-
-
-// ─── Benchmarks card: one best record per name — client AND solo dashboards ───────────────────────
-// ONE helper for both cards. Each used to build its own `pbMap`, comparing raw `value`s with the
-// direction picked by CATEGORY (cardio = lower, everything else = higher). PERF_CATEGORIES lets one
-// name be logged in either unit of a pair, and a cardio distance is not a time, so that rule showed
-// 220 lbs over 100 kg, the SLOWER of two benchmark times, and the SHORTER of two cardio distances
-// (docs/bugs/2026-09-19-dashboard-benchmarks-cards-pick-best-without-checking-units.md).
-// _bestPerfLog (app-progress.js) already converts to a common unit and picks the direction by UNIT, and
-// the coach's Performance tab uses it — so this only groups by name and delegates.
-// `logs` arrive newest-first, so a name's first appearance is its most recent record and the returned
-// order — which the card slices to four — is "the most recently logged names".
-function _perfBestsByName(logs) {
-  const byName = new Map()
-  for (const p of logs || []) {
-    if (!byName.has(p.name)) byName.set(p.name, [])
-    byName.get(p.name).push(p)
-  }
-  return [...byName.values()].map(group => _bestPerfLog(group)).filter(Boolean)
-}
-
-// ─── SOLO / PERSONAL DASHBOARD ────────────────────────────────────────────────
-// ─── Solo dashboard tile helpers ──────────────────────────────────────────────────────────────
-// Top-level, not closures, so the CLIENT dashboard can adopt the same tiles in a later pass
-// (agreed scope 2026-08-30: solo now, client later). They were closures inside renderSoloDashboard
-// and could not be called from anywhere else.
+// ─── Shared dashboard helpers ───────────────────────────────────────────────────────────────────────────────────────────────
+// Dates, the calendar timeline and goal progress, used by all three dashboards.
 
 function _dashFormatDate(dateStr) {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
@@ -694,123 +67,6 @@ function _soloUpcoming(events, progByDate, todayStr) {
   return out.sort((a, b) => a.date.localeCompare(b.date))
 }
 
-function _soloTileWeight(weights, todayStr) {
-  const latest = weights?.[0] ?? null
-  const prev = weights?.[1] ?? null
-  if (!latest) {
-    return `<div class="dashboard-card solo-tile" onclick="window._progressTab='Body Weight';navigate('progress')">
-      <div class="card-header"><h2 class="card-title">Weight</h2></div>
-      <p class="solo-tile-empty">No weigh-ins yet. Tap to log one.</p>
-    </div>`
-  }
-  // ABSOLUTE change in the user's preferred unit, matching how the Weight page and the old card both
-  // showed it. _deltaBadge exists but returns a PERCENTAGE, which would disagree with both surfaces.
-  let deltaHtml = '<span class="solo-tile-sub">First entry</span>'
-  if (prev) {
-    // Diff in KG, handed straight to fmtWeight, which owns unit conversion. Computing it in
-    // display units and converting back by hand would put the kg<->lb factor in a second place.
-    const diffKg = latest.weight_kg - prev.weight_kg
-    const flat = Math.abs(diffKg) < 0.05
-    const arrow = flat ? '→' : diffKg < 0 ? '↓' : '↑'
-    // decimals:1 is load-bearing. fmtWeight only rounds when asked, and weightToPref returns the
-    // raw float for kg — so 82.8 - 82.4 printed as "0.3999999999999915 kg" on screen. Same binary
-    // float class as the "20.800000000000004%" axis label _tickNum was written for. The STORED
-    // figure above needs no rounding; only this subtraction does.
-    // No value judgement on direction: the app does not know whether this user is cutting or
-    // bulking, and colouring "down" as good would be wrong for half of them.
-    deltaHtml = `<span class="solo-tile-delta">${arrow} ${flat ? 'no change' : fmtWeight(Math.abs(diffKg), { spaced: true, decimals: 1 })}</span>
-      <span class="solo-tile-sub">since ${_dashFormatDate(prev.date)}</span>`
-  }
-  // Name the tab: _progressTab is a plain global that persists within an SPA session, so without this
-  // the Weight tile lands on whichever Progress tab was last open (Jake, 2026-09-09).
-  return `<div class="dashboard-card solo-tile" onclick="window._progressTab='Body Weight';navigate('progress')">
-    <div class="card-header"><h2 class="card-title">Weight</h2></div>
-    <div class="solo-tile-figure">${weightToPref(latest.weight_kg)}<span class="solo-tile-unit">${window._unitPrefs.weight}</span></div>
-    <div class="solo-tile-line">${deltaHtml}</div>
-    <div class="solo-spark"><canvas id="solo-weight-spark"></canvas></div>
-  </div>`
-}
-
-// Renamed from 'Next up' to 'My calendar', Jake 2026-09-28: "This tile should be 'my calendar' not 'next up'."
-// Function/id names left alone deliberately (_soloTileNextUp, .solo-tile-* classes) -- only the visible label changed.
-function _soloTileNextUp(upcoming, todayStr) {
-  if (!upcoming.length) {
-    return `<div class="dashboard-card solo-tile" onclick="navigate('calendar')">
-      <div class="card-header"><h2 class="card-title">My calendar</h2></div>
-      <p class="solo-tile-empty">Nothing scheduled. Tap to open your calendar.</p>
-    </div>`
-  }
-  return `<div class="dashboard-card solo-tile" onclick="navigate('calendar')">
-    <div class="card-header"><h2 class="card-title">My calendar</h2></div>
-    ${upcoming.slice(0, 3).map(u => `
-      <div class="solo-tile-row">
-        <span class="solo-tile-pip" style="background:${u.colour}"></span>
-        <div class="row-info">
-          <div class="row-name">${escapeHtml(u.title)}</div>
-          <div class="row-meta">${_dashFormatDate(u.date)} · ${_dashDaysUntil(u.date, todayStr)}</div>
-        </div>
-      </div>`).join('')}
-  </div>`
-}
-
-function _soloTileRecent(recentSessions, clientId) {
-  // D3 (2026-09-07): skip 0-exercise logs (abandoned starts / test probes) — same as the client dash.
-  const rows = (recentSessions || []).filter(s => (s.workout_log_exercises?.length || 0) > 0).slice(0, 3)
-  if (!rows.length) {
-    return `<div class="dashboard-card solo-tile" onclick="navigate('workouts')">
-      <div class="card-header"><h2 class="card-title">Recent sessions</h2></div>
-      <p class="solo-tile-empty">No sessions logged yet.</p>
-    </div>`
-  }
-  // The TILE navigates; each ROW opens that specific log. stopPropagation so a row tap does not also
-  // fire the tile's navigate and race it.
-  return `<div class="dashboard-card solo-tile" onclick="navigate('workouts')">
-    <div class="card-header"><h2 class="card-title">Recent sessions</h2></div>
-    ${rows.map(s => {
-      const n = s.workout_log_exercises?.length || 0
-      return `<div class="solo-tile-row" onclick="event.stopPropagation();openWorkoutLog('${s.id}','${clientId}')">
-        <div class="row-info">
-          <div class="row-name">${escapeHtml(s.name)}</div>
-          <div class="row-meta">${_dashFormatDate(s.date)} · ${n} exercise${n !== 1 ? 's' : ''}</div>
-        </div>
-      </div>`
-    }).join('')}
-  </div>`
-}
-
-// progInfo (optional): { name, meta } for the assigned program/phase, folded in as a small eyebrow
-// above the session name. Merged in 2026-09-29 — Jake: "'Current program' and 'next session' panels
-// do the same thing. Combine the 2 to reduce the clutter." The old standalone strip's own "View
-// program" button is gone with it; the whole tile already navigate()s to Workouts on tap, same
-// destination, one fewer control.
-function _soloTileNextSession(upcoming, clientId, todayStr, progInfo) {
-  const eyebrow = progInfo?.name
-    ? `<div class="solo-strip-eyebrow">${escapeHtml(progInfo.name)}${progInfo.meta ? ' · ' + escapeHtml(progInfo.meta) : ''}</div>`
-    : ''
-  const next = upcoming.find(u => u.kind === 'session')
-  if (!next) {
-    return `<div class="dashboard-card solo-tile" onclick="navigate('workouts')">
-      <div class="card-header"><h2 class="card-title">Next session</h2></div>
-      ${eyebrow}
-      <p class="solo-tile-empty">No programmed session ahead. Tap to start a freeform one.</p>
-    </div>`
-  }
-  // Start is a SEPARATE control, and stops propagation: a mis-tap on the tile must never begin a real
-  // session, because the runner writes a resume draft and an accidental start is not free to undo.
-  // It needs the CLIENT'S CLONE template id (client_program_workouts.workout_template_id), never the
-  // master phase-slot id — every other caller resolves it the same way.
-  const canStart = !!next.templateId
-  return `<div class="dashboard-card solo-tile" onclick="navigate('workouts')">
-    <div class="card-header"><h2 class="card-title">Next session</h2></div>
-    ${eyebrow}
-    <div class="solo-tile-name">${escapeHtml(next.title)}</div>
-    <div class="solo-tile-line"><span class="solo-tile-sub">${_dashFormatDate(next.date)} · ${_dashDaysUntil(next.date, todayStr)}</span></div>
-    ${canStart
-      ? `<button class="btn-primary solo-tile-btn" onclick="event.stopPropagation();startWorkoutRunner('${clientId}','${escapeAttr(next.templateId)}')">▶ Start</button>`
-      : `<span class="solo-tile-sub">Open Workouts to start this one.</span>`}
-  </div>`
-}
-
 // Percent-complete for a goal. Lifted out of the old Goals card's inline IIFE so the tile and any
 // future surface share ONE definition — the card and this tile disagreeing about progress would be
 // two fields carrying one fact.
@@ -826,178 +82,672 @@ function _goalPct(goal) {
   return milestones.length ? Math.round((milestones.filter(m => m.completed_at).length / milestones.length) * 100) : 0
 }
 
-// Goals tile. Links to the `goals` page, which as of 2026-08-30 renders the EXISTING renderClientGoals
-// UI — add / open / edit / delete / milestones / progress. Before that route existed a solo user's
-// only goals surface was the dashboard card, which could list goals and tick milestones but could not
-// create one, so this tile is what finally makes goals fully usable from a personal account.
-function _soloTileGoals(goals, todayStr) {
-  const list = goals || []
-  if (!list.length) {
-    return `<div class="dashboard-card solo-tile" onclick="navigate('goals')">
-      <div class="card-header"><h2 class="card-title">Goals</h2></div>
-      <p class="solo-tile-empty">No active goals. Tap to set one.</p>
-    </div>`
+// ─── Dashboard model: the pure logic behind the week strip, the streak and the program tile (2026-10-03) ─────────────────
+// Jake, 2026-10-03: "The whole dashboard needs a rework for mobile view, as nothing really flows or stands out as a dashboard or
+// makes it feel like this is landing page and hub of your account." One landing page for all three roles: a Today card, the week
+// as a strip, a streak and a program tile, then body weight, calendar and goals. Everything in this section is a plain function of
+// data - no DOM, no database - so tests-node/dashboard-model.test.mjs can pin the rules. The markup builders are further down.
+
+// Monday of the week containing `ymd` (a local YYYY-MM-DD), as YYYY-MM-DD; null for anything unparseable.
+function _dashMonday(ymd) {
+  const d = _mondayOfWeek(ymd)   // app-core: a local-midnight Date, or null
+  return d ? _ymdLocal(d) : null
+}
+
+function _dashAddDays(ymd, n) {
+  const d = new Date(ymd + 'T00:00:00')
+  d.setDate(d.getDate() + n)
+  return _ymdLocal(d)
+}
+
+// How many weeks back the streak looks. Also how much history the dashboard reads: a year of sessions is a couple of hundred rows.
+const _DASH_STREAK_WEEKS = 52
+
+// The streak: consecutive weeks (Monday to Sunday) that hit the plan - Jake's choice, 2026-10-03: "Weeks hitting my whole plan".
+//   - INSIDE the program's span a week counts when every planned session was logged. A week with nothing planned asks nothing and is
+//     skipped (a planned rest week neither earns nor breaks the streak).
+//   - OUTSIDE the span - before the program began, after it ended, or with no program at all - one logged session keeps it alive.
+//     Without this a finished program would let someone who has not trained for months keep a streak.
+//   - THIS week counts once it is complete and is simply ignored until then: a Wednesday is not a missed week.
+// progByDate is _programWorkoutsByDate's map ({ 'YYYY-MM-DD': [session, ...] }); logDates are the dates of logged sessions, one per
+// session. Returns { weeks, capped }: capped means it never broke inside the lookback, so the true figure may be higher.
+function _dashStreakWeeks(progByDate, logDates, todayStr, maxWeeks = _DASH_STREAK_WEEKS) {
+  const planned = {}, logged = {}
+  let first = null, last = null   // the first and last Monday the program has a session on
+  for (const ds of Object.keys(progByDate || {})) {
+    const n = (progByDate[ds] || []).length
+    const wk = n ? _dashMonday(ds) : null
+    if (!wk) continue
+    planned[wk] = (planned[wk] || 0) + n
+    if (first === null || wk < first) first = wk
+    if (last === null || wk > last) last = wk
   }
-  // Soonest deadline first so the headline number is followed by the thing actually due. Goals with
-  // no target_date sort last rather than being dropped — a goal without a deadline is still a goal.
+  for (const ds of logDates || []) {
+    const wk = _dashMonday(ds)
+    if (wk) logged[wk] = (logged[wk] || 0) + 1
+  }
+  const need = wk => (first !== null && wk >= first && wk <= last ? (planned[wk] || 0) : 1)
+  const thisWeek = _dashMonday(todayStr)
+  if (!thisWeek) return { weeks: 0, capped: false }
+
+  let weeks = 0, broken = false
+  if (need(thisWeek) > 0 && (logged[thisWeek] || 0) >= need(thisWeek)) weeks++
+  for (let i = 1; i <= maxWeeks; i++) {
+    const wk = _dashAddDays(thisWeek, -7 * i), n = need(wk)
+    if (n === 0) continue
+    if ((logged[wk] || 0) >= n) weeks++
+    else { broken = true; break }
+  }
+  return { weeks, capped: !broken }
+}
+
+const _DASH_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+// The seven days of the week containing todayStr, Monday first. `logs` are logged sessions ({ date, ... }); progByDate as above.
+//   kind  done   something was logged that day
+//         plan   today, a session is planned and nothing is logged yet
+//         later  a planned session still to come
+//         miss   a planned session on a day that has gone, with nothing logged
+//         rest   nothing planned, nothing logged
+function _dashWeekDays(todayStr, progByDate, logs) {
+  const monday = _dashMonday(todayStr)
+  const byDate = {}
+  for (const l of logs || []) (byDate[l.date] ||= []).push(l)
+  return _DASH_DAY_LABELS.map((label, i) => {
+    const ds = _dashAddDays(monday, i)
+    const planned = (progByDate || {})[ds] || [], done = byDate[ds] || []
+    const today = ds === todayStr
+    const kind = done.length ? 'done' : planned.length ? (today ? 'plan' : ds < todayStr ? 'miss' : 'later') : 'rest'
+    return { ds, label, num: +ds.slice(8), today, kind, planned, done }
+  })
+}
+
+// "2 of 3 sessions done". planned never reads lower than done: "4 of 3" would look like a mistake, and extra sessions are fine.
+function _dashWeekCounts(days) {
+  const done = days.reduce((n, d) => n + d.done.length, 0)
+  const planned = days.reduce((n, d) => n + d.planned.length, 0)
+  return { done, planned: Math.max(planned, done) }
+}
+
+// The program tile: which week of the whole program, which phase it is in, how far through. null without a program.
+// start_date is nullable (the assign form does not require it): unset means "just started" - week 1 - not NaN, which used to fall
+// through to the LAST phase (see _buildWorkoutsHero).
+function _dashProgramInfo(cp0, todayStr) {
+  if (!cp0?.programs) return null
+  const prog = cp0.programs
+  const phases = [...(prog.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
+  const total = phases.reduce((n, p) => n + (p.duration_weeks || 0), 0)
+  const start = cp0.start_date ? new Date(cp0.start_date + 'T00:00:00') : null
+  const today = new Date(todayStr + 'T00:00:00')
+  const sinceStart = start && !isNaN(start) ? Math.max(0, Math.floor(Math.round((today - start) / 86400000) / 7)) : 0
+  let cum = 0, current = phases[phases.length - 1] || null
+  for (const p of phases) { cum += p.duration_weeks || 0; if (sinceStart < cum) { current = p; break } }
+  const week = total ? Math.min(sinceStart + 1, total) : sinceStart + 1
+  return { name: prog.name || 'Your program', phase: current ? current.name : '', week, totalWeeks: total, pct: total ? Math.round(week / total * 100) : 0 }
+}
+
+// ─── Dashboard views: markup builders (pure strings) ───────────────────────────────────────────────────────────────────────
+// Solo, client and coach share the skeleton - greeting, a Today card, the week, two number tiles, then cards - so the builders
+// below are shared. Every piece of user text goes through escapeHtml; ids inside inline handlers through escapeAttr.
+// The styles are the .dash-* classes in css/main.css (tokens only).
+
+const _DASH_ICONS = {
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+  flame: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c.6 3-1.8 4.6-1.8 7 0 1.3.9 2.2 1.9 2.2 1.1 0 2-.9 2-2.2 0-.7-.3-1.4-.7-2 2.6 1.4 4.6 4.1 4.6 7.4A7 7 0 0 1 5 16.4c0-2.8 1.6-4.6 3-6C9.4 9 10 8 10 6.4 10 4.4 11 3 12 2z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  build: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/></svg>',
+}
+
+const _dashPlural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+// Buttons. The handler is spelled out in each builder and never passed in as a string: scripts/check-handler-targets.mjs can only verify
+// an inline handler whose NAME is in the source, so a computed one would silently stop working the day its target was renamed.
+const _dashBack = () => '<button type="button" class="dash-btn dash-btn-ghost" onclick="_dashPickDay(null)">Back to today</button>'
+const _dashToProgram = (cls, label) => `<button type="button" class="dash-btn ${cls}" onclick="navigate('workouts')">${label}</button>`
+const _dashStart = (cid, tid) => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}','${tid}')">▶ Start workout</button>`
+const _dashLogWorkout = cid => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}')">Log a workout</button>`
+const _dashViewSession = (id, cid) => `<button type="button" class="dash-btn dash-btn-primary" onclick="openWorkoutLog('${id}','${cid}')">View session</button>`
+const _dashSeeClients = () => '<button type="button" class="dash-btn dash-btn-primary" onclick="navigate(\'clients\')">See clients</button>'
+const _dashAddClient = () => '<button type="button" class="dash-btn dash-btn-primary" onclick="showAddClientModal()">+ Add client</button>'
+const _dashAttention = n => `<button type="button" class="dash-btn dash-btn-ghost" onclick="document.getElementById('dash-attn')?.scrollIntoView({behavior:'smooth'})">${n} need attention</button>`
+
+// Where the weight and goals cards go - functions, for the same reason. Goals live on the Goals page for a solo user and on
+// Progress > Goals for a coached client (the client has no goals route).
+function _dashOpenWeight() { window._progressTab = 'Body Weight'; navigate('progress') }
+function _dashOpenGoals(isClient) { if (isClient) window._progressTab = 'Goals'; navigate(isClient ? 'progress' : 'goals') }
+// "Squat + Threshold": the sessions planned on a day.
+const _dashPlanNames = day => day.planned.map(p => p.workout_templates?.name || 'Session').join(' + ')
+
+// The Today card for one day of the week - today, or the day the person tapped on the strip. It is the only saturated block on
+// the page, so it is what the eye lands on; on a rest day, a finished day or any other day it goes calm.
+// ctx: { role, clientId, todayStr, days, hasProgram, program, next }  where next is { date, title } for the next planned
+// session after today, or null. No durations or exercise counts for a planned session: the app does not store them.
+function _dashHeroHtml(day, ctx) {
+  const cid = escapeAttr(ctx.clientId)
+  const when = _dashFormatDate(day.ds)
+  const back = day.today ? '' : _dashBack()
+  let calm = true, eyebrow, title, meta, actions = ''
+
+  if (day.kind === 'done') {
+    const first = day.done[0], n = first.workout_log_exercises?.length || 0, more = day.done.length - 1
+    eyebrow = `${day.today ? 'Today' : when} · Done`
+    title = escapeHtml(first.name)
+    meta = `${_dashPlural(n, 'exercise', 'exercises')} logged${more ? ` · +${_dashPlural(more, 'more session', 'more sessions')}` : ''}`
+    actions = _dashViewSession(escapeAttr(first.id), cid) + back
+  } else if (day.kind === 'plan') {
+    calm = false
+    eyebrow = (ctx.role === 'client' ? 'Up next' : 'Today') + (ctx.program ? ' · ' + escapeHtml(ctx.program.name) : '')
+    title = escapeHtml(_dashPlanNames(day))
+    const before = ctx.days.filter(d => d.ds < day.ds).reduce((n, d) => n + d.planned.length, 0)
+    const total = ctx.days.reduce((n, d) => n + d.planned.length, 0)
+    meta = day.planned.length > 1 ? `${day.planned.length} sessions today` : `Session ${before + 1} of ${total} this week`
+    // Start needs the CLIENT'S CLONE template id (client_program_workouts.workout_template_id), never the master phase-slot id -
+    // every other caller resolves it the same way. Without one, Workouts is where this session can be started.
+    const tid = day.planned[0]._clientTemplateId
+    actions = (tid ? _dashStart(cid, escapeAttr(tid)) : _dashToProgram('dash-btn-primary', 'Open Workouts')) + _dashToProgram('dash-btn-ghost', 'View program')
+  } else if (day.kind === 'miss') {
+    eyebrow = `${when} · Missed`
+    title = escapeHtml(_dashPlanNames(day))
+    meta = 'Planned, not logged.'
+    actions = back
+  } else if (day.kind === 'later') {
+    eyebrow = when
+    title = escapeHtml(_dashPlanNames(day))
+    meta = _dashDaysUntil(day.ds, ctx.todayStr)
+    actions = _dashToProgram('dash-btn-primary', 'View program') + back
+  } else {   // rest: nothing planned, nothing logged. The wording differs so the same phrase is never said twice.
+    eyebrow = day.today ? 'Today' : when
+    if (day.today) {
+      title = ctx.hasProgram ? 'Rest day' : 'Nothing planned'
+      meta = ctx.next ? `Next up: ${escapeHtml(ctx.next.title)}, ${_dashFormatDate(ctx.next.date)}` : 'Start a freeform session whenever you like.'
+      actions = _dashLogWorkout(cid) + (ctx.next ? _dashToProgram('dash-btn-ghost', 'View program') : '')
+    } else if (day.ds < ctx.todayStr) {
+      title = ctx.hasProgram ? 'Rest day' : 'No session'
+      meta = ctx.hasProgram ? 'Nothing was planned.' : 'Nothing logged.'
+      actions = back
+    } else {
+      title = ctx.hasProgram ? 'Rest day' : 'Nothing planned'
+      meta = ctx.hasProgram ? 'Recovery is part of the plan.' : 'Nothing planned yet.'
+      actions = back
+    }
+  }
+  return `<section class="dash-hero${calm ? ' dash-hero-calm' : ''}" id="dash-hero" data-kind="${day.kind}">` +
+    `<div class="dash-hero-eyebrow">${eyebrow}</div><div class="dash-hero-title">${title}</div><div class="dash-hero-meta">${meta}</div>` +
+    `<div class="dash-hero-actions">${actions}</div></section>`
+}
+
+// The week as seven tappable days. `sel` is the date the person tapped (null = today); the pressed day is the one the Today card is
+// showing, so the strip and the card never disagree.
+function _dashWeekHtml(days, counts, sel) {
+  const words = { done: 'done', plan: 'planned for today', later: 'planned', miss: 'missed', rest: 'rest day' }
+  const glyph = { done: _DASH_ICONS.check, plan: '▶', later: '', miss: '×', rest: '–' }
+  const shown = sel || days.find(d => d.today)?.ds
+  const sub = counts.planned ? `<b>${counts.done} of ${counts.planned}</b> ${counts.planned === 1 ? 'session' : 'sessions'} done` : 'Nothing planned this week'
+  return `<section class="dash-card" id="dash-week"><div class="dash-card-head"><h2 class="dash-card-title">This week</h2><span class="dash-card-sub">${sub}</span></div>` +
+    `<div class="dash-days" role="group" aria-label="This week">${days.map(d =>
+      `<button type="button" class="dash-day${d.today ? ' dash-day-today' : ''}" data-day="${d.ds}" aria-pressed="${d.ds === shown}" aria-label="${d.label} ${d.num}: ${words[d.kind]}" onclick="_dashPickDay('${d.ds}')">` +
+      `<span class="dash-dn">${d.label}</span><span class="dash-dc dash-dc-${d.kind}">${glyph[d.kind]}</span><span class="dash-dd">${d.num}</span></button>`).join('')}</div>` +
+    '<div class="dash-legend">Green done · purple planned · red missed · grey rest. Tap a day to see it.</div></section>'
+}
+
+// Streak and program: two quiet number tiles.
+function _dashTilesHtml(streak, program, isSolo) {
+  const flame = `<span class="dash-flame">${_DASH_ICONS.flame}</span>`
+  const sub = streak.weeks > 0
+    ? (program ? 'hitting your whole plan' : 'a session every week')
+    : (program ? "finish this week's plan to start one" : 'log a session this week to start one')
+  const streakTile = `<section class="dash-card" id="dash-streak"><div class="dash-ico">${flame}Streak</div>` +
+    `<div class="dash-big">${streak.weeks}${streak.capped && streak.weeks ? '+' : ''} <small>week streak</small></div><div class="dash-sub">${sub}</div></section>`
+  const programTile = program
+    ? `<section class="dash-card dash-tap" id="dash-program" onclick="navigate('workouts')"><div class="dash-ico">Program</div>` +
+      `<div class="dash-big">Wk ${program.week}${program.totalWeeks ? ` <small>of ${program.totalWeeks}</small>` : ''}</div>` +
+      `<div class="dash-sub">${escapeHtml(program.phase ? program.phase + ' · ' : '')}${escapeHtml(program.name)}</div>` +
+      `<div class="dash-meter"><i style="width:${program.pct}%"></i></div></section>`
+    : `<section class="dash-card dash-tap" id="dash-program" onclick="navigate('${isSolo ? 'programs' : 'workouts'}')"><div class="dash-ico">Program</div>` +
+      `<div class="dash-big">None</div><div class="dash-sub">${isSolo ? 'Build one in Programs' : 'Ask your PT to assign one'}</div></section>`
+  return `<div class="dash-two">${streakTile}${programTile}</div>`
+}
+
+// Body weight: the latest figure, how it moved since the weigh-in before, and the trend. Keeps the canvas id the sparkline is drawn into.
+function _dashWeightHtml(weights) {
+  const latest = weights?.[0] ?? null, prev = weights?.[1] ?? null
+  if (!latest) {
+    return `<section class="dash-card dash-tap" id="dash-weight" onclick="_dashOpenWeight()"><div class="dash-card-head"><h2 class="dash-card-title">Body weight</h2></div>` +
+      '<p class="dash-empty">No weigh-ins yet. Tap to log one.</p></section>'
+  }
+  // ABSOLUTE change in the user's preferred unit, as the Weight page showed it. No value judgement on direction: the app does not
+  // know whether this person is cutting or bulking. The diff is taken in KG and handed to fmtWeight, which owns unit conversion;
+  // decimals:1 is load-bearing (82.8 - 82.4 printed as "0.3999999999999915 kg" without it).
+  let delta = '<b>First entry</b>'
+  if (prev) {
+    const diffKg = latest.weight_kg - prev.weight_kg, flat = Math.abs(diffKg) < 0.05
+    delta = `<b>${flat ? '→ no change' : (diffKg < 0 ? '↓ ' : '↑ ') + fmtWeight(Math.abs(diffKg), { spaced: true, decimals: 1 })}</b> since ${_dashFormatDate(prev.date)}`
+  }
+  return `<section class="dash-card dash-tap" id="dash-weight" onclick="_dashOpenWeight()"><div class="dash-card-head"><h2 class="dash-card-title">Body weight</h2>` +
+    `<span class="dash-card-sub">${weights.length > 1 ? `Last ${weights.length} weigh-ins` : _dashFormatDate(latest.date)}</span></div>` +
+    `<div class="dash-wv"><b>${weightToPref(latest.weight_kg)}</b><span>${window._unitPrefs.weight}</span></div><div class="dash-delta">${delta}</div>` +
+    '<div class="solo-spark"><canvas id="solo-weight-spark"></canvas></div>' +
+    `<button type="button" class="dash-link" onclick="event.stopPropagation();_dashOpenWeight()">Log or view weight</button></section>`
+}
+
+// What is coming up: calendar events and programmed sessions on one date-ordered timeline (_soloUpcoming).
+function _dashCalendarHtml(upcoming, todayStr) {
+  const rows = (upcoming || []).slice(0, 4)
+  return `<section class="dash-card dash-tap" id="dash-calendar" onclick="navigate('calendar')"><div class="dash-card-head"><h2 class="dash-card-title">My calendar</h2></div>` +
+    (rows.length
+      ? rows.map(u => `<div class="dash-row"><span class="dash-pip" style="background:${u.colour}"></span><span class="dash-row-main"><b>${escapeHtml(u.title)}</b><i>${_dashFormatDate(u.date)}</i></span><em class="dash-pill">${_dashDaysUntil(u.date, todayStr)}</em></div>`).join('')
+      : '<p class="dash-empty">Nothing scheduled. Tap to open your calendar.</p>') +
+    `<button type="button" class="dash-link" onclick="event.stopPropagation();navigate('calendar')">See calendar</button></section>`
+}
+
+// Goals: how many are active and the two due soonest, each with its progress. Tapping opens the full goals UI for this role.
+function _dashGoalsHtml(goals, todayStr, isClient) {
+  const list = goals || []
+  const head = `<div class="dash-card-head"><h2 class="dash-card-title">Goals</h2>${list.length ? `<span class="dash-card-sub"><b>${list.length}</b> active</span>` : ''}</div>`
+  if (!list.length) return `<section class="dash-card dash-tap" id="dash-goals" onclick="_dashOpenGoals(${isClient})">${head}<p class="dash-empty">No active goals. Tap to set one.</p></section>`
+  // Soonest deadline first; a goal with no date sorts last rather than being dropped.
   const sorted = [...list].sort((a, b) => (a.target_date || '9999').localeCompare(b.target_date || '9999'))
-  return `<div class="dashboard-card solo-tile" onclick="navigate('goals')">
-    <div class="card-header"><h2 class="card-title">Goals</h2></div>
-    <div class="solo-tile-figure">${list.length}<span class="solo-tile-unit">active</span></div>
-    ${sorted.slice(0, 2).map(g => {
-      const pct = _goalPct(g)
-      return `<div class="solo-goal-row">
-        <div class="solo-goal-head">
-          <span class="row-name">${escapeHtml(g.title)}</span>
-          ${g.target_date ? `<span class="solo-tile-sub">${_dashDaysUntil(g.target_date, todayStr)}</span>` : ''}
-        </div>
-        <div class="solo-goal-bar"><div class="solo-goal-fill" style="width:${pct}%"></div></div>
-      </div>`
-    }).join('')}
-    ${list.length > 2 ? `<span class="solo-tile-sub">+${list.length - 2} more</span>` : ''}
-  </div>`
+  return `<section class="dash-card dash-tap" id="dash-goals" onclick="_dashOpenGoals(${isClient})">${head}` +
+    sorted.slice(0, 2).map(g => `<div class="dash-goal"><div class="dash-goal-head"><b>${escapeHtml(g.title)}</b><span>${g.target_date ? _dashDaysUntil(g.target_date, todayStr) : _goalPct(g) + '%'}</span></div>` +
+      `<div class="dash-meter"><i style="width:${_goalPct(g)}%"></i></div></div>`).join('') +
+    (list.length > 2 ? `<p class="dash-sub">+${list.length - 2} more</p>` : '') +
+    `<button type="button" class="dash-link" onclick="event.stopPropagation();_dashOpenGoals(${isClient})">See all goals</button></section>`
 }
 
-// Replaces the old standalone Benchmarks card (Jake, 2026-09-28: "Benchmarks can be removed from this
-// page and replaced with my progress and being linked to that page"). Decision: "Small preview, same
-// idea as today" — same pbMap-derived list this card always showed, just fewer rows shown by default.
-//
-// CORRECTED 2026-09-29 (multi-agent review, same session): the first version dropped
-// id="client-pb-form"/showClientPBForm entirely, on the wrong assumption that "+ Log record" was still
-// reachable "one tap further in" on the Personal Bests tab this card links to — at the time, that tab
-// rendered renderClient1RMs only (client_1rms, barbell 1RMs), a different table from this card's own
-// performance_logs data. Restored the form there as a stopgap while flagging the mismatch to Jake.
-//
-// CORRECTED AGAIN 2026-09-30 (Jake: "personal bests page should be the only page that contains all of
-// this data"): Personal Bests now mounts renderClientPerformance alongside the 1RM grid
-// (js/app-progress.js's renderProgress, #pb-performance-section) — the SAME add-form/history/delete UI
-// the coach's client-profile Performance tab already used, reused rather than reinvented, and now
-// genuinely covers this card's own data. So this tile goes back to a pure preview + link, this time
-// correctly: nothing is lost, because the destination actually has it now.
-// tests/pb-consolidation-2026-08-17.spec.js proves both halves: the real write path from Personal
-// Bests, and that this dashboard no longer hosts an independent copy.
-function _soloTileMyProgress(pbs) {
-  const list = pbs || []
-  return `<div class="dashboard-card solo-tile" onclick="window._progressTab='Personal Bests';navigate('progress')">
-    <div class="card-header"><h2 class="card-title">My progress</h2></div>
-    ${!list.length ? `<p class="solo-tile-empty">No records yet. Tap to add one.</p>` : list.slice(0, 2).map(pb => `
-      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(pb.name)}</span>
-        <span style="font-size:var(--text-lg, 14px);font-weight:700">${escapeHtml(String(pb.value))} <span class="solo-tile-sub">${escapeHtml(pb.unit || '')}</span></span>
-      </div>`).join('')}
-    ${list.length > 2 ? `<span class="solo-tile-sub">+${list.length - 2} more</span>` : ''}
-  </div>`
+// Tapping a day on the week strip swaps the Today card (and the pressed day) in place; no re-read. State lives on the page root, so a
+// slow render that finishes late cannot leave a stale selection behind. null / today / the same day again = back to today.
+function _dashPickDay(ds) {
+  const root = document.getElementById('dash-root'), st = root && root._dash
+  if (!st) return
+  st.sel = !ds || ds === st.todayStr || ds === st.sel ? null : ds
+  const swap = (id, html) => { const el = document.getElementById(id); if (el) el.outerHTML = html }
+  swap('dash-hero', st.hero(st.sel))
+  swap('dash-week', st.week(st.sel))
+  // The strip was rebuilt, so put the keyboard focus back on the day the card is now showing.
+  document.querySelector(`#dash-week [data-day="${st.sel || st.todayStr}"]`)?.focus()   // a day button (own pages) or a bar (coach)
 }
 
-async function renderSoloDashboard(el) {
-  log.info('renderSoloDashboard', 'loading personal dashboard')
+// ─── COACH DASHBOARD ────────────────────────────────────────────────────────────────────────────────────────────────────────
+// The same skeleton as the other two, read for a coach (Jake: "Coach version: Yes, go with it"): Today is the sessions clients have
+// logged today, the week is sessions logged per day across all clients, and the two tiles are who trained this week and which
+// programs end soon. LOGGED-ONLY on purpose: the database knows what each client DID, not what was planned for today, so there is
+// no "2 of 5 done" - that needs a new database view (SQL for Jake to run) and is a follow-up if he wants it.
+
+const _dashInitials = name => (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+
+function _dashTimeAgo(iso) {
+  const diff = Date.now() - new Date(iso)
+  const h = Math.floor(diff / 3600000), d = Math.floor(diff / 86400000)
+  if (h < 1) return 'just now'
+  if (h < 24) return `${h}h ago`
+  if (d === 1) return 'yesterday'
+  return `${d}d ago`
+}
+
+async function renderDashboard(el) {
+  log.info('renderDashboard', 'fetching dashboard data')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const clientId = window._soloClientId
-  if (!clientId) { el.innerHTML = '<div class="loading-state">Personal account not set up yet.</div>'; return }
+  // LOCAL dates throughout: a coach's "today" is their own day. (The view's sessions_7d is UTC-dated; it is only used for the
+  // rolling "trained in the last 7 days" count, which is what it always counted.)
+  const todayStr = _ymdLocal(new Date())
+  const weekAgoStr = _dashAddDays(todayStr, -7)
+  const in14Str = _dashAddDays(todayStr, 14)
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  // LOCAL date, not toISOString(). The programmed-day map is keyed by _ymdLocal, so a UTC-derived
-  // "today" would disagree with it by one day for anyone west of UTC, and for a UK user during BST
-  // between midnight and 01:00 — which is exactly when an early riser opens this page.
-  const todayStr   = _ymdLocal(new Date())
-  const weekAgoStr = _ymdLocal(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+  // Fetch coach's client IDs first so all queries are correctly scoped
+  const { data: coachClients, error: coachClientsErr } = await db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).order('full_name')
+  const ids = (coachClients || []).map(c => c.id)
 
-  const [
-    { data: goals, error: goalsErr },
-    { data: events, error: eventsErr },
-    { data: weights, error: weightsErr },
-    { data: perfLogs, error: perfLogsErr },
-    { data: assignedPrograms, error: assignedProgramsErr },
-    { data: recentSessions, error: recentSessionsErr },
-  ] = await Promise.all([
-    db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
-    db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
-    // 14, not 5: the tile draws a 7-day trend and weigh-ins are not daily, so 5 rows can span a
-    // fortnight and leave the window empty.
-    db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(14),
-    // Paged (_fetchAllRows, app-core.js): _perfBestsByName picks each exercise's best from whatever rows arrive, and a
-    // plain read delivers only the newest 200 — so an exercise not logged within the last 200 entries vanished from
-    // this tile, and a record older than that was never a candidate for "best".
-    _fetchAllRows(() => db.from('performance_logs').select('name, category, value, unit, date', { count: 'exact' }).eq('client_id', clientId).order('date', { ascending: false }).order('id', { ascending: false })),
-    // `id` and `week_number` added 2026-08-30. Without week_number every week of a periodised phase
-    // collapses onto week 1's sessions; without id the clone lookup below cannot run. Both were
-    // absent here while the calendar and workouts queries had them.
-    db.from('client_programs').select('id, start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
-    db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(15),
+  const [weightsR, logsR, goalsR, summariesR] = await Promise.all([
+    ids.length ? db.from('weight_logs').select('client_id, created_at, weight_kg').in('client_id', ids).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30) : { data: [] },
+    // Every session in the last week across all clients, PAGED (the API caps a response at 200 rows): the Today card, the week
+    // bars and the day you tap all read from this one list. `date` is the calendar day it was logged for.
+    ids.length ? _fetchAllRows(() => db.from('workout_logs').select('id, client_id, name, date, created_at, workout_log_exercises(id)', { count: 'exact' }).in('client_id', ids).gte('date', weekAgoStr).order('date', { ascending: false }).order('id', { ascending: false })) : { data: [] },
+    db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', in14Str).order('target_date').limit(5),
+    // One row per client, computed in the database (scripts/add-coach-client-summary-2026-09-20.sql). PAGED: the API caps every
+    // response at 200 rows and that applies to a view too, so a bare read would silently drop the 201st client.
+    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, sessions_7d, last_session_date, last_weigh_in_date, program_name, program_start, program_weeks', { count: 'exact' }).order('full_name').order('client_id')),
   ])
 
-  // Second round-trip, only when a programme exists. Deliberately NOT a nested embed on the query
-  // above: PostgREST silently NULLs a level the reader cannot see, and a silently empty clone map
-  // would render a Start button that launches the wrong template. Same two-step the workouts page
-  // uses (app-workouts.js:630 then :638).
-  const cp0 = assignedPrograms?.[0] || null
+  const failed = _failedFetches({
+    'your clients': coachClientsErr,
+    'recent weigh-ins': weightsR.error,
+    'recent sessions': logsR.error,
+    'upcoming goals': goalsR.error,
+    'session summaries': summariesR.error,
+  })
+  // When the summaries could not be read the numbers they feed are UNAVAILABLE, not zero - shown as "—", never as "0 trained".
+  const summariesUnavailable = !!summariesR.error
+  const summary = Object.fromEntries((summariesR.data || []).map(r => [r.client_id, r]))
+  // The roster behind every count is the SUMMARY: it is paged, so it is complete. The clients read above is cut at the API's 200
+  // rows, so it only scopes the logs / weigh-ins queries and stands in when the summary could not be read.
+  const roster = summariesUnavailable
+    ? (coachClients || [])
+    : (summariesR.data || []).map(r => ({ id: r.client_id, full_name: r.full_name, status: r.status }))
+  const active = roster.filter(c => c.status === 'active')
+  const nameOf = Object.fromEntries(roster.map(c => [c.id, c.full_name]))
+  // A log with no exercises is an abandoned start, not a session (D3, 2026-09-07).
+  const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
+  const logsByDate = {}
+  logs.forEach(l => (logsByDate[l.date] ||= []).push(l))
+
+  const monday = _dashMonday(todayStr)
+  const weekDates = Array.from({ length: 7 }, (_, i) => _dashAddDays(monday, i))
+  const dayCounts = weekDates.map(ds => (logsByDate[ds] || []).length)
+
+  // Who has not trained in the last 7 days (the old "At risk"), most overdue first; someone who has never trained leads.
+  const needAttention = summariesUnavailable ? [] : active
+    .filter(c => (Number(summary[c.id]?.sessions_7d) || 0) === 0)
+    .sort((a, b) => (summary[a.id]?.last_session_date || '').localeCompare(summary[b.id]?.last_session_date || ''))
+  const trained = summariesUnavailable ? null : active.length - needAttention.length
+
+  // Programs whose last day falls in the next 14 days. The end is start + weeks*7 - 1 (the program's final day).
+  const ending = summariesUnavailable ? [] : active.map(c => {
+    const s = summary[c.id]
+    if (!s?.program_start || !(Number(s.program_weeks) > 0)) return null
+    const endDs = _dashAddDays(s.program_start, Number(s.program_weeks) * 7 - 1)
+    return endDs >= todayStr && endDs <= in14Str ? { id: c.id, name: c.full_name, program: s.program_name, endDs } : null
+  }).filter(Boolean).sort((a, b) => a.endDs.localeCompare(b.endDs))
+
+  // The newest weigh-in per client, newest first (the read is already newest-first).
+  const seen = new Set()
+  const latestWeights = (weightsR.data || []).filter(w => (seen.has(w.client_id) ? false : seen.add(w.client_id))).slice(0, 3)
+  const weighedThisWeek = summariesUnavailable ? null : active.filter(c => (summary[c.id]?.last_weigh_in_date || '') >= weekAgoStr && summary[c.id]?.last_weigh_in_date).length
+
+  const lastTrained = c => (summary[c.id]?.last_session_date ? `Last trained ${_dashFormatDate(summary[c.id].last_session_date)}` : 'No sessions yet')
+  // The time it was logged; empty (never "Invalid Date") when the timestamp is missing or unreadable.
+  const doneAt = l => { const t = new Date(l.created_at); return l.created_at && !isNaN(t) ? t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '' }
+  const attnBtn = needAttention.length ? _dashAttention(needAttention.length) : ''
+
+  // The Today card for one day: the sessions clients logged that day. Saturated only for today with something logged.
+  const heroFor = sel => {
+    const ds = sel || todayStr, isToday = ds === todayStr, dayLogs = logsByDate[ds] || []
+    const back = isToday ? '' : _dashBack()
+    const label = isToday ? 'Today' : _dashFormatDate(ds)
+    if (!roster.length) {
+      return `<section class="dash-hero dash-hero-calm" id="dash-hero" data-kind="empty"><div class="dash-hero-eyebrow">Your clients</div><div class="dash-hero-title">No clients yet</div>` +
+        `<div class="dash-hero-meta">Add your first client to see their sessions here.</div><div class="dash-hero-actions">${_dashAddClient()}</div></section>`
+    }
+    if (!dayLogs.length) {
+      const meta = isToday ? (needAttention.length ? `${_dashPlural(needAttention.length, 'client has', 'clients have')} not trained in 7 days.` : 'Early yet.') : 'Across all clients.'
+      return `<section class="dash-hero dash-hero-calm" id="dash-hero" data-kind="none"><div class="dash-hero-eyebrow">${label} · Your clients</div>` +
+        `<div class="dash-hero-title">${isToday ? 'Nothing logged yet' : 'No sessions logged'}</div><div class="dash-hero-meta">${meta}</div>` +
+        `<div class="dash-hero-actions">${_dashSeeClients()}${isToday ? attnBtn : back}</div></section>`
+    }
+    const rows = dayLogs.slice(0, 3).map(l =>
+      `<button type="button" class="dash-hrow" onclick="openClient('${escapeAttr(l.client_id)}')"><span class="dash-av">${escapeHtml(_dashInitials(nameOf[l.client_id]))}</span>` +
+      `<span class="dash-hrow-main"><b>${escapeHtml(nameOf[l.client_id] || 'Unknown')}</b><i>${escapeHtml(l.name)}</i></span><span class="dash-hrow-st">${escapeHtml(doneAt(l))}</span></button>`).join('')
+    const more = dayLogs.length > 3 ? `<div class="dash-hero-meta">+${dayLogs.length - 3} more</div>` : ''
+    return `<section class="dash-hero${isToday ? '' : ' dash-hero-calm'}" id="dash-hero" data-kind="logged"><div class="dash-hero-eyebrow">${label} · Your clients</div>` +
+      `<div class="dash-hero-title">${_dashPlural(dayLogs.length, 'session', 'sessions')} logged</div><div class="dash-hrows">${rows}</div>${more}` +
+      `<div class="dash-hero-actions">${_dashSeeClients()}${isToday ? attnBtn : back}</div></section>`
+  }
+
+  // The week: sessions logged each day across all clients. Tap a bar to see that day.
+  const weekFor = sel => {
+    const shown = sel || todayStr, total = dayCounts.reduce((a, b) => a + b, 0), max = Math.max(1, ...dayCounts)
+    return `<section class="dash-card" id="dash-week"><div class="dash-card-head"><h2 class="dash-card-title">This week</h2><span class="dash-card-sub"><b>${total}</b> ${total === 1 ? 'session' : 'sessions'} logged</span></div>` +
+      `<div class="dash-bars" role="group" aria-label="Sessions logged each day">${weekDates.map((ds, i) =>
+        `<button type="button" class="dash-bar-col${ds === todayStr ? ' dash-bar-today' : ''}" data-day="${ds}" aria-pressed="${ds === shown}" aria-label="${_DASH_DAY_LABELS[i]}: ${_dashPlural(dayCounts[i], 'session', 'sessions')} logged" onclick="_dashPickDay('${ds}')">` +
+        `<span class="dash-bar-track"><i style="height:${Math.round(dayCounts[i] / max * 100)}%"></i></span><span class="dash-bn">${dayCounts[i] || '–'}</span><span class="dash-dn">${_DASH_DAY_LABELS[i]}</span></button>`).join('')}</div></section>`
+  }
+
+  const tiles = `<div class="dash-two">` +
+    `<section class="dash-card dash-tap" id="dash-trained" onclick="navigate('clients')"><div class="dash-ico">Trained this week</div><div class="dash-big">${trained ?? '—'} <small>of ${active.length}</small></div><div class="dash-sub">clients logged a session in the last 7 days</div></section>` +
+    `<section class="dash-card" id="dash-ending"><div class="dash-ico">Programs ending</div><div class="dash-big">${summariesUnavailable ? '—' : ending.length} <small>soon</small></div><div class="dash-sub">in the next 14 days</div></section></div>`
+
+  const attention = needAttention.length
+    ? `<section class="dash-card" id="dash-attn"><div class="dash-card-head"><h2 class="dash-card-title">Needs attention</h2><span class="dash-card-sub">No session in 7 days</span></div>` +
+      needAttention.slice(0, 5).map(c => `<button type="button" class="dash-row dash-row-btn" onclick="openClient('${escapeAttr(c.id)}')"><span class="dash-pip dash-pip-danger"></span><span class="dash-row-main"><b>${escapeHtml(c.full_name)}</b><i>${lastTrained(c)}</i></span></button>`).join('') +
+      (needAttention.length > 5 ? `<p class="dash-sub">+${needAttention.length - 5} more</p>` : '') +
+      `<button type="button" class="dash-link" onclick="navigate('clients')">See all clients</button></section>`
+    : ''
+
+  const weighIns = `<section class="dash-card" id="dash-weighins"><div class="dash-card-head"><h2 class="dash-card-title">Weigh-ins</h2>` +
+    `<span class="dash-card-sub">${weighedThisWeek === null ? '' : `<b>${weighedThisWeek} of ${active.length}</b> this week`}</span></div>` +
+    (latestWeights.length
+      ? latestWeights.map(w => `<div class="dash-grow"><b>${escapeHtml(nameOf[w.client_id] || 'Unknown')}</b><span>${fmtWeight(w.weight_kg, { spaced: true })} · ${_dashTimeAgo(w.created_at)}</span></div>`).join('')
+      : '<p class="dash-empty">No weigh-ins in the last 7 days.</p>') + '</section>'
+
+  const coming = `<section class="dash-card" id="dash-coming"><div class="dash-card-head"><h2 class="dash-card-title">Coming up</h2><span class="dash-card-sub">Next 14 days</span></div>` +
+    (ending.length
+      ? ending.slice(0, 4).map(e => `<button type="button" class="dash-row dash-row-btn" onclick="openClient('${escapeAttr(e.id)}')"><span class="dash-pip"></span><span class="dash-row-main"><b>${escapeHtml(e.name)} · program ends</b><i>${escapeHtml(e.program || 'Program')}</i></span><em class="dash-pill">${_dashDaysUntil(e.endDs, todayStr)}</em></button>`).join('')
+      : '<p class="dash-empty">No programs ending in the next 14 days.</p>') +
+    `<button type="button" class="dash-link" onclick="navigate('calendar')">See calendar</button></section>`
+
+  const goalsDue = `<section class="dash-card" id="dash-goals"><div class="dash-card-head"><h2 class="dash-card-title">Goals due soon</h2><span class="dash-card-sub">Next 14 days</span></div>` +
+    (goalsR.data?.length
+      ? goalsR.data.map(g => `<div class="dash-grow"><b>${escapeHtml(g.title)}</b><span>${escapeHtml(g.clients?.full_name || '')} · ${_dashDaysUntil(g.target_date, todayStr)}</span></div>`).join('')
+      : '<p class="dash-empty">No goals due in the next 14 days.</p>') + '</section>'
+
+  const firstName = currentProfile?.full_name?.split(' ')[0] || 'Coach'
+  const biz = window._branding?.businessName
+  el.innerHTML = `
+    <div class="dash" id="dash-root" data-dash="coach">
+      ${_fetchFailureBanner(failed, 'dashboard')}
+      <header class="dash-head">
+        <div>
+          <div class="dash-eyebrow">${biz ? escapeHtml(biz) : 'Your clients'}</div>
+          <h1 class="dash-greet">Welcome back, ${escapeHtml(firstName)}</h1>
+          <div class="dash-date">${_dashLongDate()}</div>
+        </div>
+        <div class="dash-icons">
+          <button type="button" class="dash-icon" aria-label="Add client" onclick="showAddClientModal()">${_DASH_ICONS.plus}</button>
+          <button type="button" class="dash-icon" aria-label="Build a workout" onclick="navigate('workouts')">${_DASH_ICONS.build}</button>
+        </div>
+      </header>
+      ${heroFor(null)}
+      ${weekFor(null)}
+      ${tiles}
+      ${attention}
+      ${weighIns}
+      ${coming}
+      ${goalsDue}
+    </div>`
+  const root = el.querySelector('#dash-root')
+  if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor }
+  log.ok('renderDashboard', 'rendered', { clients: roster.length, sessionsThisWeek: logs.length, needAttention: needAttention.length })
+}
+
+// ─── CLIENT DASHBOARD ─────────────────────────────────────────────────────────
+// ─── SUDO (impersonation) ─────────────────────────────────────────────────────
+function sudoAsClient(clientId, clientName) {
+  if (!_isOwnerAccount()) return
+  window._sudoClientId   = clientId
+  window._sudoClientName = clientName
+  window._sudoFromRole   = currentProfile?.role || 'coach'
+  currentProfile = { ...currentProfile, role: 'client' }
+  navigate('client-dashboard')
+}
+function exitSudo() {
+  currentProfile = { ...currentProfile, role: window._sudoFromRole || 'coach' }
+  delete window._sudoClientId
+  delete window._sudoClientName
+  delete window._sudoFromRole
+  navigate('dashboard')
+}
+
+// ─── The own-account dashboard: solo ("My Training") and client ─────────────────────────────────────────────────────────────
+// ONE page for both. Until 2026-10-03 they were two renders that had drifted: the client's program read lacked `id` and
+// `week_number` (so every week of a periodised phase collapsed onto week 1 and its Start button could not resolve the clone),
+// the solo page had tiles the client page lacked, and the client page carried inline forms the solo page did not.
+
+// One local-date long form for the greeting line ("Saturday 3 October").
+function _dashLongDate() {
+  return new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
+// Everything the page reads, in one place. Returns the data plus `failed`: { label: error } for every read that errored, so a
+// failed read shows as a notice and never passes for "nothing logged".
+async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
+  const lookbackStart = _dashAddDays(_dashMonday(todayStr), -7 * _DASH_STREAK_WEEKS)
+  const [goalsR, eventsR, weightsR, programsR, logsR, checkInR] = await Promise.all([
+    db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
+    db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
+    // 14, not 5: the card draws a trend and weigh-ins are not daily, so 5 rows can span a fortnight and leave the window empty.
+    db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(14),
+    // `id` and `week_number` are load-bearing. Without week_number every week of a periodised phase collapses onto week 1's
+    // sessions; without id the clone lookup below cannot run.
+    db.from('client_programs').select('id, start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
+    // A year of sessions, paged (_fetchAllRows, app-core.js): the API caps a response at 200 rows and says nothing when it
+    // truncates. The week strip, the streak and "done" all read from this one list.
+    _fetchAllRows(() => db.from('workout_logs').select('id, name, date, workout_log_exercises(id)', { count: 'exact' }).eq('client_id', clientId).gte('date', lookbackStart).order('date', { ascending: false }).order('id', { ascending: false })),
+    checkIn ? db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1) : Promise.resolve({ data: [], error: null }),
+  ])
+
+  // Second round-trip, only when a programme exists. Deliberately NOT a nested embed on the query above: PostgREST silently NULLs a
+  // level the reader cannot see, and a silently empty clone map would render a Start button that launches the wrong template.
+  const cp0 = programsR.data?.[0] || null
   const cpwMap = {}
+  let cpwErr = null
   if (cp0?.id) {
-    const { data: cpwRows } = await db.from('client_program_workouts')
-      .select('program_phase_workout_id, workout_template_id').eq('client_program_id', cp0.id)
-    ;(cpwRows || []).forEach(r => { cpwMap[r.program_phase_workout_id] = { templateId: r.workout_template_id } })
+    const r = await db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id').eq('client_program_id', cp0.id)
+    cpwErr = r.error
+    ;(r.data || []).forEach(row => { cpwMap[row.program_phase_workout_id] = { templateId: row.workout_template_id } })
   }
   const progByDate = _programWorkoutsByDate(cp0, cpwMap)
-  const upcoming = _soloUpcoming(events, progByDate, todayStr)
+  // The runner/save path can leave a 0-exercise workout_log (an abandoned start): those are not sessions (D3, 2026-09-07).
+  const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
 
-  const pbs = _perfBestsByName(perfLogs)
+  return {
+    goals: goalsR.data, events: eventsR.data, weights: weightsR.data, cp0, progByDate, logs,
+    upcoming: _soloUpcoming(eventsR.data, progByDate, todayStr),
+    lastCheckIn: checkInR.data?.[0] || null,
+    failed: {
+      'your goals': goalsR.error, 'upcoming events': eventsR.error, 'weight history': weightsR.error,
+      'your programme': programsR.error || cpwErr, 'recent sessions': logsR.error, 'check-ins': checkInR.error,
+    },
+  }
+}
 
-  // Current phase, folded into the Next session tile as a small eyebrow (merged 2026-09-29 — see
-  // _soloTileNextSession's own comment).
-  let progName = null, progMeta = ''
-  if (cp0) {
-    const prog = cp0.programs
-    const startDate = new Date(cp0.start_date + 'T00:00:00')
-    const weeksSinceStart = Math.max(0, Math.floor((Date.now() - startDate) / (7 * 24 * 60 * 60 * 1000)))
-    const phases = (prog?.program_phases || []).sort((a, b) => a.order_index - b.order_index)
-    let cumWeeks = 0, currentPhase = phases[phases.length - 1] || null
-    for (const p of phases) { cumWeeks += p.duration_weeks; if (weeksSinceStart < cumWeeks) { currentPhase = p; break } }
-    progName = prog?.name || 'Your program'
-    progMeta = currentPhase ? currentPhase.name + (/week/i.test(currentPhase.name) ? '' : ' · Week ' + (weeksSinceStart + 1)) : (prog?.description || '')
+// The weekly check-in: a banner at the top when it is due, and the form itself at the bottom of the client page. Same ids and
+// handlers as before (saveClientCheckIn reads the ci-* fields).
+function _dashCheckInBanner() {
+  return `<div class="dash-banner"><span>Your weekly check-in is due.</span><button type="button" onclick="document.getElementById('checkin-card').scrollIntoView({behavior:'smooth'})">Do it now</button></div>`
+}
+
+function _dashCheckInHtml(lastCheckIn, clientId) {
+  const daysSince = lastCheckIn ? Math.floor((Date.now() - new Date(lastCheckIn.created_at)) / 86400000) : null
+  const due = daysSince === null || daysSince >= 7
+  return `
+    <div class="dashboard-card dash-checkin" id="checkin-card">
+      <div class="card-header">
+        <h2 class="card-title">Weekly check-in</h2>
+        ${lastCheckIn ? `<span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${daysSince === 0 ? 'Submitted today' : daysSince + 'd ago'}</span>` : ''}
+      </div>
+      ${!due && lastCheckIn ? `
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px">
+          ${[['Sleep', lastCheckIn.sleep], ['Energy', lastCheckIn.energy], ['Stress', lastCheckIn.stress], ['Soreness', lastCheckIn.soreness]].map(([label, val]) => `
+          <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:8px">
+            <div style="font-size:var(--text-2xl, 18px);font-weight:700;color:var(--accent)">${val}/5</div>
+            <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${label}</div>
+          </div>`).join('')}
+        </div>
+        ${lastCheckIn.notes ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 10px">${escapeHtml(lastCheckIn.notes)}</p>` : ''}
+        <button onclick="document.getElementById('checkin-form').style.display='block'" class="btn-secondary" style="font-size:var(--text-base, 13px)">Submit new check-in</button>
+      ` : `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 10px">${due ? 'Your weekly check-in is due. Let your coach know how you\'re feeling.' : 'No check-ins yet.'}</p>`}
+      <div id="checkin-form" style="${due ? '' : 'display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)'}">
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px">
+          ${[['sleep', 'Sleep (1–5)'], ['energy', 'Energy (1–5)'], ['stress', 'Stress (1–5)'], ['soreness', 'Soreness (1–5)']].map(([id, label]) => `
+          <div>
+            <label class="field-label">${label}</label>
+            <input type="range" id="ci-${id}" min="1" max="5" step="1" value="${lastCheckIn?.[id] || 3}" class="field-input" style="padding:6px 0">
+            <div style="display:flex;justify-content:space-between;font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px"><span>Low</span><span>High</span></div>
+          </div>`).join('')}
+        </div>
+        <div class="field">
+          <label class="field-label">Notes for your coach <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+          <textarea id="ci-notes" class="field-input" rows="2" placeholder="How's training feeling? Any injuries or concerns?">${escapeHtml(lastCheckIn?.notes || '')}</textarea>
+        </div>
+        <p id="ci-error" style="color:var(--danger);font-size:var(--text-md, 12px);margin:4px 0"></p>
+        <button onclick="saveClientCheckIn('${escapeAttr(clientId)}')" class="btn-primary" style="margin-top:8px">Submit check-in</button>
+      </div>
+    </div>`
+}
+
+async function _dashRenderOwn(el, role) {
+  const isClient = role === 'client'
+  const page = isClient ? 'client-dashboard' : 'solo-dashboard'
+  if (isClient) log.info('renderClientDashboard', 'fetching data', { userId: currentUser.id })
+  else log.info('renderSoloDashboard', 'loading personal dashboard')
+  el.innerHTML = '<div class="loading-state">Loading…</div>'
+
+  let clientId, firstName
+  const isSudo = isClient && !!window._sudoClientId
+  if (!isClient) {
+    clientId = window._soloClientId
+    if (!clientId) { el.innerHTML = '<div class="loading-state">Personal account not set up yet.</div>'; return }
+    firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
+  } else if (isSudo) {
+    clientId = window._sudoClientId
+    firstName = (window._sudoClientName || 'Client').split(' ')[0]
+  } else {
+    // The coached client record (coach_id is not null = has a PT). A master account also owns a personal record, so the
+    // discriminator is what keeps this from throwing on two rows.
+    const { data: clientRow, error: clientErr } = await db.from('clients').select('id, full_name, coach_id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle()
+    if (clientErr || !clientRow) {
+      log.error('renderClientDashboard', 'client record not found', clientErr)
+      el.innerHTML = '<div class="loading-state">Unable to load your profile. Please contact your coach.</div>'
+      return
+    }
+    clientId = clientRow.id
+    firstName = currentProfile?.full_name?.split(' ')[0] || 'there'
   }
 
-  const _failed = _failedFetches({
-    'your goals': goalsErr,
-    'upcoming events': eventsErr,
-    'weight history': weightsErr,
-    'personal bests': perfLogsErr,
-    'your programme': assignedProgramsErr,
-    'recent sessions': recentSessionsErr,
-  })
+  // LOCAL date, not toISOString(): the programmed-day map is keyed by _ymdLocal, so a UTC "today" would disagree with it by one day
+  // for anyone west of UTC, and for a UK user during BST between midnight and 01:00 - when an early riser opens this page.
+  const todayStr = _ymdLocal(new Date())
+  const d = await _dashLoadOwn(clientId, todayStr, { checkIn: isClient })
 
-  // BEFORE innerHTML. This function replaces the whole subtree, detaching any canvas; both of
-  // _renderMetricChart's own guards resolve against the NEW element and so miss the old instance,
-  // which then lives on with its listeners and animation loop running. That is the mechanism of
-  // bugs/2026-08-17-renderclientweight-leaks-a-chart-on-every-save, and this dashboard repaints on
-  // every write via _renderOwnDashboard.
+  const days = _dashWeekDays(todayStr, d.progByDate, d.logs)
+  const counts = _dashWeekCounts(days)
+  const program = _dashProgramInfo(d.cp0, todayStr)
+  const streak = _dashStreakWeeks(d.progByDate, d.logs.map(l => l.date), todayStr)
+  const next = d.upcoming.find(u => u.kind === 'session' && u.date > todayStr) || null
+  const ctx = { role, clientId, todayStr, days, hasProgram: !!d.cp0, program, next }
+  const byDs = Object.fromEntries(days.map(x => [x.ds, x]))
+  const heroFor = sel => _dashHeroHtml(byDs[sel || todayStr], ctx)
+  const weekFor = sel => _dashWeekHtml(days, counts, sel)
+
+  const biz = window._branding?.businessName
+  const eyebrow = isClient ? (biz ? 'Coached by ' + escapeHtml(biz) : 'Coached by your PT') : 'My training'
+  const logo = isClient && window._branding?.logoUrl ? `<img class="dash-logo" src="${escapeHtml(window._branding.logoUrl)}" alt="${escapeHtml(biz || '')}">` : ''
+  const lastCheckIn = d.lastCheckIn
+  const checkInDue = isClient && (!lastCheckIn || Math.floor((Date.now() - new Date(lastCheckIn.created_at)) / 86400000) >= 7)
+
+  // BEFORE innerHTML. This function replaces the whole subtree, detaching any canvas; _renderMetricChart's own guards resolve
+  // against the NEW element and so miss the old instance, which then lives on with its listeners and animation loop running
+  // (bugs/2026-08-17-renderclientweight-leaks-a-chart-on-every-save). The dashboard repaints on every write.
   _destroyManagedCharts()
 
   el.innerHTML = `
-    ${_fetchFailureBanner(_failed, 'solo-dashboard')}
-    <div class="page-header" style="margin-bottom:16px">
-      <div>
-        <h1 class="page-title">My Training</h1>
-        <p class="solo-tile-sub">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-      </div>
-    </div>
+    <div class="dash" id="dash-root" data-dash="${role}">
+      ${_fetchFailureBanner(_failedFetches(d.failed), page)}
+      ${isSudo ? `<div class="dash-banner dash-banner-sudo"><span>👁 Viewing as ${escapeHtml(window._sudoClientName || 'Client')}</span><button type="button" onclick="exitSudo()">Exit ✕</button></div>` : ''}
+      <header class="dash-head">
+        <div>
+          <div class="dash-eyebrow">${eyebrow}</div>
+          <h1 class="dash-greet">Hi, ${escapeHtml(firstName)}</h1>
+          <div class="dash-date">${_dashLongDate()}</div>
+        </div>
+        ${logo}
+      </header>
+      ${checkInDue ? _dashCheckInBanner() : ''}
+      ${heroFor(null)}
+      ${weekFor(null)}
+      ${_dashTilesHtml(streak, program, !isClient)}
+      ${_dashWeightHtml(d.weights)}
+      ${_dashCalendarHtml(d.upcoming, todayStr)}
+      ${_dashGoalsHtml(d.goals, todayStr, isClient)}
+      ${isClient ? _dashCheckInHtml(lastCheckIn, clientId) : ''}
+    </div>`
+  const root = el.querySelector('#dash-root')
+  if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor }
 
-    <div class="solo-tiles">
-      ${_soloTileWeight(weights, todayStr)}
-      ${_soloTileNextSession(upcoming, clientId, todayStr, progName ? { name: progName, meta: progMeta } : null)}
-      ${_soloTileNextUp(upcoming, todayStr)}
-      ${_soloTileRecent(recentSessions, clientId)}
-      ${_soloTileGoals(goals, todayStr)}
-    </div>
-
-    <div class="solo-lower">
-      ${_soloTileMyProgress(pbs)}
-    </div>
-  `
-
-  // After innerHTML, so the canvas exists. Oldest-first for a left-to-right time axis, and the
-  // 7-day rolling average via the existing helper rather than a second implementation.
-  if (weights?.length) {
-    const series = [...weights].reverse()
+  // After innerHTML, so the canvas exists. Oldest-first for a left-to-right time axis, and the 7-day rolling average via the
+  // existing helper rather than a second implementation.
+  if (d.weights?.length) {
+    const series = [...d.weights].reverse()
     const vals = series.map(w => weightToPref(w.weight_kg))
     _renderMetricChart('solo-weight-spark', {
       labels: series.map(w => _dashFormatDate(w.date)),
@@ -1010,9 +760,10 @@ async function renderSoloDashboard(el) {
       tooltipUnit: window._unitPrefs.weight
     })
   }
-
-  log.ok('renderSoloDashboard', 'rendered', { clientId, goals: goals?.length, pbs: pbs.length, sessions: recentSessions?.length, upcoming: upcoming.length })
+  log.ok(isClient ? 'renderClientDashboard' : 'renderSoloDashboard', 'rendered', { clientId, goals: d.goals?.length, sessions: d.logs.length, upcoming: d.upcoming.length, streak: streak.weeks })
 }
 
+async function renderClientDashboard(el) { return _dashRenderOwn(el, 'client') }
+async function renderSoloDashboard(el) { return _dashRenderOwn(el, 'solo') }
 
 // ─── CLIENT PROFILE: PROGRAMS TAB ─────────────────────────────────────────────

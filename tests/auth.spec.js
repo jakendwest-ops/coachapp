@@ -14,8 +14,8 @@ test.describe('Auth', () => {
     await loginAsClient(page)
     // Client dashboard shows "Hi,"
     await expect(page.locator('h1')).toContainText('Hi,')
-    // Hero "up next" card is visible
-    await expect(page.locator('text=UP NEXT')).toBeVisible()
+    // The Today card is visible (its wording changes with the day - "Up next", "Today" - so the card is found by its id; reworked 2026-10-03)
+    await expect(page.locator('#dash-hero')).toBeVisible()
   })
 
   test('PT can sign out', async ({ page }) => {

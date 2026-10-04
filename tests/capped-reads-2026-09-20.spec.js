@@ -16,7 +16,8 @@ const { installCappedApi, restoreCappedApi, cappedApiCalls, fixtureRows, weightR
 //     export that reports success while incomplete — and discarded the error of a read that failed;
 //   - the personal-best reads — the coach's Performance tab and BOTH dashboards' "Personal bests" tile — took the
 //     NEWEST 200 rows and picked the best of those, so a record older than the newest 200 entries (or a whole
-//     exercise not logged recently enough) vanished from the tile: a silently wrong "best".
+//     exercise not logged recently enough) vanished from the tile: a silently wrong "best". (The dashboards no longer show
+//     personal bests since 2026-10-03; the same paged read now lives on the records page and is pinned by the Performance-tab test.)
 //
 // These run the REAL functions against tests/capped-api.js (a read-only stand-in that caps at 200 like the live
 // API, shuffles rows that tie on the sort key on every request, and fails closed): no rows are created anywhere,
@@ -287,34 +288,45 @@ test.describe('weight history, personal bests and the data export past the 200-r
     ...over,
   })
 
-  test('CLIENT dashboard "Personal bests": a record older than the newest 200 entries is still shown, another client\'s never is', async ({ page }) => {
+  // MOVED 2026-10-03. The two tests that stood here drove the CLIENT and SOLO dashboards' "Personal bests" tile; the dashboards no
+  // longer show personal bests at all (Jake: Goals stay, personal bests do not - they live on Progress -> Personal Bests). The paged,
+  // tenant-scoped read that picks each name's best from the WHOLE history is renderClientPerformance, the same function the Personal
+  // Bests page mounts, and the Performance-tab test below pins it (the old deadlift record, the true count, nobody else's rows).
+  // What is left to pin on the dashboards is that they neither read the table nor show it.
+  test('the CLIENT dashboard no longer reads or shows personal bests', async ({ page }) => {
     await loginAsClient(page)
     const me = await page.evaluate(() => currentUser.id)
-    const text = await withApi(page, dashTables(me), () => page.evaluate(async () => {
-      const el = document.createElement('div'); document.body.appendChild(el)
-      await renderClientDashboard(el)
-      return el.textContent
-    }))
-    expect.soft(text, 'the recent exercise is there either way').toContain('Cap Squat')
-    expect.soft(text, 'nobody else\'s record').not.toContain('FOREIGN')
-    expect(text, 'the OLD record must not vanish because 200 newer rows pushed it out of the window').toContain('Cap Deadlift')
+    const r = await withApi(page, dashTables(me), async () => {
+      const text = await page.evaluate(async () => {
+        const el = document.createElement('div'); document.body.appendChild(el)
+        await renderClientDashboard(el)
+        return el.textContent
+      })
+      return { text, tables: (await cappedApiCalls(page)).map(c => c.table) }
+    })
+    expect(r.tables, 'the dashboard rendered from the other tables').toContain('workout_logs')
+    expect(r.tables, 'and never read performance_logs').not.toContain('performance_logs')
+    expect(r.text, 'no record on the page').not.toContain('Cap Squat')
   })
 
-  test('SOLO dashboard "Personal bests": the same', async ({ page }) => {
+  test('the SOLO dashboard no longer reads or shows personal bests', async ({ page }) => {
     await loginAsPT(page)
     const me = await page.evaluate(() => currentUser.id)
-    const text = await withApi(page, dashTables(me), () => page.evaluate(async () => {
-      const prev = window._soloClientId
-      window._soloClientId = 'cid'
-      try {
-        const el = document.createElement('div'); document.body.appendChild(el)
-        await renderSoloDashboard(el)
-        return el.textContent
-      } finally { window._soloClientId = prev }
-    }))
-    expect.soft(text).toContain('Cap Squat')
-    expect.soft(text).not.toContain('FOREIGN')
-    expect(text).toContain('Cap Deadlift')
+    const r = await withApi(page, dashTables(me), async () => {
+      const text = await page.evaluate(async () => {
+        const prev = window._soloClientId
+        window._soloClientId = 'cid'
+        try {
+          const el = document.createElement('div'); document.body.appendChild(el)
+          await renderSoloDashboard(el)
+          return el.textContent
+        } finally { window._soloClientId = prev }
+      })
+      return { text, tables: (await cappedApiCalls(page)).map(c => c.table) }
+    })
+    expect(r.tables).toContain('workout_logs')
+    expect(r.tables).not.toContain('performance_logs')
+    expect(r.text).not.toContain('Cap Squat')
   })
 
   test('COACH Performance tab: every record is listed, the category count is the true count, another client\'s never is', async ({ page }) => {

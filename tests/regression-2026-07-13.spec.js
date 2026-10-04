@@ -691,7 +691,10 @@ test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-br
       // renderSoloDashboard into that tile builder. Without it this guard silently stopped
       // covering the solo surface — the count fell 3 -> 2 and the assertion caught it, which is
       // the guard working. A sink that moves must take its guard with it.
-      const dashboardSrc = renderDashboard.toString() + renderClientDashboard.toString() + renderSoloDashboard.toString() + _soloTileGoals.toString() + openGoal.toString()
+      // REBUILT 2026-10-03 (dashboard rework): the goal-title sink for the solo AND client pages is now _dashGoalsHtml (one shared
+      // card), their page assembly is _dashRenderOwn, and the coach's is renderDashboard's own goals-due rows. A sink that moves
+      // takes its guard with it - the scan follows it.
+      const dashboardSrc = renderDashboard.toString() + _dashRenderOwn.toString() + _dashLoadOwn.toString() + _dashGoalsHtml.toString() + _dashHeroHtml.toString() + openGoal.toString()
       const templateSrc  = renderWorkoutTemplates.toString() + openTemplate.toString() + showEditTemplateModal.toString()
       return {
         rawGoalTitle: /\$\{g\.title\}|\$\{goal\.title\}/.test(dashboardSrc),
@@ -740,8 +743,14 @@ test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-br
     // (app-workouts.js:1323) and showEditTemplateModal's textarea (:3110) -- both still escaped.
     // rawDescription above independently catches an unescaped re-introduction at any of the three.
     // 2 is pinned AT the current count, not above it, so losing either survivor still fails here.
+    // 2026-10-03: escapedMilestoneTitle lowered 2 -> 1, the OPPOSITE call to the 2026-08-30 one above, so the difference matters. There,
+    // a sink MOVED and the threshold was held. Here the client dashboard's milestone CHIPS were DELETED on purpose: the Goals card on
+    // every dashboard is a preview (title, progress bar, due date) that links to the goals page, where milestones are ticked
+    // (Jake, 2026-10-03: "Bring back: Goals"). Verified before lowering, not assumed: no dashboard function renders a milestone title
+    // any more (milestones only feed _goalPct's percentage), and openGoal's escaped site survives. 1 is pinned AT the current count,
+    // so losing it still fails here, and rawMilestoneTitle above independently catches an unescaped re-introduction anywhere.
     expect(r.escapedGoalTitle).toBeGreaterThanOrEqual(3)
-    expect(r.escapedMilestoneTitle).toBeGreaterThanOrEqual(2)
+    expect(r.escapedMilestoneTitle).toBeGreaterThanOrEqual(1)
     expect(r.escapedDescription).toBeGreaterThanOrEqual(2)
     expect(r.neutralised).toBe(true)
   })

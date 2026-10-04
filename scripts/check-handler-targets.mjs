@@ -46,15 +46,18 @@ if (!files.length) {
 // therefore cannot be resolved by reading the source. Seven of them, measured 2026-09-03:
 //   app-dashboard.js:425, app-calendar-goals.js:134, app-workouts.js:602/1521/1894,
 //   app-runner.js:685/1578 -- hero-card actions, a pill builder, and two confirm buttons.
+// SIX since 2026-10-03: the dashboard rework removed the app-dashboard.js one (its hero-card action) and wrote every new handler as a
+// literal - a small named function (_dashOpenWeight, _dashOpenGoals) or a button builder that spells its handler out - precisely so
+// this checker could keep verifying them.
 // Pinned AT the measurement, never above it: a threshold set above current is a permit, not a ratchet.
 // The count may FALL (a consolidation that removes one is a good thing and prints a note); it may not
 // RISE, because each new one is another handler this checker cannot verify.
 // Overridable ONLY so the self-test can drive both sides of the comparison against its own small
-// fixtures. checks.sh never sets it, so the real run always uses the measured 7.
+// fixtures. checks.sh never sets it, so the real run always uses the measured 6.
 // readBaseline VALIDATES rather than just parsing. The first version here was
 // `Number(process.env.X ?? 7)`, which silently disarmed this gate -- see scripts/lib/baseline.mjs for
 // what went wrong and how it was reproduced.
-const DYNAMIC_BASELINE = readBaseline('HANDLER_DYNAMIC_BASELINE', 7)
+const DYNAMIC_BASELINE = readBaseline('HANDLER_DYNAMIC_BASELINE', 6)
 
 // Placeholder for a `${...}` interpolation. A SPACE was tried first and is wrong: it is
 // indistinguishable from ordinary spacing inside the attribute, so the dynamic test would be keying on

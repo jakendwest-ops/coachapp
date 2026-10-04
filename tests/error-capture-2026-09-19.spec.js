@@ -345,7 +345,7 @@ test.describe('the owner card and the feedback card', () => {
     const soloId = await page.evaluate(() => window._soloClientId || null)
     test.skip(!soloId, 'no solo client record on this account')
     await page.evaluate(() => switchView('solo'))
-    await expect(page.locator('.solo-lower')).toBeVisible()
+    await expect(page.locator('#dash-root[data-dash="solo"]')).toBeVisible()
     await page.evaluate(() => navigate('settings'))
     await expect(page.locator('#feedback-card a[href^="mailto:"]')).toBeVisible()
   })

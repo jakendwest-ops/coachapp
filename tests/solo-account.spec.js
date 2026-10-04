@@ -129,16 +129,18 @@ test.describe('Solo / Personal account', () => {
   // mobile, so the dashboard's main content silently vanished at phone width. That guard is still
   // needed; only the element it names changed. Deleting the test with the markup would have thrown
   // the guard away with it, which is how affordances get lost here.
-  test('solo dashboard tiles stay visible (not display:none) on mobile', async ({ page }) => {
+  test('solo dashboard cards stay visible (not display:none) on mobile', async ({ page }) => {
+    // RE-MIGRATED 2026-10-03 for the dashboard rework (the cards are .dash-card now; the intent is unchanged).
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await page.setViewportSize({ width: 400, height: 844 })
     await page.waitForTimeout(300)
-    await expect(page.locator('.solo-tiles')).toBeVisible()
-    // Non-zero denominator: an empty grid is visible too, and would pass while showing nothing.
-    // EXACT count, not >=: a tile silently disappearing is the failure this guards. Update it
-    // deliberately when a tile is added — it went 4 -> 5 when Goals was added on 2026-08-30.
-    expect(await page.locator('.solo-tiles .solo-tile').count()).toBe(5)
-    await expect(page.locator('.solo-tiles .solo-tile').first()).toBeVisible()
+    await expect(page.locator('#dash-root[data-dash="solo"]')).toBeVisible()
+    await expect(page.locator('#dash-hero'), 'the Today card is the first thing on the page').toBeVisible()
+    // Non-zero denominator: an empty page is visible too, and would pass while showing nothing. EXACT count, not >=: a card
+    // silently disappearing is the failure this guards. Update it deliberately when a card is added - it is 6 now: the week, streak,
+    // program, body weight, calendar and goals.
+    expect(await page.locator('#dash-root .dash-card').count()).toBe(6)
+    await expect(page.locator('#dash-root .dash-card').first()).toBeVisible()
   })
   test('switching back to PT restores coach dashboard', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
@@ -149,20 +151,16 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('.bottom-nav-item[data-page="clients"]')).toBeVisible()
   })
 
-  test('solo dashboard folds the current program into the Next session tile, when a program is assigned (merged 2026-09-29)', async ({ page }) => {
+  test('solo dashboard shows the current program as a tile that opens Workouts, when a program is assigned (reworked 2026-10-03)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    // Jake, 2026-09-28: "'Current program' and 'next session' panels do the same thing. Combine the 2
-    // to reduce the clutter." The standalone strip + its own "View program" button are gone — the
-    // program/phase now reads as a small eyebrow inside the Next session tile instead
-    // (tests/solo-dashboard-tiles-2026-08-30.spec.js covers the eyebrow markup itself directly).
-    const tile = page.locator('.solo-tile').filter({ has: page.locator('.card-title', { hasText: 'Next session' }) })
-    const hasProgram = await tile.locator('.solo-strip-eyebrow').isVisible({ timeout: 3000 }).catch(() => false)
+    // Jake, 2026-09-28: "'Current program' and 'next session' panels do the same thing. Combine the 2 to reduce the clutter" - and on
+    // 2026-10-03 the whole page was reworked: the program is a tile (week N of M, the phase, a progress bar) beside the streak, and the
+    // Today card carries a View program button (tests/dashboard-rework-2026-10-03.spec.js drives the whole page).
+    const tile = page.locator('#dash-program')
+    const hasProgram = await tile.locator('.dash-meter').isVisible({ timeout: 3000 }).catch(() => false)
     test.skip(!hasProgram, 'No program assigned to this solo account')
-    await expect(tile.locator('.solo-strip-eyebrow')).toBeVisible()
-    await expect(page.locator('button:has-text("View program")')).toHaveCount(0)
-    // The eyebrow itself has no stopPropagation, so tapping it hits the same tile-wide navigate() the
-    // old button used to trigger — same destination, one fewer control.
-    await tile.locator('.solo-strip-eyebrow').click()
+    await expect(tile).toContainText('Wk')
+    await tile.click()
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
   })
 

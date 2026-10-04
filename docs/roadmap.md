@@ -26,9 +26,10 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   are done.
 - **UX cleanup pass — all four areas shipped** (runner, builder, progress, and the dashboard polish D2-D4 on 2026-09-08,
   live since `v2026.09.10`; this line used to say D2-D4 were "not started", which the git history disproves). What was
-  deferred is **D1, solo/client dashboard convergence**. Jake's 2026-10-03 note widens it into a full mobile rework of all
-  three dashboards as a landing page and hub. Scoped with him the same day: today's session first, then the week; body
-  weight, streak, program progress and calendar; the PT/Personal switch stays floating. Prototype next, nothing built —
+  deferred is **D1, solo/client dashboard convergence**. Jake's 2026-10-03 note widened it into a full mobile rework of all
+  three dashboards as a landing page and hub: **built 2026-10-04** from the prototype he approved - one skeleton (a Today card,
+  the week as a tappable strip, streak and program tiles, then body weight, calendar and goals), committed locally, awaiting his
+  look on a phone. The coach page is logged-only for now ("2 of 5 done" needs a new database view) —
   [the row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md).
 - **Runner walkthrough of 2026-09-28 (8 items) — ✅ shipped, `v2026.09.11`, live.** Items 1-6 (weekday on
   the program day list, no Back button, full exercise names, Next goes to what is still to do, green/purple
