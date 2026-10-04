@@ -2467,6 +2467,7 @@ async function renderProgressStrength(el) {
   // The 1M–All range selector moved to renderPerformance's toolbar (a <select>) — P1, 2026-09-07.
   el.innerHTML = `
     <input class="field-input" id="perf-ex-search" placeholder="Search exercises…" style="margin-bottom:12px" autocomplete="off" oninput="_renderPerfExerciseList(this.value)">
+    <div class="pf-bar"><span class="pf-count" id="pf-count"></span><button type="button" class="pf-all" id="pf-all" onclick="_perfAll()" hidden></button></div>
     <div id="perf-ex-list"></div>`
   _renderPerfExerciseList('')
 }
@@ -2808,6 +2809,7 @@ function _trendCardEmpty(ex) {
 //         sinceMs    only sessions on/after this are charted and listed — the records stay all-time, like a personal best
 //         todaySets  rows ticked so far in the runner: a dashed 'Today' point and a first history row
 //         getMetric / setMetric   where the chosen measure is remembered between renders
+//         model      an already-prepared _xsPrepare result for this exercise and range (My progress prepares it for the folded header)
 const _xsUnit = () => window._unitPrefs.weight
 // A NUMBER in the user's unit. weightToPref returns a STRING in lb (it exits through _stripTrailingZero), so arithmetic on it
 // must coerce — the same trap _rollingAvg documents.
@@ -2936,8 +2938,29 @@ function _xsDestroyChart(host) {
 function _mountExerciseStats(host, ex, opts = {}) {
   if (!host) return
   host.setAttribute('data-xs', '')
-  host._xs = { ex, opts, model: _xsPrepare(ex, opts), metric: opts.getMetric ? opts.getMetric() : null, sel: null, showAll: false, plotted: [], chart: null }
+  host._xs = { ex, opts, model: opts.model || _xsPrepare(ex, opts), metric: opts.getMetric ? opts.getMetric() : null, sel: null, showAll: false, plotted: [], chart: null }
   _xsRender(host)
+}
+
+// Which measure a card is showing, and its best: { avail, key, M, bestM, hasBest }, or null when no measure has any data. Only measures
+// with data become pills (a bodyweight lift has Reps and nothing else) - and the order puts Reps last, so a lift with any weight opens on
+// its top set. `key` is `metric` when it has data, else the first that does. hasBest is false when none of the measure is in the HISTORY
+// (only today has it): no caption beats "0 kg × 0".
+function _xsPick(model, metric) {
+  const plotted = model.today ? model.shown.concat([model.today]) : model.shown
+  const avail = _metricsWithData(_TREND_METRICS.weight_reps, plotted.map(s => ({ topWeight: s.m.top, e1rm: s.m.e1rm, volume: s.m.volume, intensity: s.m.intensity, reps: s.m.reps })))
+  if (!avail.length) return null
+  const key = avail.some(a => a[0] === metric) ? metric : avail[0][0]
+  const M = _XS_MEASURES[key]
+  const bestM = model.shown.length ? model.shown.map(s => s.m).reduce((a, b) => (M.val(b) >= M.val(a) ? b : a)) : null
+  return { avail, key, M, bestM, hasBest: !!bestM && M.val(bestM) > 0 }
+}
+
+// The one-line answer a card opens with - "Best top set: 95 kg × 3 · 3 sessions" - or '' when there is nothing to say. The open card's
+// caption and the folded card's header on My progress (2026-10-04) both use it, so the two cannot word it differently.
+function _xsCaption(model, metric) {
+  const p = _xsPick(model, metric)
+  return p && p.hasBest ? `Best ${p.M.noun}: ${p.M.cap(p.bestM)} · ${model.shown.length} session${model.shown.length === 1 ? '' : 's'}` : ''
 }
 
 function _xsRender(host) {
@@ -2949,24 +2972,20 @@ function _xsRender(host) {
     host.innerHTML = `<div class="xs"><div class="xs-empty" data-xs-empty>No sessions in this range.</div>${_xsRecsHtml(model.rec)}</div>`
     return
   }
-  // Only measures with data become pills (a bodyweight lift has Reps and nothing else) — and the order puts Reps last, so a
-  // lift with any weight opens on its top set.
-  const avail = _metricsWithData(_TREND_METRICS.weight_reps, st.plotted.map(s => ({ topWeight: s.m.top, e1rm: s.m.e1rm, volume: s.m.volume, intensity: s.m.intensity, reps: s.m.reps })))
-  if (!avail.length) {
+  const pick = _xsPick(model, st.metric)
+  if (!pick) {
     host.innerHTML = `<div class="xs"><div class="xs-empty">Nothing to chart yet.</div><div data-xs-hist>${_xsHistHtml(st)}</div></div>`
     return
   }
-  const key = avail.some(a => a[0] === st.metric) ? st.metric : avail[0][0]
-  const M = _XS_MEASURES[key]
-  const bestM = model.shown.length ? model.shown.map(s => s.m).reduce((a, b) => (M.val(b) >= M.val(a) ? b : a)) : null
-  const hasBest = !!bestM && M.val(bestM) > 0   // none of this measure in the history (only today has it): no caption beats "0 kg × 0"
+  const { avail, key, M } = pick
+  const caption = _xsCaption(model, key)
   const usable = st.plotted.filter(s => M.val(s.m) > 0).length
   const chartNote = typeof Chart === 'undefined' ? 'The chart could not load. Check your connection and reload the page.'
     : usable < 2 ? 'Not enough sessions yet to draw a line. It appears after a couple of workouts.' : ''
   const pills = `<div class="xs-pills" role="group" aria-label="Chart measure">${avail.map(([k, label]) =>
     `<button type="button" class="xs-pill" data-xs-metric="${k}" aria-pressed="${k === key}" onclick="_xsAct(this,'metric','${k}')"${k === key ? ` style="background:${_METRIC_COLORS[k] || 'var(--accent)'}"` : ''}>${escapeHtml(label)}</button>`).join('')}</div>`
   host.innerHTML = '<div class="xs">' +
-    (hasBest ? `<div class="xs-sub" data-xs-caption>${escapeHtml(`Best ${M.noun}: ${M.cap(bestM)} · ${model.shown.length} session${model.shown.length === 1 ? '' : 's'}`)}</div>` : '') +
+    (caption ? `<div class="xs-sub" data-xs-caption>${escapeHtml(caption)}</div>` : '') +
     pills +
     (chartNote
       ? `<div class="xs-empty" data-xs-chartnote>${escapeHtml(chartNote)}</div>`
@@ -3017,6 +3036,65 @@ function _xsAct(el, kind, val) {
   else if (kind === 'less') { st.showAll = false; _xsRefreshSel(host) }
 }
 
+// ── Fold-up exercise cards (Jake, 2026-10-04: "include a collapse/expand button so I dont have to scroll through all exercise data") ──
+// Every exercise was a card about 800px tall, so a long history was a long scroll, and every chart was drawn at once. A card now starts
+// FOLDED - its name and the one-line answer ("Best top set: 95 kg × 3 · 3 sessions") - and opens with a tap; a Collapse all / Expand all
+// button sits above the list. Only OPEN cards have a body or a chart. Which cards are open is remembered while the page is in use
+// (window._trendState.open, a Map by exercise name), so the search box, the range select and the measure pills do not close them; a
+// search that finds exactly ONE exercise opens it (typing a whole name means you want to see it) unless the person folded it themselves.
+// _perfView is what the last list render left behind for the taps: its rows, and `sync`, which brings ONE card's DOM in line with its
+// state without touching the other cards' charts.
+let _perfView = null
+
+// A Map, not an object: an exercise can be called anything, and `'constructor' in {}` is true.
+const _perfOpenMap = () => (window._trendState.open ||= new Map())
+
+// A card's shell: a real button (name, one-line best, badge, chevron) over the body. `body` is '' for a folded card.
+function _perfShell(r, body) {
+  return `<div class="xs-card pf-card${r.open ? ' is-open' : ''}" data-pf-card="${r.i}">` +
+    `<button type="button" class="xs-card-head pf-head" aria-expanded="${r.open}" aria-controls="pf-body-${r.i}" onclick="_perfToggle(${r.i})">` +
+    `<span class="pf-title"><span class="xs-card-name">${escapeHtml(r.ex.name)}</span><span class="pf-sum">${escapeHtml(r.summary)}</span></span>` +
+    `<span class="xs-card-badge">${_TREND_BADGE[r.ex.metricType] || 'Strength'}</span>` +
+    '<svg class="pf-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>' +
+    `<div class="pf-body" id="pf-body-${r.i}"${r.open ? '' : ' hidden'}>${body}</div></div>`
+}
+
+// Frees a folded card's charts: a canvas that is about to be thrown away must have its Chart destroyed, or it keeps its listeners and
+// animation loop running.
+function _perfFree(el) {
+  el.querySelectorAll('canvas').forEach(c => {
+    try { Chart.getChart(c)?.destroy() } catch { /* no Chart.js: nothing to destroy */ }
+    _activeCharts = _activeCharts.filter(ch => ch.canvas !== c)
+  })
+}
+
+function _perfToggle(i) {
+  const v = _perfView, r = v && v.rows[i]
+  if (!r || r.empty) return
+  r.open = !r.open
+  _perfOpenMap().set(r.ex.name, r.open)
+  v.sync(r)
+  _perfSyncAll()
+}
+
+// One button for the whole list: while any card is open it folds them all, otherwise it opens them all.
+function _perfAll() {
+  const v = _perfView
+  if (!v) return
+  const cards = v.rows.filter(r => !r.empty), open = !cards.some(r => r.open)
+  cards.forEach(r => { if (r.open !== open) { r.open = open; _perfOpenMap().set(r.ex.name, open); v.sync(r) } })
+  _perfSyncAll()
+}
+
+// The line above the list: how many exercises, and the Collapse all / Expand all button (hidden when there is nothing to fold).
+function _perfSyncAll() {
+  const v = _perfView
+  const count = document.getElementById('pf-count'), btn = document.getElementById('pf-all')
+  if (count) count.textContent = !v ? '' : v.shown === v.total ? `${v.total} exercise${v.total === 1 ? '' : 's'}` : `${v.shown} of ${v.total} exercises`
+  const cards = v ? v.rows.filter(r => !r.empty) : []
+  if (btn) { btn.hidden = cards.length < 2; btn.textContent = cards.some(r => r.open) ? 'Collapse all' : 'Expand all' }
+}
+
 // Destroys the previous render's Chart.js instances before rebuilding — fires on every keystroke,
 // range change and metric-chip tap, so without this each would leak a full set of chart instances
 // bound to canvases the innerHTML rebuild below just detached.
@@ -3026,14 +3104,32 @@ function _renderPerfExerciseList(query) {
   const q = (query || '').trim().toLowerCase()
   const cutoffDays = _TREND_RANGES[window._trendState.range]
   const cutoff = cutoffDays === Infinity ? 0 : Date.now() - cutoffDays * 86400000
-  const list = (window._trendCache || []).filter(ex => !q || ex.name.toLowerCase().includes(q))
-  if (!list.length) { listEl.innerHTML = '<div class="empty-state"><p>No matching exercises.</p></div>'; return }
+  const all = window._trendCache || []
+  const list = all.filter(ex => !q || ex.name.toLowerCase().includes(q))
+  const openMap = _perfOpenMap()
+  if (!list.length) {
+    listEl.innerHTML = '<div class="empty-state"><p>No matching exercises.</p></div>'
+    _perfView = { rows: [], sync() {}, total: all.length, shown: 0 }
+    _perfSyncAll()
+    return
+  }
 
   // Pass 1 — compute what each card shows (range-filtered points, visible metric chips, active chip).
   const rendered = list.map((ex, i) => {
     // Weight x reps cards are the shared exercise stats card (2026-10-03): pass 2 gives each a host, pass 3 mounts it. Every
     // other type keeps the card below.
-    if (ex.metricType === 'weight_reps') return { ex, i, xs: true }
+    // Folded unless the person opened it, or this search found only this exercise (see the note above _perfView).
+    const open = openMap.has(ex.name) ? openMap.get(ex.name) : list.length === 1
+    if (ex.metricType === 'weight_reps') {
+      const opts = {
+        chartId: `ps-chart-${i}`, sinceMs: cutoff,
+        getMetric: () => window._trendState.metricByEx[ex.name],
+        setMetric: m => { window._trendState.metricByEx[ex.name] = m },
+      }
+      const model = _xsPrepare(ex, opts)
+      const n = model.shown.length
+      return { ex, i, xs: true, open, opts: { ...opts, model }, summary: _xsCaption(model, opts.getMetric()) || (n ? `${n} session${n === 1 ? '' : 's'}` : 'No sessions in this range') }
+    }
     const pts = _metricPointsFor(ex).points.filter(p => new Date(p.date).getTime() >= cutoff)
     const metrics = _metricsWithData(_TREND_METRICS[ex.metricType] || _TREND_METRICS.weight_reps, pts)
     if (!metrics.length) return { ex, i, empty: true }
@@ -3047,22 +3143,17 @@ function _renderPerfExerciseList(query) {
     const chartable = ex.metricType === 'unilateral'
       ? Math.max(_aggregateSeries(pts, 'leftTop', 'max').length, _aggregateSeries(pts, 'rightTop', 'max').length) >= 2
       : _aggregateSeries(pts, activeKey, active[2]).length >= 2
-    return { ex, i, pts, metrics, activeKey, active, chartable }
+    const vals = pts.map(p => p[activeKey]).filter(v => v > 0)
+    const best = vals.length ? (active[4] ? Math.min(...vals) : Math.max(...vals)) : 0
+    return { ex, i, pts, metrics, activeKey, active, chartable, open, summary: `Best ${active[1].toLowerCase()}: ${active[3](best)} · ${pts.length} session${pts.length === 1 ? '' : 's'}` }
   })
 
-  // Pass 2 — build the HTML (canvases must exist before Chart.js can bind to them).
-  listEl.innerHTML = rendered.map(r => {
-    if (r.xs) return `<div class="xs-card"><div class="xs-card-head"><span class="xs-card-name">${escapeHtml(r.ex.name)}</span><span class="xs-card-badge">${_TREND_BADGE[r.ex.metricType] || 'Strength'}</span></div><div id="xs-host-${r.i}"></div></div>`
-    if (r.empty) return _trendCardEmpty(r.ex)
-    const vals = r.pts.map(p => p[r.activeKey]).filter(v => v > 0)
-    const best = vals.length ? (r.active[4] ? Math.min(...vals) : Math.max(...vals)) : 0
+  // Pass 2 — build the cards. Every card is a fold-up shell; an OPEN one carries its body (canvases must exist before Chart.js can bind to
+  // them), a folded one carries none and draws nothing.
+  const bodyHtml = r => {
+    if (r.xs) return `<div id="xs-host-${r.i}"></div>`
     return `
-      <div style="margin-bottom:20px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span style="font-size:var(--text-lg, 14px);font-weight:700">${escapeHtml(r.ex.name)}</span>
-          <span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${_TREND_BADGE[r.ex.metricType]||'Strength'}</span>
-        </div>
-        <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-bottom:8px">Best ${r.active[1].toLowerCase()}: ${r.active[3](best)} · ${r.pts.length} session${r.pts.length===1?'':'s'}</div>
+        <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-bottom:8px">${escapeHtml(r.summary)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           ${r.metrics.map(([key,label]) => `<button onclick="_setTrendMetric('${escapeAttr(r.ex.name)}','${key}')"
             style="padding:4px 10px;border:none;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
@@ -3072,18 +3163,14 @@ function _renderPerfExerciseList(query) {
           ? `<div style="position:relative;height:90px"><canvas id="ps-chart-${r.i}"></canvas></div>`
           : `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;padding:2px 0 6px">One session so far — the graph appears from the second.</div>`}
         ${_sessionSetsBlockHtml(r.pts)}
-        ${_recordsBlockHtml(_exerciseRecords(r.ex))}
-      </div>`
-  }).join('')
+        ${_recordsBlockHtml(_exerciseRecords(r.ex))}`
+  }
+  listEl.innerHTML = rendered.map(r => (r.empty ? _trendCardEmpty(r.ex) : _perfShell(r, r.open ? bodyHtml(r) : ''))).join('')
 
-  // Pass 3 — draw the charts.
-  rendered.forEach(r => {
+  // Pass 3 — draw the charts of the cards that are OPEN.
+  const drawCard = r => {
     if (r.xs) {
-      _mountExerciseStats(document.getElementById(`xs-host-${r.i}`), r.ex, {
-        chartId: `ps-chart-${r.i}`, sinceMs: cutoff,
-        getMetric: () => window._trendState.metricByEx[r.ex.name],
-        setMetric: m => { window._trendState.metricByEx[r.ex.name] = m },
-      })
+      _mountExerciseStats(document.getElementById(`xs-host-${r.i}`), r.ex, r.opts)
       return
     }
     // !chartable means pass 2 deliberately rendered no canvas — the session list below carries the
@@ -3139,7 +3226,21 @@ function _renderPerfExerciseList(query) {
       // raw. Rounding to 1dp is safe for every formatter here, including the seconds-based pace ones.
       yFormat: v => r.active[3](_tickNum(v)),
     })
-  })
+  }
+  rendered.forEach(r => { if (r.open && !r.empty) drawCard(r) })
+
+  // One card's tap: bring that card alone in line with its state. The other cards' charts are left running.
+  const sync = r => {
+    const card = listEl.querySelector(`[data-pf-card="${r.i}"]`); if (!card) return
+    const body = card.querySelector('.pf-body')
+    card.classList.toggle('is-open', r.open)
+    card.querySelector('.pf-head').setAttribute('aria-expanded', String(r.open))
+    body.hidden = !r.open
+    if (r.open) { body.innerHTML = bodyHtml(r); drawCard(r) }
+    else { _perfFree(body); body.innerHTML = '' }
+  }
+  _perfView = { rows: rendered, sync, total: all.length, shown: list.length }
+  _perfSyncAll()
 }
 
 // renderProgressCardio removed 2026-07-19 (B5): cardio now has a proper metric_type trend card in

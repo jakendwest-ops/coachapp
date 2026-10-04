@@ -109,7 +109,8 @@ const chartOf = (page, id) => page.evaluate((id) => {
 // three of these counts went from 1 to 2 with nothing in the code changed.)
 const chartCount = (page) => page.evaluate(() => (typeof Chart === 'undefined' ? -1 : Object.values(Chart.instances).filter(c => !c.canvas.closest('#dash-root')).length))
 
-// Renders Performance ▸ Per exercise for ME into a scratch container and tags the "Lay A" card's host.
+// Renders Performance ▸ Per exercise for ME into a scratch container, taps the "Lay A" card open (the cards start folded since
+// 2026-10-04: only an open card has its stats) and tags its host.
 async function showMyProgress(page, name = 'Lay A') {
   await page.evaluate(async ({ me, name }) => {
     const orig = window._getCurrentClientId
@@ -118,6 +119,7 @@ async function showMyProgress(page, name = 'Lay A') {
     const el = document.createElement('div'); el.id = 'perf-sub-content'; document.body.appendChild(el)
     try { await renderProgressStrength(el) } finally { window._getCurrentClientId = orig }
     const card = [...document.querySelectorAll('.xs-card')].find(c => c.querySelector('.xs-card-name').textContent === name)
+    if (card?.querySelector('.pf-head')?.getAttribute('aria-expanded') === 'false') card.querySelector('.pf-head').click()
     card?.querySelector('[data-xs]')?.setAttribute('data-test-host', '')
   }, { me: ME, name })
 }

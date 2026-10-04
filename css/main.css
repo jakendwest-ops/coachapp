@@ -1034,6 +1034,24 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .xs-sets { display: block; margin-top: 2px; font-size: var(--text-md); color: var(--text-muted); overflow-wrap: anywhere; }
 .xs-more { width: 100%; margin-top: 10px; padding: 10px; border: 0; border-radius: var(--radius); background: var(--surface-2); color: var(--text); font-size: var(--text-md); font-weight: 700; cursor: pointer; }
 
+/* Fold-up exercise cards on My progress (2026-10-04). Jake: "include a collapse/expand button so I dont have to scroll through all exercise
+   data." A card is a real button (name, a one-line best, badge, chevron) over a body that only exists while it is open. Tokens only. */
+.pf-card { margin-bottom: 10px; }
+.pf-card.is-open { margin-bottom: 20px; }
+.pf-head { width: 100%; min-height: 44px; margin: 0; padding: 0; gap: 8px; background: transparent; border: 0; border-radius: var(--radius-sm); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.pf-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pf-title { flex: 1; min-width: 0; }
+.pf-title .xs-card-name { display: block; overflow-wrap: anywhere; }
+.pf-sum { display: block; margin-top: 2px; font-size: var(--text-sm); color: var(--text-muted); overflow-wrap: anywhere; }
+.pf-card.is-open .pf-sum { display: none; }
+.pf-chev { width: 18px; height: 18px; flex-shrink: 0; color: var(--text-muted); transition: transform .2s; }
+.pf-card.is-open .pf-chev { transform: rotate(180deg); }
+.pf-body { margin-top: 10px; }
+.pf-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0 0 10px; min-height: 28px; }
+.pf-count { font-size: var(--text-sm); color: var(--text-muted); }
+.pf-all { border: 0; background: transparent; padding: 6px 4px; font-size: var(--text-md); font-weight: 700; color: var(--accent); cursor: pointer; }
+.pf-all[hidden] { display: none; }
+
 /* ─── Dashboard: one landing page and hub for all three roles (2026-10-03) ─────────────────────────────────────────────────
    Jake: "nothing really flows or stands out as a dashboard or makes it feel like this is the landing page and hub of your account."
    ONE skeleton - greeting, a Today card, the week as a strip, two number tiles, then body weight, calendar and goals - for solo,
