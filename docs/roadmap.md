@@ -64,8 +64,10 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   2026-10-04: an overview (phases, weeks, sessions a week, a bar with a block per phase), fold-up phase cards, slim day rows, the occasional
   controls behind ⋯ sheets ([row](bugs/2026-10-04-program-page-needs-a-ui-rework.md)). (5) Periodization gains an RPE method beside %, one
   or the other per phase - BUILT 2026-10-04 ([row](bugs/2026-10-04-periodization-has-no-rpe-method.md)). Items 4-5 are committed on master
-  (`a1d4edb`), not released, awaiting a go-ahead for `v2026.09.15` and his look on a phone; the Undulating tiers' Reps boxes are saved but
-  never applied ([row](bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md)).
+  (`a1d4edb`), not released, awaiting a go-ahead for `v2026.09.15` and his look on a phone. Two answers of his, the same day, are built on top:
+  the Undulating tiers' Reps boxes (saved but never applied) are removed ("remove",
+  [row](bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md)), and a program opens on the phase the viewer's own plan is
+  in, marked "Now", instead of always the first ("open current phase").
 - **Solo/signup:** the data model and invite-based onboarding (an owner-gated Edge Function) are
   done. Genuine open public self-signup for new solo accounts remains a deliberate deferral, not
   scoped.

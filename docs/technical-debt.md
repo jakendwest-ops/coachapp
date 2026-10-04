@@ -154,6 +154,16 @@ write with a message. (2) A stored periodization value that is an object whose `
 `String(v)` throw in `_periodizationLabel` and in the dialog (both methods; it needs crafted jsonb written by the phase's own owner,
 and the UI cannot produce it).
 
+**New, unfixed (2026-10-04, from the review of "open the current phase" / "remove the Reps boxes"; both non-blocking):**
+(1) The program page's "Now" follows the viewer's assignment of THIS program, whereas the dashboard tile, the Workouts hero and the
+calendar follow the newest assignment across ALL programs (`assign_program` leaves other programs' rows alone, and a solo user has no
+remove control). Someone who moved from program A to program B while A was still running sees A's page open on its by-date phase,
+marked Now, while the rest of the app treats B as the plan. Cosmetic and rare (an old plan usually has finished, and a finished plan
+shows no Now). The fix is one more read to compare the newest assignment's `program_id`, or a remove control for solo users.
+(2) `js/app-workouts.js` (about line 697, the Workouts hero's fallback) keeps a third copy of the phase loop. It also computes the week
+within the phase, so it could not simply call `_programPhaseAt`; it is equivalent today. The next change to either should fold them
+into one function that returns both.
+
 ## Minor hygiene debt
 
 A handful of stray debug artifacts sit at repo root (debug PNGs, a PDF, `modal-preview.html`),

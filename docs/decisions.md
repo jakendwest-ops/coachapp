@@ -12,6 +12,56 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-04 — Jake answered the two questions that came with the program-page build: the Undulating Reps boxes are removed, and a program opens on the phase the viewer's own plan is in (built, not released).**
+His words: "remove and open current phase." This supersedes the last sentence of the entry below ("'open the phase you are in' ... is not built")
+and its choice to leave the % side's Reps boxes alone. *Reps:* the % Undulating tiers had a "Reps" box that saved to
+`periodization_config.tiers.<tier>.reps` and that nothing read when weeks were generated (only a tier's %1RM / RPE is read). Of the three
+options I gave him (make it work, remove it, leave it and say so) he took the removal. The boxes are gone from both methods; a tier is its
+%1RM or its RPE and nothing else; saving the dialog writes only that, so reps typed earlier are dropped from the stored config the next
+time a phase is saved (nothing read them; a rollback would show the old dialog's default Reps text instead of the old value). The 2026-09-20
+escaping spec had pinned those inputs; its hostile-string test now proves that a stored reps string reaches NOTHING (no input, no
+attribute, no element), and a new test in the RPE spec pins the save shape. *Current phase:* `openProgram` used to open the first phase.
+It now asks `_existingAssignment(window._soloClientId, programId)` - the viewer's OWN record of the program - in parallel with the program
+query, and `_pgmCurrentPhaseId` turns that into a phase: the phase today falls in, counted by `_programWeeksElapsed` (Monday-to-Sunday weeks,
+the dashboard's count) and `_programPhaseAt`. That last function is the loop that already lived inside `_dashProgramInfo`, moved unchanged
+into `app-dashboard.js` and now called by both, so the program tile and the program page are one rule for a running plan, not two copies
+that could drift (a unit test walks the tile and the helper across 71 days for four start days, and a browser test puts the tile and the
+page side by side). The current phase opens on a first visit, wears a small "Now" pill whether folded or open, and what Jake opens or folds
+afterwards is kept like before (a phase added later starts folded; `_pgmOpenState` takes the current phase as a third argument and keeps
+its fresh-set rule). *Choices made on Jake's behalf, all reversible:* only the viewer's own plan counts - a coach looking at a program they
+built for a client still sees the first phase open, because the coach is not the one following it; a plan that has not started yet (its
+Monday is a later week), a plan that has finished, a program the viewer is not following, a failed lookup and a program with no phases all
+open the first phase and show no "Now" (there is no current phase to claim). The dashboard tile still says the LAST phase for a finished plan
+- it has to say something - so the tile and the page differ there on purpose. *Found by re-reading my own change before the regression
+run:* the plan lookup was awaited a second time, AFTER `openProgram` had set `window._openProgramId` / `_openProgramPhases` and before it
+painted; the old code had no yield between those two steps, so a quick second visit (or a tap on another tab) could set the globals under
+the first visit's paint and leave the buttons reading a different program from the one on screen. It is now one `Promise.all` - the program
+and the plan in the same round trip, a single await before anything is set - and a source-scanner unit test fails if an `await` ever comes
+back between the globals and the paint. *Verified:* 17 new unit tests (the open state, the shared phase rule on every boundary,
+`_pgmCurrentPhaseId` including errors and odd dates, and the await scanner with its own control), 6 new browser tests (a running plan
+opens its phase with the right bar block and Now badge and paints it; the six boundary weeks 0, 1, 2, 4, 5 and 6; not following / not
+started / finished; choices kept and Now stays; the tile and the page name the same phase; no Reps box on the % side and the save shape),
+and 21 deliberate breakages, each of which must fail a test (11 on the pure helpers and the scanner, 10 on the browser specs): one
+survived the first time - an error-result guard that real data never needs, since a failed lookup carries no start date anyway - and a
+test with an error that does carry a date now kills it.
+*Reviewed* by the pinned `multi-agent-review` (diff mode, three fixed angles, over this increment only; cut off once more by Jake's usage
+limit and resumed from their saved context, the repo untouched in between): no blocking finding at any angle. *Fixed:* the shape comment
+for the RPE Undulating config still listed `reps`; the % tier input lacked the `aria-label` its RPE twin has (added, and the attribute-list
+assertion that pinned it updated); the hostile-reps test had only absence assertions, which a dialog that rendered nothing would also
+pass (it now also checks that each tier shows its stored %1RM); one test title claimed the Sunday-before edge while only varying whole
+weeks (renamed - the node tests own that edge). *Checked by the reviewers and worth keeping:* the shared phase function equals the
+removed loop on about 592,000 input combinations in each of six time zones (four with daylight-saving changes), zero differences; the
+page's week rule agrees with the calendar's and the tile's over 4,620 calendar days, zero disagreements; the one new read (`_existingAssignment`)
+returns only the viewer's own row under the policies mirrored in the repo, and a client cannot reach the page. *Accepted and recorded*
+([technical-debt.md](technical-debt.md)): "Now" follows the assignment of THIS program while the tile, the Workouts hero and the calendar
+follow the newest assignment across all programs, so with two plans running at once the older program's page also says Now (one more read
+would fix it; it was judged not worth it for a case that is rare and cosmetic); the Workouts hero keeps a third copy of the phase loop
+because it also needs the week within the phase. *Honest limits:* the reviewers are the same model as the author and none ran a browser;
+the browser block runs as the PT in coach view only (solo view and a pure coach share the one branch, `window._soloClientId ? … : null`,
+and were reasoned about, not driven); the "tile and page name the same phase" browser test feeds the page's row to the tile function
+rather than the tile's own newest-assignment pick, and its unit twin is a drift guard now that the tile calls the helper - the equivalence
+with the OLD loop rests on the reviewers' brute-force run, not on a test in the repo.
+
 **2026-10-04 — The program page is an overview plus fold-up phases, and periodization has an RPE method beside %: built (not released).**
 Jake's items 4 and 5 (his 2026-10-04 note), scoped by form, shown as a tappable prototype, then "approved - build both". (He later noticed
 neither was on the live site: right - `v2026.09.14` carried items 1-3 only, and the build was still in progress.) *The page:* the top says

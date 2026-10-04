@@ -54,11 +54,14 @@ and 1280 px; the pre-push `multi-agent-review` (three reviewers, no blocking fin
 [decisions.md](decisions.md). Jake noticed on 2026-10-04 that they are not on
 the live site yet (correct: the live site is `v2026.09.14`); a release (`v2026.09.15`) waits for his go-ahead. Rows:
 [program page](bugs/2026-10-04-program-page-needs-a-ui-rework.md), [periodization](bugs/2026-10-04-periodization-has-no-rpe-method.md),
-and a new open one: the Undulating tiers' Reps boxes are saved but never applied
-([row](bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md)).
+and one more: the Undulating tiers' Reps boxes were saved but never applied
+([row](bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md)). Jake answered both open questions that came with the build
+("remove and open current phase"), and both are built into the same release: the Reps boxes are removed, and a program opens on the phase
+the viewer's own plan is in (weeks counted Monday to Sunday, the same rule as the dashboard tile, which now shares one function with the
+page), marked "Now".
 Open questions waiting on Jake: whether the app's **Sign out should end only this device's session** (today it ends every one - see
 [the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); whether to build the Up next slot-matching rule (my
-recommendation: leave it); naming ("Biggest set", "View program"); what the Undulating Reps boxes should do.
+recommendation: leave it); naming ("Biggest set", "View program").
 
 ## Next: the release plans
 

@@ -20,8 +20,9 @@ files byte-identical to the tag). Full suite 1056 passed / 1 flaky (`progress-tr
 everything that had been waiting since `v2026.09.13`: the shared exercise stats card, the top-set ghost-text fix, the dashboard rework, Jake's
 2026-10-04 items 1-3 (fold-up exercise cards on My progress, the Workouts "Up next" card naming the next workout, the Last time panel's top
 set) and the pre-push review's follow-ups. All of it awaits Jake's look on a phone. Built and committed on master but **not released**
-(`a1d4edb`): his items 4-5 (the program-page rework and an RPE method for periodization), approved 2026-10-04 after a prototype; a release
-(`v2026.09.15`) waits for his go-ahead. See [current-sprint.md](current-sprint.md).
+(`a1d4edb` and the commits after it): his items 4-5 (the program-page rework and an RPE method for periodization), approved 2026-10-04 after a
+prototype, plus his two answers of the same day ("remove" the Undulating Reps boxes; "open current phase" - the program page opens the phase
+the viewer's own plan is in, marked Now); a release (`v2026.09.15`) waits for his go-ahead. See [current-sprint.md](current-sprint.md).
 
 **RPE top-set autoregulation is live (in `v2026.09.13`).**
 A coach marks set 1 as the top set with a prescribed RPE; the runner captures the effort actually hit,
