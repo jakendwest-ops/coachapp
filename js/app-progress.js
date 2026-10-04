@@ -1955,7 +1955,8 @@ function _xsEffortOpts(s, useEffort) {
 
 // One session of one exercise -> the numbers. `sets` are workout_log_sets-shaped rows; warm-ups are dropped here
 // (_countableSets), so callers need not. Weights stay in canonical kg — only the DISPLAY converts.
-//   top / topReps  the heaviest set (a tie on weight goes to the set with more reps)
+//   top / topReps  the heaviest set (a tie on weight goes to the set with more reps); topSet is that row itself, null when
+//                  nothing was weighted (the runner's Last time panel words it, with its effort)
 //   e1rm / e1rmSrc the highest estimate and the SET it came from — not always the heaviest set, and naming it is what
 //                  stops a 1RM well above the heaviest weight from looking like a mistake
 function _xsSessionMetrics(sets, { useEffort = _XS_COUNT_EFFORT } = {}) {
@@ -1970,7 +1971,7 @@ function _xsSessionMetrics(sets, { useEffort = _XS_COUNT_EFFORT } = {}) {
     const est = _estimate1RM(s.weight_kg, s.reps_achieved, _xsEffortOpts(s, useEffort)) || 0
     if (est > best) { best = est; src = s }
   }
-  return { sets: rows.length, reps, volume, top: top ? w(top) : 0, topReps: top ? r(top) : 0, e1rm: best, e1rmSrc: src, intensity: reps ? volume / reps : 0 }
+  return { sets: rows.length, reps, volume, top: top ? w(top) : 0, topReps: top ? r(top) : 0, topSet: top, e1rm: best, e1rmSrc: src, intensity: reps ? volume / reps : 0 }
 }
 
 // All-time records for one exercise, each naming its SET and its date: heaviest set, best est. 1RM (with the set it came
@@ -2832,6 +2833,10 @@ function _xsEffortText(s) {
 // "117.5×3 @9" for the history; "117.5 × 3 @9" where it sits in a sentence. A bodyweight set is just its reps.
 const _xsSetText = s => { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (w > 0 ? _xsW(w) + '×' + r : r + ' reps') + _xsEffortText(s) }
 const _xsSetSpaced = s => { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (w > 0 ? _xsW(w) + ' × ' + r : r + ' reps') + _xsEffortText(s) }
+// "117.5 kg × 3 @9", "12 reps": a set spelled out WITH its unit, for a sentence that has no column to hold the unit (the runner's Last
+// time panel: "Top set 117.5 kg × 3 @9"). A weight with no reps recorded is the weight alone, never "× 0".
+// A `function`, not a const arrow: the runner (loaded BEFORE this file) calls it, and a const read across files is a load-order trap.
+function _xsSetWithUnit(s) { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (w > 0 ? `${_xsW(w)} ${_xsUnit()}${r > 0 ? ' × ' + r : ''}` : r + ' reps') + _xsEffortText(s) }
 
 // The five measures. Keys are the SAME keys _TREND_METRICS and the saved per-exercise choice use. `val` is the number charted;
 // `cap` is the words for the "Best ..." caption and the tooltip — and says WHICH SET a weight came from.

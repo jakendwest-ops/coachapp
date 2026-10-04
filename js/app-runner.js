@@ -288,11 +288,13 @@ async function fetchRunnerLastSession(exName, exerciseId) {
   // write weight_kg, so they were invisibly excluded from "last session" everywhere below.
   // effort_value/effort_type added 2026-09-30 so the effort ghost (renderStrengthTable's
   // ePlaceholder) can show a REAL previous rating instead of the scale's own bare bounds.
+  // phase added 2026-10-04 so the Last time panel counts WORKING sets only, exactly as the Stats card does (_countableSets): without it
+  // a warm-up read as a set and could be taken for the top set.
   let exRows = exerciseId
-    ? (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m, effort_value, effort_type)').eq('exercise_id', exerciseId).in('log_id', logIds)).data
+    ? (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m, effort_value, effort_type, phase)').eq('exercise_id', exerciseId).in('log_id', logIds)).data
     : null
   if (!exRows?.length) {
-    exRows = (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m, effort_value, effort_type)').eq('exercise_name', exName).in('log_id', logIds)).data
+    exRows = (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m, effort_value, effort_type, phase)').eq('exercise_name', exName).in('log_id', logIds)).data
   }
   if (!exRows?.length) { _runner.lastSession[exName] = null; return }
 
@@ -405,7 +407,7 @@ function _runnerLastTime(ex) {
 
 // ── Last time → Stats (Jake's 2026-09-28 walkthrough, items 7-8) ─────────────────────────────────────────────
 // The stats card that sat at the top of the scroll area (Volume / Top / Reps / Sets vs last session) is now behind
-// one tappable line UNDER the set table: "Last time · 25 Sep — 3 × 8 @ 62.5 kg  [Stats]". The Stats pill is a filled
+// one tappable line UNDER the set table: "Last time · 25 Sep · 3 sets — Top set 62.5 kg × 8  [Stats]" (the top set since 2026-10-04). The Stats pill is a filled
 // button with an icon on a tinted card, because a bare "›" was easy to miss and Jake asked for something that makes
 // it obvious you can click in. The sheet is the exercise stats card shared with My progress (below). Same gate as
 // before: weight × reps with a previous session.
@@ -417,23 +419,27 @@ function _runnerShortDate(d) {
   return _xsDate(d)
 }
 
-// "3 × 8 @ 62.5 kg" when every set matched, "3 sets, top 62.5 kg" when they didn't, reps only for bodyweight.
+// What the "Last time" panel says about a previous session: its TOP SET and how many sets there were (Jake, 2026-10-04: "This panel
+// needs to show top set" - it used to name the heaviest weight but not the reps it was lifted for). The top set is the Stats card's own
+// - the heaviest set, a tie going to the one with more reps, warm-ups never counted (_xsSessionMetrics) - so this panel and the card
+// behind it cannot disagree. A lift with no weight has no heaviest set, so its top set is the one with the most reps. Returns
+// { count, top } with `top` already worded ("23 kg × 5 @8", "12 reps"), or null when nothing countable is left (only warm-ups) so no
+// empty panel is drawn.
 function _lastTimeSummary(sets) {
-  const kgs = sets.map(s => parseFloat(s.weight_kg) || 0)
-  const reps = sets.map(s => parseInt(s.reps_achieved) || 0)
-  const top = Math.max(...kgs)
-  const same = kgs.every(w => w === kgs[0]) && reps.every(r => r === reps[0])
-  if (!top) return same ? `${sets.length} × ${reps[0]} reps` : `${sets.length} sets`
-  return same ? `${sets.length} × ${reps[0]} @ ${fmtWeight(kgs[0], { spaced: true })}` : `${sets.length} sets, top ${fmtWeight(top, { spaced: true })}`
+  const m = _xsSessionMetrics(sets)
+  if (!m.sets) return null
+  const row = m.topSet || _countableSets(sets).reduce((best, s) => ((parseInt(s.reps_achieved) || 0) >= (parseInt(best.reps_achieved) || 0) ? s : best))
+  return { count: m.sets, top: _xsSetWithUnit(row) }
 }
 
 function _renderLastTimeCard(ex) {
   const last = _runnerLastTime(ex)
-  if (!last) return ''
+  const sum = last && _lastTimeSummary(last.sets)
+  if (!sum) return ''
   const dateStr = _runnerShortDate(last.date)
-  const summary = _lastTimeSummary(last.sets)
-  return `<button id="wr-lasttime" type="button" onclick="openRunnerStats()" aria-haspopup="dialog" aria-label="View stats for ${escapeHtml(ex.name)}. Last time ${escapeHtml(dateStr)}, ${escapeHtml(summary)}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;margin-top:14px;padding:10px 10px 10px 14px;background:var(--accent-light);border:1px solid rgba(99,102,241,.3);border-radius:var(--radius, 10px);text-align:left;cursor:pointer">
-    <span style="min-width:0"><span style="display:block;font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Last time · ${escapeHtml(dateStr)}</span><span style="display:block;font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-top:2px">${escapeHtml(summary)}</span></span>
+  const count = `${sum.count} ${sum.count === 1 ? 'set' : 'sets'}`
+  return `<button id="wr-lasttime" type="button" onclick="openRunnerStats()" aria-haspopup="dialog" aria-label="View stats for ${escapeHtml(ex.name)}. Last time ${escapeHtml(dateStr)}, ${count}, top set ${escapeHtml(sum.top)}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;margin-top:14px;padding:10px 10px 10px 14px;background:var(--accent-light);border:1px solid rgba(99,102,241,.3);border-radius:var(--radius, 10px);text-align:left;cursor:pointer">
+    <span style="min-width:0"><span data-lt-label style="display:block;font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Last time · ${escapeHtml(dateStr)} · ${count}</span><span data-lt-top style="display:block;font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-top:2px">Top set ${escapeHtml(sum.top)}</span></span>
     <span aria-hidden="true" style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-height:40px;padding:0 14px 0 12px;border-radius:var(--radius-lg, 14px);background:var(--accent);color:#fff;font-size:var(--text-base, 13px);font-weight:700;box-shadow:0 1px 2px rgba(79,70,229,.35)">${_RUNNER_CHART_ICON}Stats</span></button>`
 }
 

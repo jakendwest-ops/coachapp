@@ -224,3 +224,77 @@ describe('_xsStripHtml — the change arrow under each number', () => {
     assert.equal(tile(html, 'top').delta, '')
   })
 })
+
+describe('_xsSessionMetrics.topSet — the ROW behind the top set (2026-10-04)', () => {
+  test('is the heaviest set itself (a tie on weight goes to the set with more reps), so its effort can be shown', () => {
+    const m = metrics([set(100, 3), set(100, 5, { effort_value: 9, effort_type: 'rpe' }), set(90, 10)])
+    assert.equal(m.topSet.weight_kg, 100)
+    assert.equal(m.topSet.reps_achieved, 5)
+    assert.equal(m.topSet.effort_value, 9)
+  })
+  test('is null when nothing was weighted (a bodyweight session has no heaviest set), and for an empty session', () => {
+    assert.equal(metrics([set(null, 10), set(null, 9)]).topSet, null)
+    assert.equal(metrics([]).topSet, null)
+  })
+  test('never a warm-up', () => {
+    assert.equal(metrics([set(200, 1, { phase: 'warmup' }), set(100, 5)]).topSet.weight_kg, 100)
+  })
+})
+
+// The runner's "Last time" panel (Jake, 2026-10-04: "This panel needs to show top set"). It used to read "2 sets, top 23 kg" - the
+// weight but not the reps it was lifted for. Now: the top set as weight x reps, with its effort when one was logged, plus the count.
+describe('_lastTimeSummary — what the runner\'s Last time panel says', () => {
+  const sum = (sets) => get('_lastTimeSummary')(sets)
+
+  test('Jake\'s case: two sets, 23 kg for 5 is the top set, and the count comes back with it', () => {
+    const s = sum([set(20, 5), set(23, 5)])
+    assert.equal(s.count, 2)
+    assert.equal(s.top, '23 kg × 5')
+  })
+
+  test('the top set is the Stats card\'s: heaviest first, a tie going to the set with more reps', () => {
+    const s = sum([set(100, 3), set(100, 5), set(90, 10)])
+    assert.equal(s.top, '100 kg × 5')
+    assert.equal(s.count, 3)
+  })
+
+  test('the logged effort travels with the set, and its scale with it: RPE as @9, RIR as @2 RIR', () => {
+    assert.equal(sum([set(100, 3, { effort_value: 9, effort_type: 'rpe' }), set(85, 5)]).top, '100 kg × 3 @9')
+    assert.equal(sum([set(100, 3, { effort_value: 2, effort_type: 'rir' })]).top, '100 kg × 3 @2 RIR')
+  })
+
+  test('an effort with no scale is not shown (RIR and RPE run in opposite directions, so a guess could invert it)', () => {
+    assert.equal(sum([set(100, 3, { effort_value: 8 })]).top, '100 kg × 3')
+  })
+
+  test('a warm-up is neither the top set nor part of the count (the Stats card ignores it too)', () => {
+    const s = sum([set(20, 10, { phase: 'warmup' }), set(100, 5)])
+    assert.equal(s.count, 1)
+    assert.equal(s.top, '100 kg × 5')
+  })
+
+  test('a bodyweight lift has no heaviest set: its top set is the one with the most reps', () => {
+    const s = sum([set(null, 10), set(null, 12), set(null, 9)])
+    assert.equal(s.top, '12 reps')
+    assert.equal(s.count, 3)
+  })
+
+  test('a weight with no reps recorded shows the weight alone, never "× 0"', () => {
+    assert.equal(sum([set(23, 0)]).top, '23 kg')
+  })
+
+  test('one set reads as one set, and nothing countable (only warm-ups) is null so no empty panel is drawn', () => {
+    assert.equal(sum([set(60, 8)]).count, 1)
+    assert.equal(sum([set(20, 10, { phase: 'warmup' })]), null)
+    assert.equal(sum([]), null)
+  })
+
+  test('shown in the user\'s unit, converted from the canonical kg', () => {
+    const prefs = get('window')._unitPrefs
+    const before = prefs.weight
+    try {
+      prefs.weight = 'lb'
+      assert.equal(sum([set(100, 5)]).top, '220.5 lb × 5')
+    } finally { prefs.weight = before }
+  })
+})

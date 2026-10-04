@@ -82,7 +82,8 @@ const chartState = (page) => page.evaluate(() => {
   const c = Chart.getChart(document.getElementById('rs-chart'))
   return c ? { labels: c.data.labels.slice(), sets: c.data.datasets.map(d => d.data.slice()) } : null
 })
-const chartCount = (page) => page.evaluate(() => typeof Chart === 'undefined' ? -1 : Object.keys(Chart.instances).length)
+// Counts the charts of the sheet, not of the page behind it: a client with weigh-ins has a sparkline on the dashboard (#dash-root).
+const chartCount = (page) => page.evaluate(() => (typeof Chart === 'undefined' ? -1 : Object.values(Chart.instances).filter(c => !c.canvas.closest('#dash-root')).length))
 
 test.describe('Runner log-first layout (2026-09-28)', () => {
   test('Swap, Add and Units are behind a "⋯" button — not rows on the page', async ({ page }) => {

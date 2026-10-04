@@ -104,7 +104,10 @@ const chartOf = (page, id) => page.evaluate((id) => {
   const c = Chart.getChart(document.getElementById(id))
   return c ? { labels: c.data.labels.slice(), sets: c.data.datasets.map(d => d.data.slice()), dashed: c.data.datasets.map(d => !!d.borderDash) } : null
 }, id)
-const chartCount = (page) => page.evaluate(() => typeof Chart === 'undefined' ? -1 : Object.keys(Chart.instances).length)
+// Counts the charts of the card under test, not the page behind it: a client with weigh-ins has a sparkline on the dashboard (#dash-root)
+// that sits behind the runner and the scratch container alike. (Found 2026-10-04, when the test account's weigh-ins were re-seeded and
+// three of these counts went from 1 to 2 with nothing in the code changed.)
+const chartCount = (page) => page.evaluate(() => (typeof Chart === 'undefined' ? -1 : Object.values(Chart.instances).filter(c => !c.canvas.closest('#dash-root')).length))
 
 // Renders Performance ▸ Per exercise for ME into a scratch container and tags the "Lay A" card's host.
 async function showMyProgress(page, name = 'Lay A') {
