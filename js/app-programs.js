@@ -1158,7 +1158,11 @@ async function openProgram(programId) {
   window._builderOpenSlot = {}   // start every builder visit with no slot pre-opened
   window._builderWeekData = {}   // and no cached sessions: the cards and the dialog's Week-1 heads-up must describe THIS visit's read
 
-  const { data: program, error } = await db.from('programs').select('id, name, description, created_at, is_personal, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)').eq('id', programId).single()
+  // Where the viewer's OWN plan is today (null: no solo record to follow a plan with, or the lookup failed), read in the SAME round trip as the
+  // program: one await, so nothing yields between setting the globals below and painting the page - a second await there would let a quick
+  // second visit set them under this one's paint.
+  const mineP = window._soloClientId ? _existingAssignment(window._soloClientId, programId).catch(() => null) : null
+  const [{ data: program, error }, mine] = await Promise.all([db.from('programs').select('id, name, description, created_at, is_personal, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)').eq('id', programId).single(), mineP])
 
   if (error) { log.error('openProgram', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
@@ -1180,7 +1184,8 @@ async function openProgram(programId) {
   window._openProgramId = programId
   window._openProgramPhases = phases
 
-  const openState = _pgmOpenState(programId, phases)
+  window._pgmNowId = _pgmCurrentPhaseId(phases, mine, _ymdLocal(new Date()))
+  const openState = _pgmOpenState(programId, phases, window._pgmNowId)
   const cta = _assignBtnHtml(program)   // '' for a personal program: nothing to reserve room for
   el.innerHTML = `
     <div class="pgm">
@@ -1318,15 +1323,27 @@ function _pgmSessionsText(n) {
   return n === 0 ? ' · no sessions yet' : ' · ' + _pgmSessionsLabel([n])
 }
 
+// The phase the viewer is IN right now: the one their OWN plan (their solo record's assignment of this program) has reached today, counted by
+// _programPhaseAt like the dashboard tile. null - and so the first phase opens, as before - when they are not following this program, the
+// lookup failed, the plan has not started (a Monday-to-Sunday week later than this one) or it has finished.
+function _pgmCurrentPhaseId(phases, mine, todayStr) {
+  if (!mine || mine.error || !mine.start_date || !(phases || []).length) return null
+  const start = _mondayOfWeek(mine.start_date), today = _mondayOfWeek(todayStr)
+  if (!start || !today || today < start) return null
+  const total = phases.reduce((n, p) => n + (p.duration_weeks || 0), 0)
+  if (_programWeeksElapsed(mine.start_date, todayStr) >= total) return null
+  return _programPhaseAt(phases, mine.start_date, todayStr)?.id ?? null
+}
+
 // Which phase cards are open. Kept for as long as you stay on THIS program (every add / remove / generate repaints the page, and
 // a card you opened must not fold itself); another program starts with just its first phase open. A phase the page has not seen
 // before starts folded - unless EVERY phase is new (a first visit, the first phase of an empty program, the first one added after
-// the last was removed): then the first opens, so a coach is never left looking at closed cards with nothing to do.
-function _pgmOpenState(programId, phases) {
+// the last was removed): then the one the plan is in opens (the first when there is none), so a coach is never left looking at closed cards.
+function _pgmOpenState(programId, phases, currentId) {
   let st = window._pgmOpen
   if (!st || st.programId !== programId) st = window._pgmOpen = { programId, open: {}, seen: new Set() }
   const fresh = phases.filter(p => !st.seen.has(p.id))
-  if (phases.length && fresh.length === phases.length) st.open[phases[0].id] = true
+  if (phases.length && fresh.length === phases.length) st.open[(phases.find(p => p.id === currentId) || phases[0]).id] = true
   st.seen = new Set(phases.map(p => p.id))
   return st.open
 }
@@ -1347,6 +1364,7 @@ function _pgmCardHtml(ph, i, programId, open) {
   const method = _pgmPhaseMethod(ph)
   const label = _periodizationLabel(ph)
   const chip = label ? `<span class="pgm-chip ${method}">${label}</span>` : ''
+  const now = ph.id === window._pgmNowId ? '<span class="pgm-now" title="The phase your plan is in this week">Now</span>' : ''
   const sess = _pgmSessionsText(_pgmWeek1Count(ph.id))
   const per = weeks > 1 ? `
       <div class="pgm-per">
@@ -1359,7 +1377,7 @@ function _pgmCardHtml(ph, i, programId, open) {
   return `<section class="pgm-ph${open ? ' is-open' : ''}" id="ph-${ph.id}">
     <button type="button" class="pgm-ph-h" aria-expanded="${!!open}" aria-controls="pgm-body-${ph.id}" onclick="togglePhaseCard('${ph.id}')">
       <span class="pgm-num ${method}">${i + 1}</span>
-      <span class="pgm-ph-t"><b>${escapeHtml(ph.name)}</b><small><span>${weeks} week${weeks !== 1 ? 's' : ''}</span><span id="pgm-sess-${ph.id}">${sess}</span>${chip}</small></span>
+      <span class="pgm-ph-t"><b>${escapeHtml(ph.name)}</b><small>${now}<span>${weeks} week${weeks !== 1 ? 's' : ''}</span><span id="pgm-sess-${ph.id}">${sess}</span>${chip}</small></span>
       <svg class="pgm-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
     </button>
     <button type="button" class="pgm-ph-menu" aria-label="Actions for ${escapeHtml(ph.name)}" onclick="openPhaseMenu('${programId}','${ph.id}')">⋯</button>
@@ -2013,12 +2031,11 @@ function _pzSnapshot() {
   }
   const tiers = Object.assign({}, cfg.tiers && typeof cfg.tiers === 'object' ? cfg.tiers : null)
   for (const t of ['heavy', 'moderate', 'light']) {
-    const pct = field(`pz-tier-${t}-pct`), rpe = field(`pz-tier-${t}-rpe`), reps = field(`pz-tier-${t}-reps`)
-    if (!pct && !rpe && !reps) continue
+    const pct = field(`pz-tier-${t}-pct`), rpe = field(`pz-tier-${t}-rpe`)
+    if (!pct && !rpe) continue
     tiers[t] = Object.assign({}, tiers[t] && typeof tiers[t] === 'object' ? tiers[t] : null)
     if (pct) tiers[t].pct = pct.value
     if (rpe) tiers[t].rpe = rpe.value
-    if (reps) tiers[t].reps = reps.value
   }
   if (Object.keys(tiers).length) cfg.tiers = tiers
 }
@@ -2092,13 +2109,12 @@ function renderPeriodizationBody(durationWeeks) {
   const cfg = window._pzConfig || {}
   const deloadOn = !!cfg.deloadWeek
   const tierDefault = { heavy: 85, moderate: 70, light: 55 }
-  const repsDefault = { heavy: '3-5', moderate: '6-8', light: '10-12' }
   const tog = (label, val) => `<button type="button" onclick="setPeriodizationType('${val}',${durationWeeks})" style="padding:6px 14px;font-size:12px;font-weight:700;border-radius:6px;border:1px solid ${type===val?'var(--accent)':'#d1d5db'};background:${type===val?'var(--accent)':'transparent'};color:${type===val?'white':'#6b7280'};cursor:pointer">${label}</button>`
 
   // The RPE method's fields (2026-10-04). Same rule as everything above: each cfg.* reaching an attribute is escaped. The ids are
   // new (pz-start-rpe, pz-end-rpe, pz-deload-rpe, pz-tier-<t>-rpe); the deload checkbox and week keep the % side's ids because only
-  // one side is ever on screen. Undulating RPE has no Reps box: on the % side the Reps are saved but never applied to a generated
-  // week (only the %1RM is read - _computePeriodizedPct), and a second inert box would only mislead.
+  // one side is ever on screen. Neither method has a Reps box any more (removed 2026-10-04, Jake: "remove"): it was saved but never applied
+  // to a generated week - only a tier's %1RM / RPE is read (_computePeriodizedPct / _computePeriodizedRpe).
   const rpeDefault = { heavy: 9, moderate: 8, light: 7 }
   const how = (label, val) => `<button type="button" id="pz-basis-${val}" aria-pressed="${(val === 'rpe') === rpe}" onclick="setPeriodizationBasis('${val}',${durationWeeks})">${label}</button>`
   const rpeLinear = `
@@ -2158,10 +2174,9 @@ function renderPeriodizationBody(durationWeeks) {
       <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">The same Heavy/Moderate/Light pattern repeats every week — it doesn't progress week to week. Assign a tier to each Week 1 session below, and set what each tier means.</p>
       <div style="margin-bottom:12px">
         ${['heavy', 'moderate', 'light'].map(t => `
-          <div style="display:grid;grid-template-columns:70px 1fr 1fr;gap:8px;align-items:center;margin-bottom:6px">
+          <div class="pz-tier">
             <span style="font-size:var(--text-md, 12px);font-weight:700;text-transform:capitalize">${t}</span>
-            <input class="field-input" id="pz-tier-${t}-pct" type="number" min="1" max="100" placeholder="%1RM" value="${escapeHtml(String(cfg.tiers?.[t]?.pct ?? tierDefault[t]))}">
-            <input class="field-input" id="pz-tier-${t}-reps" type="text" placeholder="Reps e.g. 3-5" value="${escapeHtml(String(cfg.tiers?.[t]?.reps ?? repsDefault[t]))}">
+            <input class="field-input" id="pz-tier-${t}-pct" type="number" min="1" max="100" placeholder="%1RM" aria-label="${t} %1RM" value="${escapeHtml(String(cfg.tiers?.[t]?.pct ?? tierDefault[t]))}">
           </div>`).join('')}
       </div>
       <div id="pz-day-tiers"><div style="color:var(--text-muted);font-size:var(--text-md, 12px)">Loading Week 1 sessions…</div></div>
@@ -2253,10 +2268,7 @@ async function savePeriodizationConfig() {
   } else if (type === 'undulating') {
     config = { tiers: {} }
     for (const t of ['heavy', 'moderate', 'light']) {
-      config.tiers[t] = {
-        pct: parseFloat(document.getElementById(`pz-tier-${t}-pct`)?.value) || null,
-        reps: document.getElementById(`pz-tier-${t}-reps`)?.value.trim() || null
-      }
+      config.tiers[t] = { pct: parseFloat(document.getElementById(`pz-tier-${t}-pct`)?.value) || null }
     }
   }
   // The Week-1 sessions' tiers are saved for either method, before the phase row (the order this always had).
@@ -2637,7 +2649,7 @@ function _computePeriodizedPct(type, config, week, totalWeeks, tier) {
 // its Week-1 sets instead of the percentage of 1RM. With no basis - every phase saved before this - it is '%', so no existing
 // phase changes and there is no migration. The two shapes:
 //   Linear      { basis:'rpe', startRpe, endRpe, deloadWeek?, deloadRpe? }
-//   Undulating  { basis:'rpe', tiers:{ heavy:{ rpe, reps }, moderate:{ … }, light:{ … } } }
+//   Undulating  { basis:'rpe', tiers:{ heavy:{ rpe }, moderate:{ … }, light:{ … } } }
 // Only a set that ALREADY carries an effort target (effortMin/effortMax, on either scale) is rewritten. Weights, reps, rest and
 // every % field are copied exactly, so a "% of today's top set" back-off keeps the % the coach typed. Tests:
 // tests-node/periodization-rpe.test.mjs.

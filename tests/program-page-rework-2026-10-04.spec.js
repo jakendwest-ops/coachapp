@@ -17,7 +17,10 @@ async function sweep (page) {
     const out = { programsFound: 0, programsRemoved: 0, exRemoved: 0, templatesFound: 0, templatesRemoved: 0 }
     const { data: progs } = await db.from('programs').select('id').eq('coach_id', currentUser.id).like('name', TAG + '%')
     out.programsFound = (progs || []).length
-    for (const p of progs || []) { const { data } = await db.from('programs').delete().eq('id', p.id).select('id'); out.programsRemoved += (data || []).length }
+    for (const p of progs || []) {
+      await db.from('client_programs').delete().eq('program_id', p.id).select('id')
+      const { data } = await db.from('programs').delete().eq('id', p.id).select('id'); out.programsRemoved += (data || []).length
+    }
     const { data: tmpls } = await db.from('workout_templates').select('id').eq('coach_id', currentUser.id).like('name', TAG + '%')
     const ids = (tmpls || []).map(t => t.id)
     out.templatesFound = ids.length
@@ -34,7 +37,7 @@ async function sweep (page) {
 
 // phases: [{ name, weeks, type?, config?, rowsForWeeks?, week1: [{ name, day, label, order? }] }] - a session's row is written for
 // every week up to rowsForWeeks (default 1), all pointing at the one template, as "Duplicate week" leaves them.
-const seed = (page, { name = TAG + ' Program', description = null, isPersonal = false, phases }) => page.evaluate(async ({ TAG, name, description, isPersonal, phases }) => {
+const seed = (page, { name = TAG + ' Program', description = null, isPersonal = false, assignWeeksAgo = null, phases }) => page.evaluate(async ({ TAG, name, description, isPersonal, assignWeeksAgo, phases }) => {
   const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name, description, is_personal: isPersonal }).select('id').single()
   const out = { programId: prog.id, phases: [] }
   let order = 0
@@ -57,8 +60,15 @@ const seed = (page, { name = TAG + ' Program', description = null, isPersonal = 
     if (rows.length) await db.from('program_phase_workouts').insert(rows)
     out.phases.push({ id: phase.id, name: ph.name })
   }
+  // The viewer's OWN plan (their solo record) started this many Monday-to-Sunday weeks ago (negative: that many weeks from now).
+  if (assignWeeksAgo !== null) {
+    const monday = _mondayOfWeek(_ymdLocal(new Date()))
+    monday.setDate(monday.getDate() - assignWeeksAgo * 7)
+    const { error } = await db.from('client_programs').insert({ client_id: window._soloClientId, program_id: prog.id, start_date: _ymdLocal(monday) })
+    if (error) throw new Error('assignment: ' + error.message)
+  }
   return out
-}, { TAG, name, description, isPersonal, phases })
+}, { TAG, name, description, isPersonal, assignWeeksAgo, phases })
 
 const MON = { name: 'Upper', day: 1, label: 'Monday' }, WED = { name: 'Lower', day: 3, label: 'Wednesday' }
 const THU = { name: 'Legs', day: 4, label: 'Thursday' }, FRI = { name: 'Full', day: 5, label: 'Friday' }
@@ -490,6 +500,76 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await manage.getByRole('button', { name: /Units and preferences/ }).click()
     await expect(manage).toBeHidden()
     await expect(page.locator('#quick-prefs-modal')).toBeVisible({ timeout: 4000 })
+  })
+})
+
+test.describe('Program page - the phase your plan is in', () => {
+  test.beforeEach(async ({ page }) => { await loginAsPT(page); await sweep(page) })
+  test.afterEach(async ({ page }) => { await sweep(page) })
+
+  // Three phases of 2, 3 and 2 weeks: weeks 1-2, 3-5 and 6-7 of the plan.
+  const THREE = [{ name: 'One', weeks: 2, week1: [MON] }, { name: 'Two', weeks: 3, week1: [MON] }, { name: 'Three', weeks: 2, week1: [MON] }]
+  const folded = async (page, s, i) => expect(page.locator(header(s, i))).toHaveAttribute('aria-expanded', 'false')
+  const opened = async (page, s, i) => expect(page.locator(header(s, i))).toHaveAttribute('aria-expanded', 'true')
+
+  test('a plan that is running opens ITS phase, marks it Now, and leaves the others folded', async ({ page }) => {
+    const s = await seed(page, { assignWeeksAgo: 3, phases: THREE })   // week 4 of 7, so phase Two
+    expect(await page.evaluate(() => !!window._soloClientId), 'this account has a solo record to follow plans with').toBe(true)
+    await open(page, s)
+    await opened(page, s, 1)
+    await folded(page, s, 0)
+    await folded(page, s, 2)
+    await expect(page.locator(`${card(s, 1)} .pgm-now`)).toHaveText('Now')
+    await expect(page.locator('.pgm-now'), 'only one phase is Now').toHaveCount(1)
+    await expect(page.locator('.pgm-seg').nth(1), 'its block in the bar is the pressed one').toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('#pgm-open-count')).toHaveText('1 open')
+    await expect(page.locator(`${card(s, 1)} .pwk-day`), 'and it is painted, not just flagged').toHaveCount(7)
+  })
+
+  // Whole-week offsets from today (the Monday-to-Sunday edge itself - the Sunday that ends a phase, the Monday that starts the next - is the
+  // node tests' job: tests-node/program-page.test.mjs, "_programPhaseAt").
+  test('the boundaries: the first week of a phase is in the new phase, the last week of the one before it is not', async ({ page }) => {
+    for (const [weeksAgo, expected] of [[0, 0], [1, 0], [2, 1], [4, 1], [5, 2], [6, 2]]) {
+      const s = await seed(page, { assignWeeksAgo: weeksAgo, phases: THREE })
+      await open(page, s)
+      await opened(page, s, expected)
+      await expect(page.locator(`${card(s, expected)} .pgm-now`), `${weeksAgo} weeks in`).toHaveText('Now')
+      await sweep(page)
+    }
+  })
+
+  test('not following the program, a plan that has not started, and one that has finished: the first phase opens, nothing says Now', async ({ page }) => {
+    for (const assignWeeksAgo of [null, -2, 12]) {
+      const s = await seed(page, { assignWeeksAgo, phases: THREE })
+      await open(page, s)
+      await opened(page, s, 0)
+      await folded(page, s, 1)
+      await expect(page.locator('.pgm-now'), `assigned ${assignWeeksAgo} weeks ago`).toHaveCount(0)
+      await sweep(page)
+    }
+  })
+
+  test('what you open or fold afterwards is kept, and Now stays on its phase', async ({ page }) => {
+    const s = await seed(page, { assignWeeksAgo: 3, phases: THREE })
+    await open(page, s)
+    await page.click(header(s, 1))   // fold the current phase
+    await page.click(header(s, 2))   // open another
+    await page.evaluate(id => openProgram(id), s.programId)
+    await page.waitForSelector(`#ph-${s.phases[0].id}`)
+    await folded(page, s, 1)
+    await opened(page, s, 2)
+    await expect(page.locator(`${card(s, 1)} .pgm-now`), 'folded, but still marked').toHaveText('Now')
+  })
+
+  test('the dashboard tile and the program page name the same phase', async ({ page }) => {
+    const s = await seed(page, { assignWeeksAgo: 3, phases: THREE })
+    await open(page, s)
+    const tile = await page.evaluate(async (id) => {
+      const { data } = await db.from('client_programs').select('id, start_date, programs(name, program_phases(id, name, duration_weeks, order_index))').eq('client_id', window._soloClientId).eq('program_id', id).single()
+      return _dashProgramInfo(data, _ymdLocal(new Date())).phase
+    }, s.programId)
+    expect(tile).toBe('Two')
+    await expect(page.locator(`${card(s, 1)} .pgm-now`)).toHaveText('Now')
   })
 })
 

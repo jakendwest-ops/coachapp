@@ -52,9 +52,9 @@ test.describe('periodization modal renders stored config values as data, not mar
     }
   }, { type, config })
 
-  const TEXT_ATTRS = ['class', 'id', 'placeholder', 'type', 'value']
-
-  test('undulating: a hostile reps string stays inside its value="" and round-trips as literal text', async ({ page }) => {
+  // The Reps box is gone (removed 2026-10-04, Jake: "remove" - it was saved but never applied to a generated week). What this test guards is
+  // unchanged in spirit: a stored reps string - hostile or not - sits in untyped jsonb, and must reach NOTHING: no input, no attribute, no element.
+  test('undulating: a hostile reps string left in a stored config reaches nothing (there is no Reps box any more)', async ({ page }) => {
     await loginAsPT(page)
     const hostile = {
       heavy: 'foo" onmouseover="window.__xss=1" data-x="',
@@ -65,10 +65,13 @@ test.describe('periodization modal renders stored config values as data, not mar
       heavy: { pct: 85, reps: hostile.heavy }, moderate: { pct: 70, reps: hostile.moderate }, light: { pct: 55, reps: hostile.light }
     } })
 
+    // Positive control: every assertion below is an absence, which a dialog that rendered nothing would also satisfy. The stored %1RM of each tier
+    // is in its box, so the dialog did render, and the string beside it did not follow it in.
+    expect.soft(r.tiers.map(t => t.pctValue), 'the dialog rendered: each tier shows its stored %1RM').toEqual(['85', '70', '55'])
     for (const tier of r.tiers) {
-      expect.soft(tier.repsAttrs, `${tier.t}: no attribute may be added by a breakout`).toEqual(TEXT_ATTRS)
-      expect.soft(tier.repsValue, `${tier.t}: the hostile string must round-trip as the literal text (not backslash-corrupted)`).toBe(hostile[tier.t])
+      expect.soft(tier.repsAttrs, `${tier.t}: there is no Reps box to carry the string`).toBeNull()
     }
+    expect.soft(await page.evaluate(() => document.getElementById('pz-body').innerHTML.includes('onmouseover') || document.getElementById('pz-body').innerHTML.includes('onerror')), 'and the string is not in the dialog at all').toBe(false)
     expect.soft(r.injectedElements, 'no element may be injected into the modal body').toBe(0)
     expect(r.xss, 'and nothing may have executed').toBeNull()
   })
@@ -79,7 +82,7 @@ test.describe('periodization modal renders stored config values as data, not mar
       heavy: { pct: '85" onmouseover="window.__xss=3', reps: '3-5' }, moderate: { pct: 70, reps: '6-8' }, light: { pct: 55, reps: '10-12' }
     } })
     const heavy = r.tiers.find(t => t.t === 'heavy')
-    expect.soft(heavy.pctAttrs, 'no attribute may be added through the pct value').toEqual(['class', 'id', 'max', 'min', 'placeholder', 'type', 'value'])
+    expect.soft(heavy.pctAttrs, 'no attribute may be added through the pct value').toEqual(['aria-label', 'class', 'id', 'max', 'min', 'placeholder', 'type', 'value'])
     expect(r.xss).toBeNull()
   })
 
@@ -115,7 +118,7 @@ test.describe('periodization modal renders stored config values as data, not mar
     const und = await openWith(page, 'undulating', { tiers: {
       heavy: { pct: 88, reps: '2-4' }, moderate: { pct: 72, reps: '5-7' }, light: { pct: 58, reps: '9-11' }
     } })
-    expect(und.tiers.map(t => t.repsValue)).toEqual(['2-4', '5-7', '9-11'])
+    expect(und.tiers.map(t => t.repsAttrs), 'stored reps are not shown: there is no Reps box').toEqual([null, null, null])
     expect(und.tiers.map(t => t.pctValue)).toEqual(['88', '72', '58'])
   })
 
@@ -130,7 +133,7 @@ test.describe('periodization modal renders stored config values as data, not mar
     expect(lin.deloadDisplay).toBe('none')
 
     const und = await openWith(page, 'undulating', {})
-    expect(und.tiers.map(t => t.repsValue), 'default reps per tier').toEqual(['3-5', '6-8', '10-12'])
+    expect(und.tiers.map(t => t.repsAttrs), 'no Reps box by default either').toEqual([null, null, null])
     expect(und.tiers.map(t => t.pctValue), 'default %1RM per tier').toEqual(['85', '70', '55'])
   })
 })

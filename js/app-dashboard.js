@@ -187,6 +187,18 @@ function _programWeeksElapsed(startDate, todayStr) {
   return Math.max(0, Math.round(Math.round((b - a) / 86400000) / 7))
 }
 
+// The phase a program that began on `startDate` is in on `todayStr`: each phase's weeks added up in order, counted by _programWeeksElapsed. Before
+// the start that is the first phase and after the end the last - what the dashboard tile has always said. The program page asks THIS function
+// too (2026-10-04) for a plan that is running, so the two cannot disagree; it declines to name a phase before the start or after the end,
+// where the tile has to say something. null when there are no phases.
+function _programPhaseAt(phases, startDate, todayStr) {
+  const ordered = [...(phases || [])].sort((a, b) => a.order_index - b.order_index)
+  const since = _programWeeksElapsed(startDate, todayStr)
+  let cum = 0, current = ordered[ordered.length - 1] || null
+  for (const p of ordered) { cum += p.duration_weeks || 0; if (since < cum) { current = p; break } }
+  return current
+}
+
 // The session to do next, for the Workouts page's Up next card: a session planned TODAY that is not logged yet, otherwise the first planned
 // session after today. The dashboard's own reading of a day (it is done once anything is logged on it), so this card and the Today card
 // name the same workout. Earlier sessions never count - the week strip shows an unlogged one as missed. Returns { ds, sessions } (the whole
@@ -208,8 +220,7 @@ function _dashProgramInfo(cp0, todayStr) {
   const phases = [...(prog.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
   const total = phases.reduce((n, p) => n + (p.duration_weeks || 0), 0)
   const sinceStart = _programWeeksElapsed(cp0.start_date, todayStr)
-  let cum = 0, current = phases[phases.length - 1] || null
-  for (const p of phases) { cum += p.duration_weeks || 0; if (sinceStart < cum) { current = p; break } }
+  const current = _programPhaseAt(phases, cp0.start_date, todayStr)
   const week = total ? Math.min(sinceStart + 1, total) : sinceStart + 1
   return { name: prog.name || 'Your program', phase: current ? current.name : '', week, totalWeeks: total, pct: total ? Math.round(week / total * 100) : 0 }
 }

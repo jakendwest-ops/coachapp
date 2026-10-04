@@ -197,7 +197,7 @@ test.describe('Periodization by RPE - the dialog', () => {
   const openDialog = async (page, s) => {
     await page.evaluate(id => openProgram(id), s.programId)
     await page.waitForSelector(`#phase-workouts-${s.phaseId} .pwk-slot-name`, { timeout: 10000 })
-    await page.click('button:has-text("Add periodization")')
+    await page.getByRole('button', { name: /^(Add|Edit) periodization$/ }).click()
     await expect(page.locator('#periodization-modal')).toBeVisible({ timeout: 4000 })
   }
   const savedPhase = (page, id) => page.evaluate(async (id) => (await db.from('program_phases').select('periodization_type, periodization_config').eq('id', id).single()).data, id)
@@ -286,12 +286,24 @@ test.describe('Periodization by RPE - the dialog', () => {
     await expect(page.locator('#pz-deload-week')).toHaveValue('3')
     await expect(page.locator('#pz-deload-pct')).toHaveValue('48')
     await page.click('#periodization-modal button:has-text("Undulating")')
-    await page.fill('#pz-tier-heavy-pct', '90'); await page.fill('#pz-tier-heavy-reps', '2-4')
+    await page.fill('#pz-tier-heavy-pct', '90')
     await page.click('#pz-basis-rpe'); await page.click('#pz-basis-pct')
     await expect(page.locator('#pz-tier-heavy-pct')).toHaveValue('90')
-    await expect(page.locator('#pz-tier-heavy-reps')).toHaveValue('2-4')
     await page.click('#periodization-modal button:has-text("Linear")')
     await expect(page.locator('#pz-start'), 'and back on Linear the first numbers are still there').toHaveValue('61')
+  })
+
+  test('there is no Reps box on the % side either, and saving it writes only the %1RM of each tier (stored reps are dropped)', async ({ page }) => {
+    const s = await seed(page, { weeks: 3, type: 'undulating', config: { tiers: { heavy: { pct: 88, reps: '2-4' }, moderate: { pct: 72, reps: '5-7' }, light: { pct: 58, reps: '9-11' } } }, slots: weekOne })
+    await openDialog(page, s)
+    await expect(page.locator('#pz-tier-heavy-pct')).toHaveValue('88')
+    await expect(page.locator('#pz-tier-moderate-pct')).toHaveValue('72')
+    await expect(page.locator('#pz-tier-light-pct')).toHaveValue('58')
+    await expect(page.locator('#pz-tier-heavy-reps, #pz-tier-moderate-reps, #pz-tier-light-reps'), 'no Reps box').toHaveCount(0)
+    await page.click('#periodization-modal .modal-footer button:has-text("Save")')
+    await page.waitForSelector('#periodization-modal', { state: 'detached', timeout: 6000 })
+    const row = await savedPhase(page, s.phaseId)
+    expect(row.periodization_config, 'the old reps are gone from the stored config').toEqual({ tiers: { heavy: { pct: 88 }, moderate: { pct: 72 }, light: { pct: 58 } } })
   })
 
   test('an RPE that is not a half point between 1 and 10 is refused with the reason, and nothing is saved', async ({ page }) => {
@@ -316,7 +328,7 @@ test.describe('Periodization by RPE - the dialog', () => {
     await expect(page.locator('#pz-tier-heavy-rpe')).toHaveValue('9')
     await expect(page.locator('#pz-tier-moderate-rpe')).toHaveValue('8')
     await expect(page.locator('#pz-tier-light-rpe')).toHaveValue('7')
-    await expect(page.locator('#pz-tier-heavy-reps'), 'no Reps box on the RPE side: the % side\'s are saved but never applied').toHaveCount(0)
+    await expect(page.locator('#pz-tier-heavy-reps'), 'no Reps box on the RPE side (removed everywhere: it was never applied)').toHaveCount(0)
     await page.fill('#pz-tier-heavy-rpe', '9.5')
 
     // the Week-1 session gets a tier, and it survives a flip to % and back (the sessions are re-read from the database on each render)
