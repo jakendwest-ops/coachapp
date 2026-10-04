@@ -45,15 +45,20 @@ are the record.
 
 ## In flight
 
-**Jake approved, on 2026-10-04 after a prototype, the program-page rework and an RPE method for periodization** (items 4-5 of his note):
-the page gets an overview (phases, weeks, sessions a week, a bar with a block per phase), fold-up phase cards, slim day rows and the
-occasional controls behind ⋯ sheets; the periodization dialog gets a "% of 1RM | RPE" switch (one method per phase; RPE steps the effort
-target of the Week-1 sets that have one, RIR converting). Being built on the branch `feat/program-page-rpe` in a git worktree at
-`C:\Users\jaken\coachapp-wt-pgm` (outside the repo, so the release run was not disturbed); **not on master yet**. Rows:
-[program page](bugs/2026-10-04-program-page-needs-a-ui-rework.md), [periodization](bugs/2026-10-04-periodization-has-no-rpe-method.md).
+**Built and committed on master (`a1d4edb`), NOT released: items 4 and 5 of Jake's 2026-10-04 note** - the program-page rework (an
+overview, fold-up phase cards, slim day rows, the occasional controls behind ⋯ sheets) and an RPE method for periodization (a
+"% of 1RM | RPE" switch in the dialog, one method per phase; RPE steps the effort target of the Week-1 sets that have one, RIR
+converting). Approved by Jake on 2026-10-04 after a prototype. 56 new unit tests, 36 new browser tests, 75 deliberate breakages each
+caught, the 24 existing builder spec files and the 13 specs that name `app-programs.js` green, `checks.sh` green, screenshots read at 480, 320
+and 1280 px; the pre-push `multi-agent-review` (three reviewers, no blocking finding, nine smaller points: seven fixed, two carried) is recorded in
+[decisions.md](decisions.md). Jake noticed on 2026-10-04 that they are not on
+the live site yet (correct: the live site is `v2026.09.14`); a release (`v2026.09.15`) waits for his go-ahead. Rows:
+[program page](bugs/2026-10-04-program-page-needs-a-ui-rework.md), [periodization](bugs/2026-10-04-periodization-has-no-rpe-method.md),
+and a new open one: the Undulating tiers' Reps boxes are saved but never applied
+([row](bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md)).
 Open questions waiting on Jake: whether the app's **Sign out should end only this device's session** (today it ends every one - see
 [the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); whether to build the Up next slot-matching rule (my
-recommendation: leave it); naming ("Biggest set", "View program").
+recommendation: leave it); naming ("Biggest set", "View program"); what the Undulating Reps boxes should do.
 
 ## Next: the release plans
 

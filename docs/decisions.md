@@ -12,6 +12,65 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-04 — The program page is an overview plus fold-up phases, and periodization has an RPE method beside %: built (not released).**
+Jake's items 4 and 5 (his 2026-10-04 note), scoped by form, shown as a tappable prototype, then "approved - build both". (He later noticed
+neither was on the live site: right - `v2026.09.14` carried items 1-3 only, and the build was still in progress.) *The page:* the top says
+what the program is - the name, "N phases · W weeks · a-b sessions a week", the description clamped to two lines with "Show more" (only when
+it really is cut off), the one main button, and a bar with a block per phase (as wide as its weeks, coloured by method, tap to jump). Each
+phase is a fold-up card. A folded card holds NOTHING of the builder in the DOM - the body is painted from the cached sessions on unfold, so
+a 12-phase program no longer draws 12 weeks at once - and only the first phase starts open (the first phase added to an empty program opens
+too: `programs.spec.js` adds a phase through the form and then looks for the day slots, which is how the rule was found). Inside an open
+phase: the periodization row (Add / Edit periodization and Generate weeks stay visible, because Generate is the step to remember after
+editing Week 1 - a deviation from the prototype, which hid it in the menu), the week tabs with the week's ⋯, and, below 768 px, the seven
+days as slim rows (a rest day is one thin line with + Add; a day with two workouts stacks them); the 7-column desktop week is unchanged.
+Edit / Remove a phase and Duplicate / Delete a week moved behind ⋯ sheets built like the runner's ⋯ menu - this app has no popover
+precedent, so the prototype's dropdowns became sheets. A sheet row carries only a literal `kind`; the program, phase and week live in
+`window._pgmMenu`, so no id and no free text sits in a handler string. Units moved into Manage (as in the runner's menu), and "add a second
+workout on this day" moved from every filled day into the opened workout's panel. The `.week-tab` style is shared with the read-only
+Workouts page, so it is restyled only under `.pgm`.
+*Periodization:* the dialog has a "% of 1RM | RPE" switch, one method per phase. The method is `basis:'rpe'` inside the phase's untyped
+`periodization_config`, so every existing phase is % and there is no migration (a % save still writes the shape it always did, with no
+`basis`). Linear is start RPE to end RPE in half points with an optional deload week at its own RPE; Undulating gives Heavy / Moderate / Light
+an RPE. Generation steps `effortMin` / `effortMax` of every Week-1 set that already has one (RIR converts, RIR = 10 - RPE; a real 0 counts),
+and never touches a weight or a % field, so a "% of today's top set" back-off keeps the % the coach typed. The dialog shows a week-by-week
+preview (Week 1 reads "as typed": generation never rewrites Week 1) and a heads-up that counts, with the wave functions themselves, exactly
+the sets Generate will rewrite - and warns when there are none, or when Week 1 mixes values (every generated week gives them all one value,
+as % does today). Generate itself ends in an amber toast, not a green one, when an RPE phase had nothing to step. The numbers typed for both
+methods survive flipping the switch or the type. *Choices made on Jake's behalf, all reversible:* sheets, not dropdowns; Generate weeks
+visible; no Reps boxes on the Undulating RPE tiers, because the same boxes on the % side are saved but never applied to a generated week
+(filed: [bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md](bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md));
+RPE accepts 1 to 10 in half points and a new RPE phase starts at 7 → 9; the amber "nothing stepped" toast is for RPE only (a % phase has
+always been allowed to generate copies, for example an Undulating phase used just for its tier labels).
+*Found by running the browser, not by the unit tests:* the dialog kept its current method in `window._pzBasis` while a function `_pzBasis()`
+read a phase's method - a window property of the same name REPLACES the function, so after the first dialog open the page died with
+"_pzBasis is not a function" and sat on "Loading…" after the next save. The state is now `window._pzMethod`, and
+`tests-node/window-shadow.test.mjs` scans every script for a `window.x =` that shares a function's name (it found no other). Also found by
+existing tests: the failure-counter source scanner (`silent-write-failures-2026-08-11.spec.js`) wants a `showToast` within four lines of each
+counter, which an inserted note had pushed out; and the survivors of the deliberate breakages (a redundant snapshot call that a test now
+kills by setting a value without an input event; a test aimed at the wrong selection; an untested phrase).
+*Reviewed* by the pinned `multi-agent-review` (diff mode, three fixed angles; the reviewers were cut off once by Jake's usage limit and
+resumed from their saved context, the repo untouched in between): no blocking finding at any angle, nine smaller points - *fixed:* "Delete
+week" repainted only the sessions, so the overview line, the bar width, the card header and "Weeks 2-N follow Week 1" kept the old week count
+(it now repaints the page, as Duplicate week does when it extends a phase); the periodization heads-up could describe an earlier visit's
+Week 1 if the dialog was opened before the sessions loaded (a visit now starts with an empty cache and the open dialog redraws when the
+sessions land); a test of "typed numbers survive flipping the switch" existed only for RPE (now also for the % side and the tiers); a
+vacuous assertion (it ran before the sessions had loaded); a day with two workouts squeezed both names into one row on a phone (they stack
+now); the keyboard lost its place on the bar after a jump and on the Method switch after a tap (restored); the week menus did not re-check the
+phase against the page, as the phase menus do. *Carried* ([technical-debt.md](technical-debt.md)): `savePeriodizationConfig` ignores the
+result of each per-session tier write (pre-existing, now shared by the RPE method), and a stored object with no callable `toString` would
+make the dialog throw (needs crafted jsonb from the phase's own owner). Reviewers also confirmed: `basis` survives the only copy path
+(`copyProgramToCoaching`), client copies receive the generated RPE values, no new query, no PII in logs, every new interpolation escaped.
+*Verified:* 56 new unit tests (`tests-node`: periodization-rpe 40, program-page 13, window-shadow 3) and 36 new browser tests (the real
+generator against real rows - Linear, Undulating, deload, nothing-to-step, a % phase unchanged - the real dialog, and the page); 75
+deliberate breakages (29 on the pure helpers, 46 on the browser specs), each of which must fail a test - three survived the first time (a
+redundant snapshot call, a mis-aimed test selection, an untested phrase) and each now has a test that kills it; the 24 existing builder /
+periodization spec files and the 13 specs that name `app-programs.js` (seven of them read it as text) pass (`programs.spec.js` reaches
+Duplicate / Delete week through the week's sheet - the same checks); `checks.sh` passes with the style-literal baselines unchanged; the full
+node unit suite passes (347); screenshots read at 480, 320 and 1280 px, in the PT view and in the owner's Personal view. *Honest limits:*
+nothing was seen on Jake's phone with his real six-phase program; the reviewers are the same model as the author (and none of them ran a
+browser), so the review reduces anchoring, not shared blind spots; the follow-up fixes were verified by tests and breakages and were NOT
+re-reviewed by the agents; "open the phase you are in" (rather than always the first) is not built.
+
 **2026-10-04 — The pre-push multi-agent review found nothing blocking and twelve smaller points: eight fixed before the release, four carried; and that review is a hard gate in `release.mjs`, not an option.**
 Jake said "push/deploy". I had told him the pre-push review would run "only if you ask" - wrong: `scripts/release.mjs` (gate 5) refuses to
 tag until a review has recorded the exact code (`scripts/lib/review-fingerprint.mjs --record`, the last step of the pinned skill), and the

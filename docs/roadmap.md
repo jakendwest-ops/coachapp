@@ -28,7 +28,7 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   live since `v2026.09.10`; this line used to say D2-D4 were "not started", which the git history disproves). What was
   deferred is **D1, solo/client dashboard convergence**. Jake's 2026-10-03 note widened it into a full mobile rework of all
   three dashboards as a landing page and hub: **built 2026-10-04** from the prototype he approved - one skeleton (a Today card,
-  the week as a tappable strip, streak and program tiles, then body weight, calendar and goals), committed locally, awaiting his
+  the week as a tappable strip, streak and program tiles, then body weight, calendar and goals), shipped in `v2026.09.14`, awaiting his
   look on a phone. The coach page is logged-only for now ("2 of 5 done" needs a new database view) —
   [the row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md).
 - **Runner walkthrough of 2026-09-28 (8 items) — ✅ shipped, `v2026.09.11`, live.** Items 1-6 (weekday on
@@ -49,22 +49,23 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   for the account (supabase-js default scope `global`): signing out on one device leaves another looking signed in, then saves
   there fail with "session expired". `signOut({ scope: 'local' })` would change that; it also removes a whole class of test-suite
   problem. Not changed — it is a product and security call. Detail: [the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md).
-- **Runner follow-ups from Jake's 2026-10-03 note.** (1) No grey last-session hints on an RPE top-set exercise: fixed on
-  master, awaiting his look ([row](bugs/2026-10-03-runner-top-set-exercise-shows-last-sessions-weight-as-ghost-text.md)).
+- **Runner follow-ups from Jake's 2026-10-03 note.** (1) No grey last-session hints on an RPE top-set exercise: shipped in `v2026.09.14`, awaiting his look ([row](bugs/2026-10-03-runner-top-set-exercise-shows-last-sessions-weight-as-ghost-text.md)).
   (2) The runner's Stats sheet now carries the full data and matches My progress because they are the SAME card (one
   component, one set of maths, one read): built 2026-10-03 from the prototype Jake reacted to (records are sets: "Heaviest set
-  117.5 kg × 3"), committed locally, awaiting his look
+  117.5 kg × 3"), shipped in `v2026.09.14`, awaiting his look
   ([row](bugs/2026-10-03-runner-stats-sheet-shows-less-than-my-progress-and-computes-est-1rm-differently.md)).
 - **Jake's note of 2026-10-04 — five items.** (1) My progress > Per exercise: fold-up cards with a Collapse all / Expand all button
   ([row](bugs/2026-10-04-my-progress-exercise-cards-cannot-be-collapsed.md)). (2) The Workouts "Up next" card names the workout - and
   now points at the right one, because it used to ignore what was already logged
   ([row](bugs/2026-10-04-workouts-up-next-card-does-not-name-the-workout.md)); the program-week count is made to agree with the
   calendar ([row](bugs/2026-10-04-program-week-counts-from-start-date-but-the-calendar-counts-monday-weeks.md)). (3) The runner's Last
-  time panel shows the top set ([row](bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md)). Items 1-3 approved and BUILT 2026-10-04, committed
-  locally, awaiting his look on a phone. (4) The program page gets the dashboard treatment - scoped with Jake (fold-up phases; everything
-  on the list bugs him); tappable prototype up for his reaction (https://claude.ai/artifact/JQZDoiQAhpgWBxfJKPHgjr) ([row](bugs/2026-10-04-program-page-needs-a-ui-rework.md)).
-  (5) Periodization gains an RPE method beside %, one or the other per phase
-  ([row](bugs/2026-10-04-periodization-has-no-rpe-method.md)); in the same prototype. Nothing from 4-5 is built.
+  time panel shows the top set ([row](bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md)). Items 1-3 approved and BUILT 2026-10-04, shipped in
+  `v2026.09.14`, awaiting his look on a phone. (4) The program page gets the dashboard treatment - approved after a prototype and BUILT
+  2026-10-04: an overview (phases, weeks, sessions a week, a bar with a block per phase), fold-up phase cards, slim day rows, the occasional
+  controls behind ⋯ sheets ([row](bugs/2026-10-04-program-page-needs-a-ui-rework.md)). (5) Periodization gains an RPE method beside %, one
+  or the other per phase - BUILT 2026-10-04 ([row](bugs/2026-10-04-periodization-has-no-rpe-method.md)). Items 4-5 are committed on master
+  (`a1d4edb`), not released, awaiting a go-ahead for `v2026.09.15` and his look on a phone; the Undulating tiers' Reps boxes are saved but
+  never applied ([row](bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md)).
 - **Solo/signup:** the data model and invite-based onboarding (an owner-gated Edge Function) are
   done. Genuine open public self-signup for new solo accounts remains a deliberate deferral, not
   scoped.

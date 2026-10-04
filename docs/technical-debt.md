@@ -146,6 +146,14 @@ release run and passed on its retry (it is the `progress-trend` flake the 2026-1
 the Body tab. The fix is small and belongs in a release with other test work: replace the sleeps with
 `await expect(page.locator('#resting-hr-chart')).toHaveCount(1)`, which retries.
 
+**New, unfixed (2026-10-04, from the pre-push review of the program-page / RPE commit; both non-blocking):**
+(1) `savePeriodizationConfig` ignores the result of each per-session tier write (`program_phase_workouts.update({ tier })`), so a refused
+or failed write is silent: the phase would save as Undulating with that session still on the default tier. It was already so for % and
+the RPE method now relies on it too. The fix is the usual one - `.select('id')` on each write, count the rows, stop before the phase
+write with a message. (2) A stored periodization value that is an object whose `toString` and `valueOf` are not callable makes
+`String(v)` throw in `_periodizationLabel` and in the dialog (both methods; it needs crafted jsonb written by the phase's own owner,
+and the UI cannot produce it).
+
 ## Minor hygiene debt
 
 A handful of stray debug artifacts sit at repo root (debug PNGs, a PDF, `modal-preview.html`),
