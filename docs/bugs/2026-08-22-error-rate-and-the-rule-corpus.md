@@ -158,3 +158,24 @@ machine).
 and run that first; if there is none, say "my guess, not checked". Added to `feedback_no_speculative_fixes` as a dated
 recurrence. This is session 2 of 3; the counting is mine alone and carries this row's own blind-spot caveat. The row
 stays open.
+
+## 2026-10-04 — the items 1-5 session (v2026.09.14 and v2026.09.15): session 3 of 3
+
+Counted the way the row's metric asks: an error that reached a commit, a claim to Jake, or a shipped conclusion, in a class an
+existing memory already covers. **Count: one** (the part of the session before the context was compacted is visible to me only
+through its summary, so this may undercount).
+
+- **Reached a claim to Jake — the class [[feedback_multi_agent_review]] and the release gate cover.** Before the first release of the day I
+  told Jake the pre-push review would run "only if you ask". `scripts/release.mjs` refuses to tag until a review has recorded the exact
+  code, so it was never optional; the review ran first and the claim is corrected in `docs/decisions.md` (the pre-push-review entry).
+
+Not counted, because each stopped short of the bar: the periodization dialog's `window._pzBasis` shadowing the function of the same name
+(found by the first real-browser run, before any commit; a scanner for the class now exists); a second `await` in `openProgram` between
+the page globals and the paint (found by re-reading my own diff before the regression run; one `Promise.all` now, pinned by a source
+scanner); wrong breakage and review counts in two drafts of the docs (corrected before the commit). One mistake in a class NO memory
+covered at the time reached Jake: the "NOT live" fact buried inside a long summary after "push/deploy" (he wrote "item 4 and 5 do not look
+any different on live"); it is now `feedback_say_whats_not_live`, so a repeat would count.
+
+This is session 3 of 3 by the row's own counting, with counts of one and one in the last two sessions: flat, not the fall the row asks for,
+and the counting is mine alone with this row's blind-spot caveat. I am not closing it; whether three flat sessions satisfy "the ratio
+fell" is Jake's call. The row stays open.

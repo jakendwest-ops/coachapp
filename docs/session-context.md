@@ -15,14 +15,13 @@ and build/assign/track workout programmes, with coach/client/solo roles. See
 
 ## Current Release Cycle
 
-Last shipped: **`v2026.09.14`** (2026-10-04, tagged, deployed and verified on the live site: the check and the deploy job green, the changed
-files byte-identical to the tag). Full suite 1056 passed / 1 flaky (`progress-trend.spec.js:5`, passed on retry) / 4 skipped. It carries
-everything that had been waiting since `v2026.09.13`: the shared exercise stats card, the top-set ghost-text fix, the dashboard rework, Jake's
-2026-10-04 items 1-3 (fold-up exercise cards on My progress, the Workouts "Up next" card naming the next workout, the Last time panel's top
-set) and the pre-push review's follow-ups. All of it awaits Jake's look on a phone. Built and committed on master but **not released**
-(`a1d4edb` and the commits after it): his items 4-5 (the program-page rework and an RPE method for periodization), approved 2026-10-04 after a
-prototype, plus his two answers of the same day ("remove" the Undulating Reps boxes; "open current phase" - the program page opens the phase
-the viewer's own plan is in, marked Now); a release (`v2026.09.15`) waits for his go-ahead. See [current-sprint.md](current-sprint.md).
+Last shipped: **`v2026.09.15`** (2026-10-04, about 23:17 BST; tagged, deployed and verified on the live site: the tag's check and deploy jobs
+green, all 11 files the site serves byte-identical to the tag; cache versions programs 71 / dashboard 32 / css 30). Full suite 1098 passed /
+0 failed / 4 skipped / 1 flaky (a gitignored local throwaway probe, `_debug-adhoc-audit.spec.js`). It carries Jake's items 4-5 of the
+2026-10-04 note (the program-page rework and an RPE method for periodization), approved after a prototype, plus his two answers of the same
+day ("remove" the Undulating Reps boxes; "open current phase" - the program page opens the phase the viewer's own plan is in, marked Now).
+Before it: **`v2026.09.14`** (the shared exercise stats card, the dashboard rework, items 1-3 of the same note, the pre-push review's
+follow-ups). All of it awaits Jake's look on a phone. See [current-sprint.md](current-sprint.md).
 
 **RPE top-set autoregulation is live (in `v2026.09.13`).**
 A coach marks set 1 as the top set with a prescribed RPE; the runner captures the effort actually hit,

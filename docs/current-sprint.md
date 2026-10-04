@@ -45,14 +45,15 @@ are the record.
 
 ## In flight
 
-**Built and committed on master (`a1d4edb`), NOT released: items 4 and 5 of Jake's 2026-10-04 note** - the program-page rework (an
+**Released and live as `v2026.09.15` (2026-10-04, about 23:17 BST; the live files are byte-identical to the tag): items 4 and 5 of Jake's
+2026-10-04 note**, awaiting his look on a phone - the program-page rework (an
 overview, fold-up phase cards, slim day rows, the occasional controls behind ⋯ sheets) and an RPE method for periodization (a
 "% of 1RM | RPE" switch in the dialog, one method per phase; RPE steps the effort target of the Week-1 sets that have one, RIR
-converting). Approved by Jake on 2026-10-04 after a prototype. 56 new unit tests, 36 new browser tests, 75 deliberate breakages each
-caught, the 24 existing builder spec files and the 13 specs that name `app-programs.js` green, `checks.sh` green, screenshots read at 480, 320
-and 1280 px; the pre-push `multi-agent-review` (three reviewers, no blocking finding, nine smaller points: seven fixed, two carried) is recorded in
-[decisions.md](decisions.md). Jake noticed on 2026-10-04 that they are not on
-the live site yet (correct: the live site is `v2026.09.14`); a release (`v2026.09.15`) waits for his go-ahead. Rows:
+converting). Approved by Jake on 2026-10-04 after a prototype. 73 new unit tests, 42 new browser tests, 96 deliberate breakages each
+caught, the full suite 1098 passed / 0 failed / 1 flaky (a local throwaway probe) / 4 skipped, `checks.sh` green, screenshots read at 480, 320
+and 1280 px; two `multi-agent-review` rounds (no blocking finding; 15 smaller points: 11 fixed, 4 carried) are recorded in
+[decisions.md](decisions.md). Jake noticed on 2026-10-04 that they were not on
+the live site yet (correct at the time: the live site was `v2026.09.14`); he then said "finish your work and push/deploy". Rows:
 [program page](bugs/2026-10-04-program-page-needs-a-ui-rework.md), [periodization](bugs/2026-10-04-periodization-has-no-rpe-method.md),
 and one more: the Undulating tiers' Reps boxes were saved but never applied
 ([row](bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md)). Jake answered both open questions that came with the build

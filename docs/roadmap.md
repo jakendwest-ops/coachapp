@@ -63,8 +63,8 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   `v2026.09.14`, awaiting his look on a phone. (4) The program page gets the dashboard treatment - approved after a prototype and BUILT
   2026-10-04: an overview (phases, weeks, sessions a week, a bar with a block per phase), fold-up phase cards, slim day rows, the occasional
   controls behind ⋯ sheets ([row](bugs/2026-10-04-program-page-needs-a-ui-rework.md)). (5) Periodization gains an RPE method beside %, one
-  or the other per phase - BUILT 2026-10-04 ([row](bugs/2026-10-04-periodization-has-no-rpe-method.md)). Items 4-5 are committed on master
-  (`a1d4edb`), not released, awaiting a go-ahead for `v2026.09.15` and his look on a phone. Two answers of his, the same day, are built on top:
+  or the other per phase - BUILT 2026-10-04 ([row](bugs/2026-10-04-periodization-has-no-rpe-method.md)). Items 4-5 shipped in
+  `v2026.09.15` (live since 2026-10-04, about 23:17 BST), awaiting his look on a phone. Two answers of his, the same day, shipped with them:
   the Undulating tiers' Reps boxes (saved but never applied) are removed ("remove",
   [row](bugs/2026-10-04-undulating-tier-reps-are-saved-but-never-applied.md)), and a program opens on the phase the viewer's own plan is
   in, marked "Now", instead of always the first ("open current phase").
