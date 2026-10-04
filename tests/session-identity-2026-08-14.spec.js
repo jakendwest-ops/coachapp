@@ -170,7 +170,9 @@ test.describe('Session identity — family_id', () => {
       if (ids) await page.evaluate(async i => {
         await db.from('program_phase_workouts').delete().eq('phase_id', i.phaseId)
         await db.from('program_phases').delete().eq('id', i.phaseId)
-        await db.from('workout_templates').delete().in('id', [i.baseId, i.wk2Id])
+        // This test's setup returns w1Id / w2Id. The block was copied from the test above, whose keys are baseId / wk2Id, so for months
+        // it deleted `in (undefined, undefined)` and left both templates behind on every run (2026-10-04, the debris report).
+        await db.from('workout_templates').delete().in('id', [i.w1Id, i.w2Id])
         await db.from('programs').delete().eq('id', i.progId)
       }, ids)
     }
