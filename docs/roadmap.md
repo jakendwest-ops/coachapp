@@ -55,6 +55,15 @@ coupling the policy version to the gate. Left: confirming `delete_current_user()
   component, one set of maths, one read): built 2026-10-03 from the prototype Jake reacted to (records are sets: "Heaviest set
   117.5 kg × 3"), committed locally, awaiting his look
   ([row](bugs/2026-10-03-runner-stats-sheet-shows-less-than-my-progress-and-computes-est-1rm-differently.md)).
+- **Jake's note of 2026-10-04 — five items.** (1) My progress > Per exercise: fold-up cards with a Collapse all / Expand all button
+  ([row](bugs/2026-10-04-my-progress-exercise-cards-cannot-be-collapsed.md)). (2) The Workouts "Up next" card names the workout - and
+  now points at the right one, because it used to ignore what was already logged
+  ([row](bugs/2026-10-04-workouts-up-next-card-does-not-name-the-workout.md)); the program-week count is made to agree with the
+  calendar ([row](bugs/2026-10-04-program-week-counts-from-start-date-but-the-calendar-counts-monday-weeks.md)). (3) The runner's Last
+  time panel shows the top set ([row](bugs/2026-10-04-runner-last-time-panel-shows-no-top-set.md)). Items 1-3 approved 2026-10-04.
+  (4) The program page gets the dashboard treatment - scoped with Jake (fold-up phases; everything on the list bugs him), prototype
+  next ([row](bugs/2026-10-04-program-page-needs-a-ui-rework.md)). (5) Periodization gains an RPE method beside %, one or the other
+  per phase ([row](bugs/2026-10-04-periodization-has-no-rpe-method.md)); shown in the same prototype. Nothing from 4-5 is built.
 - **Solo/signup:** the data model and invite-based onboarding (an owner-gated Edge Function) are
   done. Genuine open public self-signup for new solo accounts remains a deliberate deferral, not
   scoped.
