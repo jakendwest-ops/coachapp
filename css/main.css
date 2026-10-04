@@ -938,7 +938,95 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .pwk-add { width:100%; min-height:40px; font-size:11.5px; font-weight:600; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer; text-align:center; }
 .pwk-add:hover { border-color:var(--accent); color:var(--accent); }
 .pwk-add:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-.pwk-weekhead { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-bottom:8px; }
+
+/* ─── Periodization dialog (2026-10-04): the % of 1RM | RPE switch, the week-by-week preview, the heads-up line ───────── */
+.pz-how { display:flex; gap:2px; padding:3px; background:var(--surface-2); border-radius:var(--radius); }
+.pz-how button { flex:1; min-height:38px; padding:0 10px; border-radius:var(--radius-sm); font-size:var(--text-base); font-weight:800; color:var(--text-muted); }
+.pz-how button[aria-pressed="true"] { background:var(--surface); color:var(--text); box-shadow:var(--shadow-sm); }
+.pz-how button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.pz-help { font-size:var(--text-md); color:var(--text-muted); margin:4px 0 10px; }
+.pz-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.pz-tier { display:grid; grid-template-columns:70px 1fr; gap:8px; align-items:center; margin-bottom:6px; }
+.pz-prev { display:grid; grid-template-columns:repeat(auto-fit, minmax(58px, 1fr)); gap:6px; margin-top:6px; }
+.pz-prev div { padding:8px 2px; text-align:center; background:var(--surface-2); border-radius:var(--radius); }
+.pz-prev small { display:block; font-size:var(--text-xs); font-weight:800; letter-spacing:.04em; color:var(--text-muted); }
+.pz-prev b { display:block; margin-top:2px; font-size:var(--text-lg); font-weight:800; font-variant-numeric:tabular-nums; }
+.pz-note { margin-top:12px; padding:9px 11px; border-radius:var(--radius); background:var(--accent-light); color:var(--text); font-size:var(--text-md); }
+.pz-note.warn { background:var(--warning-light); border:1px solid var(--warning); }
+
+/* ─── Program page (2026-10-04): the overview first, the builder second ──────────────────────────────────────────────────
+   Tokens only (the style-literal ratchet). The week tabs and the .pwk-* day slots are the builder's own and are shared with the
+   Workouts page, so they are restyled ONLY under .pgm and only below the 768px desktop grid - the 7-column week is unchanged. */
+.pgm-back { display:inline-flex; align-items:center; gap:4px; margin-bottom:8px; font-size:var(--text-base); font-weight:600; color:var(--accent); }
+.pgm-titlerow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.pgm-title { margin-bottom:4px; overflow-wrap:anywhere; }
+.pgm-manage { flex-shrink:0; height:36px; padding:0 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-size:var(--text-base); font-weight:700; color:var(--text); white-space:nowrap; }
+.pgm-facts { font-size:var(--text-base); color:var(--text-muted); }
+.pgm-facts b { color:var(--text); font-weight:700; }
+.pgm-desc { margin-top:10px; font-size:var(--text-lg); color:var(--text-muted); overflow-wrap:anywhere; }
+.pgm-desc.is-clamped { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.pgm-more { padding:4px 0; font-size:var(--text-md); font-weight:700; color:var(--accent); }
+.pgm-cta { margin-top:12px; }
+.pgm-cta .btn { min-height:46px; }
+.pgm-tl { display:flex; gap:3px; margin:14px 0 6px; }
+.pgm-seg { min-width:0; height:34px; border-radius:var(--radius-sm); background:var(--surface-2); color:var(--text-muted); font-size:var(--text-md); font-weight:800; display:flex; align-items:center; justify-content:center; }
+.pgm-seg.pct { background:var(--accent); color:var(--surface); }
+.pgm-seg.rpe { background:var(--success); color:var(--surface); }
+.pgm-seg[aria-pressed="true"] { box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
+.pgm-seg:focus-visible, .pgm-ph-h:focus-visible, .pgm-ph-menu:focus-visible, .pgm-ibtn:focus-visible, .pgm-manage:focus-visible, .pgm-addph:focus-visible, .pgm-more:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.pgm-legend { display:flex; flex-wrap:wrap; gap:4px 12px; margin-bottom:4px; font-size:var(--text-sm); color:var(--text-muted); }
+.pgm-legend i { display:inline-block; width:10px; height:10px; margin-right:5px; border-radius:var(--radius-xs); vertical-align:-1px; background:var(--surface-2); }
+.pgm-legend i.pct { background:var(--accent); }
+.pgm-legend i.rpe { background:var(--success); }
+.pgm-sec { display:flex; justify-content:space-between; align-items:baseline; margin:18px 0 8px; }
+.pgm-sec h2 { font-size:var(--legacy-text-15); font-weight:600; }
+.pgm-sec span { font-size:var(--text-md); color:var(--text-muted); }
+.pgm-ph { position:relative; margin-bottom:8px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); }
+.pgm-ph-h { display:flex; align-items:center; gap:10px; width:100%; padding:12px 10px 12px 12px; text-align:left; color:inherit; border-radius:var(--radius-md); }
+.pgm-num { flex-shrink:0; width:30px; height:30px; border-radius:50%; background:var(--accent); color:var(--surface); font-size:var(--text-base); font-weight:800; display:flex; align-items:center; justify-content:center; }
+.pgm-num.rpe { background:var(--success); }
+.pgm-num.none { background:var(--surface-2); color:var(--text-muted); }
+.pgm-ph-t { flex:1; min-width:0; padding-right:36px; }
+.pgm-ph-t b { display:block; font-size:var(--legacy-text-15); font-weight:700; overflow-wrap:anywhere; }
+.pgm-ph-t small { display:flex; flex-wrap:wrap; align-items:center; gap:2px .4em; margin-top:3px; font-size:var(--text-md); color:var(--text-muted); }
+.pgm-chip { padding:2px 8px; border-radius:var(--radius-full); font-size:var(--text-sm); font-weight:700; background:var(--accent-light); color:var(--text); }
+.pgm-chip.rpe { background:var(--success-light); }
+.pgm-chev { flex-shrink:0; width:18px; height:18px; color:var(--text-muted); transition:transform .2s; }
+.pgm-ph.is-open .pgm-chev { transform:rotate(180deg); }
+.pgm-ph-menu { position:absolute; top:6px; right:34px; width:36px; height:36px; border-radius:50%; font-size:var(--text-2xl); line-height:1; color:var(--text); }
+.pgm-ph-body { padding:0 12px 12px; border-top:1px solid var(--border); }
+.pgm-per { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 0; }
+.pgm-per-l { font-size:var(--text-sm); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
+.pgm-sp { flex:1; }
+.pgm-sbtn { min-height:34px; padding:0 12px; font-size:var(--text-md); font-weight:700; }
+.pgm-gen { margin:0 0 8px; font-size:var(--text-md); color:var(--text-muted); }
+.pgm-loading { color:var(--text-muted); font-size:var(--text-md); padding:8px 0; }
+.pgm-wk { display:flex; align-items:center; gap:6px; margin:6px 0 8px; }
+.pgm-wk .week-tabs { flex:1; min-width:0; margin-bottom:0; overflow-x:auto; scrollbar-width:none; }
+.pgm-wk .week-tabs::-webkit-scrollbar { display:none; }
+.pgm-wk .week-tab { flex:1 0 auto; min-width:52px; }
+.pgm-ibtn { flex-shrink:0; width:34px; height:34px; border-radius:50%; font-size:var(--text-2xl); line-height:1; color:var(--text); }
+.pgm-wk .pgm-ibtn { margin-left:auto; }
+.pgm-addph { width:100%; min-height:46px; margin-top:4px; border:1.5px dashed var(--border); border-radius:var(--radius-md); background:transparent; color:var(--accent); font-size:var(--text-lg); font-weight:700; }
+.pgm-sheet-rows { display:flex; flex-direction:column; gap:8px; }
+.pgm-sheet-row { display:flex; align-items:center; width:100%; min-height:52px; padding:0 16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); font-size:var(--text-xl); font-weight:700; color:var(--text); text-align:left; }
+.pgm-sheet-row.is-danger { color:var(--danger); }
+.pgm .pwk-rest { display:none; }
+@media (max-width:767px) {
+  .pgm .pwk-days { gap:0; }
+  .pgm-cta .btn { width:100%; }
+  .pgm .pwk-day { display:flex; flex-wrap:wrap; align-items:center; gap:0 10px; min-height:44px; padding:4px 0; border:0; border-bottom:1px solid var(--border); border-radius:0; background:transparent; }
+  .pgm .pwk-day.is-empty { min-height:34px; padding:2px 0; }
+  .pgm .pwk-dow { flex-shrink:0; width:34px; margin:0; font-size:var(--text-sm); font-weight:800; color:var(--accent); }
+  .pgm .pwk-day.is-empty .pwk-dow { color:var(--text-muted); }
+  .pgm .pwk-rest { display:block; flex:1; font-size:var(--text-base); color:var(--text-muted); }
+  .pgm .pwk-slot { flex:1 0 calc(100% - 46px); min-width:0; margin:0; border:0; background:transparent; }
+  .pgm .pwk-slot + .pwk-slot { margin-left:44px; }
+  .pgm .pwk-slot-head { padding:8px 0; }
+  .pgm .pwk-slot-name { font-size:var(--text-lg); }
+  .pgm .pwk-day .pwk-add { width:auto; min-height:34px; padding:0 8px; border:0; background:none; color:var(--accent); font-size:var(--text-md); font-weight:700; }
+  .pgm .pwk-detail { margin:0 0 8px; background:var(--bg); border-color:var(--border); }
+}
 
 /* ─── Set-target builder: optional-field disclosure (2026-07-22) ────────────────
    The cardio set card had 9 always-visible rows, 6 of which are rarely used. Native <details>

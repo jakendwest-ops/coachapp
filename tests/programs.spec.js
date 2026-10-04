@@ -45,6 +45,14 @@ async function programManage(page, label) {
   await page.click(`#program-manage-modal button:text-is("${label}")`)
 }
 
+// 2026-10-04 (the program page rework): Duplicate week / Delete week moved off the week header and behind the week's ⋯ sheet, so a
+// stray tap cannot delete a week. Opens the sheet for the week on screen and taps one row ("Duplicate week" | "Delete week").
+async function weekAction(page, label) {
+  await page.click('button[aria-label="Week actions"]')
+  await page.waitForSelector('#pgm-sheet', { state: 'visible', timeout: 4000 })
+  await page.click(`#pgm-sheet button:text-is("${label}")`)
+}
+
 // ONE shared sweep for every UI-created program fixture in this file (2026-08-20).
 //
 // These tests build a program through the UI and tidy up with a trailing `Delete` click at the end of
@@ -568,8 +576,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     await assignWorkoutToDay(page, 1, templateIds[0])
     await expect(page.locator('[id^="phase-workouts-"] .pwk-slot-name').first()).toBeVisible({ timeout: 8000 })
 
-    await expect(page.locator('button:has-text("Duplicate week")')).toBeVisible({ timeout: 4000 })
-    await page.click('button:has-text("Duplicate week")')
+    await weekAction(page, 'Duplicate week')
     await page.click('#dup-week-modal button:has-text("1×")')
     // 20 s, was 8 s: duplicating a week copies every day's workout assignment (several writes) before the tab appears, and the
     // 2026-10-03 release gate saw this fail once on a slow run and pass on retry.
@@ -831,7 +838,9 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
       await page.evaluate((programId) => openProgram(programId), setup.programId)
       await page.waitForSelector('.week-tab[data-week="3"]', { timeout: 8000 })
-      await expect(page.locator('button:has-text("Delete week")').first()).toBeVisible({ timeout: 4000 })
+      await page.click('button[aria-label="Week actions"]')
+      await expect(page.locator('#pgm-sheet button:text-is("Delete week")')).toBeVisible({ timeout: 4000 })
+      await page.click('#pgm-sheet .modal-close')
 
       const _delWk = page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 2), setup)
       await acceptConfirm(page)
@@ -961,10 +970,10 @@ test.describe('Copy program workouts to Library + duplicate-week auto-extend (20
       await page.evaluate(async (programId) => { await openProgram(programId) }, setup.programId)
       await page.waitForSelector('h1:has-text("[E2E] AutoExtend Program")', { timeout: 8000 })
 
-      // The button must now be present even though the phase is already "full" (1 of 1 weeks).
-      const dupBtn = page.locator('button:has-text("Duplicate week")').first()
-      await expect(dupBtn).toBeVisible({ timeout: 8000 })
-      await dupBtn.click()
+      // The row must now be offered even though the phase is already "full" (1 of 1 weeks).
+      await page.click('button[aria-label="Week actions"]')
+      await expect(page.locator('#pgm-sheet button:text-is("Duplicate week")')).toBeVisible({ timeout: 8000 })
+      await page.click('#pgm-sheet button:text-is("Duplicate week")')
       await page.click('#dup-week-modal button:has-text("1×")')
       await expect(page.locator('text=phase extended to 2 weeks')).toBeVisible({ timeout: 8000 })
 
@@ -995,7 +1004,7 @@ test.describe('Copy program workouts to Library + duplicate-week auto-extend (20
       await page.evaluate(async (programId) => { await openProgram(programId) }, setup.programId)
       await page.waitForSelector('h1:has-text("[E2E] DupN Program")', { timeout: 8000 })
 
-      await page.locator('button:has-text("Duplicate week")').first().click()
+      await weekAction(page, 'Duplicate week')
       await expect(page.locator('#dup-week-modal')).toBeVisible()
       await page.click('#dup-week-modal button:has-text("3×")')
       await expect(page.locator('.week-tab[data-week="4"]')).toBeVisible({ timeout: 10000 })
