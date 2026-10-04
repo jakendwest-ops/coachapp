@@ -7,6 +7,9 @@
 // _buildWorkoutsHero (app-workouts.js:563) only returns the first session of the current programme
 // WEEK, ignoring today's date entirely, so a tile built on it would disagree with the calendar.
 //
+// Each entry also carries _phaseName and _weekInPhase (2026-10-04): the Workouts page's Up next card says "Accumulation 1 · Week 2" for the
+// session it names, and only this function knows which repeat of a non-periodised phase a date is.
+//
 // Returns {} rather than null for any unusable input: callers iterate the result, and a null here
 // would move the failure into their loop instead of this function's own guard.
 function _programWorkoutsByDate(cp0, cpwMap) {
@@ -36,7 +39,7 @@ function _programWorkoutsByDate(cp0, cpwMap) {
         const ds = _ymdLocal(d)
         if (!byDate[ds]) byDate[ds] = []
         const _clone = map[pw.id]
-        byDate[ds].push({ ...pw, _clientTemplateId: _clone?.templateId || null, _clientExercises: _clone?.exercises || null })
+        byDate[ds].push({ ...pw, _clientTemplateId: _clone?.templateId || null, _clientExercises: _clone?.exercises || null, _phaseName: phase.name || '', _weekInPhase: w + 1 })
       })
     }
     weekOffset += (phase.duration_weeks || 1)

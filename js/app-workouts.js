@@ -638,13 +638,12 @@ async function renderWorkoutLibrary(el) {
   await renderWorkoutTemplates(document.getElementById('workout-tab-content'))
 }
 
-// Hero card for the Workouts page (2026-07-08) — same phase/week math the dashboards' own
-// "Up next" hero already computes (app-dashboard.js:324-336 client, :652-663 solo), extended one
-// step further since we're already ON the Workouts page: also resolves the actual next session's
-// templateId (first program_phase_workouts row in the current phase/week, by day_of_week/
-// session_order) so the Start button can jump straight into it instead of just linking back here.
-// Deliberately a standalone pair of functions, not shared with the dashboards' inline copies —
-// avoids touching two already-shipped, already-tested renders for a pure dedup benefit.
+// Hero card for the Workouts page (2026-07-08, reworked 2026-10-04). It names the session you would do NEXT and starts it: today's session
+// while it is not logged yet, otherwise the next planned one - found with the calendar's own date map (_programWorkoutsByDate) and the
+// dashboard's rule (_dashNextSession), so this card and the dashboard's Today card name the same workout. Until 2026-10-04 it took the
+// FIRST session of the current program week whatever today was or had been done, so after Monday's workout it still pointed at Monday's
+// (Jake: "Needs to include the next workout name" - naming it would have named the wrong one). With no start date there is no dated plan
+// and it falls back to that old reading. Start launches the client's own copy of the session (client_program_workouts), never the master.
 // How many weeks of this phase actually EXIST to train, as opposed to how many it declares.
 // The accordion header printed phase.duration_weeks (the plan) directly above a body rendered from
 // the real program_phase_workouts rows (what's been built) — so a 3-week phase with 2 weeks built
@@ -655,46 +654,60 @@ function _builtWeekCount(sessions) {
   return new Set((sessions || []).map(s => s.week_number || 1)).size
 }
 
-function _buildWorkoutsHero(clientId, activeAssignment, cpwMap) {
+function _buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr, logs } = {}) {
+  const freeform = `startWorkoutRunner('${clientId}')`
   if (!activeAssignment?.programs) {
-    return { title: 'No program assigned', meta: 'Start a freeform session below, or ask your PT to assign a program.', action: `startWorkoutRunner('${clientId}')`, btnLabel: 'Start a session' }
+    return { eyebrow: 'Up next', title: 'No program assigned', meta: 'Start a freeform session below, or ask your PT to assign a program.', action: freeform, btnLabel: 'Start a session' }
   }
   const prog = activeAssignment.programs
-  // start_date is nullable (the assign form doesn't require it) -- treat unset as "just started"
-  // (week 1 of phase 1) rather than letting `new Date(null + ...)` produce NaN, which silently
-  // fell through to the LAST phase/week instead of the real current one.
-  const weeksSinceStart = activeAssignment.start_date
-    ? Math.max(0, Math.floor((Date.now() - new Date(activeAssignment.start_date + 'T00:00:00')) / (7 * 24 * 60 * 60 * 1000)))
-    : 0
+  const today = todayStr || _ymdLocal(new Date())
+  // One card for every way a session can be found. `row` is the program_phase_workouts row to start; `when` is 'Today', a date or ''; `more`
+  // is how many other sessions share its day. The name comes from the client's copy (cpwMap), the same name the list below shows.
+  const card = (row, when, phaseName, week, more) => {
+    const cpw = row ? cpwMap[row.id] : null
+    const name = (cpw?.name || '').replace(/ — W\d+/, '')   // a periodised week's copy is named "Upper Body — W2"
+    const where = [phaseName, week ? 'Week ' + week : ''].filter(Boolean).join(' · ') || (prog.description || '')
+    return {
+      eyebrow: 'Up next' + (when ? ' · ' + when : ''),
+      title: name || prog.name || 'Your program',
+      meta: (name ? [prog.name, where].filter(Boolean).join(' · ') : where) + (more ? ` · +${more} more ${when === 'Today' ? 'today' : 'that day'}` : ''),
+      action: cpw?.templateId ? `startWorkoutRunner('${clientId}','${cpw.templateId}')` : freeform,
+      btnLabel: '▶ Start'
+    }
+  }
+
+  const byDate = _programWorkoutsByDate(activeAssignment, cpwMap)
+  if (Object.keys(byDate).length) {
+    const next = _dashNextSession(byDate, logs, today)
+    // Every dated session is behind us: the program is finished. Pointing at one of its old sessions would be wrong.
+    if (!next) return { eyebrow: 'Program complete', title: prog.name || 'Your program', meta: 'Start a freeform session below, or move on to your next program.', action: freeform, btnLabel: 'Start a session' }
+    const first = next.sessions[0]
+    return card(first, next.ds === today ? 'Today' : _dashFormatDate(next.ds), first._phaseName, first._weekInPhase, next.sessions.length - 1)
+  }
+
+  // No dated plan (no start date, or no sessions): the first session of the program week the start date puts us in, as before. start_date
+  // is nullable - treat unset as "just started" (week 1 of phase 1) rather than letting a NaN fall through to the LAST phase.
+  const weeksSinceStart = _programWeeksElapsed(activeAssignment.start_date, today)
   const phases = [...(prog.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
   let cumWeeks = 0, currentPhase = phases[phases.length - 1] || null, weekInPhase = 1
   for (const p of phases) {
     if (weeksSinceStart < cumWeeks + p.duration_weeks) { currentPhase = p; weekInPhase = weeksSinceStart - cumWeeks + 1; break }
     cumWeeks += p.duration_weeks
   }
-  const title = prog.name || 'Your program'
-  const meta = currentPhase ? currentPhase.name + ' · Week ' + weekInPhase : (prog.description || '')
-  // "Next up": first day/session in the current phase's current week; falls back to the phase's
-  // first available week if that exact week has no rows yet (e.g. periodization not generated
-  // that far, or a non-periodized phase where everything sits at week_number 1).
+  // First day/session in the current phase's current week; falls back to the phase's first available week if that exact week has no rows
+  // yet (e.g. periodization not generated that far, or a non-periodized phase where everything sits at week_number 1).
   const allRows = [...(currentPhase?.program_phase_workouts || [])].sort((a, b) => a.day_of_week - b.day_of_week || a.session_order - b.session_order)
   const thisWeekRows = allRows.filter(pw => (pw.week_number || 1) === weekInPhase)
-  const next = thisWeekRows[0] || allRows[0] || null
-  const nextTemplateId = next ? cpwMap[next.id]?.templateId : null
-  return {
-    title, meta,
-    action: nextTemplateId ? `startWorkoutRunner('${clientId}','${nextTemplateId}')` : `startWorkoutRunner('${clientId}')`,
-    btnLabel: '▶ Start'
-  }
+  return card(thisWeekRows[0] || allRows[0] || null, '', currentPhase?.name, currentPhase ? weekInPhase : 0, 0)
 }
 
 function _renderWorkoutsHeroHtml(hero) {
   return `
-    <div style="background:var(--accent);border-radius:var(--radius-md, 12px);padding:18px 20px;margin-bottom:16px;color:#fff">
-      <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">Up next</div>
-      <div style="font-size:var(--legacy-text-19, 19px);font-weight:700;margin-bottom:3px">${escapeHtml(hero.title)}</div>
-      <div style="font-size:var(--text-base, 13px);opacity:.8;margin-bottom:14px">${escapeHtml(hero.meta)}</div>
-      <button onclick="${hero.action}" style="padding:8px 20px;border-radius:var(--radius-sm, 8px);background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">${hero.btnLabel} →</button>
+    <div id="wk-hero" style="background:var(--accent);border-radius:var(--radius-md, 12px);padding:18px 20px;margin-bottom:16px;color:#fff">
+      <div data-hero-eyebrow style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">${escapeHtml(hero.eyebrow || 'Up next')}</div>
+      <div data-hero-title style="font-size:var(--legacy-text-19, 19px);font-weight:700;margin-bottom:3px">${escapeHtml(hero.title)}</div>
+      <div data-hero-meta style="font-size:var(--text-base, 13px);opacity:.8;margin-bottom:14px">${escapeHtml(hero.meta)}</div>
+      <button data-hero-start onclick="${hero.action}" style="padding:8px 20px;border-radius:var(--radius-sm, 8px);background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">${hero.btnLabel} →</button>
     </div>`
 }
 
@@ -772,7 +785,7 @@ async function renderClientWorkoutsPage(el) {
       <h1 class="page-title">Workouts</h1>
     </div>
 
-    ${hasProgram ? _renderWorkoutsHeroHtml(_buildWorkoutsHero(clientId, activeAssignment, cpwMap)) : ''}
+    ${hasProgram ? _renderWorkoutsHeroHtml(_buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr: _ymdLocal(new Date()), logs: loggedLogs })) : ''}
 
     ${hasProgram ? (() => {
       const prog = activeAssignment.programs

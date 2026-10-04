@@ -169,17 +169,38 @@ function _dashWeekCounts(days) {
   return { done, planned: Math.max(planned, done) }
 }
 
+// Whole program weeks since the program began, counted the way the CALENDAR places sessions: _programWorkoutsByDate anchors week 1 to the
+// MONDAY of the start date's week, so a week runs Monday to Sunday. Until 2026-10-04 the tile and the Workouts card counted seven-day blocks
+// from the start date instead; the two agree when a program starts on a Monday and disagreed for a few days of every week when it started
+// mid-week (start Thursday, and on the Tuesday after the tile still said week 1 while the calendar - and so the Today card - was in week 2).
+// 0 for no start date, an unreadable one, or a start in the future.
+function _programWeeksElapsed(startDate, todayStr) {
+  const a = startDate ? _mondayOfWeek(startDate) : null, b = _mondayOfWeek(todayStr)
+  if (!a || !b) return 0
+  return Math.max(0, Math.round(Math.round((b - a) / 86400000) / 7))
+}
+
+// The session to do next, for the Workouts page's Up next card: a session planned TODAY that is not logged yet, otherwise the first planned
+// session after today. The dashboard's own reading of a day (it is done once anything is logged on it), so this card and the Today card
+// name the same workout. Earlier sessions never count - the week strip shows an unlogged one as missed. Returns { ds, sessions } (the whole
+// day, in session order), or null when nothing is left. logs are logged sessions ({ date }); progByDate is _programWorkoutsByDate's map.
+function _dashNextSession(progByDate, logs, todayStr) {
+  const map = progByDate || {}
+  const today = map[todayStr] || []
+  if (today.length && !(logs || []).some(l => l.date === todayStr)) return { ds: todayStr, sessions: today }
+  const later = Object.keys(map).filter(ds => ds > todayStr && (map[ds] || []).length).sort()[0]
+  return later ? { ds: later, sessions: map[later] } : null
+}
+
 // The program tile: which week of the whole program, which phase it is in, how far through. null without a program.
 // start_date is nullable (the assign form does not require it): unset means "just started" - week 1 - not NaN, which used to fall
-// through to the LAST phase (see _buildWorkoutsHero).
+// through to the LAST phase (see _buildWorkoutsHero). Weeks are Monday to Sunday, as on the calendar (_programWeeksElapsed).
 function _dashProgramInfo(cp0, todayStr) {
   if (!cp0?.programs) return null
   const prog = cp0.programs
   const phases = [...(prog.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
   const total = phases.reduce((n, p) => n + (p.duration_weeks || 0), 0)
-  const start = cp0.start_date ? new Date(cp0.start_date + 'T00:00:00') : null
-  const today = new Date(todayStr + 'T00:00:00')
-  const sinceStart = start && !isNaN(start) ? Math.max(0, Math.floor(Math.round((today - start) / 86400000) / 7)) : 0
+  const sinceStart = _programWeeksElapsed(cp0.start_date, todayStr)
   let cum = 0, current = phases[phases.length - 1] || null
   for (const p of phases) { cum += p.duration_weeks || 0; if (sinceStart < cum) { current = p; break } }
   const week = total ? Math.min(sinceStart + 1, total) : sinceStart + 1
