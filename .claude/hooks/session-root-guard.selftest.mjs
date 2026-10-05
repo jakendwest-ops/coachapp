@@ -66,6 +66,8 @@ const fires = (label, payload) => {
   // A move re-roots the shell, hooks and skills at once, CLAUDE.md only later and the memory path never (measured 2026-10-05): the message must not promise a clean re-root.
   check(`${label}: says what a move does NOT carry, and what to do about it`, typeof ctx === 'string'
     && ctx.includes('Read ' + REPO + '/CLAUDE.md') && ctx.includes('write memory notes ONLY into ' + REPO_MEMORY) && ctx.includes('NEW session'))
+  // A tab already open when the session moved stays in the Vault (measured 2026-10-05: Jake's tab stayed at the Vault prompt; a tab opened after the move started in the repo).
+  check(`${label}: warns that a Terminal tab already open stays in the Vault`, typeof ctx === 'string' && ctx.includes('Terminal-panel tab already open stays in the Vault folder') && ctx.includes('open_terminal_tab'))
 }
 const silent = (label, payload, raw) => {
   const r = run(payload, raw)

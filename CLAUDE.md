@@ -30,7 +30,7 @@ on 2026-09-19 ran CoachApp for 16 days without any of them (`docs/decisions.md`,
 was reset to ..."; if that is not `C:\Users\jaken\OneDrive\coachapp`, or `/hello-claude` answers "Unknown skill", STOP: start a NEW session on the repo
 folder, or move this one (`mcp__ccd_directory__change_directory`) - never work around it, never `cd` past it. A move carries the shell, hooks and
 skills at once, this file only at the next post-compaction re-read of the instructions (measured 2026-10-05: about 45 minutes on) and the memory path never, so after one, Read this file and the
-repo-keyed `MEMORY.md` yourself and write memory only into `~/.claude/projects/c--Users-jaken-OneDrive-coachapp/memory/`. Enforced, not just written:
+repo-keyed `MEMORY.md` yourself and write memory only into `~/.claude/projects/c--Users-jaken-OneDrive-coachapp/memory/`. A Terminal tab already open stays in the Vault (only new tabs follow a move; close it). Enforced, not just written:
 `.claude/hooks/session-root-guard.mjs` (user-level SessionStart; fires in the Vault, on every start, resume and compaction), plus `os-lint`'s
 `memory-split`, `vault-rooted-session` and the widened `no-vault-pointers`.
 
