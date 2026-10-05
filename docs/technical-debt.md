@@ -164,6 +164,21 @@ shows no Now). The fix is one more read to compare the newest assignment's `prog
 within the phase, so it could not simply call `_programPhaseAt`; it is equivalent today. The next change to either should fold them
 into one function that returns both.
 
+**New, unfixed (2026-10-05, from the Vault-rooted-session incident; `docs/decisions.md` has the whole story):**
+(1) The desktop app's default folder for a NEW session is the Vision OS folder (all 22 sessions it lists started there). That is the app's choice, not ours (its settings
+tool exposes no such setting), so a new session can still START in the wrong folder; the controls make it visible (`session-root-guard.mjs` tells Jake and the model) and
+detectable afterwards (`os-lint`'s `vault-rooted-session`), not impossible. Starting sessions on the repo folder is the actual fix, and it is Jake's.
+(2) A `change_directory` move re-roots hooks and skills at once, CLAUDE.md only at a later post-compaction re-read and the memory path never (measured 2026-10-05), so a moved session must read both itself and a NEW session is
+cleaner. VERIFIED in a headless Vault-rooted session: the guard fires and the model quotes it. UNVERIFIED: that the desktop app shows the guard's `systemMessage` to Jake; `~/.claude/state/session-root-guard.log` gains a line per session event, which is how a first
+Vault-rooted start will answer it. (3) The user-level registration of the guard lives in `~/.claude/settings.json`, which is NOT backed up (the claude-config allowlist excludes
+it); `os-lint`'s `hooks` check goes RED if it is lost, and the memory note `reference_vault_system.md` records how to re-add it. (4) About a dozen stale July worktrees under the
+Vault (`.claude/worktrees/*`) still carry copies of the old CoachApp launch config; they are inert and were left alone. (5) Memory notes are not scanned for Vault paths
+(`no-vault-pointers` reads hooks and skills only): the one-off scrub of 2026-10-05 found four stale pointers, and a note written tomorrow could add one. (6) `os-lint` is RED at
+every session start on four checks that PREDATE this change (measured at the 2026-10-05 start, before its edits): `context-budget` (STATUS + roadmap 18.2k chars vs a ceiling of
+9.3k), `ritual-budget` (hello-claude + save 41.6k vs 40.9k), `docs-budget` (`docs/*.md` 154.7k vs 79.9k - it was 79.5k at the 2026-09-27 baseline, and `decisions.md` alone went from 8k to
+54k) and `doc-obligations` (`critical.md` has not recorded four newer security bugs). This change adds about 10k to `docs/*.md` (the decisions entry and this paragraph) and shrinks the rituals by about 370 bytes. INFERRED: nobody saw
+them because the 2026-09-19..10-04 conversation, rooted in the Vault, never ran os-lint at its start. They are not fixed here, and the fix for `docs-budget` is bigger than one file: `decisions.md` is 63k of the 159k and the other ten docs total 96k, so reaching the 79.9k ceiling means archiving across several docs - a separate job.
+
 ## Minor hygiene debt
 
 A handful of stray debug artifacts sit at repo root (debug PNGs, a PDF, `modal-preview.html`),

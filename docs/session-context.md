@@ -5,7 +5,7 @@ point-in-time file, not a live feed.** For anything time-sensitive, run the `/he
 instead — it reads the repo's live docs and checks current state every session. This file is for a
 fast read when that ritual hasn't been run, or for a non-Claude-Code reader.
 
-Snapshot date: 2026-10-04.
+Snapshot date: 2026-10-05.
 
 ## Project Summary
 
@@ -53,6 +53,10 @@ Node 22 while this machine runs Node 24; "pushed" is not "deployed" — check `g
 
 ## Active Risks
 
+- **Session root (2026-10-05):** CoachApp's CLAUDE.md, skills, hooks and memory load only in a session rooted in this repo; a Vault-rooted one ran CoachApp for
+  16 days with none of them. `session-root-guard.mjs`, three `os-lint` checks and `CLAUDE.md` now cover it ([decisions.md](decisions.md), 2026-10-05); the
+  [bug row](bugs/2026-10-05-coachapp-session-ran-in-the-vault-folder-for-16-days.md) closes on Jake's check. `os-lint` is also RED on four budget and
+  obligation checks that predate this ([technical-debt.md](technical-debt.md)).
 - 1 deferred **critical** bug: GDPR consent capture (deferred 2026-08-19, but 5 of 6 steps have since shipped —
   see [roadmap.md](roadmap.md)).
 - A push runs no browser tests (since 2026-09-27); only the release's full suite does. See `CLAUDE.md` and
@@ -77,6 +81,8 @@ repeated here so there is no third copy to drift.
    `multi-agent-review` before that commit).
 3. Housekeeping still open: the ungraded-prediction backlog and duplicate ids —
    [technical-debt.md](technical-debt.md).
+4. Start the next session on this repo's folder (not the Vision OS one) and let `/hello-claude` run; then confirm the guard per the
+   [bug row](bugs/2026-10-05-coachapp-session-ran-in-the-vault-folder-for-16-days.md), and decide how to clear the four RED `os-lint` budgets ([technical-debt.md](technical-debt.md), item 6).
 
 ## Important Reference Documents
 

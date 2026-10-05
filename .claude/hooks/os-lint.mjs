@@ -28,7 +28,7 @@
  * Suppression: put LINT-OK on a line to exempt it (use sparingly; it is a confession, not a fix).
  */
 
-import { readFileSync, readdirSync, existsSync, statSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, openSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync, statSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, openSync, readSync, closeSync, fstatSync } from 'node:fs'
 import { join, relative, dirname } from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -1151,7 +1151,12 @@ function checkHooks () {
 //
 //     WARN, not RED — new checks ship non-blocking until measured over time (2026-08-25).
 // ---------------------------------------------------------------------------
-const VAULT_PATH_RE = /Claude[/\\]+Vault/
+//
+//     WIDENED 2026-10-05: the pattern above was BLIND to the folder sessions actually START in. It matched `Claude/Vault` (the data subfolder) and nothing
+//     else, so the launch root itself - the Vision OS folder one level up - passed everywhere, while a desktop session rooted in it ran CoachApp for 16 days
+//     (docs/decisions.md, 2026-10-05). The second alternative catches the root: `Users/jaken/Claude` not followed by a name character, so `.claude`,
+//     `Claude-other` and `claude` (case) are not hits.
+const VAULT_PATH_RE = /Claude[/\\]+Vault|Users[/\\]+jaken[/\\]+Claude(?![\w.-])/
 function checkNoVaultPointers () {
   const hits = []
 
@@ -1181,6 +1186,99 @@ function checkNoVaultPointers () {
       + '\n    CoachApp is repo-only since 2026-09-18 (docs/decisions.md). If this is a comment explaining what was'
       + '\n    REMOVED, prefix it with // (hooks) or add LINT-OK (skills). If it is a real read/write, delete it.')
   } else ok('no-vault-pointers', 'no live Vault filesystem path in any hook or skill')
+}
+
+// ---------------------------------------------------------------------------
+// 9d. The session's ROOT - the thing every check above is blind to. Added 2026-10-05 (docs/decisions.md, "The Vault severing was verified on files and never on the session's folder").
+//     CoachApp's CLAUDE.md, skills, hooks and auto-memory load from the folder a session is ROOTED in. The 2026-09-15..18 severing moved them into the repo
+//     and was verified on FILES; sessions kept starting in the Vision OS folder (all 22 sessions the app lists started there), so one ran CoachApp for
+//     16 days with none of them while a second memory folder grew beside the real one. Two checks, from the repo side, that look where a session IS:
+//       memory-split           RED   a Vault-keyed auto-memory folder has anything new in it. CoachApp memory has ONE home (the repo-keyed folder); the Vault-keyed
+//                                    one is a frozen stub, so a note there is CoachApp memory in the wrong home unless it says `scope: vision-os`. Structural - a
+//                                    file is there or it is not - because the content cannot be judged: 24 of the 51 notes a Vault-rooted CoachApp session really
+//                                    wrote never contain the word "CoachApp" (measured 2026-10-05), so a "mentions CoachApp" test would have missed half.
+//       vault-rooted-session   WARN  a recent session transcript whose LAST working folder is still the Vault and which has made tool calls on the repo's files:
+//                                    a session doing CoachApp work from the wrong folder right now. A heuristic over transcripts, so WARN until measured.
+//     The PREVENTIVE half is hooks/session-root-guard.mjs (a user-level SessionStart hook, which `hooks` above goes RED over if its registration is lost).
+//     These are the detective half: they fire even if that hook is gone, and they are the only thing that can see a memory folder diverge.
+// ---------------------------------------------------------------------------
+const PROJECTS_DIR = env('OSLINT_PROJECTS_DIR', `${HOME}/.claude/projects`)
+const VAULT_PROJECT_KEY = /^[cC]--Users-jaken-Claude(?:--|$)/      // the folder key the harness gives a session rooted in the Vault or one of its worktrees
+const VAULT_STUB_SENTINEL = 'COACHAPP-DOES-NOT-LIVE-HERE'
+const vaultProjectDirs = () => { try { return readdirSync(PROJECTS_DIR).filter(d => VAULT_PROJECT_KEY.test(d)) } catch { return [] } }
+
+function checkMemorySplit () {
+  const dirs = vaultProjectDirs()
+  const bad = []
+  for (const d of dirs) {
+    const mem = `${PROJECTS_DIR}/${d}/memory`
+    if (!existsSync(mem)) continue
+    for (const f of readdirSync(mem)) {
+      if (!f.endsWith('.md') || f === 'MEMORY.md' || !statSync(`${mem}/${f}`).isFile()) continue
+      if (/^scope:\s*vision-os\s*$/m.test(read(`${mem}/${f}`) || '')) continue      // the one opt-out: a note that says it is about Vision OS itself
+      bad.push(`${d}/memory/${f}`)
+    }
+    const idx = read(`${mem}/MEMORY.md`)
+    if (idx !== null && !idx.includes(VAULT_STUB_SENTINEL)) bad.push(`${d}/memory/MEMORY.md has lost the stub's stop notice (${VAULT_STUB_SENTINEL})`)
+  }
+  if (bad.length) {
+    red('memory-split', `${bad.length} item(s) in a Vault-keyed memory folder, which is FROZEN - CoachApp memory has ONE home (the repo-keyed folder), and a second one is how 51 and 57 notes diverged:\n    `
+      + bad.slice(0, 8).join('\n    ') + (bad.length > 8 ? `\n    …and ${bad.length - 8} more` : '')
+      + '\n    A session rooted in the Vault wrote these. Merge CoachApp notes into the repo-keyed folder and archive the originals (a note about Vision OS itself may stay if its frontmatter says `scope: vision-os`); the stub index must keep its COACHAPP-DOES-NOT-LIVE-HERE line.')
+  } else ok('memory-split', `nothing new in a Vault-keyed memory folder, and the stub is intact (${dirs.length} folder(s) checked)`)
+}
+
+/** The last `bytes` of a (possibly huge) transcript - they are JSONL, one record a line, and tens of MB after a long session. */
+function tailOf (path, bytes) {
+  const fd = openSync(path, 'r')
+  try {
+    const size = fstatSync(fd).size, len = Math.min(bytes, size), buf = Buffer.alloc(len)
+    readSync(fd, buf, 0, len, size - len)
+    return buf.toString('utf8')
+  } finally { closeSync(fd) }
+}
+const REPO_PATH = /OneDrive[\\/]+coachapp/i                        // matched against a tool call's input serialised as JSON, where a Windows path carries doubled backslashes: [\\/]+ takes any run
+const VAULT_CWD = /^c:\/users\/jaken\/claude(\/|$)/                // a normalised working folder inside the Vault (or one of its worktrees)
+// COUNTED: tool calls whose INPUT names the repo's path - not mentions. Mentions (this check's first version) include the guard's own text, which names the repo
+// about three times per firing, so a Vision OS session the guard had fired in twice would have read as CoachApp work. Measured 2026-10-05 on the real 16-day
+// Vault-rooted conversation, its last 400 KB at ten points (nine pre-move compaction records, one a duplicate, and a 2026-10-02 window): 1, 20, 21, 18, 8, 20, 7, 20, 7 and 15 calls on the repo's files. 3 sits
+// below nine of the ten and above a session that only talks about the repo (0 by construction). The one miss (1 call) was a discussion-only stretch: the guard is
+// the control, this is the backstop.
+const VAULT_SESSION_MIN_CALLS = 3
+
+function checkVaultRootedSessions () {
+  const hits = []
+  let checked = 0
+  for (const d of vaultProjectDirs()) {
+    const dir = `${PROJECTS_DIR}/${d}`
+    let files = []
+    try { files = readdirSync(dir).filter(f => f.endsWith('.jsonl')) } catch { continue }
+    for (const f of files) {
+      let st; try { st = statSync(`${dir}/${f}`) } catch { continue }
+      if (now - st.mtimeMs > 3 * DAY) continue                   // cheap pre-filter; the real test of "recent" is the transcript's own clock, below
+      let lastCwd = null, lastAt = 0, calls = 0
+      for (const line of tailOf(`${dir}/${f}`, 400_000).split('\n')) {
+        let rec; try { rec = JSON.parse(line) } catch { continue }   // the first line of a tail slice is usually cut in half
+        if (!rec || typeof rec !== 'object') continue
+        if (typeof rec.cwd === 'string') lastCwd = rec.cwd       // where the session is NOW: a session moved to the repo writes the repo from then on
+        const at = Date.parse(rec.timestamp); if (at > lastAt) lastAt = at
+        const blocks = rec.message && Array.isArray(rec.message.content) ? rec.message.content : []
+        for (const b of blocks) if (b && b.type === 'tool_use' && REPO_PATH.test(JSON.stringify(b.input || {}))) calls++
+      }
+      if (lastCwd === null) continue
+      // A file something touched after its last record (the real 2026-09-18 review session read as live on 10-03 that way) is not a live session.
+      if (lastAt && now - lastAt > 3 * DAY) continue
+      checked++
+      const last = lastCwd.replace(/\\/g, '/').replace(/^\/([a-z])\//i, '$1:/').toLowerCase()
+      if (!VAULT_CWD.test(last)) continue
+      if (calls >= VAULT_SESSION_MIN_CALLS) hits.push(`${f.slice(0, 13)}… (last active ${new Date(lastAt || st.mtimeMs).toISOString().slice(0, 16)}Z; its last working folder is the Vault; ${calls} tool call(s) on the CoachApp repo's files in its last 400 KB)`)
+    }
+  }
+  if (hits.length) {
+    warn('vault-rooted-session', `${hits.length} recent session transcript(s) rooted in the Vault folder and doing CoachApp work:\n    ` + hits.slice(0, 5).join('\n    ')
+      + '\n    CoachApp\'s CLAUDE.md, skills, hooks and memory load ONLY in a session rooted in the repo, so that session runs without them. Move it'
+      + '\n    (mcp__ccd_directory__change_directory to the repo: a partial re-root, see the ROOT paragraph in CLAUDE.md) or, cleaner, start a new one on the repo folder - docs/decisions.md, 2026-10-05.')
+  } else ok('vault-rooted-session', `no recent session is rooted in the Vault while working on CoachApp (${checked} transcript(s) active in the last 3 days checked)`)
 }
 
 // ---------------------------------------------------------------------------
@@ -1468,6 +1566,44 @@ function runSelfTest () {
              OSLINT_SKILLS: join(root, 'nope-vp-hook') } },
     { check: 'no-vault-pointers', name: 'no-vault-pointers/skill', expect: 'live reference(s) to the Vault filesystem path',
       env: { OSLINT_SKILLS: skillDir('vps', FM + 'cd "C:\\Users\\jaken\\Claude\\Vault"\n') } }, // LINT-OK: deliberate fixture, must contain the pattern under test
+    // 2026-10-05: the third detector - the launch ROOT, which the pattern was blind to for 17 days. The fixture also carries two lookalikes that must NOT
+    // count (the hidden ~/.claude folder and a folder that merely starts with the same name), so "1 live reference(s)" proves the pattern is not over-wide.
+    { check: 'no-vault-pointers', name: 'no-vault-pointers/root', expect: '1 live reference(s) to the Vault filesystem path',
+      env: { OSLINT_HOOKS_DIR: (() => { file('vr/leak.mjs', "const A = 'C:/Users/jaken/Claude'\nconst B = 'C:/Users/jaken/.claude/hooks'\nconst C = 'C:/Users/jaken/Claude-other'\n"); return join(root, 'vr') })(), // LINT-OK: deliberate fixture, must contain the pattern under test
+             OSLINT_SKILLS: join(root, 'nope-vp-root') } },
+    // 2026-10-05 - the session's ROOT. Each fixture carries the live case AND the controls that must NOT count, so the number in the message proves the
+    // controls stayed quiet: a detector that also fired on a moved session, a passing mention or an old transcript would say 3 or 4, not 1.
+    // memory-split has two independent detectors (a stray note, a stub that lost its stop notice) - one fixture each.
+    { check: 'memory-split', name: 'memory-split/note', expect: '1 item(s)',
+      env: { OSLINT_PROJECTS_DIR: (() => {
+        // The note that must count says nothing about CoachApp: 24 of the 51 notes a Vault-rooted CoachApp session really wrote never name it, so a content test would miss half.
+        file('proj-ms/C--Users-jaken-Claude/memory/feedback_leak.md', '---\nname: x\n---\nAlways bump the ?v=N on a changed module.\n')
+        file('proj-ms/C--Users-jaken-Claude/memory/vision_note.md', '---\nname: v\nscope: vision-os\n---\nA Vision OS note that says so: opted out.\n')
+        file('proj-ms/C--Users-jaken-Claude/memory/MEMORY.md', '<!-- COACHAPP-DOES-NOT-LIVE-HERE -->\n# the stub, which mentions CoachApp and must not count\n')
+        file('proj-ms/C--Users-jaken-Claude/memory/_archive-2026/old_note.md', '---\nname: o\n---\nArchived originals sit in a subfolder and must not count.\n')
+        file('proj-ms/C--Users-jaken-Claude--claude-worktrees-w/memory/feedback_ok.md', '---\nname: y\nscope: vision-os\n---\nA Vision OS note in a worktree-keyed folder.\n')
+        file('proj-ms/c--Users-jaken-OneDrive-coachapp/memory/feedback_home.md', '---\nname: z\n---\nCoachApp notes belong in THIS folder, which is not Vault-keyed.\n')
+        return join(root, 'proj-ms') })() } },
+    { check: 'memory-split', name: 'memory-split/stub-lost', expect: 'has lost the stub',
+      env: { OSLINT_PROJECTS_DIR: (() => {
+        file('proj-msl/C--Users-jaken-Claude/memory/MEMORY.md', '# an index a session rewrote: the stop notice is gone\n- [x](x.md)\n')
+        return join(root, 'proj-msl') })() } },
+    { check: 'vault-rooted-session', expect: '1 recent session transcript(s)',
+      env: { OSLINT_PROJECTS_DIR: (() => {
+        const d = 'proj-vr/C--Users-jaken-Claude/'
+        const VAULT = 'C:\\Users\\jaken\\Claude', REPO = 'C:\\Users\\jaken\\OneDrive\\coachapp' // LINT-OK: deliberate fixture, real Windows paths
+        const H = 3600e3
+        const rec = (cwd, ago, block) => JSON.stringify({ timestamp: new Date(now - ago).toISOString(), cwd, message: { content: [block] } }) + '\n'
+        const call = (cwd, ago, path = REPO + '\\CLAUDE.md') => rec(cwd, ago, { type: 'tool_use', name: 'Read', input: { file_path: path } })
+        const talk = (cwd, ago) => rec(cwd, ago, { type: 'text', text: 'we are working on ' + REPO + ' right now' })
+        file(d + 'live.jsonl', call(VAULT, H).repeat(5))                                       // rooted in the Vault, calling tools on the repo: the one that must count
+        file(d + 'moved.jsonl', call(VAULT, 2 * H).repeat(5) + call(REPO, H))                  // was in the Vault, has since moved to the repo: not a live problem
+        file(d + 'prose.jsonl', talk(VAULT, H).repeat(20))                                     // names the repo twenty times (the guard's own text does) but touches nothing: Vision OS
+        file(d + 'twocalls.jsonl', call(VAULT, H).repeat(2))                                   // one call below the threshold
+        file(d + 'elsewhere.jsonl', call(VAULT, H, VAULT + '\\Vault\\notes.md').repeat(5))     // five tool calls, none of them on the repo: Vision OS work // LINT-OK: deliberate fixture
+        const old = file(d + 'old.jsonl', call(VAULT, 10 * 24 * H).repeat(5)); const t = new Date(now - 10 * DAY); utimesSync(old, t, t)   // the live shape 10 days ago: outside the window
+        file(d + 'touched.jsonl', call(VAULT, 10 * 24 * H).repeat(5))                          // 10 days of records in a file touched today (real case: a 09-18 session, mtime 10-03): not live
+        return join(root, 'proj-vr') })() } },
     // event-gates' marker reading changed shape 2026-09-18 and has three independent detectors.
     // One fixture each. The third is the discriminating one: a JSON marker whose ranAt is 2026-01-01
     // but whose FILE mtime is today — if the JSON branch were dead, the label would fall back to
@@ -2227,6 +2363,8 @@ if (REPORT) measureMetaWork()
 checkHookSelfTests()
 checkHooks()
 checkNoVaultPointers()
+checkMemorySplit()
+checkVaultRootedSessions()
 // checkGatesFired retired 2026-09-15 (call commented out), deleted outright 2026-09-18 along with
 // its GATES/GATE_WINDOW/VAULT/LOG constants and self-test spec — see docs/decisions.md's 2026-09-18
 // entry. No replacement mechanism was built for evidencing these gates fired from the repo side —

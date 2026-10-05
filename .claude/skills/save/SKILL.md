@@ -5,8 +5,8 @@ description: End-of-session ritual. Run when the user says /save or signals they
 
 # End-of-session save
 
-**Step 0a — `cd "C:\Users\jaken\OneDrive\coachapp"` before anything else.** Same as `hello-claude`'s
-Step 0a: every step below assumes this cwd, STOP and tell Jake if it fails.
+**Step 0a — the session's ROOT must be the repo**, exactly as `hello-claude`'s Step 0a says; if it is not, STOP
+and tell Jake. A shell `cd` does not fix a mis-rooted session.
 
 **Step 0b — write the checklist to `~/.claude/state/ritual-save.md`, one `- [ ]`
 line per step below**, and tick each one off in the file as you finish it. A save that dies mid-way
@@ -22,13 +22,10 @@ line up.
 
 Run every step below in order. Do not skip any.
 
-**Note (golden path, 2026-07-02, updated 2026-09-18):** Bare `/save` dispatches to THIS skill and
-nothing else, and is now fully self-contained — it never reads or invokes `vault-save.md`
-(`C:\Users\jaken\Claude\.claude\commands\vault-save.md`) and writes nothing to the Vault. That
-changed 2026-09-18: Jake was explicit that no CoachApp work should point at the Vault any more, so
-predictions capture moved into Step 10 below and owner-voice/ledger duties simply stopped being
-CoachApp's concern — `vault-save.md` still exists and still runs for every other project, just never
-triggered from here.
+**Note (golden path, 2026-07-02, updated 2026-10-05):** Bare `/save` dispatches to THIS skill and nothing
+else. It is repo-only: it never reads or invokes the Vault's separate `/vault-save` ritual and writes nothing
+to the Vault. Since 2026-09-18 predictions capture lives in Step 10 below and owner-voice/ledger duties are
+not CoachApp's concern.
 
 > **🔒 GATE (2026-08-25, repointed 2026-09-17) — grade before you append.** `guardrails.mjs` Rule 6
 > blocks the commit in Step 10 if it adds a NEW `docs/predictions.jsonl` record while any prediction

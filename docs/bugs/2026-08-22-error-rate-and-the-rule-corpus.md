@@ -179,3 +179,20 @@ any different on live"); it is now `feedback_say_whats_not_live`, so a repeat wo
 This is session 3 of 3 by the row's own counting, with counts of one and one in the last two sessions: flat, not the fall the row asks for,
 and the counting is mine alone with this row's blind-spot caveat. I am not closing it; whether three flat sessions satisfy "the ratio
 fell" is Jake's call. The row stays open.
+
+## 2026-10-05 — correction to the entry above: that session ran with NO rules loaded, so its count is void, and the count is two, not one
+
+The 2026-10-04 entry counted one error and called "session 3 of 3". Both statements were wrong, for a reason bigger than either: the session that
+made them was rooted in the Vault folder (2026-09-19..10-05; `docs/decisions.md`, 2026-10-05), so none of the repo's soft rules were in force in it - not
+`CLAUDE.md`'s standing behaviours, not the 57 notes of the repo-keyed memory, not the guardrails or claim-check hooks. The metric ("errors per session in
+classes that already had a rule") was measured on a session in which NO rule was loaded. It says nothing about whether the corpus works, in either direction.
+
+- **The count itself:** the buried "NOT live" line I filed as "a class no memory covered" falls in the class of `feedback_answer_questions_separately` (an
+  answer buried in a wall of build output, Jake re-asked, 2026-08-11), which existed and was never loaded. Recounted: two (that, and the "review only if
+  you ask" claim) - but see above: the count does not mean what it was meant to mean for this session.
+- **"Session 3 of 3" is withdrawn.** Sessions 1 and 2 ran in repo-rooted or mixed conditions; this one did not count as a measurement of anything but the folder.
+  The next three REPO-ROOTED sessions are the ones that count, starting from the next one.
+- **The finding that matters more than the number:** a rule corpus cannot reduce errors in a session that never loads it, and nothing in this project
+  checked WHICH corpus a session had. That is now checked (`session-root-guard.mjs`, `os-lint` `memory-split` / `vault-rooted-session`).
+
+The row stays open.

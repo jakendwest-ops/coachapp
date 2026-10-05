@@ -16,17 +16,23 @@ repeated here. PTHub (the other project) ended 2026-09-15.
 | Thing | Lives in |
 |---|---|
 | Docs, bug ledger, predictions, all 9 skills, `os-lint.mjs`, `guardrails.mjs` | this repo |
-| `claim-check.mjs`, this project's Claude memory | `~/.claude` (its own private `claude-config` repo) — generic, not CoachApp-specific. (`standing-behaviours.mjs` is still there but unregistered since 2026-09-27; its text moved into this file.) |
-| The Vault | nothing CoachApp needs. Old CoachApp files are archived at `Vault/projects/_archive/CoachApp/`; `os-lint`'s `no-vault-pointers` check warns if a live path back into it reappears in a hook or skill |
+| `claim-check.mjs`, this project's Claude memory | `~/.claude` (its own private `claude-config` repo). Memory has ONE home, `~/.claude/projects/c--Users-jaken-OneDrive-coachapp/memory/`; the Vault-keyed folder beside it is a frozen stub (`os-lint`'s `memory-split` goes RED if anything new appears there). (`standing-behaviours.mjs` is still there but unregistered since 2026-09-27; its text moved into this file.) |
+| `session-root-guard.mjs` | this repo's `.claude/hooks/`, REGISTERED in `~/.claude/settings.json` (user level) so it fires in the Vault folder too; `os-lint`'s `hooks` check goes RED if the registration is lost |
+| The Vault | nothing CoachApp needs, and no CoachApp session may be rooted in it. Old CoachApp files are archived at `Vault/projects/_archive/CoachApp/`; `os-lint`'s `no-vault-pointers` check warns if a live path to the Vault - its data folder OR the folder above it that sessions start in - reappears in a hook or skill |
 
 **Conversational memory is never authoritative.** Never rely on what a previous session said
 happened, what you remember doing, or an unverified summary carried over in context — if `docs/`
 has an answer, read the file.
 
-**`cd` guard, added 2026-09-18, not yet empirically verified:** `hello-claude` and `save` both open
-with an explicit `cd "C:\Users\jaken\OneDrive\coachapp"` (Step 0a) and refuse to proceed if it fails,
-so a fresh session can't resolve either ritual from wherever its shell happened to start. Added, not
-yet watched succeed on a cold session — confirm it holds the next time either runs fresh.
+**The session's ROOT is part of the boundary (added 2026-10-05).** This file, the skills, the hooks and the auto-memory load only when a
+session is ROOTED in this repo. The Vault severing was first verified on files alone, and a desktop session started in the Vision OS folder
+on 2026-09-19 ran CoachApp for 16 days without any of them (`docs/decisions.md`, 2026-10-05). So the first command of a session shows "Shell cwd
+was reset to ..."; if that is not `C:\Users\jaken\OneDrive\coachapp`, or `/hello-claude` answers "Unknown skill", STOP: start a NEW session on the repo
+folder, or move this one (`mcp__ccd_directory__change_directory`) - never work around it, never `cd` past it. A move carries the shell, hooks and
+skills at once, this file only at the next post-compaction re-read of the instructions (measured 2026-10-05: about 45 minutes on) and the memory path never, so after one, Read this file and the
+repo-keyed `MEMORY.md` yourself and write memory only into `~/.claude/projects/c--Users-jaken-OneDrive-coachapp/memory/`. Enforced, not just written:
+`.claude/hooks/session-root-guard.mjs` (user-level SessionStart; fires in the Vault, on every start, resume and compaction), plus `os-lint`'s
+`memory-split`, `vault-rooted-session` and the widened `no-vault-pointers`.
 
 ## What this is
 
@@ -77,9 +83,9 @@ module you change**, in the same commit. Full module map + data layer: `docs/arc
 
 ## Session startup
 
-Run `/hello-claude` first — it boots the preview server and scans for bugs. **Repo only, since
-2026-09-18** — it no longer reads any Vault path at all (the full severing decision; see
-`docs/decisions.md`'s 2026-09-18 "Full severing" entry). For anything about current priorities/risks/bugs, prefer:
+Start the session IN the repo folder (all 22 desktop sessions listed so far started in the Vision OS folder, so choose this one explicitly), then run `/hello-claude` - it
+boots the preview server and scans for bugs. **Repo only, since 2026-09-18** — it no longer reads any Vault path at all (the full severing
+decision; see `docs/decisions.md`'s 2026-09-18 "Full severing" entry and 2026-10-05 for why the folder matters). For anything about current priorities/risks/bugs, prefer:
 
 - `docs/session-context.md` — priorities, risks, immediate next actions (point-in-time snapshot)
 - `docs/current-sprint.md` — the current release cycle's in-flight state

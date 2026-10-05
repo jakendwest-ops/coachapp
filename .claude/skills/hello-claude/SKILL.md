@@ -5,9 +5,10 @@ description: Session-start ritual for CoachApp — boots the preview server, rea
 
 # Session start ritual
 
-**Step 0a — `cd "C:\Users\jaken\OneDrive\coachapp"` before anything else.** Every step below assumes
-this cwd; STOP and tell Jake if it fails, don't guess a fallback. Closes `CLAUDE.md`'s 2026-09-15
-"not yet verified" gap — only holds if this runs first, every time.
+**Step 0a — the session's ROOT must be the repo, `C:\Users\jaken\OneDrive\coachapp`** (or a worktree of it): the first command's "Shell cwd was reset to …"
+line, and the memory path in your system prompt (`…\c--Users-jaken-OneDrive-coachapp\memory`). A miss (the Vision OS folder, say): STOP and tell Jake - a NEW session
+on the repo is the clean fix. A `mcp__ccd_directory__change_directory` move keeps hooks and skills at once, CLAUDE.md only after a later compaction and the memory path never: Read the repo's `CLAUDE.md`
+and its `MEMORY.md` yourself, and never `cd` past it (`docs/decisions.md`, 2026-10-05).
 
 **Step 0b — write the checklist to
 `~/.claude/state/ritual-hello-claude.md`, one `- [ ]` line per step below.** Tick each one off in the
@@ -33,7 +34,6 @@ background, learns fast, wants the *why* behind every decision.
 - Silence + continuing = positive feedback. He doesn't say "great job."
 - "both" / "all" / "please add" = execute everything, no follow-up needed.
 - "make a note" = write it to `docs/` (decisions.md/technical-debt.md as fits) — repo only, always.
-  Not the Vault: a CoachApp session has no business routing anything there any more.
 - "are you able to..." = genuine feasibility check, not rhetorical — answer directly.
 - Ships small, sees it, moves on. He doesn't like long planning phases.
 - Turns failures into permanent systems — when something breaks badly, a skill or lint check comes out of it.
@@ -62,12 +62,8 @@ or it's the wrong app, follow the `run-coachapp` skill. This step blocks until C
 
 **The repo (`docs/*.md`) is CoachApp's system of record — repo only, no Vault reads.** (See
 `CLAUDE.md`'s "Repository source of truth", `docs/decisions.md`'s 2026-09-15 and 2026-09-18 entries.)
-Items 5-6 below were dropped 2026-09-18 (`Vault/memory/lessons.jsonl`, `Vault/owner/voice.md`) — Jake
-was explicit: nothing CoachApp-side should still point at the Vault. `lessons.jsonl`'s job is already
-covered here by this project's own Claude memory (the feedback entries indexed every session,
-CoachApp-specific, no fork/staleness risk). `voice.md` has no repo-native replacement yet — if a
-session needs to draft external-facing prose in Jake's voice, say so explicitly rather than silently
-guessing at tone.
+The owner-voice file was dropped 2026-09-18 with no repo replacement: if a session must draft external-facing prose in Jake's voice, say so explicitly rather than
+silently guessing at tone.
 
 1. `coachapp/docs/session-context.md` — priorities/risks/next-actions snapshot, then
    `coachapp/docs/current-sprint.md` — live release-cycle state
