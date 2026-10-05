@@ -161,52 +161,23 @@ continue appending future entries here, not in a separate file._
 - **2026-06-28 to 2026-09-06** — archived verbatim in
   [archive/critical-timeline-2026-06-28-to-2026-09-06.md](archive/critical-timeline-2026-06-28-to-2026-09-06.md)
   (GDPR hardening, the leaked PAT, stored-XSS instances 4–8, the 44-day public-signup gap, export completeness).
-- 2026-09-20: **That 8th instance is closed, and the checker's blindness is root-caused.** Nothing about the
-  syntax defeated `check-escaping.mjs`: its hand-written free-text field list had no name in
-  `cfg.tiers?.[t]?.reps ?? …`, so the interpolation was never a candidate. `cfg.` is now on the list, a 16-case
-  self-test holds the RED proof (the checker had none) and is wired into `checks.sh`, and `.reps` was deliberately
-  NOT added — measured, it flags 3 runner sites that are not the cross-user class. The bug also corrupted
-  *honest* input containing a quote (`it's "10-12"` was truncated), not just hostile input.
-- 2026-09-20: **RLS did not cover every write of a two-write function — measured, not assumed.**
-  `saveNewTemplate` wrote a `workout_templates` row stamped with a caller-supplied `program_id`, then a
-  `program_phase_workouts` row. A red-first cross-tenant probe showed RLS refuses the second but ACCEPTS the
-  first: another coach's programme id landed in the row. The app now verifies the programme/phase pair before
-  either write; the database still accepts it — open row
-  `2026-09-20-workout-templates-insert-accepts-another-coachs-program-id`, needs a schema read and a reviewed
-  policy script. **Lesson:** probe each write of a multi-write function separately; "RLS backstops it" had been
-  assumed for both.
-- 2026-09-20: **The 8th instance's class sweep missed two more unescaped renders — both found by review, not by the
-  checker.** (1) The sweep was keyed on the variable name `cfg`; the same untyped jsonb column
-  (`periodization_config`) has a second reader, `_periodizationLabel`, that aliases it as `c` and renders raw into the
-  phase header. (2) `clientOverviewTab` interpolated `programName` — a coach-typed programme name arriving as a
-  function PARAMETER — with no escaper (9th instance; coach → the same coach, so low). Both fixed red→green
-  (`tests/review-followups-2026-09-20.spec.js`). **Lesson:** sweep a class by the COLUMN (`grep` every reader of it)
-  and by every value that reaches a template, not by the name the first site happened to use; and a name-keyed checker
-  cannot see a taint that crosses a function return or arrives under an unlisted name — its header now says so.
-- 2026-09-20: **The data export could report success while incomplete — and swallowed read errors.** The API returns
-  at most 200 rows per request and says nothing when it cuts a list short (measured: 200 rows for `.limit(1000)` on a
-  5,564-row table). `_buildMyDataBundle` read seven growing health tables that way, so a subject-access export past 200
-  rows in any of them silently omitted the rest (seven health tables, plus a coach's clients, templates and programmes:
-  the coach block was missed by the first pass and found in review); and it destructured `{ data }` and discarded the
-  error, so a table that failed to load, or the profile, produced a bundle with a hole and no sign of one. Both fixed (paged reads, failures throw and
-  the UI shows "Export failed"); same fix for the weight tabs and personal-best reads. Whether any real export was
-  affected is unmeasured. **Lesson:** an export that reports success must be proven complete past the API's cap, not
-  just on small fixtures — `tests/capped-api.js` now makes that testable.
-- 2026-09-20: **A tenant clause a stub cannot see is not proven.** The runner finish screen's PR baseline was rewritten as
-  one read scoped by client through a two-level `!inner` embed. Its first tests never asked about ANOTHER client, and the
-  test stand-in returned an embedded select whole — so dropping the client filter, or the second `!inner`, would have passed
-  every test (found by review). The stand-in now models PostgREST's `!inner` rule, the real-database test asks about another
-  client, and each breakage fails. **Lesson:** a tenant filter needs a fixture row belonging to someone else, asked about
-  through the real API; and check the read still lands in RLS-bounded tables (restated in the older deferred-RLS row).
-- 2026-09-21: **A view's `security_invoker` setting is reset by the next `create or replace view` that omits it.** Found reviewing
-  the new `coach_client_summary` view (Release 2b): re-creating it without `with (security_invoker = true)` silently made it run
-  with its owner's rights and bypass row-level security — another coach's log was then counted (measured on a local Postgres).
-  Any view over tenant data must repeat the clause on every replace and read `reloptions` back each time (the migration does).
-  Same review, recorded and **fixed and closed 2026-09-26**: a client could rewrite their own `clients.coach_id` (the
-  `clients_update_own_row` policy pinned only `user_id`; detaching was already accepted, pointing at ANOTHER coach was not
-  covered). A `BEFORE UPDATE OF coach_id` trigger now refuses it for end-user roles; detaching is unaffected. See
-  docs/bugs/2026-09-26-a-client-can-rewrite-the-coach-id-of-their-own-clients-row.md. A coach can still attach another coach's
-  programme id to their own client (write side only, unrelated, not fixed).
+- **2026-09-20 to 2026-09-21** — archived verbatim in
+  [archive/critical-timeline-2026-09-20-to-2026-09-21.md](archive/critical-timeline-2026-09-20-to-2026-09-21.md): the 8th stored-XSS instance closed and the
+  checker's blindness root-caused (a hand-written field list); RLS not covering every write of a two-write function (`saveNewTemplate` took another
+  coach's programme id; the database side is still an open row); a class sweep missing two more unescaped renders (sweep a class by the COLUMN); the
+  data export reporting success while incomplete past the API's 200-row cap; a tenant clause a stub cannot see is not proven; a view's
+  `security_invoker` reset by the next `create or replace view`; and the client `clients.coach_id` rewrite (fixed 2026-09-26).
+- 2026-10-05: **The stored-XSS safety net has a known blind spot, and three older security rows were closed on 2026-09-27.** (1) `scripts/check-escaping.mjs`
+  treats a line as markup only if that LINE contains `<`, so an interpolation on its own line inside a multi-line template (the template editor's back
+  label was the case found) is invisible to it: removing `escapeHtml` from a real sink failed nothing. That one sink now has a behavioural spec
+  (`tests/template-back-label-escaping-2026-09-27.spec.js`); how many others sit on continuation lines is UNMEASURED. Open row:
+  [bugs/2026-09-27-escaping-checker-cannot-see-an-interpolation-on-a-continuation-line.md](bugs/2026-09-27-escaping-checker-cannot-see-an-interpolation-on-a-continuation-line.md).
+  (2) Closed 2026-09-27 on closure rule (b), with no new facts for this timeline: the original client-to-coach stored-XSS row (2026-07-13, commit `134140f`,
+  `tests/regression-2026-07-13.spec.js`), the 5-file recurrence row (2026-08-12; a neuter run showed `tests/escaping-sweep-2026-08-12.spec.js` fails when one
+  escape is removed) and `_effectiveCoachIdForClient` swallowing an RLS denial (2026-08-17, fixed 2026-09-04 and recorded above in the archived
+  timeline; `tests/effective-coach-id-2026-09-04.spec.js`). `os-lint`'s `doc-obligations` flagged all four because closing a row rewrites its file, so it
+  looks newer than this one; the only new content was the open row. **Lesson:** that check keys on file time, so a status edit on an old row can
+  demand an append that has nothing new in it; read the rows before appending.
 
 ## Requires Validation
 

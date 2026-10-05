@@ -1,193 +1,111 @@
 # Technical Debt
 
-This file analyzes *what kinds* of debt exist and why they matter. For current bug counts, see
-[backlog.md](backlog.md) — this file doesn't repeat those numbers.
+This file analyzes *what kinds* of debt exist and why they matter. For current bug counts, see [backlog.md](backlog.md); this file doesn't repeat
+those numbers. Condensed 2026-10-05: each dated write-up below is one paragraph or less, and the full text of every one is in the verbatim copy
+[archive/technical-debt-2026-10-05.md](archive/technical-debt-2026-10-05.md).
 
 ## Schema debt
 
-**Closed 2026-09-15** — [schema.md](schema.md) is now the canonical reference (migrated from the
-Vault's `data-model.md`). The remaining debt: it's a design reference kept in sync manually, not
-generated from `information_schema`, and this migration didn't independently re-verify it against
-the live database — see its own Requires Validation.
+**Closed 2026-09-15** — [schema.md](schema.md) is now the canonical reference (migrated from the Vault's `data-model.md`). The remaining debt:
+it's a design reference kept in sync manually, not generated from `information_schema`, and this migration didn't independently re-verify it
+against the live database — see its own Requires Validation.
 
 ## Known gaps
 
-Migrated from `STATUS.md`'s 2026-09-08 save — real product/engineering debt, distinct from the
-process/tracking debt below.
+Real product/engineering debt, distinct from the process debt below. Migrated from the Vault 2026-09-15 and added to since; not all re-verified,
+so check `docs/bugs/` and `docs/releases/` first.
 
-- **Runner:** only cardio/intervals still use the one-set-at-a-time flow (everything else is in the fast table);
-  Jake's "cardio runner needs the same UI" is a design question (`2026-07-11-runner-phase-2`, deferred). Superset
-  auto-switch unbuilt (unknown whether real templates use `supersetGroup`); bodyweight-in-table not live-verified.
-- **`deleteProgram()` orphan-cleanup** stops future debris, but a historical backlog of orphaned
-  templates on the main coach account (found while building that fix) was never separately cleaned
-  up.
+- **Runner:** only cardio/intervals still use the one-set-at-a-time flow (everything else is in the fast table); "cardio runner needs the same UI"
+  is a design question (`2026-07-11-runner-phase-2`, deferred). Superset auto-switch unbuilt; bodyweight-in-table not live-verified.
+- **`deleteProgram()` orphan-cleanup** stops future debris, but a historical backlog of orphaned templates on the main coach account was never cleaned.
 - **My Progress Strength tab** uses a PostgREST `!inner` join not verified live with real data.
-- **Exercise stats card (2026-10-03):** the finish screen's PR check (`_prBaseline`) and the card's "Heaviest set" read the same
-  history through different queries (the check also matches by library id), so for a renamed lift they could in principle
-  disagree - not changed. My progress now draws a full card for every weight x reps exercise; if that proves too long a scroll
-  on a real history, the per-exercise read (`_fetchExerciseSessions`) is the building block for loading a card on demand.
-- **Dashboard rework (2026-10-04):** (1) the coach's Today card is logged-only; "2 of 5 done" and "clients on a streak" need a new
-  database view of what was PLANNED (SQL for Jake to run) - a follow-up if he wants it. (2) The coach page's logs and weigh-ins reads
-  are scoped by the `clients` read, which the API cuts at 200 rows (the counts come from the paged summary, so they are right; the
-  bars and weigh-in list would miss client 201 onward) - the same open item as the unbounded `clients` reads under Known gaps.
-  (3) The rework left handlers with no caller on the dashboards: `showClientPBForm`, `saveClientPB`, `showGoalProgressForm`,
-  `saveGoalProgress`, `toggleClientMilestone`, `showClientWeightForm` (the forms they served moved to Progress and Goals). Some are
-  still exercised by tests that pin their ownership checks (tests/own-client-writes-2026-08-21.spec.js), so remove them together
-  with those tests rather than one at a time.
-- **Carried from the 2026-10-04 pre-push review (all non-blocking, none fixed):** (1) The coach dashboard's "Goals due soon" read has no
-  coach or client anchor, so only the database's permissions scope it (the page it replaced did the same; probed RLS-safe on 2026-08-02,
-  coach against coach only, solo-owned rows not probed). Adding `.in('client_id', ids)` would silently drop goals past 200 clients, because
-  `ids` comes from the capped `clients` read. (2) The Up next button puts raw client and template ids in its inline handler (the shape
-  it always had; both are uuids, so not exploitable). (3) The Stats sheet matches an exercise's history by NAME only (deliberate: it and
-  My progress cannot then disagree) while the Last time panel matches by exercise id first, so an exercise id logged under two names would
-  show a "Last time" the card does not list. (4) Dead code the dashboard rework left: `_pbFormHtml`, `_PB_FORM_CATEGORIES`, `_pbUnitOptions`
-  and `_pbSyncUnits` (app-core.js) have no caller; remove them with the handlers listed above. (5) "View as client" only works on the
-  dashboard: `_getCurrentClientId()` has no view-as branch, so Progress, Workouts and Calendar show the owner's own record. The dashboard's
-  cards that lead there are inert while it is on (fixed in the same release), but making view-as work app-wide needs a banner on every page;
-  sign-out does not clear the view-as globals (the old dashboard behaved the same). Row: [bugs/2026-10-04-view-as-client-only-works-on-the-dashboard.md](bugs/2026-10-04-view-as-client-only-works-on-the-dashboard.md).
-  (6) `_renderMetricChart` filters the chart registry by `chart.canvas`, which Chart.js clears on destroy(), so a re-drawn chart's
-  predecessor lingers in `_activeCharts` until the next `_destroyManagedCharts()` (harmless: destroy is idempotent). The fold-up code filters
-  by the chart itself; the older call was left alone. (7) A phase with `duration_weeks` of 0 or null reads 0 weeks on the dashboard tile and
-  1 week on the calendar; the app's own forms refuse it, so only a direct database edit could produce it.
-- **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted —
-  a UX gap, not a correctness bug.
-- **Invite email** doesn't yet include PT branding/logo (Edge Function not updated for it).
-- **Runner vs. competitor apps:** background rest-timer alerts need an installable app (the screen wake lock
-  shipped in v2026.09.7 covers most gym use); the last-session strip is strength-only. No pre-fill is Jake's
-  choice (2026-07-11), not a gap.
+- **Exercise stats card (2026-10-03):** the finish screen's PR check (`_prBaseline`) and the card's "Heaviest set" read the same history through
+  different queries, so for a renamed lift they could in principle disagree. If a full card per exercise proves too long a scroll on a real
+  history, `_fetchExerciseSessions` is the building block for loading one on demand.
+- **Dashboard rework (2026-10-04):** the coach's Today card is logged-only ("2 of 5 done" needs a new database view of what was PLANNED, SQL for Jake);
+  the coach page's logs and weigh-ins are scoped by the `clients` read the API cuts at 200 rows; and the rework left handlers with no caller
+  (`showClientPBForm`, `saveClientPB`, `showGoalProgressForm`, `saveGoalProgress`, `toggleClientMilestone`, `showClientWeightForm`, and in
+  `app-core.js` `_pbFormHtml`, `_PB_FORM_CATEGORIES`, `_pbUnitOptions`, `_pbSyncUnits`). Remove them together with the tests that pin their
+  ownership checks (`tests/own-client-writes-2026-08-21.spec.js`), not one at a time.
+- **Carried from the 2026-10-04 pre-push review (non-blocking, none fixed):** the coach dashboard's "Goals due soon" read has no coach or client
+  anchor (only the database's permissions scope it; adding `.in('client_id', ids)` would drop goals past 200 clients); the "Up next" button puts
+  raw uuids in its inline handler; the Stats sheet matches history by NAME only while the Last time panel matches by exercise id first;
+  "View as client" works only on the dashboard ([row](bugs/2026-10-04-view-as-client-only-works-on-the-dashboard.md)); `_renderMetricChart` leaves
+  a predecessor in `_activeCharts` until the next destroy (harmless); a phase with `duration_weeks` of 0 or null reads 0 weeks on the dashboard tile and
+  1 on the calendar (only a direct database edit can produce it).
+- **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted (a UX gap). **Invite email** has no PT branding yet.
+- **Runner vs. competitor apps:** background rest-timer alerts need an installable app (the wake lock covers most gym use); the last-session
+  strip is strength-only. No pre-fill is Jake's choice (2026-07-11), not a gap.
 
-These were migrated from the Vault 2026-09-15 and not all re-verified — check `docs/bugs/` and `docs/releases/` first.
+**From the template-draft-save release (2026-09-17; deferred, detail in [releases/v2026.09.6.md](releases/v2026.09.6.md)):** `sudoAsClient`/`exitSudo`
+flip `currentProfile.role` before the dirty-draft check (the shape of the `switchView` bug that release fixed; narrower exposure; the fix mirrors
+`switchView`'s reorder); a propagation-dismissal modal can resolve `_waitForPropagationModalsToClear` before the handler's async work finishes
+(a confusing render, not a data-safety problem); the template editor's Start button and a few other exits bypass the unsaved-changes prompt; and a
+triplicated leave-guard block (`app-core.js` x2, `app-workouts.js` `_templateGoBack()`) wants one shared helper.
 
-**New 2026-09-17, from the template-draft-save release's own three review rounds (found, triaged,
-deliberately deferred rather than fixed in that release — full detail in
-[releases/v2026.09.6.md](releases/v2026.09.6.md)'s Known Issues, and this cycle's own SDD ledger at
-`.claude/worktrees/template-draft-save/.superpowers/sdd/2026-09-13-template-draft-save/progress.md`,
-which still needs deleting once its value is fully extracted):**
+**From planning the product-review releases (2026-09-20; read from code, impact unmeasured):** capped reads (still open: the unpaged `clients`
+roster reads and the sites `checks.sh` rule 9n pins); writes with no retry safety or transaction (workout save, program assignment,
+`deletePhaseWeek`); two propagation regimes (a content edit *offers* "Update assigned clients?", week-structure edits change plans with no prompt:
+Jake's call); stale backlog premises (3 of 20 ranked items rested on lines the code had left behind: check code first); and an unrunnable ad-hoc
+probe recipe (`_adhoc*` is in `testIgnore`; the skills say `_debug-adhoc`, which is gitignored but not runner-ignored, so a leftover runs in `npm test`).
 
-- `app-dashboard.js`'s `sudoAsClient`/`exitSudo` flip `currentProfile.role` before checking for a
-  dirty template draft — the same shape a `switchView` bug this release fixed had. Narrower exposure
-  (the `'client'` role doesn't trip the same solo-suppression `'solo'` does), and the actual
-  write/disclosure decision is now safe regardless (a separate fix this release made locks that
-  decision to a role snapshot, not a live read) — but the class itself is still open on these two
-  call sites. The fix shape would mirror `switchView`'s own reorder exactly.
-- A propagation-dismissal modal can resolve `_waitForPropagationModalsToClear` on its own DOM
-  removal, before the dismissal handler's own async work (and a possible role flip) has actually
-  finished — so the wrong template's editor can render under the wrong role after dismissing a
-  propagation prompt mid-navigation. Confusing-render regression, not a data-safety one (per the
-  role-snapshot fix above).
-- The template editor's ▶ Start button (and a few other exit routes) still bypass the
-  unsaved-changes prompt entirely — no data is lost, but a staged edit can be silently left staged
-  while the user trains the pre-edit version of the workout.
-- A triplicated leave-guard block (Save/Discard/Keep-editing choice-handling) across `app-core.js`
-  (×2: `navigate()` and `switchView()`) and `app-workouts.js` (`_templateGoBack()`) — three
-  near-identical copies that would benefit from one shared helper, deferred as a refactor-only change
-  with no behavior risk.
-
-**New 2026-09-20, from planning the product-review releases** (read from code, impact unmeasured; evidence in
-[the release plans](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md)): **capped reads**
-(the API's silent 200-row cap — the known screens were fixed in v2026.09.7/.8; still open: the unpaged `clients` roster
-reads and the named sites `checks.sh` rule 9n pins); **writes with no retry safety or transaction** (workout save, program assignment, `deletePhaseWeek`); **two
-propagation regimes** (a workout's content edit *offers* "Update assigned clients?", week-structure edits change
-their plans with no prompt — Jake's call; [schema.md](schema.md) said otherwise until today); **stale backlog
-premises** (3 of 20 ranked items rested on lines the code had left behind — check code first); **an unrunnable
-ad-hoc probe recipe** (`_adhoc*` is in `testIgnore`; the skills now say `_debug-adhoc`, gitignored but not
-runner-ignored, so a leftover runs in `npm test`); and no fault-injection test anywhere in `tests/`.
-
-**New 2026-09-27, from the app-code audit** ([archive/app-code-audit-2026-09-27.md](archive/app-code-audit-2026-09-27.md);
-point-in-time, counts measured that day). Fixed the same day: phone sign-out skipping the draft wipe, the "PT" pill shown to
-every phone user, the login placeholder mojibake, and floating unhashed CDN scripts (checks.sh rules 9p/9q now hold the
-last two classes). Still open, in the audit's priority order:
-- **No transactions on the programme lifecycle — HALF DONE (v2026.09.9).**
-  - **Done:** assign, restart and clone are now one `assign_program()` transaction, with the first fault-injection spec.
-    Shape recorded in `decisions.md` 2026-09-27.
-  - **Still browser-orchestrated chains:** `deleteProgram` and `deletePhaseWeek`. `deletePhaseWeek` only touches the client
-    copies the current view (PT vs Personal) may touch, which the database cannot see, so it needs its own design.
-  - **Now tests-only:** `_cloneProgramForClient` has no app caller; four older specs still call it.
-- **Escaping is opt-in** (181 `innerHTML` writes, stored XSS ×8): an auto-escaping `html` tagged template, ratcheted.
-- **`dbq()` at 8% adoption** (26 of 318 `db.from` calls, unchanged since the 2026-08-12 audit), and raw writes whose
-  `error` is ignored never reach the error-report card. Decide: make it mandatory with a ratchet, or delete it.
+**From the 2026-09-27 app-code audit** ([archive/app-code-audit-2026-09-27.md](archive/app-code-audit-2026-09-27.md); point-in-time), still open in its
+priority order:
+- **No transactions on the programme lifecycle, half done.** Assign, restart and clone are one `assign_program()` transaction (shape in
+  [archive/decisions-2026-09-26-to-2026-10-04.md](archive/decisions-2026-09-26-to-2026-10-04.md), 2026-09-27), with the first fault-injection spec.
+  `deleteProgram` and `deletePhaseWeek` are still browser-orchestrated chains; `deletePhaseWeek` only touches the client copies the current view may
+  touch, which the database cannot see, so it needs its own design. `_cloneProgramForClient` has no app caller but four older specs still call it.
+- **Escaping is opt-in** (181 `innerHTML` writes, stored XSS x8): an auto-escaping `html` tagged template, ratcheted.
+- **`dbq()` at 8% adoption** (26 of 318 `db.from` calls), and raw writes whose `error` is ignored never reach the error-report card: make it
+  mandatory with a ratchet, or delete it.
 - **History in comments:** 23% of `js/` lines are comments, 371 of them dated incident stories.
 
 ## Test-gate coverage debt
 
-Since 2026-09-27 a push runs **no** browser tests. The 2-spec smoke run was dropped from the pre-push hook for
-speed: ~7 min to ~50 s per push, see [decisions.md](decisions.md). Every spec now runs only in the release's full
-suite. That is the accepted tradeoff: master can carry a browser regression between releases, but nothing reaches the
-live site without the full suite passing. Widening the old push gate had been tried once and reverted (2026-08-20:
-silent glob no-op, cleanup-unsafe cross-tenant probes at push frequency).
+Since 2026-09-27 a push runs **no** browser tests: the 2-spec smoke run was dropped from the pre-push hook (about 7 min to about 50 s a push, see
+[archive/decisions-2026-09-26-to-2026-10-04.md](archive/decisions-2026-09-26-to-2026-10-04.md)). Every spec now runs only in the release's full suite.
+That is the accepted tradeoff: master can carry a browser regression between releases, but nothing reaches the live site without the full suite
+passing. Widening the old push gate had been tried once and reverted (2026-08-20: silent glob no-op, cleanup-unsafe cross-tenant probes at push frequency).
 
 ## Process/tracking debt
 
-The tracking system regularly self-reports its own decay (`os-lint --report` at session start) — the
-live numbers (stale bugs, ungraded predictions, full-file-review age) belong to that report and
-[backlog.md](backlog.md), not repeated here since they go stale within a day. The pattern worth
-recording here, not there: **this is direct, ongoing evidence the tracking system itself accumulates
-debt at roughly the same rate it prevents it** — close to the actual motivation for this whole
-in-repo documentation set.
+The tracking system regularly self-reports its own decay (`os-lint --report` at session start); the live numbers belong to that report and
+[backlog.md](backlog.md). The pattern worth recording: **the tracking system accumulates debt at roughly the rate it prevents it.** Fixes to the
+mechanism are logged in [decisions.md](decisions.md) as they land (and in the archives it points to); don't duplicate that detail here.
 
-Specific fixes to the mechanism itself are logged in [decisions.md](decisions.md) as they land
-(2026-09-16: `checkEventGateEvidence` added, `checkContinuityBudget` retired; 2026-09-17:
-`predictions.jsonl` moved into the repo; 2026-09-18: full Vault severing, `checkGatesFired` deleted
-outright) — don't duplicate that detail here.
+**Unfixed:**
+- **`docs/predictions.jsonl` has 7 duplicate `id` values**, 3 pairing a graded record with a still-overdue one (`pth-034`, `pth-090`, `pth-109`),
+  which is ambiguous for Rule 6's id-keyed logic. Needs Jake's own pass.
+- **Node 22 in CI, Node 24 locally** (2026-10-03), and nothing pins either. It already cost a release: `v2026.09.12` was tagged but never deployed
+  because a self-test passed on 24 and failed on 22. `scripts/checks.sh` prints a `[note]` when the majors differ, but a note is not a gate. The fix
+  (pin both to one major) touches `.github/`, so it belongs in a release.
+- **`tests/progress-trend.spec.js:5`** (the resting-HR chart) is a fixed-sleep race that failed once in the `v2026.09.14` run and passed on retry.
+  Fix: replace the sleeps with `await expect(page.locator('#resting-hr-chart')).toHaveCount(1)`, in a release with other test work.
+- **From the 2026-10-04 reviews of the program page:** `savePeriodizationConfig` ignores the result of each per-session tier write, so a refused write
+  is silent (fix: `.select('id')` on each, count the rows, stop before the phase write); a stored periodization value whose `toString` and `valueOf`
+  are not callable makes `String(v)` throw (it needs crafted jsonb from the phase's own owner); the program page's "Now" follows the viewer's
+  assignment of THIS program while the dashboard tile, the Workouts hero and the calendar follow the newest assignment across ALL programs
+  (cosmetic, rare); and `js/app-workouts.js` (about line 697) keeps a third copy of the phase loop, to fold into one function with `_programPhaseAt`.
+- **From the Vault-rooted-session incident (2026-10-05, [decisions.md](decisions.md)):** (1) the desktop app's default folder for a NEW session is the
+  Vision OS folder; that is the app's choice, so a session can still START in the wrong folder (the guard makes it visible, not impossible);
+  (2) a `change_directory` move re-roots hooks and skills at once, CLAUDE.md only at a later post-compaction re-read and the memory path never;
+  UNVERIFIED that the desktop app shows the guard's `systemMessage` to Jake (`~/.claude/state/session-root-guard.log` answers it); (3) the guard's
+  user-level registration lives in `~/.claude/settings.json`, which is not backed up (`os-lint`'s `hooks` check goes RED if it is lost;
+  `reference_vault_system.md` records how to re-add it); (4) stale July worktrees under the Vault still carry the old CoachApp launch config (inert);
+  (5) memory notes are not scanned for Vault paths (`no-vault-pointers` reads hooks and skills only).
 
-**New, unfixed:** `docs/predictions.jsonl` has 7 duplicate `id` values, 3 pairing a graded record
-with a still-overdue one (`pth-034`, `pth-090`, `pth-109`) — ambiguous for Rule 6's id-keyed logic.
-Needs Jake's own pass; not something code evidence can resolve.
-
-**New, unfixed (2026-10-03):** GitHub's checks run Node 22 (`.github/workflows/deploy.yml`) while this machine runs
-Node 24, and nothing pins either. That gap already cost a release: `v2026.09.12` was tagged but never deployed
-because a self-test passed on 24 and failed on 22. `scripts/checks.sh` now prints the local version and a `[note]`
-when the majors differ, but a note is not a gate. The fix is a one-line choice (pin both to the same major, or run
-the local suite under the CI version); not done, because it touches `.github/` and so belongs in a release.
-
-**New, unfixed (2026-10-04):** `tests/progress-trend.spec.js:5` (the resting-HR chart on the Body weight tab) is a
-fixed-sleep race: it waits one second after rendering and then counts `#resting-hr-chart`. It failed once in the v2026.09.14
-release run and passed on its retry (it is the `progress-trend` flake the 2026-10-03 notes mention). Nothing in that release touches
-the Body tab. The fix is small and belongs in a release with other test work: replace the sleeps with
-`await expect(page.locator('#resting-hr-chart')).toHaveCount(1)`, which retries.
-
-**New, unfixed (2026-10-04, from the pre-push review of the program-page / RPE commit; both non-blocking):**
-(1) `savePeriodizationConfig` ignores the result of each per-session tier write (`program_phase_workouts.update({ tier })`), so a refused
-or failed write is silent: the phase would save as Undulating with that session still on the default tier. It was already so for % and
-the RPE method now relies on it too. The fix is the usual one - `.select('id')` on each write, count the rows, stop before the phase
-write with a message. (2) A stored periodization value that is an object whose `toString` and `valueOf` are not callable makes
-`String(v)` throw in `_periodizationLabel` and in the dialog (both methods; it needs crafted jsonb written by the phase's own owner,
-and the UI cannot produce it).
-
-**New, unfixed (2026-10-04, from the review of "open the current phase" / "remove the Reps boxes"; both non-blocking):**
-(1) The program page's "Now" follows the viewer's assignment of THIS program, whereas the dashboard tile, the Workouts hero and the
-calendar follow the newest assignment across ALL programs (`assign_program` leaves other programs' rows alone, and a solo user has no
-remove control). Someone who moved from program A to program B while A was still running sees A's page open on its by-date phase,
-marked Now, while the rest of the app treats B as the plan. Cosmetic and rare (an old plan usually has finished, and a finished plan
-shows no Now). The fix is one more read to compare the newest assignment's `program_id`, or a remove control for solo users.
-(2) `js/app-workouts.js` (about line 697, the Workouts hero's fallback) keeps a third copy of the phase loop. It also computes the week
-within the phase, so it could not simply call `_programPhaseAt`; it is equivalent today. The next change to either should fold them
-into one function that returns both.
-
-**New, unfixed (2026-10-05, from the Vault-rooted-session incident; `docs/decisions.md` has the whole story):**
-(1) The desktop app's default folder for a NEW session is the Vision OS folder (all 22 sessions it lists started there). That is the app's choice, not ours (its settings
-tool exposes no such setting), so a new session can still START in the wrong folder; the controls make it visible (`session-root-guard.mjs` tells Jake and the model) and
-detectable afterwards (`os-lint`'s `vault-rooted-session`), not impossible. Starting sessions on the repo folder is the actual fix, and it is Jake's.
-(2) A `change_directory` move re-roots hooks and skills at once, CLAUDE.md only at a later post-compaction re-read and the memory path never (measured 2026-10-05), so a moved session must read both itself and a NEW session is
-cleaner. VERIFIED in a headless Vault-rooted session: the guard fires and the model quotes it. UNVERIFIED: that the desktop app shows the guard's `systemMessage` to Jake; `~/.claude/state/session-root-guard.log` gains a line per session event, which is how a first
-Vault-rooted start will answer it. (3) The user-level registration of the guard lives in `~/.claude/settings.json`, which is NOT backed up (the claude-config allowlist excludes
-it); `os-lint`'s `hooks` check goes RED if it is lost, and the memory note `reference_vault_system.md` records how to re-add it. (4) About a dozen stale July worktrees under the
-Vault (`.claude/worktrees/*`) still carry copies of the old CoachApp launch config; they are inert and were left alone. (5) Memory notes are not scanned for Vault paths
-(`no-vault-pointers` reads hooks and skills only): the one-off scrub of 2026-10-05 found four stale pointers, and a note written tomorrow could add one. (6) `os-lint` is RED at
-every session start on four checks that PREDATE this change (measured at the 2026-10-05 start, before its edits): `context-budget` (STATUS + roadmap 18.2k chars vs a ceiling of
-9.3k), `ritual-budget` (hello-claude + save 41.6k vs 40.9k), `docs-budget` (`docs/*.md` 154.7k vs 79.9k - it was 79.5k at the 2026-09-27 baseline, and `decisions.md` alone went from 8k to
-54k) and `doc-obligations` (`critical.md` has not recorded four newer security bugs). This change adds about 10k to `docs/*.md` (the decisions entry and this paragraph) and shrinks the rituals by about 370 bytes. INFERRED: nobody saw
-them because the 2026-09-19..10-04 conversation, rooted in the Vault, never ran os-lint at its start. They are not fixed here, and the fix for `docs-budget` is bigger than one file: `decisions.md` is 63k of the 159k and the other ten docs total 96k, so reaching the 79.9k ceiling means archiving across several docs - a separate job.
+**Cleared 2026-10-05:** `os-lint` had been RED at every session start on four checks (`context-budget`, `ritual-budget`, `docs-budget`,
+`doc-obligations`) that predated the Vault-root work: `docs/*.md` had grown from 79.5k (2026-09-27) to 159.6k, 63.8k of it `decisions.md`, because the
+conversation that grew it was rooted in the Vault and never ran `os-lint`. Fixed by moving detail VERBATIM into `docs/archive/`, not by raising a ceiling
+(see [decisions.md](decisions.md), 2026-10-05).
 
 ## Minor hygiene debt
 
-A handful of stray debug artifacts sit at repo root (debug PNGs, a PDF, `modal-preview.html`),
-mostly already covered by `.gitignore` patterns. Low priority, noted for completeness only.
+A handful of stray debug artifacts sit at repo root (debug PNGs, a PDF, `modal-preview.html`), mostly already covered by `.gitignore` patterns.
+Low priority, noted for completeness only.
 
 ## Requires Validation
 
-- Whether the "fixed-awaiting-jake" bucket in the bug ledger (see [backlog.md](backlog.md))
-  represents a genuine confirmation-workflow bottleneck is not established — flagged as worth
-  Jake's attention, not asserted as a problem.
-- The live Supabase schema has not been independently verified against the 20 migration files —
-  see [architecture.md](architecture.md).
+- Whether the "fixed-awaiting-jake" bucket in the bug ledger (see [backlog.md](backlog.md)) represents a genuine confirmation-workflow bottleneck
+  is not established: flagged as worth Jake's attention, not asserted as a problem.
+- The live Supabase schema has not been independently verified against the 20 migration files; see [architecture.md](architecture.md).

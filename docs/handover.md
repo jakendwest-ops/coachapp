@@ -35,7 +35,7 @@ data layer and multi-tenancy (`coach_id` / `client_id`, and the solo `NULL coach
   since 2026-09-27).
 - **Every release:** `node scripts/release.mjs vYYYY.MM.N` refuses unless the tree is clean, the FULL suite is
   green on that code, a review saw exactly that code, and release notes exist. Only a `v*` tag deploys.
-- **CI (GitHub Actions):** code checks only — no browser tests since 2026-09-27 (see [decisions.md](decisions.md)).
+- **CI (GitHub Actions):** code checks only — no browser tests since 2026-09-27 (see [the decisions archive](archive/decisions-2026-09-26-to-2026-10-04.md)).
 - **SQL:** run locally against a copy of the live schema (`scripts/sql-verify/`) before Jake runs it live.
 
 ## Known risks

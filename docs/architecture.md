@@ -60,7 +60,7 @@ global-setup that asserts the preview server is real, is CoachApp, and is servin
 checkout, and a global-teardown that reports (without failing on) leftover `[E2E]`-tagged fixture
 rows. That last assertion exists because `.claude/launch.json` is git-tracked: a worktree used to
 inherit the main checkout's server root and test code its author never wrote (2026-09-30, see
-[decisions.md](decisions.md)).
+[the decisions archive](archive/decisions-2026-09-26-to-2026-10-04.md)).
 
 `_estimate1RM` (`app-workouts.js`) is RPE-aware: given an effort value it reads the RTS/Tuchscherer
 reps x RPE -> %1RM chart instead of Epley, which assumes every set went to failure. The chart itself
@@ -69,7 +69,7 @@ is covered by `tests-node/pure.test.mjs`, not a browser spec.
 **A push runs no browser tests (since 2026-09-27).** The pre-push hook runs `checks.sh` in FAST mode
 (static checks only, ~50 s). The full suite runs in `scripts/release.mjs` before any tag. The old
 2-spec smoke run (`runner.spec.js` + `solo-account.spec.js`) is still available per push with
-`CHECKS_SMOKE=1` (see [decisions.md](decisions.md)).
+`CHECKS_SMOKE=1` (see [the decisions archive](archive/decisions-2026-09-26-to-2026-10-04.md)).
 
 ## CI/CD (evidenced from `.github/workflows/deploy.yml`)
 
@@ -77,7 +77,7 @@ One workflow, "Check & Deploy":
 - **`check`** job — runs on every push/PR to `master`: `npm ci`, then `scripts/checks.sh`. On a tag
   push, also verifies `docs/releases/<tag>.md` exists before allowing deploy.
 - **`deploy`** job — needs `check`; fires **only** on a `v*` tag push, so a push to `master` never deploys.
-- No browser tests in CI since 2026-09-27 (see [decisions.md](decisions.md)): `scripts/release.mjs`
+- No browser tests in CI since 2026-09-27 (see [the decisions archive](archive/decisions-2026-09-26-to-2026-10-04.md)): `scripts/release.mjs`
   runs the full suite locally. CI runs `checks.sh` in FULL mode (it includes the SQL mutation self-test
   that a local push skips).
 
@@ -95,44 +95,17 @@ The repo's `.claude/settings.json` wires up SessionStart/PreToolUse/PostToolUse/
 `os-lint.mjs` and `guardrails.mjs` live in this repo (`.claude/hooks/`); `claim-check.mjs` lives at the
 user level (`~/.claude/hooks/`). The UserPromptSubmit hook (`standing-behaviours.mjs`) was retired
 2026-09-27 — its text is now in `CLAUDE.md` — because every hook invocation opens a visible console
-window on this Windows machine (see [decisions.md](decisions.md)).
+window on this Windows machine (see [the decisions archive](archive/decisions-2026-09-26-to-2026-10-04.md)).
 `docs/superpowers/subagent-contract.md` is the one governance document that does live in-repo. This
 means some of the machinery enforcing quality gates today is not part of the repository itself.
 
 ## Known architecture debt — 2026-08-12 audit (historical, not re-verified)
 
-The Vault held a full 9-module architecture audit from 2026-08-12 — the first-ever structured
-review of every module (prior review tooling only ever covered a diff or the 2-3 highest-churn
-files). Migrated in full to `docs/archive/architecture-audit-2026-08-12.md`. It is now 5+ weeks
-old — the codebase has grown substantially since (that audit counted 13,745 lines across 9 modules;
-this file's own verified count above is 17,599) — so treat every specific finding below as a
-*historical* signal to check against `docs/backlog.md`/`docs/bugs/` for current status, not a live
-fact:
-
-- **`dbq()` (the query-wrapper convention) adoption was thin and uneven at audit time** — 23 of 292
-  `db.from()` calls repo-wide (~8%), with `dbq()`'s own definer file using it for only 2 of its own
-  8 calls. No lint/type/runtime friction flags a raw `db.from()` call as non-compliant.
-- **No shared ownership-anchor helper existed for most tables that needed one.**
-  `_verifyTemplateOwnership` (`app-workouts.js`) was the only such helper repo-wide at the time; the
-  audit's top two recommendations were building equivalents for the client-scoped tables
-  (`app-progress.js`/`app-runner.js`) and the programme tables (`app-programs.js`, ~20+ unanchored
-  sites, its single largest finding). Current status of these specific gaps: not re-checked in this
-  migration — cross-reference `docs/bugs/` for anything still open with an `id` from that audit.
-- **Stored-XSS had recurred 5+ times as of that audit** (the class is separately tracked in
-  [critical.md](critical.md)'s Security Timeline, which continues past this audit through an 8th
-  instance on 2026-09-06).
-- **A recurring-bug-class scorecard** (against `critical.md`'s incident history) found the
-  ownership-anchor and stored-XSS classes still actively recurring, FK-cascade assumptions
-  informational-only, and — the one class the audit found genuinely closed out — the solo
-  `coach_id = NULL` trap absent everywhere it checked, despite 4 prior incidents.
-- **Documentation-vs-code disagreements found at the time** (several since folded into
-  [vision.md](vision.md) and [schema.md](schema.md) with their own "known stale" notes): a
-  self-signup page `blueprint.md` described no longer existed; the documented canonical modal
-  pattern predated `mountModal()`; the runner's `_runner` object carried more fields than documented;
-  a third, undocumented template-ownership state existed in the schema.
-
-Full detail, per-module findings, and the audit's own methodology/limitations:
-`docs/archive/architecture-audit-2026-08-12.md`.
+The audit's five headline findings (thin `dbq()` adoption, no shared ownership-anchor helper, the stored-XSS recurrence, the recurring-bug-class
+scorecard, documentation-vs-code disagreements) are archived verbatim in
+[archive/architecture-known-debt-2026-08-12.md](archive/architecture-known-debt-2026-08-12.md); the full audit is
+[archive/architecture-audit-2026-08-12.md](archive/architecture-audit-2026-08-12.md). It is over eight weeks old and the code has grown since: treat
+each finding as a signal to check against [backlog.md](backlog.md) and `docs/bugs/`, not as a live fact.
 
 ## Requires Validation
 
