@@ -37,6 +37,10 @@ so check `docs/bugs/` and `docs/releases/` first.
   the wizard's set list, the Stats sheet, Last time). The template builder's and library's set summaries and the runner's template defaults still test a
   prescribed weight for truthiness (`app-workouts.js` 352, 371, 480, 1665, 2192, 2212; `app-runner.js` 56, 3649). A prescribed 0 is not a real case today
   (bodyweight is its own flag), and `scripts/count-baseline.json` pins the count so a new one cannot appear.
+- **A toast covers the lower half of a dialog on a phone (found 2026-10-11).** `showToast` sits at z-index 9999, bottom 80px, so it hides a
+  dialog's last line. Fixed for the 1RM question only (it clears the toast); `app-workouts.js` 3237 still shows one over the copy-propagate dialog
+  (a solo account with assigned clients). Also: `checks.sh` rule 9c greps `^function`, so it cannot see a duplicate `async function` (a manual scan
+  of 731 names found none), and `showPostSessionOneRMModal` and the resume modal print `clientId` into an `onclick` without `escapeAttr` (own storage only).
 - **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted (a UX gap). **Invite email** has no PT branding yet.
 - **Runner vs. competitor apps:** background rest-timer alerts need an installable app (the wake lock covers most gym use); the last-session
   strip is strength-only. No pre-fill is Jake's choice (2026-07-11), not a gap.

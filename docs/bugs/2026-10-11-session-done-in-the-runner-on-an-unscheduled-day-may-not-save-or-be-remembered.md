@@ -3,7 +3,7 @@ id: 2026-10-11-session-done-in-the-runner-on-an-unscheduled-day-may-not-save-or-
 status: open
 priority: high
 reported: 2026-10-11
-status_detail: "OPEN. Reported by Jake 2026-10-11. Investigated read-only against his account the same day: sessions on unscheduled days DO save. The likely real cause is the 0 kg display bug (row 2026-10-11-a-weight-of-0-is-not-recorded-or-shown-like-any-other-weight), fixed the same day on master (unreleased). Stays open until Jake confirms which session he meant and that it now shows."
+status_detail: "OPEN. Reported by Jake 2026-10-11. Investigated read-only against his account the same day: sessions on unscheduled days DO save. The likely real cause is the 0 kg display bug (row 2026-10-11-a-weight-of-0-is-not-recorded-or-shown-like-any-other-weight), fixed the same day and live in v2026.10.1. Stays open until Jake confirms which session he meant and that it now shows."
 ---
 
 # A session done in the runner on a day it is not scheduled may not be saved, or not remembered next time
