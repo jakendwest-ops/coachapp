@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient, logTableSet, clickVisible, acceptConfirm } = require('./helpers')
+const { loginAsPT, loginAsClient, logTableSet, clickVisible, acceptConfirm, declineConfirm } = require('./helpers')
 
 // Every exercise these tests create through the picker's real "Create new exercise" is a genuine library
 // row, and nothing used to remove them: ~600 runs left ~10 each, 6,275 on the E2E account by 2026-10-01
@@ -571,19 +571,19 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('button:has-text("Save workout")')).toBeVisible({ timeout: 10000 })
     await page.locator('button:has-text("Save workout")').click()
 
-    // The post-session 1RM modal GATES _afterRunnerSave — navigation only fires once it is dismissed
-    // (its close button calls _afterRunnerSave explicitly). Logging 80×8 on a brand-new exercise
-    // produces a 1RM candidate, so it reliably appears here.
+    // The post-session 1RM question GATES _afterRunnerSave — navigation only fires once it is answered ("Not now" calls
+    // _afterRunnerSave explicitly). Logging 80×8 on a brand-new exercise produces a 1RM candidate, so it reliably appears here.
+    // (Until 2026-10-11 the full 1RM list opened here instead; it now opens only on "View" — see onerm-ask-first-2026-10-11.spec.js.)
     //
     // This surfaced when the block moved to an owned workout: previously the beforeEach had already
     // navigated to Workouts, so the h1 read "Workouts" whether or not _afterRunnerSave ever ran — the
     // assertion below passed VACUOUSLY. Starting from the dashboard makes it a real test of navigation.
-    // waitFor, not isVisible: the modal appears only after the save round-trips (clientLookup +
+    // waitFor, not isVisible: the question appears only after the save round-trips (clientLookup +
     // insert + the 1RM candidate query), so an immediate visibility check races it and silently
     // skips the dismissal — which is exactly what made this fail twice before it was diagnosed.
-    const oneRm = page.locator('#modal-post-session-1rm')
-    await oneRm.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {})
-    if (await oneRm.count()) await oneRm.locator('.modal-close').click()
+    const question = page.locator('#confirm-dialog')
+    await question.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {})
+    if (await question.count()) await declineConfirm(page)
 
     // Must land on client workouts page — not PT client profile
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 12000 })

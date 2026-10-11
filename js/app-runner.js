@@ -3249,8 +3249,23 @@ async function saveRunnerSession() {
     .filter(Boolean)
 
   discardRunner()
-  if (candidates.length) showPostSessionOneRMModal(clientId, candidates)
+  if (candidates.length) _askAboutNewOneRMs(clientId, candidates)
   else _afterRunnerSave(clientId)
+}
+
+// Jake, 2026-10-11: "I don't think it should display in full, I think it should be asked to the user 'do you wish to view/update your new predicted
+// 1rm's'". A short question first; the full list (showPostSessionOneRMModal) opens only on "View". Either answer goes on to the Workouts page, as the
+// list always did, and closing the question another way (backdrop, X) reads as "Not now". Nothing is saved by the question itself.
+// If the page changed while the question was open (browser Back, a programmatic navigate()), that navigation swept the question away and it
+// resolves false too: the athlete has already chosen where to go, so it must NOT route them on a second time (found by the 2026-10-11 review).
+async function _askAboutNewOneRMs(clientId, candidates) {
+  const n = candidates.length
+  const pageAtAsk = currentPage
+  const view = await confirmDialog(
+    `Your session points to ${n === 1 ? 'a new estimated 1RM' : n + ' new estimated 1RMs'}. Do you want to view or update ${n === 1 ? 'it' : 'them'} now?`,
+    { title: n === 1 ? 'New 1RM estimate' : 'New 1RM estimates', confirmLabel: 'View', cancelLabel: 'Not now' })
+  if (view) showPostSessionOneRMModal(clientId, candidates)
+  else if (currentPage === pageAtAsk) _afterRunnerSave(clientId)
 }
 
 function _afterRunnerSave(clientId) {

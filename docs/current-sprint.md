@@ -24,9 +24,9 @@ Everything from `v2026.09.14` on still awaits Jake's look on a phone (the `fixed
 
 ## In flight
 
-Unreleased on `master` since `v2026.09.15`: `app-programs` v72 (periodization save checks), `app-runner` v114 and `app-progress` v78 (0 kg shown and
-remembered; Finish and End ask first; Back to workout), plus tooling (CI on Node 24, `scripts/verify-live.mjs`). Jake's 2026-10-11 rows are in
-[bugs/](bugs/) (the 1RM dialog waits on his go). Waiting on Jake: whether **Sign out should end only this device's session**
+Unreleased on `master` since `v2026.09.15`: `app-programs` v72 (periodization save checks), `app-runner` v115 and `app-progress` v78 (0 kg shown and
+remembered; Finish and End ask first; Back to workout; the 1RM estimate asks first), plus tooling (CI on Node 24, `scripts/verify-live.mjs`).
+Jake's 2026-10-11 rows in [bugs/](bugs/) all await his phone check. Waiting on Jake: whether **Sign out should end only this device's session**
 ([the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation: leave it); the names "Biggest set" and "View program".
 
 ## Next: the release plans

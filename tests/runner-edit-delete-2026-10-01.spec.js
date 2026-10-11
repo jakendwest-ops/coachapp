@@ -85,6 +85,7 @@ test.describe('runner — destructive edits on a strength table', () => {
     // Jake chose "warn": the set that was left out is SAID, on the finish screen, before Save — never a silent loss.
     await expect(page.locator('#wr-dropped-note'), 'the finish screen must say a ticked set was left out').toContainText('1 ticked set was left out')
     await page.locator('button[onclick="saveRunnerSession()"]').click()
+    await acceptConfirm(page)      // "View" on the new 1RM question (2026-10-11)
     await expect(page.locator('#modal-post-session-1rm')).toBeVisible()
     await page.locator('#modal-post-session-1rm button:has-text("Done")').click()
 

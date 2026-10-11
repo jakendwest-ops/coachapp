@@ -104,6 +104,7 @@ async function runTopSetSessionAndAccept1RM(page, { shotPrefix } = {}) {
   await expect(page.locator('#workout-runner')).toContainText('Workout complete')
   await expect(page.locator('#wr-dropped-note'), 'every set here is complete, so there is nothing to warn about').toHaveCount(0)
   await page.locator('button[onclick="saveRunnerSession()"]').click()
+  await acceptConfirm(page)        // "View" on the new 1RM question (2026-10-11): the list no longer opens by itself
   await expect(page.locator('#modal-post-session-1rm')).toBeVisible()
   await expect(page.locator('#psorm-estimate-0')).toContainText('115.9')
   if (shotPrefix) await shot(page, `${shotPrefix}-1rm-modal`)

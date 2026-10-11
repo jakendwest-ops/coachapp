@@ -2,7 +2,7 @@
 // Before this, app-runner.js:3038 recorded that the in-gym runner captured NO effort at all —
 // effort only reached the DB through the manual Log Session modal.
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, acceptConfirm } = require('./helpers')
 
 // Owns its fixtures end to end — a fresh client + a fresh template per test, created directly with
 // the same db.from(...).insert(...) calls the other runner specs use (tests/runner.spec.js:61-70),
@@ -493,6 +493,7 @@ test.describe('post-session 1RM prefill (Task 6, 2026-09-29)', () => {
     await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
     // Returning the promise from evaluate awaits the whole async save chain rather than sleeping.
     await page.evaluate(() => saveRunnerSession())
+    await acceptConfirm(page)        // "View" on the new 1RM question (2026-10-11)
     // Plain Epley on 100x3 is 110.0; the RPE-aware estimate is 115.9. This number is therefore a
     // real discriminator between the two code paths, not merely "a number appeared".
     await expect(page.locator('#psorm-estimate-0')).toContainText('115.9')
@@ -505,6 +506,7 @@ test.describe('post-session 1RM prefill (Task 6, 2026-09-29)', () => {
     await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
     await page.click('#set-0-done')
     await page.evaluate(() => saveRunnerSession())
+    await acceptConfirm(page)        // "View" on the new 1RM question (2026-10-11)
     await expect(page.locator('#psorm-estimate-0')).toContainText('110')
   })
 })
@@ -527,6 +529,7 @@ test.describe('RPE top set: review fixes (2026-09-30)', () => {
     // Correct the weight and do NOT re-tick — the exact sequence that desynced them.
     await page.fill('#set-0-weight', '110')
     const rows = await finishSessionAndReadSets(page)
+    await acceptConfirm(page)        // "View" on the new 1RM question (2026-10-11)
     // 110 x 3 @ RPE 8 -> 110/0.863 = 127.46 -> 127.5. NOT 115.9, which is the 100 kg answer.
     await expect(page.locator('#psorm-estimate-0')).toContainText('127.5')
     await expect(page.locator('#psorm-row-0')).toContainText('110')
@@ -586,6 +589,7 @@ test.describe('RPE top set: review fixes (2026-09-30)', () => {
     await page.fill('#set-1-weight', '120'); await page.fill('#set-1-reps', '1')
     await page.click('#set-1-done')
     await page.evaluate(() => saveRunnerSession())
+    await acceptConfirm(page)        // "View" on the new 1RM question (2026-10-11)
     // _estimate1RM(120, 1) returns 120 unchanged. The top set's 115.9 must not suppress it.
     await expect(page.locator('#psorm-estimate-0')).toContainText('120')
   })
