@@ -20,4 +20,4 @@ The same-day report [a session done on an unscheduled day may not be saved or re
 
 ## What would close it
 
-A test that fails before the fix and passes after: a set entered with weight 0 is saved as 0 and is shown and remembered (Last time, grey ghost text, the Stats sheet, My progress) the way any other weight is. Or Jake confirming it on his phone.
+**Closes when** a test that fails before the fix and passes after: a set entered with weight 0 is saved as 0 and is shown and remembered (Last time, grey ghost text, the Stats sheet, My progress) the way any other weight is. Or Jake confirming it on his phone.

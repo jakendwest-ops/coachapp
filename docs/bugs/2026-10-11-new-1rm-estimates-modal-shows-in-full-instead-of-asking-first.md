@@ -16,4 +16,4 @@ The dialog (`#modal-post-session-1rm`) opened after saving a one-set test sessio
 
 ## What would close it
 
-Jake's answer on the wanted behaviour once the usage question is answered: the dialog is replaced by a short question first ("do you want to view or update your new estimated 1RMs?"), and only opens in full if the answer is yes.
+**Closes when** Jake's answer on the wanted behaviour is built and he confirms it, once the usage question is answered: the dialog is replaced by a short question first ("do you want to view or update your new estimated 1RMs?"), and only opens in full if the answer is yes.

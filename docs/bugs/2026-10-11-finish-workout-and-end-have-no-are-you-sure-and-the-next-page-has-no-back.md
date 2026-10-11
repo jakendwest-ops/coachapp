@@ -16,4 +16,4 @@ status_detail: "OPEN. Reported by Jake 2026-10-11, not yet investigated."
 
 ## What would close it
 
-Tapping Finish workout, and the End button during a workout, asks "are you sure" first, and declining leaves the workout exactly as it was. Or Jake confirming it on his phone. Whether the page after Finish should also gain a way back is a question for Jake.
+**Closes when** tapping Finish workout, and the End button during a workout, asks "are you sure" first, and declining leaves the workout exactly as it was. Or Jake confirming it on his phone. Whether the page after Finish should also gain a way back is a question for Jake.

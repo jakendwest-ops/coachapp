@@ -28,4 +28,4 @@ He attached two screenshots:
 
 ## What would close it
 
-Jake confirming which session he meant, and that it now shows. If it was a Tuesday session that was never saved, that is a different bug and needs the steps he took.
+**Closes when** Jake confirms which session he meant and that it now shows. If it was a Tuesday session that was never saved, that is a different bug and needs the steps he took.
