@@ -12,18 +12,15 @@ process-level entries below were pulled out and belong here.
 
 ---
 
-**2026-10-05 — The four red `os-lint` checks were cleared by moving detail into `docs/archive/` verbatim, never by raising a ceiling.**
-Jake: "fix the red checks". They had been RED at every session start since the Vault-rooted conversation that grew them (it never ran `os-lint`): `docs-budget` 159.6k
-against a 79.9k ceiling (`decisions.md` alone 63.8k, from 8k on 2026-09-27), `context-budget` (`current-sprint.md` + `roadmap.md`) 18.2k against 9.3k, `ritual-budget`
-(`hello-claude` + `save`) 41.3k against 40.9k, and `doc-obligations` (`critical.md` behind on four security rows). *Done:* every move was asserted lossless before it was
-written. The `decisions.md` entries of 2026-09-26..10-04 and the full Vault-root entry, the 2026-09-20/21 security-timeline entries and the 2026-08-12 architecture-debt
-summary went to `docs/archive/` byte for byte; `roadmap`, `current-sprint`, `session-context` and `technical-debt` were rewritten shorter, each with a verbatim copy of its old
-text in `docs/archive/`; `hello-claude` lost history prose and one paragraph that described the old two-spec push gate (gone since 2026-09-27), kept verbatim in
-`docs/archive/hello-claude-trimmed-2026-10-05.md`; `critical.md` got one entry (its only new content was an open row about the escaping checker's blind spot: the
-other three flagged rows were already recorded, and the check fired because closing a row rewrites its file). *Not chosen:* raising a ceiling, which the lint forbids and
-which is how earlier trims were undone. *Consequence, stated because it is new:* each budget's baseline ratchets down to whatever size it lands at, so headroom is always about
-2% (roughly 1.5k for `docs/*.md`): the next long `decisions.md` entry will trip `docs-budget` again unless entries older than the current release cycle are archived as they
-age. `/save` is the natural place; this entry does not add that step.
+**2026-10-11 — CI runs Node 24 like the dev machine, a release is checked live by script, and a database write that can be refused silently is row-checked.**
+Jake approved three tooling fixes from his board ("approved"). *Node:* `deploy.yml` pinned 22 while this machine runs 24, which cost `v2026.09.12` its deploy; it now pins 24
+(not chosen: pinning the machine down to 22, since everything is verified on 24; no `.nvmrc` or `engines` added, and `checks.sh` still prints a `[note]` if the two ever differ).
+*Live check:* `node scripts/verify-live.mjs <tag>` compares every file the app loads with the tag, byte for byte, retrying while Pages catches up (exit 0 identical, 1 differs,
+2 could not check); its self-test runs on every push (`checks.sh` 9t) and eight deliberate breakages each turn it red. *Silent refusals:* `savePeriodizationConfig` now row-checks each
+tier write and the phase write (row-level security answers a refused UPDATE with 200 and no rows) and anchors the tier write on the verified phase, which closes the 2026-09-06 row.
+*Found by the pre-push review:* a self-test that runs git in a temp folder inherits `GIT_DIR` from a pre-push hook run in a LINKED worktree and then commits to the real repo (reproduced);
+the `verify-live` and `bump-versions` self-tests now strip `GIT_*`, and three release-only ones are named in `technical-debt.md`. The reviewers saw the version before the last fixes (the
+anchor, the phase-row check, the self-test hardening): those are covered by tests and by deliberate breakage, not by a second review.
 
 **2026-10-05 — The Vault severing was verified on files and never on the session's folder: a desktop session rooted in the Vault ran CoachApp for 16 days. Fixed at the root, and made to refuse.**
 Jake: "we shouldn't be in the vault, that was severed a month ago and everything now lives inside the repo ... ensure this does not reoccur." *What happened:* the
@@ -40,6 +37,10 @@ skills follow at once, CLAUDE.md only at the next post-compaction re-read, the m
 the desktop app's default folder for a new session is its own choice, so a session can still START in the Vault (the guard makes that visible, not impossible);
 UNVERIFIED that the desktop app shows the guard's `systemMessage` to Jake. The full entry, with every number, timestamp and the review's findings:
 [archive/decisions-2026-10-05-vault-rooted-session.md](archive/decisions-2026-10-05-vault-rooted-session.md).
+
+**2026-10-05 (docs budget)** — the four red `os-lint` checks (`docs-budget`, `context-budget`, `ritual-budget`, `doc-obligations`) cleared by moving detail into `docs/archive/` verbatim,
+never by raising a ceiling; each budget then re-pins to its new size, so headroom is always about 2% and older entries must be archived as they age. Full entry:
+[archive/decisions-2026-10-05-docs-budget-trim.md](archive/decisions-2026-10-05-docs-budget-trim.md).
 
 **2026-09-26 to 2026-10-04** — archived verbatim in
 [archive/decisions-2026-09-26-to-2026-10-04.md](archive/decisions-2026-09-26-to-2026-10-04.md). It holds: the program page as an overview plus

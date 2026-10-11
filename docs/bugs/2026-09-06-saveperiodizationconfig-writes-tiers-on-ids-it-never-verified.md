@@ -1,14 +1,15 @@
 ---
 id: 2026-09-06-saveperiodizationconfig-writes-tiers-on-ids-it-never-verified
-status: open
+status: closed
 priority: medium
 reported: 2026-09-06
-status_detail: "Found by the 2026-09-06 full-file review (Agent A), verified at source. js/app-programs.js:1785 verifies phaseId, then :1806 writes tier onto slot.id taken from the window._pzDaySlots global with no verification, no error check and no .select(). The function takes no arguments, so both values come from globals -- one set synchronously, one filled by an async query. Damage is within the user's own data, not cross-tenant."
+closed_by: tests/periodization-rpe-2026-10-04.spec.js
+status_detail: "CLOSED 2026-10-11 via closure rule (b). All three problems are fixed in js/app-programs.js (app-programs v72): the tier write is checked for an error and for zero rows, it is anchored on the verified phase (.eq('phase_id', phaseId)), and the phase update is row-checked with .select('id'). Red before, green after: the refused-write and failed-write tests and the 'session list that belongs to ANOTHER phase' test all failed on the old code (the dialog closed as if the save had worked, and the other phase's session was given a tier); the phase-row test is covered by a deliberate-breakage run (removing its check turns it red). Of the four deliberate breakages, three turn a test red; the fourth (dropping the explicit error check on the tier write) is an equivalent change, since a server error also returns no rows. The 108-test periodization / builder / programs / progress-trend set passes. Not a Jake-reported row."
 ---
 
 # savePeriodizationConfig verifies the phase, then writes on ids from a stale-able global
 
-`js/app-programs.js:1777` — the function takes **no arguments**. Both `phaseId` and the slot list come
+`js/app-programs.js:1777` (at the time) — the function takes **no arguments**. Both `phaseId` and the slot list come
 from `window.*` globals.
 
 Three separate problems in four lines:
@@ -36,6 +37,17 @@ lands last wins. If A's lands last, saving writes A's tiers while the guard pass
 **Blast radius is the user's own data, not tenancy** — both phases belong to whoever opened them, so
 the outcome is wrong tiers on your own other phase. Graded medium for that reason, against Agent A's
 framing.
+
+## Fix (2026-10-11)
+
+Points 2 and 3 were fixed first (the tier write checked, then the phase update); the 2026-10-11 pre-push review of that change pointed out that
+it did not close this row, because the verified id was still not the written id. The tier write is now anchored on the verified phase, so a
+stale list's ids match nothing and the save is refused with a message rather than writing into the other phase. The race itself is not
+prevented (the list can still be stale); its effect is.
+
+Left, and named: the stale list can still hold a session that was deleted from another tab or device, which is refused too (the message says to
+close and reopen the dialog); tiers written before the failing session stay written; and a Save pressed before the session list has loaded
+saves the phase with no tier writes (`loadDayTierAssignment` ignores a read error).
 
 **Closes when** the slot writes are anchored on the verified phase, or verified per slot, AND both
 writes rowcount-check — proven by a spec where the write is refused and the UI does not report success,

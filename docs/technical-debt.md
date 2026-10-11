@@ -76,13 +76,15 @@ mechanism are logged in [decisions.md](decisions.md) as they land (and in the ar
 **Unfixed:**
 - **`docs/predictions.jsonl` has 7 duplicate `id` values**, 3 pairing a graded record with a still-overdue one (`pth-034`, `pth-090`, `pth-109`),
   which is ambiguous for Rule 6's id-keyed logic. Needs Jake's own pass.
-- **Node 22 in CI, Node 24 locally** (2026-10-03), and nothing pins either. It already cost a release: `v2026.09.12` was tagged but never deployed
-  because a self-test passed on 24 and failed on 22. `scripts/checks.sh` prints a `[note]` when the majors differ, but a note is not a gate. The fix
-  (pin both to one major) touches `.github/`, so it belongs in a release.
-- **`tests/progress-trend.spec.js:5`** (the resting-HR chart) is a fixed-sleep race that failed once in the `v2026.09.14` run and passed on retry.
-  Fix: replace the sleeps with `await expect(page.locator('#resting-hr-chart')).toHaveCount(1)`, in a release with other test work.
-- **From the 2026-10-04 reviews of the program page:** `savePeriodizationConfig` ignores the result of each per-session tier write, so a refused write
-  is silent (fix: `.select('id')` on each, count the rows, stop before the phase write); a stored periodization value whose `toString` and `valueOf`
+- **Node: CI is pinned to 24 (2026-10-11); the dev machine is not.** CI ran 22 against local 24, which cost `v2026.09.12` its deploy. There is no
+  `.nvmrc` or `engines`, so a future machine upgrade is caught only by `checks.sh`'s `[note]`, which is not a gate.
+- **Git-in-a-temp-folder self-tests that inherit git's environment.** From a LINKED worktree, `git push` runs its hook with `GIT_DIR` pointing at
+  the real repo, so a self-test that runs `git init / add / commit` in a temp folder instead commits to the worktree's own branch and leaves tracked
+  files deleted (reproduced 2026-10-11). Fixed in `scripts/bump-versions.selftest.mjs` (it runs on every push) and `scripts/verify-live.selftest.mjs`.
+  Still inherited, in release-only self-tests that need `CHECKS_FULL=1 git push` from a linked worktree to matter: `.claude/hooks/guardrails.selftest.mjs`,
+  `scripts/check-guardrails-worktree.selftest.mjs` and `.claude/hooks/os-lint.selftest.mjs`. The worktree one tests worktree behaviour on purpose, so it needs
+  care rather than a blanket strip.
+- **From the 2026-10-04 reviews of the program page:** a stored periodization value whose `toString` and `valueOf`
   are not callable makes `String(v)` throw (it needs crafted jsonb from the phase's own owner); the program page's "Now" follows the viewer's
   assignment of THIS program while the dashboard tile, the Workouts hero and the calendar follow the newest assignment across ALL programs
   (cosmetic, rare); and `js/app-workouts.js` (about line 697) keeps a third copy of the phase loop, to fold into one function with `_programPhaseAt`.

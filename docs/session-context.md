@@ -21,8 +21,8 @@ e1RM from the RTS chart, and backoff sets target a percentage of that. Spec and 
 [superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md](superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md).
 
 **Test-harness facts (learned 2026-10-03):** the full suite takes 47-59 min and needs a 2 h Bash timeout; specs that click Sign out as the PT
-revoke the shared saved login for the rest of the run, so a test that needs a live session must sign in for real; CI runs Node 22 while this
-machine runs Node 24; "pushed" is not "deployed", so check `gh run list`.
+revoke the shared saved login for the rest of the run, so a test that needs a live session must sign in for real; CI runs Node 24 like this machine
+(pinned 2026-10-11); "pushed" is not "deployed", so check `gh run list`, then `node scripts/verify-live.mjs <tag>`.
 
 ## Current Priorities
 
@@ -49,7 +49,8 @@ Bug counts live in [backlog.md](backlog.md); pattern analysis in [technical-debt
 
 ## Immediate Next Actions
 
-1. Jake's phone check of `v2026.09.14`/`.15`, and his call on Sign out (end only this device's session?). No app code is waiting to be released.
+1. Jake's phone check of `v2026.09.14`/`.15`, his call on Sign out (end only this device's session?), and his approval of the plans for his 2026-10-11 reports
+   (0 kg shown and remembered, a confirm on Finish/End, the 1RM dialog). One small app change (`app-programs` v72) is unreleased.
 2. Read the release plan's "START HERE", answer its questions, then start the next unbuilt release.
 3. Housekeeping still open: the ungraded-prediction backlog and duplicate ids ([technical-debt.md](technical-debt.md)).
 4. Start the next session on this repo's folder (not the Vision OS one) and let `/hello-claude` run; confirm the guard per the

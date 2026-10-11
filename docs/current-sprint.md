@@ -24,10 +24,10 @@ Everything from `v2026.09.14` on still awaits Jake's look on a phone (the `fixed
 
 ## In flight
 
-No unreleased app code is known: after the `v2026.09.15` tag, `master` holds a docs commit (`332d80f`) and the Vault-root guard (`cdd5b3b`,
-[decisions.md](decisions.md) 2026-10-05), plus the docs-budget trim of 2026-10-05, which is uncommitted. Waiting on Jake: whether **Sign out
-should end only this device's session** ([the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); whether to build the "Up next"
-slot-matching rule (recommendation: leave it); the names "Biggest set" and "View program".
+Unreleased on `master` since `v2026.09.15`: one app change, `app-programs` v72 (the periodization save checks every write), plus tooling (CI on
+Node 24, `scripts/verify-live.mjs`, the docs trim) and docs. Jake's 2026-10-11 reports are open rows in [bugs/](bugs/); their plans await his
+approval. Waiting on Jake: whether **Sign out should end only this device's session**
+([the open row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation: leave it); the names "Biggest set" and "View program".
 
 ## Next: the release plans
 
