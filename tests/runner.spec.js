@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient, logTableSet, clickVisible } = require('./helpers')
+const { loginAsPT, loginAsClient, logTableSet, clickVisible, acceptConfirm } = require('./helpers')
 
 // Every exercise these tests create through the picker's real "Create new exercise" is a genuine library
 // row, and nothing used to remove them: ~600 runs left ~10 each, 6,275 on the E2E account by 2026-10-01
@@ -562,13 +562,10 @@ test.describe('Workout runner (client)', () => {
     await page.evaluate(() => { if (typeof skipRestTimer === 'function') skipRestTimer() })
     await page.waitForTimeout(300)
 
-    // End session
-    const endBtn = page.locator('button:text-is("End")')
-    if (await endBtn.isVisible().catch(() => false)) await endBtn.click()
-
-    // Confirm if needed
-    const confirmBtn = page.locator('button:has-text("End session"), button:has-text("Yes"), button:has-text("Finish")')
-    if (await confirmBtn.isVisible({ timeout: 4000 }).catch(() => false)) await confirmBtn.first().click()
+    // End session. End asks "Finish this workout?" first since 2026-10-11, and the question is answered by name, not by whichever
+    // "Finish"-looking button happens to be on screen (this used to match by luck).
+    await page.locator('button:text-is("End")').click()
+    await acceptConfirm(page)
 
     // Save workout
     await expect(page.locator('button:has-text("Save workout")')).toBeVisible({ timeout: 10000 })

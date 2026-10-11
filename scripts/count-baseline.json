@@ -34,6 +34,12 @@
       "count": 37,
       "why": "The solo role test, inlined 38 times in CODE (comments stripped). Every one is a place a future _isSolo() change would have to be repeated -- and solo scoping is this project's most-shipped bug class (four separate coach_id/solo bugs). Phase 3 adds _isSolo()."
     },
+    "weight truthy test": {
+      "pattern": "\\b(?:s|set|row|prev|last|best|r|x|ex|tgt)\\??\\.(?:weight|weight_kg|leftWeight|rightWeight)\\s*(?:&&|\\|\\||\\?[^.?])",
+      "scope": "js",
+      "count": 10,
+      "why": "A weight tested for truthiness or defaulted with `||` (`s.weight ? ...`, `s.weight && ...`, `prev?.weight_kg || ...`) drops a real 0: an unweighted dip is 0 kg. Jake, 2026-10-11: \"0 should be logged as 0\". The LOGGED-weight sites were fixed that day (they use _hasNumVal); what is counted now is the PRESCRIBED weights in the template builder, the library summaries and the runner's template defaults (docs/technical-debt.md names them). It does NOT see other variable names or destructured weights, so it is a floor, not a proof. A new counted site fails the push: use _hasNumVal(w), and String(weightToPref(w)) when the result feeds an `||` chain (weightToPref returns the NUMBER 0 in kg and the string '0' in lb)."
+    },
     "typeof shield": {
       "pattern": "typeof\\s+[A-Za-z_$][\\w$]*\\s*!==\\s*'undefined'",
       "scope": "js",

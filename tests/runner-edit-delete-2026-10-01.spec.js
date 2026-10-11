@@ -7,7 +7,7 @@
 // tests-node/ticked-row-edit.test.mjs; this is the same two actions against the real page — real delete button, real
 // typing into the real input, real End / Save — and what the database actually holds afterwards.
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, clickVisible, acceptConfirm } = require('./helpers')
 const S = require('./rpe-journey-steps')
 
 let F = null   // the live fixture, read by cleanup even when the test threw
@@ -80,6 +80,7 @@ test.describe('runner — destructive edits on a strength table', () => {
     await page.locator('#set-1-reps').fill('')
 
     await page.locator('button[onclick="confirmEndRunner()"]').click()
+    await acceptConfirm(page)      // Finish asks "are you sure" first (2026-10-11)
     await expect(page.locator('#workout-runner')).toContainText('Workout complete')
     // Jake chose "warn": the set that was left out is SAID, on the finish screen, before Save — never a silent loss.
     await expect(page.locator('#wr-dropped-note'), 'the finish screen must say a ticked set was left out').toContainText('1 ticked set was left out')

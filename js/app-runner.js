@@ -335,7 +335,7 @@ function renderRunnerLastSession(exName) {
           ${data.sets.map(s => `
             <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text);white-space:nowrap">
               <span style="color:var(--text-muted)">S${s.set_number}</span>
-              ${s.weight_kg ? fmtWeight(Math.round(s.weight_kg * 10) / 10) : ''}${s.weight_kg && s.reps_achieved ? ' × ' : ''}${s.reps_achieved ? s.reps_achieved : ''}
+              ${_hasNumVal(s.weight_kg) ? fmtWeight(Math.round(s.weight_kg * 10) / 10) : ''}${_hasNumVal(s.weight_kg) && s.reps_achieved ? ' × ' : ''}${s.reps_achieved ? s.reps_achieved : ''}
             </span>`).join('')}
         </div>
       `
@@ -1078,7 +1078,9 @@ function renderStrengthTable(ex) {
     // Fall back to the unit / "reps" rather than a bare em-dash (R3, 2026-09-07): an empty field
     // showing "—" reads as disabled. Ghost values from last session / %1RM still win when present.
     // topSetExercise: oneRMPh or nothing -- see where it is declared. (`prev` is already undefined for these rows.)
-    const wPlaceholder = topSetExercise ? oneRMPh : (oneRMPh || (prev?.weight_kg != null ? weightToPref(prev.weight_kg) : '') || window._unitPrefs.weight)
+    // String(...), so a remembered 0 is "0" and survives the `||` chain: weightToPref returns the NUMBER 0 in kg (falsy, replaced by the word
+    // "kg") but the string "0" in lb, so the same set was remembered in one unit and forgotten in the other (Jake, 2026-10-11: "0 should be logged as 0").
+    const wPlaceholder = topSetExercise ? oneRMPh : (oneRMPh || (_hasNumVal(prev?.weight_kg) ? String(weightToPref(prev.weight_kg)) : '') || window._unitPrefs.weight)
     // FIXED 2026-09-30 (Jake: "the ghost reps... are still showing the reps from the previous
     // session, which could be confusing"). This used to be prev-only, unlike wPlaceholder right above
     // it: a backoff row's own prescribed repsMin never won, so its reps ghost could show last
@@ -1271,14 +1273,14 @@ function renderRunner() {
               <span style="font-size:var(--text-base, 13px);color:var(--text-muted);font-weight:600;width:48px;flex-shrink:0">Set ${i+1}</span>
               <span style="flex:1;display:flex;gap:10px;align-items:center">
                 ${ex.type === 'cardio'
-                  ? `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.duration ? s.duration : (_cardioDistanceM(s) > 0 ? fmtDistanceM(_cardioDistanceM(s)) : '—')}</span>`
+                  ? `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.duration ? escapeHtml(String(s.duration)) : (_cardioDistanceM(s) > 0 ? fmtDistanceM(_cardioDistanceM(s)) : '—')}</span>`
                   : s.distance_m
-                    ? `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.weight?fmtWeight(s.weight, { spaced: true }):'—'}</span><span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.distance_m} m</span>`
+                    ? `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${_hasNumVal(s.weight)?fmtWeight(s.weight, { spaced: true }):'—'}</span><span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.distance_m} m</span>`
                     : s.duration
-                    ? `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">⏱ ${s.duration}</span>${s.weight?`<span style="font-size:var(--text-lg, 14px);font-weight:600;color:var(--text-muted)">${fmtWeight(s.weight, { spaced: true })}</span>`:''}`
+                    ? `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">⏱ ${escapeHtml(String(s.duration))}</span>${_hasNumVal(s.weight)?`<span style="font-size:var(--text-lg, 14px);font-weight:600;color:var(--text-muted)">${fmtWeight(s.weight, { spaced: true })}</span>`:''}`
                     : s.leftReps != null
-                    ? `<span style="font-size:var(--text-base, 13px);font-weight:700">L: ${s.leftReps||'—'}${s.leftWeight?' @ '+fmtWeight(s.leftWeight):''}</span><span style="font-size:var(--text-base, 13px);font-weight:700">R: ${s.rightReps||'—'}${s.rightWeight?' @ '+fmtWeight(s.rightWeight):''}</span>`
-                    : `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.weight&&s.weight!=='BW'?fmtWeight(s.weight, { spaced: true }):s.weight==='BW'?'BW':'—'}</span><span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.reps||'—'} reps</span>`}
+                    ? `<span style="font-size:var(--text-base, 13px);font-weight:700">L: ${s.leftReps||'—'}${_hasNumVal(s.leftWeight)?' @ '+fmtWeight(s.leftWeight):''}</span><span style="font-size:var(--text-base, 13px);font-weight:700">R: ${s.rightReps||'—'}${_hasNumVal(s.rightWeight)?' @ '+fmtWeight(s.rightWeight):''}</span>`
+                    : `<span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${_hasNumVal(s.weight)&&s.weight!=='BW'?fmtWeight(s.weight, { spaced: true }):s.weight==='BW'?'BW':'—'}</span><span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${s.reps||'—'} reps</span>`}
               </span>
               <button onclick="editRunnerSet(${_runner.exIdx},${i})" style="flex-shrink:0;padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:var(--text-sm, 11px);font-weight:700;cursor:pointer;color:var(--accent)">✎ Edit</button>
             </div>`).join('')}</div>`}
@@ -1328,7 +1330,7 @@ function renderRunner() {
           const started = ex.loggedSets.length > 0
           // The last exercise with nothing logged (or a one-exercise workout on first paint) is not "you're done, well
           // done": it is a way OUT. So it is neutral, not green, and goes through confirmEndRunner — the End button's own
-          // flow — because Finish from here would send a mis-tap to a finish screen with no route back to the runner.
+          // flow. (Both ask first now and the finish screen has a way back; once a set is ticked, the green "Finish 🏁" asks the same question.)
           const untouchedLast = isLast && !started
           const label = untouchedLast ? 'Finish workout' : isLast ? 'Finish 🏁' : started ? 'Next exercise →' : 'Skip exercise →'
           const bg = started ? (isLast ? 'var(--success)' : 'var(--accent)') : 'var(--surface-2)'
@@ -2463,10 +2465,12 @@ function _nextExerciseTarget() {
 }
 
 function skipToNextExercise() {
+  const next = _nextExerciseTarget()
+  // Nothing left to go to: this is the green "Finish 🏁" button, and it asks first like End and the grey "Finish workout" do (Jake, 2026-10-11).
+  // Asked BEFORE any timer is stopped, so answering Cancel leaves the exercise exactly as it was; showRunnerFinish stops them itself on a yes.
+  if (next === -1) { confirmEndRunner(); return }
   stopRunnerCountIn()
   stopIntervalTimer()
-  const next = _nextExerciseTarget()
-  if (next === -1) { showRunnerFinish(); return }
   // Through runnerJumpTo, not a bare index write: it already knows how to leave an exercise while a rest
   // timer is running (the countdown keeps going; the rest chip takes over) and how to land on the exercise
   // a finished rest belongs to.
@@ -2747,6 +2751,10 @@ async function showRunnerFinish() {
   const clientId   = _runner.clientId
   const runnerName = _runner.name
   const startTime  = _runner.startTime
+  const finishNotes = _runner.finishNotes || ''   // typed on an earlier visit to this screen (backToRunnerFromFinish)
+  // Identifies THIS visit to the finish screen. The PR lookup below finishes later and repaints the screen; if the athlete has since gone Back (or
+  // come here again), that late repaint would draw a finish screen over the runner, or a stale one over a newer one. It only repaints while this token is current.
+  const finishToken = _runner._finishToken = {}
 
   const duration  = fmtRunnerTime(startTime)
   const doneExs   = _loggedExercises()   // same definition the save uses — they must not diverge
@@ -2781,7 +2789,8 @@ async function showRunnerFinish() {
 
     el.innerHTML = `
       <div style="position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden">
-        <div style="padding:20px 16px 16px;border-bottom:1px solid var(--border)">
+        <div style="padding:8px 16px 16px;border-bottom:1px solid var(--border)">
+          <button type="button" onclick="backToRunnerFromFinish()" style="display:inline-flex;align-items:center;gap:6px;min-height:44px;margin:0 0 4px -6px;padding:0 6px;border:none;background:none;font-size:var(--text-base, 13px);font-weight:700;color:var(--accent);cursor:pointer">← Back to workout</button>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
             <h2 style="font-size:var(--text-3xl, 20px);font-weight:700;margin:0">Workout complete</h2>
             ${prCount > 0 ? `<span style="background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-size:var(--text-sm, 11px);font-weight:700;padding:3px 8px;border-radius:var(--radius-xl, 20px)">🏆 ${prCount} PR${prCount>1?'s':''}</span>` : ''}
@@ -2852,8 +2861,8 @@ async function showRunnerFinish() {
                       // compares it as a number. fmtDistanceM itself was fixed 2026-07-30 to render
                       // a real 0 as "0 m" (needed for jump_distance) — so a bare call here would
                       // wrongly print "0 m" on every duration-only cardio set (the common case).
-                      ? [s.duration, _cardioDistanceM(s) > 0 ? fmtDistanceM(_cardioDistanceM(s)) : null].filter(Boolean).join(' · ')
-                      : [s.weight&&s.weight!=='BW'?fmtWeight(s.weight, { spaced: true }):s.weight==='BW'?'BW':'', s.reps?s.reps+' reps':''].filter(Boolean).join(' × ')
+                      ? [s.duration ? escapeHtml(String(s.duration)) : null, _cardioDistanceM(s) > 0 ? fmtDistanceM(_cardioDistanceM(s)) : null].filter(Boolean).join(' · ')
+                      : [_hasNumVal(s.weight)&&s.weight!=='BW'?fmtWeight(s.weight, { spaced: true }):s.weight==='BW'?'BW':'', s.reps?s.reps+' reps':''].filter(Boolean).join(' × ')
                     }
                     ${isSetPR ? ' 🏆' : ''}
                   </span>
@@ -2868,7 +2877,7 @@ async function showRunnerFinish() {
           </div>
           <div class="field">
             <label class="field-label">Notes</label>
-            <textarea class="field-input" id="rf-notes" rows="2" placeholder="How did it go?"></textarea>
+            <textarea class="field-input" id="rf-notes" rows="2" placeholder="How did it go?">${escapeHtml(finishNotes)}</textarea>
           </div>
         </div>
 
@@ -2900,7 +2909,7 @@ async function showRunnerFinish() {
     // an ENABLED Save beside it — a second tap would insert a second log. (Found by review; the old code had the same
     // hazard for any client with history.)
     const saving = el.querySelector('button[onclick="saveRunnerSession()"]')?.disabled
-    if (el.isConnected && !saving && lifts.some(e => isPr(e, baselines))) {
+    if (el.isConnected && _runner?._finishToken === finishToken && !saving && lifts.some(e => isPr(e, baselines))) {
       // Repainting replaces the whole form, so carry over whatever was typed while the lookup ran: the notes and the
       // session name used to be silently reset to their defaults.
       const typed = ['rf-name', 'rf-notes'].map(id => [id, el.querySelector('#' + id)?.value])
@@ -2910,22 +2919,54 @@ async function showRunnerFinish() {
   }
 }
 
-function confirmEndRunner() {
-  // Tapping End with nothing logged has nothing to lose — discardRunner() runs bare here by design,
-  // same as it does after a successful save (below). The confirm belongs on the ONE call site where a
-  // tap can actually destroy real unsaved work: the Discard button beside Save. See
-  // confirmDiscardRunner. (An earlier version of this fix put the confirm inside discardRunner()
-  // itself, which meant it also fired here — on an empty session with nothing to lose — and again
-  // after a successful save, telling the user their just-saved workout was about to be lost. Neither
-  // is true. Fix the call site, not the shared teardown.)
-  if (_runner.exercises.some(e=>e.loggedSets.length)) showRunnerFinish()
+// Both the red End button and the bottom "Finish workout" button call this (Jake, 2026-10-11: "when you click 'finish workout' you should be asked
+// 'are you sure you wish to finish this workout?' This also goes for the 'end' button that could accidentally be pressed during a workout").
+// The finish screen replaced the runner with one tap and, until the same day, had no way back. Asking lives HERE, in the wrapper the two buttons
+// call, and NOT in discardRunner(): that shared teardown has silent callers (the post-save cleanup must never tell someone their just-saved workout
+// is about to be lost; see confirmDiscardRunner, which owns the Discard button's own question).
+async function confirmEndRunner() {
+  if (!_runner) return
+  const anyLogged = _runner.exercises.some(e => e.loggedSets.length)
+  const ok = await confirmDialog(
+    anyLogged ? 'Finish this workout? You can still go back and change it from the next screen.' : 'End this workout? Nothing has been logged yet.',
+    { title: anyLogged ? 'Finish workout?' : 'End workout?', confirmLabel: anyLogged ? 'Finish' : 'End' })
+  // Re-read AFTER the question: it can stay open while a save or a discard finishes elsewhere, and a runner that is gone must not be acted on.
+  if (!ok || !_runner) return
+  if (_runner.exercises.some(e => e.loggedSets.length)) showRunnerFinish()
   else discardRunner()
+}
+// Registered because it awaits: two quick taps would otherwise stack two questions (the second supersedes the first, but the first caller would
+// then read its cancel as an answer).
+guardReentry('confirmEndRunner')
+
+// The way back from the finish screen (Jake, 2026-10-11: "there should be a back to workout button"). showRunnerFinish tore down the session timer,
+// the draft checkpoint and the screen lock when it opened; this puts them back and repaints the runner from the SAME state, so every logged set is
+// still ticked. What was typed on the finish screen is kept for the next visit (the save reads both fields from the screen itself).
+function backToRunnerFromFinish() {
+  if (!_runner) return
+  // Not while a save is under way. saveRunnerSession's ONLY re-entry guard is the disabled Save button it captured: going Back and finishing again would
+  // draw a fresh, ENABLED Save beside the one still saving (a second tap inserts a second log), and the first save ends by tearing the runner down
+  // under whatever was ticked after Back. After a FAILED save the button is enabled again and Back works. Same test showRunnerFinish uses for its
+  // late repaint. (Found by all three 2026-10-11 reviewers.)
+  if (document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')?.disabled) return
+  const typedName = document.getElementById('rf-name')?.value.trim()
+  if (typedName) _runner.name = typedName
+  _runner.finishNotes = document.getElementById('rf-notes')?.value || ''
+  // _loggedExercises gave a nameless exercise a fallback label ("Exercise 1") ON THE LIVE OBJECT so the finish screen and the save could name it.
+  // That was harmless while the finish screen was terminal; back in the runner it would become the exercise's real name (and its history lookup key).
+  _runner.exercises.forEach(e => { if (e._nameFallback) { e.name = ''; delete e._nameFallback } })
+  _runner._finishToken = null      // a PR lookup still in flight for the screen being left must not repaint it over the runner
+  _runner._wakeLockOff = false
+  _startRunnerTimerTick()
+  _startRunnerDraftSafetyNet()
+  renderRunner()
+  _runnerWakeLockOn()
 }
 
 // The ONLY confirming entry point to discardRunner() — the Discard button on the finish screen,
 // which sits directly beside Save. That is the one tap that can destroy real unsaved work with a
-// single accidental press; every other caller (confirmEndRunner's empty-session branch, and the
-// post-save teardown in saveRunnerSession) has nothing left to lose and must stay silent.
+// single accidental press; every other caller (confirmEndRunner's empty-session branch, which has just
+// asked its own question, and the post-save teardown in saveRunnerSession) must not ask again.
 async function confirmDiscardRunner() {
   if (!(await confirmDialog('Discard this workout? Everything logged will be lost — this cannot be undone.', { title: 'Discard workout?', confirmLabel: 'Discard', danger: true }))) return
   discardRunner()
@@ -2960,8 +3001,8 @@ function discardRunner() {
 // workout seeds a nameless exercise and the fast table renders no name input, so a session could be
 // counted and itemised on the finish screen and then silently discarded on save. Names are backfilled
 // here rather than the row being dropped — losing logged work is never the right answer to a missing
-// label. NOTE the finish screen has no route back to the runner, so the fallback is visible but NOT
-// correctable in-session; renaming has to happen from the saved log.
+// label. NOTE: until 2026-10-11 the finish screen had no route back to the runner, so the fallback was visible but NOT
+// correctable in-session; "Back to workout" (backToRunnerFromFinish) is that route now.
 function _loggedExercises() {
   if (!_runner) return []
   // Refresh the derived state from the live table BEFORE filtering on it. inCell's oninput writes
@@ -2978,7 +3019,7 @@ function _loggedExercises() {
     if (ex.tableRows) { _syncLoggedSetsFromTable(ex); _recomputeLiveE1RM(ex) }
   })
   const out = _runner.exercises.filter(e => e.loggedSets.length)
-  out.forEach((e, i) => { if (!e.name || !String(e.name).trim()) e.name = `Exercise ${i + 1}` })
+  out.forEach((e, i) => { if (!e.name || !String(e.name).trim()) { e.name = `Exercise ${i + 1}`; e._nameFallback = true } })   // flag: backToRunnerFromFinish undoes it
   return out
 }
 

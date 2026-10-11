@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsClient, loginAsPT } = require('./helpers')
+const { loginAsClient, loginAsPT, acceptConfirm } = require('./helpers')
 
 // ─── Workout runner: exercise tabs, "Next exercise", header (Jake's 2026-09-28 walkthrough, items 1-6) ─────────
 //
@@ -113,6 +113,7 @@ test.describe('Runner exercise tabs and Next exercise (2026-09-28)', () => {
     await complete(page, 3)
     await expect(nextBtn(page), 'nothing left to do').toContainText('Finish')
     await nextBtn(page).click()
+    await acceptConfirm(page)        // Finish asks "are you sure" first (2026-10-11)
     expect(await finished(page), 'with everything complete, Next finishes the workout').toBe(true)
   })
 
@@ -134,6 +135,7 @@ test.describe('Runner exercise tabs and Next exercise (2026-09-28)', () => {
     await partial(page, 3)
     await expect(nextBtn(page), 'nothing lies ahead of the last exercise, so the button says so').toContainText('Finish')
     await nextBtn(page).click()
+    await acceptConfirm(page)        // Finish asks "are you sure" first (2026-10-11)
     expect(await finished(page), 'skipping the last exercise finishes — it does not wrap round to the undone ones behind it').toBe(true)
   })
 
@@ -150,6 +152,7 @@ test.describe('Runner exercise tabs and Next exercise (2026-09-28)', () => {
     await partial(page, 2)
     await expect(nextBtn(page)).toContainText('Finish')
     await nextBtn(page).click()
+    await acceptConfirm(page)        // Finish asks "are you sure" first (2026-10-11)
     expect(await finished(page), 'the third press finishes; a wrapping rule would have gone back to 1 and cycled for ever').toBe(true)
   })
 

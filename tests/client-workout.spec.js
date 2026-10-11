@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsClient, loginAsPT, clickVisible } = require('./helpers')
+const { loginAsClient, loginAsPT, clickVisible, acceptConfirm } = require('./helpers')
 
 test.describe('Client workout flow', () => {
   test.beforeEach(async ({ page }) => {
@@ -117,13 +117,10 @@ test.describe('Client workout flow', () => {
     // Runner renders with a red End button
     const endBtn = page.locator('button:text-is("End")')
     await expect(endBtn).toBeVisible({ timeout: 8000 })
-    // End the runner
+    // End the runner. End asks first since 2026-10-11 ("End this workout? Nothing has been logged yet."), so the question must be answered.
     await endBtn.click()
-    // Confirm dialog may appear — click any confirm button
-    const confirmBtn = page.locator('button:has-text("End session"), button:has-text("Yes"), button:has-text("Confirm"), button:has-text("Finish")')
-    if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await confirmBtn.first().click()
-    }
+    await expect(page.locator('#confirm-dialog')).toContainText('Nothing has been logged')
+    await acceptConfirm(page)
     // Runner is gone when End button is no longer visible
     await expect(endBtn).not.toBeVisible({ timeout: 8000 })
   })

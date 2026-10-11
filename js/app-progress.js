@@ -2833,12 +2833,16 @@ function _xsEffortText(s) {
   return ' @' + (+s.effort_value) + (s.effort_type === 'rir' ? ' RIR' : '')
 }
 // "117.5×3 @9" for the history; "117.5 × 3 @9" where it sits in a sentence. A bodyweight set is just its reps.
-const _xsSetText = s => { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (w > 0 ? _xsW(w) + '×' + r : r + ' reps') + _xsEffortText(s) }
-const _xsSetSpaced = s => { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (w > 0 ? _xsW(w) + ' × ' + r : r + ' reps') + _xsEffortText(s) }
+// A weight of 0 is a weight (Jake, 2026-10-11: "0 should be logged as 0": an unweighted dip is 0 kg, and it must read "0 kg × 9", not "9 reps").
+// Only a MISSING weight (null) reads as reps alone. The records and the top set stay weighted-only (a 0 kg "heaviest set" means nothing): see _xsSessionMetrics.
+// _xsHasW: a weight is present if it is a real number, 0 included. A non-numeric value ('BW', NaN, 'abc') is not a weight and still reads as reps only.
+const _xsHasW = s => _hasNumVal(s.weight_kg) && Number.isFinite(parseFloat(s.weight_kg))
+const _xsSetText = s => { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (_xsHasW(s) ? _xsW(w) + '×' + r : r + ' reps') + _xsEffortText(s) }
+const _xsSetSpaced = s => { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (_xsHasW(s) ? _xsW(w) + ' × ' + r : r + ' reps') + _xsEffortText(s) }
 // "117.5 kg × 3 @9", "12 reps": a set spelled out WITH its unit, for a sentence that has no column to hold the unit (the runner's Last
 // time panel: "Top set 117.5 kg × 3 @9"). A weight with no reps recorded is the weight alone, never "× 0".
 // A `function`, not a const arrow: the runner (loaded BEFORE this file) calls it, and a const read across files is a load-order trap.
-function _xsSetWithUnit(s) { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (w > 0 ? `${_xsW(w)} ${_xsUnit()}${r > 0 ? ' × ' + r : ''}` : r + ' reps') + _xsEffortText(s) }
+function _xsSetWithUnit(s) { const w = parseFloat(s.weight_kg) || 0, r = parseInt(s.reps_achieved) || 0; return (_xsHasW(s) ? `${_xsW(w)} ${_xsUnit()}${r > 0 ? ' × ' + r : ''}` : r + ' reps') + _xsEffortText(s) }
 
 // The five measures. Keys are the SAME keys _TREND_METRICS and the saved per-exercise choice use. `val` is the number charted;
 // `cap` is the words for the "Best ..." caption and the tooltip — and says WHICH SET a weight came from.

@@ -5,6 +5,7 @@
 // you start the workout — stays in each spec. Everything here is a click or a keystroke; nothing reaches the
 // app through page.evaluate except reading results back.
 const { expect } = require('./fixtures')
+const { acceptConfirm } = require('./helpers')
 
 const SHOTS = process.env.E2E_SHOTS
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` }) }
@@ -99,6 +100,7 @@ async function runTopSetSessionAndAccept1RM(page, { shotPrefix } = {}) {
   await page.locator('#set-1-done').click()
 
   await page.locator('button[onclick="confirmEndRunner()"]').click()
+  await acceptConfirm(page)        // Finish asks "are you sure" first (2026-10-11)
   await expect(page.locator('#workout-runner')).toContainText('Workout complete')
   await expect(page.locator('#wr-dropped-note'), 'every set here is complete, so there is nothing to warn about').toHaveCount(0)
   await page.locator('button[onclick="saveRunnerSession()"]').click()
