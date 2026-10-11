@@ -2271,15 +2271,29 @@ async function savePeriodizationConfig() {
       config.tiers[t] = { pct: parseFloat(document.getElementById(`pz-tier-${t}-pct`)?.value) || null }
     }
   }
-  // The Week-1 sessions' tiers are saved for either method, before the phase row (the order this always had).
+  // The Week-1 sessions' tiers are saved for either method, before the phase row (the order this always had). Each write is CHECKED: an
+  // unchecked refusal saved the phase as Undulating with that session still on its old tier, and showed nothing. `.select('id')` is what
+  // makes a refusal visible - row-level security answers an UPDATE it refuses with 200 and an empty list, not an error. Tiers written
+  // before the one that failed stay written (the same tiers again on a retry, so harmless); the phase row is not.
   if (type === 'undulating') {
     for (const slot of (window._pzDaySlots || [])) {
-      await db.from('program_phase_workouts').update({ tier: slot.tier }).eq('id', slot.id)
+      // Anchored on the VERIFIED phase (`.eq('phase_id', phaseId)`): _verifyPhaseOwnership above vouched for phaseId, and this dialog's list
+      // is a global filled by an async read, so after a slow read it can hold another phase's session ids. Those now match no row here.
+      const { data: tierRows, error: tierErr } = await db.from('program_phase_workouts').update({ tier: slot.tier }).eq('id', slot.id).eq('phase_id', phaseId).select('id')
+      if (tierErr || !tierRows?.length) {
+        log.error('savePeriodizationConfig', 'tier write failed', tierErr || { refused: true, slotId: slot.id })
+        // "Close and reopen" because a session deleted from another tab or device stays in this dialog's list until it is rebuilt.
+        errEl.textContent = 'Could not save the session tiers, so the periodization was not applied. Try again, or close and reopen this dialog.'
+        return
+      }
     }
   }
 
-  const { error } = await db.from('program_phases').update({ periodization_type: type, periodization_config: config }).eq('id', phaseId)
+  // The same refusal shape applies to the phase row itself (found by the 2026-10-11 review): without `.select('id')` a refused update
+  // returns no error, the next line logged success and the dialog closed on a phase that had not changed.
+  const { data: phaseRows, error } = await db.from('program_phases').update({ periodization_type: type, periodization_config: config }).eq('id', phaseId).select('id')
   if (error) { log.error('savePeriodizationConfig', 'update failed', error); errEl.textContent = error.message; return }
+  if (!phaseRows?.length) { log.error('savePeriodizationConfig', 'phase update refused', { phaseId }); errEl.textContent = 'Could not save the periodization: permission denied.'; return }
   log.ok('savePeriodizationConfig', 'saved', { phaseId, type })
   closeModal('periodization-modal')
   openProgram(programId)

@@ -33,8 +33,8 @@ async function sweep (page) {
 }
 
 // One program, one phase, and a Week-1 slot per entry of `slots`: { day, label, tier?, exercises: [{ name, sets }] }.
-const seed = (page, { weeks = 4, type = null, config = null, slots }) => page.evaluate(async ({ TAG, weeks, type, config, slots }) => {
-  const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, name: TAG + ' Program' }).select('id').single()
+const seed = (page, { weeks = 4, type = null, config = null, slots, personal = false }) => page.evaluate(async ({ TAG, weeks, type, config, slots, personal }) => {
+  const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: personal, name: TAG + ' Program' }).select('id').single()
   const { data: phase } = await db.from('program_phases').insert({
     program_id: prog.id, name: 'Block 1', duration_weeks: weeks, order_index: 0, periodization_type: type, periodization_config: config
   }).select('id').single()
@@ -51,7 +51,7 @@ const seed = (page, { weeks = 4, type = null, config = null, slots }) => page.ev
     templateIds.push(tmpl.id)
   }
   return { programId: prog.id, phaseId: phase.id, templateIds }
-}, { TAG, weeks, type, config, slots })
+}, { TAG, weeks, type, config, slots, personal })
 
 // Runs the real generator (the confirm is auto-accepted) and waits until every generated week exists.
 const generate = async (page, s, expectedWeekRows) => {
@@ -348,6 +348,101 @@ test.describe('Periodization by RPE - the dialog', () => {
     const tier = await page.evaluate(async (id) => (await db.from('program_phase_workouts').select('tier').eq('phase_id', id).eq('week_number', 1).single()).data.tier, s.phaseId)
     expect(tier, 'the session\'s tier was saved with the phase').toBe('heavy')
     await expect(page.getByText('Undulating RPE (9.5/8/7)')).toBeVisible({ timeout: 6000 })
+  })
+
+  // 2026-10-05: savePeriodizationConfig wrote each Week-1 session's tier and never looked at the result, so a refused or failed write
+  // saved the phase as Undulating with that session still on its old tier and showed nothing (docs/technical-debt.md, the 2026-10-04
+  // review of the program page). `.select('id')` is what makes a refusal visible: row-level security answers an UPDATE it refuses
+  // with 200 and an empty list, not an error. Both shapes are forced by answering the request; then the SAME dialog is saved again
+  // with the answer removed, and that second half is the positive control (a guard that refuses everyone passes the first half).
+  for (const [shape, answer] of [
+    ['refused (200 and no rows: the row-level-security shape)', { status: 200, contentType: 'application/json', body: '[]' }],
+    ['failed (a server error)', { status: 500, contentType: 'application/json', body: JSON.stringify({ code: 'XX000', message: 'boom', details: null, hint: null }) }]
+  ]) {
+    test(`a Week-1 session tier write that is ${shape} stops the save with a message and leaves the phase alone; saving again lands`, async ({ page }) => {
+      const s = await seed(page, { weeks: 3, slots: weekOne })
+      await openDialog(page, s)
+      await page.click('#periodization-modal button:has-text("Undulating")')
+      const tierSelect = page.locator('#pz-day-tiers select').first()
+      await expect(tierSelect).toBeVisible({ timeout: 6000 })
+      await tierSelect.selectOption('heavy')
+
+      const tierWrites = '**/rest/v1/program_phase_workouts*'
+      await page.route(tierWrites, route => route.request().method() === 'PATCH' ? route.fulfill(answer) : route.continue())
+      await page.click('#periodization-modal .modal-footer button:has-text("Save")')
+      await expect(page.locator('#pz-error'), 'the reason is shown').toContainText('tier')
+      await expect(page.locator('#periodization-modal'), 'the dialog stays open, so nothing typed is lost').toBeVisible()
+      expect((await savedPhase(page, s.phaseId)).periodization_type, 'the phase was NOT saved as Undulating').toBeNull()
+
+      await page.unroute(tierWrites)
+      await page.click('#periodization-modal .modal-footer button:has-text("Save")')
+      await page.waitForSelector('#periodization-modal', { state: 'detached', timeout: 6000 })
+      expect((await savedPhase(page, s.phaseId)).periodization_type, 'control: once the write is allowed, the same dialog saves').toBe('undulating')
+      const tier = await page.evaluate(async (id) => (await db.from('program_phase_workouts').select('tier').eq('phase_id', id).eq('week_number', 1).single()).data.tier, s.phaseId)
+      expect(tier, 'control: and the session\'s tier landed').toBe('heavy')
+    })
+  }
+
+  // docs/bugs/2026-09-06-saveperiodizationconfig-writes-tiers-on-ids-it-never-verified: the dialog's session list (window._pzDaySlots) is a
+  // global filled by an async read, so a slow read from phase A can land after phase B's dialog opened. The save verified phase B and then
+  // wrote tiers onto A's sessions by id alone. The write is now anchored on the verified phase, so A's ids simply match nothing.
+  // The stale list is staged directly: the race itself cannot be timed in a browser, but its RESULT (B's dialog holding A's session ids) can.
+  test('a session list that belongs to ANOTHER phase is refused: the tiers of the other phase are not touched and the phase is not saved', async ({ page }) => {
+    const a = await seed(page, { weeks: 3, slots: weekOne })
+    const b = await seed(page, { weeks: 3, slots: weekOne })
+    const tierOfA = () => page.evaluate(async (id) => (await db.from('program_phase_workouts').select('tier').eq('phase_id', id).eq('week_number', 1).single()).data.tier, a.phaseId)
+    const slotOfA = await page.evaluate(async (id) => (await db.from('program_phase_workouts').select('id').eq('phase_id', id).eq('week_number', 1).single()).data.id, a.phaseId)
+    expect(await tierOfA(), 'control: A starts with no tier').toBeNull()
+
+    await openDialog(page, b)
+    await page.click('#periodization-modal button:has-text("Undulating")')
+    await expect(page.locator('#pz-day-tiers select').first()).toBeVisible({ timeout: 6000 })
+    await page.evaluate(id => { window._pzDaySlots = [{ id, tier: 'heavy' }] }, slotOfA)   // what A's late read leaves behind in B's dialog
+    await page.click('#periodization-modal .modal-footer button:has-text("Save")')
+    await expect(page.locator('#pz-error'), 'the save is refused with the reason').toContainText('tier')
+    await expect(page.locator('#periodization-modal')).toBeVisible()
+    expect(await tierOfA(), 'the other phase\'s session was NOT given a tier').toBeNull()
+    expect((await savedPhase(page, b.phaseId)).periodization_type, 'and this phase was not saved as Undulating').toBeNull()
+  })
+
+  // The phase row's own write needs the same row check: a refused UPDATE returns no error, so the old code logged success and closed the
+  // dialog on a phase that had not changed. Forced by answering the request; then saved again with the answer removed (the control).
+  test('a refused write of the phase itself stops the save with a message; saving again lands', async ({ page }) => {
+    const s = await seed(page, { weeks: 4, slots: weekOne })
+    await openDialog(page, s)
+    await page.click('#periodization-modal button:has-text("Linear")')
+    await page.fill('#pz-start', '60')
+    await page.fill('#pz-end', '80')
+    const phaseWrites = '**/rest/v1/program_phases*'
+    await page.route(phaseWrites, route => route.request().method() === 'PATCH' ? route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }) : route.continue())
+    await page.click('#periodization-modal .modal-footer button:has-text("Save")')
+    await expect(page.locator('#pz-error'), 'the reason is shown').toContainText('permission denied')
+    await expect(page.locator('#periodization-modal'), 'the dialog stays open').toBeVisible()
+    expect((await savedPhase(page, s.phaseId)).periodization_type, 'nothing was saved').toBeNull()
+    await page.unroute(phaseWrites)
+    await page.click('#periodization-modal .modal-footer button:has-text("Save")')
+    await page.waitForSelector('#periodization-modal', { state: 'detached', timeout: 6000 })
+    expect((await savedPhase(page, s.phaseId)).periodization_type, 'control: once the write is allowed, the same dialog saves').toBe('linear')
+  })
+
+  // The guard above refuses on "no rows came back". A solo owner's programme carries coach_id = their own uid like a coach's, so it should
+  // pass exactly the same way; this proves it in the Personal view rather than by reading the policy (2026-10-11 review: every other
+  // tier-save spec runs in the coach view). A guard that refused the legitimate user is this project's most-shipped guard bug.
+  test('the same save lands in the Personal (solo) view: the checks do not refuse a solo owner', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
+    await page.goto('/')
+    await expect.poll(() => page.evaluate(() => (typeof currentProfile !== 'undefined' && currentProfile?.role === 'solo' && window._soloClientId) ? 'ready' : 'not yet'), { message: 'the Personal view is active' }).toBe('ready')
+    const s = await seed(page, { weeks: 3, slots: weekOne, personal: true })
+    await openDialog(page, s)
+    await page.click('#periodization-modal button:has-text("Undulating")')
+    const tierSelect = page.locator('#pz-day-tiers select').first()
+    await expect(tierSelect).toBeVisible({ timeout: 6000 })
+    await tierSelect.selectOption('light')
+    await page.click('#periodization-modal .modal-footer button:has-text("Save")')
+    await page.waitForSelector('#periodization-modal', { state: 'detached', timeout: 6000 })
+    expect((await savedPhase(page, s.phaseId)).periodization_type, 'a solo owner\'s phase saved').toBe('undulating')
+    const tier = await page.evaluate(async (id) => (await db.from('program_phase_workouts').select('tier').eq('phase_id', id).eq('week_number', 1).single()).data.tier, s.phaseId)
+    expect(tier, 'and the session\'s tier landed').toBe('light')
   })
 
   test('saving on the % side writes the shape it always did: no basis key, so existing phases never change meaning', async ({ page }) => {

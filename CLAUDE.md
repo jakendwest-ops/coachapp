@@ -62,7 +62,8 @@ Live: https://jakendwest-ops.github.io/coachapp
   is green (the deploy job `needs: check`, so a tag pushed over a red check never deploys — v2026.09.12);
   otherwise it exits 1 with the tag left local. Without `--push` it stops at the local tag.
   "Pushed" is not "deployed": after a release, confirm with `gh run list --limit 4` that the deploy job
-  succeeded. **The full suite takes 47–59 min**: from Claude Code's Bash tool run it with
+  succeeded, then `node scripts/verify-live.mjs <tag>` (every file the live site serves, byte for byte against the
+  tag; retries while Pages catches up). **The full suite takes 47–59 min**: from Claude Code's Bash tool run it with
   `run_in_background: true` and `timeout: 7200000` — a background call is killed at exactly its timeout.
 
 ## The 9 modules (`js/`)

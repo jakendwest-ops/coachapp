@@ -5,24 +5,35 @@ const { loginAsPT, loginAsClient, clickVisible } = require('./helpers')
 test('resting-HR trend chart shows on the Body tab with >=2 entries (B4)', async ({ page }) => {
   await loginAsPT(page)
   await clickVisible(page, ['#vs-personal', '#mvs-personal'])
-  await page.waitForTimeout(1000)
-  await page.evaluate(async () => {
-    const cid = await _getCurrentClientId()
-    await db.from('weight_logs').insert([
-      { client_id: cid, date: '2027-03-01', weight_kg: 82, resting_hr: 60 },
-      { client_id: cid, date: '2027-03-08', weight_kg: 81.5, resting_hr: 57 }
-    ])
-  })
-  await page.reload()
-  await page.waitForTimeout(800)
-  await page.evaluate(() => { window._progressTab = 'Body Weight'; renderProgress(document.getElementById('main-content')) })
-  await page.waitForTimeout(1000)
-  const count = await page.locator('#resting-hr-chart').count()
-  await page.evaluate(async () => { // cleanup own fixture (future dates, no collision)
-    const cid = await _getCurrentClientId()
-    await db.from('weight_logs').delete().eq('client_id', cid).in('date', ['2027-03-01', '2027-03-08'])
-  })
-  expect(count).toBe(1)
+  // 2026-10-05: three fixed sleeps (1 s, 0.8 s, 1 s) used to stand here, and the last one raced the chart's own render: it failed once
+  // in the v2026.09.14 release run and passed on retry. Each wait is now for the thing it was waiting for, and the final assertion
+  // retries; the fixture is removed even when an assertion fails (the old order skipped the cleanup on a failure).
+  const personalReady = () => page.evaluate(() => (typeof currentProfile !== 'undefined' && currentProfile?.role === 'solo' && window._soloClientId) ? 'ready' : 'not yet')
+  await expect.poll(personalReady, { message: 'the Personal view is active' }).toBe('ready')
+  // Resolved ONCE, here, and reused by the cleanup: re-resolving it later depends on the role, and a role that had not flipped back
+  // would delete under the wrong id and strand the fixture rows (found by the 2026-10-11 review).
+  const cid = await page.evaluate(() => _getCurrentClientId())
+  expect(cid, 'the Personal view has a client id').toBeTruthy()
+  try {
+    await page.evaluate(async (cid) => {
+      await db.from('weight_logs').insert([
+        { client_id: cid, date: '2027-03-01', weight_kg: 82, resting_hr: 60 },
+        { client_id: cid, date: '2027-03-08', weight_kg: 81.5, resting_hr: 57 }
+      ])
+    }, cid)
+    await page.reload()
+    await expect.poll(personalReady, { message: 'the app has booted back into the Personal view' }).toBe('ready')
+    // The role and client id are set early in boot; the landing dashboard paints later and would replace this page if it finished
+    // after the render below (raw renderProgress calls bypass navigate()'s stale-render guard). Its greeting exists only once it has.
+    await expect(page.locator('h1.dash-greet'), 'the landing dashboard has finished painting').toBeVisible()
+    // Returning the promise makes page.evaluate wait for the whole render, not just for the call.
+    await page.evaluate(() => { window._progressTab = 'Body Weight'; return renderProgress(document.getElementById('main-content')) })
+    await expect(page.locator('#resting-hr-chart')).toHaveCount(1)
+  } finally {
+    await page.evaluate(async (cid) => { // cleanup own fixture (future dates, no collision)
+      await db.from('weight_logs').delete().eq('client_id', cid).in('date', ['2027-03-01', '2027-03-08'])
+    }, cid)
+  }
 })
 
 // B5 — the standalone "Cardio bests" section is removed from Personal Bests (cardio now has its own

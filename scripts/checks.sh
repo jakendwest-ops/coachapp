@@ -26,7 +26,8 @@ warn() {
 
 echo ""
 echo "=== CoachApp pre-push bug check ==="
-# CI runs Node 22 and the dev machine Node 24 (nothing pins either); that mismatch hid a Node-22-only failure for two days.
+# CI's Node major is the `node-version:` in .github/workflows/deploy.yml (24 since 2026-10-05, matching the dev machine). When the two
+# differ the note below says so: a gap hid a Node-22-only failure for two days (v2026.09.12 was tagged and never deployed).
 echo "  (node $(node --version))"
 ci_node=$(sed -n 's/^ *node-version: *\([0-9][0-9]*\).*/\1/p' .github/workflows/deploy.yml 2>/dev/null | head -1)
 local_node=$(node --version | sed 's/^v\([0-9]*\).*/\1/')
@@ -678,6 +679,14 @@ echo "Checking the suite's server precondition (its self-test)..."
 if ! selftest_out=$(node scripts/check-preview-server.selftest.mjs 2>&1); then
   printf '%s\n' "$selftest_out" | sed "s/^/    /"
   fail "check-preview-server self-test FAILED -- the suite's server precondition can no longer be trusted: a worktree could run against another checkout's code and report green."
+fi
+# -- 9t. The "is the release live?" script (scripts/verify-live.mjs) can still tell live from not-live --
+# Until 2026-10-05 this was a by-hand comparison after every release. A checker that passes whatever it is shown is worse than none,
+# so its self-test (a throwaway git repo + a local web server, ~4 s; six deliberate breakages each turn it red) runs on every push.
+echo "Checking the live-release verifier (its self-test)..."
+if ! selftest_out=$(node scripts/verify-live.selftest.mjs 2>&1); then
+  printf '%s\n' "$selftest_out" | sed "s/^/    /"
+  fail "verify-live self-test FAILED -- the post-release 'is it live?' check can no longer be trusted."
 fi
 # -- 10. Playwright smoke tests --
 #

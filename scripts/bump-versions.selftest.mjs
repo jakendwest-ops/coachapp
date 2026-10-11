@@ -23,6 +23,11 @@ import { fileURLToPath } from 'node:url'
 
 const BUMP = join(dirname(fileURLToPath(import.meta.url)), 'bump-versions.mjs')
 
+// No inherited GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE. checks.sh runs this from inside git's pre-push hook, and from a LINKED
+// WORKTREE those variables point at the real repo: every `git init / add / commit` below would then land on the worktree's own branch
+// and leave tracked files deleted (reproduced by the 2026-10-11 review of scripts/verify-live.selftest.mjs, which had the same shape).
+const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')))
+
 const indexHtml = (vs) => [
   `  <link rel="stylesheet" href="css/main.css?v=${vs.css}">`,
   `  <script src="js/app-core.js?v=${vs.core}"></script>`,
@@ -31,7 +36,7 @@ const indexHtml = (vs) => [
 
 function newRepo () {
   const repo = mkdtempSync(join(tmpdir(), 'bump-selftest-'))
-  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' })
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8', env: cleanEnv })
   g('init', '-q')
   g('config', 'user.email', 'selftest@example.invalid')
   g('config', 'user.name', 'selftest')
@@ -52,7 +57,7 @@ function newRepo () {
 
 function run (repo) {
   try {
-    return { out: execFileSync(process.execPath, [BUMP], { encoding: 'utf8', env: { ...process.env, BUMP_REPO: repo } }), exit: 0 }
+    return { out: execFileSync(process.execPath, [BUMP], { encoding: 'utf8', env: { ...cleanEnv, BUMP_REPO: repo } }), exit: 0 }
   } catch (err) {
     return { out: (err.stdout || '') + (err.stderr || ''), exit: err.status }
   }
