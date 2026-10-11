@@ -32,6 +32,9 @@ test.describe('The post-session 1RM estimate asks first (2026-10-11)', () => {
     await page.evaluate(() => saveRunnerSession())
     await expect(page.locator('#confirm-dialog'), 'a question, not the list').toBeVisible()
     await expect(page.locator('#confirm-dialog')).toContainText('estimated 1RM')
+    await expect(page.locator('#confirm-dialog'), 'the question itself says the workout is saved').toContainText('Workout saved')
+    // Counted at once, not with toHaveCount(0): that retries, and the toast would be gone by itself after 2.5 s. Seen on a phone: it covered the question's last line.
+    expect(await page.locator('#app-toast').count(), 'the "Workout saved!" toast is not left on top of the question').toBe(0)
     await expect(page.locator('#modal-post-session-1rm'), 'the full list is not shown by itself').toHaveCount(0)
     await declineConfirm(page)                                            // "Not now"
     await expect(page.locator('#modal-post-session-1rm')).toHaveCount(0)

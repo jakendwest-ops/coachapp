@@ -3258,11 +3258,14 @@ async function saveRunnerSession() {
 // list always did, and closing the question another way (backdrop, X) reads as "Not now". Nothing is saved by the question itself.
 // If the page changed while the question was open (browser Back, a programmatic navigate()), that navigation swept the question away and it
 // resolves false too: the athlete has already chosen where to go, so it must NOT route them on a second time (found by the 2026-10-11 review).
+// The "Workout saved!" toast (z-index 9999, bottom 80px) lands on the lower half of the question for 2.5 s and hides its last line on a phone (seen in the
+// 2026-10-11 phone-width walkthrough), so the question replaces the toast and says "Workout saved." itself.
 async function _askAboutNewOneRMs(clientId, candidates) {
   const n = candidates.length
   const pageAtAsk = currentPage
+  document.getElementById('app-toast')?.remove()
   const view = await confirmDialog(
-    `Your session points to ${n === 1 ? 'a new estimated 1RM' : n + ' new estimated 1RMs'}. Do you want to view or update ${n === 1 ? 'it' : 'them'} now?`,
+    `Workout saved. Your session points to ${n === 1 ? 'a new estimated 1RM' : n + ' new estimated 1RMs'}. Do you want to view or update ${n === 1 ? 'it' : 'them'} now?`,
     { title: n === 1 ? 'New 1RM estimate' : 'New 1RM estimates', confirmLabel: 'View', cancelLabel: 'Not now' })
   if (view) showPostSessionOneRMModal(clientId, candidates)
   else if (currentPage === pageAtAsk) _afterRunnerSave(clientId)

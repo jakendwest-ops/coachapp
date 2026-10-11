@@ -50,7 +50,7 @@ Bug counts live in [backlog.md](backlog.md); pattern analysis in [technical-debt
 ## Immediate Next Actions
 
 1. Jake's phone check of `v2026.09.14`/`.15`, his call on Sign out (end only this device's session?), and his approval of the plans for his 2026-10-11 reports
-   (his 2026-10-11 runner changes are all built and await his phone check). Unreleased: `app-programs` v72, `app-runner` v115, `app-progress` v78.
+   (his 2026-10-11 runner changes are all built and await his phone check). Unreleased: `app-programs` v72, `app-runner` v116, `app-progress` v78.
 2. Read the release plan's "START HERE", answer its questions, then start the next unbuilt release.
 3. Housekeeping still open: the ungraded-prediction backlog and duplicate ids ([technical-debt.md](technical-debt.md)).
 4. Start the next session on this repo's folder (not the Vision OS one) and let `/hello-claude` run; confirm the guard per the

@@ -3,7 +3,7 @@ id: 2026-10-11-new-1rm-estimates-modal-shows-in-full-instead-of-asking-first
 status: fixed-awaiting-jake
 priority: low
 reported: 2026-10-11
-status_detail: "FIXED 2026-10-11 on master, unreleased (app-runner v115); awaiting Jake's look on a phone. Red before, green after: tests/onerm-ask-first-2026-10-11.spec.js (a session that points to a new 1RM asks 'view or update?' and the list is not shown by itself; Not now goes on and saves nothing; View opens the full list; leaving the page while the question is open does not route on to Workouts a second time; a session with nothing to offer asks nothing). The specs that expected the list straight after a save now answer View first."
+status_detail: "FIXED 2026-10-11 on master, unreleased (app-runner v116); awaiting Jake's look on a phone. Red before, green after: tests/onerm-ask-first-2026-10-11.spec.js (a session that points to a new 1RM asks 'view or update?' and the list is not shown by itself; Not now goes on and saves nothing; View opens the full list; leaving the page while the question is open does not route on to Workouts a second time; the 'Workout saved!' toast no longer covers the question (found in a phone-width walkthrough); a session with nothing to offer asks nothing). The specs that expected the list straight after a save now answer View first."
 ---
 
 # The "New 1RM estimates from today" dialog opens in full after every session
