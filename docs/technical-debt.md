@@ -33,6 +33,10 @@ so check `docs/bugs/` and `docs/releases/` first.
   "View as client" works only on the dashboard ([row](bugs/2026-10-04-view-as-client-only-works-on-the-dashboard.md)); `_renderMetricChart` leaves
   a predecessor in `_activeCharts` until the next destroy (harmless); a phase with `duration_weeks` of 0 or null reads 0 weeks on the dashboard tile and
   1 on the calendar (only a direct database edit can produce it).
+- **A PRESCRIBED weight of 0 still reads as empty (2026-10-11).** The zero-weight fix covers LOGGED weights (the runner's grey memory, the finish screen,
+  the wizard's set list, the Stats sheet, Last time). The template builder's and library's set summaries and the runner's template defaults still test a
+  prescribed weight for truthiness (`app-workouts.js` 352, 371, 480, 1665, 2192, 2212; `app-runner.js` 56, 3649). A prescribed 0 is not a real case today
+  (bodyweight is its own flag), and `scripts/count-baseline.json` pins the count so a new one cannot appear.
 - **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted (a UX gap). **Invite email** has no PT branding yet.
 - **Runner vs. competitor apps:** background rest-timer alerts need an installable app (the wake lock covers most gym use); the last-session
   strip is strength-only. No pre-fill is Jake's choice (2026-07-11), not a gap.
