@@ -336,10 +336,25 @@ async function openClient(id) {
   renderClientOverview(id, document.getElementById('tab-content'))
 }
 
+// Each tab render gets its OWN pane (docs/bugs/2026-10-12-client-profile-shows-the-overview-under-another-tab-when-the-overview-loads-last.md).
+// openClient starts the Overview render without waiting for it, and it makes three queries before it writes; every tab render is async. All of them used
+// to write into the SAME #tab-content, so whichever finished last won: tap Workouts before the Overview's queries returned and the Overview landed over
+// the Workouts pane while the Workouts button stayed highlighted. A render that is superseded now holds a pane that is no longer in the page, so its
+// late write is invisible. Code that repaints the current tab by looking #tab-content up by id still finds the live pane.
+function _freshTabPane() {
+  const old = document.getElementById('tab-content')
+  if (!old) return null
+  const fresh = document.createElement('div')
+  fresh.id = 'tab-content'
+  old.replaceWith(fresh)
+  return fresh
+}
+
 function switchTab(btn, tab, clientId) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
   btn.classList.add('active')
-  const content = document.getElementById('tab-content')
+  const content = _freshTabPane()
+  if (!content) return
 
   switch (tab) {
     case 'tab-overview': content.innerHTML = ''; renderClientOverview(clientId, content); break

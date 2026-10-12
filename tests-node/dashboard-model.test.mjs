@@ -1,21 +1,20 @@
-// The dashboard's pure logic (2026-10-03): the weekly streak, the week strip and the program tile.
+// The dashboard's pure logic (2026-10-03): the streak, the week strip and the program tile.
 //
-// Jake, scoping the dashboard rework: "Streak: Weeks hitting my whole plan". These pin that rule so it cannot drift:
-//   - weeks run Monday to Sunday;
-//   - inside the program's span a week counts when every planned session was logged, and a week with nothing planned asks
-//     nothing (a planned rest week neither earns nor breaks the streak);
-//   - after the span has ended, or with no program at all, any one session keeps the streak alive — otherwise a finished program
-//     would let a long-idle person keep a streak;
-//   - the streak never looks back past the week the program began (Jake, 2026-10-12: "I have not been on this plan for 16 weeks");
-//   - the current week counts once it is complete and is simply ignored until then (a Wednesday is not a missed week).
-//
+// The streak is SESSIONS LOGGED IN A ROW (Jake, 2026-10-12: "the streak should show how many sessions you have logged in a row"; it counted weeks until then):
+//   - the number of sessions logged across the unbroken run of Monday-to-Sunday weeks ending with this one; every session counts, planned or not;
+//   - a FINISHED week inside the plan breaks the run when fewer sessions were logged than planned (a planned session left unlogged); a week with nothing
+//     planned (a planned rest week) neither earns nor breaks it;
+//   - a finished week outside the plan (before it began, after it ended, no plan) breaks it when no session was logged: his "7 days with none", as whole weeks;
+//   - this week never breaks it (a Wednesday is not a missed week) and adds what is logged so far;
+//   - a plan cannot ask for a session before its start date.
+
 // Dates used: 2026-10-03 is a Saturday. Mondays: 09-28, 09-21, 09-14, 09-07, 08-31, 08-24, 08-17, 08-10, 08-03.
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { get } from './load-app.mjs'
 
-const streak = (prog, logs, today, max) => get('_dashStreakWeeks')(prog, logs, today, max)
+const streak = (prog, logs, today, max, planStart) => get('_dashStreak')(prog, logs, today, max, planStart)
 const addDays = (ymd, n) => get('_dashAddDays')(ymd, n)
 
 // A program of `perWeek` sessions on Mon/Wed/Fri for each week in [fromMonday, toMonday] (both inclusive); `skip` lists Mondays with nothing planned.
@@ -50,143 +49,165 @@ describe('_dashMonday / _dashAddDays', () => {
   })
 })
 
-describe('_dashStreakWeeks — no program: any one session a week', () => {
+describe('_dashStreak — no plan: a session every week keeps it, and every session counts', () => {
   const today = '2026-10-03'
   test('no logs: no streak', () => {
-    assert.deepEqual({ ...streak({}, [], today) }, { weeks: 0, capped: false, onPlan: false })
+    assert.deepEqual({ ...streak({}, [], today) }, { sessions: 0, capped: false, onPlan: false })
   })
-  test('a session in each of the last three finished weeks is a 3-week streak (this week, unfinished, is ignored)', () => {
-    const r = streak({}, weeksOf('2026-09-21', '2026-09-14', '2026-09-07'), today)
-    assert.equal(r.weeks, 3)
+  test('a session in each of the last three finished weeks is 3 sessions (this week, with none yet, is ignored)', () => {
+    assert.equal(streak({}, weeksOf('2026-09-21', '2026-09-14', '2026-09-07'), today).sessions, 3)
   })
-  test('this week counts as soon as it has a session', () => {
-    const r = streak({}, weeksOf('2026-09-28', '2026-09-21', '2026-09-14'), today)
-    assert.equal(r.weeks, 3)
+  test('this week\'s sessions count as they are logged', () => {
+    assert.equal(streak({}, weeksOf('2026-09-28', '2026-09-21', '2026-09-14'), today).sessions, 3)
   })
-  test('an empty week breaks it — and nothing before the gap counts', () => {
-    const r = streak({}, weeksOf('2026-09-21', '2026-09-14', '2026-08-31', '2026-08-24'), today)
-    assert.equal(r.weeks, 2)
+  test('every session counts, not every week: three and two in a row of weeks are 5', () => {
+    assert.equal(streak({}, [...logsIn('2026-09-21', 3), ...logsIn('2026-09-14', 2)], today).sessions, 5)
   })
-  test('three sessions in one week are still one week', () => {
-    assert.equal(streak({}, logsIn('2026-09-21', 3), today).weeks, 1)
+  test('an empty week breaks it, and nothing before the gap counts', () => {
+    assert.equal(streak({}, weeksOf('2026-09-21', '2026-09-14', '2026-08-31', '2026-08-24'), today).sessions, 2)
   })
 })
 
-describe('_dashStreakWeeks — with a program: every planned session', () => {
+describe('_dashStreak — with a plan: a planned session left unlogged breaks it', () => {
   const prog = program('2026-08-03', '2026-09-28')   // 3 a week, nine weeks, including this one
   test('every planned session logged in each finished week counts them all', () => {
     const logs = ['2026-09-21', '2026-09-14', '2026-09-07', '2026-08-31'].flatMap(m => logsIn(m, 3))
-    // 08-24 .. 08-03 have a plan and nothing logged, so the streak stops at 08-31.
-    assert.equal(streak(prog, logs, '2026-10-03').weeks, 4)
+    // 08-24 .. 08-03 have a plan and nothing logged, so the run stops at 08-31.
+    assert.equal(streak(prog, logs, '2026-10-03').sessions, 12)
   })
-  test('two of three is a miss: it breaks the streak', () => {
+  test('two of three is a miss: it breaks the run, and nothing before it counts', () => {
     const logs = [...logsIn('2026-09-21', 2), ...logsIn('2026-09-14', 3), ...logsIn('2026-09-07', 3)]
-    assert.equal(streak(prog, logs, '2026-10-03').weeks, 0)
+    assert.equal(streak(prog, logs, '2026-10-03').sessions, 0)
+    assert.equal(streak(prog, [...logs, ...logsIn('2026-09-28', 1)], '2026-10-03').sessions, 1, 'only what is logged since the miss')
   })
-  test('the current week is complete only when ALL its sessions are logged', () => {
+  test('this week adds what is logged so far and never breaks the run', () => {
     const base = ['2026-09-21', '2026-09-14'].flatMap(m => logsIn(m, 3))
-    assert.equal(streak(prog, [...base, ...logsIn('2026-09-28', 3)], '2026-10-03').weeks, 3, 'all three this week: it counts')
-    assert.equal(streak(prog, [...base, ...logsIn('2026-09-28', 2)], '2026-10-03').weeks, 2, 'two of three: ignored, not a break')
+    assert.equal(streak(prog, base, '2026-10-03').sessions, 6, 'nothing logged this week yet: not a miss')
+    assert.equal(streak(prog, [...base, ...logsIn('2026-09-28', 1)], '2026-10-03').sessions, 7, 'one of three this week: counted, not a break')
   })
-  test('a Wednesday with one of three logged does not break a long streak (an unfinished week is not a missed one)', () => {
-    const logs = ['2026-09-21', '2026-09-14', '2026-09-07'].flatMap(m => logsIn(m, 3)).concat(logsIn('2026-09-28', 1))
-    assert.equal(streak(prog, logs, '2026-09-30').weeks, 3)
+  test('extra sessions are fine and all count: four logged against three planned', () => {
+    assert.equal(streak(prog, logsIn('2026-09-21', 4), '2026-10-03').sessions, 4)
   })
-  test('a planned rest week (nothing scheduled inside the program) neither earns nor breaks', () => {
+  test('a planned rest week (nothing scheduled inside the plan) neither earns nor breaks, and a session logged in it counts', () => {
     const p = program('2026-08-03', '2026-09-28', 3, ['2026-09-14'])
-    const logs = ['2026-09-21', '2026-09-07', '2026-08-31'].flatMap(m => logsIn(m, 3))
-    assert.equal(streak(p, logs, '2026-10-03').weeks, 3, 'the empty week of 09-14 is skipped, not counted')
+    const logs = [...['2026-09-21', '2026-09-07', '2026-08-31'].flatMap(m => logsIn(m, 3)), ...logsIn('2026-09-14', 1)]
+    assert.equal(streak(p, logs, '2026-10-03').sessions, 10)
   })
-  test('extra sessions are fine: four logged against three planned still counts', () => {
-    assert.equal(streak(prog, logsIn('2026-09-21', 4), '2026-10-03').weeks, 1)
+  test('a Wednesday with one session logged does not break a long run', () => {
+    const logs = ['2026-09-21', '2026-09-14', '2026-09-07'].flatMap(m => logsIn(m, 3)).concat(logsIn('2026-09-28', 1))
+    assert.equal(streak(prog, logs, '2026-09-30').sessions, 10)
   })
 })
 
-describe('_dashStreakWeeks — outside the program\'s span, one session a week keeps it alive', () => {
-  test('a program that ended and nothing since: the streak is 0 however clean the old weeks were', () => {
+describe('_dashStreak — a plan cannot ask for a session before the day it starts', () => {
+  // Mon/Wed/Fri plan from Monday 28 Sep, but assigned with a start date of Wednesday 30 Sep: its Monday 28 is not a planned session.
+  const plan = program('2026-09-28', '2026-10-12')
+  const logs = [...logsIn('2026-10-12', 1), ...logsIn('2026-10-05', 3), '2026-09-30', '2026-10-02', ...weeksOf('2026-09-21')]
+  test('with the start date, week 1 asks for the two sessions that exist and is met', () => {
+    assert.equal(streak(plan, logs, '2026-10-12', 52, '2026-09-30').sessions, 7, '1 this week + 3 + 2 in week 1 + 1 the week before the plan')
+  })
+  test('without it, week 1 asks for three, can never be met, and breaks the run (the 2026-10-12 review)', () => {
+    assert.equal(streak(plan, logs, '2026-10-12').sessions, 4)
+  })
+})
+
+describe('_dashStreak — the start week of a plan is in the plan', () => {
+  // The assign form defaults the start date to today: a plan assigned on Saturday 10 Oct has no Mon/Wed/Fri session on or after its start that week.
+  test('a plan assigned late in a week: that week is a planned rest week (asks nothing), not an outside week that needs a session', () => {
+    const plan = program('2026-10-05', '2026-10-26')
+    const logs = [...logsIn('2026-10-12', 1), ...logsIn('2026-09-28', 2), ...logsIn('2026-09-21', 1)]
+    const r = streak(plan, logs, '2026-10-14', 52, '2026-10-10')
+    assert.equal(r.sessions, 4, '1 this week + 0 in the start week (rest) + 2 + 1 before the plan; the week before that is empty and ends it')
+    assert.equal(r.onPlan, true)
+  })
+})
+
+describe('_dashPlannedFrom - planned days before the start date are not planned sessions', () => {
+  const f = (m, d) => get('_dashPlannedFrom')(m, d)
+  const map = { '2026-09-28': [{ id: 'a' }], '2026-09-30': [{ id: 'b' }], '2026-10-02': [{ id: 'c' }] }
+  test('days before the start date are dropped; the start date itself stays', () => {
+    assert.deepEqual(Object.keys(f(map, '2026-09-30')), ['2026-09-30', '2026-10-02'])
+  })
+  test('no start date leaves the map alone; junk input is an empty map', () => {
+    assert.deepEqual(Object.keys(f(map, null)), Object.keys(map))
+    assert.deepEqual(Object.keys(f(undefined, '2026-09-30')), [])
+  })
+  test('a start date with a time part is read as its date', () => {
+    assert.deepEqual(Object.keys(f(map, '2026-09-30T00:00:00+00:00')), ['2026-09-30', '2026-10-02'])
+  })
+})
+
+describe('_dashStreak — outside the plan, a session a week keeps it alive and joins the planned weeks', () => {
+  test('a plan that ended and nothing since: the run is 0 however clean the old weeks were', () => {
     const ended = program('2026-07-06', '2026-09-07')
     const logs = ['2026-09-07', '2026-08-31', '2026-08-24'].flatMap(m => logsIn(m, 3))
-    assert.equal(streak(ended, logs, '2026-10-03').weeks, 0, 'four idle weeks after the plan ended')
+    assert.equal(streak(ended, logs, '2026-10-03').sessions, 0, 'two idle weeks after the plan ended')
   })
-  test('after the plan ends, a session a week carries the streak on and joins the planned weeks before it', () => {
+  test('after the plan ends, a session a week carries on and joins the planned weeks before it', () => {
     const ended = program('2026-07-06', '2026-09-07')
     const logs = [...weeksOf('2026-09-21', '2026-09-14'), ...['2026-09-07', '2026-08-31', '2026-08-24'].flatMap(m => logsIn(m, 3))]
-    // 09-21 and 09-14: one session each (outside the span); 09-07, 08-31, 08-24: all three; 08-17: nothing logged -> stop.
-    assert.equal(streak(ended, logs, '2026-10-03').weeks, 5)
+    // 09-21 and 09-14: one session each (outside the plan); 09-07, 08-31, 08-24: three each; 08-17: planned three, nothing logged -> stop.
+    assert.equal(streak(ended, logs, '2026-10-03').sessions, 11)
   })
-  test('before the program began, weeks do not count: the streak starts with the plan (it was 5 before 2026-10-12)', () => {
+  test('before the plan began a week still needs one session, and its sessions count', () => {
     const started = program('2026-09-14', '2026-09-28')
     const logs = [...['2026-09-28', '2026-09-21', '2026-09-14'].flatMap(m => logsIn(m, 3)), ...weeksOf('2026-09-07', '2026-08-31')]
-    const r = streak(started, logs, '2026-10-03')
-    assert.equal(r.weeks, 3, 'the three planned weeks only, not the two single-session weeks before the plan')
-    assert.equal(r.capped, false, 'the plan\'s first week is a real boundary: the true figure cannot be higher')
+    assert.equal(streak(started, logs, '2026-10-03').sessions, 11)
   })
-  test('Jake\'s case: a one-week plan after 16 weeks of single sessions reads 0, not 16', () => {
-    const plan = program('2026-10-12', '2026-10-12')     // one week, Mon/Wed/Fri
+  test('Jake\'s case: a one-week plan after 16 weeks of single sessions is 17 sessions in a row, and says so (not "weeks on the plan")', () => {
+    const plan = program('2026-10-12', '2026-10-12')
     const before = Array.from({ length: 16 }, (_, i) => addDays('2026-10-05', -7 * i))
-    const logs = [...weeksOf(...before), ...logsIn('2026-10-12', 1)]
-    assert.equal(streak(plan, logs, '2026-10-12').weeks, 0, 'this week is unfinished (1 of 3) so it is ignored, and the 16 earlier weeks are not the plan')
-    assert.equal(streak(plan, [...weeksOf(...before), ...logsIn('2026-10-12', 3)], '2026-10-12').weeks, 1, 'finish the week and it is 1')
+    const r = streak(plan, [...weeksOf(...before), ...logsIn('2026-10-12', 1)], '2026-10-12')
+    assert.equal(r.sessions, 17)
+    assert.equal(r.onPlan, true, 'this week is inside the plan')
   })
-  test('a plan that has not begun yet: nothing to hit, however long the person has been training', () => {
-    const later = program('2026-10-12', '2026-10-26')
-    const logs = weeksOf('2026-10-05', '2026-09-28', '2026-09-21')
-    assert.equal(streak(later, logs, '2026-10-08').weeks, 0)
-  })
-  test('with no program the old weeks still count (the plain training streak)', () => {
-    assert.equal(streak({}, weeksOf('2026-09-21', '2026-09-14', '2026-09-07'), '2026-10-03').weeks, 3)
-  })
-  // The 2026-10-12 review: the tile's words follow HOW the number was counted, not whether a program exists.
-  test('onPlan says the streak was counted by the plan; notBegun that the plan starts later; a program with no dated session is a plain streak', () => {
+  test('onPlan: true only while the plan governs this week', () => {
     const plan = program('2026-09-14', '2026-09-28')
-    assert.equal(streak(plan, logsIn('2026-09-28', 3), '2026-10-03').onPlan, true)
-    const later = streak(program('2026-10-12', '2026-10-26'), [], '2026-10-08')
-    assert.deepEqual({ ...later }, { weeks: 0, capped: false, onPlan: true, notBegun: true })
-    const noDates = streak({}, weeksOf('2026-09-21', '2026-09-14'), '2026-10-03')
-    assert.equal(noDates.onPlan, false, 'a program with no start date or no sessions places nothing on the calendar, so nothing is dated')
-    assert.equal(noDates.weeks, 2, 'and it stays the one-session-a-week streak')
-  })
-  test('a plan exactly as old as the lookback is exact, not "N+" (the first week of the plan is a real boundary)', () => {
-    const plan = program('2026-09-07', '2026-09-28')      // first = 09-07, three weeks before this week (09-28)
-    const logs = ['2026-09-28', '2026-09-21', '2026-09-14', '2026-09-07'].flatMap(m => logsIn(m, 3))
-    const r = streak(plan, logs, '2026-10-03', 3)          // lookback of 3 weeks: the loop ends exactly on the plan's first week
-    assert.deepEqual({ ...r }, { weeks: 4, capped: false, onPlan: true })
+    assert.equal(streak(plan, [], '2026-10-03').onPlan, true, 'this week is the plan\'s last')
+    assert.equal(streak(plan, [], '2026-10-12').onPlan, false, 'the plan has ended')
+    assert.equal(streak(plan, [], '2026-09-08').onPlan, false, 'the plan has not begun')
+    assert.equal(streak({}, [], '2026-10-03').onPlan, false, 'no plan')
   })
 })
 
-describe('_dashStreakWeeks — edges', () => {
+describe('_dashStreak — edges', () => {
   test('a very long run is capped at the lookback and says so', () => {
     const mondays = Array.from({ length: 60 }, (_, i) => addDays('2026-09-28', -7 * i))
     const r = streak({}, weeksOf(...mondays), '2026-10-03')
-    assert.equal(r.weeks, 53, 'this week plus the 52 weeks looked back')
+    assert.equal(r.sessions, 53, 'this week plus the 52 weeks looked back, one session each')
     assert.equal(r.capped, true)
   })
   test('junk is ignored: unparseable log dates and empty plan days', () => {
     const r = streak({ '2026-09-30': [], 'junk': [{}] }, ['nope', null, ...weeksOf('2026-09-21')], '2026-10-03')
-    assert.equal(r.weeks, 1)
+    assert.equal(r.sessions, 1)
   })
   test('missing inputs do not throw', () => {
-    assert.equal(streak(undefined, undefined, '2026-10-03').weeks, 0)
+    assert.equal(streak(undefined, undefined, '2026-10-03').sessions, 0)
   })
 })
 
-// What the streak tile SAYS follows how the number was counted (Jake, 2026-10-12: it read '16 week streak, hitting your whole plan' on a one-week plan).
+// What the streak tile SAYS follows how the number was counted (Jake, 2026-10-12): sessions in a row, and "the plan" only while the plan governs this week.
 describe('_dashTilesHtml - the streak tile wording', () => {
   const words = streak => get('_dashTilesHtml')(streak, { week: 1, name: 'Op', phase: null, totalWeeks: 1 }, false).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
-  test('counted by the plan: hitting your whole plan', () => {
-    assert.match(words({ weeks: 2, capped: false, onPlan: true }), /2 week streak hitting your whole plan/)
+  test('while a plan governs the week: sessions in a row, without missing a planned session', () => {
+    assert.match(words({ sessions: 12, capped: false, onPlan: true }), /12 sessions in a row without missing a planned session/)
   })
-  test('counted as a plain streak (no dated plan session): a session every week, never the plan', () => {
-    const t = words({ weeks: 16, capped: false, onPlan: false })
-    assert.match(t, /16 week streak a session every week/)
-    assert.doesNotMatch(t, /whole plan/)
+  test('otherwise: sessions in a row, a session every week, never the plan; one session is singular; a capped run says N+', () => {
+    const t = words({ sessions: 16, capped: false, onPlan: false })
+    assert.match(t, /16 sessions in a row a session every week/)
+    assert.doesNotMatch(t, /planned session/)
+    assert.match(words({ sessions: 1, capped: false, onPlan: false }), /1 session in a row/)
+    assert.match(words({ sessions: 53, capped: true, onPlan: false }), /53\+ sessions in a row/)
   })
-  test('nothing yet: the hint says why, by how the streak is counted', () => {
-    assert.match(words({ weeks: 0, capped: false, onPlan: true, notBegun: true }), /your plan has not started yet/)
-    assert.match(words({ weeks: 0, capped: false, onPlan: true }), /finish this week's plan to start one/)
-    assert.match(words({ weeks: 0, capped: false, onPlan: false }), /log a session this week to start one/)
+  test('nothing yet: the hint says what starts one (a planned rest week asks for none, so it never says "planned")', () => {
+    assert.match(words({ sessions: 0, capped: false, onPlan: true }), /0 sessions in a row log a session to start one/)
+    assert.match(words({ sessions: 0, capped: false, onPlan: false }), /0 sessions in a row log a session to start one/)
+  })
+  test('a capped 1 reads "1+ sessions", not "1+ session"', () => {
+    assert.match(words({ sessions: 1, capped: true, onPlan: false }), /1\+ sessions in a row/)
   })
 })
+
 describe('_dashWeekDays — the week strip', () => {
   const prog = program('2026-09-28', '2026-09-28')           // Mon 28, Wed 30, Fri 2 planned
   const logs = [{ id: 'l1', name: 'Upper', date: '2026-09-28', workout_log_exercises: [{ id: 'e' }] }]

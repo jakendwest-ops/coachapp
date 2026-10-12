@@ -36,7 +36,7 @@ test.describe('solo dashboard cards', () => {
         _dashWeightHtml([{ date: d(-1), weight_kg: 82.4 }, { date: d(-3), weight_kg: 82.8 }]),
         _dashCalendarHtml([{ date: d(1), kind: 'event', title: 'Massage', colour: 'var(--warning)' }], today),
         _dashGoalsHtml([{ id: 'g', title: 'Bench', target_date: d(20), start_value: 1, current_value: 2, target_value: 3, goal_milestones: [] }], today, false),
-        _dashTilesHtml({ weeks: 2, capped: false }, { name: 'P', phase: 'Phase 1', week: 2, totalWeeks: 8, pct: 25 }, true),
+        _dashTilesHtml({ sessions: 2, capped: false, onPlan: true }, { name: 'P', phase: 'Phase 1', week: 2, totalWeeks: 8, pct: 25 }, true),
       ].join('')
       const box = document.createElement('div')
       box.innerHTML = html
@@ -238,7 +238,7 @@ test.describe('solo dashboard cards', () => {
       try { out.goals = _dashGoalsHtml([], today, false) } catch (e) { out.goalsErr = String(e) }
       try { out.goalsNull = _dashGoalsHtml(null, today, false) } catch (e) { out.goalsNullErr = String(e) }
       try { out.hero = _dashHeroHtml(day, ctx) } catch (e) { out.heroErr = String(e) }
-      try { out.tiles = _dashTilesHtml({ weeks: 0, capped: false }, null, true) } catch (e) { out.tilesErr = String(e) }
+      try { out.tiles = _dashTilesHtml({ sessions: 0, capped: false, onPlan: false }, null, true) } catch (e) { out.tilesErr = String(e) }
       try { out.week = _dashWeekHtml(_dashWeekDays(today, {}, []), { done: 0, planned: 0 }, null) } catch (e) { out.weekErr = String(e) }
       try { out.progNull = JSON.stringify(_programWorkoutsByDate(null, null)) } catch (e) { out.progErr = String(e) }
       return out

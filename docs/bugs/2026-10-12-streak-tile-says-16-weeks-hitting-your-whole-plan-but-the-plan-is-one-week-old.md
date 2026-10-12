@@ -3,7 +3,7 @@ id: 2026-10-12-streak-tile-says-16-weeks-hitting-your-whole-plan-but-the-plan-is
 status: fixed-awaiting-jake
 priority: medium
 reported: 2026-10-12
-status_detail: "FIXED 2026-10-12 on master, unreleased (app-dashboard v33); awaiting Jake's look on a phone. Jake chose 'plan weeks only': while a plan is running the streak starts with the plan (it never counts the weeks before it); before the plan begins it is 0; with no dated plan it stays a plain training streak and is labelled as one. Red before, green after: tests-node/dashboard-model.test.mjs (Jake's one-week-plan case reads 0, not 16; the not-begun, no-dated-plan and exactly-52-weeks cases; the tile wording) and tests/dashboard-rework-2026-10-03.spec.js. Carried: see the section at the end."
+status_detail: "FIXED 2026-10-12 on master, unreleased (app-dashboard v33); awaiting Jake's look on a phone. Jake's final decision: the streak is SESSIONS LOGGED IN A ROW. A finished week inside the plan breaks it if a planned session was left unlogged; with no plan (or outside it) a whole week with no session breaks it; this week never breaks it; extra sessions count. The tile reads 'N sessions in a row'. Red before, green after: tests-node/dashboard-model.test.mjs and tests/dashboard-rework-2026-10-03.spec.js. See the section at the end for the history and what was simplified."
 ---
 
 # The dashboard streak says "16 week streak, hitting your whole plan", but he has not been on the plan for 16 weeks
@@ -32,16 +32,31 @@ UNVERIFIED against his data: the browser pane was signed out on 2026-10-12, so h
 
 **Closes when** Jake picks one, it is built, and he confirms on his phone that the number and its label agree with his history.
 
-## Decision (Jake, 2026-10-12) and what was built
+## Decisions (Jake, 2026-10-12) and what was built
 
-Asked "what should the dashboard streak count?", Jake chose **plan weeks only**: while a plan is running, count only weeks since it began; with no plan it stays a plain training streak.
+1. First answer: "plan weeks only" (count only weeks since the plan began). Built, then **superseded the same day** by his next answer.
+2. Final: "the streak should [show] how many sessions you have logged in a row". Asked what breaks it: **a planned session left unlogged** while a plan runs; with no plan, **the same gap rule** (7 days with none).
 
-- `_dashStreakWeeks` never looks back past the Monday of the plan's first session; before the plan has begun it is 0 (`notBegun`); it returns `onPlan`, which says whether the number was counted by the plan.
-- The tile's words follow `onPlan`, not "a program exists": "hitting your whole plan" only for a plan-counted streak, "a session every week" for a plain one, "your plan has not started yet" before it begins. A program with no start date or no sessions has nothing dated, so it is a plain streak and says so (found by the review).
-- A plan exactly 52 weeks old no longer shows "53+" (review).
+What `_dashStreak` does (it replaces `_dashStreakWeeks`):
 
-## Carried (not built, for Jake)
+- The number is the sessions logged across the unbroken run of Monday-to-Sunday weeks ending with this one; every session counts, planned or not.
+- A FINISHED week inside the plan breaks the run when fewer sessions were logged than planned; a planned rest week neither earns nor breaks it (its sessions still count). A finished week outside the plan (before it began, after it ended, or no plan) breaks it when no session was logged.
+- THIS week never breaks it and adds what is logged so far, so a Wednesday is not a missed week and a Monday session done on a Tuesday still counts.
+- A plan cannot ask for a session before its start date: a plan that begins on a Wednesday no longer makes its own first Monday unwinnable (this was the review's finding, and the reason the streak could read 0 for a diligent first week).
+- The tile says "N sessions in a row"; the sub-line says "without missing a planned session" while a plan governs this week and "a session every week" otherwise. It no longer claims "your plan" for weeks before the plan. Your own case (a one-week plan after 16 weeks of single sessions) is 17 sessions in a row, and says so.
 
-- **A plan assigned mid-week can start with an impossible week.** Week 1 counts every planned session in that calendar week, including days before the start date, so someone who starts on a Wednesday of a Mon/Wed/Fri plan can never complete week 1 and the streak stays 0 until week 2 is done. This was already true of the plan's own weeks; it matters more now that week 1 is where the streak begins. A fix would count only sessions on or after the start date.
-- The streak resets to 0 whenever a program is re-assigned or restarted (a new assignment is a new plan). That follows the rule Jake chose; the wording does not say so.
-- If a newer program has been assigned beside a running one, the newest assignment decides (the same convention as the Workouts page and the calendar).
+## Simplified, for Jake to know
+
+- "7 days with none" is implemented as "a whole Monday-to-Sunday week with none", so it works with the plan rule. A gap of 8 to 12 days that touches two weeks is therefore not a break; a whole empty week is. Say if you want the exact day count instead.
+- Days before the first plan week still need one session a week while the plan has not started (outside the plan), and count toward the run.
+
+## Review follow-ups, built (2026-10-12)
+
+- **The plan's start week is in the plan.** The assign form defaults the start date to today, so a plan assigned on a Saturday has no session on or after its start day that week. That week is now a planned rest week (it asks nothing) and not an outside week that needs one session, so it no longer breaks the run.
+- **The week strip, its "x of y done", the hero and Up next agree with the streak.** Planned days before the start date are filtered once, where the plan is loaded (`_dashPlannedFrom`); a plan that starts on a Wednesday used to show its own Monday as a red miss. The calendar and the Workouts page still show those days (not changed).
+- Tile wording: with nothing yet it always says "log a session to start one" (a planned rest week asks for none); a capped 1 reads "1+ sessions".
+
+## Carried, for Jake (strict by design)
+
+- **A planned session must be logged by Sunday of its week.** Weeks are strict buckets: with a Mon/Wed/Fri plan, Mon and Wed logged and the Friday session done the next Monday, the finished week is one short and breaks the run; the late session counts in the new week. This is the rule as written, and it is the price of a simple, explainable streak. Say if you want a grace day.
+- The runner stamps a session with the UTC date while the dashboard buckets by the local week, so a session logged in the first hour after midnight (BST) can land in the previous week. Already open: [the runner saves the session date as the UTC day](2026-10-04-runner-saves-the-session-date-as-the-utc-day.md).

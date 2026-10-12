@@ -21,7 +21,7 @@ Everything from `v2026.09.14` on still awaits Jake's look on a phone (the `fixed
 
 ## In flight
 
-Unreleased (Jake's 2026-10-12 items 1-4a): `app-dashboard` v33, `app-programs` v73, `app-progress` v79; items 4b, 5, 6 are scoped, awaiting prototypes. Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
+Unreleased (Jake's 2026-10-12 items, batching for one release): `app-dashboard` v33 (sessions-in-a-row streak), `app-programs` v73, `app-progress` v79, `app-clients` v21; items 4b, 5, 6 await prototypes. Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
 end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation:
 leave it); the names "Biggest set" and "View program".
 

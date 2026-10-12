@@ -18,26 +18,61 @@ const rir = v => ({ effort_type: 'rir', effort_value: v })
 test.describe('Recorded effort in the Performance tables (2026-10-12)', () => {
   test('a set line carries its effort, RPE and RIR each naming their scale; sets with different effort do not collapse', async ({ page }) => {
     await loginAsPT(page)
-    const r = await page.evaluate(([rpeSets, rirSets, mixed, none, junk]) => ({
+    const r = await page.evaluate(([rpeSets, rirSets, mixed, none, junk, legacy]) => ({
       rpe: _collapsedSetLine(rpeSets),
       plain: _setDetailsLine(rpeSets),
       rir: _collapsedSetLine(rirSets),
       mixed: _collapsedSetLine(mixed),
       none: _collapsedSetLine(none),
-      junk: _collapsedSetLine(junk)
+      junk: _collapsedSetLine(junk),
+      legacy: _collapsedSetLine(legacy)
     }), [
       [set(1, 62.5, 4, rpe(7)), set(2, 65, 4, rpe(8)), set(3, 62.4, 4, rpe(7))],
       [set(1, 82.5, 6, rir(0)), set(2, 80, 9, rir(0)), set(3, 80, 7, rir(0))],
       [set(1, 95, 8, rpe(7)), set(2, 95, 8, rpe(7)), set(3, 95, 8, rpe(8)), set(4, 95, 8)],
       [set(1, 95, 8), set(2, 95, 8)],
-      [set(1, 95, 8, { effort_value: 8 }), set(2, 95, 8, { effort_type: 'rpe', effort_value: null }), set(3, 95, 8, { effort_type: 'rpe', effort_value: 'abc' })]
+      [set(1, 95, 8, { effort_type: 'tempo', effort_value: 8 }), set(2, 95, 8, { effort_type: 'rpe', effort_value: null }), set(3, 95, 8, { effort_type: 'rpe', effort_value: 'abc' })],
+      [set(1, 95, 8, { effort_type: null, effort_value: 8 }), set(2, 95, 8, { effort_type: null, effort_value: 8 })]
     ])
     expect(r.rpe, 'an RPE is named as one, like an RIR').toBe('62.5×4 @7 RPE · 65×4 @8 RPE · 62.4×4 @7 RPE')
     expect(r.plain, 'the plain line (the Per session list) carries it too').toBe('62.5×4 @7 RPE, 65×4 @8 RPE, 62.4×4 @7 RPE')
     expect(r.rir, 'RIR 0 ("to failure") is a real value and is shown').toBe('82.5×6 @0 RIR · 80×9 @0 RIR · 80×7 @0 RIR')
     expect(r.mixed, 'two sets at RPE 7 collapse; the RPE 8 set and the set with no effort do not join them').toBe('2 × 95×8 @7 RPE · 95×8 @8 RPE · 95×8')
     expect(r.none, 'a set with no effort reads exactly as it always did').toBe('2 × 95×8')
-    expect(r.junk, 'an effort with no scale, no value, or a value that is not a number is not shown (RPE and RIR run in opposite directions, so a guess could invert it)').toBe('3 × 95×8')
+    expect(r.junk, 'an unknown scale, no value, or a value that is not a number is not shown (RPE and RIR run in opposite directions, so a guess could invert it)').toBe('3 × 95×8')
+    expect(r.legacy, 'a set logged before the scale was recorded (no type) is shown as RPE - Jake, 2026-10-12').toBe('2 × 95×8 @8 RPE')
+  })
+
+  // Jake, 2026-10-12: "include per block" - the Per program tab gets an average effort for each block's window of the exercise, RIR converted to RPE.
+  test('Per program: each block shows its average effort; RIR is converted, a set with no scale counts as RPE, a block with no effort shows no line', async ({ page }) => {
+    await loginAsPT(page)
+    const r = await page.evaluate(() => {
+      const host = document.createElement('div'); host.id = 'blk-result'; document.body.appendChild(host)
+      const keep = { c: window._blockCache, e: window._blockExCache, s: window._blockState }
+      const s = (n, w, r, extra = {}) => ({ set_number: n, weight_kg: w, reps_achieved: r, ...extra })
+      window._blockCache = [
+        { key: 'past:a', name: 'Block A', start: '2026-05-04', end: '2026-06-28', weeks: 8, open: false },
+        { key: 'past:b', name: 'Block B', start: '2026-07-06', end: '2026-08-30', weeks: 8, open: false },
+        { key: 'past:c', name: 'Block C', start: '2026-09-07', end: '2026-10-04', weeks: 4, open: false }
+      ]
+      window._blockExCache = [{ name: 'Barbell Military Press', metricType: 'weight_reps', sessions: [
+        { date: '2026-05-11', sets: [s(1, 60, 5, { effort_type: 'rpe', effort_value: 7 }), s(2, 60, 5, { effort_type: 'rpe', effort_value: 8 })] },
+        { date: '2026-07-13', sets: [s(1, 62.5, 5, { effort_type: 'rir', effort_value: 1 }), s(2, 62.5, 5, { effort_type: 'rir', effort_value: 2 }), s(3, 62.5, 5, { effort_type: null, effort_value: 7 }), s(4, 62.5, 5, { effort_type: 'rpe', effort_value: 88 })] },
+        { date: '2026-09-14', sets: [s(1, 65, 5)] }
+      ] }]
+      const read = (a, b) => {
+        window._blockState = { a, b, ex: 'Barbell Military Press' }
+        _renderBlockComparison()
+        return [...host.querySelectorAll('[data-block-effort]')].map(e => e.textContent.replace(/\s+/g, ' ').trim())
+      }
+      try {
+        return { ab: read('past:a', 'past:b'), c: read('past:c', ''), cWords: host.textContent.includes('Block C') }
+      } finally { window._blockCache = keep.c; window._blockExCache = keep.e; window._blockState = keep.s; host.remove() }
+    })
+    expect(r.ab[0], 'RPE 7 and 8 average 7.5').toBe('Average effort @7.5 RPE · 2 sets')
+    expect(r.ab[1], 'RIR 1 and 2 are RPE 9 and 8, and a set with no scale is RPE 7: (9 + 8 + 7) / 3 = 8, and it says RIR was converted').toBe('Average effort @8 RPE · 3 sets (RIR counted as 10 − RIR)')
+    expect(r.c, 'a block whose sets have no effort shows no effort line').toEqual([])
+    expect(r.cWords, 'and the block itself is still shown').toBe(true)
   })
 
   test('Per session: a stored value that looks like markup is shown as text, never run', async ({ page }) => {

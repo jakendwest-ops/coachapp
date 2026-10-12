@@ -196,6 +196,7 @@ function _applyOneRMEstimate(i) {
 async function renderClient1RMs(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading 1RMs…</div>'
   const { data: rows, error } = await db.from('client_1rms').select('*').eq('client_id', clientId).order('recorded_at', { ascending: false })
+  if (!el.isConnected) return    // superseded by a newer tab: do not rebind window._oneRMGridRows under it
   if (error) {
     el.innerHTML = `<div class="empty-state"><div class="empty-title">Couldn't load your 1RMs</div><div class="empty-text">Check your connection and try again.</div></div>`
     return
@@ -509,6 +510,7 @@ async function renderClientPerformance(clientId, el) {
     .eq('client_id', clientId)
     .order('date', { ascending: false }).order('id', { ascending: false }))
 
+  if (!el.isConnected) return    // superseded: switchTab gave a newer tab the page, and this render's chart teardown and globals below would hit THAT tab
   if (error) { log.error('renderClientPerformance', 'fetch failed', error); el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading performance data</div></div>`; return }
   log.ok('renderClientPerformance', `loaded ${logs.length} records`)
 
@@ -807,6 +809,7 @@ async function renderClientWeight(clientId, el) {
   ])
   // clientErr counts too: ignoring it rendered a BLANK goals editor, and "Save goals" would then write NULLs over the
   // person's real starting and goal weights.
+  if (!el.isConnected) return    // superseded by a newer tab (see renderClientPerformance): do not destroy the live tab's charts or rebind its globals
   const loadErr = error || clientErr
 
   if (loadErr) { log.error('renderClientWeight', 'fetch failed', loadErr); el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading weight data</div></div>`; return }
@@ -1950,7 +1953,8 @@ const _XS_COUNT_EFFORT = true
 
 // The options _estimate1RM wants for one logged set, or undefined. A value with NO scale is ignored, never guessed: RIR and
 // RPE run in opposite directions, so reading an unlabelled 2 as either could invert it. _hasNumVal, not truthiness: a real 0
-// (RIR 0, "to failure") counts.
+// (RIR 0, "to failure") counts. NOTE (2026-10-12): the DISPLAY (_xsEffortText) and the block average now read a NULL type as RPE, because Jake asked to
+// "show them as RPE"; the ESTIMATE deliberately does not, since changing an estimate is not what he asked, so a legacy set can read "@8 RPE" without counting.
 function _xsEffortOpts(s, useEffort) {
   if (!useEffort) return undefined
   const scale = s.effort_type === 'rpe' || s.effort_type === 'rir' ? s.effort_type : null
@@ -2400,12 +2404,15 @@ function _renderBlockComparison() {
     if (!vals.length) return `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);padding:3px 0">${escapeHtml(s.b.name)} · <em>no sessions logged in this window</em></div>`
     const first = vals[0], last = vals[vals.length - 1]   // sessions are sorted by date in _buildExerciseSeries
     const { delta, arrow, colour } = _deltaBadge(first, last, lowerIsBetter)
+    // The block's average effort over every set in its window, whatever the chosen metric (Jake, 2026-10-12: "include per block").
+    const eff = _avgEffortRpe(s.pts.flatMap(p => p.sets || []))
+    const effLine = eff ? `<div data-block-effort style="font-size:var(--text-sm, 11px);color:var(--text-muted);padding:0 0 4px">Average effort @${eff.avg} RPE · ${eff.n} set${eff.n === 1 ? '' : 's'}${eff.converted ? ' (RIR counted as 10 − RIR)' : ''}</div>` : ''
     return `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:var(--text-md, 12px)">
       <span style="color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.b.name)} · ${escapeHtml(_fmtBlockRange(s.b))}</span>
       <span style="flex-shrink:0"><strong>${escapeHtml(active[3](first))} → ${escapeHtml(active[3](last))}</strong>
         <span style="color:${colour};font-weight:700"> ${arrow}${delta == null ? '' : ` ${Math.abs(delta)}%`}</span>
         <span style="color:var(--text-muted)"> · ${s.pts.length} session${s.pts.length === 1 ? '' : 's'}</span></span>
-    </div>`
+    </div>${effLine}`
   }
 
   // Metric chips, matching the Per exercise cards. Without them this tab was locked to whichever
@@ -2834,11 +2841,29 @@ function _xsDate(iso, long) {
 // "@9 RPE" or "@2 RIR": the scale travels with the number, because the two run in opposite directions. Both carry it: an RPE used to be a bare
 // "@9" while an RIR said "RIR", so an RPE did not read as one (Jake, 2026-10-12: "the RPE is not shown whereas the RIR is").
 function _xsEffortText(s) {
-  if (!_hasNumVal(s.effort_value) || !(s.effort_type === 'rpe' || s.effort_type === 'rir')) return ''
+  if (!_hasNumVal(s.effort_value)) return ''
+  // A set logged before the scale was recorded has an effort and NO type; those were all RPE (the runner's last-session table has always read them that way).
+  // Jake, 2026-10-12, asked to show them as RPE. Only a NULL type is read as RPE: any other unknown type still says nothing (RPE and RIR run in opposite directions).
+  // === null, not == null: undefined means the query did not SELECT effort_type, and reading that as RPE would invert an RIR (review, 2026-10-12).
+  const type = s.effort_type === null ? 'rpe' : s.effort_type
+  if (!(type === 'rpe' || type === 'rir')) return ''
   // parseFloat + isFinite: a stored value that is not a number (a hand-written row) says nothing, never "@NaN RPE" (found by the 2026-10-12 review).
   const v = parseFloat(s.effort_value)
-  if (!Number.isFinite(v)) return ''
-  return ' @' + v + (s.effort_type === 'rir' ? ' RIR' : ' RPE')
+  if (!Number.isFinite(v) || v < 0 || v > 10) return ''     // the scale is 0-10 (_effortOrNull's range): a hand-written 88 says nothing
+  return ' @' + v + (type === 'rir' ? ' RIR' : ' RPE')
+}
+// The average effort of a set of sets, as an RPE (Jake, 2026-10-12: "include per block" on the Per program tab). An RIR is converted (RPE = 10 - RIR) so the two scales
+// can be averaged; a set with no scale is read as RPE, as _xsEffortText does; a set with no usable effort is left out. null when none has one.
+function _avgEffortRpe(sets) {
+  let sum = 0, n = 0, converted = false
+  for (const x of sets || []) {
+    if (!_hasNumVal(x.effort_value)) continue
+    const v = parseFloat(x.effort_value)
+    if (!Number.isFinite(v) || v < 0 || v > 10) continue     // an out-of-range value would skew the whole block (and 1e308 would overflow the sum)
+    const t = x.effort_type === null ? 'rpe' : x.effort_type
+    if (t === 'rpe') { sum += v; n++ } else if (t === 'rir') { sum += 10 - v; n++; converted = true }
+  }
+  return n ? { avg: Math.round(sum / n * 10) / 10, n, converted } : null
 }
 // "117.5×3 @9" for the history; "117.5 × 3 @9" where it sits in a sentence. A bodyweight set is just its reps.
 // A weight of 0 is a weight (Jake, 2026-10-11: "0 should be logged as 0": an unweighted dip is 0 kg, and it must read "0 kg × 9", not "9 reps").

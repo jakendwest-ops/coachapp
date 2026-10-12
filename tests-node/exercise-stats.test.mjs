@@ -263,8 +263,13 @@ describe('_lastTimeSummary — what the runner\'s Last time panel says', () => {
     assert.equal(sum([set(100, 3, { effort_value: 2, effort_type: 'rir' })]).top, '100 kg × 3 @2 RIR')
   })
 
-  test('an effort with no scale is not shown (RIR and RPE run in opposite directions, so a guess could invert it)', () => {
+  // Jake, 2026-10-12: sets logged before the scale was recorded have an effort and no type; "show them as RPE" (they were all RPE). Only a MISSING type is read that way.
+  test('an effort with no scale is read as RPE (logged before the scale existed); an unknown scale says nothing (RIR and RPE run in opposite directions)', () => {
+    assert.equal(sum([set(100, 3, { effort_value: 8, effort_type: null })]).top, '100 kg × 3 @8 RPE')
+    // undefined is NOT null: a query that did not select effort_type must not have its RIR read as RPE (review, 2026-10-12).
     assert.equal(sum([set(100, 3, { effort_value: 8 })]).top, '100 kg × 3')
+    assert.equal(sum([set(100, 3, { effort_value: 88, effort_type: 'rpe' })]).top, '100 kg × 3', 'a value outside the 0-10 scale says nothing')
+    assert.equal(sum([set(100, 3, { effort_value: 8, effort_type: 'tempo' })]).top, '100 kg × 3')
     // A stored value that is not a number (a hand-written row) says nothing, never "@NaN RPE" (2026-10-12 review).
     assert.equal(sum([set(100, 3, { effort_value: 'abc', effort_type: 'rpe' })]).top, '100 kg × 3')
     assert.equal(sum([set(100, 3, { effort_value: '1e999', effort_type: 'rir' })]).top, '100 kg × 3')

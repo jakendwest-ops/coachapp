@@ -107,27 +107,38 @@ function _dashAddDays(ymd, n) {
   return _ymdLocal(d)
 }
 
+// Planned days BEFORE the assignment's start date are not planned sessions (a plan that starts on a Wednesday cannot ask for its Monday). Filtered once, where the
+// plan is loaded, so the week strip, its "x of y" counts, the hero and Up next agree with the streak; unfiltered, a Wednesday start showed its own Monday as a red
+// miss (found by the 2026-10-12 review). YYYY-MM-DD strings compare as dates; no start date leaves the map as it is.
+function _dashPlannedFrom(progByDate, startDate) {
+  const from = startDate ? String(startDate).slice(0, 10) : null
+  if (!from) return progByDate || {}
+  const out = {}
+  for (const ds of Object.keys(progByDate || {})) if (ds >= from) out[ds] = progByDate[ds]
+  return out
+}
+
 // How many weeks back the streak looks. Also how much history the dashboard reads: a year of sessions is a couple of hundred rows.
 const _DASH_STREAK_WEEKS = 52
 
-// The streak: consecutive weeks (Monday to Sunday) that hit the plan - Jake's choice, 2026-10-03: "Weeks hitting my whole plan".
-//   - INSIDE the program's span a week counts when every planned session was logged. A week with nothing planned asks nothing and is
-//     skipped (a planned rest week neither earns nor breaks the streak).
-//   - AFTER the span has ended, or with no program at all, one logged session keeps it alive. Without this a finished program would let
-//     someone who has not trained for months keep a streak.
-//   - The streak never looks back past the week the program began (Jake, 2026-10-12: "I have not been on this plan for 16 weeks"). It used to
-//     count the weeks BEFORE the plan by the one-session rule and label the whole number "hitting your whole plan", so a one-week plan showed
-//     16. While a program is running the streak starts with the program; before it has begun it is 0.
-//   - THIS week counts once it is complete and is simply ignored until then: a Wednesday is not a missed week.
-// progByDate is _programWorkoutsByDate's map ({ 'YYYY-MM-DD': [session, ...] }); logDates are the dates of logged sessions, one per
-// session. Returns { weeks, capped, onPlan, notBegun }: capped means it never broke inside the lookback AND never reached the plan's first week, so the
-// true figure may be higher; onPlan means the program has dated sessions and the streak is counted by the plan (so the tile may say "your plan"; with
-// no dated session - no program, no start date, an empty program - it is the plain one-session-a-week streak and must not claim the plan); notBegun means
-// the plan starts in a later week.
-function _dashStreakWeeks(progByDate, logDates, todayStr, maxWeeks = _DASH_STREAK_WEEKS) {
+// The streak: how many SESSIONS you have logged in a row (Jake, 2026-10-12: "the streak should show how many sessions you have logged in a row"; until
+// then it counted weeks, and "hitting your whole plan" was claimed for weeks that were before the plan began).
+// It is the number of sessions logged across the unbroken run of Monday-to-Sunday weeks that ends with this one. A FINISHED week breaks the run when:
+//   - it is INSIDE the plan and fewer sessions were logged than were planned: a planned session left unlogged. (A week with nothing planned, a planned rest
+//     week, neither earns nor breaks it, and any session logged in it still counts.)
+//   - it is OUTSIDE the plan (before it began, after it ended, or no plan at all) and no session was logged in it: Jake's "7 days with none", kept as
+//     whole weeks so it works with the plan rule above (a gap of 8-12 days that touches two weeks is therefore not a break; a whole empty week is).
+// THIS week never breaks the run (a Wednesday is not a missed week) and adds the sessions logged so far. Extra sessions all count, planned or not.
+// A plan cannot ask for a session before the day it starts: planStart (the assignment's start_date) drops planned days earlier than it, so a plan that begins
+// on a Wednesday does not make its own first Monday a miss (the review of 2026-10-12 found that week unwinnable).
+// progByDate is _programWorkoutsByDate's map ({ 'YYYY-MM-DD': [session, ...] }); logDates are the dates of logged sessions, one per session.
+// Returns { sessions, capped, onPlan }: capped means it never broke inside the lookback, so the true figure may be higher ("N+"); onPlan means the plan
+// governs THIS week, so the tile may say "without missing a planned session" (otherwise it says "a session every week").
+function _dashStreak(progByDate, logDates, todayStr, maxWeeks = _DASH_STREAK_WEEKS, planStart = null) {
   const planned = {}, logged = {}
-  let first = null, last = null   // the first and last Monday the program has a session on
+  let first = null, last = null   // the first and last Monday the plan has a session on
   for (const ds of Object.keys(progByDate || {})) {
+    if (planStart && ds < planStart) continue   // not a planned session: the plan had not started
     const n = (progByDate[ds] || []).length
     const wk = n ? _dashMonday(ds) : null
     if (!wk) continue
@@ -139,25 +150,23 @@ function _dashStreakWeeks(progByDate, logDates, todayStr, maxWeeks = _DASH_STREA
     const wk = _dashMonday(ds)
     if (wk) logged[wk] = (logged[wk] || 0) + 1
   }
+  // The plan's own start week is IN the plan even when nothing is left to do in it: the assign form defaults the start date to today, so a plan assigned on a
+  // Saturday has no session on or after its start day that week. That week is a planned rest week (it asks nothing), not an outside week that needs one session
+  // (found by the 2026-10-12 review).
+  const startWk = planStart ? _dashMonday(planStart) : null
+  if (first !== null && startWk && startWk < first) first = startWk
   const need = wk => (first !== null && wk >= first && wk <= last ? (planned[wk] || 0) : 1)
   const thisWeek = _dashMonday(todayStr)
-  if (!thisWeek) return { weeks: 0, capped: false, onPlan: false }
-  const onPlan = first !== null
-  if (onPlan && thisWeek < first) return { weeks: 0, capped: false, onPlan, notBegun: true }   // the plan has not begun: nothing to hit yet
+  if (!thisWeek) return { sessions: 0, capped: false, onPlan: false }
+  const onPlan = first !== null && thisWeek >= first && thisWeek <= last
 
-  let weeks = 0, broken = false
-  if (need(thisWeek) > 0 && (logged[thisWeek] || 0) >= need(thisWeek)) weeks++
+  let sessions = logged[thisWeek] || 0, broken = false
   for (let i = 1; i <= maxWeeks; i++) {
-    const wk = _dashAddDays(thisWeek, -7 * i), n = need(wk)
-    // The plan's first week is the start of the streak: a real boundary, so it is not "capped" (the true figure cannot be higher).
-    if (first !== null && wk < first) { broken = true; break }
-    if (n === 0) continue
-    if ((logged[wk] || 0) >= n) weeks++
-    else { broken = true; break }
-    // Counted the plan's first week: that is where the streak starts, so a program exactly maxWeeks old is exact, not "53+" (found by the 2026-10-12 review).
-    if (first !== null && wk === first) { broken = true; break }
+    const wk = _dashAddDays(thisWeek, -7 * i), got = logged[wk] || 0
+    if (got < need(wk)) { broken = true; break }
+    sessions += got
   }
-  return { weeks, capped: !broken, onPlan }
+  return { sessions, capped: !broken, onPlan }
 }
 
 const _DASH_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -352,14 +361,14 @@ function _dashWeekHtml(days, counts, sel) {
 // Streak and program: two quiet number tiles.
 function _dashTilesHtml(streak, program, isSolo) {
   const flame = `<span class="dash-flame">${_DASH_ICONS.flame}</span>`
-  // Keyed on whether the streak was counted BY THE PLAN (streak.onPlan), not on whether a program exists: a program with no dated session (no start date,
-  // an empty program) is counted as a plain training streak and must not be called "your whole plan" (found by the 2026-10-12 review).
-  const sub = streak.weeks > 0
-    ? (streak.onPlan ? 'hitting your whole plan' : 'a session every week')
-    : streak.notBegun ? 'your plan has not started yet'
-    : (streak.onPlan ? "finish this week's plan to start one" : 'log a session this week to start one')
+  // What the tile says follows how the number was counted: while a plan governs this week it is "without missing a planned session", otherwise "a session
+  // every week" (the tile no longer calls a streak "your plan" - Jake, 2026-10-12).
+  const n = streak.sessions
+  const sub = n > 0
+    ? (streak.onPlan ? 'without missing a planned session' : 'a session every week')
+    : 'log a session to start one'     // true whichever rule governs (a planned rest week asks for none, so "log a planned session" could be false)
   const streakTile = `<section class="dash-card" id="dash-streak"><div class="dash-ico">${flame}Streak</div>` +
-    `<div class="dash-big">${streak.weeks}${streak.capped && streak.weeks ? '+' : ''} <small>week streak</small></div><div class="dash-sub">${sub}</div></section>`
+    `<div class="dash-big">${n}${streak.capped && n ? '+' : ''} <small>${n === 1 && !streak.capped ? 'session' : 'sessions'} in a row</small></div><div class="dash-sub">${sub}</div></section>`
   const programTile = program
     ? `<section class="dash-card dash-tap" id="dash-program" onclick="navigate('workouts')"><div class="dash-ico">Program</div>` +
       `<div class="dash-big">Wk ${program.week}${program.totalWeeks ? ` <small>of ${program.totalWeeks}</small>` : ''}</div>` +
@@ -668,7 +677,7 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     cpwErr = r.error
     ;(r.data || []).forEach(row => { cpwMap[row.program_phase_workout_id] = { templateId: row.workout_template_id } })
   }
-  const progByDate = _programWorkoutsByDate(cp0, cpwMap)
+  const progByDate = _dashPlannedFrom(_programWorkoutsByDate(cp0, cpwMap), cp0?.start_date)
   // The runner/save path can leave a 0-exercise workout_log (an abandoned start): those are not sessions (D3, 2026-09-07).
   const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
 
@@ -765,7 +774,7 @@ async function _dashRenderOwn(el, role) {
   const days = _dashWeekDays(todayStr, d.progByDate, d.logs)
   const counts = _dashWeekCounts(days)
   const program = _dashProgramInfo(d.cp0, todayStr)
-  const streak = _dashStreakWeeks(d.progByDate, d.logs.map(l => l.date), todayStr)
+  const streak = _dashStreak(d.progByDate, d.logs.map(l => l.date), todayStr, _DASH_STREAK_WEEKS, d.cp0?.start_date || null)
   const next = d.upcoming.find(u => u.kind === 'session' && u.date > todayStr) || null
   const ctx = { role, clientId, todayStr, days, hasProgram: !!d.cp0, program, next }
   const byDs = Object.fromEntries(days.map(x => [x.ds, x]))
@@ -823,7 +832,7 @@ async function _dashRenderOwn(el, role) {
       tooltipUnit: window._unitPrefs.weight
     })
   }
-  log.ok(isClient ? 'renderClientDashboard' : 'renderSoloDashboard', 'rendered', { clientId, goals: d.goals?.length, sessions: d.logs.length, upcoming: d.upcoming.length, streak: streak.weeks })
+  log.ok(isClient ? 'renderClientDashboard' : 'renderSoloDashboard', 'rendered', { clientId, goals: d.goals?.length, sessions: d.logs.length, upcoming: d.upcoming.length, streak: streak.sessions })
 }
 
 async function renderClientDashboard(el) { return _dashRenderOwn(el, 'client') }

@@ -1,9 +1,9 @@
 ---
 id: 2026-10-12-client-profile-shows-the-overview-under-another-tab-when-the-overview-loads-last
-status: open
+status: fixed-awaiting-jake
 priority: medium
 reported: 2026-10-12
-status_detail: "OPEN. Found by me, not reported by Jake: three intermittent test failures in two days, one with a screenshot showing the Workouts tab highlighted over the Overview content. A real race in js/app-clients.js (openClient fires the Overview render without waiting; a tab tapped before its three queries finish is overwritten when they land). Fix proposed, not built; waiting on Jake's go."
+status_detail: "FIXED 2026-10-12 on master, unreleased (app-clients v21), at Jake's go ('fix'). Every tab render now gets its own fresh #tab-content pane (_freshTabPane in switchTab), so a superseded render writes into a pane that is no longer in the page. Red before, green after: tests/client-profile-tab-race-2026-10-12.spec.js (holds the Overview render open, taps Workouts, releases it). Closes when the full release suite runs without the rpe-e2e-journey / runner-edit-delete flake on this click."
 ---
 
 # A coach's client profile can show the Overview under the Workouts (or any) tab when a slow Overview load finishes last
@@ -24,3 +24,13 @@ Give every tab render its own host: `openClient` and `switchTab` replace `#tab-c
 ## What would close it
 
 **Closes when** the fix is built with a spec that fails without it (the held-query test above), and `rpe-e2e-journey`, `runner-edit-delete` and the release suite stop flaking on this click.
+
+## Built (Jake: "fix", 2026-10-12)
+
+`_freshTabPane` replaces the `#tab-content` element on every `switchTab`; the initial Overview render keeps the pane `openClient` made, so tapping a tab replaces it too. A repaint that looks `#tab-content` up by id after an action finds the live pane. The spec holds the Overview render on a gate, taps Workouts, releases the gate and asserts the Workouts content and button are what is shown (mutation-checked: without the fix it fails).
+
+## Review follow-ups (2026-10-12)
+
+Built: the Weight, Performance and 1RMs tab renderers now stop after their fetch when their pane is no longer in the page (`el.isConnected`). A superseded render still ran global side effects that hit the live tab: `_destroyManagedCharts` destroys EVERY chart (so a late Performance fetch blanked the Weight chart), Performance reset `window.__perfChartData`, 1RMs rebound `window._oneRMGridRows`. Each has a spec with a connected-pane control (`tests/client-profile-tab-race-2026-10-12.spec.js`, mutation-checked).
+
+**Still open (pre-existing, not worsened):** save and delete paths that repaint by looking `#tab-content` up by id AFTER an await will paint into whatever pane is live if the coach switched tabs mid-save: `app-programs.js` 461, 792, 834; `app-progress.js` 1090, 1112, 1133 (and the helpers at 24 and 37); `app-calendar-goals.js` 728, 855, 1174 (`deleteGoal` has no null guard); `app-runner.js` 3843 and 4064. The fix shape is to capture the pane before the await and repaint only if it is still connected. The window is narrow (a tab switch during a save), so it was named, not fixed.
