@@ -373,7 +373,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
 
   test('_buildWorkoutsHero falls back to a freeform start action when no program is assigned', async ({ page }) => {
     const hero = await page.evaluate(() => _buildWorkoutsHero('fake-client-id', null, {}))
-    expect(hero.title).toBe('No program assigned')
+    expect(hero.title).toBe('No training plan assigned')
     expect(hero.action).toContain("startWorkoutRunner('fake-client-id')")
   })
 

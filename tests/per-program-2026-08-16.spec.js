@@ -8,16 +8,16 @@ const { loginAsClient } = require('./helpers')
 
 const RUN = Date.now()
 
-test.describe('Per program', () => {
+test.describe('Per training plan', () => {
   test('all three sub-tabs are present and Per program is reachable', async ({ page }) => {
     await loginAsClient(page)
     const tabs = await page.evaluate(async () => {
-      window._progressTab = 'Performance'; window._perfTab = 'Per program'
+      window._progressTab = 'Performance'; window._perfTab = 'Per training plan'
       await renderProgress(document.getElementById('main-content'))
       await new Promise(r => setTimeout(r, 2500))
       return [...document.querySelectorAll('#progress-tab-content button')].map(b => b.textContent.trim()).filter(t => t.startsWith('Per '))
     })
-    expect(tabs).toEqual(['Per exercise', 'Per session', 'Per program'])
+    expect(tabs).toEqual(['Per exercise', 'Per session', 'Per training plan'])
   })
 
   // ─── The window boundary: the whole feature in one test ───────────────────
@@ -169,7 +169,7 @@ test.describe('Per program', () => {
     // A null return must not be mistaken for an empty list — that would tell Jake he has no
     // programmes when in fact the read failed.
     expect(r).toContain("Couldn't load")
-    expect(r).not.toContain('No programme with a start date')
+    expect(r).not.toContain('No training plan with a start date')
   })
 
   test('kg and lb both render the tab without throwing', async ({ page }) => {
@@ -179,7 +179,7 @@ test.describe('Per program', () => {
     for (const unit of ['kg', 'lb']) {
       const txt = await page.evaluate(async (u) => {
         window._unitPrefs = { ...window._unitPrefs, weight: u }
-        window._progressTab = 'Performance'; window._perfTab = 'Per program'
+        window._progressTab = 'Performance'; window._perfTab = 'Per training plan'
         await renderProgress(document.getElementById('main-content'))
         await new Promise(r => setTimeout(r, 2500))
         return document.getElementById('progress-tab-content')?.innerText || ''

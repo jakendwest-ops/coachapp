@@ -207,7 +207,7 @@ describe('the Up next card names the session you would do next', () => {
 describe('the edges of the card', () => {
   test('the last session of the program is done: it says the program is complete and offers a freeform session, not an old session', () => {
     const h = hero(PROGRAM, CLONES, { todayStr: '2026-10-26', logs: [] })
-    assert.equal(h.eyebrow, 'Program complete')
+    assert.equal(h.eyebrow, 'Training plan complete')
     assert.equal(h.title, 'Operation 240')
     assert.equal(h.action, "startWorkoutRunner('c1')")
     assert.equal(h.btnLabel, 'Start a session')
@@ -215,7 +215,7 @@ describe('the edges of the card', () => {
 
   test('no program assigned', () => {
     const h = hero(null, {}, {})
-    assert.equal(h.title, 'No program assigned')
+    assert.equal(h.title, 'No training plan assigned')
     assert.equal(h.action, "startWorkoutRunner('c1')")
   })
 
@@ -323,9 +323,9 @@ describe('the Up next card when no dated session is left but the program has wee
   })
   test('once the last week has been reached it IS complete', () => {
     const h = hero(lengthened, clones, { todayStr: '2026-11-09', logs: [] })   // Monday of week 7
-    assert.equal(h.eyebrow, 'Program complete')
+    assert.equal(h.eyebrow, 'Training plan complete')
   })
   test('a finished 4-week program still reads complete (the tile clamps at week 4 of 4)', () => {
-    assert.equal(hero(PROGRAM, CLONES, { todayStr: '2026-10-26', logs: [] }).eyebrow, 'Program complete')
+    assert.equal(hero(PROGRAM, CLONES, { todayStr: '2026-10-26', logs: [] }).eyebrow, 'Training plan complete')
   })
 })

@@ -494,7 +494,7 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await page.click('button:has-text("Manage")')
     const manage = page.locator('#program-manage-modal')
     await expect(manage).toBeVisible()
-    for (const label of ['Edit name and description', 'Copy workouts to Library', 'Delete program']) {
+    for (const label of ['Edit name and description', 'Copy workouts to Library', 'Delete training plan']) {
       await expect(manage.locator(`button:text-is("${label}")`)).toBeVisible()
     }
     await manage.getByRole('button', { name: /Units and preferences/ }).click()

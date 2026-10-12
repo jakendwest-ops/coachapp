@@ -60,7 +60,7 @@ const STARTER_TEMPLATE = {
 
 const STARTER_PROGRAM = {
   name: 'Example — 4-Week Foundation',
-  description: 'A sample 2×/week full-body program — edit or delete it.',
+  description: 'A sample 2×/week full-body training plan — edit or delete it.',
   phaseName: 'Foundation',
   durationWeeks: 4,
   days: [

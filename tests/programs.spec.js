@@ -84,13 +84,13 @@ test.describe('Program periodization', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, '[data-page="programs"]')
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
   test.afterEach(async ({ page }) => { await sweepProgramFixtures(page) })
 
   test('configure Linear periodization on a multi-week phase and generate weeks', async ({ page }) => {
     // Create a throwaway test program
-    await page.click('button:has-text("New program")')
+    await page.click('button:has-text("New training plan")')
     await page.fill('#pm-name', '[E2E] Periodization Test')
     await page.click('#pm-save-btn')
     await page.waitForSelector('h1:has-text("[E2E] Periodization Test")', { timeout: 8000 })
@@ -128,13 +128,13 @@ test.describe('Program periodization', () => {
     await expect(page.locator('.week-tab[data-week="3"]')).toBeVisible({ timeout: 10000 })
 
     // Cleanup — delete the throwaway program
-    await programManage(page, 'Delete program')
+    await programManage(page, 'Delete training plan')
     await acceptConfirm(page)
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
 
   test('periodization Configure modal — Undulating shows tier fields, Cancel closes without saving', async ({ page }) => {
-    await page.click('button:has-text("New program")')
+    await page.click('button:has-text("New training plan")')
     await page.fill('#pm-name', '[E2E] Periodization Cancel Test')
     await page.click('#pm-save-btn')
     await page.waitForSelector('h1:has-text("[E2E] Periodization Cancel Test")', { timeout: 8000 })
@@ -160,13 +160,13 @@ test.describe('Program periodization', () => {
     await expect(page.locator('button:has-text("Edit periodization")')).toHaveCount(0)
     await expect(page.locator('button:has-text("Generate weeks")')).toHaveCount(0)
 
-    await programManage(page, 'Delete program')
+    await programManage(page, 'Delete training plan')
     await acceptConfirm(page)
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
 
   test('B1 (2026-09-07): the ⋯ Manage menu holds the secondary actions and closes cleanly', async ({ page }) => {
-    await page.click('button:has-text("New program")')
+    await page.click('button:has-text("New training plan")')
     await page.fill('#pm-name', '[E2E] Periodization Test') // in the afterEach sweep list
     await page.click('#pm-save-btn')
     await page.waitForSelector('button:has-text("Manage")', { timeout: 8000 })
@@ -176,15 +176,15 @@ test.describe('Program periodization', () => {
 
     await page.click('button:has-text("Manage")')
     await expect(page.locator('#program-manage-modal')).toBeVisible({ timeout: 4000 })
-    for (const label of ['Edit name and description', 'Copy workouts to Library', 'Delete program']) {
+    for (const label of ['Edit name and description', 'Copy workouts to Library', 'Delete training plan']) {
       await expect(page.locator(`#program-manage-modal button:text-is("${label}")`)).toBeVisible()
     }
     await page.click('#program-manage-modal .btn-icon')
     await expect(page.locator('#program-manage-modal')).toBeHidden({ timeout: 4000 })
 
-    await programManage(page, 'Delete program')
+    await programManage(page, 'Delete training plan')
     await acceptConfirm(page)
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
 })
 
@@ -192,12 +192,12 @@ test.describe('Inline assign grid', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, '[data-page="programs"]')
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
   test.afterEach(async ({ page }) => { await sweepProgramFixtures(page) })
 
   test('7-day grid renders, and the picker live-filters its rows', async ({ page }) => {
-    await page.click('button:has-text("New program")')
+    await page.click('button:has-text("New training plan")')
     await page.fill('#pm-name', '[E2E] Inline Grid Test')
     await page.click('#pm-save-btn')
     await page.waitForSelector('h1:has-text("[E2E] Inline Grid Test")', { timeout: 8000 })
@@ -233,13 +233,13 @@ test.describe('Inline assign grid', () => {
     await expect(page.locator(CREATE_ROW)).toBeVisible()
     await closeDayPicker(page)
 
-    await programManage(page, 'Delete program')
+    await programManage(page, 'Delete training plan')
     await acceptConfirm(page)
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
 
   test('picking an already-filled slot is rejected instead of creating a duplicate', async ({ page }) => {
-    await page.click('button:has-text("New program")')
+    await page.click('button:has-text("New training plan")')
     await page.fill('#pm-name', '[E2E] Grid Race Test')
     await page.click('#pm-save-btn')
     await page.waitForSelector('h1:has-text("[E2E] Grid Race Test")', { timeout: 8000 })
@@ -270,13 +270,13 @@ test.describe('Inline assign grid', () => {
     }, phaseId)
     expect(rowCount).toBe(1)
 
-    await programManage(page, 'Delete program')
+    await programManage(page, 'Delete training plan')
     await acceptConfirm(page)
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
 
   test('creating a new workout from the grid returns to the program via "Back to program"', async ({ page }) => {
-    await page.click('button:has-text("New program")')
+    await page.click('button:has-text("New training plan")')
     await page.fill('#pm-name', '[E2E] Grid Create Test')
     await page.click('#pm-save-btn')
     await page.waitForSelector('h1:has-text("[E2E] Grid Create Test")', { timeout: 8000 })
@@ -294,8 +294,8 @@ test.describe('Inline assign grid', () => {
     await page.fill('#ct-name', '[E2E] Grid Created Template')
     await page.click('#create-template-modal button:has-text("Create")')
 
-    await expect(page.locator('text=Back to program')).toBeVisible({ timeout: 8000 })
-    await page.click('text=Back to program')
+    await expect(page.locator('text=Back to training plan')).toBeVisible({ timeout: 8000 })
+    await page.click('text=Back to training plan')
     await expect(page.locator('h1:has-text("[E2E] Grid Create Test")')).toBeVisible({ timeout: 8000 })
 
     // Cleanup — the created template isn't attached to the program via program_phase_workouts, delete separately
@@ -303,9 +303,9 @@ test.describe('Inline assign grid', () => {
       const { data } = await db.from('workout_templates').select('id').eq('name', '[E2E] Grid Created Template')
       if (data?.length) await db.from('workout_templates').delete().in('id', data.map(t => t.id))
     })
-    await programManage(page, 'Delete program')
+    await programManage(page, 'Delete training plan')
     await acceptConfirm(page)
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
 
   test('a template created inline for one day slot stays out of OTHER programs\' pickers (2026-07-10, narrowed 2026-08-14)', async ({ page }) => {
@@ -329,7 +329,7 @@ test.describe('Inline assign grid', () => {
     // inline template must never leak into a DIFFERENT programme's picker. The positive half (it IS
     // offered inside its own programme) is covered surgically in
     // tests/workout-picker-2026-08-14.spec.js -- keep both, they fail for different reasons.
-    await page.click('button:has-text("New program")')
+    await page.click('button:has-text("New training plan")')
     await page.fill('#pm-name', '[E2E] Picker Scope Test')
     await page.click('#pm-save-btn')
     await page.waitForSelector('h1:has-text("[E2E] Picker Scope Test")', { timeout: 8000 })
@@ -399,7 +399,7 @@ test.describe('Inline assign grid', () => {
         await db.from('programs').delete().in('id', ids)
       }, templateId)
       await page.evaluate(() => navigate('programs'))
-      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
     }
   })
 })
@@ -408,7 +408,7 @@ test.describe('Assignment-time 1RM check', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, '[data-page="programs"]')
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
 
   test('assigning a program with a %1RM exercise shows the missing-1RM checklist and saves an entered value', async ({ page }) => {
@@ -448,7 +448,7 @@ test.describe('Assignment-time 1RM check', () => {
     // start failing (it had been silently vacuous every prior run because the client had no program).
     try {
       await page.reload()
-      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await page.click('text=[E2E] 1RM Check Program')
       await page.waitForSelector('button:has-text("Assign to client")', { timeout: 8000 })
       await page.click('button:has-text("Assign to client")')
@@ -528,7 +528,7 @@ test.describe('Assignment-time 1RM check', () => {
     // "[E2E] 1RM Have Program"/"[E2E] 1RM Have Squat" debris behind the same way.
     try {
       await page.reload()
-      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await page.click('text=[E2E] 1RM Have Program')
       await page.waitForSelector('button:has-text("Assign to client")', { timeout: 8000 })
       await page.click('button:has-text("Assign to client")')
@@ -553,12 +553,12 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, '[data-page="programs"]')
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
   test.afterEach(async ({ page }) => { await sweepProgramFixtures(page) })
 
   test('duplicating a week copies its day/workout assignments into the next empty week', async ({ page }) => {
-    await page.click('button:has-text("New program")')
+    await page.click('button:has-text("New training plan")')
     await page.fill('#pm-name', '[E2E] Duplicate Week Test')
     await page.click('#pm-save-btn')
     await page.waitForSelector('h1:has-text("[E2E] Duplicate Week Test")', { timeout: 8000 })
@@ -591,9 +591,9 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     expect(week2Rows.length).toBe(1)
     expect(week2Rows[0].template_id).toBe(week1.template_id)
 
-    await programManage(page, 'Delete program')
+    await programManage(page, 'Delete training plan')
     await acceptConfirm(page)
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
 
   test('editing a workout assigned to two slots forks a copy instead of overwriting the shared one', async ({ page }) => {
@@ -607,7 +607,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     })
 
     await page.reload()
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
     await page.click('text=[E2E] Fork Test Program')
     await page.waitForSelector('text=[E2E] Shared Workout', { timeout: 8000 })
 
@@ -806,10 +806,10 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
 
     try {
       await page.reload()
-      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await page.click('text=[E2E] Delete Block Test')
       await page.waitForSelector('button:has-text("Manage")', { timeout: 8000 })
-      await programManage(page, 'Delete program')
+      await programManage(page, 'Delete training plan')
       await expect(page.locator('#app-toast')).toContainText(client.name, { timeout: 4000 })
     } finally {
       await page.evaluate(async ({ programId, clientId }) => {
@@ -835,7 +835,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
 
     try {
       await clickVisible(page, '[data-page="programs"]')
-      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await page.evaluate((programId) => openProgram(programId), setup.programId)
       await page.waitForSelector('.week-tab[data-week="3"]', { timeout: 8000 })
       await page.click('button[aria-label="Week actions"]')
@@ -951,7 +951,7 @@ test.describe('Copy program workouts to Library + duplicate-week auto-extend (20
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
     await clickVisible(page, '[data-page="programs"]')
-    await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+    await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
 
   test('duplicating the last week of a full phase extends the phase instead of refusing', async ({ page }) => {

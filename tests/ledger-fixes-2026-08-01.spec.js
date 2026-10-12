@@ -9,7 +9,7 @@ test.describe('navigate role re-guard (2026-07-18 finding)', () => {
     await page.waitForTimeout(300)
     // Before the fix: renderPrograms() ran (RLS returned 0 rows, so "No programs yet" — no leak, but
     // the builder chrome itself, e.g. the "New program" button, still rendered for a client).
-    await expect(page.locator('button:has-text("New program")')).not.toBeVisible()
+    await expect(page.locator('button:has-text("New training plan")')).not.toBeVisible()
   })
 })
 
@@ -45,7 +45,7 @@ test.describe('week-tab labels are sequential, not raw week_number (2026-07-19 f
       })
 
       await clickVisible(page, '[data-page="programs"]')
-      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await page.evaluate((programId) => openProgram(programId), setup.programId)
       await page.waitForSelector(`.week-tab[data-phase="${setup.phaseId}"][data-week="3"]`, { timeout: 8000 })
 
@@ -92,6 +92,8 @@ test.describe('week-tab labels are sequential, not raw week_number (2026-07-19 f
       })
 
       await clickVisible(page, '[data-page="workouts"]')
+      await page.waitForSelector('details[data-plan-fold]', { timeout: 8000 })
+      await page.evaluate(() => { document.querySelector('details[data-plan-fold]').open = true })      // the solo page folds the plan away (2026-10-12)
       await page.waitForSelector('.week-tab[data-week="3"]', { timeout: 8000 })
 
       const firstTabText = await page.locator('.week-tab[data-week="2"]').first().innerText()

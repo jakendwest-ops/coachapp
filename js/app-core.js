@@ -1213,7 +1213,7 @@ const _NAV_ITEMS = {
     { page: 'clients',    label: 'Clients'   },
     { page: 'workouts',   label: 'Workouts'  },
     { page: 'calendar',   label: 'Calendar'  },
-    { page: 'programs',   label: 'Programs'  },
+    { page: 'programs',   label: 'Training plans'  },
     { page: 'settings',   label: 'Settings'  },
   ],
   client: [
@@ -1227,7 +1227,7 @@ const _NAV_ITEMS = {
     { page: 'solo-dashboard', label: 'Dashboard' },
     { page: 'workouts',       label: 'Workouts'  },
     { page: 'library',       label: 'Library'    },
-    { page: 'programs',       label: 'Programs'  },
+    { page: 'programs',       label: 'Training plans'  },
     { page: 'calendar',       label: 'Calendar'  },
     { page: 'progress',       label: 'Progress'  },
     { page: 'settings',       label: 'Settings'  },

@@ -32,7 +32,7 @@ const { loginAsPT } = require('./helpers')
 const FROZEN_UNGUARDED = {
   // ── Internal helpers: only ever run INSIDE an already-guarded entry point. Guarding them would
   //    guard the same gesture twice and add a second flag that can disagree with the first.
-  _archiveAssignmentBlock:            'internal — runs inside unassignProgram / deleteProgram, via _removeAssignmentAndClones (confirm-gated)',
+  _archiveAssignmentBlock:            'internal — runs inside unassignProgram / deleteProgram / removeFromMyPlan / saveAssignProgramToClient, via _removeAssignmentAndClones (confirm-gated, or guarded by its caller)',
   _cloneTemplateForClient:            'internal — runs inside the clone/periodization callers',
   _cloneProgramForClient:             'no app caller since 2026-09-27 (the assign buttons use assign_program()); kept only for the specs that call it',
   _saveMissingOneRMEntries:           'internal — runs inside the assign flow after it has succeeded',

@@ -327,7 +327,7 @@ async function openClient(id) {
       <button class="tab-btn" onclick="switchTab(this,'tab-workouts','${id}')">Workouts</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-weight','${id}')">Weight</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-performance','${id}')">Performance</button>
-      <button class="tab-btn" onclick="switchTab(this,'tab-programs','${id}')">Programs</button>
+      <button class="tab-btn" onclick="switchTab(this,'tab-programs','${id}')">Training plans</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-1rms','${id}')">1RMs</button>
     </div>
 
@@ -378,7 +378,7 @@ function clientOverviewTab(client, programName = null) {
   return `
     <div class="card">
       <div class="card-body">
-        ${programName ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)"><span style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Active program</span><span style="font-size:var(--text-lg, 14px);font-weight:600;color:var(--accent)">${escapeHtml(programName)}</span></div>` : ''}
+        ${programName ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)"><span style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Active training plan</span><span style="font-size:var(--text-lg, 14px);font-weight:600;color:var(--accent)">${escapeHtml(programName)}</span></div>` : ''}
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:20px">
           ${infoItem('Status', `<span class="badge badge-${client.status}">${client.status}</span>`)}
           ${infoItem('Email', client.email ? escapeHtml(client.email) : '—')}

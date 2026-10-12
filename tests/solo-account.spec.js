@@ -88,8 +88,8 @@ test.describe('Solo / Personal account', () => {
   test('solo Programs page loads', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await clickVisible(page, '[data-page="programs"]')
-    await expect(page.locator('h1')).toContainText('Programs', { timeout: 8000 })
-    await expect(page.locator('button:has-text("New program")')).toBeVisible()
+    await expect(page.locator('h1')).toContainText('Training plans', { timeout: 8000 })
+    await expect(page.locator('button:has-text("New training plan")')).toBeVisible()
   })
 
   test('solo Calendar page loads', async ({ page }) => {
@@ -112,6 +112,7 @@ test.describe('Solo / Personal account', () => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await clickVisible(page, '[data-page="workouts"]')
     await page.waitForTimeout(2000)
+    await page.evaluate(() => { const d = document.querySelector('details[data-plan-fold]'); if (d) d.open = true })      // the solo page folds the plan away (2026-10-12)
     // Skip if no program assigned (E2E account may not have one)
     const hasPhase = await page.locator('button[onclick*="cl-phase"]').first().isVisible({ timeout: 4000 }).catch(() => false)
     if (!hasPhase) return
@@ -255,8 +256,8 @@ test.describe('Solo / Personal account', () => {
         await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] PT Picker Template' })
       })
       await clickVisible(page, '[data-page="programs"]')
-      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
-      await page.click('button:has-text("New program")')
+      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
+      await page.click('button:has-text("New training plan")')
       await page.fill('#pm-name', '[E2E] Personal Picker Program')
       await page.click('#pm-save-btn')
       await page.waitForSelector('h1:has-text("[E2E] Personal Picker Program")', { timeout: 8000 })

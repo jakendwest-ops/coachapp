@@ -72,7 +72,7 @@ test.describe('Copy to coaching programs requires a coaching view', () => {
     await page.evaluate(() => { window._masterAccount = false })   // ← the ONE thing a native solo lacks
     const menu = await openManageMenu(page, fx.id)
 
-    expect(menu, 'the manage menu must render (otherwise "absent" proves nothing)').toContain('Delete program')
+    expect(menu, 'the manage menu must render (otherwise "absent" proves nothing)').toContain('Delete training plan')
     expect(menu, 'a user with no coaching view must not be offered a copy INTO it').not.toContain('copyProgramToCoaching')
   })
 

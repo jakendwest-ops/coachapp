@@ -1,9 +1,9 @@
 ---
 id: 2026-10-12-workouts-page-wants-a-ui-refresh-and-its-day-n-wording-counts-the-weekday-not-the-plan
-status: open
+status: fixed-awaiting-jake
 priority: low
 reported: 2026-10-12
-status_detail: "OPEN (half done). (a) DONE 2026-10-12 on master, unreleased (app-programs v73): the day headings read 'WEDNESDAY' with no 'DAY 3', on the Workouts page and the coach's Programs page (tests/runner-exercise-nav-2026-09-28.spec.js). (b) OPEN: the UI refresh of the Workouts page. Jake chose its parts: the Up next hero card, the plan and day list, and Recent sessions (not the PT / Personal toggle). Next step is a tappable prototype, then his reaction, then the build; nothing built for (b)."
+status_detail: "FIXED 2026-10-12, released in v2026.10.2; awaits Jake on his phone. (a) Day headings read 'WEDNESDAY' with no 'DAY 3'. (b) The Workouts page refresh was built with Step 2 of the on-the-fly row. Tests: the solo Workouts page spec (tests/solo-workouts-page-2026-10-12.spec.js) and the day-heading specs."
 ---
 
 # The Workouts page UI could do with updating, and "Day 3" is the day of the week, not the day of the plan
@@ -32,3 +32,11 @@ Attached: the Workouts page (hero "Up next · Wed 14 Oct, Heavy Lower Body", the
 - (a) Drop the "DAY n" wording: approved and built.
 - (b) The refresh should cover **the "Up next" hero card, the plan and day list, and Recent sessions**. The PT / Personal toggle was not selected.
 - Method (his own rule): a tappable prototype first, in the app's tokens with example data, and his reaction before any real build.
+
+## Prototype reaction (Jake, 2026-10-12; prototype https://claude.ai/artifact/2Qu78DKistXV61n1JhWStu)
+
+The page order drawn in the prototype is right: start buttons, then "Up next" (only while a plan is on), then Your workouts, then Recent sessions. It is built as part of Step 2, with its plan in [the on-the-fly row](2026-10-12-scope-creating-a-workout-on-the-fly-and-renaming-programs-to-training-plans.md).
+
+## Built (2026-10-12)
+
+(a) shipped on master earlier the same day; (b) is the solo Workouts page of the on-the-fly row: start buttons first, then "Up next", the plan folded away, "Your workouts", Recent sessions.

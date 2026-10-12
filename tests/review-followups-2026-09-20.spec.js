@@ -71,8 +71,8 @@ test.describe('escaping follow-ups from the R1b–R1e review', () => {
       const host = (h) => { const d = document.createElement('div'); d.innerHTML = h; return d.textContent }
       return { withName: host(clientOverviewTab(c, `Hypertrophy Block — O'Brien & Co`)), without: host(clientOverviewTab(c, null)) }
     })
-    expect(r.withName).toContain('Active program')
+    expect(r.withName).toContain('Active training plan')
     expect(r.withName, 'punctuation renders as typed').toContain(`Hypertrophy Block — O'Brien & Co`)
-    expect(r.without).not.toContain('Active program')
+    expect(r.without).not.toContain('Active training plan')
   })
 })

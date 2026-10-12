@@ -150,7 +150,7 @@ test.describe('the client and solo dashboard', () => {
     expect(r.hero.eyebrow).toBe('Up next · Operation 240')
     expect(r.hero.title).toBe('Squat + Threshold')
     expect(r.hero.meta).toBe('Session 4 of 4 this week')
-    expect(r.hero.buttons).toEqual(['▶ Start workout', 'View program'])
+    expect(r.hero.buttons).toEqual(['▶ Start workout', 'View training plan'])
 
     expect(kinds(r), 'Mon-Fri done or rest, Saturday planned').toEqual(['done', 'rest', 'done', 'rest', 'done', 'plan', 'rest'])
     expect(r.days.map(d => d.num)).toEqual(['28', '29', '30', '1', '2', '3', '4'])
@@ -295,7 +295,7 @@ test.describe('the client and solo dashboard', () => {
     await render(page, 'renderClientDashboard')
     r = await read(page)
     expect(r.hero).toMatchObject({ kind: 'rest', calm: true, eyebrow: 'Today', title: 'Rest day', meta: 'Next up: Upper Body, Mon 5 Oct' })
-    expect(r.hero.buttons).toEqual(['Log a workout', 'View program'])
+    expect(r.hero.buttons).toEqual(['Log a workout', 'View training plan'])
   })
 
   test('without a program (solo): a freeform prompt, a streak of sessions in a row (a session every week keeps it), and a way to build one', async ({ page }) => {
@@ -309,7 +309,7 @@ test.describe('the client and solo dashboard', () => {
     expect(r.streak, 'one session in each of the last two weeks').toContain('2 sessions in a row')
     expect(r.streak).toContain('a session every week')
     expect(r.program).toContain('None')
-    expect(r.program).toContain('Build one in Programs')
+    expect(r.program).toContain('Build one in Training plans')
     expect(r.checkin, 'the weekly check-in is a client thing').toBe(false)
   })
 
@@ -354,7 +354,7 @@ test.describe('the client and solo dashboard', () => {
     await page.locator('#dash-calendar').click()
     await page.locator('#dash-goals').click()
     await page.locator('#dash-program').click()
-    await page.locator('#dash-hero').getByText('View program').click()
+    await page.locator('#dash-hero').getByText('View training plan').click()
     expect(await page.evaluate(() => window.__nav)).toEqual([
       ['progress', 'Body Weight'], ['calendar', 'Body Weight'], ['progress', 'Goals'], ['workouts', 'Goals'], ['workouts', 'Goals'],
     ])
@@ -522,8 +522,8 @@ test.describe('the coach dashboard', () => {
     expect(r.weighins).toContain('4 of 6 this week')
     expect(r.weighins).toContain('Sam K')
     expect(r.weighins).toContain('91.2 kg')
-    expect(r.coming).toMatch(/Sam K · program ends\s*Hypertrophy block\s*Tomorrow/)
-    expect(r.coming).toMatch(/Priya M · program ends\s*Operation Strength\s*In 8 days/)
+    expect(r.coming).toMatch(/Sam K · training plan ends\s*Hypertrophy block\s*Tomorrow/)
+    expect(r.coming).toMatch(/Priya M · training plan ends\s*Operation Strength\s*In 8 days/)
     expect(r.goals).toContain('Bench 100 kg')
     expect(r.goals).toContain('Sam K · In 7 days')
   })
@@ -538,8 +538,8 @@ test.describe('the coach dashboard', () => {
     await install(page, t)
     await render(page, 'renderDashboard')
     const r = await coachRead(page)
-    expect(r.coming).toMatch(/Zed T · program ends\s*Three weeks\s*Tomorrow/)
-    expect(r.coming, 'not "In 4 days"').not.toMatch(/Zed T · program ends\s*Three weeks\s*In 4 days/)
+    expect(r.coming).toMatch(/Zed T · training plan ends\s*Three weeks\s*Tomorrow/)
+    expect(r.coming, 'not "In 4 days"').not.toMatch(/Zed T · training plan ends\s*Three weeks\s*In 4 days/)
     expect(r.ending, 'Sam K, Zed T and Priya M all end inside the fortnight').toContain('3 soon')
   })
 

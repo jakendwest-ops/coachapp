@@ -250,7 +250,7 @@ test.describe('Personal / PT program boundary', () => {
     try {
       fx = await plantProgram(page, { name: `${TAG} Sealed Personal`, isPersonal: true })
       await clickVisible(page, '[data-page="programs"]')
-      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
+      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await expect(page.locator(`text=${TAG} Sealed Personal`)).toHaveCount(0)
     } finally {
       await cleanup(page, fx, null)
@@ -275,8 +275,8 @@ test.describe('Personal / PT program boundary', () => {
   test('a program created in PT view is stamped is_personal = false', async ({ page }) => {
     try {
       await clickVisible(page, '[data-page="programs"]')
-      await page.waitForSelector('h1:has-text("Programs")', { timeout: 8000 })
-      await page.click('button:has-text("New program")')
+      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
+      await page.click('button:has-text("New training plan")')
       await page.fill('#pm-name', `${TAG} Created In PT`)
       await page.click('#pm-save-btn')
       await page.waitForSelector(`h1:has-text("${TAG} Created In PT")`, { timeout: 8000 })

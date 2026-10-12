@@ -1537,7 +1537,7 @@ async function renderPerformance(el) {
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
       <div class="chip-row" style="flex:1">
-        ${['Per exercise', 'Per session', 'Per program'].map(t => `
+        ${['Per exercise', 'Per session', 'Per training plan'].map(t => `
           <button class="chip" aria-selected="${t === subTab}"
             onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))">${t}</button>`).join('')}
       </div>
@@ -1550,7 +1550,7 @@ async function renderPerformance(el) {
   const subEl = document.getElementById('perf-sub-content')
   if (subTab === 'Per session') {
     await renderProgressPerSession(clientId, subEl)
-  } else if (subTab === 'Per program') {
+  } else if (subTab === 'Per training plan') {
     await renderProgressPerProgram(clientId, subEl)
   } else {
     await renderProgressStrength(subEl)
@@ -2138,8 +2138,8 @@ async function _loadProgramBlocks(clientId) {
       const phases = cp.programs?.program_phases || []
       return {
         key: `live:${cp.id}`,
-        progKey: cp.program_id || cp.programs?.name || 'Programme',
-        name: cp.programs?.name || 'Programme',
+        progKey: cp.program_id || cp.programs?.name || 'Training plan',
+        name: cp.programs?.name || 'Training plan',
         startRaw: cp.start_date || (cp.created_at || '').split('T')[0],
         end: today,
         weeks: phases.length ? phases.reduce((s, p) => s + (p.duration_weeks || 1), 0) : null,
@@ -2148,8 +2148,8 @@ async function _loadProgramBlocks(clientId) {
     }),
     ...(archived.data || []).map(b => ({
       key: `past:${b.id}`,
-      progKey: b.program_id || b.program_name || 'Programme',
-      name: b.program_name || 'Programme',
+      progKey: b.program_id || b.program_name || 'Training plan',
+      name: b.program_name || 'Training plan',
       startRaw: b.start_date || (b.assigned_at || '').split('T')[0],
       end: b.ended_at,
       weeks: b.planned_weeks,
@@ -2283,7 +2283,7 @@ const _exerciseNamesInBlocks = (exercises, blocks, keys) => {
 }
 
 async function renderProgressPerProgram(clientId, el) {
-  el.innerHTML = '<div class="loading-state">Loading programmes…</div>'
+  el.innerHTML = '<div class="loading-state">Loading training plans…</div>'
   // Own token, mirroring _perfExerciseToken — a master account switching Client/Personal mid-fetch
   // must not paint the wrong person's blocks.
   const myToken = ++_perfProgramToken
@@ -2291,11 +2291,11 @@ async function renderProgressPerProgram(clientId, el) {
   if (myToken !== _perfProgramToken) return
 
   if (blocks === null || exercises === null) {   // a failed exercise read must not draw the comparison with no exercises in it
-    el.innerHTML = '<div class="empty-state"><div class="empty-title">Couldn\'t load your programmes</div><div class="empty-text">Check your connection and try again.</div></div>'
+    el.innerHTML = '<div class="empty-state"><div class="empty-title">Couldn\'t load your training plans</div><div class="empty-text">Check your connection and try again.</div></div>'
     return
   }
   if (!blocks.length) {
-    el.innerHTML = '<div class="empty-state"><p>No programme with a start date yet — assign one and set its start date to compare blocks.</p></div>'
+    el.innerHTML = '<div class="empty-state"><p>No training plan with a start date yet — assign one and set its start date to compare blocks.</p></div>'
     return
   }
   // Deliberately NOT window._trendCache. That global is owned by renderProgressStrength behind a
@@ -2307,7 +2307,7 @@ async function renderProgressPerProgram(clientId, el) {
   // Honest about the day-one state: history only accrues from a restart, so a brand-new setup has one
   // block and nothing to compare. Saying so beats an empty second dropdown the user has to interpret.
   const singleBlockNote = blocks.length < 2
-    ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;margin-bottom:12px">Only one block so far. Restarting or changing a programme files the current one away, and it becomes available here to compare against.</div>`
+    ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;margin-bottom:12px">Only one block so far. Restarting or changing a training plan files the current one away, and it becomes available here to compare against.</div>`
     : ''
 
   window._blockState = window._blockState || {}

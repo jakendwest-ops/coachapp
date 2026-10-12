@@ -60,7 +60,7 @@ async function _startFreshRunner(clientId) {
 
   document.getElementById('runner-setup')?.remove()
 
-  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null, templateId: template?.id || null }
+  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null, templateId: (template && !template._standIn) ? template.id : null }      // a stand-in template ("Start from a past session") has no row to point at
   // Interval exercises store ONE sets_json entry describing the whole block, so the generic
   // `targetSets: ex.sets_json?.length || 3` above always comes out as 1 (or 3, on a legacy fallback)
   // for them — expand now so targetSets reflects the real work-round count everywhere it's read
@@ -252,6 +252,7 @@ async function _resumeRunnerFromDraft(clientId) {
   document.getElementById('runner-resume-modal')?.remove()
   const draft = _loadRunnerDraft(clientId)
   if (!draft) { await _startFreshRunner(clientId); return } // vanished between modal open and tap
+  window._fakeRsTemplate = null; window._fakeRsName = null      // the start this draft blocked is abandoned: it must not leak into the next one
   _runner = {
     clientId: draft.clientId, name: draft.name, date: draft.date, exercises: draft.exercises,
     exIdx: draft.exIdx || 0, startTime: draft.startTime, _timerInterval: null,
@@ -2879,6 +2880,7 @@ async function showRunnerFinish() {
             <label class="field-label">Notes</label>
             <textarea class="field-input" id="rf-notes" rows="2" placeholder="How did it go?">${escapeHtml(finishNotes)}</textarea>
           </div>
+          ${_ownRunner() ? `<div class="field"><button type="button" class="btn-secondary" id="rf-save-template" data-save-as-workout onclick="saveRunnerAsWorkout()"${_runner._savedWorkoutId ? ' disabled' : ''}>${_runner._savedWorkoutId ? 'Saved to your workouts' : 'Save as a workout'}</button></div>` : ''}
         </div>
 
         <div style="padding:12px 16px 24px;border-top:1px solid var(--border);display:flex;gap:8px">
@@ -2956,6 +2958,7 @@ function backToRunnerFromFinish() {
   // That was harmless while the finish screen was terminal; back in the runner it would become the exercise's real name (and its history lookup key).
   _runner.exercises.forEach(e => { if (e._nameFallback) { e.name = ''; delete e._nameFallback } })
   _runner._finishToken = null      // a PR lookup still in flight for the screen being left must not repaint it over the runner
+  _runner._savedWorkoutId = null      // sets may change from here: the next finish offers "Save as a workout" afresh
   _runner._wakeLockOff = false
   _startRunnerTimerTick()
   _startRunnerDraftSafetyNet()
@@ -3023,6 +3026,51 @@ function _loggedExercises() {
   return out
 }
 
+// A solo account's own session (clientId === the solo record's id): the only runner that may save its exercises as a reusable workout (Jake, 2026-10-12).
+const _ownRunner = () => !!_runner && !!window._soloClientId && _runner.clientId === window._soloClientId
+
+// "Save as a workout" (Jake, 2026-10-12): offered on the finish screen and only when tapped, never automatically. Creates the person's own personal workout (the
+// same shape saveNewTemplate writes: coach_id = their own id, is_personal, no program) from the session's exercises, so it appears in Your workouts. The exercise
+// rows are a second write, so if they fail the empty workout is removed again rather than left in the library.
+async function saveRunnerAsWorkout() {
+  if (!_ownRunner() || _runner._savedWorkoutId) return
+  const exs = _loggedExercises()
+  if (!exs.length) { showToast('Log a set first.', 'warn'); return }
+  const name = document.getElementById('rf-name')?.value.trim() || _runner.name || 'Workout'
+  const btn = document.getElementById('rf-save-template')
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…' }
+  const reset = () => { if (btn) { btn.disabled = false; btn.textContent = 'Save as a workout' } }
+  // An empty workout a failed earlier try could not remove (the connection dropping between its two writes) is reused, not duplicated.
+  let workoutId = _runner._orphanWorkoutId || null
+  if (!workoutId) {
+    const { data: tmpl, error } = await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: true, name, description: null, program_id: null }).select('id').single()
+    if (error || !tmpl) { log.error('saveRunnerAsWorkout', 'template insert failed', error); showToast('Could not save it as a workout. Try again.', 'error'); reset(); return }
+    workoutId = tmpl.id
+  }
+  const rows = exs.map((e, i) => {
+    const work = _countableSets(e.loggedSets)      // warm-ups and cool-downs are not part of the workout; a session of nothing else keeps them
+    const sets = work.length ? work : e.loggedSets
+    return {
+      template_id: workoutId, exercise_id: e.exerciseId || null, exercise_name: e.name, exercise_type: e.type || 'strength', metric_type: e.metricType || 'weight_reps', order_index: i,
+      sets: sets.length,
+      sets_json: (e.metricType || 'weight_reps') === 'weight_reps' ? sets.map(s => ({ repsMin: _hasNumVal(s.reps) ? String(s.reps) : '' })) : null
+    }
+  })
+  const { error: exErr } = await db.from('workout_template_exercises').insert(rows)
+  if (exErr) {
+    log.error('saveRunnerAsWorkout', 'exercise insert failed: removing the empty workout', exErr)
+    const { data: gone } = await db.from('workout_templates').delete().eq('id', workoutId).select('id')
+    if (!gone?.length) log.error('saveRunnerAsWorkout', 'the empty workout could not be removed', { id: workoutId })
+    if (_runner) _runner._orphanWorkoutId = gone?.length ? null : workoutId
+    showToast('Could not save it as a workout. Try again.', 'error'); reset(); return
+  }
+  if (_runner) { _runner._savedWorkoutId = workoutId; _runner._orphanWorkoutId = null; if (!_runner.templateId) _runner.templateId = workoutId }      // so the session reads as the first time it was done      // (_runner is gone if the screen was left mid-save: the saved workout stands either way)
+  const done = document.getElementById('rf-save-template')
+  if (done) { done.disabled = true; done._reentryPrevDisabled = true; done.textContent = 'Saved to your workouts' }      // (the re-entry guard puts a button back to its prior state when this returns: that state is now "disabled", see _setBusy)
+  showToast('Saved to your workouts', 'success')
+}
+guardReentry('saveRunnerAsWorkout')   // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
+
 async function saveRunnerSession() {
   if (!_runner) return
   // Capture all _runner fields into locals before any await — discardRunner() can null _runner mid-save
@@ -3075,11 +3123,12 @@ async function saveRunnerSession() {
     // template_id is what lets the Library page say when a session was last TRAINED. Its sibling
     // saveWorkoutSession has always recorded it; this path never did, so until 2026-09-04 a session
     // trained in the actual runner left no link back to the template it came from.
-    coach_id: coachId, client_id: clientId, template_id: _runner?.templateId || null, name, date, notes
+    coach_id: coachId, client_id: clientId, template_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(_runner?.templateId || '') ? _runner.templateId : null, name, date, notes      // a uuid or nothing: the column is a foreign key
   }).select().single()
   if (error) {
     log.error('saveRunnerSession', 'workout_logs insert failed', error)
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
+    showToast(`Save failed — ${error.message}. Please try again.`, 'error')
     return
   }
 

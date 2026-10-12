@@ -790,6 +790,8 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   font-weight: 500;
   padding: 8px 4px;
   border-radius: 8px;
+  text-align: center;
+  line-height: 1.15;      /* "Training plans" wraps to two lines on a phone: keep it inside the bar */
   transition: color 0.15s;
 }
 .bottom-nav-item:hover { text-decoration: none; }
@@ -968,6 +970,27 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .pgm-more { padding:4px 0; font-size:var(--text-md); font-weight:700; color:var(--accent); }
 .pgm-cta { margin-top:12px; }
 .pgm-cta .btn { min-height:46px; }
+.pgm-onplan { display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
+.pgm-replaces { font-size:var(--text-md); color:var(--text-muted); margin:0 0 12px; }
+
+/* The solo Workouts page (Jake, 2026-10-12): start buttons, a folded plan, "Your workouts". */
+.wk-start { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
+.wk-start .btn-primary, .wk-start .btn-secondary { width:100%; min-height:48px; }
+.wk-noplan { padding:12px; margin-bottom:16px; border:1px dashed var(--border); border-radius:var(--radius); color:var(--text-muted); font-size:var(--text-md); }
+.wk-noplan a { color:var(--accent); font-weight:700; }
+.wk-plan { margin-bottom:16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+.wk-plan > summary { padding:12px; cursor:pointer; font-size:var(--text-base); font-weight:700; color:var(--text); }
+.wk-plan[open] > summary { border-bottom:1px solid var(--border); }
+.wk-plan > :not(summary) { margin:12px; }
+.wk-sec { margin:20px 0 4px; font-size:var(--text-base); font-weight:800; color:var(--text); }
+.wk-sub { margin:0 0 10px; font-size:var(--text-md); color:var(--text-muted); }
+.wk-list, .wk-pastlist { display:flex; flex-direction:column; gap:8px; }
+.wk-row { display:flex; align-items:center; gap:10px; width:100%; padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); color:inherit; text-align:left; }
+.wk-pastrow { cursor:pointer; }
+.wk-grow { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; cursor:pointer; }
+.wk-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-base); font-weight:700; }
+.wk-meta { font-size:var(--text-sm); color:var(--text-muted); }
+.wk-go { flex-shrink:0; min-height:40px; padding:0 14px; }
 .pgm-tl { display:flex; gap:3px; margin:14px 0 6px; }
 .pgm-seg { min-width:0; height:34px; border-radius:var(--radius-sm); background:var(--surface-2); color:var(--text-muted); font-size:var(--text-md); font-weight:800; display:flex; align-items:center; justify-content:center; }
 .pgm-seg.pct { background:var(--accent); color:var(--surface); }

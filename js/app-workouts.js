@@ -657,7 +657,7 @@ function _builtWeekCount(sessions) {
 function _buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr, logs } = {}) {
   const freeform = `startWorkoutRunner('${clientId}')`
   if (!activeAssignment?.programs) {
-    return { eyebrow: 'Up next', title: 'No program assigned', meta: 'Start a freeform session below, or ask your PT to assign a program.', action: freeform, btnLabel: 'Start a session' }
+    return { eyebrow: 'Up next', title: 'No training plan assigned', meta: 'Start a freeform session, or ask your PT to assign a training plan.', action: freeform, btnLabel: 'Start a session' }
   }
   const prog = activeAssignment.programs
   const today = todayStr || _ymdLocal(new Date())
@@ -669,7 +669,7 @@ function _buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr, logs
     const where = [phaseName, week ? 'Week ' + week : ''].filter(Boolean).join(' · ') || (prog.description || '')
     return {
       eyebrow: 'Up next' + (when ? ' · ' + when : ''),
-      title: name || prog.name || 'Your program',
+      title: name || prog.name || 'Your training plan',
       meta: (name ? [prog.name, where].filter(Boolean).join(' · ') : where) + (more ? ` · +${more} more ${when === 'Today' ? 'today' : 'that day'}` : ''),
       action: cpw?.templateId ? `startWorkoutRunner('${clientId}','${cpw.templateId}')` : freeform,
       btnLabel: '▶ Start'
@@ -684,9 +684,9 @@ function _buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr, logs
     if (!next) {
       const info = _dashProgramInfo(activeAssignment, today)
       if (info && info.totalWeeks && info.week < info.totalWeeks) {
-        return { eyebrow: 'Up next', title: prog.name || 'Your program', meta: 'No more sessions are set up yet. Start a freeform session below.', action: freeform, btnLabel: 'Start a session' }
+        return { eyebrow: 'Up next', title: prog.name || 'Your training plan', meta: 'No more sessions are set up yet. Start a freeform session.', action: freeform, btnLabel: 'Start a session' }
       }
-      return { eyebrow: 'Program complete', title: prog.name || 'Your program', meta: 'Start a freeform session below, or move on to your next program.', action: freeform, btnLabel: 'Start a session' }
+      return { eyebrow: 'Training plan complete', title: prog.name || 'Your training plan', meta: 'Start a freeform session, or move on to your next training plan.', action: freeform, btnLabel: 'Start a session' }
     }
     const first = next.sessions[0]
     return card(first, next.ds === today ? 'Today' : _dashFormatDate(next.ds), first._phaseName, first._weekInPhase, next.sessions.length - 1)
@@ -739,6 +739,10 @@ async function renderClientWorkoutsPage(el) {
   // _getCurrentClientId() is the canonical resolver (app-core.js) and already answers this correctly.
   const clientId = await _getCurrentClientId()
   if (!clientId) { el.innerHTML = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'; return }
+  // The solo account's OWN page gets the new layout (Jake, 2026-10-12, from the prototype): start buttons, Up next, its plan folded away, Your workouts, Recent
+  // sessions. A coached client's page is unchanged. clientId === the solo record's id is the test, not a role string (a master account in Client view has another id).
+  const isOwn = !!window._soloClientId && clientId === window._soloClientId
+  const yourWorkoutsRead = isOwn ? _yourWorkoutsHtml(clientId) : null      // started with the reads below, awaited where it is drawn
 
   const [{ data: logs }, { data: cpAssignments }] = await Promise.all([
     db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
@@ -768,7 +772,7 @@ async function renderClientWorkoutsPage(el) {
   // (solo) account, which shares coach_id with the orphan-heavy PT account and almost always
   // has an active program (making this the common, not edge, case for that account).
   let templates = null
-  if (!hasProgram) {
+  if (!hasProgram && !isOwn) {      // the flat list below is replaced by Your workouts on the solo page
     // .limit(100) bounds cost against that same orphan backlog -- not a product ceiling on
     // real template count. .is('generated_from_phase_id', null) excludes periodization-generated
     // week clones (e.g. "Bench Press — W2") -- these have client_id/program_id both null too
@@ -787,17 +791,20 @@ async function renderClientWorkoutsPage(el) {
     }
   }
 
+  const yourWorkouts = isOwn ? await yourWorkoutsRead : ''
   el.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Workouts</h1>
     </div>
 
-    ${hasProgram ? _renderWorkoutsHeroHtml(_buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr: _ymdLocal(new Date()), logs: loggedLogs })) : ''}
+    ${isOwn ? _wkStartHtml(clientId) : ''}
 
-    ${hasProgram ? (() => {
+    ${hasProgram ? _renderWorkoutsHeroHtml(_buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr: _ymdLocal(new Date()), logs: loggedLogs })) : (isOwn ? _wkNoPlanHtml(!!activeAssignment) : '')}
+
+    ${hasProgram ? _wkPlanBlock(isOwn, activeAssignment.programs?.name, (() => {
       const prog = activeAssignment.programs
       const phases = [...(prog?.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
-      return `<div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-bottom:10px">${escapeHtml(prog?.name || 'My Program')}</div>
+      return `<div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-bottom:10px">${escapeHtml(prog?.name || 'My training plan')}</div>
         <div style="margin-bottom:28px">
           ${phases.map((phase, pi) => {
             const allSessions = [...(phase.program_phase_workouts || [])].sort((a, b) => a.week_number - b.week_number || a.day_of_week - b.day_of_week || a.session_order - b.session_order)
@@ -881,7 +888,7 @@ async function renderClientWorkoutsPage(el) {
             </div>`
           }).join('')}
         </div>`
-    })() : (() => {
+    })()) : (isOwn ? '' : (() => {
       const allTemplates = templates || []
       return `<div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Templates</div>
       ${!allTemplates.length ? `
@@ -902,7 +909,9 @@ async function renderClientWorkoutsPage(el) {
           </div>`
         }).join('')}</div>`}
       `
-    })()}
+    })())}
+
+    ${isOwn ? yourWorkouts : ''}
 
     ${!loggedLogs.length ? `
       <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Recent sessions</div>
@@ -1014,7 +1023,7 @@ async function renderWorkoutTemplates(el) {
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
 
   if (!templates.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No standalone templates</div><div class="empty-text">Create one below, or if it's part of a phased plan, add it via Programs → phase view.</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No standalone templates</div><div class="empty-text">Create one below, or if it's part of a phased plan, add it via Training plans → phase view.</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
     return
   }
 
@@ -1471,7 +1480,7 @@ async function saveNewTemplate() {
       if (pwErr) { log.error('saveNewTemplate', 'auto-assign to slot failed', pwErr); showToast('Workout created, but could not auto-assign to the slot — add it from the phase page', 'error') }
       else newPwId = newPw.id
     }
-    openTemplate(data.id, { backLabel: 'Back to program', backFn: () => openProgram(ctx.programId), programId: ctx.programId, phaseWorkoutId: newPwId })
+    openTemplate(data.id, { backLabel: 'Back to training plan', backFn: () => openProgram(ctx.programId), programId: ctx.programId, phaseWorkoutId: newPwId })
     return
   }
 
@@ -3441,7 +3450,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
     }
     window._propagateTargets = targets
     window._propagateChanges = changes
-    _showPropagateModal(tmpl.name, targets.length, 'this program', unlinked)
+    _showPropagateModal(tmpl.name, targets.length, 'this training plan', unlinked)
     return
   }
 
@@ -3703,7 +3712,7 @@ async function saveTemplateToLibrary(templateId, btnEl) {
   const result = await _copyTemplateToLibrary(templateId)
   if (btn) { btn.disabled = false; btn.textContent = 'Save to Library' }
   if (result === 'copied') {
-    showToast('Saved to your Library — you can now reuse it in any program', 'success')
+    showToast('Saved to your Library — you can now reuse it in any training plan', 'success')
     await _refreshProgramTemplates() // or the picker behind this drawer wouldn't list it until reload
   }
   else if (result === 'exists') showToast('A workout with this name is already in your Library', 'warn')
@@ -3715,7 +3724,7 @@ async function saveTemplateToLibrary(templateId, btnEl) {
 async function copyProgramWorkoutsToLibrary(programId) {
   const { data: phases } = await db.from('program_phases').select('id').eq('program_id', programId)
   const phaseIds = (phases || []).map(p => p.id)
-  if (!phaseIds.length) { showToast('This program has no workouts yet', 'warn'); return }
+  if (!phaseIds.length) { showToast('This training plan has no workouts yet', 'warn'); return }
 
   // Exclude periodization week-clones (generated_from_phase_id set) — they're derivatives of Week 1,
   // not source workouts, and copying them would litter the library with "Bench Press — W2" entries.
@@ -3736,7 +3745,7 @@ async function copyProgramWorkoutsToLibrary(programId) {
     seenIds.add(t.id)
     sources.push(t.id)
   }
-  if (!sources.length) { showToast('This program has no workouts to copy', 'warn'); return }
+  if (!sources.length) { showToast('This training plan has no workouts to copy', 'warn'); return }
 
   // Sequential, not Promise.all: each copy's name guard must see the rows written by the ones before
   // it, or two same-named workouts in the same program would both pass the check and both be created.
@@ -3951,7 +3960,7 @@ async function renderClientWorkouts(clientId, el) {
     if (cpwRows?.length) {
       const seen = new Set()
       const unique = cpwRows.filter(r => { const id = r.workout_template_id; if (seen.has(id)) return false; seen.add(id); return true })
-      const programName = clientProgs[0]?.programs?.name || 'Program'
+      const programName = clientProgs[0]?.programs?.name || 'Training plan'
       programWorkoutsHtml = `
         <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${escapeHtml(programName)}</div>
         <div class="list" style="margin-bottom:20px">
@@ -4015,6 +4024,115 @@ async function renderClientWorkouts(clientId, el) {
 
 // ─── WORKOUT RUNNER ───────────────────────────────────────────────────────────
 let _runner = null
+
+// ─── The solo Workouts page (Jake, 2026-10-12; prototype https://claude.ai/artifact/2Qu78DKistXV61n1JhWStu; docs/bugs/2026-10-12-scope-creating-a-workout-on-the-fly-and-renaming-programs-to-training-plans.md)
+
+const _wkStartHtml = clientId => `<div class="wk-start"><button type="button" class="btn-primary" data-start-empty onclick="startEmptyWorkout('${clientId}')">Start an empty workout</button><button type="button" class="btn-secondary" data-start-past onclick="showStartFromPast('${clientId}')">Start from a past session</button></div>`
+
+const _wkNoPlanHtml = hasPlan => hasPlan
+  ? '<div class="wk-noplan" data-no-plan>Your training plan has no sessions set up yet. You can train any time, or <a href="#" onclick="navigate(\'programs\');return false">open your training plans</a>.</div>'
+  : '<div class="wk-noplan" data-no-plan>No training plan is running. You can train any time, or <a href="#" onclick="navigate(\'programs\');return false">pick a training plan</a>.</div>'
+
+// The plan's own day list stays (it is how a planned session other than "Up next" is started) but is folded away on the solo page.
+function _wkPlanBlock(isOwn, planName, html) {
+  if (!isOwn) return html
+  return `<details class="wk-plan" data-plan-fold><summary>Your plan · ${escapeHtml(planName || 'My plan')}</summary>${html}</details>`
+}
+
+// "Start an empty workout": the runner opens straight on a blank workout (the fast path startWorkoutRunner(clientId, templateId) uses, with no template) and the
+// person adds exercises as they go. launchRunner owns the draft-resume check.
+function startEmptyWorkout(clientId) {
+  _unlockAudio()
+  _unlockSpeech()
+  window._runnerTemplates = []
+  window._fakeRsTemplate = ''
+  window._fakeRsName = `${_dashFormatDate(_ymdLocal(new Date()))} workout`
+  launchRunner(clientId)
+}
+
+// "Start from a past session": pick one of the last sessions and its exercises open as a new workout with blank sets. Nothing is written until it is saved.
+async function showStartFromPast(clientId) {
+  document.getElementById('sfp-modal')?.remove()
+  const { data: logs, error } = await db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(30)
+  if (error) { log.error('showStartFromPast', 'fetch failed', error); showToast('Could not load your sessions. Try again.', 'error'); return }
+  const rows = (logs || []).filter(l => (l.workout_log_exercises?.length || 0) > 0).slice(0, 10)      // 30 looked at, 10 shown: empty logs (abandoned starts) must not hide the real ones
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'sfp-modal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Start from a past session</h2>
+        <button class="modal-close" onclick="document.getElementById('sfp-modal').remove()">✕</button>
+      </div>
+      <p class="wk-sub">Its exercises open as a new workout with blank sets. Nothing is saved until you finish.</p>
+      ${rows.length ? `<div class="wk-pastlist">${rows.map(l => `<button type="button" class="wk-row wk-pastrow" data-past-session onclick="startFromPastSession('${clientId}','${l.id}')"><span class="wk-grow"><span class="wk-name">${escapeHtml(l.name || 'Session')}</span><span class="wk-meta">${_dashFormatDate(l.date)} · ${l.workout_log_exercises.length} exercise${l.workout_log_exercises.length !== 1 ? 's' : ''}</span></span></button>`).join('')}</div>` : '<p class="wk-sub" data-no-past>No sessions logged yet. Start an empty workout and it will be here next time.</p>'}
+    </div>`
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+  mountModal(overlay)
+}
+
+async function startFromPastSession(clientId, logId) {
+  // Anchored on the client as well as the log id: a session id that is not this person's finds nothing.
+  const { data: past, error } = await db.from('workout_logs').select('id, name, workout_log_exercises(exercise_id, exercise_name, exercise_type, metric_type, order_index)').eq('id', logId).eq('client_id', clientId).maybeSingle()
+  if (error || !past) { log.error('startFromPastSession', 'fetch failed', error || { found: false }); showToast('Could not open that session. Try again.', 'error'); return }
+  document.getElementById('sfp-modal')?.remove()
+  _unlockAudio()
+  _unlockSpeech()
+  const exs = [...(past.workout_log_exercises || [])].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+  // A stand-in template, in memory only: the runner builds its exercises from a template, and a stand-in lets it do that without a database row. Its id is not a
+  // real template id, so the runner's templateId is cleared once it has started (workout_logs.template_id is a foreign key and must stay null for this session).
+  window._runnerTemplates = [{ id: `past-${past.id}`, _standIn: true, name: past.name, workout_template_exercises: exs.map((e, i) => ({ id: `past-${i}`, exercise_id: e.exercise_id || null, exercise_name: e.exercise_name, exercise_type: e.exercise_type, metric_type: e.metric_type, order_index: i, sets_json: null })) }]
+  window._fakeRsTemplate = `past-${past.id}`
+  window._fakeRsName = `${_dashFormatDate(_ymdLocal(new Date()))} workout`
+  await launchRunner(clientId)
+  if (_runner) _runner.templateId = null      // (belt and braces: _startFreshRunner already leaves a stand-in's id out)
+}
+guardReentry('startFromPastSession')      // a second tap on a row while the first is launching would start a second runner
+
+// Your workouts: the workouts this account has made (its personal library, not part of a plan) plus any plan session it has trained from, each with when it was last
+// done and how often. Read-only; no table of its own. A plan session's copy is "From a plan"; everything else is "Made by you".
+async function _yourWorkoutsHtml(clientId) {
+  const [mineR, logsR] = await Promise.all([
+    db.from('workout_templates').select('id, name, workout_template_exercises(id)').eq('coach_id', currentUser.id).eq('is_personal', true).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('created_at', { ascending: false }).limit(100),
+    _fetchAllRows(() => db.from('workout_logs').select('id, template_id, date', { count: 'exact' }).eq('client_id', clientId).not('template_id', 'is', null).order('date', { ascending: false }).order('id', { ascending: false }))
+  ])
+  const head = '<div class="wk-sec">Your workouts</div><p class="wk-sub">Workouts you have created and used.</p>'
+  if (mineR.error || logsR.error) { log.error('_yourWorkoutsHtml', 'fetch failed', mineR.error || logsR.error); return `${head}<p class="wk-sub" data-yw-error>Could not load your workouts. Check your connection and try again.</p>` }
+  const used = {}
+  for (const l of logsR.data || []) { const u = (used[l.template_id] ||= { last: l.date, n: 0 }); u.n++ }      // newest first, so the first row seen is the last time it was done
+  const mine = mineR.data || []
+  const mineIds = new Set(mine.map(t => t.id))
+  const otherIds = Object.keys(used).filter(id => !mineIds.has(id)).slice(0, 50)
+  let others = []
+  if (otherIds.length) {
+    const r = await db.from('workout_templates').select('id, name, workout_template_exercises(id)').eq('coach_id', currentUser.id).in('id', otherIds)
+    if (r.error) { log.error('_yourWorkoutsHtml', 'plan sessions fetch failed', r.error); return `${head}<p class="wk-sub" data-yw-error>Could not load your workouts. Check your connection and try again.</p>` }
+    others = r.data || []
+  }
+  // A periodised plan keeps one copy of a session per week ("Upper — W2"): they are one workout here, shown by its plain name, as the one most recently done with every time added up.
+  const weekless = n => (n || '').replace(/ — W\d+/, '')
+  const planGroups = Object.create(null)      // keyed by a typed name: no inherited keys
+  for (const t of others) {
+    const u = used[t.id] || null, g = (planGroups[weekless(t.name)] ||= { best: { t, u }, n: 0 })
+    g.n += u?.n || 0
+    if ((u?.last || '') > (g.best.u?.last || '')) g.best = { t, u }
+  }
+  const planRows = Object.entries(planGroups).map(([name, g]) => ({ t: { ...g.best.t, name }, src: 'plan', u: g.best.u ? { last: g.best.u.last, n: g.n } : null }))
+  const rows = [...mine.map(t => ({ t, src: 'you', u: used[t.id] || null })), ...planRows]
+    .sort((a, b) => (b.u?.last || '').localeCompare(a.u?.last || ''))      // most recently done first; never done after (a stable sort keeps newest-made first)
+  if (!rows.length) return `${head}<p class="wk-sub" data-yw-empty>Nothing here yet. Start an empty workout, and tap "Save as a workout" when you finish it.</p>`
+  const list = rows.map(({ t, src, u }) => {
+    const n = (t.workout_template_exercises || []).length
+    const meta = `${n} exercise${n !== 1 ? 's' : ''}${u ? ` · last done ${_dashFormatDate(u.last)} · done ${u.n} time${u.n !== 1 ? 's' : ''}` : ' · not done yet'}`
+    return `<div class="wk-row" data-your-workout>
+      <div class="wk-grow" onclick="openSessionDetail('${t.id}','${escapeAttr(t.name)}')"><span class="wk-name">${escapeHtml(t.name)}</span><span class="wk-meta">${meta}</span></div>
+      <span class="badge ${src === 'plan' ? 'badge-active' : 'badge-inactive'}" data-yw-src>${src === 'plan' ? 'From a plan' : 'Made by you'}</span>
+      <button type="button" class="btn-primary wk-go" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
+    </div>`
+  }).join('')
+  return `${head}<div class="wk-list">${list}</div>`
+}
 
 async function startWorkoutRunner(clientId, templateId) {
   // Unlock audio/speech here (the earliest real user gesture) instead of waiting for

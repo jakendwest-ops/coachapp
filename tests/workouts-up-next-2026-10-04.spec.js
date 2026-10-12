@@ -73,7 +73,7 @@ test.describe('The Workouts page Up next card (2026-10-04)', () => {
 
   test('when the whole program is done the card says so and offers a freeform session - it does not point at an old one', async ({ page }) => {
     await showWorkouts(page, { today: '2026-10-26' })                                    // the Monday after week 4
-    expect(await card(page)).toMatchObject({ eyebrow: 'Program complete', title: 'Operation 240', button: 'Start a session →' })
+    expect(await card(page)).toMatchObject({ eyebrow: 'Training plan complete', title: 'Operation 240', button: 'Start a session →' })
     await page.locator('#wk-hero [data-hero-start]').click()
     expect(await started(page), 'a freeform session: no template').toEqual([CLIENT])
   })
