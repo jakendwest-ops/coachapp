@@ -1012,8 +1012,10 @@ async function renderPrograms(el) {
 // So ALWAYS subtract 1 when indexing this with a stored day_of_week.
 const _DAY_LABELS = ['MON','TUE','WED','THU','FRI','SAT','SUN']
 
-// The heading on a program's day list: "MONDAY · DAY 1". The list used to print only "DAY 1 / DAY 3 / DAY 5",
-// which reads as nonsense with the gaps — the weekday is what the day means. Jake, 2026-09-28. Both lists
+// The heading on a program's day list: "MONDAY". The list used to print only "DAY 1 / DAY 3 / DAY 5",
+// which reads as nonsense with the gaps — the weekday is what the day means. Jake, 2026-09-28. That version
+// kept the number ("MONDAY · DAY 1"), but the number is the WEEKDAY's (Wednesday = 3), and it read as the Nth day
+// of the plan, so it is gone (Jake, 2026-10-12: "day 3 is day 3 of the week but not day 3 of the plan"). Both lists
 // (the client's Workouts page and the coach's Programs page) build it here so they cannot drift apart.
 // A day past 7 has no weekday, so it falls back to the bare number rather than printing "undefined".
 const _DAY_NAMES = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY']
@@ -1021,8 +1023,7 @@ function _dayHeadingLabel(day) {
   // Coerced to a number: the result goes straight into innerHTML, and both callers pass one today — this keeps
   // it that way for the next caller, who might pass a string.
   const n = Number(day)
-  const name = _DAY_NAMES[n - 1]
-  return name ? `${name} · DAY ${n}` : `DAY ${n}`
+  return _DAY_NAMES[n - 1] || `DAY ${n}`
 }
 
 // Builds the Add-workout picker's pool, INCLUDING where each template is already used.

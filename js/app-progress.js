@@ -1566,22 +1566,26 @@ async function renderPerformance(el) {
 // ── B3 diary helpers (unit-tested) ──────────────────────────────────────────────────────────────
 // Compact per-set line, our format: "105×10, 110×8" (weight×reps), "L 20×10, R 18×10" (unilateral),
 // hold times, jump heights/distances.
+//
+// The recorded effort follows each set ("62.5×4 @7 RPE, 65×4 @8 RPE", "82.5×6 @0 RIR"): Jake, 2026-10-12, "none of the performance tables show
+// recorded effort". It is the Stats sheet's formatter (_xsEffortText), so the two screens cannot word it differently. Every query that feeds
+// this line must therefore select effort_type and effort_value (the Per session one did not).
+function _setDetailOf(x) {
+  // `!= null`, not `||`. weightToPref returns the NUMBER 0 in kg (falsy → "BW") but the STRING "0"
+  // in lb (truthy → "0×10"), so the same bodyweight set read differently depending on the unit
+  // preference. Matches the != null discipline this function already uses two lines down.
+  if (x.side) return `${x.side[0].toUpperCase()} ${x.weight_kg != null ? weightToPref(x.weight_kg) : 'BW'}×${x.reps_achieved || 0}`
+  // != null, not truthy — a real 0cm/0m jump attempt must still show, same falsy-zero shape as
+  // the runner's weight guard (Jake, 2026-07-29/30).
+  if (x.height_cm != null) return fmtJumpHeight(x.height_cm)
+  if (x.duration_seconds && x.weight_kg == null) return fmtRestCountdown(parseInt(x.duration_seconds))
+  if (x.weight_kg != null && x.reps_achieved != null) return `${weightToPref(x.weight_kg)}×${x.reps_achieved}`
+  if (x.reps_achieved != null) return `${x.reps_achieved} rep`
+  if (x.distance_m != null) return fmtDistanceM(x.distance_m)
+  return ''
+}
 function _setDetailsLine(sets) {
-  const num = v => parseFloat(v) || 0
-  return (sets || []).map(x => {
-    // `!= null`, not `||`. weightToPref returns the NUMBER 0 in kg (falsy → "BW") but the STRING "0"
-    // in lb (truthy → "0×10"), so the same bodyweight set read differently depending on the unit
-    // preference. Matches the != null discipline this function already uses two lines down.
-    if (x.side) return `${x.side[0].toUpperCase()} ${x.weight_kg != null ? weightToPref(x.weight_kg) : 'BW'}×${x.reps_achieved || 0}`
-    // != null, not truthy — a real 0cm/0m jump attempt must still show, same falsy-zero shape as
-    // the runner's weight guard (Jake, 2026-07-29/30).
-    if (x.height_cm != null) return fmtJumpHeight(x.height_cm)
-    if (x.duration_seconds && x.weight_kg == null) return fmtRestCountdown(parseInt(x.duration_seconds))
-    if (x.weight_kg != null && x.reps_achieved != null) return `${weightToPref(x.weight_kg)}×${x.reps_achieved}`
-    if (x.reps_achieved != null) return `${x.reps_achieved} rep`
-    if (x.distance_m != null) return fmtDistanceM(x.distance_m)
-    return ''
-  }).filter(Boolean).join(', ')
+  return (sets || []).map(x => { const d = _setDetailOf(x); return d ? d + _xsEffortText(x) : '' }).filter(Boolean).join(', ')
 }
 
 // Same per-set rendering as _setDetailsLine, but CONSECUTIVE IDENTICAL sets collapse: "95×8, 95×8,
@@ -1661,7 +1665,7 @@ async function renderProgressPerSession(clientId, el) {
   // Any chart expanded on the previous render is about to be detached — destroy it first so it doesn't leak.
   _destroyManagedCharts()
   const { data: sessions } = await db.from('workout_logs')
-    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr, avg_watts, phase))')
+    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr, avg_watts, phase, effort_type, effort_value))')
     .eq('client_id', clientId).order('date', { ascending: false }).limit(10)
   if (myToken !== _perfSessionToken) return
   if (!sessions?.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet. Your recent workouts will show here.</p></div>'; return }
@@ -1733,7 +1737,7 @@ function _renderPerfSessionDetail(i) {
           <span style="font-size:var(--text-base, 13px);font-weight:600">${escapeHtml(ex.exercise_name)}</span>
           <span style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap">${m.main.fmt} ${mainDelta}</span>
         </div>
-        ${m.setLine ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${m.setLine}</div>` : ''}
+        ${m.setLine ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${escapeHtml(m.setLine)}</div>` : ''}
         ${m.sec ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${m.sec.label} ${m.sec.fmt} ${secDelta}</div>` : ''}
         <div id="perf-sess-${i}-ex-${ei}-chart" style="display:none;position:relative;height:80px;margin-top:8px"></div>
       </div>`
@@ -2827,10 +2831,14 @@ function _xsDate(iso, long) {
   return d.toLocaleDateString('en-GB', long ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short' })
 }
 
-// "@9" (RPE) or "@2 RIR": the scale travels with the number, because the two run in opposite directions.
+// "@9 RPE" or "@2 RIR": the scale travels with the number, because the two run in opposite directions. Both carry it: an RPE used to be a bare
+// "@9" while an RIR said "RIR", so an RPE did not read as one (Jake, 2026-10-12: "the RPE is not shown whereas the RIR is").
 function _xsEffortText(s) {
   if (!_hasNumVal(s.effort_value) || !(s.effort_type === 'rpe' || s.effort_type === 'rir')) return ''
-  return ' @' + (+s.effort_value) + (s.effort_type === 'rir' ? ' RIR' : '')
+  // parseFloat + isFinite: a stored value that is not a number (a hand-written row) says nothing, never "@NaN RPE" (found by the 2026-10-12 review).
+  const v = parseFloat(s.effort_value)
+  if (!Number.isFinite(v)) return ''
+  return ' @' + v + (s.effort_type === 'rir' ? ' RIR' : ' RPE')
 }
 // "117.5×3 @9" for the history; "117.5 × 3 @9" where it sits in a sentence. A bodyweight set is just its reps.
 // A weight of 0 is a weight (Jake, 2026-10-11: "0 should be logged as 0": an unweighted dip is 0 kg, and it must read "0 kg × 9", not "9 reps").
@@ -2914,7 +2922,7 @@ function _xsStripHtml(st) {
   // Says in words WHICH set the 1RM is worked out from — the question Jake asked of the first prototype.
   const src = cur.m.e1rmSrc
   const rpe = src ? _effortToRPE(_xsEffortOpts(src, _XS_COUNT_EFFORT)) : null
-  const note = src ? `<div class="xs-note" data-xs-note>Est. 1RM works from your best set: ${escapeHtml(_xsSetSpaced(src))}${rpe != null && rpe < 10 ? ` (${src.effort_type === 'rir' ? 'RIR' : 'RPE'} counted)` : ''}.</div>` : ''
+  const note = src ? `<div class="xs-note" data-xs-note>Est. 1RM works from your best set: ${escapeHtml(_xsSetSpaced(src))}${rpe != null && rpe < 10 ? ' (effort counted)' : ''}.</div>` : ''
   return `<div class="xs-sel"><span class="xs-selname" data-xs-selname>${escapeHtml(title)}</span><span class="xs-vs">${escapeHtml(vs)}</span></div><div class="xs-strip">${tiles.map(tile).join('')}</div>${note}`
 }
 

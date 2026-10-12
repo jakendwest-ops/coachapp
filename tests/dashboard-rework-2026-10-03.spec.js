@@ -158,7 +158,9 @@ test.describe('the client and solo dashboard', () => {
     expect(r.days.filter(d => d.pressed === 'true').map(d => d.label), 'the pressed day is the one the Today card shows').toEqual(['Sat'])
     expect(r.weekSub).toBe('3 of 4 sessions done')
 
-    expect(r.streak, 'three finished weeks with every planned session logged; this week, unfinished, is ignored').toContain('3 week streak')
+    // Jake, 2026-10-12: the streak starts with the plan. The plan began two weeks ago, so the two finished weeks of it count (every planned session logged);
+    // the week BEFORE the plan, which this fixture also fills, does not (it counted as a third week until then); this week, unfinished, is ignored.
+    expect(r.streak, 'two finished plan weeks with every planned session logged; the week before the plan and this unfinished week do not count').toContain('2 week streak')
     expect(r.streak).toContain('hitting your whole plan')
     expect(r.program).toContain('Wk 3')
     expect(r.program).toContain('of 12')
@@ -284,7 +286,7 @@ test.describe('the client and solo dashboard', () => {
     expect(r.hero).toMatchObject({ kind: 'done', calm: true, eyebrow: 'Today · Done', title: 'Squat + Threshold', meta: '5 exercises logged' })
     expect(r.hero.buttons).toEqual(['View session'])
     expect(r.weekSub).toBe('4 of 4 sessions done')
-    expect(r.streak, 'the week is now complete, so it counts: four weeks').toContain('4 week streak')
+    expect(r.streak, 'the week is now complete, so it counts: the two finished plan weeks plus this one (the week before the plan never counts)').toContain('3 week streak')
     await restoreCappedApi(page)
 
     // Rest: Sunday, nothing planned. The next session is named.
@@ -319,7 +321,7 @@ test.describe('the client and solo dashboard', () => {
     const r = await read(page)
     expect(r.hero.kind, 'still planned, not done').toBe('plan')
     expect(r.weekSub).toBe('3 of 4 sessions done')
-    expect(r.streak, 'and the unfinished week still does not count').toContain('3 week streak')
+    expect(r.streak, 'and the unfinished week still does not count: the two finished plan weeks only').toContain('2 week streak')
   })
 
   test('the streak breaks on a week that missed the plan - and nothing before the gap counts', async ({ page }) => {

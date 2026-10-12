@@ -258,13 +258,16 @@ describe('_lastTimeSummary — what the runner\'s Last time panel says', () => {
     assert.equal(s.count, 3)
   })
 
-  test('the logged effort travels with the set, and its scale with it: RPE as @9, RIR as @2 RIR', () => {
-    assert.equal(sum([set(100, 3, { effort_value: 9, effort_type: 'rpe' }), set(85, 5)]).top, '100 kg × 3 @9')
+  test('the logged effort travels with the set, and its scale with it: RPE as @9 RPE, RIR as @2 RIR (both name their scale - Jake, 2026-10-12)', () => {
+    assert.equal(sum([set(100, 3, { effort_value: 9, effort_type: 'rpe' }), set(85, 5)]).top, '100 kg × 3 @9 RPE')
     assert.equal(sum([set(100, 3, { effort_value: 2, effort_type: 'rir' })]).top, '100 kg × 3 @2 RIR')
   })
 
   test('an effort with no scale is not shown (RIR and RPE run in opposite directions, so a guess could invert it)', () => {
     assert.equal(sum([set(100, 3, { effort_value: 8 })]).top, '100 kg × 3')
+    // A stored value that is not a number (a hand-written row) says nothing, never "@NaN RPE" (2026-10-12 review).
+    assert.equal(sum([set(100, 3, { effort_value: 'abc', effort_type: 'rpe' })]).top, '100 kg × 3')
+    assert.equal(sum([set(100, 3, { effort_value: '1e999', effort_type: 'rir' })]).top, '100 kg × 3')
   })
 
   test('a warm-up is neither the top set nor part of the count (the Stats card ignores it too)', () => {

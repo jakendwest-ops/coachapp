@@ -262,14 +262,16 @@ test.describe('Runner exercise tabs and Next exercise (2026-09-28)', () => {
 })
 
 test.describe('Program day labels (2026-09-28)', () => {
-  test('a day reads as its weekday plus its day number — Day 1 is Monday', async ({ page }) => {
+  // Jake, 2026-10-12: "day 3 is day 3 of the week but not day 3 of the plan. We could probably drop this wording." The weekday alone is what
+  // the heading says now; a number only survives for a day past 7, which has no weekday.
+  test('a day reads as its weekday alone — no "DAY n", which was the weekday number and read as a day of the plan', async ({ page }) => {
     await loginAsPT(page)
     const labels = await page.evaluate(() => typeof _dayHeadingLabel === 'function'
       ? [1, 3, 5, 7, 9, '2'].map(_dayHeadingLabel) : null)
     expect(labels, '_dayHeadingLabel exists').not.toBeNull()
-    expect(labels.slice(0, 4)).toEqual(['MONDAY · DAY 1', 'WEDNESDAY · DAY 3', 'FRIDAY · DAY 5', 'SUNDAY · DAY 7'])
+    expect(labels.slice(0, 4)).toEqual(['MONDAY', 'WEDNESDAY', 'FRIDAY', 'SUNDAY'])
     expect(labels[4], 'a day past 7 has no weekday — it must not print "undefined"').toBe('DAY 9')
-    expect(labels[5], 'a numeric string is treated as the number').toBe('TUESDAY · DAY 2')
+    expect(labels[5], 'a numeric string is treated as the number').toBe('TUESDAY')
   })
 
   test('both places that list a program\'s days use it — none still prints the bare day number', async ({ page }) => {

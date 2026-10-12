@@ -3,7 +3,7 @@ id: 2026-10-12-scope-creating-a-workout-on-the-fly-and-renaming-programs-to-trai
 status: open
 priority: low
 reported: 2026-10-12
-status_detail: "OPEN. Reported by Jake 2026-10-12 as a SCOPING item, not a defect: how a user creates a workout on the fly (not everyone wants programs), with a possible split of the 'Workouts' page (workouts that have been created and used) and 'Programs' renamed 'training plans'. Product design; nothing is built until Jake approves a scoped plan."
+status_detail: "OPEN. Scoped with Jake 2026-10-12; his four answers are below. Not built; the next step is a prototype of the new Workouts and Training plans pages for his reaction, then a plan to approve."
 ---
 
 # Scope: creating a workout on the fly, and a Workouts / Training plans split
@@ -28,3 +28,14 @@ status_detail: "OPEN. Reported by Jake 2026-10-12 as a SCOPING item, not a defec
 ## What would close it
 
 **Closes when** Jake approves a scoped plan (a prototype first, per his own rule), it is built and tested, and he confirms on his phone. This row is the scoping item itself; the build gets its own row.
+
+## Decisions (Jake, 2026-10-12)
+
+1. **Who first:** solo users with no plan (someone who just wants to train and log, without building a program).
+2. **How:** start empty and add exercises as you go; nothing to set up first, and the session is logged.
+3. **Reuse:** a finished on-the-fly session becomes a reusable workout only if the user taps "Save workout" on the finish screen.
+4. **Rename and split:** "Programs" becomes "Training plans" everywhere; "Workouts" lists workouts that have been created and used, with a plan's sessions living under Training plans.
+
+## Next
+
+A tappable prototype (Workouts as created-and-used workouts, Training plans, and the empty-start flow), then his reaction, then a plan with the rename's blast radius (nav, headings, copy, the coach's view, specs) for approval. Related: the Workouts page refresh row (hero, plan and day list, recent sessions) is the same page and should be designed together.

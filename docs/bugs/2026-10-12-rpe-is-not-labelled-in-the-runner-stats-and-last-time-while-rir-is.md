@@ -1,9 +1,9 @@
 ---
 id: 2026-10-12-rpe-is-not-labelled-in-the-runner-stats-and-last-time-while-rir-is
-status: open
+status: fixed-awaiting-jake
 priority: medium
 reported: 2026-10-12
-status_detail: "OPEN. Reported by Jake 2026-10-12. My reading, to be confirmed with him: the runner's Stats sheet and Last time strip print RIR with its label ('@0 RIR') but RPE as a bare number ('@7'), so RPE does not read as RPE. Not built; one question to Jake first."
+status_detail: "FIXED 2026-10-12 on master, unreleased (app-progress v79); awaiting Jake's look on a phone. Jake confirmed my reading (an RPE had no label while an RIR did): an RPE now reads '@7 RPE' beside '@0 RIR' in the runner's Stats sheet, the Last time strip, the Stats card and the 1RM note (which now says 'effort counted'). Red before, green after: tests-node/exercise-stats.test.mjs, tests/exercise-stats-shared-2026-10-03.spec.js, tests/runner-last-time-top-set-2026-10-04.spec.js."
 ---
 
 # In the runner, RPE is not shown whereas RIR is
@@ -25,3 +25,7 @@ The two selected rows suggest the complaint is that RPE is shown only as "@7" wi
 ## What would close it
 
 **Closes when** Jake confirms which screen he meant and that, after the change, an RPE reads as an RPE wherever an RIR does.
+
+## Confirmed with Jake, 2026-10-12
+
+Asked which he meant, Jake chose "RPE has no label (my reading)": RIR read "@0 RIR" and RPE a bare "@7". Now both name their scale.

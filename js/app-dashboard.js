@@ -113,11 +113,17 @@ const _DASH_STREAK_WEEKS = 52
 // The streak: consecutive weeks (Monday to Sunday) that hit the plan - Jake's choice, 2026-10-03: "Weeks hitting my whole plan".
 //   - INSIDE the program's span a week counts when every planned session was logged. A week with nothing planned asks nothing and is
 //     skipped (a planned rest week neither earns nor breaks the streak).
-//   - OUTSIDE the span - before the program began, after it ended, or with no program at all - one logged session keeps it alive.
-//     Without this a finished program would let someone who has not trained for months keep a streak.
+//   - AFTER the span has ended, or with no program at all, one logged session keeps it alive. Without this a finished program would let
+//     someone who has not trained for months keep a streak.
+//   - The streak never looks back past the week the program began (Jake, 2026-10-12: "I have not been on this plan for 16 weeks"). It used to
+//     count the weeks BEFORE the plan by the one-session rule and label the whole number "hitting your whole plan", so a one-week plan showed
+//     16. While a program is running the streak starts with the program; before it has begun it is 0.
 //   - THIS week counts once it is complete and is simply ignored until then: a Wednesday is not a missed week.
 // progByDate is _programWorkoutsByDate's map ({ 'YYYY-MM-DD': [session, ...] }); logDates are the dates of logged sessions, one per
-// session. Returns { weeks, capped }: capped means it never broke inside the lookback, so the true figure may be higher.
+// session. Returns { weeks, capped, onPlan, notBegun }: capped means it never broke inside the lookback AND never reached the plan's first week, so the
+// true figure may be higher; onPlan means the program has dated sessions and the streak is counted by the plan (so the tile may say "your plan"; with
+// no dated session - no program, no start date, an empty program - it is the plain one-session-a-week streak and must not claim the plan); notBegun means
+// the plan starts in a later week.
 function _dashStreakWeeks(progByDate, logDates, todayStr, maxWeeks = _DASH_STREAK_WEEKS) {
   const planned = {}, logged = {}
   let first = null, last = null   // the first and last Monday the program has a session on
@@ -135,17 +141,23 @@ function _dashStreakWeeks(progByDate, logDates, todayStr, maxWeeks = _DASH_STREA
   }
   const need = wk => (first !== null && wk >= first && wk <= last ? (planned[wk] || 0) : 1)
   const thisWeek = _dashMonday(todayStr)
-  if (!thisWeek) return { weeks: 0, capped: false }
+  if (!thisWeek) return { weeks: 0, capped: false, onPlan: false }
+  const onPlan = first !== null
+  if (onPlan && thisWeek < first) return { weeks: 0, capped: false, onPlan, notBegun: true }   // the plan has not begun: nothing to hit yet
 
   let weeks = 0, broken = false
   if (need(thisWeek) > 0 && (logged[thisWeek] || 0) >= need(thisWeek)) weeks++
   for (let i = 1; i <= maxWeeks; i++) {
     const wk = _dashAddDays(thisWeek, -7 * i), n = need(wk)
+    // The plan's first week is the start of the streak: a real boundary, so it is not "capped" (the true figure cannot be higher).
+    if (first !== null && wk < first) { broken = true; break }
     if (n === 0) continue
     if ((logged[wk] || 0) >= n) weeks++
     else { broken = true; break }
+    // Counted the plan's first week: that is where the streak starts, so a program exactly maxWeeks old is exact, not "53+" (found by the 2026-10-12 review).
+    if (first !== null && wk === first) { broken = true; break }
   }
-  return { weeks, capped: !broken }
+  return { weeks, capped: !broken, onPlan }
 }
 
 const _DASH_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -340,9 +352,12 @@ function _dashWeekHtml(days, counts, sel) {
 // Streak and program: two quiet number tiles.
 function _dashTilesHtml(streak, program, isSolo) {
   const flame = `<span class="dash-flame">${_DASH_ICONS.flame}</span>`
+  // Keyed on whether the streak was counted BY THE PLAN (streak.onPlan), not on whether a program exists: a program with no dated session (no start date,
+  // an empty program) is counted as a plain training streak and must not be called "your whole plan" (found by the 2026-10-12 review).
   const sub = streak.weeks > 0
-    ? (program ? 'hitting your whole plan' : 'a session every week')
-    : (program ? "finish this week's plan to start one" : 'log a session this week to start one')
+    ? (streak.onPlan ? 'hitting your whole plan' : 'a session every week')
+    : streak.notBegun ? 'your plan has not started yet'
+    : (streak.onPlan ? "finish this week's plan to start one" : 'log a session this week to start one')
   const streakTile = `<section class="dash-card" id="dash-streak"><div class="dash-ico">${flame}Streak</div>` +
     `<div class="dash-big">${streak.weeks}${streak.capped && streak.weeks ? '+' : ''} <small>week streak</small></div><div class="dash-sub">${sub}</div></section>`
   const programTile = program

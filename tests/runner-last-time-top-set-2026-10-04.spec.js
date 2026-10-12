@@ -6,7 +6,7 @@ const { installCappedApi } = require('./capped-api')
 //
 // The panel read "2 sets, top 23 kg": the heaviest WEIGHT, not the set - the reps it was lifted for were missing, and so was the
 // effort on an RPE top-set exercise (where last time's top set is exactly what the lifter needs in view, now that the grey hints
-// are gone). It now reads "Top set 23 kg × 5" (with "@9" for a logged RPE, "@2 RIR" for RIR) under "Last time · 29 Sept · 2 sets".
+// are gone). It now reads "Top set 23 kg × 5" (with "@9 RPE" for a logged RPE, "@2 RIR" for RIR; both name their scale since 2026-10-12) under "Last time · 29 Sept · 2 sets".
 // "Top set" is the Stats card's own definition (_xsSessionMetrics: the heaviest set, a tie going to more reps, warm-ups never
 // counted), so the panel and the card behind it cannot disagree. The wording itself is pinned in tests-node/exercise-stats.test.mjs;
 // these prove the wiring: the panel, its accessible name, the agreement with the card, and that the read asks for each set's phase.
@@ -60,7 +60,7 @@ test.describe('The Last time panel shows the top set (2026-10-04)', () => {
   test('a logged RPE travels with the top set, so last time\'s top set reads the way it was lifted', async ({ page }) => {
     await showRunner(page, { sets: [[100, 3, 'rpe', 9], [85, 5], [85, 5], [85, 5]] })
     const p = await panel(page)
-    expect(p.top).toBe('Top set 100 kg × 3 @9')
+    expect(p.top).toBe('Top set 100 kg × 3 @9 RPE')
     expect(p.label).toBe('Last time · 29 Sept · 4 sets')
   })
 

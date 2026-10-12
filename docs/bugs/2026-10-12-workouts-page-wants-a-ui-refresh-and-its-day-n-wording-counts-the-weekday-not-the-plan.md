@@ -3,7 +3,7 @@ id: 2026-10-12-workouts-page-wants-a-ui-refresh-and-its-day-n-wording-counts-the
 status: open
 priority: low
 reported: 2026-10-12
-status_detail: "OPEN. Reported by Jake 2026-10-12. Two parts: (a) drop the 'DAY N' wording, a one-line change in _dayHeadingLabel that is waiting for his go; (b) 'the UI on this page could do with updating' is design work, to be scoped with him and shown as a prototype first. Nothing built."
+status_detail: "OPEN (half done). (a) DONE 2026-10-12 on master, unreleased (app-programs v73): the day headings read 'WEDNESDAY' with no 'DAY 3', on the Workouts page and the coach's Programs page (tests/runner-exercise-nav-2026-09-28.spec.js). (b) OPEN: the UI refresh of the Workouts page. Jake chose its parts: the Up next hero card, the plan and day list, and Recent sessions (not the PT / Personal toggle). Next step is a tappable prototype, then his reaction, then the build; nothing built for (b)."
 ---
 
 # The Workouts page UI could do with updating, and "Day 3" is the day of the week, not the day of the plan
@@ -26,3 +26,9 @@ Attached: the Workouts page (hero "Up next · Wed 14 Oct, Heavy Lower Body", the
 ## What would close it
 
 **Closes when** Jake confirms on his phone that the day headings read right, and that the refreshed layout (once scoped and approved) is what he wanted.
+
+## Decisions (Jake, 2026-10-12)
+
+- (a) Drop the "DAY n" wording: approved and built.
+- (b) The refresh should cover **the "Up next" hero card, the plan and day list, and Recent sessions**. The PT / Personal toggle was not selected.
+- Method (his own rule): a tappable prototype first, in the app's tokens with example data, and his reaction before any real build.

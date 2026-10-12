@@ -15,14 +15,13 @@ trusting this file for anything time-sensitive. The previous version is archived
   stall (that test passes alone, 6 of 6); the second: 1117 passed / 0 failed / 2 flaky / 4 skipped. [releases/v2026.10.1.md](releases/v2026.10.1.md)
 - **`v2026.09.15`** and **`v2026.09.14`** (both 2026-10-04): the program-page rework and RPE periodization; the shared exercise stats card, the
   one-skeleton dashboard, My progress fold-ups and "Up next". [releases/](releases/)
-- **Earlier:** `v2026.09.13` (2026-10-03: RPE top-set autoregulation, the runner walkthrough rounds; `v2026.09.12` was tagged but never deployed,
-  see [releases/v2026.09.12.md](releases/v2026.09.12.md)) and `v2026.09.11` (2026-09-28). `docs/releases/` is the record for anything older.
+- **Earlier:** see `docs/releases/` (the full file is archived: [archive/current-sprint-2026-10-12.md](archive/current-sprint-2026-10-12.md)).
 
 Everything from `v2026.09.14` on still awaits Jake's look on a phone (the `fixed-awaiting-jake` rows in [bugs/](bugs/)).
 
 ## In flight
 
-Nothing unreleased in the app. Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
+Unreleased (Jake's 2026-10-12 items 1-4a): `app-dashboard` v33, `app-programs` v73, `app-progress` v79; items 4b, 5, 6 are scoped, awaiting prototypes. Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
 end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation:
 leave it); the names "Biggest set" and "View program".
 
