@@ -15,7 +15,7 @@
 //
 // Run: node .claude/hooks/os-lint.selftest.mjs     (exit 1 if any case misbehaves)
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -72,9 +72,23 @@ console.log('— every child_process call in os-lint.mjs runs hidden —')
     for (; i < src.length; i++) { if (src[i] === '(') depth++; else if (src[i] === ')' && --depth === 0) break }
     calls.push({ line: src.slice(0, m.index).split('\n').length, text: src.slice(m.index, i + 1) })
   }
-  const bare = calls.filter(c => !/windowsHide\s*:\s*true/.test(c.text))
-  say(calls.length >= 7, 'seen', `the scan found the child_process calls in os-lint.mjs (${calls.length}; a scan that finds none would pass everything)`)
+  // A flag inside a commented-out line must not count: strip // comments before looking for it (hook review, 2026-10-12).
+  // Split on \r?\n: the file has Windows line endings, and `.` does not match the \r, so a plain \n split left every comment in place.
+  const code = t => t.split(/\r?\n/).map(l => l.replace(/\/\/.*$/, '')).join('\n')
+  const bare = calls.filter(c => !/windowsHide\s*:\s*true/.test(code(c.text)))
+  say(calls.length >= 5, 'seen', `the scan found the child_process calls in os-lint.mjs (${calls.length}; a scan that finds none would pass everything)`)
   say(bare.length === 0, 'not misread', bare.length ? `these calls lack windowsHide: true: line ${bare.map(c => c.line).join(', ')}` : 'every one of them carries windowsHide: true')
+  // The scan finds calls by their literal names, so what os-lint.mjs may IMPORT is pinned too: one child_process import, only names the scan knows, no alias
+  // (an added exec or fork, an alias, or a require would otherwise start a child the scan cannot see).
+  const specs = src.match(/['"](?:node:)?child_process['"]/g) || []
+  const imp = src.match(/import\s*\{([^}]*)\}\s*from\s*['"]node:child_process['"]/)
+  const names = imp ? imp[1].split(',').map(x => x.trim()).filter(Boolean) : []
+  const known = ['execFileSync', 'execSync', 'spawnSync', 'spawn', 'execFile']
+  say(specs.length === 1 && !!imp && names.length > 0 && names.every(n => known.includes(n)), 'not misread', `os-lint.mjs imports child_process once and only names this scan knows (${names.join(', ') || 'none found'})`)
+  // A second DETACHED launcher in another hook would reopen this bug and escape a scan of os-lint.mjs alone.
+  const others = readdirSync(HERE).filter(f => /\.mjs$/.test(f) && f !== 'os-lint.mjs' && f !== 'os-lint.selftest.mjs')
+  const launchers = others.filter(f => /detached\s*:\s*true/.test(readFileSync(join(HERE, f), 'utf8')))
+  say(launchers.length === 0, 'not misread', launchers.length ? `a detached launcher in ${launchers.join(', ')} needs its own hidden-children check` : 'no other hook starts a detached process')
 }
 
 let MAIN

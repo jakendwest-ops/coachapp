@@ -3,7 +3,7 @@ id: 2026-10-12-os-lint-self-test-opens-dozens-of-console-windows-again
 status: fixed-awaiting-jake
 priority: high
 reported: 2026-10-12
-status_detail: "FIXED 2026-10-12 in the working tree (commit 8a785f6, local until a review has seen it; the hook runs from the working tree, so it is live now). Verified by process inspection: the self-test, launched the way the hook does, ran 20 minutes with no console window (before: windows from the first --report child, within 2 minutes). A guard in os-lint.selftest.mjs refuses a child_process call without windowsHide (mutation-checked). Closes when Jake sees no windows over the next self-test, due about 2026-10-19."
+status_detail: "FIXED 2026-10-12 in the working tree (commit 8a785f6, local until a review has seen it; the hook runs from the working tree, so it is live now). Verified by process inspection: the self-test, launched the way the hook does, ran 20 minutes with no VISIBLE console window (before: windows from the first --report child, within 2 minutes; the incident, not a same-method run on the old code). A guard in os-lint.selftest.mjs refuses a child_process call without windowsHide (mutation-checked). Closes when Jake sees no windows over the next self-test, due about 2026-10-19."
 ---
 
 # The os-lint weekly self-test opened dozens of console windows over Jake's screen, again
@@ -22,7 +22,7 @@ A chain `os-lint.mjs --self-test` (start 17:27, parent gone: the SessionStart ho
 
 ## Fix
 
-`windowsHide: true` on every `child_process` call in `os-lint.mjs` on the self-test's path (lines 49, 1668, 1758, 2113, 2250; 311 and 2351 already had it). Their descendants inherit the hidden console. `os-lint.selftest.mjs` now reads `os-lint.mjs` and fails if any such call lacks the flag (7 calls found; removing the flag from one turns it red).
+`windowsHide: true` on every `child_process` call in `os-lint.mjs` on the self-test's path (lines 49, 1671, 1761, 2116 and 2253; 314 and 2354 already had it). Their descendants inherit the hidden console. `os-lint.selftest.mjs` now reads `os-lint.mjs` and fails if any such call lacks the flag (7 calls found; a flag that is only in a comment does not count), if os-lint.mjs imports anything from child_process the scan does not know (an alias, `exec`, `fork`), or if another hook starts a detached process. Each of those four breakages was shown to turn it red.
 
 ## What is not fixed here
 
