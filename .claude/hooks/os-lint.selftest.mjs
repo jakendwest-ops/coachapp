@@ -15,7 +15,7 @@
 //
 // Run: node .claude/hooks/os-lint.selftest.mjs     (exit 1 if any case misbehaves)
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -54,6 +54,27 @@ function lint (cwd, baseline, extraEnv = {}) {
     env: { ...process.env, OSLINT_MAIN_REPO: MAIN, OSLINT_REPO: '', OSLINT_SIZE_BASELINE: baseline, OSLINT_NO_SELFTEST_LAUNCH: '1', OSLINT_HOOKS_DIR: join(dir, 'no-hooks-here'), ...extraEnv }
   })
   return { out: (r.stdout || '') + (r.stderr || ''), code: r.status }
+}
+
+// Every child_process call in os-lint.mjs must be told to run HIDDEN (2026-10-12, Jake: "whatever keeps opening powershell needs to close all of
+// those windows immediately"). The weekly self-test is launched DETACHED, so it has no console, and every console program IT starts (its ~40
+// `--report` runs, git) is given a new VISIBLE one: dozens of Windows Terminal windows over his editor. The launcher's own windowsHide did not
+// cover them, which is how it came back after the 2026-09-26 fix. A visible window cannot be asserted from a test, so this reads the source:
+// a call without the flag is refused. Calls are found by name and their argument text by matching parentheses (a `//` comment is skipped).
+console.log('— every child_process call in os-lint.mjs runs hidden —')
+{
+  const src = readFileSync(LINT, 'utf8')
+  const calls = []
+  for (const m of src.matchAll(/\b(?:execFileSync|execSync|spawnSync|spawn|execFile)\(/g)) {
+    const lineStart = src.lastIndexOf('\n', m.index) + 1
+    if (src.slice(lineStart, m.index).includes('//')) continue        // prose in a comment, not a call
+    let depth = 0, i = m.index + m[0].length - 1
+    for (; i < src.length; i++) { if (src[i] === '(') depth++; else if (src[i] === ')' && --depth === 0) break }
+    calls.push({ line: src.slice(0, m.index).split('\n').length, text: src.slice(m.index, i + 1) })
+  }
+  const bare = calls.filter(c => !/windowsHide\s*:\s*true/.test(c.text))
+  say(calls.length >= 7, 'seen', `the scan found the child_process calls in os-lint.mjs (${calls.length}; a scan that finds none would pass everything)`)
+  say(bare.length === 0, 'not misread', bare.length ? `these calls lack windowsHide: true: line ${bare.map(c => c.line).join(', ')}` : 'every one of them carries windowsHide: true')
 }
 
 let MAIN

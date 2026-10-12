@@ -46,7 +46,7 @@ const STATE    = `${HOME}/.claude/state`
 const MAIN_REPO = process.env.OSLINT_MAIN_REPO || `${HOME}/OneDrive/coachapp`
 const normTree = p => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 const gitOut = (args, cwd) => {
-  try { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }
+  try { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).trim() }
   catch { return null }
 }
 // --self-test pins its children to main: they run with fixtures for most inputs, and what is NOT overridden must keep
@@ -308,6 +308,9 @@ function maybeLaunchSelfTest () {
     // windowsHide: on Windows a DETACHED child is given its own console window, and without this it is a VISIBLE black
     // node.exe window that opens over the editor at session start and again every 45+ minutes while the marker is stale
     // (reported 2026-09-26). The run needs no console — its output goes to SELFTEST_LOG.
+    // That flag alone is NOT enough (reported again 2026-10-12): a detached process has NO console, so every console program IT starts
+    // (the self-test's ~40 `--report` runs, git) is given a new VISIBLE one. Every child_process call on the self-test's path therefore
+    // carries `windowsHide: true` too; the descendants of those children inherit that hidden console.
     const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--self-test'],
       { detached: true, windowsHide: true, stdio: ['ignore', out, out] })
     child.unref()
@@ -1666,7 +1669,7 @@ function runSelfTest () {
     let out = ''
     try {
       out = execFileSync(process.execPath, [SELF, '--report'],
-        { env: { ...process.env, ...s.env }, encoding: 'utf8' })
+        { env: { ...process.env, ...s.env }, encoding: 'utf8', windowsHide: true })
     } catch (e) { out = String(e.stdout || '') }
     // Capture the check's WHOLE message, not just its verdict line: a RED message wraps onto
     // continuation lines, and the substring identifying WHICH detector fired usually lives there.
@@ -1756,7 +1759,7 @@ function runSelfTest () {
     for (const [label, fixtureEnv] of cases) {
       try {
         execFileSync(process.execPath, [SELF, '--report'],
-          { env: { ...process.env, ...fixtureEnv }, encoding: 'utf8' })
+          { env: { ...process.env, ...fixtureEnv }, encoding: 'utf8', windowsHide: true })
       } catch { /* the verdict is irrelevant here — only the side effect is under test */ }
       if (readBaseline() !== baselineAtStart) {
         impure.push(`${label}: a fixture-input run REWROTE ${SIZE_BASELINE}`)
@@ -2110,7 +2113,7 @@ function readEventMarker (p) {
 function checkEventGateEvidence () {
   let git
   try {
-    git = (...args) => execFileSync('git', args, { cwd: REPO, encoding: 'utf8' }).trim()
+    git = (...args) => execFileSync('git', args, { cwd: REPO, encoding: 'utf8', windowsHide: true }).trim()
     git('rev-parse', '--is-inside-work-tree')
   } catch { warn('event-gates', 'could not read git history for this repo — skipped'); return }
 
@@ -2247,7 +2250,7 @@ function checkHookSelfTests () {
       // 120 s, not 30: guardrails.selftest.mjs takes ~20 s on an idle machine (a real git hook run is ~0.4 s and it makes ~70)
       // and longer under load; at 30 s a PASSING test was reported as "guardrails.selftest.mjs FAILED (ETIMEDOUT)" — a false RED
       // that reads as the commit gate being broken (2026-10-01, when a new case briefly pushed it to 30 s).
-      execFileSync(process.execPath, [join(HOOKS_DIR, t)], { encoding: 'utf8', stdio: 'pipe', timeout: 120000 })
+      execFileSync(process.execPath, [join(HOOKS_DIR, t)], { encoding: 'utf8', stdio: 'pipe', timeout: 120000, windowsHide: true })
     } catch (e) {
       const out = `${e.stdout || ''}${e.stderr || ''}`
       const bad = out.split(/\r?\n/).filter(l => /^FAIL/.test(l)).slice(0, 4)
