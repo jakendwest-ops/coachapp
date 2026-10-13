@@ -3,7 +3,7 @@ id: 2026-10-13-progress-page-needs-a-ui-rework-starting-with-the-body-weight-sec
 status: open
 priority: medium
 reported: 2026-10-13
-status_detail: "OPEN. Reported by Jake 2026-10-13 against v2026.10.2: the Body Weight section of My Progress needs a UI rework, and then the whole page. Scoping; nothing built. Root cause of the weight form's look found: its two form classes have no CSS rule anywhere."
+status_detail: "OPEN. Scoped with Jake 2026-10-13 (clickable questions): the weight log form, the start/goal line and cards, and the dated list; then Personal Bests and Goals; and the unstyled form classes fixed everywhere (17 uses). Method: a tappable prototype and his reaction before any real build. Nothing built."
 ---
 
 # My Progress: the Body Weight section needs a UI rework, and the whole page after it
@@ -30,3 +30,15 @@ Attached: My Progress > Body Weight with the "+ Log weight" form open (Date, Wei
 ## What would close it
 
 **Closes when** the scope is agreed with Jake (his method: a tappable prototype in the app's tokens with example data, and his reaction first), built with specs that fail without it, and he confirms on his phone.
+
+## Decisions (Jake, 2026-10-13, from clickable questions)
+
+1. **Body Weight, what is wrong:** the log form, the start/goal line and the three cards, and the dated list. **Not selected: the chart** (it stays as it is).
+2. **Other tabs, in order:** Personal Bests, then Goals. Performance and the tab bar were not selected.
+3. **The same fault everywhere:** give `form-input` and `form-label` real styles so all 17 uses (`app-progress` 5, `app-programs` 12, `app-core` 6) match the rest of the app; check each of those screens before and after.
+
+## Plan to approve (not built)
+
+- **Step 0, the class fix:** `.form-label` / `.form-input` in `css/main.css` on the existing `.field-label` / `.field-input` tokens (one rule set, not a second family); a before/after look at the three modules' forms (the weight form, the plan create/edit and phase forms, and the `app-core` ones) at 480px; a spec that every element carrying either class has a computed border, padding and width.
+- **Step 1, a tappable prototype** (private Artifact, the app's tokens, his real-shaped example data) of: the Body Weight section (form, start/goal and cards, list), then Personal Bests, then Goals. His reaction before the real build.
+- **Step 2, the build** per his reactions, tab by tab, each with specs and a mutation check; the chart code is not touched.
