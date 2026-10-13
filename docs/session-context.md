@@ -3,7 +3,7 @@
 A quick-orientation snapshot for picking up work on CoachApp. **This is a manually-refreshed, point-in-time file, not a live feed.** For anything
 time-sensitive run the `/hello-claude` skill: it reads the live docs and checks current state every session.
 
-Snapshot date: 2026-10-11. The longer version of this file is archived verbatim:
+Snapshot date: 2026-10-13. The longer version of this file is archived verbatim:
 [archive/session-context-2026-10-05.md](archive/session-context-2026-10-05.md).
 
 ## Project Summary
@@ -13,8 +13,8 @@ with coach/client/solo roles. See [vision.md](vision.md).
 
 ## Current Release Cycle
 
-Last shipped: **`v2026.10.1`** (2026-10-11, live and verified: the check and deploy jobs green, the 13 live files byte-identical to the tag), after
-`v2026.09.15` and `v2026.09.14`. All three await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
+Last shipped: **`v2026.10.2`** (2026-10-13, live and verified: deploy green, the 13 live files byte-identical to the tag), after `v2026.10.1`,
+`v2026.09.15` and `v2026.09.14`. All four await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
 
 RPE top-set autoregulation is live (since `v2026.09.13`): a coach marks set 1 as the top set with a prescribed RPE, the runner estimates a live
 e1RM from the RTS chart, and backoff sets target a percentage of that. Spec and plan: [superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md](superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md),

@@ -13,7 +13,7 @@ gate. Left: confirming `delete_current_user()` exists in the database (needs Jak
 
 ## Current priorities (corrected 2026-10-05)
 
-- **Awaiting Jake's look on a phone:** everything in `v2026.09.14`, `.15` and `v2026.10.1` (0 kg, Finish/End asking, the 1RM question) — the one-skeleton dashboard (D1, built from the prototype he
+- **Awaiting Jake's look on a phone:** everything in `v2026.09.14`, `.15`, `v2026.10.1` and `v2026.10.2` (0 kg, Finish/End asking, the 1RM question; Training plans, add/remove, the new Workouts page, the streak) — the one-skeleton dashboard (D1, built from the prototype he
   approved; the coach page is logged-only until a database view exists, [row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md)),
   the shared exercise stats card, My progress fold-ups, the "Up next" card, the Last time top set, the program-page rework and the RPE method for
   periodization. The rows are the `fixed-awaiting-jake` files in [bugs/](bugs/).

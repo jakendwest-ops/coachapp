@@ -9,21 +9,20 @@ trusting this file for anything time-sensitive. The previous version is archived
 
 ## Last shipped (tagged + deployed)
 
-- **`v2026.10.1`**, cut 2026-10-11, live: the check and deploy jobs green and the 13 live files byte-identical to the tag (`verify-live`). Jake's
-  three runner reports of the day (a 0 kg weight is logged, shown and remembered; Finish and End ask first, with Back to workout on the finish
-  screen; the new-1RM estimate asks "view or update?" first), the periodization save checks and CI on Node 24. The first full-suite run failed on a
-  stall (that test passes alone, 6 of 6); the second: 1117 passed / 0 failed / 2 flaky / 4 skipped. [releases/v2026.10.1.md](releases/v2026.10.1.md)
-- **`v2026.09.15`** and **`v2026.09.14`** (both 2026-10-04): the program-page rework and RPE periodization; the shared exercise stats card, the
-  one-skeleton dashboard, My progress fold-ups and "Up next". [releases/](releases/)
+- **`v2026.10.2`**, cut 2026-10-13, live: deploy green, the 13 live files byte-identical (`verify-live`). "Training plans" (was Programs), "On my plan" with
+  add/remove and one plan at a time, the solo Workouts page with Save as a workout, the sessions-in-a-row streak, effort in the performance tables. The first
+  full-suite run failed only on two tests that cross local midnight; the second: 1149 passed / 0 failed / 2 flaky / 4 skipped. [releases/v2026.10.2.md](releases/v2026.10.2.md)
+- **`v2026.10.1`** (2026-10-11): the runner reports (0 kg is a weight, Finish/End ask first, the new-1RM question). **`v2026.09.15`** and **`v2026.09.14`**
+  (2026-10-04): the program-page rework, RPE periodization, the one-skeleton dashboard. [releases/](releases/)
 - **Earlier:** see `docs/releases/` (the full file is archived: [archive/current-sprint-2026-10-12.md](archive/current-sprint-2026-10-12.md)).
 
 Everything from `v2026.09.14` on still awaits Jake's look on a phone (the `fixed-awaiting-jake` rows in [bugs/](bugs/)).
 
 ## In flight
 
-Unreleased (Jake's 2026-10-12 items, batching for one release): `app-dashboard` v33 (sessions-in-a-row streak), `app-programs` v73, `app-progress` v79, `app-clients` v21; items 4b, 5, 6 await prototypes. Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
+Nothing is unreleased. Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
 end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation:
-leave it); the names "Biggest set" and "View program".
+leave it); the names "Biggest set" and "View training plan".
 
 ## Next: the release plans
 

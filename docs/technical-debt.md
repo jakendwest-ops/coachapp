@@ -75,6 +75,10 @@ Since 2026-09-27 a push runs **no** browser tests: the 2-spec smoke run was drop
 That is the accepted tradeoff: master can carry a browser regression between releases, but nothing reaches the live site without the full suite
 passing. Widening the old push gate had been tried once and reverted (2026-08-20: silent glob no-op, cleanup-unsafe cross-tenant probes at push frequency).
 
+**Specs that build "today" from the UTC date** (`new Date().toISOString().split('T')[0]`, 22 spec files) fail when a release suite runs between local midnight and 01:00 BST,
+because the page's "today" is the local date: `library-last-used-2026-09-04.spec.js` failed twice that way in the first `v2026.10.2` run; the unchanged re-run after 01:00 passed.
+The fix is the local date (`toLocaleDateString('en-CA')`); not done, it touches 22 specs. Until then, do not start a release between 23:00 and 01:00 BST.
+
 ## Process/tracking debt
 
 The tracking system regularly self-reports its own decay (`os-lint --report` at session start); the live numbers belong to that report and
