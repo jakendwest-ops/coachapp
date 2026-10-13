@@ -26,6 +26,7 @@ async function soloView(page) {
 // Renders the Workouts page into a scratch host (the real renderer, the real reads). noPlan stubs only the "which plan am I on" read, so the no-plan layout can be seen
 // whatever the shared test account happens to be on.
 const renderInto = (page, { noPlan = false, assignment = null } = {}) => page.evaluate(async ({ noPlan, assignment }) => {
+  window._navigateNow = async () => {}      // the app's own late start-up navigation closes every open modal (found 2026-10-13); nothing here navigates
   window.__realFrom = window.__realFrom || db.from.bind(db)
   const q = data => { const o = { select: () => o, eq: () => o, order: () => o, limit: () => o, then: (res, rej) => Promise.resolve({ data, error: null }).then(res, rej) }; return o }
   db.from = noPlan ? (t => t === 'client_programs' ? q(assignment ? [assignment] : []) : window.__realFrom(t)) : window.__realFrom

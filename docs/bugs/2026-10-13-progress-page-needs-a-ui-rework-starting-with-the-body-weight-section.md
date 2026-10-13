@@ -3,7 +3,7 @@ id: 2026-10-13-progress-page-needs-a-ui-rework-starting-with-the-body-weight-sec
 status: open
 priority: medium
 reported: 2026-10-13
-status_detail: "OPEN. Scoped with Jake 2026-10-13 (clickable questions): the weight log form, the start/goal line and cards, and the dated list; then Personal Bests and Goals; and the unstyled form classes fixed everywhere (17 uses). Method: a tappable prototype and his reaction before any real build. Nothing built."
+status_detail: "OPEN. Built 2026-10-13 and awaiting Jake on his phone: the form-class fix, the Body Weight section (goal card, log sheet, list by month) and Personal Bests (a row per lift, a page per lift). Goals is NOT built: it needs a prototype and his reaction (he said: cramped or cluttered, progress unclear, milestones clumsy). The row stays open until Goals is done."
 ---
 
 # My Progress: the Body Weight section needs a UI rework, and the whole page after it
@@ -59,3 +59,19 @@ Build notes (not yet checked in code): the numbers come from the shared exercise
 
 - **Step 0 done:** `.form-label` / `.form-input` now share the `.field-*` rules (selector lists in `css/main.css`). Test: `tests/form-classes-styled-2026-10-13.spec.js` (3; both aliases broken on purpose and caught). Checked on the weight form and the plan modal at 480px.
 - **Step 1 prototype published** (private): https://claude.ai/artifact/AvgWLiWo4ogERWiRzJJomm . Body Weight (a goal card instead of the start/goal line and three cards; a log sheet with a stepper, the date, and body fat / resting HR / note folded away; the list grouped by month with the change since the last entry) and Personal Bests (clean rows, a lift page with best history, best sets by reps and estimated 1RM, and an Update best sheet). Goals is not drawn: it needs Jake's notes. Awaiting his reaction before Step 2.
+
+## Body Weight, built (2026-10-13)
+
+Jake's reactions to the prototype: the goal card, the log sheet and the lift page are right as drawn. Built and committed (`07dfa23`): one goal card, the log sheet (pre-filled with the last entry, stored kg verbatim when untouched, the LOCAL day as the date default, extras folded away), the list grouped by month. `tests/weight-section-2026-10-13.spec.js` (10), nine breakages caught. Not pushed yet.
+
+## Personal Bests, build plan (2026-10-13)
+
+- The grid of number boxes and "Save all" is **removed** (`saveOneRMGrid`, the row estimate and date boxes). The list is one row per lift (name, recorded date, change since the one before, the best) and each row opens that lift's page. Lifts with no best yet (the Big 5 not yet recorded) show "Record best".
+- **The lift page** (full page, Back): the best and what it replaced; **best history** (a chart and the dated entries, each deletable with the existing `delete1RM`); **best sets by reps** (the heaviest set logged for at least 1, 3, 5, 8 and 10 reps, with its date: a 6 counts for the 5); **estimated 1RM** (one estimate per logged session from the shared stats engine `_xsSessionMetrics`, as a chart, against the recorded best).
+- **Update best** is the existing Add 1RM sheet (type it or estimate it from a set, with a date), which appends a dated row to `client_1rms` (append-only, so the history is those rows). The weight is typed fresh, so the lb round-trip drift the grid guarded against cannot occur. The Big 5 library-id resolution the grid did moves into `save1RM`.
+- The same renderer serves the coach's client-profile 1RMs tab, so a coach gets the lift page too.
+- Specs that drove the grid (date-only edit drift, "Save all writes only changed rows", the per-row estimate box) are retired or ported to the sheet. Their intent that still matters is covered by new tests on `save1RM` (a lb value typed, the Big 5 id, append-only).
+
+## Personal Bests, built (2026-10-13)
+
+Built as planned: `renderClient1RMs` is a row per lift, `openLiftPage` / `renderLiftPage` the page (best, history chart and entries with delete, best sets by reps, estimated 1RM), `updateBest` / `recordBest` open the existing Add 1RM sheet, `save1RM` resolves the Big 5 library id and refuses a missing date. The grid (`saveOneRMGrid` and its helpers) is removed. `tests/personal-bests-2026-10-13.spec.js` (11), eight breakages caught; the specs that drove the grid were ported (date-only edit drift became an Update-best-in-pounds test; Save all became Update best writes one row). Found on the way: the app's late start-up navigation (`_navigateNow`) closes every open modal, which made modal tests flaky about one run in six; the specs now ignore that stray navigation. **Left, and named:** the Personal Bests tab also holds the "Log a PB / performance record" form and the cardio/other records below the lifts (not part of this rework); "best sets by reps" can show an outlier a person logged by mistake (Jake's Back Squat shows a 255 kg set on 2 Aug).

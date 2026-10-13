@@ -126,16 +126,14 @@ test.describe('Calendar day modal shows the full prescription, like the Workouts
   })
 })
 
-test.describe('1RM grid is the only state, not just the empty one', () => {
-  // The layout Jake preferred was the EMPTY state. Populated, the same function rendered a totally
-  // different card-per-exercise view, so on his own account he could never see the grid again. This
-  // asserts the grid survives having data in it -- which is the entire report.
-  test('renders the grid with values inline once 1RMs exist', async ({ page }) => {
+test.describe('Personal Bests is one list: recorded lifts and the Big 5 together (grid until 2026-10-13)', () => {
+  // The layout Jake preferred was the EMPTY state. Populated, the same function once rendered a totally different card-per-exercise view, so on his own account he could never see
+  // the quick-start list again. This asserts the list survives having data in it. Since 2026-10-13 it is a row per lift, not a grid of number boxes.
+  test('renders a row per lift once 1RMs exist, recorded and un-recorded together', async ({ page }) => {
     await loginAsPT(page)
     let clientId = null
     try {
-      // Owns its fixture: a dedicated client row, never `_getCurrentClientId()`. A coach account has
-      // no client record of its own, and borrowing shared data is the pattern that produced real
+      // Owns its fixture: a dedicated client row, never `_getCurrentClientId()`. A coach account has no client record of its own, and borrowing shared data is the pattern that produced real
       // flakiness in this suite before (see the ownWorkout fixture, 2026-08-11).
       const r = await page.evaluate(async () => {
         const { data: c } = await db.from('clients')
@@ -147,27 +145,31 @@ test.describe('1RM grid is the only state, not just the empty one', () => {
         if (iErr) throw new Error('1rm insert: ' + iErr.message)
         const host = document.createElement('div'); host.id = 'orm-test-host'; document.body.appendChild(host)
         await renderClient1RMs(c.id, host)
-        const rows = window._oneRMGridRows || []
+        const lifts = window._pbLifts || []
+        const rowOf = n => [...host.querySelectorAll('.pb-row')].find(x => x.textContent.includes(n))
         const out = {
           clientId: c.id,
-          // A recorded lift and an un-recorded Big 5 lift must BOTH be rows in the same grid.
-          rowCount: rows.length,
-          hasRecorded: rows.some(x => x.name === '[E2E] Grid Lift'),
-          hasBig5: rows.some(x => x.name === 'Back Squat'),
-          hasUpdateButton: /\+ Update</.test(host.innerHTML),   // the card layout is gone
+          rowCount: lifts.length,
+          hasRecorded: lifts.some(x => x.name === '[E2E] Grid Lift'),
+          hasBig5: lifts.some(x => x.name === 'Back Squat'),
+          recordedBest: rowOf('[E2E] Grid Lift')?.querySelector('.pb-best')?.textContent.trim(),
+          big5IsStatic: !!rowOf('Back Squat')?.classList.contains('pb-row-static'),
+          boxes: host.querySelectorAll('input[id^="orm-"]').length,
           hasSaveAll: /Save all</.test(host.innerHTML),
-          recordedValue: document.getElementById(`orm-${rows.findIndex(x => x.name === '[E2E] Grid Lift')}`)?.value,
+          hasUpdateButton: /\+ Update</.test(host.innerHTML),
         }
         host.remove()
         return out
       })
       clientId = r.clientId
-      expect(r.hasRecorded, 'the recorded lift is a row, not a card').toBe(true)
-      expect(r.hasBig5, 'un-recorded Big 5 lifts stay in the same grid, not a separate empty state').toBe(true)
+      expect(r.hasRecorded, 'the recorded lift is a row').toBe(true)
+      expect(r.hasBig5, 'un-recorded Big 5 lifts stay in the same list, not a separate empty state').toBe(true)
       expect(r.rowCount).toBeGreaterThan(1)
-      expect(r.hasUpdateButton, 'the card layout with its +Update button is gone').toBe(false)
-      expect(r.hasSaveAll).toBe(true)
-      expect(r.recordedValue, 'the stored value is prefilled, editable in place').toBe('100')
+      expect(r.recordedBest, 'the stored value is on the row').toBe('100 kg')
+      expect(r.big5IsStatic, 'an un-recorded lift is a row with Record best, not a link to an empty page').toBe(true)
+      expect(r.boxes, 'the number boxes are gone').toBe(0)
+      expect(r.hasSaveAll).toBe(false)
+      expect(r.hasUpdateButton, 'the old card layout with its +Update button is gone').toBe(false)
     } finally {
       if (clientId) await page.evaluate(async id => {
         await db.from('client_1rms').delete().eq('client_id', id)
@@ -176,10 +178,9 @@ test.describe('1RM grid is the only state, not just the empty one', () => {
     }
   })
 
-  // client_1rms is APPEND-ONLY -- the newest row per exercise wins and "+ Update" always inserted.
-  // So a Save-all that wrote every row would stamp a duplicate against today for every lift the user
-  // never touched, burying the real history. Only genuine edits may be written.
-  test('Save all writes ONLY changed rows, never every row', async ({ page }) => {
+  // client_1rms is APPEND-ONLY -- the newest row per exercise wins. So an update must write exactly ONE new dated row, for the lift it was made on: not one per lift (which would stamp a
+  // duplicate against today for every lift the user never touched and bury the real history), and not an invented row for a Big 5 lift nobody has recorded.
+  test('Update best writes ONE new row, for that lift only', async ({ page }) => {
     await loginAsPT(page)
     let clientId = null
     try {
@@ -193,19 +194,17 @@ test.describe('1RM grid is the only state, not just the empty one', () => {
           { client_id: c.id, exercise_name: names[1], one_rm_kg: 100, recorded_at: today },
         ])
         if (iErr) throw new Error('1rm insert: ' + iErr.message)
-        // Mounted as #pb-1rms-section, the real container id, so saveOneRMGrid's own post-write
-        // refresh (_refresh1RMs) resolves here and is genuinely exercised rather than short-circuited.
+        // Mounted as #pb-1rms-section, the real container id, so save1RM's own post-write refresh (_refresh1RMs) resolves here and is genuinely exercised.
         const host = document.createElement('div'); host.id = 'pb-1rms-section'; document.body.appendChild(host)
         await renderClient1RMs(c.id, host)
-
-        const idxOf = n => (window._oneRMGridRows || []).findIndex(x => x.name === n)
-        // Touch exactly one input; leave every other row -- including the blank Big 5 rows -- alone.
-        document.getElementById(`orm-${idxOf(names[1])}`).value = '110'
-        await saveOneRMGrid(c.id)
+        await openLiftPage(c.id, window._pbLifts.findIndex(x => x.name === names[1]))
+        updateBest()
+        document.getElementById('1rm-weight').value = '110'
+        await save1RM(c.id)
+        await new Promise(r2 => setTimeout(r2, 900))
 
         const { data } = await db.from('client_1rms').select('exercise_name, one_rm_kg')
           .eq('client_id', c.id).in('exercise_name', names)
-        // A blank Big 5 row must not be written either -- that would invent a 1RM the user never set.
         const { data: big5 } = await db.from('client_1rms').select('id')
           .eq('client_id', c.id).eq('exercise_name', 'Back Squat')
         host.remove()
@@ -218,8 +217,8 @@ test.describe('1RM grid is the only state, not just the empty one', () => {
       })
       clientId = r.clientId
       expect(r.untouched, 'an untouched lift must NOT gain a duplicate row dated today').toBe(1)
-      expect(r.edited, 'the edited lift appends, preserving the old value as history').toEqual([100, 110])
-      expect(r.blankBig5Written, 'a blank row is not an edit — nothing to save').toBe(0)
+      expect(r.edited, 'the updated lift appends, preserving the old value as history').toEqual([100, 110])
+      expect(r.blankBig5Written, 'an un-recorded Big 5 lift is not written: nothing to save').toBe(0)
     } finally {
       if (clientId) await page.evaluate(async id => {
         await db.from('client_1rms').delete().eq('client_id', id)
@@ -234,7 +233,7 @@ test.describe('1RM grid is the only state, not just the empty one', () => {
 // but a STRING in lb, so calling .toFixed() on its return value threw for every lb user with a
 // recorded 1RM, taking down the whole Progress page. Pinned here as a unit-matrix test so the next
 // weight-rendering surface can't repeat it.
-test.describe('1RM grid survives a non-default weight unit', () => {
+test.describe('Personal Bests survives a non-default weight unit', () => {
   for (const unit of ['kg', 'lb']) {
     test(`renders with a recorded 1RM when weight unit is ${unit}`, async ({ page }) => {
       await loginAsPT(page)
@@ -252,23 +251,17 @@ test.describe('1RM grid survives a non-default weight unit', () => {
           const host = document.createElement('div'); host.id = 'orm-unit-host'; document.body.appendChild(host)
           let threw = null
           try { await renderClient1RMs(c.id, host) } catch (e) { threw = String(e && e.message || e) }
-          const rows = window._oneRMGridRows || []
-          const idx = rows.findIndex(x => x.name === '[E2E] Unit Lift')
-          const out = {
-            clientId: c.id, threw,
-            value: document.getElementById(`orm-${idx}`)?.value,
-            rendered: /Save all</.test(host.innerHTML),
-          }
+          const row = [...host.querySelectorAll('.pb-row')].find(x => x.textContent.includes('[E2E] Unit Lift'))
+          const out = { clientId: c.id, threw, value: row?.querySelector('.pb-best')?.textContent.trim(), rendered: host.querySelectorAll('.pb-row').length > 0 }
           window._unitPrefs.weight = prev
           host.remove()
           return out
         }, unit)
         clientId = r.clientId
         expect(r.threw, `renderClient1RMs must not throw in ${unit}`).toBeNull()
-        expect(r.rendered, 'the grid renders rather than dying mid-template').toBe(true)
-        // 100kg is 100 in kg and ~220.5 in lb — the point is that BOTH are finite numbers, not NaN
-        // and not a crash.
-        expect(r.value).toBe(unit === 'kg' ? '100' : '220.5')
+        expect(r.rendered, 'the list renders rather than dying mid-template').toBe(true)
+        // 100kg is 100 in kg and ~220.5 in lb — the point is that BOTH are finite numbers, not NaN and not a crash.
+        expect(r.value).toBe(unit === 'kg' ? '100 kg' : '220.5 lb')
       } finally {
         if (clientId) await page.evaluate(async id => {
           await db.from('client_1rms').delete().eq('client_id', id)

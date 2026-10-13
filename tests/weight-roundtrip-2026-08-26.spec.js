@@ -63,11 +63,10 @@ test.describe('Weight display round-trip must not corrupt the stored kg', () => 
     expect(r.nullEl).toBeNull()
   })
 
-  // End to end on the surface Jake actually reported, through the REAL grid render and the REAL
-  // saveOneRMGrid. A DATE-ONLY edit is the path that drifts: saveOneRMGrid's equality guard only
-  // skips a row when the value AND the date are unchanged, so changing just the date sends the
-  // painted display value down the save path.
-  test('END TO END: a date-only edit in lb must not move the stored weight', async ({ page }) => {
+  // End to end on the surface Jake originally reported (a 1RM stored as 200 kg drifting to 199.99 through a lb round trip). The grid that pre-filled a lb value and re-read it is gone
+  // (2026-10-13): "Update best" opens a sheet whose weight box starts EMPTY, so nothing is ever read back from the painted display value. What must still hold, through the REAL list, lift
+  // page and save1RM: an older row is never rewritten, and a value typed in lb is converted once.
+  test('END TO END: Update best typed in lb appends one converted row and leaves the older kg row exactly as it was', async ({ page }) => {
     await loginAsPT(page)
     let ids = null
     try {
@@ -75,40 +74,36 @@ test.describe('Weight display round-trip must not corrupt the stored kg', () => 
         const tag = '[E2E] rt ' + Date.now()
         const { data: c } = await db.from('clients')
           .insert({ coach_id: currentUser.id, full_name: tag + ' client' }).select('id').single()
-        const today = new Date().toISOString().split('T')[0]
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
         await db.from('client_1rms').insert({
-          client_id: c.id, exercise_name: tag + ' A', one_rm_kg: 200, recorded_at: yesterday
+          client_id: c.id, exercise_name: tag + ' A', one_rm_kg: 200, recorded_at: '2026-09-01'
         })
 
         const prev = window._unitPrefs
         window._unitPrefs = { ...(prev || {}), weight: 'lb' }
-        const host = document.createElement('div')
+        const host = document.createElement('div'); host.id = 'pb-1rms-section'
         document.body.appendChild(host)
         await renderClient1RMs(c.id, host)
-
-        const idx = (window._oneRMGridRows || []).findIndex(x => x.name === tag + ' A')
-        const inp = document.getElementById('orm-' + idx)
-        const painted = inp.value
-        // Touch ONLY the date. The weight field is left exactly as rendered.
-        // Must DIFFER from the input default (which is already today), or saveOneRMGrid's equality
-        // guard correctly treats the row as unchanged and skips it — my first attempt set it to
-        // today and asserted on a save that never happened.
-        document.getElementById('orm-date-' + idx).value = yesterday
-        await saveOneRMGrid(c.id)
+        const listed = host.querySelector('.pb-best')?.textContent.trim()
+        const idx = (window._pbLifts || []).findIndex(x => x.name === tag + ' A')
+        await openLiftPage(c.id, idx)
+        updateBest()
+        document.getElementById('1rm-weight').value = '440.9'
+        document.getElementById('1rm-date').value = '2026-10-01'
+        await save1RM(c.id)
         await new Promise(r => setTimeout(r, 1500))
 
         const { data: rows } = await db.from('client_1rms')
           .select('one_rm_kg, recorded_at').eq('client_id', c.id).order('recorded_at')
         window._unitPrefs = prev
-        return { ids: { clientId: c.id }, painted, kgs: (rows || []).map(r => r.one_rm_kg) }
+        host.remove()
+        return { ids: { clientId: c.id }, listed, rows: (rows || []).map(r => [Number(r.one_rm_kg), r.recorded_at]) }
       })
       ids = out.ids
-      expect(out.painted, 'the grid paints a rounded lb value — this is the lossy proxy').toBe('440.9')
-      expect(out.kgs.length, 'the date-only edit must have appended a new dated entry').toBe(2)
-      for (const kg of out.kgs) {
-        expect(kg, 'THE BUG: a date-only edit rewrote the weight as 199.99 instead of 200').toBe(200)
-      }
+      expect(out.listed, 'the list paints the stored 200 kg in pounds').toBe('440.9 lb')
+      expect(out.rows.length, 'one new dated entry was appended').toBe(2)
+      expect(out.rows[0], 'the older row is exactly as it was stored: 200, not 199.99').toEqual([200, '2026-09-01'])
+      expect(out.rows[1][0], 'the typed 440.9 lb is converted once').toBeCloseTo(440.9 / 2.20462, 2)
+      expect(out.rows[1][1]).toBe('2026-10-01')
     } finally {
       if (ids) await page.evaluate(async i => {
         await db.from('client_1rms').delete().eq('client_id', i.clientId)

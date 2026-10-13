@@ -108,21 +108,21 @@ test.describe('Client profile tabs: a late render cannot land over the tab that 
     expect(r.afterLive, 'CONTROL: a connected pane does (render error: ' + r.err + ')').toBeGreaterThan(0)
   })
 
-  test('a superseded 1RMs render does not rebind the live tab\'s grid rows', async ({ page }) => {
+  test('a superseded 1RMs render does not rebind the live tab\'s lifts', async ({ page }) => {
     await loginAsPT(page)
     await page.route('**/rest/v1/client_1rms*', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
     const r = await page.evaluate(async () => {
       let err = null
-      window._oneRMGridRows = 'live-tab-sentinel'
+      window._pbLifts = 'live-tab-sentinel'
       try {
         await renderClient1RMs('c', document.createElement('div'))
-        const afterGone = window._oneRMGridRows
+        const afterGone = window._pbLifts
         const live = document.createElement('div'); document.body.appendChild(live)
         try { await renderClient1RMs('c', live) } catch (e) { err = String(e).slice(0, 120) }
-        const out = { afterGone, afterLive: window._oneRMGridRows, err }
+        const out = { afterGone, afterLive: window._pbLifts, err }
         live.remove()
         return out
-      } finally { delete window._oneRMGridRows }
+      } finally { delete window._pbLifts }
     })
     expect(r.afterGone, 'a pane that is gone rebinds nothing').toBe('live-tab-sentinel')
     expect(r.afterLive, 'CONTROL: a connected pane rebinds it (render error: ' + r.err + ')').not.toBe('live-tab-sentinel')

@@ -210,7 +210,7 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('#progress-tab-content button:has-text("Progressions")')).toHaveCount(0)
   })
 
-  test('P1-P4 (2026-09-07): range is a select on the toolbar, pill rows scroll, 1RM date/estimate collapse', async ({ page }) => {
+  test('P1-P4 (2026-09-07): range is a select on the toolbar, pill rows scroll, Personal Bests is a row per lift', async ({ page }) => {
     // renderProgress is async through its sub-renders — returning the promise makes page.evaluate
     // await the whole chain, so no fixed sleep is needed before the assertions.
     const render = () => page.evaluate(() => renderProgress(document.getElementById('main-content')))
@@ -247,16 +247,12 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     expect(p2.scrolled, 'the row overflows at 320px, so the active tab can only be in view if it was scrolled there').toBe(true)
     expect(p2.inView).toBe(true)
 
-    // P4 — a 1RM row's date + estimate controls are hidden until the value input is focused.
+    // P4 (replaced 2026-10-13) — Personal Bests is a row per lift: no number boxes, no Save all, no per-row date or estimate controls.
     await page.evaluate(() => { window._progressTab = 'Personal Bests' })
     await render()
-    await expect(page.locator('#orm-more-0')).toBeHidden()
-    await expect(page.locator('#orm-more-1')).toBeHidden()
-    await page.locator('#orm-0').focus()
-    await expect(page.locator('#orm-more-0')).toBeVisible()
-    await expect(page.locator('#orm-more-1')).toBeHidden()            // only the focused row expands
-    // the hidden date input still carries today's default — which is what saveOneRMGrid reads
-    expect(await page.locator('#orm-date-1').inputValue()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    await expect(page.locator('#pb-1rms-section .pb-row').first()).toBeVisible()
+    await expect(page.locator('#pb-1rms-section input[id^="orm-"]')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Save all' })).toHaveCount(0)
   })
 
   test('P3 (2026-09-07): Body Weight collapses the goals editor to a one-line summary once both are set', async ({ page }) => {

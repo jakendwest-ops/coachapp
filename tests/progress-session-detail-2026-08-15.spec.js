@@ -130,10 +130,10 @@ test.describe('"Per session" rename', () => {
   })
 })
 
-test.describe('1RM row — date and estimate, no second screen', () => {
-  // Jake challenged the ⋯ and was right that it was redundant for the common case. It existed only
-  // because it was the ONLY route to backdating and to Epley estimation. Both moved into the row.
-  test('the row backdates and estimates inline, with no ⋯ in the DOM', async ({ page }) => {
+test.describe('Personal Bests: Update best takes a date and an estimate in its sheet, no second screen (ported 2026-10-13)', () => {
+  // Jake challenged the ⋯ and was right that it was redundant: it existed only because it was the ONLY route to backdating and to Epley estimation. Both moved into the row, and since
+  // 2026-10-13 (Personal Bests as a row per lift) into the Update best sheet on the lift's page. These are the same guards on that sheet.
+  test('the sheet backdates and estimates from a set, the old entry survives as history, and the lift page repaints', async ({ page }) => {
     await loginAsPT(page)
     let cid = null
     try {
@@ -145,31 +145,38 @@ test.describe('1RM row — date and estimate, no second screen', () => {
         })
         const host = document.createElement('div'); host.id = 'pb-1rms-section'; document.body.appendChild(host)
         await renderClient1RMs(c.id, host)
-        const rows = window._oneRMGridRows || []
-        const i = rows.findIndex(x => x.name === '[E2E] Squat')
-        const out = { cid: c.id, ellipsisInDom: /⋯/.test(host.innerHTML), hasDateInput: !!document.getElementById(`orm-date-${i}`) }
+        const i = (window._pbLifts || []).findIndex(x => x.name === '[E2E] Squat')
+        await openLiftPage(c.id, i)
+        updateBest()
+        const out = { cid: c.id, ellipsisInDom: /⋯/.test(host.innerHTML + document.body.innerHTML), hasDateInput: !!document.getElementById('1rm-date') }
 
-        // Epley: 100 × (1 + 5/30) = 116.67 → written straight into the row's own value input, so the
-        // save path still reads exactly ONE number.
-        document.getElementById(`orm-estw-${i}`).value = '100'
-        document.getElementById(`orm-estr-${i}`).value = '5'
-        _applyOneRMEstimate(i)
-        out.rowValueAfterEstimate = document.getElementById(`orm-${i}`).value
+        // Epley: 100 × (1 + 5/30) = 116.67
+        _setAdd1RMMode('epley')
+        document.getElementById('orm-est-weight').value = '100'
+        document.getElementById('orm-est-reps').value = '5'
+        _updateAdd1RMEpleyPreview()
+        out.preview = document.getElementById('orm-epley-value').textContent
 
-        document.getElementById(`orm-date-${i}`).value = '2026-05-20'
-        await saveOneRMGrid(c.id)
-        await new Promise(r2 => setTimeout(r2, 900))
+        document.getElementById('1rm-date').value = '2026-05-20'
+        await save1RM(c.id)
+        await new Promise(r2 => setTimeout(r2, 1200))
         const { data } = await db.from('client_1rms').select('one_rm_kg, recorded_at').eq('client_id', c.id)
-        out.saved = (data || []).map(x => `${Number(x.one_rm_kg)}@${x.recorded_at}`).sort()
+        out.saved = (data || []).map(x => [Number(x.one_rm_kg), x.recorded_at]).sort((a, b) => (a[1] < b[1] ? -1 : 1))
+        out.pageTitle = host.querySelector('.pw-title')?.textContent
+        out.history = [...host.querySelectorAll('.pw-card .pw-item .pw-item-date')].map(d => d.textContent)
         host.remove()
         return out
       })
       cid = r.cid
       expect(r.ellipsisInDom, 'the ⋯ button is gone — nothing needs a second screen').toBe(false)
-      expect(r.hasDateInput, 'backdating moved into the row').toBe(true)
-      expect(r.rowValueAfterEstimate, '100kg × 5 → 116.7 via the shared _estimate1RM').toBe('116.7')
-      expect(r.saved, 'saved on the CHOSEN date, not today, and the old entry survives as history')
-        .toEqual(['100@2026-07-01', '116.7@2026-05-20'])
+      expect(r.hasDateInput, 'backdating is in the sheet').toBe(true)
+      expect(r.preview, '100kg × 5 → 116.7 via the shared _estimate1RM').toContain('116.7')
+      expect(r.saved.length, 'one entry added, the old one kept as history').toBe(2)
+      expect(r.saved[0][1]).toBe('2026-05-20')
+      expect(r.saved[0][0], 'saved on the CHOSEN date, not today').toBeCloseTo(116.7, 1)
+      expect(r.saved[1]).toEqual([100, '2026-07-01'])
+      expect(r.pageTitle, 'the lift page repainted in place, it did not jump back to the list').toBe('[E2E] Squat')
+      expect(r.history, 'both dated entries are in the history, newest first').toEqual(['1 Jul 2026', '20 May 2026'])
     } finally {
       if (cid) await page.evaluate(async id => {
         await db.from('client_1rms').delete().eq('client_id', id)
@@ -178,12 +185,9 @@ test.describe('1RM row — date and estimate, no second screen', () => {
     }
   })
 
-  // Found by pre-push review. Change-detection skipped a row whose VALUE was unchanged before the
-  // date was ever read, so a date-only edit did nothing and reported "Nothing changed" — while the
-  // date control the user had just changed sat on screen. It also silently removed the capability the
-  // ⋯ was deleted in favour of: the old modal inserted unconditionally, so re-recording the same
-  // number on a new date worked. client_1rms is append-only exactly so a plateau is recordable.
-  test('changing ONLY the date is a real edit, not "nothing changed"', async ({ page }) => {
+  // client_1rms is append-only exactly so a plateau is recordable: the same weight on a new date is a real, additional entry (found by pre-push review on the old grid, which skipped a
+  // date-only change as "nothing changed"). The sheet always inserts what it is given.
+  test('the same weight on a new date is a real, additional entry', async ({ page }) => {
     await loginAsPT(page)
     let cid = null
     try {
@@ -195,18 +199,19 @@ test.describe('1RM row — date and estimate, no second screen', () => {
         })
         const host = document.createElement('div'); host.id = 'pb-1rms-section'; document.body.appendChild(host)
         await renderClient1RMs(c.id, host)
-        const i = (window._oneRMGridRows || []).findIndex(x => x.name === '[E2E] Plateau')
-        // Value untouched at 100; only the date moves.
-        document.getElementById(`orm-date-${i}`).value = '2026-08-10'
-        await saveOneRMGrid(c.id)
+        const i = (window._pbLifts || []).findIndex(x => x.name === '[E2E] Plateau')
+        await openLiftPage(c.id, i)
+        updateBest()
+        document.getElementById('1rm-weight').value = '100'
+        document.getElementById('1rm-date').value = '2026-08-10'
+        await save1RM(c.id)
         await new Promise(r2 => setTimeout(r2, 900))
-        const err = document.getElementById('orm-grid-error')?.textContent || ''
+        const err = document.getElementById('1rm-error')?.textContent || ''
         const { data } = await db.from('client_1rms').select('one_rm_kg, recorded_at').eq('client_id', c.id)
         host.remove()
         return { cid: c.id, err, saved: (data || []).map(x => `${Number(x.one_rm_kg)}@${x.recorded_at}`).sort() }
       })
       cid = r.cid
-      expect(r.err, 'a date-only change must not be reported as no change').not.toContain('Nothing changed')
       expect(r.saved, 'the same weight on a new date is a real, additional entry')
         .toEqual(['100@2026-07-01', '100@2026-08-10'])
     } finally {
@@ -217,31 +222,27 @@ test.describe('1RM row — date and estimate, no second screen', () => {
     }
   })
 
-  // The estimate adds a brand-new weightFromPref → _estimate1RM → weightToPref → parseFloat → toFixed
-  // chain, and that number-vs-string shape has produced a production bug on two consecutive days.
-  // The suite runs entirely in kg, so without this the whole lb branch is invisible.
+  // The estimate runs weightFromPref -> _estimate1RM -> fmtWeight, and that number-vs-string shape has produced a production bug on two consecutive days. The suite runs entirely in kg, so without this
+  // the whole lb branch is invisible.
   for (const unit of ['kg', 'lb']) {
-    test(`the inline estimate is finite and correctly rounded in ${unit}`, async ({ page }) => {
+    test(`the sheet's estimate preview is finite and correctly rounded in ${unit}`, async ({ page }) => {
       await loginAsPT(page)
       const r = await page.evaluate(u => {
         const prev = window._unitPrefs.weight
         window._unitPrefs.weight = u
-        const host = document.createElement('div')
-        host.innerHTML = `<input id="orm-9"><input id="orm-estw-9"><input id="orm-estr-9"><span id="orm-estout-9"></span>`
-        document.body.appendChild(host)
-        document.getElementById('orm-estw-9').value = '100'
-        document.getElementById('orm-estr-9').value = '5'
-        _applyOneRMEstimate(9)
-        const out = { value: document.getElementById('orm-9').value, label: document.getElementById('orm-estout-9').textContent }
-        host.remove()
+        _showOneRMDetailModal('00000000-0000-4000-8000-000000000000', { id: null, name: '[E2E] Preview' })
+        _setAdd1RMMode('epley')
+        document.getElementById('orm-est-weight').value = '100'
+        document.getElementById('orm-est-reps').value = '5'
+        _updateAdd1RMEpleyPreview()
+        const out = { label: document.getElementById('orm-epley-value').textContent }
+        document.getElementById('modal-1rm')?.remove()
         window._unitPrefs.weight = prev
         return out
       }, unit)
-      // Epley is 100 × (1 + 5/30) = 116.67 in whatever unit was typed, so the DISPLAYED figure is the
-      // same either way — what differs is the kg conversion in between, which is where a string would
-      // poison the arithmetic and yield NaN or an empty box.
-      expect(r.value, `the row value must be a finite number in ${unit}`).toBe('116.7')
-      expect(Number.isFinite(parseFloat(r.value))).toBe(true)
+      // Epley is 100 × (1 + 5/30) = 116.67 in whatever unit was typed, so the DISPLAYED figure is the same either way — what differs is the kg conversion in between, where a string would
+      // poison the arithmetic and yield NaN.
+      expect(r.label).toContain('116.7')
       expect(r.label).toContain(unit)
     })
   }

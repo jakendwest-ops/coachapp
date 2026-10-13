@@ -59,13 +59,14 @@ test('Cardio-bests stays deleted; a stale Benchmarks tab value lands on Personal
 
 // The other half of that move: 1RMs must actually BE on the new tab. Without this, deleting the
 // section outright would pass the test above just as happily as relocating it did.
-test('1RMs has its own Progress tab and renders the grid there (2026-08-14)', async ({ page }) => {
+test('Personal Bests has its own Progress tab and renders a row per lift there (2026-08-14, rows since 2026-10-13)', async ({ page }) => {
   await loginAsClient(page)
   await page.evaluate(() => { window._progressTab = '1RMs'; renderProgress(document.getElementById('main-content')) })
   await page.waitForTimeout(1200)
   expect(await page.locator('#pb-1rms-section').count()).toBe(1)
-  await expect(page.getByRole('button', { name: 'Save all' })).toBeVisible()
-  // Grid always, not only when empty — the whole point of Jake's 2026-08-14 report. The Big 5 are
+  await expect(page.locator('#pb-1rms-section .pb-row').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save all' }), 'the number boxes and Save all are gone (2026-10-13)').toHaveCount(0)
+  // Always the list, not only when empty — the whole point of Jake's 2026-08-14 report. The Big 5 are
   // offered as rows whether or not anything is recorded yet.
   await expect(page.getByText('Back Squat').first()).toBeVisible()
 })

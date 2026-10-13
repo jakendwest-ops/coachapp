@@ -1043,6 +1043,23 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .pw-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .pw-error { margin:0 0 6px; font-size:var(--text-md); color:var(--danger); }
 .pw-save { width:100%; padding:13px; font-size:var(--text-xl); }
+
+/* ─── My Progress > Personal Bests (Jake, 2026-10-13): a row per lift, and a page for each ──────────────────────────────────────────────────────────────────────────────── */
+.pb-note { margin:0 2px 12px; font-size:var(--text-md); color:var(--text-muted); }
+.pb-row { display:flex; align-items:center; gap:10px; width:100%; padding:12px 14px; border:0; border-bottom:1px solid var(--border); background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.pb-row-static { cursor:default; }
+.pw-list > .pb-row:last-child { border-bottom:0; }
+.pb-row-main { flex:1; min-width:0; display:flex; flex-direction:column; }
+.pb-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-base); font-weight:600; }
+.pb-sub { font-size:var(--text-sm); color:var(--text-muted); }
+.pb-best { min-width:68px; text-align:right; font-size:var(--text-lg); font-variant-numeric:tabular-nums; }
+.pb-chev { width:14px; height:14px; flex-shrink:0; color:var(--text-muted); }
+.pb-record { font-size:var(--text-md); padding:6px 12px; }
+.pb-back { margin-bottom:6px; padding:4px 0; border:0; background:none; color:var(--accent); font-size:var(--text-base); font-weight:600; cursor:pointer; }
+.pb-del { width:26px; height:26px; flex-shrink:0; border:1px solid var(--border); border-radius:var(--radius-sm); background:transparent; color:var(--text-muted); line-height:1; cursor:pointer; }
+.pb-card { padding:12px 12px 4px; }
+.pb-card .pw-list { border:0; border-radius:0; }
+.pb-chart { position:relative; height:160px; margin-bottom:8px; }
 .pgm-tl { display:flex; gap:3px; margin:14px 0 6px; }
 .pgm-seg { min-width:0; height:34px; border-radius:var(--radius-sm); background:var(--surface-2); color:var(--text-muted); font-size:var(--text-md); font-weight:800; display:flex; align-items:center; justify-content:center; }
 .pgm-seg.pct { background:var(--accent); color:var(--surface); }

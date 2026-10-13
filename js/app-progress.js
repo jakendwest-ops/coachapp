@@ -15,6 +15,15 @@
 
 const BIG_5_EXERCISES = ['Back Squat', 'Deadlift', 'Bench Press', 'Overhead Press', 'Barbell Row']
 
+// Calendar days (YYYY-MM-DD) shown as text, read as their own parts: a Body Weight / Personal Bests date is not an instant (see _pwDay).
+const _PW_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const _PW_MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+// A weight_logs.date is a calendar day (YYYY-MM-DD), not an instant: read as its own parts, never through new Date(string), which is UTC midnight and shows the day before west of UTC.
+const _pwDay = ymd => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return { y, m, d } }
+const _pwFmtDate = ymd => { const p = _pwDay(ymd); return `${p.d} ${_PW_MONTHS[p.m - 1]} ${p.y}` }
+const _pwFmtMonth = ymd => { const p = _pwDay(ymd); return `${_PW_MONTHS_LONG[p.m - 1]} ${p.y}` }
+const _pwFmtShort = ymd => { const p = _pwDay(ymd); return `${p.d} ${_PW_MONTHS[p.m - 1]}` }
+
 
 // Refresh whichever container is actually showing the 1RMs list — the client/solo 1RMs tab
 // (pb-1rms-section) or the PT-facing client-profile 1RMs tab (tab-content). Was three byte-identical
@@ -26,7 +35,7 @@ function _refresh1RMs(clientId) {
   // surface that hosts neither container throws on el.innerHTML and the exception surfaces as a
   // failed save — when the data is safely in Postgres and only the redraw had nowhere to go.
   if (!el) return Promise.resolve()
-  return renderClient1RMs(clientId, el)
+  return window._pbOpenLift ? renderLiftPage() : renderClient1RMs(clientId, el)      // an open lift page repaints itself: that is what the person is looking at
 }
 
 // Same shape as _refresh1RMs just above, for renderClientPerformance's own two write paths
@@ -39,257 +48,186 @@ function _refreshClientPerformance(clientId) {
   return renderClientPerformance(clientId, el)
 }
 
-// Writes only the rows the user actually CHANGED. client_1rms is append-only — the newest row per
-// exercise wins, and "+ Update" has always inserted rather than updated — so saving every row every
-// time would stamp a fresh entry against today for lifts that were never touched, burying the real
-// history under a wall of duplicate values.
-async function saveOneRMGrid(clientId) {
-  // Missed by the 2026-08-21 sweep that guarded its two neighbours in this very render function
-  // (save1RM at the onclick three lines below renderClient1RMs' delete1RM). Found by pre-push
-  // review 2026-08-22: the class has TWELVE members, not the ten the app-core comment claimed.
-  if (!(await _verifyClientAccess('saveOneRMGrid', clientId))) {
-    const e = document.getElementById('orm-grid-error'); if (e) e.textContent = 'Save failed — permission denied.'
-    return
-  }
-  // The try/finally that used to live here existed ONLY to release _saveOneRMGridPending.
-  // guardReentry (js/app-core.js) owns that now, in one place, so the wrapper is gone.
-  const errEl = document.getElementById('orm-grid-error')
-  if (errEl) errEl.textContent = ''
-  const today = new Date().toISOString().split('T')[0]
+// ─── Personal Bests: one clean row per lift, and a page for each lift (Jake, 2026-10-13) ─────────────────────────────────────────────────────────────────────────────────────────────
+// "page needs UI rework. you should be able to click into an exercise and see exercise/personal best data for that exercise" (docs/bugs/2026-10-13-progress-page-needs-a-ui-rework-starting-with-the-body-weight-section.md;
+// prototype https://claude.ai/artifact/AvgWLiWo4ogERWiRzJJomm). The grid of number boxes with "Save all" (and its per-row date and estimate boxes) is gone. The list is a row per lift; a tap opens that
+// lift's own page; "Update best" there is the Add 1RM sheet (_showOneRMDetailModal: type it or estimate it from a set, with a date). client_1rms is APPEND-ONLY (the newest row per lift is the best), so every
+// update is a new dated row and the history on the page is simply those rows. The weight is typed fresh in that sheet, so the lb round-trip drift the old grid had to guard against cannot occur.
+// The lifts are addressed by their position in window._pbLifts, never by name: a lift name is free text and has no business inside an attribute.
+let _pbLiftToken = 0
 
-  const changed = []
-  const invalid = []
-  ;(window._oneRMGridRows || []).forEach((d, i) => {
-    const inp = document.getElementById(`orm-${i}`)
-    if (!inp) return
-    const val = (inp.value || '').trim()
-    if (!val) return   // left blank — not an edit
-    // Per-row date, read BEFORE the equality guard below. Replaces the backdating that used to live
-    // behind the row's ⋯ (removed 2026-08-15). A cleared or malformed value is a real edit that
-    // cannot be stored, so it is rejected by name rather than silently stamped with today — the same
-    // treatment an unusable weight gets. (A browser with native date support only ever yields '' or
-    // a valid yyyy-mm-dd; the regex is the guard for one that degrades to a text field.)
-    const dateVal = (document.getElementById(`orm-date-${i}`)?.value || '').trim()
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) { invalid.push(`${d.name} (date)`); return }
-    const recordedAt = dateVal
+// A weight for display in the person's unit, rounded to one decimal with no trailing zero ("160", "162.5", "158.7"), with the unit or without it.
+const _pbN = kg => String(parseFloat(Number(weightToPref(kg)).toFixed(1)))
+const _pbW = kg => `${_pbN(kg)} ${window._unitPrefs.weight}`
+const _pbHost = () => document.getElementById('pb-1rms-section') || document.getElementById('tab-content')
+// The one error panel for both pages (a failed read must never look like an empty list).
+const _pbError = (title, lead = '') => `${lead}<div class="empty-state"><div class="empty-title">${title}</div><div class="empty-text">Check your connection and try again.</div></div>`
 
-    // Compared NUMERICALLY, with both sides already in the display unit, so "100.0" and "100" are
-    // the same edit rather than a duplicate append. Comparing the CONVERTED kg would be wrong: a
-    // kg→lb→kg round trip drifts in the last decimal and would read as a change on every save.
-    //
-    // `recordedAt === today` is the second half of the test, and it is load-bearing. Without it a
-    // DATE-ONLY change was skipped here and the user got "Nothing changed — edit a value first"
-    // while looking at the date control they had just changed. Worse, it silently removed the very
-    // capability the ⋯ was deleted in favour of: the old modal inserted unconditionally, so
-    // "I hit 100kg again on the 20th" recorded fine. client_1rms is append-only precisely so a
-    // repeat at the same weight on a new date is a real entry. Caught by pre-push review.
-    const origNum = parseFloat(inp.dataset.orig || '')
-    const valNum = parseFloat(val)
-    if (!isNaN(origNum) && valNum === origNum && recordedAt === today) return
-
-    // weightFromInput, not weightFromPref: an untouched (or identically retyped) field returns the
-    // stored kg verbatim instead of the lb round-trip of what was painted. See app-core.js.
-    // This is the path that drifted 200 -> 199.99 on a DATE-ONLY edit, because the equality guard
-    // above only skips when the date is also unchanged.
-    const kg = weightFromInput(inp)
-    // A typed 0, a negative, or text is a REAL edit that cannot be stored. Surfacing it beats
-    // dropping it: silently skipping meant either "Nothing changed" (false — they did change it)
-    // or, in a mixed save, the other rows saving while this one re-rendered showing its old value,
-    // looking for all the world like it had saved too.
-    if (kg == null || !(kg > 0)) { invalid.push(d.name); return }
-    changed.push({ name: d.name, exerciseId: d.exerciseId, kg, recordedAt })
-  })
-
-  if (invalid.length) {
-    if (errEl) errEl.textContent = `Enter a weight above 0 for ${invalid.join(', ')}`
-    return
-  }
-  if (!changed.length) {
-    if (errEl) errEl.textContent = 'Nothing changed — edit a value first'
-    return
-  }
-
-  const coachId = await _effectiveCoachIdForClient(clientId)
-  // REFUSE rather than guess. This is the one caller with a WRITE blast radius: coachId is handed to
-  // _resolveExerciseIdForSave, which INSERTs into `exercises`. Under the old `|| currentUser.id`
-  // fallback, a client row we were denied read access to resolved to "me" — so a foreign client's lift
-  // name could become a permanent row in the current user's own exercise library.
-  if (!coachId) {
-    if (errEl) errEl.textContent = 'Could not verify this client — please refresh and try again.'
-    return
-  }
-  const rows = await Promise.all(changed.map(async r => ({
-    client_id: clientId,
-    // Auto-create a library exercise ONLY for the Big 5 quick-start names — the contract
-    // _resolveExerciseIdForSave documents for itself ("kept only for the Big 5 quick-start 1RM
-    // form, which has no free text entry at all", app-workouts.js:1834). The grid now lists every
-    // exercise_name in this client's 1RM history, so an ungated call would silently insert a
-    // permanent `exercises` row named after any legacy or imported string the moment its value was
-    // edited — from a screen that shows no exercise picker. exercise_id is nullable; skipping is safe.
-    exercise_id: r.exerciseId || (BIG_5_EXERCISES.includes(r.name) ? await _resolveExerciseIdForSave(r.name, coachId) : null),
-    exercise_name: r.name, one_rm_kg: r.kg, recorded_at: r.recordedAt || today
-  })))
-  const { error } = await dbq('saveOneRMGrid', db.from('client_1rms').insert(rows))
-  if (error) { if (errEl) errEl.textContent = 'Save failed — try again'; return }
-  showToast(`${rows.length} 1RM${rows.length === 1 ? '' : 's'} saved`, 'success')
-  await _refresh1RMs(clientId)
-}
-guardReentry('saveOneRMGrid')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
-
-// The two affordances that used to live behind the row's ⋯ (removed 2026-08-15 on Jake's challenge:
-// "I can update the maxes on the landing page, so please can you explain the need to click the 3
-// dots"). He was right that it was redundant for the common case — it existed only because it was the
-// ONLY route to the two things inline editing could not do: a per-row DATE (the grid otherwise always
-// stamps today) and ESTIMATE FROM A SET (Epley). Both now sit in the row, collapsed until used, so the
-// default row is no busier than before and nothing needs a second screen.
-//
-// This note lives OUTSIDE the template literal deliberately. An HTML comment inside one still ships to
-// the DOM, and it is the exact shape that produced a stored XSS on 2026-08-14 when an interpolation
-// sat inside `<!-- -->` — a template literal does not know it is in a comment. Keep prose in `//`.
-function _toggleOneRMEstimate(i) {
-  const box = document.getElementById(`orm-est-${i}`)
-  if (!box) return
-  const open = box.style.display !== 'none'
-  box.style.display = open ? 'none' : 'flex'
-  if (!open) document.getElementById(`orm-estw-${i}`)?.focus()
-}
-
-// P4 (2026-09-07): reveal a lift's date + estimate controls once you focus its value input. Stays
-// open for the rest of the render — collapsing on blur would hide the date field the instant you
-// reached for it.
-function _revealOneRMRow(i) {
-  const more = document.getElementById(`orm-more-${i}`)
-  if (more) more.style.display = 'block'
-}
-
-// Writes the estimate straight into the row's own value input, so there is exactly ONE number the
-// Save-all path reads — the estimate is an input aid, never a second source of truth.
-function _applyOneRMEstimate(i) {
-  const out = document.getElementById(`orm-estout-${i}`)
-  const target = document.getElementById(`orm-${i}`)
-  if (!out || !target) return
-  // weightFromPref converts the typed display unit to canonical kg; _estimate1RM (app-workouts.js:97,
-  // shared with the programme-assignment quick entry) returns kg and refuses implausible rep counts.
-  const w = weightFromPref(document.getElementById(`orm-estw-${i}`)?.value)
-  const r = parseInt(document.getElementById(`orm-estr-${i}`)?.value)
-  const estKg = _estimate1RM(w, r)
-  if (estKg == null) {
-    out.textContent = (w && r > _ESTIMATE_1RM_MAX_REPS) ? `max ${_ESTIMATE_1RM_MAX_REPS} reps` : ''
-    return
-  }
-  // Back to the display unit for the row input, matching how every other value in this grid is held.
-  // parseFloat BEFORE toFixed — weightToPref returns a STRING in lb (app-core.js:78) and calling a
-  // number method on it is the crash that took down this whole page on 2026-08-14.
-  const disp = parseFloat(weightToPref(estKg))
-  if (isNaN(disp)) { out.textContent = ''; return }
-  target.value = String(parseFloat(disp.toFixed(1)))
-  out.textContent = `≈ ${fmtWeight(estKg, { spaced: true, decimals: 1 })}`
-}
-
-// ONE state, not two. This used to render a clean "Quick-start your 1RMs — The Big 5" grid when the
-// client had no rows, and a completely different card-per-exercise layout the moment they had one.
-// Jake compared his own account (populated) against a client's (empty) on 2026-08-14 and read it as a
-// PT-vs-Personal difference: "The 1RM grid on the PT > Client side is better UI and layout than the
-// grid used for personal." It was never two implementations — one function, two states, and he could
-// never see the grid again on his own account. He chose "grid always" (2026-08-14), so the card
-// layout is gone and the grid now carries real values inline.
 async function renderClient1RMs(clientId, el) {
+  window._pbOpenLift = null
+  _pbLiftToken++      // a lift page still loading must not paint over the list
+  _destroyManagedCharts()
   el.innerHTML = '<div class="loading-state">Loading 1RMs…</div>'
   const { data: rows, error } = await db.from('client_1rms').select('*').eq('client_id', clientId).order('recorded_at', { ascending: false })
-  if (!el.isConnected) return    // superseded by a newer tab: do not rebind window._oneRMGridRows under it
+  if (!el.isConnected || window._pbOpenLift) return    // superseded by a newer tab, or by opening a lift
   if (error) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-title">Couldn't load your 1RMs</div><div class="empty-text">Check your connection and try again.</div></div>`
+    el.innerHTML = _pbError("Couldn't load your 1RMs")
     return
   }
 
-  // Group by exercise name, newest first within each group
+  // Group by exercise name, newest first within each group. Recorded lifts first, then any Big 5 still missing, so the quick-start prompt works for a brand-new account AND keeps
+  // nudging an established one about a main lift it has never recorded.
   const byEx = {}
-  ;(rows || []).forEach(r => { if (!byEx[r.exercise_name]) byEx[r.exercise_name] = []; byEx[r.exercise_name].push(r) })
-
-  // Recorded lifts first, then any Big 5 still missing. That keeps the quick-start prompt working for
-  // a brand-new account AND keeps nudging an established one about a main lift it has never recorded,
-  // without either being a separate screen the other can never reach.
-  const gridRows = [
+  ;(rows || []).forEach(r => { (byEx[r.exercise_name] ||= []).push(r) })
+  const lifts = [
     ...Object.keys(byEx).map(name => ({ name, entries: byEx[name] })),
     ...BIG_5_EXERCISES.filter(n => !byEx[n]).map(name => ({ name, entries: [] }))
   ]
-  // Indexed ids, not name-derived ones: an exercise name is free text and can carry spaces, quotes or
-  // markup, none of which belong in a DOM id. The parallel array is what saveOneRMGrid reads.
-  window._oneRMGridRows = gridRows.map(r => ({ name: r.name, exerciseId: r.entries[0]?.exercise_id || null }))
+  window._pbLifts = lifts.map(l => ({ name: l.name, exerciseId: l.entries[0]?.exercise_id || null }))
 
-  const unit = window._unitPrefs.weight
-  const fmtDate = d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-  // Each row's date input defaults to TODAY, not to the row's existing recorded_at: the common action
-  // is "I hit a new max today", and client_1rms is append-only so a save always creates a new dated
-  // entry rather than editing the old one. Backdating is the exception, which is why it is a control
-  // rather than a default. ISO, because that is what a native <input type="date"> requires.
-  const today = new Date().toISOString().split('T')[0]
-
+  const chev = '<svg class="pb-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>'
+  const rowHtml = (l, i) => {
+    if (!l.entries.length) {
+      return `<div class="pb-row pb-row-static"><span class="pb-row-main"><span class="pb-name">${escapeHtml(l.name)}</span><span class="pb-sub">Not recorded yet</span></span><button type="button" class="btn-secondary pb-record" onclick="recordBest('${clientId}',${i})">Record best</button></div>`
+    }
+    const latest = l.entries[0], prev = l.entries[1]
+    const diff = prev ? parseFloat(latest.one_rm_kg) - parseFloat(prev.one_rm_kg) : 0
+    const pill = diff ? `<span class="pw-pill ${diff > 0 ? 'is-good' : ''}">${diff > 0 ? '+' : '−'}${_pbW(Math.abs(diff))}</span>` : ''
+    return `<button type="button" class="pb-row" onclick="openLiftPage('${clientId}',${i})"><span class="pb-row-main"><span class="pb-name">${escapeHtml(l.name)}</span><span class="pb-sub">Recorded ${_pwFmtDate(latest.recorded_at)}</span></span>${pill}<strong class="pb-best">${_pbW(parseFloat(latest.one_rm_kg))}</strong>${chev}</button>`
+  }
+  const recorded = lifts.map((l, i) => ({ l, i })).filter(x => x.l.entries.length)
+  const missing = lifts.map((l, i) => ({ l, i })).filter(x => !x.l.entries.length)
   el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <h3 style="margin:0;font-size:var(--text-xl, 16px);font-weight:700">${el.id === 'pb-1rms-section' ? 'My Personal Bests' : 'Personal Bests'}</h3>
-      <button class="btn-primary" style="font-size:var(--text-base, 13px);padding:8px 14px" onclick="showAdd1RMModal('${clientId}')">+ Add lift</button>
+    <div class="pw-head">
+      <h3 class="pw-title">${el.id === 'pb-1rms-section' ? 'My Personal Bests' : 'Personal Bests'}</h3>
+      <button class="btn-primary pw-log-btn" onclick="showAdd1RMModal('${clientId}')">+ Add lift</button>
     </div>
-    <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:14px">Edit any value and press Save all. Each save keeps your previous number as history.</div>
-    <div style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:4px 16px 16px;background:var(--surface)">
-      ${gridRows.map((r, i) => {
-        const latest = r.entries[0]
-        const history = r.entries.slice(1)
-        // Rendered to the display unit here and compared numerically on save, so a kg↔lb round trip
-        // can't register as a phantom edit. decimals:1 matches what the old card layout showed.
-        //
-        // parseFloat BEFORE .toFixed, never after: weightToPref returns a NUMBER in kg but a STRING
-        // in lb (it exits through _stripTrailingZero, app-core.js:78). Written the other way round
-        // this threw "toFixed is not a function" for every lb user with a recorded 1RM, killing the
-        // whole Progress page — and no test caught it because the entire suite runs at the kg
-        // default. fmtWeight (app-core.js:110) is the correctly-ordered precedent.
-        const dispNum = latest ? parseFloat(weightToPref(parseFloat(latest.one_rm_kg))) : NaN
-        const orig = isNaN(dispNum) ? '' : String(parseFloat(dispNum.toFixed(1)))
-        return `
-        <div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:${i < gridRows.length - 1 ? '1px solid var(--border)' : 'none'}">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:var(--text-base, 13px);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.name)}</div>
-            <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:1px">${latest ? 'Recorded ' + fmtDate(latest.recorded_at) : 'Not recorded yet'}</div>
-          </div>
-          <!-- 16px: an inline font-size beats the global input rule, and below 16px iOS Safari
-               re-triggers auto-zoom-on-focus. Same reasoning as every other inline input here. -->
-          <input class="field-input" id="orm-${i}" type="number" step="0.5" inputmode="decimal"
-                 ${weightInputAttrs(latest ? latest.one_rm_kg : null, orig)} data-orig="${escapeHtml(orig)}" placeholder="—"
-                 onfocus="_revealOneRMRow(${i})"
-                 style="width:82px;text-align:center;font-size:var(--text-xl, 16px);flex-shrink:0">
-          <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);width:20px;flex-shrink:0">${escapeHtml(unit)}</span>
-          ${latest ? `<button onclick="delete1RM('${latest.id}','${clientId}')" title="Delete" style="width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:var(--text-lg, 14px);line-height:1;cursor:pointer;color:var(--text-muted)">×</button>` : `<span style="width:26px;flex-shrink:0"></span>`}
-        </div>
-        <!-- P4 (2026-09-07): date + estimate crowd the row at 390px and are only needed while you're
-             actually entering a value — hidden until the value input is focused. The date input
-             keeps its default (today) even while hidden, which is what saveOneRMGrid reads. -->
-        <div id="orm-more-${i}" style="display:none">
-        <div style="display:flex;align-items:center;gap:8px;padding:0 0 9px 0;margin-top:-4px;font-size:var(--text-sm, 11px);flex-wrap:wrap">
-          <span style="color:var(--text-muted)">Dated</span>
-          <input class="field-input" id="orm-date-${i}" type="date" value="${escapeHtml(today)}"
-                 style="width:140px;padding:3px 6px;font-size:var(--text-xl, 16px)">
-          <button type="button" onclick="_toggleOneRMEstimate(${i})"
-                  style="padding:3px 9px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:var(--text-sm, 11px);font-weight:600;cursor:pointer;color:var(--text-muted)">Estimate from a set</button>
-        </div>
-        <div id="orm-est-${i}" style="display:none;align-items:center;gap:6px;padding:0 0 10px 0;margin-top:-4px;font-size:var(--text-sm, 11px);flex-wrap:wrap">
-          <input class="field-input" id="orm-estw-${i}" type="number" step="0.5" inputmode="decimal" placeholder="${escapeHtml(unit)}"
-                 oninput="_applyOneRMEstimate(${i})" style="width:74px;text-align:center;font-size:var(--text-xl, 16px);padding:3px 6px">
-          <span style="color:var(--text-muted)">×</span>
-          <input class="field-input" id="orm-estr-${i}" type="number" inputmode="numeric" placeholder="reps"
-                 oninput="_applyOneRMEstimate(${i})" style="width:64px;text-align:center;font-size:var(--text-xl, 16px);padding:3px 6px">
-          <span id="orm-estout-${i}" style="color:var(--text-muted);font-weight:600"></span>
-        </div>
-        </div>
-        ${history.length ? `
-        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 0 9px 0;margin-top:-2px">
-          <span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Was</span>
-          ${history.map(h => `<span style="font-size:var(--text-sm, 11px);color:var(--text-muted)">${fmtWeight(parseFloat(h.one_rm_kg), { spaced: true, decimals: 1 })} <span style="font-size:var(--text-xs, 10px)">${fmtDate(h.recorded_at)}</span></span>`).join('<span style="color:var(--border)">·</span>')}
-        </div>` : ''}`
-      }).join('')}
-      <p class="modal-error" id="orm-grid-error" style="margin-top:12px"></p>
-      <button class="btn-primary" style="width:100%;margin-top:6px" onclick="saveOneRMGrid('${clientId}')">Save all</button>
-    </div>
+    <div class="pb-note">Tap a lift for its history, your best sets by reps and your estimated 1RM.</div>
+    ${recorded.length ? `<div class="pw-list">${recorded.map(x => rowHtml(x.l, x.i)).join('')}</div>` : ''}
+    ${missing.length ? `<div class="pw-group">Not recorded yet</div><div class="pw-list">${missing.map(x => rowHtml(x.l, x.i)).join('')}</div>` : ''}
   `
+}
+
+// "Record best" on a lift with no best yet: the Add 1RM sheet for that lift.
+function recordBest(clientId, i) {
+  const l = window._pbLifts?.[i]
+  if (l) _showOneRMDetailModal(clientId, { id: l.exerciseId, name: l.name })
+}
+
+async function openLiftPage(clientId, i) {
+  const l = window._pbLifts?.[i]
+  if (!l) return
+  window._pbOpenLift = { clientId, name: l.name, exerciseId: l.exerciseId }
+  await renderLiftPage()
+}
+
+function closeLiftPage(clientId) {
+  window._pbOpenLift = null
+  const el = _pbHost()
+  if (el) renderClient1RMs(clientId, el)
+}
+
+// "Update best" on a lift's page: the Add 1RM sheet for it. The save appends a dated row and _refresh1RMs repaints THIS page.
+function updateBest() {
+  const o = window._pbOpenLift
+  if (o) _showOneRMDetailModal(o.clientId, { id: o.exerciseId, name: o.name })
+}
+
+// The heaviest set logged for AT LEAST each rep count (a set of 6 counts for the 5), with its date. Warm-ups (_countableSets) and sets with no weight (bodyweight) are ignored; an exact tie on weight goes
+// to the more recent session. `sessions` is the _fetchExerciseSessions shape ([{ date, sets }]); returns one entry per target, null where nothing qualifies.
+function _bestSetsByReps(sessions, targets) {
+  const ordered = [...(sessions || [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  return targets.map(reps => {
+    let best = null
+    for (const sess of ordered) {
+      for (const s of _countableSets(sess.sets)) {
+        const w = parseFloat(s.weight_kg), r = parseInt(s.reps_achieved)
+        if (!(w > 0) || !(r >= reps)) continue
+        if (!best || w >= best.weightKg) best = { reps, weightKg: w, date: sess.date }
+      }
+    }
+    return best
+  })
+}
+
+// One estimated 1RM per logged session, oldest first, from the SAME engine as the runner's Stats sheet and the Per exercise cards (_xsSessionMetrics). Sessions that estimate nothing are left out.
+function _pbE1rmPoints(sessions) {
+  return [...(sessions || [])]
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    .map(s => ({ date: s.date, kg: _xsSessionMetrics(s.sets).e1rm }))
+    .filter(p => p.kg > 0)
+}
+
+async function renderLiftPage() {
+  const open = window._pbOpenLift
+  const el = _pbHost()
+  if (!open || !el) return
+  const { clientId, name } = open
+  const token = ++_pbLiftToken
+  _destroyManagedCharts()
+  el.innerHTML = '<div class="loading-state">Loading this lift…</div>'
+  const [bestsR, hist] = await Promise.all([
+    db.from('client_1rms').select('*').eq('client_id', clientId).eq('exercise_name', name).order('recorded_at', { ascending: false }),
+    // The logged-sessions read is allowed to fail on its own: the best history above it is a different table and still stands.
+    _fetchExerciseSessions(clientId, name).then(sessions => ({ sessions, error: null }), error => ({ sessions: null, error }))
+  ])
+  if (token !== _pbLiftToken || !el.isConnected) return
+  const back = `<button type="button" class="pb-back" onclick="closeLiftPage('${clientId}')">‹ Personal Bests</button>`
+  if (bestsR.error) {
+    log.error('renderLiftPage', 'best history fetch failed', bestsR.error)
+    el.innerHTML = _pbError("Couldn't load this lift", back)
+    return
+  }
+  if (hist.error) log.error('renderLiftPage', 'logged sessions fetch failed', hist.error)
+  const bests = bestsR.data || []                    // newest first
+  const latest = bests[0], prev = bests[1]
+  const unit = escapeHtml(window._unitPrefs.weight)
+  const dispNum = kg => parseFloat(Number(weightToPref(kg)).toFixed(1))
+
+  const bestCard = latest
+    ? `<div class="pw-card"><div class="pw-label">Personal best</div><div class="pw-big">${_pbN(parseFloat(latest.one_rm_kg))} <span class="pw-big-unit">${unit}</span></div>
+         <div class="pb-note">Recorded ${_pwFmtDate(latest.recorded_at)}${prev ? ` · was ${_pbW(parseFloat(prev.one_rm_kg))} on ${_pwFmtDate(prev.recorded_at)}${parseFloat(latest.one_rm_kg) > parseFloat(prev.one_rm_kg) ? ` <span class="pw-pill is-good">+${_pbW(parseFloat(latest.one_rm_kg) - parseFloat(prev.one_rm_kg))}</span>` : ''}` : ''}</div></div>`
+    : `<div class="pw-card"><div class="pw-label">Personal best</div><div class="pb-note">None recorded yet. Tap Update best to add one.</div></div>`
+
+  const histRows = bests.map(b => `<div class="pw-item"><span class="pw-item-date">${_pwFmtDate(b.recorded_at)}</span><strong class="pw-item-w">${_pbW(parseFloat(b.one_rm_kg))}</strong><button type="button" class="pb-del" title="Delete" aria-label="Delete this entry" onclick="delete1RM('${b.id}','${clientId}')">×</button></div>`).join('')
+  const histCard = `<div class="pw-card pb-card">${bests.length > 1 ? '<div class="pb-chart"><canvas id="pb-hist-chart"></canvas></div>' : ''}<div class="pw-list">${histRows || '<div class="pb-note" style="padding:12px 14px">Nothing recorded yet.</div>'}</div></div>`
+
+  let repsCard, e1Card
+  if (hist.error) {
+    const msg = '<div class="pb-note">Could not load your logged sessions. Check your connection and try again.</div>'
+    repsCard = `<div class="pw-card">${msg}</div>`
+    e1Card = `<div class="pw-card">${msg}</div>`
+  } else {
+    const reps = _bestSetsByReps(hist.sessions, [1, 3, 5, 8, 10]).filter(Boolean)
+    repsCard = reps.length
+      ? `<div class="pw-card pb-card"><div class="pw-list">${reps.map(r => `<div class="pw-item"><span class="pw-item-date"><strong>${r.reps}</strong> ${r.reps === 1 ? 'rep' : 'reps'}</span><strong class="pw-item-w">${_pbW(r.weightKg)}</strong><span class="pw-item-bf">${_pwFmtDate(r.date)}</span></div>`).join('')}</div></div><div class="pb-note">The heaviest set you logged for at least that many reps.</div>`
+      : `<div class="pw-card"><div class="pb-note">No weighted sets logged for this lift yet. Log it in a workout and your best sets appear here.</div></div>`
+    const pts = _pbE1rmPoints(hist.sessions)
+    if (pts.length) {
+      const est = pts[pts.length - 1].kg, rec = latest ? parseFloat(latest.one_rm_kg) : null
+      const cmp = rec == null ? '' : est > rec ? `Your logged sets point to ${_pbW(est - rec)} above your recorded best.` : `Your recorded best is ${_pbW(rec - est)} above what your logged sets estimate.`
+      e1Card = `<div class="pw-card pb-card"><div class="pw-card-row"><div><div class="pw-big pb-e1">${_pbN(est)} <span class="pw-big-unit">${unit}</span></div><div class="pb-note" style="margin:2px 0 0">from your latest logged sets</div></div></div><div class="pb-chart"><canvas id="pb-e1rm-chart"></canvas></div>${cmp ? `<div class="pb-note" style="margin:0">${cmp}</div>` : ''}</div>`
+    } else {
+      e1Card = `<div class="pw-card"><div class="pb-note">Nothing to estimate from yet.</div></div>`
+    }
+  }
+
+  el.innerHTML = `${back}
+    <div class="pw-head"><h3 class="pw-title">${escapeHtml(name)}</h3><button type="button" class="btn-primary pw-log-btn" onclick="updateBest()">Update best</button></div>
+    ${bestCard}
+    <div class="pw-group">Best history</div>${histCard}
+    <div class="pw-group">Best sets by reps</div>${repsCard}
+    <div class="pw-group">Estimated 1RM</div>${e1Card}`
+
+  const unitText = window._unitPrefs.weight
+  if (bests.length > 1) {
+    const asc = [...bests].reverse()
+    _renderMetricChart('pb-hist-chart', { labels: asc.map(b => _pwFmtShort(b.recorded_at)), series: [{ label: `Best (${unitText})`, data: asc.map(b => dispNum(parseFloat(b.one_rm_kg))), colour: _METRIC_COLORS.topWeight, fill: true }], height: true, legend: false, yFormat: v => `${_tickNum(v)} ${unitText}` })
+  }
+  if (!hist.error) {
+    const pts = _pbE1rmPoints(hist.sessions)
+    if (pts.length) _renderMetricChart('pb-e1rm-chart', { labels: pts.map(p => _pwFmtShort(p.date)), series: [{ label: `Estimated 1RM (${unitText})`, data: pts.map(p => dispNum(p.kg)), colour: _METRIC_COLORS.e1rm, fill: true }], height: true, legend: false, yFormat: v => `${_tickNum(v)} ${unitText}` })
+  }
 }
 
 function showAdd1RMModal(clientId, prefillExercise = '', prefillExerciseId = null) {
@@ -309,7 +247,7 @@ function showAdd1RMModal(clientId, prefillExercise = '', prefillExerciseId = nul
 // Weight/date/Epley entry screen — shown once an exercise has been picked (or was already
 // known, e.g. the "+ Update" button on an existing 1RM row).
 function _showOneRMDetailModal(clientId, picked, opts = {}) {
-  const { existingId = null, weight = '', date = new Date().toISOString().split('T')[0] } = opts
+  const { existingId = null, weight = '', date = _ymdLocal(new Date()) } = opts
   const existing = document.getElementById('modal-1rm')
   if (existing) existing.remove()
   window._oneRMDetailPicked = picked
@@ -370,7 +308,7 @@ function _showOneRMDetailModal(clientId, picked, opts = {}) {
 // "Change" link on the 1RM detail screen — reopens the picker without losing weight/date entry.
 function _reopenExercisePickerFor1RM(clientId, existingId) {
   const weight = document.getElementById('1rm-weight')?.value || ''
-  const date = document.getElementById('1rm-date')?.value || new Date().toISOString().split('T')[0]
+  const date = document.getElementById('1rm-date')?.value || _ymdLocal(new Date())
   document.getElementById('modal-1rm')?.remove()
   _effectiveCoachIdForClient(clientId).then(coachId => {
     // Same as showAdd1RMModal — null is "we could not establish whose library this is".
@@ -419,7 +357,16 @@ async function save1RM(clientId, existingId = null) {
   const errEl    = document.getElementById('1rm-error')
   if (!picked?.name) { errEl.textContent = 'Exercise name is required'; return }
   if (!weight || weight <= 0) { errEl.textContent = 'Enter a valid weight'; return }
-  const row = { client_id: clientId, exercise_id: picked.id || null, exercise_name: picked.name, one_rm_kg: weight, recorded_at: date }
+  if (!date) { errEl.textContent = 'Enter the date'; return }
+  // A Big 5 lift picked by name ("Record best") has no library id yet: resolve or create it, as the old grid did, so its history links by id. REFUSE when the client cannot be verified: this is the one
+  // path here that writes into the exercise library (_resolveExerciseIdForSave INSERTs), so a client row we were denied must never resolve to "me".
+  let exerciseId = picked.id || null
+  if (!exerciseId && BIG_5_EXERCISES.includes(picked.name)) {
+    const coachId = await _effectiveCoachIdForClient(clientId)
+    if (!coachId) { errEl.textContent = 'Could not verify this client — please refresh and try again.'; return }
+    exerciseId = await _resolveExerciseIdForSave(picked.name, coachId)
+  }
+  const row = { client_id: clientId, exercise_id: exerciseId, exercise_name: picked.name, one_rm_kg: weight, recorded_at: date }
   let error
   if (existingId) {
     // .eq('client_id', clientId) as well as the row id: the guard above verifies clientId, so the
@@ -1770,12 +1717,6 @@ function _expandPerfSessionExercise(i, ei) {
 }
 
 // ─── The Body Weight section's pieces (Jake, 2026-10-13; see renderProgressWeight) ───────────────────────────────────────────────────────────────────────────────────────────────
-const _PW_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const _PW_MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-// A weight_logs.date is a calendar day (YYYY-MM-DD), not an instant: read as its own parts, never through new Date(string), which is UTC midnight and shows the day before west of UTC.
-const _pwDay = ymd => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return { y, m, d } }
-const _pwFmtDate = ymd => { const p = _pwDay(ymd); return `${p.d} ${_PW_MONTHS[p.m - 1]} ${p.y}` }
-const _pwFmtMonth = ymd => { const p = _pwDay(ymd); return `${_PW_MONTHS_LONG[p.m - 1]} ${p.y}` }
 
 // The log sheet. client-weight-form is the sheet's backdrop (showClientWeightForm shows and hides it); the weight box is pre-filled with the last entry, in the display unit through
 // weightInputAttrs, so saving it untouched stores that exact kg again (saveClientWeight reads it with weightFromInput). Body fat, resting HR and the note are in the DOM, folded away.
