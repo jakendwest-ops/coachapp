@@ -61,7 +61,7 @@ test.describe('weight history, personal bests and the data export past the 200-r
           const ds = chart?.data.datasets[0].data
           return {
             text: el.textContent,
-            current: leaf('Current')?.previousElementSibling?.textContent.trim() ?? null,
+            current: el.querySelector('.pw-big')?.textContent.trim() ?? null,      // the goal card's big number (the three tiles are gone, 2026-10-13)
             wantNewest: fmtWeight(NEWEST_KG, { spaced: true }),
             wantStale: fmtWeight(STALE_KG, { spaced: true }),
             wantTie: fmtWeight(71, { spaced: true }),
@@ -132,7 +132,7 @@ test.describe('weight history, personal bests and the data export past the 200-r
         await renderProgressWeight(a)
         await renderClientWeight('cid', b)
         const leaf = (el, label) => [...el.querySelectorAll('div')].find(d => d.children.length === 0 && d.textContent.trim() === label)
-        return { client: leaf(a, 'Current')?.previousElementSibling?.textContent.trim(), coach: leaf(b, 'CURRENT')?.nextElementSibling?.textContent.trim(), want: fmtWeight(NEWEST_KG, { spaced: true }) }
+        return { client: a.querySelector('.pw-big')?.textContent.trim(), coach: leaf(b, 'CURRENT')?.nextElementSibling?.textContent.trim(), want: fmtWeight(NEWEST_KG, { spaced: true }) }
       }, { NEWEST_KG }))
     expect(both.client, 'the client tab shows the newest').toBe(both.want)
     expect(both.coach, 'and so does the coach tab').toBe(both.want)
@@ -156,7 +156,7 @@ test.describe('weight history, personal bests and the data export past the 200-r
         await renderClientWeight('cid', b)
         const leaf = (el, label) => [...el.querySelectorAll('div')].find(d => d.children.length === 0 && d.textContent.trim() === label)
         // The coach tab always formats to one decimal ("71.0 kg"); the client tab does not ("71 kg").
-        return { client: leaf(a, 'Current')?.previousElementSibling?.textContent.trim(), coach: leaf(b, 'CURRENT')?.nextElementSibling?.textContent.trim(),
+        return { client: a.querySelector('.pw-big')?.textContent.trim(), coach: leaf(b, 'CURRENT')?.nextElementSibling?.textContent.trim(),
                  wantClient: fmtWeight(71, { spaced: true }), wantCoach: fmtWeight(71, { spaced: true, decimals: 1 }) }
       }))
     expect.soft(c.client, 'client tab').toBe(c.wantClient)

@@ -50,6 +50,7 @@ test.describe('Sub-project 2d — manual HR capture', () => {
     await page.evaluate(() => { window._progressTab = 'Body Weight'; renderProgress(document.getElementById('main-content')) })
     await page.click('button:has-text("+ Log weight")')
     await page.fill('#cwf-weight', '82.5')
+    await page.click('.pw-more-btn')      // body fat, resting HR and the note are folded away until asked for (2026-10-13)
     await page.fill('#cwf-resting-hr', '58') // this input is exactly what ②d adds — RED before it exists
 
     const row = await page.evaluate(async () => {

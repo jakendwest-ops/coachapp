@@ -1003,6 +1003,46 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .wk-toggle { align-items:stretch; min-width:0; padding:0; border:0; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .wk-chev { width:14px; height:14px; flex-shrink:0; color:var(--text-muted); transition:transform .2s; transform:rotate(0deg); cursor:pointer; }
 .wk-detail { padding:0 12px 12px; }
+
+/* ─── My Progress > Body Weight (Jake, 2026-10-13): a goal card, a log sheet, the entries grouped by month ──────────────────────────────────────────────────────────── */
+.pw-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.pw-title { margin:0; font-size:var(--text-xl); font-weight:700; }
+.pw-log-btn { font-size:var(--text-base); padding:8px 14px; }
+.pw-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; margin-bottom:16px; }
+.pw-card-title { font-size:var(--text-base); font-weight:700; color:var(--text); margin-bottom:4px; }
+.pw-card-sub { font-size:var(--text-sm); color:var(--text-muted); margin-bottom:14px; }
+.pw-card-row { display:flex; justify-content:space-between; align-items:flex-end; gap:10px; }
+.pw-label { font-size:var(--text-md); color:var(--text-muted); }
+.pw-big { font-size:var(--text-display); font-weight:800; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+.pw-big-unit { font-size:var(--text-xl); font-weight:600; color:var(--text-muted); letter-spacing:0; }
+.pw-pill { font-size:var(--text-md); font-weight:700; border-radius:var(--radius-full); padding:2px 8px; background:var(--surface-2); color:var(--text-muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.pw-pill.is-good { background:var(--success-light); color:color-mix(in srgb, var(--success) 60%, black); }
+.pw-bar { height:10px; border-radius:var(--radius-full); background:var(--surface-2); overflow:hidden; margin-top:14px; }
+.pw-bar > i { display:block; height:100%; border-radius:var(--radius-full); background:var(--accent); }
+.pw-legend { display:flex; justify-content:space-between; gap:8px; margin-top:6px; font-size:var(--text-md); color:var(--text-muted); }
+.pw-legend strong { color:var(--text); }
+.pw-link { background:none; border:0; padding:6px 0; color:var(--accent); font-size:var(--text-base); font-weight:600; cursor:pointer; }
+.pw-card > .pw-link { margin-top:8px; padding-bottom:0; }
+.pw-group { margin:14px 2px 6px; font-size:var(--text-md); font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); }
+.pw-list { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); overflow:hidden; }
+.pw-item { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid var(--border); }
+.pw-list > .pw-item:last-child { border-bottom:0; }
+.pw-item-date { flex:1; font-size:var(--text-base); color:var(--text-muted); }
+.pw-item-w { min-width:72px; text-align:right; font-size:var(--text-lg); font-variant-numeric:tabular-nums; }
+.pw-item-bf { font-size:var(--text-sm); color:var(--text-muted); }
+.pw-group[hidden], .pw-list[hidden], .pw-item[hidden] { display:none; }
+.pw-all { width:100%; margin-top:12px; }
+.pw-sheet-bg { position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.45); }
+.pw-sheet { position:absolute; left:0; right:0; bottom:0; max-width:440px; max-height:92vh; margin:0 auto; padding:18px 16px calc(18px + env(safe-area-inset-bottom, 0px)); overflow-y:auto; background:var(--surface); border-radius:var(--radius-lg) var(--radius-lg) 0 0; }
+.pw-sheet-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.pw-sheet-title { font-size:var(--text-xl); font-weight:700; }
+.pw-stepper { display:grid; grid-template-columns:48px 1fr 48px; gap:8px; align-items:stretch; }
+.pw-step { border:1.5px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--accent); font-size:var(--text-4xl); font-weight:600; cursor:pointer; }
+.form-input.pw-big-input { padding:8px 6px; text-align:center; font-size:var(--text-4xl); font-weight:700; }
+.pw-unit { margin-top:4px; text-align:center; font-size:var(--text-md); color:var(--text-muted); }
+.pw-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.pw-error { margin:0 0 6px; font-size:var(--text-md); color:var(--danger); }
+.pw-save { width:100%; padding:13px; font-size:var(--text-xl); }
 .pgm-tl { display:flex; gap:3px; margin:14px 0 6px; }
 .pgm-seg { min-width:0; height:34px; border-radius:var(--radius-sm); background:var(--surface-2); color:var(--text-muted); font-size:var(--text-md); font-weight:800; display:flex; align-items:center; justify-content:center; }
 .pgm-seg.pct { background:var(--accent); color:var(--surface); }

@@ -96,7 +96,7 @@ async function saveClientCheckIn(clientId) {
 
 async function saveClientWeight(clientId) {
   const date   = document.getElementById('cwf-date').value
-  const weight = weightFromPref(document.getElementById('cwf-weight').value)
+  const weight = weightFromInput(document.getElementById('cwf-weight'))      // the box is pre-filled with the last entry: untouched, it stores that exact kg
   const bf     = document.getElementById('cwf-bf').value
   const notes  = document.getElementById('cwf-notes').value.trim()
   const restingHr = document.getElementById('cwf-resting-hr')?.value

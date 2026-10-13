@@ -1769,6 +1769,105 @@ function _expandPerfSessionExercise(i, ei) {
   })
 }
 
+// ─── The Body Weight section's pieces (Jake, 2026-10-13; see renderProgressWeight) ───────────────────────────────────────────────────────────────────────────────────────────────
+const _PW_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const _PW_MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+// A weight_logs.date is a calendar day (YYYY-MM-DD), not an instant: read as its own parts, never through new Date(string), which is UTC midnight and shows the day before west of UTC.
+const _pwDay = ymd => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return { y, m, d } }
+const _pwFmtDate = ymd => { const p = _pwDay(ymd); return `${p.d} ${_PW_MONTHS[p.m - 1]} ${p.y}` }
+const _pwFmtMonth = ymd => { const p = _pwDay(ymd); return `${_PW_MONTHS_LONG[p.m - 1]} ${p.y}` }
+
+// The log sheet. client-weight-form is the sheet's backdrop (showClientWeightForm shows and hides it); the weight box is pre-filled with the last entry, in the display unit through
+// weightInputAttrs, so saving it untouched stores that exact kg again (saveClientWeight reads it with weightFromInput). Body fat, resting HR and the note are in the DOM, folded away.
+function _weightSheetHtml(clientId, lastKg) {
+  const unit = window._unitPrefs.weight
+  return `<div id="client-weight-form" class="pw-sheet-bg" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+      <div class="pw-sheet" role="dialog" aria-label="Log weight">
+        <div class="pw-sheet-head"><div class="pw-sheet-title">Log weight</div><button type="button" class="pw-link" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button></div>
+        <div class="field">
+          <label class="form-label" for="cwf-weight">Weight</label>
+          <div class="pw-stepper">
+            <button type="button" class="pw-step" aria-label="Down 0.1" onclick="_stepWeightInput(this,-0.1)">−</button>
+            <input type="number" id="cwf-weight" class="form-input pw-big-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300" inputmode="decimal" ${weightInputAttrs(lastKg)}>
+            <button type="button" class="pw-step" aria-label="Up 0.1" onclick="_stepWeightInput(this,0.1)">+</button>
+          </div>
+          <div class="pw-unit">${escapeHtml(unit)}${lastKg != null ? ' · last time ' + fmtWeight(lastKg, { spaced: true }) : ''}</div>
+        </div>
+        <div class="field"><label class="form-label" for="cwf-date">Date</label><input type="date" id="cwf-date" class="form-input" value="${_ymdLocal(new Date())}"></div>
+        <button type="button" class="pw-link pw-more-btn" onclick="document.getElementById('cwf-more').hidden=false;this.hidden=true">+ Add body fat, resting HR or a note</button>
+        <div id="cwf-more" hidden>
+          <div class="pw-grid2">
+            <div class="field"><label class="form-label" for="cwf-bf">Body fat %</label><input type="number" id="cwf-bf" class="form-input" placeholder="optional" step="0.1" min="1" max="60" inputmode="decimal"></div>
+            <div class="field"><label class="form-label" for="cwf-resting-hr">Resting HR (bpm)</label><input type="number" inputmode="numeric" id="cwf-resting-hr" class="form-input" placeholder="optional" step="1" min="20" max="250"></div>
+          </div>
+          <div class="field"><label class="form-label" for="cwf-notes">Note</label><input type="text" id="cwf-notes" class="form-input" placeholder="optional"></div>
+        </div>
+        <p id="cwf-error" class="pw-error"></p>
+        <button type="button" class="btn btn-primary pw-save" onclick="saveClientWeight('${clientId}')">Save</button>
+      </div>
+    </div>`
+}
+
+// The - / + buttons beside the weight box nudge it by a tenth, in whatever unit the box is in.
+function _stepWeightInput(btn, delta) {
+  const inp = btn.parentElement.querySelector('input')
+  const cur = parseFloat(inp.value)
+  const next = Math.round(((isNaN(cur) ? 0 : cur) + delta) * 10) / 10
+  inp.value = next > 0 ? String(next) : ''
+}
+
+// ONE card for where you are against your goal: the current weight, the change since you started, and (with both goals set) a bar to the goal and "x to go". Moving towards the goal reads
+// green, away from it grey; with no goal the change is just grey. cur / start are kg numbers.
+function _weightGoalCardHtml(cur, start, goal, hasBothGoals) {
+  const change = cur - start
+  const toward = hasBothGoals && change !== 0 && Math.sign(change) === Math.sign(goal - start)
+  const unit = escapeHtml(window._unitPrefs.weight)
+  const since = change === 0
+    ? 'No change since you started'
+    : `${change < 0 ? '▼' : '▲'} ${fmtWeight(Math.abs(change), { spaced: true, decimals: 1 })} since you started`
+  let bar = ''
+  if (hasBothGoals && goal !== start) {
+    const pct = Math.max(0, Math.min(100, (start - cur) / (start - goal) * 100))
+    const reached = (goal < start && cur <= goal) || (goal > start && cur >= goal)
+    bar = `<div class="pw-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}"><i style="width:${pct}%"></i></div>
+      <div class="pw-legend"><span>Start ${fmtWeight(start, { spaced: true })}</span><strong>${reached ? 'Goal reached' : fmtWeight(Math.abs(cur - goal), { spaced: true, decimals: 1 }) + ' to go'}</strong><span>Goal ${fmtWeight(goal, { spaced: true })}</span></div>`
+  }
+  return `<div class="pw-card" id="pw-goalcard">
+      <div class="pw-card-row"><div><div class="pw-label">Current</div><div class="pw-big">${weightToPref(cur)} <span class="pw-big-unit">${unit}</span></div></div><span class="pw-pill ${toward ? 'is-good' : ''}">${since}</span></div>
+      ${bar}
+      ${hasBothGoals ? `<button type="button" class="pw-link" onclick="document.getElementById('wg-editor').style.display='block';this.hidden=true">Edit start and goal</button>` : ''}
+    </div>`
+}
+
+// The entries, newest first, grouped by month, each with the change since the entry before it (green when it moves towards the goal: goalDir is -1 for a loss goal, 1 for a gain goal, 0 for none).
+// The first six show; "Show all" opens the rest.
+function _weightListHtml(logs, goalDir = 0) {
+  const newest = logs.slice().reverse()
+  const FIRST = 6
+  const groups = []
+  newest.forEach((l, i) => {
+    const prev = newest[i + 1]
+    const d = prev ? parseFloat(l.weight_kg) - parseFloat(prev.weight_kg) : null
+    const month = _pwFmtMonth(l.date)
+    if (!groups.length || groups[groups.length - 1].month !== month) groups.push({ month, rows: [], from: i })
+    const delta = d === null || d === 0 ? '' : `<span class="pw-pill ${goalDir !== 0 && Math.sign(d) === goalDir ? 'is-good' : ''}">${d < 0 ? '▼' : '▲'} ${fmtWeight(Math.abs(d), { spaced: true, decimals: 1 })}</span>`
+    const bf = l.body_fat_pct ? `<span class="pw-item-bf">${escapeHtml(String(l.body_fat_pct))}% BF</span>` : ''
+    groups[groups.length - 1].rows.push(`<div class="pw-item"${i >= FIRST ? ' data-pw-more hidden' : ''}><span class="pw-item-date">${_pwFmtDate(l.date)}</span>${delta}<strong class="pw-item-w">${fmtWeight(l.weight_kg, { spaced: true })}</strong>${bf}</div>`)
+  })
+  const body = groups.map(g => `<div class="pw-group"${g.from >= FIRST ? ' data-pw-more hidden' : ''}>${g.month}</div><div class="pw-list"${g.from >= FIRST ? ' data-pw-more hidden' : ''}>${g.rows.join('')}</div>`).join('')
+  const more = newest.length > FIRST
+    ? `<button type="button" class="btn-secondary pw-all" onclick="_toggleAllWeights(this)" data-total="${newest.length}">Show all ${newest.length} entries</button>`
+    : ''
+  return body + more
+}
+
+function _toggleAllWeights(btn) {
+  const open = btn.dataset.open !== '1'
+  document.querySelectorAll('[data-pw-more]').forEach(n => { n.hidden = !open })
+  btn.dataset.open = open ? '1' : ''
+  btn.textContent = open ? 'Show fewer' : `Show all ${btn.dataset.total} entries`
+}
+
 async function renderProgressWeight(el) {
   // Entered DIRECTLY from saveClientWeight (js/app-clients.js:80),
   // so its own teardown never ran and every "+ Log weight" orphaned pw-chart and resting-hr-chart.
@@ -1789,29 +1888,12 @@ async function renderProgressWeight(el) {
   const loadErr = logsErr || clientErr
   const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
   const goalWeightKg     = clientRow?.goal_weight_kg != null ? parseFloat(clientRow.goal_weight_kg) : null
-  // 2026-07-08 BUG FIX: the button below called showClientWeightForm(), which only toggles a DOM
-  // node (#client-weight-form) that existed on the Dashboard pages — never on this Progress page
-  // it's actually clicked from. Silent no-op, same bug shape as the "Log PB" fix earlier this
-  // session. Adding the form here (same markup as app-dashboard.js) makes the button real.
-  const addWeightBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Body weight log</span><button class="btn-primary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showClientWeightForm('${clientId}')">+ Log weight</button></div>
-    <div id="client-weight-form" style="display:none;margin-bottom:16px;padding:14px;border-radius:var(--radius-md, 12px);background:var(--surface);border:1px solid var(--border)">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div><label class="form-label">Date</label><input type="date" id="cwf-date" class="form-input" value="${new Date().toISOString().split('T')[0]}"></div>
-        <div><label class="form-label">Weight (${window._unitPrefs.weight})</label><input type="number" id="cwf-weight" class="form-input" placeholder="e.g. 89.5" step="0.1" min="20" max="300"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div><label class="form-label">Body fat % <span style="color:var(--text-muted)">(optional)</span></label><input type="number" id="cwf-bf" class="form-input" placeholder="e.g. 19.5" step="0.1" min="1" max="60"></div>
-        <div><label class="form-label">Resting HR (bpm) <span style="color:var(--text-muted)">(optional)</span></label><input type="number" inputmode="numeric" id="cwf-resting-hr" class="form-input" placeholder="e.g. 58" step="1" min="20" max="250"></div>
-      </div>
-      <div style="margin-bottom:8px">
-        <div><label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label><input type="text" id="cwf-notes" class="form-input" placeholder="Any notes…"></div>
-      </div>
-      <p id="cwf-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 6px"></p>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="saveClientWeight('${clientId}')">Save</button>
-        <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('client-weight-form').style.display='none'">Cancel</button>
-      </div>
-    </div>`
+  // Jake, 2026-10-13 ("the UI in this section needs a rework"; prototype https://claude.ai/artifact/AvgWLiWo4ogERWiRzJJomm; docs/bugs/2026-10-13-progress-page-needs-a-ui-rework-starting-with-the-body-weight-section.md):
+  // ONE goal card instead of the start/goal line and the three tiles, the log form as a slide-up sheet (a stepper, the date, the extras folded away) and the list grouped by month
+  // with the change since the last entry. The ids the save and the specs rely on (client-weight-form, cwf-*, wg-*, pw-chart) are unchanged, and so is the chart. (History: until 2026-07-08
+  // the "+ Log weight" button called showClientWeightForm on a form that only existed on the dashboards; the form now lives here, as the same markup.)
+  const lastKg = logs?.length ? logs[logs.length - 1].weight_kg : null
+  const addWeightBtn = `<div class="pw-head"><h3 class="pw-title">Body weight</h3><button class="btn-primary pw-log-btn" onclick="showClientWeightForm('${clientId}')">+ Log weight</button></div>${_weightSheetHtml(clientId, lastKg)}`
   // A failed load must not read as "no data" (the empty state below invites the person to start logging again), and
   // a failed CLIENT read must not render a blank goals editor that "Save goals" would write NULLs over. For a solo
   // account this is the ONLY place to log a weight, so the button stays and there is a way to retry.
@@ -1820,10 +1902,7 @@ async function renderProgressWeight(el) {
     el.innerHTML = addWeightBtn + `<div class="loading-state">Error loading weight data. <button class="btn-secondary" onclick="renderProgressWeight(this.closest('.loading-state').parentElement)">Try again</button></div>`
     return
   }
-  // P3 (2026-09-07): once both goals are set, this leads with the DATA (tiles + chart), not the
-  // editor. The card collapses to a one-line "Start X → Goal Y · Edit" summary; the full editor is
-  // still there, hidden, revealed by the Edit button. When either value is missing it stays a full
-  // card — then it's a genuine setup prompt.
+  // Once both goals are set the editor is folded away (the goal card's "Edit start and goal" reveals it); with either missing it stays a full card: then it is a genuine setup prompt.
   const goalsFields = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
@@ -1837,18 +1916,15 @@ async function renderProgressWeight(el) {
       </div>
       <p id="wg-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
       <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>`
-  const goalsCard = (startingWeightKg != null && goalWeightKg != null)
-    ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
-         <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Start <span style="font-weight:700;color:var(--text)">${fmtWeight(startingWeightKg, { spaced: true })}</span> &rarr; Goal <span style="font-weight:700;color:var(--text)">${fmtWeight(goalWeightKg, { spaced: true })}</span></span>
-         <button onclick="this.parentElement.style.display='none';document.getElementById('wg-editor').style.display='block'" style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--accent);background:none;border:none;cursor:pointer;padding:4px 6px">Edit</button>
-       </div>
-       <div id="wg-editor" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:16px">
-         <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:14px">Weight goals</div>
+  const hasBothGoals = startingWeightKg != null && goalWeightKg != null
+  const goalsCard = hasBothGoals
+    ? `<div id="wg-editor" class="pw-card" style="display:none">
+         <div class="pw-card-title">Weight goals</div>
          ${goalsFields}
        </div>`
-    : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:16px">
-         <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
-         <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
+    : `<div class="pw-card">
+         <div class="pw-card-title">Weight goals</div>
+         <div class="pw-card-sub">Used to set the chart's range below</div>
          ${goalsFields}
        </div>`
   if (!logs?.length) { el.innerHTML = addWeightBtn + goalsCard + '<div class="empty-state"><p>No weight logs yet. Tap + Log weight to add your first entry.</p></div>'; return }
@@ -1856,32 +1932,19 @@ async function renderProgressWeight(el) {
   const first  = logs[0]
   // "Starting" prefers the user's own starting_weight_kg goal field over the earliest logged
   // entry — the goal field is meant to represent where they actually started (which may predate
-  // their first in-app log), so entering it should visibly move this tile, not just the chart axis.
+  // their first in-app log), so entering it should visibly move this card, not just the chart axis.
   const effectiveStarting = startingWeightKg ?? first.weight_kg
-  const change = (latest.weight_kg - effectiveStarting).toFixed(1)
-  const sign   = change > 0 ? '+' : ''
   el.innerHTML = `
     ${addWeightBtn}
+    ${_weightGoalCardHtml(parseFloat(latest.weight_kg), parseFloat(effectiveStarting), goalWeightKg, hasBothGoals)}
     ${goalsCard}
-    <div style="display:flex;gap:12px;margin-bottom:16px">
-      ${[['Starting', fmtWeight(effectiveStarting, { spaced: true })], ['Current', fmtWeight(latest.weight_kg, { spaced: true })], ['Change', sign + fmtWeight(change, { spaced: true, decimals: 1 })]].map(([l,v])=>`
-        <div style="flex:1;padding:12px;border-radius:var(--radius-md, 12px);background:var(--surface);text-align:center">
-          <div style="font-size:var(--text-2xl, 18px);font-weight:800;color:var(--accent)">${v}</div>
-          <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${l}</div>
-        </div>`).join('')}
-    </div>
     <div style="position:relative;height:200px;margin-bottom:16px"><canvas id="pw-chart" style="width:100%;height:100%"></canvas></div>
-    <div style="border-radius:var(--radius-md, 12px);overflow:hidden;border:1px solid var(--border)">
-      ${logs.slice().reverse().slice(0,10).map(l=>`
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border)">
-          <span style="font-size:var(--text-base, 13px);color:var(--text-muted)">${new Date(l.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
-          <span style="font-size:var(--text-lg, 14px);font-weight:700">${fmtWeight(l.weight_kg, { spaced: true })}${l.body_fat_pct ? ' · '+l.body_fat_pct+'% BF' : ''}</span>
-        </div>`).join('')}
-    </div>
+    ${_weightListHtml(logs, hasBothGoals ? Math.sign(goalWeightKg - effectiveStarting) : 0)}
     ${(() => { const hr = logs.filter(l => l.resting_hr != null); if (hr.length < 2) return ''
       return `<div style="margin-top:20px;margin-bottom:8px;font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Resting heart rate</div>
         <div style="position:relative;height:160px"><canvas id="resting-hr-chart" style="width:100%;height:100%"></canvas></div>` })()}
   `
+
   // Y-axis range blends whichever of goal/starting weight are set with the actual logged data —
   // previously this only activated when BOTH fields were set, so entering just one (the common
   // case) silently had zero visible effect. Math.min/max (not "goal is always below starting") so

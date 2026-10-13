@@ -45,15 +45,15 @@ test.describe('The form-input and form-label classes are styled (2026-10-13)', (
     expect(r.label.form.display).toBe('block')
   })
 
-  test('the real Body Weight log form is styled: a bordered, padded input with its label above it', async ({ page }) => {
+  test('the real Body Weight log sheet is styled: a bordered, padded date box with its label above it', async ({ page }) => {
     await soloView(page)
     await page.evaluate(() => { window._progressTab = 'Body Weight'; navigate('progress') })
     await expect(page.locator('.chip-row')).toBeVisible({ timeout: 15000 })
     await page.locator('button[onclick^="showClientWeightForm"]').first().click({ timeout: 15000 })
-    const weight = page.locator('#cwf-weight')
+    const weight = page.locator('#cwf-date')      // the plain form-input in the sheet (the weight box has its own big style)
     await expect(weight).toBeVisible()
     const s = await page.evaluate(() => {
-      const input = document.getElementById('cwf-weight'), label = input.previousElementSibling
+      const input = document.getElementById('cwf-date'), label = input.previousElementSibling
       const cs = getComputedStyle(input)
       return { borderStyle: cs.borderTopStyle, pad: cs.paddingLeft, radius: cs.borderTopLeftRadius, labelDisplay: getComputedStyle(label).display, labelAbove: label.getBoundingClientRect().bottom <= input.getBoundingClientRect().top + 1 }
     })
