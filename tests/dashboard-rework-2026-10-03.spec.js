@@ -6,7 +6,7 @@ const { installCappedApi, restoreCappedApi, cappedApiCalls } = require('./capped
 //
 // "The whole dashboard needs a rework for mobile view, as nothing really flows or stands out as a dashboard or makes it feel like
 // this is the landing page and hub of your account." Scoped with him: all three dashboards in one design; today's session first and
-// then the week; body weight, streak (sessions logged in a row), program progress and calendar; Goals stay; the PT | Personal
+// then the week; body weight, streak (plan adherence on a plan, weeks in a row at a weekly target without one - reworked 2026-10-13), program progress and calendar; Goals stay; the PT | Personal
 // switch stays floating. These run the REAL render functions against tests/capped-api.js (a read-only stand-in that caps responses
 // at 200 rows, models `!inner`, and fails closed on anything it does not implement) with the clock PINNED, so nothing depends on
 // the weekday the suite runs on and no rows are created anywhere. The pure rules (streak, week strip, program tile) are pinned in
@@ -101,7 +101,8 @@ function coachTables(uid, { quietToday = false } = {}) {
 // ── plumbing ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 async function prepare(page) {
   await page.clock.setFixedTime(NOW)   // after login: the saved session was issued against the real clock
-  await page.evaluate(() => { window._unitPrefs = { ...(window._unitPrefs || {}), weight: 'kg' }; window._branding = { businessName: 'West Strength', logoUrl: null } })
+  // _weeklyTarget: the real login loaded whatever the test account has stored; the streak tile's numbers must not depend on it.
+  await page.evaluate(() => { window._unitPrefs = { ...(window._unitPrefs || {}), weight: 'kg' }; window._branding = { businessName: 'West Strength', logoUrl: null }; window._weeklyTarget = null })
 }
 const install = (page, tables) => installCappedApi(page, tables)
 const render = async (page, fn) => {
@@ -158,10 +159,11 @@ test.describe('the client and solo dashboard', () => {
     expect(r.days.filter(d => d.pressed === 'true').map(d => d.label), 'the pressed day is the one the Today card shows').toEqual(['Sat'])
     expect(r.weekSub).toBe('3 of 4 sessions done')
 
-    // Jake, 2026-10-12: the streak is the SESSIONS logged in a row. Every planned session of the two finished plan weeks was logged (4 + 4), so was the week
-    // before the plan began (4: outside a plan one session a week keeps the run), and this week has 3 so far, which count and never break it: 15.
-    expect(r.streak, 'sessions in a row: 3 this week + 4 + 4 + 4').toContain('15 sessions in a row')
-    expect(r.streak, 'a plan governs this week, so it says so').toContain('without missing a planned session')
+    // Jake, 2026-10-13: while a plan governs the week the tile is plan adherence. Every planned session of the two finished plan weeks was logged (4 + 4); this week
+    // has 4 due (Mon, Wed, Fri and today's Saturday) and 3 logged. The week before the plan began (4 logged) is not part of it: 11 of 12, not 15.
+    expect(r.streak, 'planned sessions done, of those due so far').toContain('11 of 12 planned so far')
+    expect(r.streak, 'where the person is in the plan, and this week').toContain('Week 3 of 12 · this week 3 of 4')
+    await expect(page.locator('#dash-streak[data-mode="plan"] .dash-meter i')).toHaveAttribute('style', /width:\s*92%/)
     expect(r.program).toContain('Wk 3')
     expect(r.program).toContain('of 12')
     expect(r.program).toContain('Accumulation 1 · Operation 240')
@@ -286,7 +288,8 @@ test.describe('the client and solo dashboard', () => {
     expect(r.hero).toMatchObject({ kind: 'done', calm: true, eyebrow: 'Today · Done', title: 'Squat + Threshold', meta: '5 exercises logged' })
     expect(r.hero.buttons).toEqual(['View session'])
     expect(r.weekSub).toBe('4 of 4 sessions done')
-    expect(r.streak, 'today\'s session makes it 4 this week: 16 in a row').toContain('16 sessions in a row')
+    expect(r.streak, 'today\'s session makes it 4 of 4 this week: 12 of 12').toContain('12 of 12 planned so far')
+    expect(r.streak).toContain('this week 4 of 4')
     await restoreCappedApi(page)
 
     // Rest: Sunday, nothing planned. The next session is named.
@@ -298,7 +301,7 @@ test.describe('the client and solo dashboard', () => {
     expect(r.hero.buttons).toEqual(['Log a workout', 'View training plan'])
   })
 
-  test('without a program (solo): a freeform prompt, a streak of sessions in a row (a session every week keeps it), and a way to build one', async ({ page }) => {
+  test('without a program (solo): a freeform prompt, the weekly-target streak (3 a week unless the person set another), and a way to build one', async ({ page }) => {
     await withData(page, { program: false }, 'renderSoloDashboard')
     const r = await read(page)
     expect(r.eyebrow).toBe('My training')
@@ -306,14 +309,50 @@ test.describe('the client and solo dashboard', () => {
     expect(r.hero.buttons).toEqual(['Log a workout'])
     expect(kinds(r)).toEqual(Array(7).fill('rest'))
     expect(r.weekSub).toBe('Nothing planned this week')
-    expect(r.streak, 'one session in each of the last two weeks').toContain('2 sessions in a row')
-    expect(r.streak).toContain('a session every week')
+    // One session in each of the last two weeks and none yet this week: short of the default target of 3, so no run, and the tile says what to aim for.
+    expect(r.streak).toContain('0 weeks in a row')
+    expect(r.streak).toContain('Aim for 3 a week · this week 0 of 3')
+    await expect(page.locator('#dash-streak[data-mode="target"]')).toBeVisible()
     expect(r.program).toContain('None')
     expect(r.program).toContain('Build one in Training plans')
     expect(r.checkin, 'the weekly check-in is a client thing').toBe(false)
+    // The same two sessions against a target of 1 a week (set in Settings, loaded at login as window._weeklyTarget): two weeks in a row.
+    await page.evaluate(async () => { window._weeklyTarget = 1; await renderSoloDashboard(document.getElementById('main-content')) })
+    const again = await read(page)
+    expect(again.streak).toContain('2 weeks in a row')
+    expect(again.streak).toContain('at 1 a week · this week 0 of 1')
   })
 
-  test('an abandoned start (a log with no exercises in it) is not a session: not done, not counted, not a streak week', async ({ page }) => {
+  test('a tap on the weekly-target streak opens Settings, and a tile on a plan is not a link', async ({ page }) => {
+    await withData(page, { program: false }, 'renderSoloDashboard')
+    await page.evaluate(() => { window.__nav = []; window.navigate = (p) => window.__nav.push(p) })
+    await page.locator('#dash-streak').click()
+    expect(await page.evaluate(() => window.__nav)).toEqual(['settings'])
+    await restoreCappedApi(page)
+    const uid = await page.evaluate(() => currentUser.id)
+    await install(page, ownTables('dash-c1', uid))
+    await render(page, 'renderClientDashboard')
+    await page.evaluate(() => { window.__nav = [] })
+    await page.locator('#dash-streak').click()
+    expect(await page.evaluate(() => window.__nav), 'adherence on a plan goes nowhere').toEqual([])
+  })
+
+  test('the weekly target the person set is the one the tile uses; an out-of-range value reads as 3; the sudo view uses the default', async ({ page }) => {
+    const uid = await page.evaluate(() => currentUser.id)
+    await install(page, ownTables('dash-c1', uid, { program: false }))
+    for (const [stored, want] of [[5, '5'], [99, '3'], [null, '3'], [undefined, '3']]) {
+      await page.evaluate(async (v) => { window._weeklyTarget = v; await renderClientDashboard(document.getElementById('main-content')) }, stored)
+      expect((await read(page)).streak, `stored ${stored}`).toContain(`${want} a week`)
+    }
+    await page.evaluate(async () => { window._weeklyTarget = 5; window._sudoClientId = 'dash-c1'; window._sudoClientName = 'Pat'; await renderClientDashboard(document.getElementById('main-content')) })
+    expect((await read(page)).streak, 'an owner looking at a client\'s page sees the default, not their own target').toContain('3 a week')
+    // ...and the tile is not a link there: Settings would be the OWNER's own, not the client's.
+    await expect(page.locator('#dash-streak')).not.toHaveClass(/dash-tap/)
+    expect(await page.locator('#dash-streak').getAttribute('onclick')).toBeNull()
+    await page.evaluate(() => { window._sudoClientId = null })
+  })
+
+  test('an abandoned start (a log with no exercises in it) is not a session: not done, not counted towards the plan', async ({ page }) => {
     // The runner can leave a log behind when a workout is started and abandoned (D3, 2026-09-07). It must not tick today off.
     const uid = await page.evaluate(() => currentUser.id)
     await install(page, ownTables('dash-c1', uid, { logs: [...defaultLogs('dash-c1'), log('dash-c1', 'Squat + Threshold', TODAY, { workout_log_exercises: [] })] }))
@@ -321,17 +360,18 @@ test.describe('the client and solo dashboard', () => {
     const r = await read(page)
     expect(r.hero.kind, 'still planned, not done').toBe('plan')
     expect(r.weekSub).toBe('3 of 4 sessions done')
-    expect(r.streak, 'the empty start is not a session: still 15, not 16').toContain('15 sessions in a row')
+    expect(r.streak, 'the empty start is not a session: still 11 of 12, not 12').toContain('11 of 12 planned so far')
+    expect(r.streak).toContain('this week 3 of 4')
   })
 
-  test('the streak breaks on a week that missed the plan - and nothing before the gap counts', async ({ page }) => {
+  test('a planned session left unlogged is just not counted: the plan\'s figure reads 10 of 12, it does not reset', async ({ page }) => {
     const uid = await page.evaluate(() => currentUser.id)
-    // Last week only 3 of 4 sessions: a planned session left unlogged breaks the run. The weeks before it were complete, but they are behind the miss.
+    // Last week only 3 of 4 sessions. Adherence is a running figure over the whole plan: the miss costs one session, and the weeks around it still count.
     await install(page, ownTables('dash-c1', uid, { logs: defaultLogs('dash-c1').filter(l => l.date !== addDays(MON, -7 + 5)) }))
     await render(page, 'renderClientDashboard')
     const r = await read(page)
-    expect(r.streak, 'only the three sessions logged since the miss').toContain('3 sessions in a row')
-    expect(r.streak).toContain('without missing a planned session')
+    expect(r.streak).toContain('10 of 12 planned so far')
+    await expect(page.locator('#dash-streak .dash-meter i')).toHaveAttribute('style', /width:\s*83%/)
   })
 
   // Found by the 2026-10-12 review: a plan that starts on a Wednesday showed its own Monday as a red miss and counted it in "x of y", while the streak ignored it.
@@ -344,7 +384,8 @@ test.describe('the client and solo dashboard', () => {
     const r = await read(page)
     expect(kinds(r), 'Monday is before the start: rest, not missed; Wed and Fri done; Saturday (today) planned').toEqual(['rest', 'rest', 'done', 'rest', 'done', 'plan', 'rest'])
     expect(r.weekSub, 'three planned sessions exist (Wed, Fri, Sat), two done').toBe('2 of 3 sessions done')
-    expect(r.streak).toContain('2 sessions in a row')
+    expect(r.streak, 'Wed, Fri and today\'s Saturday are due; the Monday before the start is not').toContain('2 of 3 planned so far')
+    expect(r.streak).toContain('Week 1 of 12 · this week 2 of 3')
   })
 
   test('every card goes where its job lives', async ({ page }) => {
@@ -403,16 +444,16 @@ test.describe('the client and solo dashboard', () => {
     expect(await page.evaluate(() => Object.keys(Chart.instances).length), 'repainting does not leave the old chart behind').toBe(1)
   })
 
-  test('a year of sessions is read in pages - the streak counts every session, not the newest 200 rows', async ({ page }) => {
+  test('a year of sessions is read in pages - the streak counts every week, not the newest 200 rows', async ({ page }) => {
     // No program: five sessions a week for the last 46 finished weeks = 230 rows, more than one response holds. A read capped at
-    // 200 would lose the oldest weeks and the streak would come up short.
+    // 200 would lose the oldest weeks and the streak would come up short (40 weeks, not 46).
     const uid = await page.evaluate(() => currentUser.id)
     const logs = []
     for (let w = 1; w <= 46; w++) for (let k = 0; k < 5; k++) logs.push(log('dash-c1', 'Freeform', addDays(MON, -7 * w + k)))
     await install(page, ownTables('dash-c1', uid, { program: false, logs }))
     await render(page, 'renderClientDashboard')
     const r = await read(page)
-    expect(r.streak, '46 finished weeks of five sessions: 230, more than the 200 one response holds').toContain('230 sessions in a row')
+    expect(r.streak, '46 finished weeks of five sessions: 230 rows, more than the 200 one response holds').toContain('46 weeks in a row')
     const reads = (await cappedApiCalls(page)).filter(c => c.table === 'workout_logs')
     expect(reads.length, 'more than one request').toBeGreaterThan(1)
     for (const c of reads) expect(c.desc, 'every page is scoped to this person and ordered by a unique key').toEqual(expect.arrayContaining(['eq(client_id)', 'order(id desc)']))

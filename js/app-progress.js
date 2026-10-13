@@ -3417,6 +3417,30 @@ async function renderSettings(el) {
         </div>
       </div>` : ''
 
+  // The weekly session target (2026-10-13): what the dashboard's Streak tile counts weeks against when no training plan governs the week. Not for a coach's own
+  // view (no tile there); a master account's Personal view is role 'solo' and gets it. The same profile row serves both views.
+  const targetNow = _dashWeeklyTarget(window._weeklyTarget)
+  const weeklyTargetCard = isCoach ? '' : `
+      <!-- Weekly target -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Weekly target</h2>
+        </div>
+        <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
+          <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0">How many sessions a week you aim for. When you are not on a training plan, your Streak counts the weeks in a row you hit it. On a plan, the Streak follows the plan instead.</p>
+          <div class="field">
+            <label class="field-label" for="settings-weekly-target">Sessions per week</label>
+            <select class="field-input" id="settings-weekly-target">
+              ${Array.from({ length: _DASH_TARGET_MAX }, (_, i) => i + _DASH_TARGET_MIN).map(n => `<option value="${n}"${n === targetNow ? ' selected' : ''}>${n}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <button class="btn-primary" style="font-size:var(--text-lg, 14px)" onclick="saveSettingsTarget()">Save target</button>
+            <span id="settings-target-msg" style="font-size:var(--text-base, 13px);margin-left:12px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+      </div>`
+
   el.innerHTML = `
     <div class="page-header">
       <div>
@@ -3486,6 +3510,8 @@ async function renderSettings(el) {
           </div>
         </div>
       </div>
+
+      ${weeklyTargetCard}
 
       <!-- Password -->
       <div class="card">
@@ -3752,6 +3778,22 @@ async function saveSettingsUnits() {
     return
   }
   if (msg) { msg.style.color = '#22c55e'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
+}
+
+async function saveSettingsTarget() {
+  const n = Number(document.getElementById('settings-weekly-target')?.value)
+  const msg = document.getElementById('settings-target-msg')
+  if (!Number.isInteger(n) || n < _DASH_TARGET_MIN || n > _DASH_TARGET_MAX) {
+    if (msg) { msg.style.color = 'var(--danger)'; msg.textContent = `Pick a number from ${_DASH_TARGET_MIN} to ${_DASH_TARGET_MAX}.` }
+    return
+  }
+  const error = await _saveWeeklyTarget(n)
+  if (error) {
+    log.error('saveSettingsTarget', 'update failed', error)
+    if (msg) { msg.style.color = 'var(--danger)'; msg.textContent = 'Save failed. Try again.' }
+    return
+  }
+  if (msg) { msg.style.color = 'var(--success)'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
 }
 
 async function saveSettingsPassword() {

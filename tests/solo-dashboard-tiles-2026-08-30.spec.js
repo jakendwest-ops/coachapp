@@ -36,7 +36,8 @@ test.describe('solo dashboard cards', () => {
         _dashWeightHtml([{ date: d(-1), weight_kg: 82.4 }, { date: d(-3), weight_kg: 82.8 }]),
         _dashCalendarHtml([{ date: d(1), kind: 'event', title: 'Massage', colour: 'var(--warning)' }], today),
         _dashGoalsHtml([{ id: 'g', title: 'Bench', target_date: d(20), start_value: 1, current_value: 2, target_value: 3, goal_milestones: [] }], today, false),
-        _dashTilesHtml({ sessions: 2, capped: false, onPlan: true }, { name: 'P', phase: 'Phase 1', week: 2, totalWeeks: 8, pct: 25 }, true),
+        // The streak tile while a plan governs the week (2026-10-13): adherence, not a link. With no plan it is the weekly target and opens Settings - tested below.
+        _dashTilesHtml({ mode: 'plan', done: 2, due: 3, pct: 67, week: 2, totalWeeks: 8, weekDone: 1, weekPlanned: 2 }, { name: 'P', phase: 'Phase 1', week: 2, totalWeeks: 8, pct: 25 }, true),
       ].join('')
       const box = document.createElement('div')
       box.innerHTML = html
@@ -64,6 +65,20 @@ test.describe('solo dashboard cards', () => {
     // 2026-09-09: the Weight card must NAME its Progress tab - _progressTab persists within an SPA session, so without this it
     // lands on whichever tab was last open.
     expect(r.visited[0][1], 'the weight card lands on Body Weight, not "wherever you were"').toBe('Body Weight')
+
+    // The weekly-target Streak tile (no plan) is tappable too, and goes to Settings, where the target is set - a page every role may reach.
+    const target = await page.evaluate(() => {
+      const box = document.createElement('div')
+      box.innerHTML = _dashTilesHtml({ mode: 'target', weeks: 2, capped: false, target: 3, weekDone: 1 }, null, true)
+      const visited = []
+      const realNav = window.navigate
+      window.navigate = (p) => visited.push(p)
+      try { box.querySelector('#dash-streak').click() } finally { window.navigate = realNav }
+      return { visited, streakIsTappable: box.querySelector('#dash-streak').classList.contains('dash-tap') }
+    })
+    expect(target.streakIsTappable).toBe(true)
+    expect(target.visited, 'one tap, one destination').toEqual(['settings'])
+    expect(solo).toContain('settings')
   })
 
   // ── 2. Real navigation, not just an attribute ──────────────────────────────────────────────────────────────────
@@ -238,7 +253,7 @@ test.describe('solo dashboard cards', () => {
       try { out.goals = _dashGoalsHtml([], today, false) } catch (e) { out.goalsErr = String(e) }
       try { out.goalsNull = _dashGoalsHtml(null, today, false) } catch (e) { out.goalsNullErr = String(e) }
       try { out.hero = _dashHeroHtml(day, ctx) } catch (e) { out.heroErr = String(e) }
-      try { out.tiles = _dashTilesHtml({ sessions: 0, capped: false, onPlan: false }, null, true) } catch (e) { out.tilesErr = String(e) }
+      try { out.tiles = _dashTilesHtml(_dashStreakModel({}, [], today), null, true) } catch (e) { out.tilesErr = String(e) }
       try { out.week = _dashWeekHtml(_dashWeekDays(today, {}, []), { done: 0, planned: 0 }, null) } catch (e) { out.weekErr = String(e) }
       try { out.progNull = JSON.stringify(_programWorkoutsByDate(null, null)) } catch (e) { out.progErr = String(e) }
       return out
@@ -250,6 +265,9 @@ test.describe('solo dashboard cards', () => {
     expect(r.weight, 'and so does an empty weight card').toContain('_dashOpenWeight()')
     expect(r.hero).toContain('Nothing planned')
     expect(r.tiles).toContain('None')
+    const streakText = r.tiles.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+    expect(streakText, 'the empty streak tile says what to aim for').toContain('0 weeks in a row Aim for 3 a week · this week 0 of 3')
+    expect(r.tiles, 'and prints no undefined or NaN (a tile fed the wrong model shape used to, with every test still green)').not.toMatch(/undefined|NaN/)
     // {} not null: callers iterate the result, and a null would move the failure into their loop.
     expect(r.progNull).toBe('{}')
   })
@@ -400,7 +418,11 @@ test.describe('solo dashboard cards', () => {
       while (start > 0 && !/^(async )?function /.test(lines[start])) start--
       const body = lines.slice(start, i).join('\n')
       const fn = (lines[start].match(/function ([_a-zA-Z0-9]+)/) || [])[1]
-      if (!body.includes('_destroyManagedCharts()') && !EXEMPT[fn]) {
+      // _pbDestroyCharts() (2026-10-13) is the SCOPED teardown: it destroys only the Personal Bests lift page's own two charts (#pb-hist-chart and #pb-e1rm-chart).
+      // renderLiftPage rebuilds only its own host, and a blanket destroy there would take out a chart an expanded Performance record below the list has open
+      // (tests/personal-bests-2026-10-13.spec.js, "closing a lift page destroys only its own charts"). It is accepted as the destroy - but it must be CALLED
+      // before the render, in the same function, exactly like the blanket one.
+      if (!body.includes('_destroyManagedCharts()') && !body.includes('_pbDestroyCharts()') && !EXEMPT[fn]) {
         callers.push(fn + ':' + (i + 1))
       }
     })

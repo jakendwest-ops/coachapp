@@ -574,6 +574,32 @@ async function _saveUnitPrefs(weight, jumpHeight, cardioDistance) {
   return error
 }
 
+// The weekly session target behind the dashboard's Streak tile when no plan governs the week (2026-10-13): a whole number of sessions from 1 to 14 on the
+// person's own profile row, next to the unit preferences, or null until they set one (the tile reads null as 3).
+// Read on its OWN, not in loadUserInfo's select: the column is added by a SQL step, and a select that names a column the table does not have fails the whole profile
+// read (role, units and all). So a failed read here - the column not added yet, or a blip - is the default, never an error the person sees.
+async function _loadWeeklyTarget() {
+  try {
+    const { data, error } = await db.from('profiles').select('weekly_session_target').eq('id', currentUser.id).maybeSingle()
+    if (error) { log.warn('loadUserInfo', 'weekly target unreadable - using the default', { code: error.code }); return null }
+    return data?.weekly_session_target ?? null
+  } catch (e) {
+    log.warn('loadUserInfo', 'weekly target lookup threw - using the default', { name: e?.name })
+    return null
+  }
+}
+
+// Saves the target and, on success only, updates the in-memory copy the dashboard reads. Returns an error object (or null), like _saveUnitPrefs above.
+// An UPDATE that matches no row - or one a row-level-security policy filters out - returns no error and zero rows, which would read as "Saved" while nothing was
+// stored and the number came back at the next login. So the written row is asked for back, and none is a failure (the same trap scripts/add-consent-2026-08-24.sql names).
+async function _saveWeeklyTarget(n) {
+  const { data, error } = await db.from('profiles').update({ weekly_session_target: n }).eq('id', currentUser.id).select('weekly_session_target')
+  if (error) return error
+  if (!data?.length) return { code: 'NO_ROW', message: 'no profile row was updated' }
+  window._weeklyTarget = n
+  return null
+}
+
 // ─── QUICK PREFERENCES — icon + popover (2026-08-08) ───────────────────────────
 // Jake, live: the units toggle (above) and the cardio-capture toggles (app-runner.js) both need to be
 // reachable "on the fly" from the builder and the runner, not just buried in Settings — via a small
@@ -1060,6 +1086,7 @@ async function showApp() {
 
 async function loadUserInfo() {
   log.info('loadUserInfo', 'fetching profile', { userId: currentUser.id })
+  const targetRead = _loadWeeklyTarget()   // started now and awaited below, so the extra read adds no round trip to login (it never rejects)
   const { data, error } = await db
     .from('profiles')
     .select('full_name, role, starter_seeded, solo_only, weight_unit, jump_height_unit, cardio_distance_unit')
@@ -1073,6 +1100,7 @@ async function loadUserInfo() {
     jumpHeight: data?.jump_height_unit || 'cm',
     cardioDistance: data?.cardio_distance_unit || 'km',
   }
+  window._weeklyTarget = error ? null : await targetRead
 
   // If profile has no role (invited client whose profile row may have been created without role),
   // check the clients table to determine correct role. Gated on `!error`: a FAILED fetch (network
