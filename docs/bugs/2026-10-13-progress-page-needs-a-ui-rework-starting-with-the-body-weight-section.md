@@ -42,3 +42,15 @@ Attached: My Progress > Body Weight with the "+ Log weight" form open (Date, Wei
 - **Step 0, the class fix:** `.form-label` / `.form-input` in `css/main.css` on the existing `.field-label` / `.field-input` tokens (one rule set, not a second family); a before/after look at the three modules' forms (the weight form, the plan create/edit and phase forms, and the `app-core` ones) at 480px; a spec that every element carrying either class has a computed border, padding and width.
 - **Step 1, a tappable prototype** (private Artifact, the app's tokens, his real-shaped example data) of: the Body Weight section (form, start/goal and cards, list), then Personal Bests, then Goals. His reaction before the real build.
 - **Step 2, the build** per his reactions, tab by tab, each with specs and a mutation check; the chart code is not touched.
+
+## Personal Bests (Jake, 2026-10-13, a second message and clickable questions)
+
+> page needs UI rework. you should be able to click into an exercise and see exercise/personal best data for that exercise
+
+Decisions:
+
+1. **Tap a lift** and it opens **its own full page with Back** (like opening a plan), not a sheet.
+2. The page shows **your best history** (every recorded best with its date, newest first, and a small chart of how it moved), **best sets by reps** (the heaviest weight actually lifted for 1, 3, 5, 8 and 10 reps, with the date, taken from logged sessions) and the **estimated 1RM trend** (what logged sets say the max is, over time). *Not selected: recent sessions.*
+3. **Editing moves onto that page** ("Update best"); the list becomes clean rows (name, best, date) with no number boxes and no "Save all". `client_1rms` stays append-only (each update is a new dated row, so the history is the list).
+
+Build notes (not yet checked in code): the numbers come from the shared exercise-stats engine behind the runner's Stats sheet and the Per-exercise cards (`_xsSessionMetrics`, `_xsRecords`, `js/app-progress.js`), so the page reuses it rather than adding a second set of rules; whether `_xsRecords` already yields best-by-rep-count is the first thing to read before the prototype. Add lift (a lift with no best yet) stays on the list.
