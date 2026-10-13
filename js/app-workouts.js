@@ -843,25 +843,7 @@ async function renderClientWorkoutsPage(el) {
                           ${multi ? `<span style="font-size:var(--text-base, 13px);font-weight:600">${escapeHtml(name)}</span>` : ''}
                           ${templateId ? `<button class="btn-primary" style="font-size:var(--text-md, 12px);padding:3px 10px;flex-shrink:0" onclick="startWorkoutRunner('${clientId}','${templateId}')">▶ Start</button>` : `<span style="font-size:var(--text-md, 12px);color:var(--text-muted)">Not set up</span>`}
                         </div>
-                        ${exs.length ? `
-                        <div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">
-                          ${exs.map(ex => {
-                            // Jake, 2026-07-22: name + set count alone is "not good UX or helpful to a
-                            // user who wants to look at their week ahead to see what the plan has in
-                            // store for them". Show the actual prescription, sets collapsed.
-                            const _exIsInterval = (ex.metric_type || ex.exercise_type) === 'interval'
-                            const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval, isUnilateral: _resolveMetricType(ex.metric_type, ex.exercise_type, ex.sets_json?.[0]) === 'unilateral' })
-                            const _setCount = _prescribedSetCount(ex.sets_json, _exIsInterval)
-                            return `
-                            <div style="padding:5px 0;border-bottom:1px solid var(--border)">
-                              <div style="display:flex;justify-content:space-between;gap:8px">
-                                <span style="font-size:var(--text-md, 12px);font-weight:600">${escapeHtml(ex.exercise_name)}</span>
-                                <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
-                              </div>
-                              ${presc ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
-                            </div>`
-                          }).join('')}
-                        </div>` : ''}
+                        ${exs.length ? _wkExerciseBlockHtml(exs) : ''}
                       </div>`
                     }).join('')}
                   </div>
@@ -4027,6 +4009,34 @@ let _runner = null
 
 // ─── The solo Workouts page (Jake, 2026-10-12; prototype https://claude.ai/artifact/2Qu78DKistXV61n1JhWStu; docs/bugs/2026-10-12-scope-creating-a-workout-on-the-fly-and-renaming-programs-to-training-plans.md)
 
+// The grey exercise block of a plan day: each exercise with its set count and prescription. Shared by the plan's day list (Jake, 2026-07-22: "show the actual
+// prescription, sets collapsed") and by Your workouts (2026-10-13: a tapped row expands in place, as a plan day does, instead of opening the slide-in drawer).
+// `exs` are template exercises, already sorted. A workout saved from a session may have no per-set prescription (no sets_json): its count then comes from `sets`,
+// for an interval exercise too (without a prescription _prescribedSetCount would say 1). A plan day's query does not select `sets`, so it is unchanged.
+function _wkExerciseBlockHtml(exs) {
+  if (!exs.length) return ''
+  return `<div style="padding:6px 8px;background:var(--surface-2);border-radius:6px">${exs.map(ex => {
+    const _exIsInterval = (ex.metric_type || ex.exercise_type) === 'interval'
+    const presc = _fmtSetsCollapsed(ex.sets_json, { isCardio: (ex.metric_type || ex.exercise_type) === 'cardio', isInterval: _exIsInterval, isUnilateral: _resolveMetricType(ex.metric_type, ex.exercise_type, ex.sets_json?.[0]) === 'unilateral' })
+    const _setCount = Number((Array.isArray(ex.sets_json) && ex.sets_json.length ? 0 : ex.sets) || _prescribedSetCount(ex.sets_json, _exIsInterval)) || 0
+    return `
+    <div style="padding:5px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <span style="font-size:var(--text-md, 12px);font-weight:600">${escapeHtml(ex.exercise_name)}</span>
+        <span style="font-size:var(--text-sm, 11px);color:var(--text-muted);flex-shrink:0">${_setCount} set${_setCount !== 1 ? 's' : ''}</span>
+      </div>
+      ${presc ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${escapeHtml(presc)}</div>` : ''}
+    </div>`
+  }).join('')}</div>`
+}
+
+// A Your workouts row opens and closes in place: the plan's own toggle shows or hides the panel and turns the chevron; this keeps aria-expanded true to it.
+function toggleYourWorkout(id) {
+  toggleClientPhase(`yw-${id}`)
+  const open = document.getElementById(`yw-${id}`)?.style.display !== 'none'
+  document.querySelector(`[aria-controls="yw-${id}"]`)?.setAttribute('aria-expanded', String(open))
+}
+
 const _wkStartHtml = clientId => `<div class="wk-start"><button type="button" class="btn-primary" data-start-empty onclick="startEmptyWorkout('${clientId}')">Start an empty workout</button><button type="button" class="btn-secondary" data-start-past onclick="showStartFromPast('${clientId}')">Start from a past session</button></div>`
 
 const _wkNoPlanHtml = hasPlan => hasPlan
@@ -4094,7 +4104,7 @@ guardReentry('startFromPastSession')      // a second tap on a row while the fir
 // done and how often. Read-only; no table of its own. A plan session's copy is "From a plan"; everything else is "Made by you".
 async function _yourWorkoutsHtml(clientId) {
   const [mineR, logsR] = await Promise.all([
-    db.from('workout_templates').select('id, name, workout_template_exercises(id)').eq('coach_id', currentUser.id).eq('is_personal', true).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('created_at', { ascending: false }).limit(100),
+    db.from('workout_templates').select('id, name, workout_template_exercises(id, exercise_name, exercise_type, metric_type, order_index, sets, sets_json)').eq('coach_id', currentUser.id).eq('is_personal', true).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).order('created_at', { ascending: false }).limit(100),
     _fetchAllRows(() => db.from('workout_logs').select('id, template_id, date', { count: 'exact' }).eq('client_id', clientId).not('template_id', 'is', null).order('date', { ascending: false }).order('id', { ascending: false }))
   ])
   const head = '<div class="wk-sec">Your workouts</div><p class="wk-sub">Workouts you have created and used.</p>'
@@ -4106,7 +4116,7 @@ async function _yourWorkoutsHtml(clientId) {
   const otherIds = Object.keys(used).filter(id => !mineIds.has(id)).slice(0, 50)
   let others = []
   if (otherIds.length) {
-    const r = await db.from('workout_templates').select('id, name, workout_template_exercises(id)').eq('coach_id', currentUser.id).in('id', otherIds)
+    const r = await db.from('workout_templates').select('id, name, workout_template_exercises(id, exercise_name, exercise_type, metric_type, order_index, sets, sets_json)').eq('coach_id', currentUser.id).in('id', otherIds)
     if (r.error) { log.error('_yourWorkoutsHtml', 'plan sessions fetch failed', r.error); return `${head}<p class="wk-sub" data-yw-error>Could not load your workouts. Check your connection and try again.</p>` }
     others = r.data || []
   }
@@ -4125,10 +4135,15 @@ async function _yourWorkoutsHtml(clientId) {
   const list = rows.map(({ t, src, u }) => {
     const n = (t.workout_template_exercises || []).length
     const meta = `${n} exercise${n !== 1 ? 's' : ''}${u ? ` · last done ${_dashFormatDate(u.last)} · done ${u.n} time${u.n !== 1 ? 's' : ''}` : ' · not done yet'}`
-    return `<div class="wk-row" data-your-workout>
-      <div class="wk-grow" onclick="openSessionDetail('${t.id}','${escapeAttr(t.name)}')"><span class="wk-name">${escapeHtml(t.name)}</span><span class="wk-meta">${meta}</span></div>
-      <span class="badge ${src === 'plan' ? 'badge-active' : 'badge-inactive'}" data-yw-src>${src === 'plan' ? 'From a plan' : 'Made by you'}</span>
-      <button type="button" class="btn-primary wk-go" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
+    const exs = [...(t.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
+    return `<div class="wk-item">
+      <div class="wk-row" data-your-workout>
+        <button type="button" class="wk-grow wk-toggle" data-yw-toggle aria-expanded="false" aria-controls="yw-${t.id}" onclick="toggleYourWorkout('${t.id}')"><span class="wk-name">${escapeHtml(t.name)}</span><span class="wk-meta">${meta}</span></button>
+        <svg class="wk-chev" id="yw-${t.id}-chevron" aria-hidden="true" onclick="toggleYourWorkout('${t.id}')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        <span class="badge ${src === 'plan' ? 'badge-active' : 'badge-inactive'}" data-yw-src>${src === 'plan' ? 'From a plan' : 'Made by you'}</span>
+        <button type="button" class="btn-primary wk-go" onclick="startWorkoutRunner('${clientId}','${t.id}')">▶ Start</button>
+      </div>
+      <div class="wk-detail" id="yw-${t.id}" data-yw-detail style="display:none">${exs.length ? _wkExerciseBlockHtml(exs) : '<p class="wk-sub">No exercises in this workout.</p>'}</div>
     </div>`
   }).join('')
   return `${head}<div class="wk-list">${list}</div>`

@@ -991,6 +991,12 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .wk-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-base); font-weight:700; }
 .wk-meta { font-size:var(--text-sm); color:var(--text-muted); }
 .wk-go { flex-shrink:0; min-height:40px; padding:0 14px; }
+/* Your workouts: a row is a card that expands in place (2026-10-13) */
+.wk-item { border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); overflow:hidden; }
+.wk-item .wk-row { border:0; border-radius:0; background:none; }
+.wk-toggle { align-items:stretch; min-width:0; padding:0; border:0; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.wk-chev { width:14px; height:14px; flex-shrink:0; color:var(--text-muted); transition:transform .2s; transform:rotate(0deg); cursor:pointer; }
+.wk-detail { padding:0 12px 12px; }
 .pgm-tl { display:flex; gap:3px; margin:14px 0 6px; }
 .pgm-seg { min-width:0; height:34px; border-radius:var(--radius-sm); background:var(--surface-2); color:var(--text-muted); font-size:var(--text-md); font-weight:800; display:flex; align-items:center; justify-content:center; }
 .pgm-seg.pct { background:var(--accent); color:var(--surface); }

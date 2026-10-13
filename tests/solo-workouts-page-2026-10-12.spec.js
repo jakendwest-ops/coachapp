@@ -154,7 +154,7 @@ test.describe('Solo: the Workouts page (2026-10-12)', () => {
       await expect(row).toContainText('last done')
 
       await page.evaluate(() => { window.startWorkoutRunner = (...a) => { window.__started = a } })
-      await row.locator('.wk-go').click()
+      await row.locator('.wk-go').click({ timeout: 10000 })
       expect(await page.evaluate(() => window.__started), 'Start launches this workout for this account').toEqual([fx.soloId, fx.id])
     } finally { gone = await cleanup(page, fx?.soloId || (await page.evaluate(() => window._soloClientId)), name) }
     expect(gone.logs).toBe(2)
@@ -271,6 +271,50 @@ test.describe('Solo: the Workouts page (2026-10-12)', () => {
     await renderInto(page, { noPlan: true, assignment: { id: '00000000-0000-4000-8000-000000000001', start_date: '2026-10-12', programs: { id: '00000000-0000-4000-8000-000000000002', name: 'Empty plan', program_phases: [] } } })
     await expect(page.locator('#wk-host [data-no-plan]')).toContainText('has no sessions set up yet')
     await expect(page.locator('#wk-host [data-no-plan]')).not.toContainText('No training plan is running')
+  })
+
+  // Jake, 2026-10-13: "clicking a workout shouldnt open the slider, it should open the workout as collapsible" (docs/bugs/2026-10-13-your-workouts-row-opens-the-slide-in-drawer-instead-of-expanding-in-place.md)
+  test('a Your workouts row expands in place to its exercises, opens no slide-in drawer, collapses again, and Start still launches it', async ({ page }) => {
+    test.setTimeout(120_000)
+    await soloView(page)
+    const name = `${TAG} expand ${Date.now()}`
+    let fx, gone
+    try {
+      fx = await makeWorkout(page, name, ['Bench Press', 'Row'])
+      await renderInto(page, { noPlan: true })
+      const item = page.locator('#wk-host .wk-item', { hasText: name })
+      const toggle = item.locator('[data-yw-toggle]')
+      const detail = item.locator('[data-yw-detail]')
+      await expect(detail, 'collapsed to start with').toBeHidden()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await page.evaluate(() => { window.__drawerOpened = 0; window.openSessionDetail = () => { window.__drawerOpened++ } })      // the drawer opens after a database read, so count calls rather than look for its panel
+      await toggle.click({ timeout: 10000 })
+      await expect(detail).toBeVisible()
+      await expect(detail).toContainText('Bench Press')
+      await expect(detail).toContainText('Row')
+      await expect(detail, 'the set count of a workout with no per-set prescription comes from its sets column').toContainText('3 sets')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(page.locator('#session-detail-panel'), 'no slide-in drawer').toHaveCount(0)
+      expect(await page.evaluate(() => window.__drawerOpened), 'and nothing asked for it').toBe(0)
+      await toggle.click()
+      await expect(detail).toBeHidden()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await page.evaluate(() => { window.startWorkoutRunner = (...a) => { window.__started = a } })
+      await item.locator('.wk-go').click({ timeout: 10000 })
+      expect(await page.evaluate(() => window.__started), 'the row\'s Start is not swallowed by the toggle').toEqual([fx.soloId, fx.id])
+      // the chevron is a second way to open the row
+      await item.locator('.wk-chev').click({ timeout: 10000 })
+      await expect(detail).toBeVisible()
+    } finally { gone = await cleanup(page, fx?.soloId || (await page.evaluate(() => window._soloClientId)), name) }
+    expect(gone.templates).toBe(1)
+    expect(gone.exercises, 'and its exercise rows').toBe(2)
+  })
+
+  // Jake, 2026-10-13: "change this to a dumbbell icon not a cup of coffee" (docs/bugs/2026-10-13-workouts-nav-icon-is-a-cup-of-coffee.md)
+  test('the Workouts nav item is a dumbbell, not the cup of coffee', async ({ page }) => {
+    await soloView(page)
+    await expect(page.locator('[data-page="workouts"] svg[data-icon="dumbbell"]').first()).toBeAttached()
+    await expect(page.locator('[data-page="workouts"] svg path[d^="M18 8h1a4"]'), 'the cup path is gone from the Workouts item').toHaveCount(0)
   })
 
   test('a coached client\'s Workouts page is unchanged: no start buttons, no Your workouts', async ({ page }) => {
