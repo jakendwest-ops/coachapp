@@ -54,3 +54,8 @@ Decisions:
 3. **Editing moves onto that page** ("Update best"); the list becomes clean rows (name, best, date) with no number boxes and no "Save all". `client_1rms` stays append-only (each update is a new dated row, so the history is the list).
 
 Build notes (not yet checked in code): the numbers come from the shared exercise-stats engine behind the runner's Stats sheet and the Per-exercise cards (`_xsSessionMetrics`, `_xsRecords`, `js/app-progress.js`), so the page reuses it rather than adding a second set of rules; whether `_xsRecords` already yields best-by-rep-count is the first thing to read before the prototype. Add lift (a lift with no best yet) stays on the list.
+
+## Progress (2026-10-13)
+
+- **Step 0 done:** `.form-label` / `.form-input` now share the `.field-*` rules (selector lists in `css/main.css`). Test: `tests/form-classes-styled-2026-10-13.spec.js` (3; both aliases broken on purpose and caught). Checked on the weight form and the plan modal at 480px.
+- **Step 1 prototype published** (private): https://claude.ai/artifact/AvgWLiWo4ogERWiRzJJomm . Body Weight (a goal card instead of the start/goal line and three cards; a log sheet with a stepper, the date, and body fat / resting HR / note folded away; the list grouped by month with the change since the last entry) and Personal Bests (clean rows, a lift page with best history, best sets by reps and estimated 1RM, and an Update best sheet). Goals is not drawn: it needs Jake's notes. Awaiting his reaction before Step 2.

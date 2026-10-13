@@ -192,14 +192,18 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 /* ─── Fields ─────────────────────────────────────────────────────────────────── */
 .field { margin-bottom: 16px; }
 
-.field-label {
+/* .form-label / .form-input are the same two rules under the names the weight, plan, phase and personal-best forms were written with (they had no CSS at all, so every
+   one of those inputs was an unstyled browser box: Jake, 2026-10-13). One rule set, not a second family. */
+.field-label,
+.form-label {
   display: block;
   font-weight: 500;
   margin-bottom: 6px;
   font-size: 13px;
 }
 
-.field-input {
+.field-input,
+.form-input {
   width: 100%;
   padding: 10px 12px;
   border: 1.5px solid var(--border);
@@ -209,12 +213,14 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   outline: none;
 }
 
-.field-input:focus {
+.field-input:focus,
+.form-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
 }
 
-.field-input::placeholder { color: #c4c9d4; }
+.field-input::placeholder,
+.form-input::placeholder { color: #c4c9d4; }
 
 .field-hint {
   font-size: 12px;
