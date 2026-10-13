@@ -12,7 +12,7 @@ const { loginAsPT } = require('./helpers')
 test.use({ timezoneId: 'Europe/London' })
 
 const row = (date, kg, extra = {}) => ({ date, weight_kg: kg, body_fat_pct: null, resting_hr: null, ...extra })
-// Oldest first, as the page asks for them: 24 Jun 109.2 ... 12 Oct 110.3 (8 entries: three months and a half)
+// Oldest first, as the page asks for them: 24 Jun 109.2 ... 12 Oct 110.3 (9 entries: three months and a half)
 const LOGS = [row('2026-06-24', 109.2), row('2026-07-15', 108.4), row('2026-08-10', 107.4), row('2026-08-25', 106.8), row('2026-09-03', 107.3), row('2026-09-05', 105.2), row('2026-09-15', 108.0), row('2026-10-06', 109.7), row('2026-10-12', 110.3, { body_fat_pct: 19.5 })]
 
 async function soloView(page) {
@@ -49,7 +49,8 @@ test.describe('Body Weight: the goal card, the log sheet and the list (2026-10-1
     await expect(host(page).locator('.pw-legend')).toContainText('10.3 kg to go')
     await expect(host(page).locator('.pw-legend')).toContainText('Goal 100 kg')
     // the three old tiles are gone
-    await expect(host(page).getByText('STARTING', { exact: true })).toHaveCount(0)
+    await expect(host(page).getByText('Starting', { exact: true }), 'the Starting / Current / Change tiles').toHaveCount(0)
+    await expect(host(page).getByText('Change', { exact: true })).toHaveCount(0)
     // "Edit start and goal" reveals the editor and goes away itself
     await expect(host(page).locator('#wg-editor')).toBeHidden()
     await host(page).getByRole('button', { name: 'Edit start and goal' }).click()
@@ -150,6 +151,7 @@ test.describe('Body Weight: the goal card, the log sheet and the list (2026-10-1
       const real = db.from
       db.from = t => t === 'weight_logs' ? { insert: async row => { payload = row; return { error: null } } } : real(t)
       window.renderProgressWeight = async () => {}      // the save repaints the page; not under test
+      window._renderOwnDashboard = async () => {}      // a scratch host has no #progress-tab-content, so the save would repaint the dashboard instead
       await saveClientWeight('cid')
       return payload
     })
@@ -172,6 +174,45 @@ test.describe('Body Weight: the goal card, the log sheet and the list (2026-10-1
       return payload
     })
     expect(saved.weight_kg).toBeCloseTo(220 / 2.20462, 3)
+  })
+
+  test('both goals set and nothing logged yet: the goals editor is open, not hidden behind a button that is not there', async ({ page }) => {
+    await soloView(page)
+    await show(page, { logs: [] })      // start 114, goal 100
+    await expect(host(page).locator('#wg-starting'), 'the goal fields are on the page, not folded behind a button that does not exist yet').toBeVisible()
+    await expect(host(page).locator('#wg-starting')).toHaveValue('114')
+    await expect(host(page).locator('#wg-goal')).toHaveValue('100')
+  })
+
+  test('a change under a tenth is "no change", never "0.0 kg", and the big number is rounded like the rest', async ({ page }) => {
+    await soloView(page)
+    await show(page, { logs: [row('2026-09-01', 100), row('2026-10-01', 100.04)], start: 100, goal: 90 })
+    await expect(host(page).locator('#pw-goalcard .pw-pill')).toHaveText('No change since you started')
+    await expect(host(page).locator('.pw-item .pw-pill'), 'no 0.0 kg pill on the list either').toHaveCount(0)
+    await show(page, { logs: [row('2026-10-01', 82.333)], start: 85, goal: 80 })
+    await expect(host(page).locator('.pw-big')).toHaveText('82.3 kg')
+  })
+
+  test('a weight outside 20 to 300 kg is refused with a message, and nothing is written', async ({ page }) => {
+    await soloView(page)
+    await show(page)
+    await host(page).getByRole('button', { name: '+ Log weight' }).click()
+    const r = await page.evaluate(async () => {
+      window._verifyClientAccess = async () => true
+      let inserted = 0
+      const real = db.from
+      db.from = t => t === 'weight_logs' ? { insert: async () => { inserted++; return { error: null } } } : real(t)
+      const out = {}
+      for (const v of ['-5', '1000000000', '19']) {
+        document.getElementById('cwf-weight').value = v
+        await saveClientWeight('cid')
+        out[v] = document.getElementById('cwf-error').textContent
+      }
+      out.inserted = inserted
+      return out
+    })
+    for (const v of ['-5', '1000000000', '19']) expect(r[v], `${v} is refused`).toBe('Enter a weight between 20 kg and 300 kg.')
+    expect(r.inserted).toBe(0)
   })
 
   test('with no entries yet the page says so, and the log button and sheet are still there', async ({ page }) => {

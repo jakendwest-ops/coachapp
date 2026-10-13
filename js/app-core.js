@@ -507,7 +507,7 @@ function weightFromInput(el) {
   const shown = el.dataset ? el.dataset.shown : undefined
   const kg = el.dataset ? el.dataset.kg : undefined
   // Compared NUMERICALLY so "200" and "200.0" are the same untouched field, matching how
-  // saveOneRMGrid already compares its own data-orig.
+  // the 1RM grid (removed 2026-10-13) compared its own data-orig the same way.
   if (shown !== undefined && shown !== '' && kg !== undefined && kg !== '') {
     const shownNum = parseFloat(shown)
     const rawNum = parseFloat(raw)

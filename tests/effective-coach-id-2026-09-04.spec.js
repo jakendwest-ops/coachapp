@@ -4,7 +4,7 @@
 // return comes back as 0 rows, so `data` is null — and that tail turned the refusal into the current
 // user's own id, indistinguishable from a genuine solo record whose coach_id is legitimately NULL.
 //
-// It matters because one caller writes. `saveOneRMGrid` hands this value to `_resolveExerciseIdForSave`,
+// It matters because one caller writes. `save1RM` (for a Big 5 lift picked by name; it was saveOneRMGrid until 2026-10-13) hands this value to `_resolveExerciseIdForSave`,
 // which INSERTs into `exercises` — so a foreign client's lift name could become a permanent row in the
 // current user's own exercise library.
 //

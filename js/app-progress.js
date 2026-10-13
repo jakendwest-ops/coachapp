@@ -27,15 +27,14 @@ const _pwFmtShort = ymd => { const p = _pwDay(ymd); return `${p.d} ${_PW_MONTHS[
 
 // Refresh whichever container is actually showing the 1RMs list — the client/solo 1RMs tab
 // (pb-1rms-section) or the PT-facing client-profile 1RMs tab (tab-content). Was three byte-identical
-// copies of these three lines in saveBig5OneRMs, save1RM and delete1RM; a fourth was about to be
-// added for the grid save, so it is hoisted instead.
+// copies of these three lines in saveBig5OneRMs, save1RM and delete1RM, so it is hoisted.
 function _refresh1RMs(clientId) {
   const el = document.getElementById('pb-1rms-section') || document.getElementById('tab-content')
   // Null-guarded because this runs AFTER the write has already succeeded. Without it, a caller on a
   // surface that hosts neither container throws on el.innerHTML and the exception surfaces as a
   // failed save — when the data is safely in Postgres and only the redraw had nowhere to go.
   if (!el) return Promise.resolve()
-  return window._pbOpenLift ? renderLiftPage() : renderClient1RMs(clientId, el)      // an open lift page repaints itself: that is what the person is looking at
+  return window._pbOpenLift?.clientId === clientId ? renderLiftPage() : renderClient1RMs(clientId, el)      // an open lift page repaints itself, but only for a write to ITS client
 }
 
 // Same shape as _refresh1RMs just above, for renderClientPerformance's own two write paths
@@ -60,15 +59,26 @@ let _pbLiftToken = 0
 const _pbN = kg => String(parseFloat(Number(weightToPref(kg)).toFixed(1)))
 const _pbW = kg => `${_pbN(kg)} ${window._unitPrefs.weight}`
 const _pbHost = () => document.getElementById('pb-1rms-section') || document.getElementById('tab-content')
+// The lift page's own two charts, and nothing else: _destroyManagedCharts would also destroy a chart that an expanded Performance record below the list has open.
+function _pbDestroyCharts() {
+  for (const id of ['pb-hist-chart', 'pb-e1rm-chart']) {
+    const c = Chart.getChart(id)
+    if (c) { c.destroy(); _activeCharts = _activeCharts.filter(x => x !== c) }
+  }
+}
+// The "Log a PB / performance record" section sits under the 1RM list on the client / solo page. A lift's page is a page of its own: it is hidden while one is open (and so cannot tear down the lift's charts).
+const _pbShowPerformance = show => { const p = document.getElementById('pb-performance-section'); if (p) p.hidden = !show }
 // The one error panel for both pages (a failed read must never look like an empty list).
 const _pbError = (title, lead = '') => `${lead}<div class="empty-state"><div class="empty-title">${title}</div><div class="empty-text">Check your connection and try again.</div></div>`
 
 async function renderClient1RMs(clientId, el) {
   window._pbOpenLift = null
   _pbLiftToken++      // a lift page still loading must not paint over the list
-  _destroyManagedCharts()
+  _pbDestroyCharts()
+  _pbShowPerformance(true)
   el.innerHTML = '<div class="loading-state">Loading 1RMs…</div>'
-  const { data: rows, error } = await db.from('client_1rms').select('*').eq('client_id', clientId).order('recorded_at', { ascending: false })
+  // Paged: the API caps a response at 200 rows without saying so, and past that whole lifts would drop off the list. `id` is the unique tie-break the paging needs.
+  const { data: rows, error } = await _fetchAllRows(() => db.from('client_1rms').select('*', { count: 'exact' }).eq('client_id', clientId).order('recorded_at', { ascending: false }).order('id', { ascending: false }))
   if (!el.isConnected || window._pbOpenLift) return    // superseded by a newer tab, or by opening a lift
   if (error) {
     el.innerHTML = _pbError("Couldn't load your 1RMs")
@@ -77,7 +87,7 @@ async function renderClient1RMs(clientId, el) {
 
   // Group by exercise name, newest first within each group. Recorded lifts first, then any Big 5 still missing, so the quick-start prompt works for a brand-new account AND keeps
   // nudging an established one about a main lift it has never recorded.
-  const byEx = {}
+  const byEx = Object.create(null)      // keyed by a typed name: no inherited keys ("constructor" is a lift name too)
   ;(rows || []).forEach(r => { (byEx[r.exercise_name] ||= []).push(r) })
   const lifts = [
     ...Object.keys(byEx).map(name => ({ name, entries: byEx[name] })),
@@ -102,7 +112,7 @@ async function renderClient1RMs(clientId, el) {
       <h3 class="pw-title">${el.id === 'pb-1rms-section' ? 'My Personal Bests' : 'Personal Bests'}</h3>
       <button class="btn-primary pw-log-btn" onclick="showAdd1RMModal('${clientId}')">+ Add lift</button>
     </div>
-    <div class="pb-note">Tap a lift for its history, your best sets by reps and your estimated 1RM.</div>
+    <div class="pb-note">Tap a lift for its history, best sets by reps and estimated 1RM.</div>
     ${recorded.length ? `<div class="pw-list">${recorded.map(x => rowHtml(x.l, x.i)).join('')}</div>` : ''}
     ${missing.length ? `<div class="pw-group">Not recorded yet</div><div class="pw-list">${missing.map(x => rowHtml(x.l, x.i)).join('')}</div>` : ''}
   `
@@ -111,7 +121,7 @@ async function renderClient1RMs(clientId, el) {
 // "Record best" on a lift with no best yet: the Add 1RM sheet for that lift.
 function recordBest(clientId, i) {
   const l = window._pbLifts?.[i]
-  if (l) _showOneRMDetailModal(clientId, { id: l.exerciseId, name: l.name })
+  if (l) _showOneRMDetailModal(clientId, { id: l.exerciseId, name: l.name }, { fixed: true })
 }
 
 async function openLiftPage(clientId, i) {
@@ -130,7 +140,7 @@ function closeLiftPage(clientId) {
 // "Update best" on a lift's page: the Add 1RM sheet for it. The save appends a dated row and _refresh1RMs repaints THIS page.
 function updateBest() {
   const o = window._pbOpenLift
-  if (o) _showOneRMDetailModal(o.clientId, { id: o.exerciseId, name: o.name })
+  if (o) _showOneRMDetailModal(o.clientId, { id: o.exerciseId, name: o.name }, { fixed: true })
 }
 
 // The heaviest set logged for AT LEAST each rep count (a set of 6 counts for the 5), with its date. Warm-ups (_countableSets) and sets with no weight (bodyweight) are ignored; an exact tie on weight goes
@@ -164,10 +174,11 @@ async function renderLiftPage() {
   if (!open || !el) return
   const { clientId, name } = open
   const token = ++_pbLiftToken
-  _destroyManagedCharts()
+  _pbDestroyCharts()
+  _pbShowPerformance(false)
   el.innerHTML = '<div class="loading-state">Loading this lift…</div>'
   const [bestsR, hist] = await Promise.all([
-    db.from('client_1rms').select('*').eq('client_id', clientId).eq('exercise_name', name).order('recorded_at', { ascending: false }),
+    _fetchAllRows(() => db.from('client_1rms').select('*', { count: 'exact' }).eq('client_id', clientId).eq('exercise_name', name).order('recorded_at', { ascending: false }).order('id', { ascending: false })),
     // The logged-sessions read is allowed to fail on its own: the best history above it is a different table and still stands.
     _fetchExerciseSessions(clientId, name).then(sessions => ({ sessions, error: null }), error => ({ sessions: null, error }))
   ])
@@ -194,19 +205,20 @@ async function renderLiftPage() {
 
   let repsCard, e1Card
   if (hist.error) {
-    const msg = '<div class="pb-note">Could not load your logged sessions. Check your connection and try again.</div>'
+    const msg = '<div class="pb-note">Could not load the logged sessions. Check your connection and try again.</div>'
     repsCard = `<div class="pw-card">${msg}</div>`
     e1Card = `<div class="pw-card">${msg}</div>`
   } else {
     const reps = _bestSetsByReps(hist.sessions, [1, 3, 5, 8, 10]).filter(Boolean)
     repsCard = reps.length
-      ? `<div class="pw-card pb-card"><div class="pw-list">${reps.map(r => `<div class="pw-item"><span class="pw-item-date"><strong>${r.reps}</strong> ${r.reps === 1 ? 'rep' : 'reps'}</span><strong class="pw-item-w">${_pbW(r.weightKg)}</strong><span class="pw-item-bf">${_pwFmtDate(r.date)}</span></div>`).join('')}</div></div><div class="pb-note">The heaviest set you logged for at least that many reps.</div>`
-      : `<div class="pw-card"><div class="pb-note">No weighted sets logged for this lift yet. Log it in a workout and your best sets appear here.</div></div>`
+      ? `<div class="pw-card pb-card"><div class="pw-list">${reps.map(r => `<div class="pw-item"><span class="pw-item-date"><strong>${r.reps}</strong> ${r.reps === 1 ? 'rep' : 'reps'}</span><strong class="pw-item-w">${_pbW(r.weightKg)}</strong><span class="pw-item-bf">${_pwFmtDate(r.date)}</span></div>`).join('')}</div></div><div class="pb-note">The heaviest set logged for at least that many reps.</div>`
+      : `<div class="pw-card"><div class="pb-note">No weighted sets logged under this exact name yet. Log it in a workout and the best sets appear here.</div></div>`
     const pts = _pbE1rmPoints(hist.sessions)
     if (pts.length) {
       const est = pts[pts.length - 1].kg, rec = latest ? parseFloat(latest.one_rm_kg) : null
-      const cmp = rec == null ? '' : est > rec ? `Your logged sets point to ${_pbW(est - rec)} above your recorded best.` : `Your recorded best is ${_pbW(rec - est)} above what your logged sets estimate.`
-      e1Card = `<div class="pw-card pb-card"><div class="pw-card-row"><div><div class="pw-big pb-e1">${_pbN(est)} <span class="pw-big-unit">${unit}</span></div><div class="pb-note" style="margin:2px 0 0">from your latest logged sets</div></div></div><div class="pb-chart"><canvas id="pb-e1rm-chart"></canvas></div>${cmp ? `<div class="pb-note" style="margin:0">${cmp}</div>` : ''}</div>`
+      const gap = rec == null ? 0 : parseFloat(Number(weightToPref(Math.abs(est - rec))).toFixed(1))      // what is read: under a tenth is "agrees"
+      const cmp = rec == null ? '' : gap === 0 ? 'Logged sets agree with the recorded best.' : est > rec ? `Logged sets point to ${_pbW(est - rec)} above the recorded best.` : `The recorded best is ${_pbW(rec - est)} above what logged sets estimate.`
+      e1Card = `<div class="pw-card pb-card"><div class="pw-card-row"><div><div class="pw-big pb-e1">${_pbN(est)} <span class="pw-big-unit">${unit}</span></div><div class="pb-note" style="margin:2px 0 0">from the latest logged sets</div></div></div><div class="pb-chart"><canvas id="pb-e1rm-chart"></canvas></div>${cmp ? `<div class="pb-note" style="margin:0">${cmp}</div>` : ''}</div>`
     } else {
       e1Card = `<div class="pw-card"><div class="pb-note">Nothing to estimate from yet.</div></div>`
     }
@@ -247,7 +259,7 @@ function showAdd1RMModal(clientId, prefillExercise = '', prefillExerciseId = nul
 // Weight/date/Epley entry screen — shown once an exercise has been picked (or was already
 // known, e.g. the "+ Update" button on an existing 1RM row).
 function _showOneRMDetailModal(clientId, picked, opts = {}) {
-  const { existingId = null, weight = '', date = _ymdLocal(new Date()) } = opts
+  const { existingId = null, weight = '', date = _ymdLocal(new Date()), fixed = false } = opts
   const existing = document.getElementById('modal-1rm')
   if (existing) existing.remove()
   window._oneRMDetailPicked = picked
@@ -264,7 +276,7 @@ function _showOneRMDetailModal(clientId, picked, opts = {}) {
         <label class="field-label">Exercise</label>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm, 8px);background:var(--surface-2)">
           <span style="font-size:var(--legacy-text-15, 15px);font-weight:700">${escapeHtml(picked.name)}</span>
-          <button type="button" class="btn-secondary" style="font-size:var(--text-md, 12px);padding:5px 12px;flex-shrink:0" onclick="_reopenExercisePickerFor1RM('${clientId}'${existingId ? `,'${existingId}'` : ',null'})">Change</button>
+          ${fixed ? '' : `<button type="button" class="btn-secondary" style="font-size:var(--text-md, 12px);padding:5px 12px;flex-shrink:0" onclick="_reopenExercisePickerFor1RM('${clientId}'${existingId ? `,'${existingId}'` : ',null'})">Change</button>`}
         </div>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:14px">
@@ -377,9 +389,10 @@ async function save1RM(clientId, existingId = null) {
     ;({ error } = await dbq('save1RM:insert', db.from('client_1rms').insert(row)))
   }
   if (error) { errEl.textContent = 'Save failed — try again'; return }
-  document.getElementById('modal-1rm').remove()
+  document.getElementById('modal-1rm')?.remove()
   _refresh1RMs(clientId)
 }
+guardReentry('save1RM')   // a double tap inserted two rows (and, for a Big 5 lift, could create the library exercise twice); see tests/reentry-guard-2026-08-28.spec.js
 
 async function delete1RM(id, clientId) {
   if (!(await confirmDialog('Delete this 1RM?', { title: 'Delete 1RM?', confirmLabel: 'Delete', danger: true }))) return
@@ -1349,6 +1362,7 @@ db.auth.onAuthStateChange((event, session) => {
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 
 async function renderProgress(el) {
+  window._pbOpenLift = null      // a lift page left open by a previous visit must not decide what a later save repaints
   // Destroy any charts left over from whichever Performance sub-view was active before this
   // top-level tab switch -- the per-render destroy calls inside _renderPerfExerciseList/
   // renderProgressPerSession only guard re-renders WITHIN the same sub-view (a keystroke, a range
@@ -1761,9 +1775,10 @@ function _stepWeightInput(btn, delta) {
 // green, away from it grey; with no goal the change is just grey. cur / start are kg numbers.
 function _weightGoalCardHtml(cur, start, goal, hasBothGoals) {
   const change = cur - start
-  const toward = hasBothGoals && change !== 0 && Math.sign(change) === Math.sign(goal - start)
+  const shownChange = parseFloat(Number(weightToPref(Math.abs(change))).toFixed(1))      // what is read: under a tenth is "no change", never "0.0 kg"
+  const toward = hasBothGoals && shownChange !== 0 && Math.sign(change) === Math.sign(goal - start)
   const unit = escapeHtml(window._unitPrefs.weight)
-  const since = change === 0
+  const since = shownChange === 0
     ? 'No change since you started'
     : `${change < 0 ? '▼' : '▲'} ${fmtWeight(Math.abs(change), { spaced: true, decimals: 1 })} since you started`
   let bar = ''
@@ -1774,7 +1789,7 @@ function _weightGoalCardHtml(cur, start, goal, hasBothGoals) {
       <div class="pw-legend"><span>Start ${fmtWeight(start, { spaced: true })}</span><strong>${reached ? 'Goal reached' : fmtWeight(Math.abs(cur - goal), { spaced: true, decimals: 1 }) + ' to go'}</strong><span>Goal ${fmtWeight(goal, { spaced: true })}</span></div>`
   }
   return `<div class="pw-card" id="pw-goalcard">
-      <div class="pw-card-row"><div><div class="pw-label">Current</div><div class="pw-big">${weightToPref(cur)} <span class="pw-big-unit">${unit}</span></div></div><span class="pw-pill ${toward ? 'is-good' : ''}">${since}</span></div>
+      <div class="pw-card-row"><div><div class="pw-label">Current</div><div class="pw-big">${_pbN(cur)} <span class="pw-big-unit">${unit}</span></div></div><span class="pw-pill ${toward ? 'is-good' : ''}">${since}</span></div>
       ${bar}
       ${hasBothGoals ? `<button type="button" class="pw-link" onclick="document.getElementById('wg-editor').style.display='block';this.hidden=true">Edit start and goal</button>` : ''}
     </div>`
@@ -1791,9 +1806,10 @@ function _weightListHtml(logs, goalDir = 0) {
     const d = prev ? parseFloat(l.weight_kg) - parseFloat(prev.weight_kg) : null
     const month = _pwFmtMonth(l.date)
     if (!groups.length || groups[groups.length - 1].month !== month) groups.push({ month, rows: [], from: i })
-    const delta = d === null || d === 0 ? '' : `<span class="pw-pill ${goalDir !== 0 && Math.sign(d) === goalDir ? 'is-good' : ''}">${d < 0 ? '▼' : '▲'} ${fmtWeight(Math.abs(d), { spaced: true, decimals: 1 })}</span>`
+    const shownDelta = d === null ? 0 : parseFloat(Number(weightToPref(Math.abs(d))).toFixed(1))
+    const delta = shownDelta === 0 ? '' : `<span class="pw-pill ${goalDir !== 0 && Math.sign(d) === goalDir ? 'is-good' : ''}">${d < 0 ? '▼' : '▲'} ${fmtWeight(Math.abs(d), { spaced: true, decimals: 1 })}</span>`
     const bf = l.body_fat_pct ? `<span class="pw-item-bf">${escapeHtml(String(l.body_fat_pct))}% BF</span>` : ''
-    groups[groups.length - 1].rows.push(`<div class="pw-item"${i >= FIRST ? ' data-pw-more hidden' : ''}><span class="pw-item-date">${_pwFmtDate(l.date)}</span>${delta}<strong class="pw-item-w">${fmtWeight(l.weight_kg, { spaced: true })}</strong>${bf}</div>`)
+    groups[groups.length - 1].rows.push(`<div class="pw-item"${i >= FIRST ? ' data-pw-more hidden' : ''}><span class="pw-item-date">${_pwFmtDate(l.date)}</span>${delta}<strong class="pw-item-w">${_pbW(parseFloat(l.weight_kg))}</strong>${bf}</div>`)
   })
   const body = groups.map(g => `<div class="pw-group"${g.from >= FIRST ? ' data-pw-more hidden' : ''}>${g.month}</div><div class="pw-list"${g.from >= FIRST ? ' data-pw-more hidden' : ''}>${g.rows.join('')}</div>`).join('')
   const more = newest.length > FIRST
@@ -1858,7 +1874,7 @@ async function renderProgressWeight(el) {
       <p id="wg-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
       <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>`
   const hasBothGoals = startingWeightKg != null && goalWeightKg != null
-  const goalsCard = hasBothGoals
+  const goalsCard = hasBothGoals && logs?.length
     ? `<div id="wg-editor" class="pw-card" style="display:none">
          <div class="pw-card-title">Weight goals</div>
          ${goalsFields}
@@ -1918,7 +1934,7 @@ async function renderProgressWeight(el) {
     label: 'Body fat %', data: dispBf, colour: _METRIC_COLORS.intensity, axis: 'y2', spanGaps: true,
   })
   _renderMetricChart('pw-chart', {
-    labels: logs.map(l => new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+    labels: logs.map(l => _pwFmtShort(l.date)),
     series: pwSeries,
     yRange,
     height: true,   // the canvas sits in a fixed-height box, so aspect ratio must not drive it
@@ -1929,7 +1945,7 @@ async function renderProgressWeight(el) {
   const hrLogs = logs.filter(l => l.resting_hr != null)
   if (hrLogs.length >= 2 && document.getElementById('resting-hr-chart')) {
     _renderMetricChart('resting-hr-chart', {
-      labels: hrLogs.map(l => new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+      labels: hrLogs.map(l => _pwFmtShort(l.date)),
       series: [{ label: 'Resting HR', data: hrLogs.map(l => l.resting_hr), colour: _METRIC_COLORS.avgHr, fill: true }],
       height: true,
       legend: false,

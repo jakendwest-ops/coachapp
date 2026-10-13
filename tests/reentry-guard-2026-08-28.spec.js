@@ -36,7 +36,7 @@ const FROZEN_UNGUARDED = {
   _cloneTemplateForClient:            'internal — runs inside the clone/periodization callers',
   _cloneProgramForClient:             'no app caller since 2026-09-27 (the assign buttons use assign_program()); kept only for the specs that call it',
   _saveMissingOneRMEntries:           'internal — runs inside the assign flow after it has succeeded',
-  _resolveExerciseIdForSave:          'internal — runs inside saveOneRMGrid / the Big-5 quick form',
+  _resolveExerciseIdForSave:          'internal — runs inside save1RM (a Big 5 lift picked by name), which is re-entry guarded',
   _propagateExerciseChangeToTemplates:'internal — runs inside _applyToAllSessions after a guarded save',
   _cloneSharedMasterTemplate:         'internal — runs inside _resolveEditableTemplateId',
   _seedStarterContent:                'internal — runs once from loadUserInfo on first login, no button',
@@ -61,7 +61,6 @@ const FROZEN_UNGUARDED = {
   saveNewClient:                      'one row, lands in the client list, deletable',
   saveProgram:                        'one row, lands in the programs list, deletable',
   savePhase:                          'one row, appears in the builder immediately, deletable',
-  save1RM:                            'one row, client_1rms is append-only by design, deletable',
   savePerformanceLog:                 'one row, appears in the log list, deletable',
   saveWeightLog:                      'one row, appears in the weight history, deletable',
 

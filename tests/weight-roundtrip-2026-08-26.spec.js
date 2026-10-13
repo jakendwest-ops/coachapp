@@ -11,8 +11,8 @@
 // is why reading the code twice found nothing: the corruption is invisible from the UI and bounded
 // (~0.023 kg), so it never looks like a bug — it looks like data.
 //
-// Fixed with ONE shared helper, weightFromInput (app-core.js), used at all five prefilled sites:
-//   orm-${i} (1RM grid) · ls-weight-${bi}-${si} · ls-orm-${bi} · wr-edit-weight · ts-weight-${i}
+// Fixed with ONE shared helper, weightFromInput (app-core.js), used at the prefilled sites:
+//   cwf-weight (the log sheet, 2026-10-13; orm-${i} of the 1RM grid until then) · ls-weight-${bi}-${si} · ls-orm-${bi} · wr-edit-weight · ts-weight-${i}
 // Sites whose inputs are placeholder-only (1rm-weight, rorm-*, orm-est*) are deliberately untouched:
 // with no prefill there is no round trip to lose.
 const { test, expect } = require('./fixtures')

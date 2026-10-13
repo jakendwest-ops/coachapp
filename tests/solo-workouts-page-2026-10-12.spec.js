@@ -21,6 +21,8 @@ async function soloView(page) {
   await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
   await page.goto('/')
   await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+  // The bottom bar and the floating PT / Personal switch are fixed over the foot of the page and can sit over what a test clicks (it intercepted a row's Start): this spec is about the page's content, not the chrome.
+  await page.addStyleTag({ content: '#mobile-view-switcher, #mobile-view-switcher.mvs-on, .bottom-nav { display: none !important }' })
 }
 
 // Renders the Workouts page into a scratch host (the real renderer, the real reads). noPlan stubs only the "which plan am I on" read, so the no-plan layout can be seen

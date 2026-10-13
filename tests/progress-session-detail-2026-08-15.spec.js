@@ -159,7 +159,7 @@ test.describe('Personal Bests: Update best takes a date and an estimate in its s
 
         document.getElementById('1rm-date').value = '2026-05-20'
         await save1RM(c.id)
-        await new Promise(r2 => setTimeout(r2, 1200))
+        for (let k = 0; k < 50 && host.querySelectorAll('.pw-card .pw-item .pw-item-date').length < 2; k++) await new Promise(r2 => setTimeout(r2, 100))      // until the lift page has repainted with both entries
         const { data } = await db.from('client_1rms').select('one_rm_kg, recorded_at').eq('client_id', c.id)
         out.saved = (data || []).map(x => [Number(x.one_rm_kg), x.recorded_at]).sort((a, b) => (a[1] < b[1] ? -1 : 1))
         out.pageTitle = host.querySelector('.pw-title')?.textContent

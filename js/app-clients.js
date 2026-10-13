@@ -103,6 +103,7 @@ async function saveClientWeight(clientId) {
   const errorEl = document.getElementById('cwf-error')
 
   if (!date || weight == null) { errorEl.textContent = 'Date and weight are required.'; return }
+  if (!(weight >= 20 && weight <= 300)) { errorEl.textContent = `Enter a weight between ${fmtWeight(20, { spaced: true })} and ${fmtWeight(300, { spaced: true })}.`; return }      // the inputs' min/max are not enforced without a <form>
   errorEl.textContent = ''
 
   if (!(await _verifyClientAccess('saveClientWeight', clientId))) { errorEl.textContent = 'Save failed — permission denied.'; return }

@@ -60,7 +60,7 @@ test.describe('Client profile tabs: a late render cannot land over the tab that 
   })
   // Review, 2026-10-12: switchTab's fresh pane stops a late render from painting over the live tab, but a late render still ran its GLOBAL side effects:
   // renderClientWeight and renderClientPerformance call _destroyManagedCharts (which destroys EVERY chart), Performance resets window.__perfChartData and
-  // renderClient1RMs rebinds window._oneRMGridRows. A render whose pane is no longer in the page now stops after its fetch. Each test has a connected-pane
+  // renderClient1RMs rebinds window._pbLifts (window._oneRMGridRows until 2026-10-13). A render whose pane is no longer in the page now stops after its fetch. Each test has a connected-pane
   // control, so a render that never gets that far cannot pass it. The control's render may throw on the stubbed empty data AFTER the point being measured; that
   // error is recorded and shown in the failure message, never swallowed.
   test('a superseded Performance render does not destroy the live tab\'s charts or reset its data', async ({ page }) => {
