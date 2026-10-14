@@ -154,7 +154,7 @@ through 16 migrations. This migration adds the newer `scripts/*.sql` files (thro
 | `weight_unit` | 2026-07-24 | `kg`/`lb`, default kg |
 | `jump_height_unit` | 2026-07-24 | `cm`/`in`, default cm |
 | `cardio_distance_unit` | 2026-07-24 | `km`/`mi`, default km |
-| `weekly_session_target` | 2026-10-13 | smallint, nullable, CHECK 1 to 14. The sessions-a-week target behind the dashboard Streak tile when no plan governs the week; NULL = never set, read as 3. `scripts/add-weekly-session-target-2026-10-13.sql`. Read on its own in `_loadWeeklyTarget` (`js/app-core.js`), never in `loadUserInfo`'s main select, so a missing column cannot fail the profile read |
+| `weekly_session_target` | 2026-10-13 | smallint, nullable, CHECK 1 to 14. The sessions-a-week target behind the dashboard Streak tile when no plan governs the week; NULL = never set, read as 3. `scripts/add-weekly-session-target-2026-10-13.sql` (additive and idempotent, ends with a read-back of the column; proven on a local Postgres: only 1 to 14 accepted, nothing backfilled). Read on its own in `_loadWeeklyTarget` (`js/app-core.js`), never in `loadUserInfo`'s main select, so a missing column cannot fail the profile read |
 | `profiles_role_chk` | 2026-08-01 | CHECK constraint pinning the role enum (solo migration) |
 | `consented_at` | 2026-08-24 | timestamptz, nullable. NULL = no consent on record |
 | `consent_policy_version` | 2026-08-24 | text, nullable. Which privacy-policy version was accepted |
