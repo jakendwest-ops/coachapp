@@ -18,6 +18,8 @@ async function soloView(page) {
   await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
   await page.goto('/')
   await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+  // _soloClientId is set BEFORE the boot's own navigate paints the dashboard; a late boot navigate removes the sheet a test has just opened (see goals-rework-2026-10-14).
+  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })
 }
 
 test.describe('The form-input and form-label classes are styled (2026-10-13)', () => {

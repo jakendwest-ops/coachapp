@@ -115,6 +115,9 @@ async function soloView(page) {
   await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
   await page.goto('/')
   await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+  // _soloClientId is set BEFORE the dashboard paints. Until it has, a test that mounts into #main-content is overwritten by the late paint (the scroll test
+  // failed twice in the 2026-10-15 release suite, on a slow Supabase evening, with the dashboard on screen instead of the goal page).
+  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })
   // The bottom bar and the floating PT / Personal switch are fixed over the foot of the page and can sit over what a test clicks: this spec is about the Goals screens, not the chrome.
   await page.addStyleTag({ content: '#mobile-view-switcher, #mobile-view-switcher.mvs-on, .bottom-nav { display: none !important }' })
 }
