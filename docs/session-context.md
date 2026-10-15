@@ -13,8 +13,8 @@ with coach/client/solo roles. See [vision.md](vision.md).
 
 ## Current Release Cycle
 
-Last shipped: **`v2026.10.2`** (2026-10-13, live and verified: deploy green, the 13 live files byte-identical to the tag), after `v2026.10.1`,
-`v2026.09.15` and `v2026.09.14`. All four await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
+Last shipped: **`v2026.10.3`** (2026-10-15, live and verified: deploy green, the 13 live files byte-identical to the tag), after `v2026.10.2`,
+`v2026.10.1`, `v2026.09.15` and `v2026.09.14`. All five await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
 
 RPE top-set autoregulation is live (since `v2026.09.13`): a coach marks set 1 as the top set with a prescribed RPE, the runner estimates a live
 e1RM from the RTS chart, and backoff sets target a percentage of that. Spec and plan: [superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md](superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md),
@@ -49,8 +49,8 @@ Bug counts live in [backlog.md](backlog.md); pattern analysis in [technical-debt
 
 ## Immediate Next Actions
 
-1. Jake's phone check of `v2026.09.14`, `.15` and `v2026.10.1` (0 kg, Finish/End asking, Back to workout, the 1RM question), his answer on which
-   session went missing in the "unscheduled day" row, and his call on Sign out (end only this device's session?). Unreleased: `app-dashboard` v33, `app-programs` v73, `app-progress` v79, `app-clients` v21.
+1. Jake's phone check of `v2026.09.14` to `v2026.10.3` (the Streak tile and Weekly target, My Progress Body Weight and Personal Bests, Your workouts), his answer on which
+   session went missing in the "unscheduled day" row, and his call on Sign out (end only this device's session?). Next build: the Goals tab, once he has reacted to prototype v2.
 2. Read the release plan's "START HERE", answer its questions, then start the next unbuilt release.
 3. Housekeeping still open: the ungraded-prediction backlog and duplicate ids ([technical-debt.md](technical-debt.md)).
 4. Start the next session on this repo's folder (not the Vision OS one) and let `/hello-claude` run; confirm the guard per the
