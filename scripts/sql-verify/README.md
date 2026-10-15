@@ -10,6 +10,7 @@ node scripts/sql-verify/coach-client-summary.verify.mjs   # the coach_client_sum
 node scripts/sql-verify/clients-coach-id-guard.verify.mjs # the clients.coach_id guard trigger; exit 0 = all passed
 node scripts/sql-verify/assign-program.verify.mjs         # the assign_program() transaction; exit 0 = all passed
 node scripts/sql-verify/client-empty-session-delete.verify.mjs # a client deleting their own EMPTY, recent session; exit 0 = all passed
+node scripts/sql-verify/solo-goal-milestones.verify.mjs       # a SOLO user adding a step to their own goal (live goals policies, live-schema-goals.mjs); exit 0 = all passed
 node scripts/sql-verify/run-mutations.mjs                 # deliberate breakages, every suite; exit 0 = every one was caught
 ```
 
@@ -40,7 +41,7 @@ All run on every push from `scripts/checks.sh` (rule 9m). A new verifier joins t
 
 - **Write policies on tables not listed.** The first schema read covered SELECT and ALL only. Since then the `clients` UPDATE
   policies (2026-09-26), the programme-lifecycle tables (2026-09-27, `live-schema-programs.mjs`) and the session-log tables
-  (`workout_logs`, `workout_log_exercises`, `workout_log_sets`, 2026-10-01) have their write policies here, verbatim from the
+  (`workout_logs`, `workout_log_exercises`, `workout_log_sets`, 2026-10-01) and the goal tables (`goals`, `goal_milestones`, `goal_check_ins`, 2026-10-15, `live-schema-goals.mjs`) have their write policies here, verbatim from the
   live `pg_policies`. `exercises`, `client_1rms` and `performance_logs` are still NOT here. Role lists (`to authenticated` vs
   `to public`) were not captured for every policy, and neither was the PERMISSIVE flag: all are modelled permissive.
 - **The `clients` CHECK constraint, foreign keys and its `audit_clients` trigger**, and any table not listed.
