@@ -13,7 +13,7 @@
     "empty-state markup": {
       "pattern": "\\bempty-state\\b",
       "scope": "js",
-      "count": 34,
+      "count": 32,
       "why": "35 hand-rolled empty states (counted with comments stripped). Phase 6 replaces them with one _emptyState(msg) builder; until then this stops a 36th being written."
     },
     "Loading ellipsis": {
@@ -25,7 +25,7 @@
     "toLocaleDateString(": {
       "pattern": "toLocaleDateString\\(",
       "scope": "js",
-      "count": 25,
+      "count": 22,
       "why": "Ten distinct option shapes across 36 sites, which is why dates render inconsistently between pages. Phase 3 introduces fmtDateGB(dateStr, shape)."
     },
     "role === 'solo'": {

@@ -50,7 +50,7 @@ Bug counts live in [backlog.md](backlog.md); pattern analysis in [technical-debt
 ## Immediate Next Actions
 
 1. Jake's phone check of `v2026.09.14` to `v2026.10.3` (the Streak tile and Weekly target, My Progress Body Weight and Personal Bests, Your workouts), his answer on which
-   session went missing in the "unscheduled day" row, and his call on Sign out (end only this device's session?). Next build: the Goals tab, once he has reacted to prototype v2.
+   session went missing in the "unscheduled day" row, and his call on Sign out (end only this device's session?). Unreleased on master: the Goals tab rework (2026-10-14).
 2. Read the release plan's "START HERE", answer its questions, then start the next unbuilt release.
 3. Housekeeping still open: the ungraded-prediction backlog and duplicate ids ([technical-debt.md](technical-debt.md)).
 4. Start the next session on this repo's folder (not the Vision OS one) and let `/hello-claude` run; confirm the guard per the

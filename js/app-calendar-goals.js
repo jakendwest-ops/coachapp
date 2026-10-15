@@ -538,13 +538,70 @@ async function saveClientEvent() {
 // edit or delete the goal (Jake, 2026-10-01). Anything that is not exactly coach or solo (a client, an unknown role) gets no controls.
 const _canManageGoals = () => ['coach', 'solo'].includes(currentProfile?.role)
 
+// ─── The goal model: plain functions the list, the goal page and their tests share (reworked 2026-10-14) ─────────────────────────────────────────
+// Jake, 2026-10-13, on the Goals tab: "cramped or cluttered, progress unclear, milestones clumsy". Prototype: https://claude.ai/artifact/JEJgr7Q81rjzotfJAfDWox
+// (his reactions: fuller list cards, no pace pill or weekly line, a step with a number ticks itself). A goal with a start and a target NUMBER has progress along
+// the line between them, in its own direction (a weight loss runs downward); a goal without numbers is tracked by its steps alone. A "step" is a goal_milestones row.
+// No DOM and no database in this block.
+const _GL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+// A calendar day (YYYY-MM-DD) as text, read as its own parts: new Date('2026-12-20') is UTC midnight and shows the day before west of UTC. (The month names are a copy of
+// app-progress.js's _PW_MONTHS on purpose: that file loads later, and reading its const from here would add a backward read to check-references' ratchet.)
+function _glDate(ymd, withYear = false) {
+  const [y, m, d] = String(ymd || '').slice(0, 10).split('-').map(Number)
+  return y && m && d ? `${d} ${_GL_MONTHS[m - 1]}${withYear ? ' ' + y : ''}` : ''
+}
+const _glNum = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null }
+// One decimal at most, no trailing zero: 130, 88.4, 117.5.
+const _glFmt = v => String(parseFloat(Number(v).toFixed(1)))
+
+// The numbers a goal can be measured by, or null: a start AND a target that differ. cur falls back to the start (a goal made today has no check-in yet).
+// A goal from the old form can have a target and a current number but NO start; the dashboard's _goalPct reads that as current / target, so it runs from 0 here
+// too - the list, the goal page and the dashboard card then give the same percentage.
+function _goalNums(g) {
+  const target = _glNum(g?.target_value), cur = _glNum(g?.current_value)
+  const start = _glNum(g?.start_value) ?? (target != null && target !== 0 && cur != null ? 0 : null)
+  if (start == null || target == null || start === target) return null
+  return { start, target, cur: cur ?? start, up: target > start }
+}
+// 0 to 1 along start -> target. Clamped: past the target is "there", the wrong way is 0.
+const _goalFrac = n => Math.max(0, Math.min(1, (n.cur - n.start) / (n.target - n.start)))
+const _goalToGo = n => Math.max(0, n.up ? n.target - n.cur : n.cur - n.target)
+
+// The steps in the order they were made (the `order` column when it is set, then when they were created).
+function _goalSteps(g) {
+  return [...(g?.goal_milestones || [])].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || String(a.created_at || '').localeCompare(String(b.created_at || '')))
+}
+// A step with a target number is reached once progress passes it, in the goal's own direction - provided the number lies ON the goal's line, between its start and its
+// target: a typo (14 for 140) or a number beyond the target must not tick itself, because a step cannot be deleted (it can still be ticked by hand). It is DERIVED, never
+// written: completed_at stays what a person ticked.
+function _goalStepReached(n, m) {
+  const v = _glNum(m?.target_value)
+  if (!n || v == null || v < Math.min(n.start, n.target) || v > Math.max(n.start, n.target)) return false
+  return n.up ? n.cur >= v : n.cur <= v
+}
+const _goalStepDone = (g, m) => !!m?.completed_at || _goalStepReached(_goalNums(g), m)
+const _goalNextStep = g => _goalSteps(g).find(m => !_goalStepDone(g, m)) || null
+
+// "21 weeks left", "5 days left", "due today", "3 days past due", from two YYYY-MM-DD days; null without a valid due date. Whole days apart, so a clock change cannot move it.
+function _goalTimeLeft(due, today) {
+  const ms = ymd => { const [y, m, d] = String(ymd || '').slice(0, 10).split('-').map(Number); return y && m && d ? Date.UTC(y, m - 1, d) : null }
+  const a = ms(due), b = ms(today)
+  if (a == null || b == null) return null
+  const days = Math.round((a - b) / 86400000), s = n => (n === 1 ? '' : 's')
+  if (days < 0) return { text: `${-days} day${s(-days)} past due`, late: true }
+  if (days === 0) return { text: 'due today', late: false }
+  return { text: days < 14 ? `${days} day${s(days)} left` : `${Math.round(days / 7)} weeks left`, late: false }
+}
+const _goalFinished = g => g?.status === 'completed' || g?.status === 'abandoned'
+const _GOAL_STATUS_PILL = { completed: 'Done', paused: 'Paused', abandoned: 'Abandoned' }
+
 async function renderClientGoals(clientId, el) {
   log.info('renderClientGoals', 'fetching goals', { clientId })
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const { data: goals, error } = await db
     .from('goals')
-    .select('*, goal_milestones(*)')
+    .select('*, goal_milestones(*), goal_check_ins(date)')
     .eq('client_id', clientId)
     .order('priority')
     .order('created_at')
@@ -553,143 +610,157 @@ async function renderClientGoals(clientId, el) {
   log.ok('renderClientGoals', `loaded ${goals.length} goals`)
 
   const canManage = _canManageGoals()
+  const open = goals.filter(g => !_goalFinished(g)), finished = goals.filter(_goalFinished)
+  const cid = escapeAttr(clientId)
   el.innerHTML = `
-    ${canManage ? `<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
-      <button class="btn-primary" onclick="showAddGoalModal('${clientId}')">+ Add goal</button>
-    </div>` : ''}
-    <div class="list" id="goals-view">
+    ${canManage ? `<div class="gl-top"><button class="btn-primary" onclick="showAddGoalModal('${cid}')">+ Add goal</button></div>` : ''}
+    <div class="gl-list" id="goals-view">
       ${goals.length === 0 ? `
         <div class="empty-state">
           <div class="empty-icon">🎯</div>
           <div class="empty-title">No goals yet</div>
           <div class="empty-text">${currentProfile?.role === 'solo' ? 'Set a goal to give yourself a clear roadmap' : canManage ? 'Set a goal to give this client a clear roadmap to success' : 'Your coach sets your goals — they will show up here'}</div>
-          ${canManage ? `<button class="btn-primary" onclick="showAddGoalModal('${clientId}')">+ Add first goal</button>` : ''}
+          ${canManage ? `<button class="btn-primary" onclick="showAddGoalModal('${cid}')">+ Add first goal</button>` : ''}
         </div>
-      ` : goals.map(g => goalCard(g, clientId)).join('')}
+      ` : `
+        <div class="pw-group">In progress · ${open.length}</div>
+        ${open.length ? open.map(g => goalCard(g, clientId)).join('') : `<p class="gl-none">${canManage ? 'Nothing in progress. Add a goal to get started.' : 'Nothing in progress right now.'}</p>`}
+        ${finished.length ? `
+          <button type="button" class="pw-link gl-link gl-finished-btn" aria-expanded="false" onclick="_toggleFinishedGoals(this)">Show finished goals (${finished.length})</button>
+          <div id="gl-finished" class="gl-list" hidden>${finished.map(g => goalCard(g, clientId)).join('')}</div>` : ''}
+      `}
     </div>
   `
 }
 
+// The finished goals sit folded under the list; the button says what it will do.
+function _toggleFinishedGoals(btn) {
+  const box = document.getElementById('gl-finished'); if (!box) return
+  box.hidden = !box.hidden
+  btn.setAttribute('aria-expanded', String(!box.hidden))
+  const n = box.querySelectorAll('.gl-card').length
+  btn.textContent = `${box.hidden ? 'Show' : 'Hide'} finished goals (${n})`
+}
+
+// One goal in the list: its name, where it stands (the number, or the steps), the bar, the next step, and when it was last updated and is due.
 function goalCard(g, clientId) {
-  const milestones  = g.goal_milestones || []
-  const completed   = milestones.filter(m => m.completed_at).length
-  const progress    = g.target_value && g.start_value != null
-    ? Math.min(100, Math.round(((g.current_value - g.start_value) / (g.target_value - g.start_value)) * 100))
-    : null
-  const dueStr = g.target_date
-    ? new Date(g.target_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    : null
-
+  const n = _goalNums(g), steps = _goalSteps(g), done = steps.filter(m => _goalStepDone(g, m)).length, next = _goalFinished(g) ? null : _goalNextStep(g)
+  const unit = g.metric_unit ? ' ' + escapeHtml(g.metric_unit) : ''
+  const pct = n ? Math.round(_goalFrac(n) * 100) : steps.length ? Math.round(done / steps.length * 100) : 0
+  const last = (g.goal_check_ins || []).map(c => String(c.date || '')).sort().pop()
+  const left = g.target_date && !_goalFinished(g) ? _goalTimeLeft(g.target_date, _ymdLocal(new Date())) : null
+  // the year only when it is not this one (a goal due next March must not read as one due this March)
+  const when = g.target_date ? `Due ${_glDate(g.target_date, String(g.target_date).slice(0, 4) !== _ymdLocal(new Date()).slice(0, 4))}${left ? ' · ' + left.text : ''}` : 'No date set'
+  const pill = _GOAL_STATUS_PILL[g.status]
+  const gid = escapeAttr(g.id), cid = escapeAttr(clientId)
+  // The handlers are spelled out, not built from a variable: scripts/check-handler-targets.mjs can only verify a handler whose function NAME is in the source.
   return `
-    <div class="card" style="margin-bottom:0;cursor:pointer" onclick="openGoal('${g.id}','${clientId}')">
-      <div class="card-body">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px">
-          <div>
-            <div style="font-weight:600;font-size:var(--legacy-text-15, 15px);margin-bottom:3px">${escapeHtml(g.title)}</div>
-            ${g.description ? `<div style="color:var(--text-muted);font-size:var(--text-base, 13px)">${escapeHtml(g.description)}</div>` : ''}
-          </div>
-          <span class="badge badge-${g.status === 'active' ? 'accent' : g.status === 'completed' ? 'active' : 'inactive'}">${g.status}</span>
-        </div>
-
-        ${progress !== null ? `
-          <div style="margin-bottom:10px">
-            <div style="display:flex;justify-content:space-between;font-size:var(--text-md, 12px);color:var(--text-muted);margin-bottom:5px">
-              <span>${escapeHtml(g.metric_label || 'Progress')}</span>
-              <span>${escapeHtml(String(g.current_value ?? g.start_value))} → ${escapeHtml(String(g.target_value))} ${escapeHtml(g.metric_unit || '')}</span>
-            </div>
-            <div style="height:6px;background:var(--border);border-radius:var(--radius-full, 99px);overflow:hidden">
-              <div style="height:100%;width:${Math.max(0, progress)}%;background:var(--accent);border-radius:99px;transition:width 0.4s"></div>
-            </div>
-            <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:4px">${progress}% complete</div>
-          </div>
-        ` : ''}
-
-        <div style="display:flex;align-items:center;gap:16px;font-size:var(--text-md, 12px);color:var(--text-muted)">
-          ${dueStr ? `<span>📅 Target: ${dueStr}</span>` : ''}
-          ${milestones.length ? `<span>🏁 ${completed}/${milestones.length} milestones</span>` : ''}
-          <span style="margin-left:auto;color:var(--accent);font-weight:500">View →</span>
-        </div>
+    <div class="card gl-card" role="button" tabindex="0" onclick="openGoal('${gid}','${cid}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openGoal('${gid}','${cid}')}">
+      <div class="gl-card-head"><span class="gl-name">${escapeHtml(g.title)}</span>${pill ? `<span class="pw-pill">${pill}</span>` : ''}</div>
+      <div class="gl-nums">
+        ${n ? `<span><b>${_glFmt(n.cur)}</b> <span class="gl-muted">of ${_glFmt(n.target)}${unit}</span></span><span class="gl-muted">${_goalFinished(g) ? '' : `${_glFmt(_goalToGo(n))}${unit} to go`}</span>`
+            : steps.length ? `<span><b>${done}</b> <span class="gl-muted">of ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}</span></span>` : '<span class="gl-muted">No steps yet</span>'}
+      </div>
+      ${n || steps.length ? `<div class="pw-bar gl-bar"><i style="width:${pct}%"></i></div>` : ''}
+      <div class="gl-meta">
+        ${next ? `<div class="gl-next"><span class="gl-muted">Next</span> ${escapeHtml(next.title)}</div>` : steps.length && !_goalFinished(g) ? '<div class="gl-muted">All steps done</div>' : ''}
+        <div class="gl-meta-row"><span>${n && steps.length ? `${done} of ${steps.length} steps · ` : ''}${last ? 'Updated ' + _glDate(last) : 'No updates yet'}</span><span class="${left?.late ? 'gl-late' : ''}">${when}</span></div>
       </div>
     </div>
   `
 }
 
-// ─── ADD GOAL MODAL ───────────────────────────────────────────────────────────
+// ─── ADD GOAL SHEET ───────────────────────────────────────────────────────────
+// Short on purpose (Jake, 2026-10-13: "cramped or cluttered"): what the goal is, how it is measured, where it goes from and to, and when. Everything the old form asked
+// that is not needed to start - description, type, metric label, priority - is folded under "More options" with the same ids, so nothing was lost.
 function showAddGoalModal(clientId) {
   if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
+  const w = escapeHtml(window._unitPrefs?.weight || 'kg')
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'add-goal-modal'
   overlay.innerHTML = `
-    <div class="modal">
+    <div class="modal gl-sheet">
       <div class="modal-header">
-        <h2 class="modal-title">Add goal</h2>
+        <h2 class="modal-title">New goal</h2>
         <button class="modal-close" onclick="closeModal('add-goal-modal')">✕</button>
       </div>
 
       <div class="field">
-        <label class="field-label">Goal title <span style="color:var(--danger)">*</span></label>
-        <input class="field-input" id="ag-title" placeholder="e.g. Lose 10kg, Squat 100kg, Run 5K">
+        <label class="field-label" for="ag-title">What is the goal? <span class="gl-req">*</span></label>
+        <input class="field-input" id="ag-title" placeholder="e.g. Squat 160 kg, Run 5K under 25 min" autocomplete="off">
       </div>
       <div class="field">
-        <label class="field-label">Description</label>
-        <textarea class="field-input" id="ag-desc" rows="2" placeholder="What does achieving this goal look like?" style="resize:vertical"></textarea>
+        <span class="field-label">How will you measure it?</span>
+        <div class="gl-chips" id="ag-kind" role="group" aria-label="How will you measure it?">
+          <button type="button" class="gl-chip" aria-pressed="true" data-unit="${w}" onclick="_pickGoalKind(this)">Weight (${w})</button>
+          <button type="button" class="gl-chip" aria-pressed="false" data-unit="min" onclick="_pickGoalKind(this)">Time (min)</button>
+          <button type="button" class="gl-chip" aria-pressed="false" data-unit="reps" onclick="_pickGoalKind(this)">Reps</button>
+          <button type="button" class="gl-chip" aria-pressed="false" data-other="1" onclick="_pickGoalKind(this)">Other</button>
+          <button type="button" class="gl-chip" aria-pressed="false" data-steps="1" onclick="_pickGoalKind(this)">Steps only</button>
+        </div>
+        <input class="field-input" id="ag-unit" value="${w}" placeholder="Unit, e.g. km or %" aria-label="Unit" hidden>
       </div>
-      <div class="field-row">
+      <div class="pw-grid2" id="ag-nums">
+        <div class="field"><label class="field-label" for="ag-start">From</label><input class="field-input" id="ag-start" type="number" inputmode="decimal" step="any" placeholder="e.g. 100"></div>
+        <div class="field"><label class="field-label" for="ag-target">To</label><input class="field-input" id="ag-target" type="number" inputmode="decimal" step="any" placeholder="e.g. 160"></div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="ag-date">Target date <span class="gl-muted">(optional)</span></label>
+        <input class="field-input" id="ag-date" type="date">
+      </div>
+      <details class="gl-more">
+        <summary>More options</summary>
         <div class="field">
-          <label class="field-label">Goal type</label>
-          <select class="field-input" id="ag-type">
-            <option value="custom">Custom</option>
-            <option value="weight">Weight loss / gain</option>
-            <option value="strength">Strength</option>
-            <option value="cardio">Cardio / endurance</option>
-            <option value="body_composition">Body composition</option>
-            <option value="habit">Habit</option>
-          </select>
+          <label class="field-label" for="ag-desc">Description</label>
+          <textarea class="field-input" id="ag-desc" rows="2" placeholder="What does achieving this goal look like?"></textarea>
+        </div>
+        <div class="pw-grid2">
+          <div class="field">
+            <label class="field-label" for="ag-type">Goal type</label>
+            <select class="field-input" id="ag-type">
+              <option value="custom">Custom</option>
+              <option value="weight">Weight loss / gain</option>
+              <option value="strength">Strength</option>
+              <option value="cardio">Cardio / endurance</option>
+              <option value="body_composition">Body composition</option>
+              <option value="habit">Habit</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="ag-priority">Priority</label>
+            <select class="field-input" id="ag-priority">
+              <option value="1">1 — Primary goal</option>
+              <option value="2">2 — Secondary goal</option>
+              <option value="3">3 — Tertiary goal</option>
+            </select>
+          </div>
         </div>
         <div class="field">
-          <label class="field-label">Target date</label>
-          <input class="field-input" id="ag-date" type="date">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label class="field-label">Metric label</label>
+          <label class="field-label" for="ag-metric">Metric label</label>
           <input class="field-input" id="ag-metric" placeholder="e.g. Bodyweight, Squat 1RM">
         </div>
-        <div class="field">
-          <label class="field-label">Unit</label>
-          <input class="field-input" id="ag-unit" placeholder="e.g. kg, lbs, mins">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label class="field-label">Start value</label>
-          <input class="field-input" id="ag-start" type="number" placeholder="e.g. 90">
-        </div>
-        <div class="field">
-          <label class="field-label">Target value</label>
-          <input class="field-input" id="ag-target" type="number" placeholder="e.g. 80">
-        </div>
-      </div>
-      <div class="field">
-        <label class="field-label">Priority</label>
-        <select class="field-input" id="ag-priority">
-          <option value="1">1 — Primary goal</option>
-          <option value="2">2 — Secondary goal</option>
-          <option value="3">3 — Tertiary goal</option>
-        </select>
-      </div>
+      </details>
 
       <p class="modal-error" id="ag-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="closeModal('add-goal-modal')">Cancel</button>
-        <button class="btn-primary" onclick="saveNewGoal('${clientId}')">Add goal</button>
+        <button class="btn-primary" onclick="saveNewGoal('${escapeAttr(clientId)}')">Add goal</button>
       </div>
     </div>
   `
   mountModal(overlay)
   document.getElementById('ag-title').focus()
+}
+
+// The measure chips set the unit; "Other" asks for one; "Steps only" hides the numbers (the goal is tracked by its steps alone).
+function _pickGoalKind(btn) {
+  const group = btn.closest('#ag-kind'); if (!group) return
+  group.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === btn)))
+  const stepsOnly = btn.hasAttribute('data-steps'), other = btn.hasAttribute('data-other')
+  const unit = document.getElementById('ag-unit'), nums = document.getElementById('ag-nums')
+  if (unit) { unit.hidden = !other; unit.value = other || stepsOnly ? '' : btn.dataset.unit; if (other) unit.focus() }
+  if (nums) nums.hidden = stepsOnly
 }
 
 async function saveNewGoal(clientId) {
@@ -698,12 +769,18 @@ async function saveNewGoal(clientId) {
   const errorEl = document.getElementById('ag-error')
   if (!title) { errorEl.textContent = 'Title is required'; return }
 
+  // From and To are a pair: one without the other is a typo, not a goal. "Steps only" has neither.
+  const stepsOnly = !!document.querySelector('#ag-kind [aria-pressed="true"][data-steps]')
+  const startRaw = document.getElementById('ag-start').value.trim(), targetRaw = document.getElementById('ag-target').value.trim()
+  const start = stepsOnly ? null : _glNum(startRaw), target = stepsOnly ? null : _glNum(targetRaw)
+  if (!stepsOnly && (startRaw || targetRaw) && (start == null || target == null)) { errorEl.textContent = 'Enter both From and To, or choose Steps only.'; return }
+  if (start != null && start === target) { errorEl.textContent = 'From and To are the same number.'; return }
+
   // The CREATE path. _verifyGoalAccess/_verifyMilestoneAccess key on an EXISTING goalId, so neither
   // can cover this one — it was missed by the 2026-08-21 goal sweep for exactly that reason and
   // found by pre-push review 2026-08-22, as the 15th member of the caller-supplied-clientId class.
   if (!(await _verifyClientAccess('saveNewGoal', clientId))) { errorEl.textContent = 'Save failed — permission denied.'; return }
   log.info('saveNewGoal', 'inserting goal', { clientId })
-  const startVal = document.getElementById('ag-start').value
   const { error } = await db.from('goals').insert({
     client_id:    clientId,
     created_by:   currentUser.id,
@@ -711,10 +788,10 @@ async function saveNewGoal(clientId) {
     description:  document.getElementById('ag-desc').value.trim()   || null,
     goal_type:    document.getElementById('ag-type').value,
     metric_label: document.getElementById('ag-metric').value.trim() || null,
-    metric_unit:  document.getElementById('ag-unit').value.trim()   || null,
-    start_value:  startVal || null,
-    current_value: startVal || null,
-    target_value: document.getElementById('ag-target').value        || null,
+    metric_unit:  stepsOnly ? null : (document.getElementById('ag-unit').value.trim() || null),
+    start_value:  start,
+    current_value: start,
+    target_value: target,
     target_date:  document.getElementById('ag-date').value          || null,
     priority:     parseInt(document.getElementById('ag-priority').value),
     status:       'active'
@@ -727,111 +804,111 @@ async function saveNewGoal(clientId) {
   const tabContent = document.getElementById('tab-content')
   if (tabContent) renderClientGoals(clientId, tabContent)
 }
+guardReentry('saveNewGoal')   // a double tap on Add goal made two goals; see tests/reentry-guard-2026-08-28.spec.js
 
 // ─── GOAL DETAIL ──────────────────────────────────────────────────────────────
+// The goal's own page (reworked 2026-10-14): where it stands (the number, how far to go, the bar), the steps as a checklist with a one-line add, and the history of
+// updates. "Update progress" is the old check-in (a number and a note). A step with a target number ticks itself once progress passes it (_goalStepDone, derived and
+// never written); any other step is ticked by hand. A client keeps the tracking controls and none of the managing ones (_canManageGoals).
 async function openGoal(goalId, clientId) {
   const el = document.getElementById('tab-content')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
-  const { data: g } = await db
+  const gid = escapeAttr(goalId), cid = escapeAttr(clientId)
+  const back = `<a class="back-btn" href="#" onclick="backToGoals('${cid}');return false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>All goals</a>`
+  const { data: g, error } = await db
     .from('goals')
     .select('*, goal_milestones(*), goal_check_ins(*)')
     .eq('id', goalId)
     .single()
+  if (error || !g) { log.error('openGoal', 'fetch failed', error); el.innerHTML = `${back}<div class="loading-state">Could not load this goal. Check your connection and try again.</div>`; return }
+  window._goalOpen = { id: goalId, clientId, goal: g }     // the Update progress sheet starts from this goal's number
 
-  const milestones = (g.goal_milestones || []).sort((a, b) => a.order - b.order)
-  const checkIns   = (g.goal_check_ins  || []).sort((a, b) => b.date.localeCompare(a.date))
-  const progress   = g.target_value && g.start_value != null
-    ? Math.min(100, Math.round(((g.current_value - g.start_value) / (g.target_value - g.start_value)) * 100))
-    : null
+  const canManage = _canManageGoals()
+  const n = _goalNums(g)
+  const steps = _goalSteps(g).map(m => ({ m, on: _goalStepDone(g, m), auto: !m.completed_at && _goalStepReached(n, m) }))
+  const nDone = steps.filter(s => s.on).length
+  const checkIns = [...(g.goal_check_ins || [])].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || '')))
+  const unit = g.metric_unit ? ' ' + escapeHtml(g.metric_unit) : ''
+  const pct = n ? Math.round(_goalFrac(n) * 100) : steps.length ? Math.round(nDone / steps.length * 100) : 0
+  const left = g.target_date && !_goalFinished(g) ? _goalTimeLeft(g.target_date, _ymdLocal(new Date())) : null
+  const sub = g.target_date ? `${_goalFinished(g) ? 'Target' : 'Due'} ${_glDate(g.target_date, true)}${left ? ' · ' + left.text : ''}` : 'No date set'
+  const pill = _GOAL_STATUS_PILL[g.status] ? `<span class="pw-pill">${_GOAL_STATUS_PILL[g.status]}</span>` : ''
+  const tick = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>'
+  // A mark on the bar for every step that has a number inside the goal's range.
+  const marks = n ? steps.map(({ m, on }) => {
+    const v = _glNum(m.target_value), x = v == null ? null : (v - n.start) / (n.target - n.start)
+    return x != null && x > 0 && x < 1 ? `<b class="gl-mark${on ? ' is-hit' : ''}" style="left:${(x * 100).toFixed(1)}%"></b>` : ''
+  }).join('') : ''
+  const started = g.created_at ? _glDate(_ymdLocal(new Date(g.created_at))) : ''
+  const updateBtn = g.status === 'completed' || g.status === 'abandoned' ? '' : `<button type="button" class="btn-primary gl-update" onclick="showAddCheckInModal('${gid}','${cid}')">Update progress</button>`
 
   el.innerHTML = `
-    <a class="back-btn" href="#" onclick="backToGoals('${clientId}');return false">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-      All goals
-    </a>
-
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:24px;flex-wrap:wrap">
-      <div>
-        <h2 style="font-size:var(--text-3xl, 20px);font-weight:700;margin-bottom:4px">${escapeHtml(g.title)}</h2>
-        ${g.description ? `<p style="color:var(--text-muted)">${escapeHtml(g.description)}</p>` : ''}
+    ${back}
+    <div class="gl-head">
+      <div class="gl-head-main">
+        <h2 class="gl-title">${escapeHtml(g.title)}</h2>
+        <div class="gl-due${left?.late ? ' gl-late' : ''}">${sub}</div>
+        ${g.description ? `<p class="gl-desc">${escapeHtml(g.description)}</p>` : ''}
       </div>
-      <div style="display:flex;gap:8px">
-        <span class="badge badge-${g.status === 'active' ? 'accent' : g.status === 'completed' ? 'active' : 'inactive'}">${g.status}</span>
-        ${_canManageGoals() ? `<button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 12px" onclick="showEditGoalModal('${goalId}','${clientId}')">Edit</button>` : ''}
-      </div>
+      ${canManage ? `<button class="btn-secondary gl-edit" onclick="showEditGoalModal('${gid}','${cid}')">Edit</button>` : ''}
     </div>
 
-    ${progress !== null ? `
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-body">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <span style="font-weight:600">${escapeHtml(g.metric_label || 'Progress')}</span>
-            <span style="font-size:var(--legacy-text-22, 22px);font-weight:700;color:var(--accent)">${progress}%</span>
-          </div>
-          <div style="height:8px;background:var(--border);border-radius:var(--radius-full, 99px);overflow:hidden;margin-bottom:8px">
-            <div style="height:100%;width:${Math.max(0, progress)}%;background:var(--accent);border-radius:99px"></div>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:var(--text-md, 12px);color:var(--text-muted)">
-            <span>Start: ${escapeHtml(String(g.start_value))} ${escapeHtml(g.metric_unit || '')}</span>
-            <span>Current: <strong style="color:var(--text)">${escapeHtml(String(g.current_value ?? '—'))} ${escapeHtml(g.metric_unit || '')}</strong></span>
-            <span>Target: ${escapeHtml(String(g.target_value))} ${escapeHtml(g.metric_unit || '')}</span>
-          </div>
-        </div>
-      </div>
-    ` : ''}
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-
-      <!-- Milestones -->
-      <div>
-        <div class="section-header">
-          <h3 class="section-title">Milestones</h3>
-          ${_canManageGoals() ? `<button class="btn-primary" style="font-size:var(--text-md, 12px);padding:5px 10px" onclick="showAddMilestoneModal('${goalId}','${clientId}')">+ Add</button>` : ''}
-        </div>
-        <div class="list" id="milestone-list">
-          ${milestones.length === 0 ? `<div class="empty-state" style="padding:30px"><div class="empty-text">No milestones yet</div></div>` :
-            milestones.map(m => `
-              <div class="card" style="margin-bottom:0">
-                <div class="card-body" style="padding:14px 16px;display:flex;align-items:flex-start;gap:10px">
-                  <button onclick="toggleMilestone('${m.id}','${goalId}','${clientId}')" style="margin-top:1px;flex-shrink:0">
-                    <div style="width:18px;height:18px;border-radius:50%;border:2px solid ${m.completed_at ? 'var(--success)' : 'var(--border)'};background:${m.completed_at ? 'var(--success)' : 'transparent'};display:flex;align-items:center;justify-content:center">
-                      ${m.completed_at ? '<svg style="width:10px;height:10px;stroke:white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
-                    </div>
-                  </button>
-                  <div>
-                    <div style="font-weight:500;font-size:13.5px;${m.completed_at ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${escapeHtml(m.title)}</div>
-                    ${m.target_date ? `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${new Date(m.target_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>` : ''}
-                  </div>
-                </div>
-              </div>
-            `).join('')}
-        </div>
-      </div>
-
-      <!-- Check-ins -->
-      <div>
-        <div class="section-header">
-          <h3 class="section-title">Check-ins</h3>
-          <button class="btn-primary" style="font-size:var(--text-md, 12px);padding:5px 10px" onclick="showAddCheckInModal('${goalId}','${clientId}')">+ Add</button>
-        </div>
-        <div class="list">
-          ${checkIns.length === 0 ? `<div class="empty-state" style="padding:30px"><div class="empty-text">No check-ins yet</div></div>` :
-            checkIns.map(ci => `
-              <div class="card" style="margin-bottom:0">
-                <div class="card-body" style="padding:14px 16px">
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-                    <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${new Date(ci.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
-                    ${ci.current_value != null ? `<span style="font-weight:600;color:var(--accent)">${escapeHtml(String(ci.current_value))} ${escapeHtml(g.metric_unit || '')}</span>` : ''}
-                  </div>
-                  ${ci.notes ? `<div style="font-size:var(--text-base, 13px);color:var(--text-muted)">${escapeHtml(ci.notes)}</div>` : ''}
-                </div>
-              </div>
-            `).join('')}
-        </div>
-      </div>
+    <div class="pw-card gl-progress">
+      ${g.metric_label ? `<div class="pw-label">${escapeHtml(g.metric_label)}</div>` : ''}
+      ${n ? `
+        <div class="pw-card-row"><div class="pw-big">${_glFmt(n.cur)}<span class="pw-big-unit">${unit}</span></div>${pill}</div>
+        <div class="gl-sub">${g.status === 'completed' ? (pct >= 100 ? 'Goal reached' : `Marked as done · ${pct}% of the way`) : `${_glFmt(_goalToGo(n))}${unit} to go · ${pct}% there`}</div>
+        <div class="gl-barwrap"><div class="pw-bar gl-bar"><i style="width:${pct}%"></i></div>${marks}</div>
+        <div class="pw-legend"><span><strong>${_glFmt(n.start)}${unit}</strong><br>${started ? 'Started ' + started : 'Start'}</span><span class="gl-end"><strong>${_glFmt(n.target)}${unit}</strong><br>Target</span></div>`
+      : `
+        ${steps.length ? `<div class="pw-card-row"><div class="pw-big">${nDone}<span class="pw-big-unit"> of ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}</span></div>${pill}</div>
+        <div class="pw-bar gl-bar"><i style="width:${pct}%"></i></div>` : `<div class="pw-card-row"><div class="gl-sub gl-nothing">Nothing to track yet.${canManage ? ' Add a step below, or set From and To in Edit.' : ''}</div>${pill}</div>`}`}
+      ${updateBtn}
     </div>
+
+    <div class="pw-head gl-sec"><h3 class="pw-card-title">Steps</h3><span class="gl-muted">${nDone} of ${steps.length} done</span></div>
+    <div class="pw-list gl-steps" id="milestone-list">
+      ${steps.length ? steps.map(({ m, on, auto }) => `
+        <div class="gl-step${on ? ' is-done' : ''}">
+          <button type="button" class="gl-tick${on ? ' on' : ''}" onclick="toggleMilestone('${escapeAttr(m.id)}','${gid}','${cid}')" aria-label="${on ? 'Mark not done' : 'Mark done'}: ${escapeHtml(m.title)}"${auto ? ' disabled' : ''}>${tick}</button>
+          <div class="gl-step-main">
+            <div class="gl-step-t">${escapeHtml(m.title)}</div>
+            ${auto ? '<div class="gl-auto">Ticked itself when your progress reached it</div>' : ''}
+            ${m.target_date ? `<div class="gl-muted">${_glDate(m.target_date, true)}</div>` : ''}
+          </div>
+        </div>`).join('') : `<div class="gl-step"><div class="gl-step-main gl-muted">${canManage ? 'No steps yet. Add one below to break the goal up.' : 'No steps yet.'}</div></div>`}
+      ${canManage ? `
+        <div class="gl-addstep">
+          <input class="field-input" id="step-title" placeholder="Add a step, e.g. Squat 140 kg" aria-label="New step" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addStep('${gid}','${cid}')}">
+          <button type="button" class="btn-primary" onclick="addStep('${gid}','${cid}')">Add</button>
+        </div>` : ''}
+    </div>
+    ${canManage ? `<p class="gl-step-err" id="step-error" role="alert"></p><button type="button" class="pw-link gl-link" onclick="showAddMilestoneModal('${gid}','${cid}')">Add a step with a number or a date…</button>` : ''}
+
+    ${checkIns.length ? `
+      <div class="pw-head gl-sec"><h3 class="pw-card-title">History</h3><span class="gl-muted">${checkIns.length} ${checkIns.length === 1 ? 'update' : 'updates'}</span></div>
+      <div class="pw-list" id="gl-history">
+        ${checkIns.map((ci, i) => `
+          <div class="gl-hist"${i >= 5 ? ' hidden' : ''}>
+            <div>
+              <div class="gl-hist-v">${ci.current_value != null && ci.current_value !== '' ? _glFmt(ci.current_value) + unit : 'Note'}</div>
+              ${ci.notes ? `<div class="gl-muted gl-hist-n">${escapeHtml(ci.notes)}</div>` : ''}
+            </div>
+            <div class="gl-muted gl-hist-d">${_glDate(ci.date)}</div>
+          </div>`).join('')}
+      </div>
+      ${checkIns.length > 5 ? `<button type="button" class="pw-link gl-link" aria-expanded="false" onclick="_toggleAllCheckIns(this)">Show all ${checkIns.length}</button>` : ''}` : ''}
   `
+}
+
+// The history shows the newest five; this opens the rest and folds them again.
+function _toggleAllCheckIns(btn) {
+  const rows = document.querySelectorAll('#gl-history .gl-hist')
+  const open = btn.getAttribute('aria-expanded') === 'true'
+  rows.forEach((r, i) => { r.hidden = open && i >= 5 })
+  btn.setAttribute('aria-expanded', String(!open))
+  btn.textContent = open ? `Show all ${rows.length}` : 'Show fewer'
 }
 
 function backToGoals(clientId) {
@@ -866,7 +943,7 @@ function showAddMilestoneModal(goalId, clientId) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">Add milestone</h2>
+        <h2 class="modal-title">Add a step</h2>
         <button class="modal-close" onclick="closeModal('add-milestone-modal')">✕</button>
       </div>
       <div class="field">
@@ -890,7 +967,7 @@ function showAddMilestoneModal(goalId, clientId) {
       <p class="modal-error" id="am-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="closeModal('add-milestone-modal')">Cancel</button>
-        <button class="btn-primary" onclick="saveNewMilestone('${goalId}','${clientId}')">Add milestone</button>
+        <button class="btn-primary" onclick="saveNewMilestone('${escapeAttr(goalId)}','${escapeAttr(clientId)}')">Add step</button>
       </div>
     </div>
   `
@@ -903,6 +980,7 @@ async function saveNewMilestone(goalId, clientId) {
   const title   = document.getElementById('am-title').value.trim()
   const errorEl = document.getElementById('am-error')
   if (!title) { errorEl.textContent = 'Title is required'; return }
+  if (!(await _verifyGoalAccess('saveNewMilestone', goalId))) { errorEl.textContent = 'Save failed — permission denied.'; return }
 
   log.info('saveNewMilestone', 'inserting milestone', { goalId })
   const { error } = await db.from('goal_milestones').insert({
@@ -918,6 +996,25 @@ async function saveNewMilestone(goalId, clientId) {
   closeModal('add-milestone-modal')
   openGoal(goalId, clientId)
 }
+guardReentry('saveNewMilestone')   // a double tap on Add made two steps; see tests/reentry-guard-2026-08-28.spec.js
+
+// The one-line "Add a step": a title and Add, no dialog (Jake, 2026-10-13: the milestones were "clumsy"). A step with a number or a date still has its dialog
+// (showAddMilestoneModal), linked underneath. Same ownership check as every other goal write in this file, and the database's own refusal is shown, not swallowed:
+// a solo user's milestone insert is refused today (docs/bugs/2026-10-01-solo-user-cannot-add-milestones-to-their-own-goals.md).
+async function addStep(goalId, clientId) {
+  if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
+  const input = document.getElementById('step-title'), errorEl = document.getElementById('step-error')
+  const title = (input?.value || '').trim()
+  if (!title) { if (errorEl) errorEl.textContent = 'Type the step first.'; return }
+  if (errorEl) errorEl.textContent = ''
+  if (!(await _verifyGoalAccess('addStep', goalId))) { if (errorEl) errorEl.textContent = 'Not added — permission denied.'; return }
+  log.info('addStep', 'inserting step', { goalId })
+  const { error } = await db.from('goal_milestones').insert({ goal_id: goalId, title })
+  if (error) { log.error('addStep', 'insert failed', error); if (errorEl) errorEl.textContent = 'Could not add the step: ' + error.message; return }
+  log.ok('addStep', 'step created', { goalId })
+  await _repaintGoal(goalId, clientId, { focusStep: true })
+}
+guardReentry('addStep')   // a double tap (or Enter then a tap) added the step twice
 
 // ONE ownership check for every goal/milestone write in this file (2026-08-12 audit + a 2026-08-02
 // note that was never actually filed until 2026-08-12).
@@ -958,17 +1055,31 @@ async function _verifyMilestoneAccess(fnName, milestoneId) {
   return await _verifyGoalAccess(fnName, m.goal_id)
 }
 
+// Repaints the goal page after a step is added or ticked without throwing the person back to the top: openGoal swaps the whole page for "Loading…" first, which collapses
+// the scroll position - and ticking steps is now the page's main action. The step box gets the focus back after an add, ready for the next one.
+async function _repaintGoal(goalId, clientId, { focusStep = false } = {}) {
+  const main = document.getElementById('main-content')
+  const y = window.scrollY, top = main ? main.scrollTop : 0
+  await openGoal(goalId, clientId)
+  window.scrollTo(0, y)
+  if (main) main.scrollTop = top
+  if (focusStep) document.getElementById('step-title')?.focus({ preventScroll: true })
+}
+
 async function toggleMilestone(milestoneId, goalId, clientId) {
   log.info('toggleMilestone', 'toggling milestone', { milestoneId })
   if (!(await _verifyMilestoneAccess('toggleMilestone', milestoneId))) return
   const { data: m, error: fetchErr } = await db.from('goal_milestones').select('completed_at').eq('id', milestoneId).single()
   if (fetchErr) { log.error('toggleMilestone', 'fetch failed', fetchErr); return }
   const newVal = m.completed_at ? null : new Date().toISOString()
-  const { error } = await db.from('goal_milestones').update({ completed_at: newVal }).eq('id', milestoneId)
+  // Row-counted: an update the database refuses returns no error and no row, and the page would repaint with the tick unchanged as if nothing had been asked.
+  const { data: changed, error } = await db.from('goal_milestones').update({ completed_at: newVal }).eq('id', milestoneId).select('id')
   if (error) { log.error('toggleMilestone', 'update failed', error); return }
+  if (!(changed || []).length) { log.error('toggleMilestone', 'update changed no rows - permission denied or the step is gone', { milestoneId }); showToast('That step could not be changed', 'error'); return }
   log.ok('toggleMilestone', 'milestone toggled', { milestoneId, completed: !!newVal })
-  openGoal(goalId, clientId)
+  await _repaintGoal(goalId, clientId)
 }
+guardReentry('toggleMilestone')   // a double tap toggled it twice - on, then off again
 
 async function toggleClientMilestone(milestoneId) {
   if (!(await _verifyMilestoneAccess('toggleClientMilestone', milestoneId))) return
@@ -1005,125 +1116,178 @@ async function saveGoalProgress(goalId) {
   _renderOwnDashboard()   // see app-core.js — hardcoding the client dashboard breaks solo
 }
 
-// ─── CHECK-IN MODAL ───────────────────────────────────────────────────────────
+// ─── UPDATE PROGRESS SHEET (the check-in) ─────────────────────────────────────
+// A number and a note: the old "Log check-in" without the dialog's four fields. The number starts from where the goal stands, with − and + for a quick nudge (the step
+// follows the size of the goal); the date is today unless changed under the fold. Every role can use it: a client tracks progress on the goal their coach set.
+// A goal with no numbers (steps only) gets a plain optional number and a note.
 function showAddCheckInModal(goalId, clientId) {
+  const g = window._goalOpen?.goal?.id === goalId ? window._goalOpen.goal : null
+  const n = g ? _goalNums(g) : null
+  const unit = g?.metric_unit ? escapeHtml(g.metric_unit) : ''
+  // A 30+ goal moves in 2.5s, reps in whole reps, anything else in halves.
+  const step = !n ? 0.5 : Math.abs(n.target - n.start) >= 30 ? 2.5 : /^reps?$/i.test(String(g.metric_unit || '').trim()) ? 1 : 0.5
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'add-checkin-modal'
   overlay.innerHTML = `
-    <div class="modal">
+    <div class="modal gl-sheet">
       <div class="modal-header">
-        <h2 class="modal-title">Log check-in</h2>
+        <h2 class="modal-title">Update progress</h2>
         <button class="modal-close" onclick="closeModal('add-checkin-modal')">✕</button>
       </div>
-      <div class="field-row">
-        <div class="field">
-          <label class="field-label">Date</label>
-          <input class="field-input" id="ci-date" type="date" value="${new Date().toISOString().split('T')[0]}">
+      ${g ? `<p class="gl-sheet-goal">${escapeHtml(g.title)}</p>` : ''}
+      <div class="field">
+        <label class="field-label" for="ci-value">${n ? 'Where you are now' : 'Number <span class="gl-muted">(optional)</span>'}</label>
+        ${n ? `
+        <div class="pw-stepper">
+          <button type="button" class="pw-step" aria-label="Down" onclick="_stepGoalValue(this,-1)">−</button>
+          <input class="form-input pw-big-input" id="ci-value" type="number" inputmode="decimal" step="any" data-step="${step}" value="${escapeHtml(String(n.cur))}">
+          <button type="button" class="pw-step" aria-label="Up" onclick="_stepGoalValue(this,1)">+</button>
         </div>
-        <div class="field">
-          <label class="field-label">Current value</label>
-          <input class="field-input" id="ci-value" type="number" placeholder="e.g. 87.5">
-        </div>
+        <div class="pw-unit">${unit || '&nbsp;'}</div>` : `
+        <input class="field-input" id="ci-value" type="number" inputmode="decimal" step="any" placeholder="e.g. 87.5">`}
       </div>
       <div class="field">
-        <label class="field-label">Notes</label>
-        <textarea class="field-input" id="ci-notes" rows="3" style="resize:vertical" placeholder="How is it going? Any observations…"></textarea>
+        <label class="field-label" for="ci-notes">Note <span class="gl-muted">(optional)</span></label>
+        <textarea class="field-input" id="ci-notes" rows="2" placeholder="How is it going?"></textarea>
       </div>
+      <details class="gl-more">
+        <summary>Change the date</summary>
+        <div class="field"><label class="field-label" for="ci-date">Date</label><input class="field-input" id="ci-date" type="date" value="${_ymdLocal(new Date())}"></div>
+      </details>
       <p class="modal-error" id="ci-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="closeModal('add-checkin-modal')">Cancel</button>
-        <button class="btn-primary" onclick="saveCheckIn('${goalId}','${clientId}')">Save check-in</button>
+        <button class="btn-primary" onclick="saveCheckIn('${escapeAttr(goalId)}','${escapeAttr(clientId)}')">Save</button>
       </div>
     </div>
   `
   mountModal(overlay)
 }
 
+// − and + on the number: one step of the size the sheet chose, to at most two decimals.
+function _stepGoalValue(btn, dir) {
+  const input = btn.parentElement?.querySelector('input'); if (!input) return
+  const step = Number(input.dataset.step) || 0.5
+  input.value = String(parseFloat(((parseFloat(input.value) || 0) + dir * step).toFixed(2)))
+}
+
 async function saveCheckIn(goalId, clientId) {
   const errorEl = document.getElementById('ci-error')
-  const value   = document.getElementById('ci-value').value
+  const raw     = document.getElementById('ci-value').value.trim()
+  const value   = raw === '' ? null : parseFloat(raw)
+  const notes   = document.getElementById('ci-notes').value.trim() || null
+  const date    = document.getElementById('ci-date')?.value || _ymdLocal(new Date())
+  if (raw !== '' && !Number.isFinite(value)) { errorEl.textContent = 'Enter a number.'; return }
+  if (value == null && !notes) { errorEl.textContent = 'Enter a number or a note.'; return }
 
   if (!(await _verifyGoalAccess('saveCheckIn', goalId))) { errorEl.textContent = 'Save failed — permission denied.'; return }
   log.info('saveCheckIn', 'inserting check-in', { goalId })
   const { error } = await db.from('goal_check_ins').insert({
     goal_id:       goalId,
     created_by:    currentUser.id,
-    date:          document.getElementById('ci-date').value,
-    current_value: value || null,
-    notes:         document.getElementById('ci-notes').value.trim() || null
+    date,
+    current_value: value,
+    notes
   })
 
   if (error) { log.error('saveCheckIn', 'insert failed', error); errorEl.textContent = error.message; return }
   log.ok('saveCheckIn', 'check-in saved', { goalId })
 
-  // Update goal's current_value if a value was provided
-  if (value) {
+  // The goal's own number follows the update - unless the update is OLDER than the newest one already in the history: logging last month's weigh-in must not pull the
+  // goal back to last month's number. Rowcount-checked: an update the database refuses returns no error and no row, and the page would repaint with the old number as
+  // if nothing had been asked.
+  const open = window._goalOpen?.goal?.id === goalId ? window._goalOpen.goal : null
+  const newest = open ? (open.goal_check_ins || []).map(c => String(c.date || '')).sort().pop() : null
+  if (value != null && newest && date < newest) {
+    showToast('Saved to the history. It is older than your latest update, so the goal\'s number stays as it is.', 'info')
+  } else if (value != null) {
     log.info('saveCheckIn', 'updating goal current_value', { goalId })
-    const { error: updateErr } = await db.from('goals').update({ current_value: parseFloat(value), updated_at: new Date().toISOString() }).eq('id', goalId)
-    if (updateErr) log.error('saveCheckIn', 'goal current_value update failed', updateErr)
+    const { data: moved, error: updateErr } = await db.from('goals').update({ current_value: value, updated_at: new Date().toISOString() }).eq('id', goalId).select('id')
+    if (updateErr || !(moved || []).length) {
+      log.error('saveCheckIn', 'goal current_value update failed', updateErr || { code: 'NO_ROW' })
+      showToast('Saved to the history, but the goal\'s number could not be updated.', 'error')
+    }
   }
 
   closeModal('add-checkin-modal')
   openGoal(goalId, clientId)
 }
+guardReentry('saveCheckIn')   // a double tap on Save logged the update twice; see tests/reentry-guard-2026-08-28.spec.js
 
-// ─── EDIT GOAL MODAL ──────────────────────────────────────────────────────────
+// ─── EDIT GOAL SHEET ──────────────────────────────────────────────────────────
+// The same short shape as the new-goal sheet: the name, from and to, the date, and "Mark goal finished"; the rest (description, status, the current number, Delete) is under
+// "More options" with the ids the save has always read. Start value is editable now (it never was), so a goal made without numbers can be given them.
 async function showEditGoalModal(goalId, clientId) {
   if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
-  const { data: g } = await db.from('goals').select('*').eq('id', goalId).single()
+  const { data: g, error } = await db.from('goals').select('*').eq('id', goalId).single()
+  if (error || !g) { log.error('showEditGoalModal', 'fetch failed', error); showToast('Could not load this goal', 'error'); return }
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'edit-goal-modal'
+  const gid = escapeAttr(goalId), cid = escapeAttr(clientId)
   overlay.innerHTML = `
-    <div class="modal">
+    <div class="modal gl-sheet">
       <div class="modal-header">
         <h2 class="modal-title">Edit goal</h2>
         <button class="modal-close" onclick="closeModal('edit-goal-modal')">✕</button>
       </div>
       <div class="field">
-        <label class="field-label">Goal title</label>
+        <label class="field-label" for="eg-title">Goal title</label>
         <input class="field-input" id="eg-title" value="${escapeHtml(g.title)}">
       </div>
+      <div class="pw-grid2">
+        <div class="field"><label class="field-label" for="eg-start">From</label><input class="field-input" id="eg-start" type="number" inputmode="decimal" step="any" value="${escapeHtml(String(g.start_value ?? ''))}"></div>
+        <div class="field"><label class="field-label" for="eg-target">To</label><input class="field-input" id="eg-target" type="number" inputmode="decimal" step="any" value="${escapeHtml(String(g.target_value ?? ''))}"></div>
+      </div>
       <div class="field">
-        <label class="field-label">Description</label>
-        <textarea class="field-input" id="eg-desc" rows="2" style="resize:vertical">${escapeHtml(g.description || '')}</textarea>
+        <label class="field-label" for="eg-date">Target date</label>
+        <input class="field-input" id="eg-date" type="date" value="${escapeHtml(g.target_date || '')}">
       </div>
-      <div class="field-row">
+      <details class="gl-more">
+        <summary>More options</summary>
         <div class="field">
-          <label class="field-label">Status</label>
-          <select class="field-input" id="eg-status">
-            <option value="active"    ${g.status==='active'    ?'selected':''}>Active</option>
-            <option value="completed" ${g.status==='completed' ?'selected':''}>Completed</option>
-            <option value="paused"    ${g.status==='paused'    ?'selected':''}>Paused</option>
-            <option value="abandoned" ${g.status==='abandoned' ?'selected':''}>Abandoned</option>
-          </select>
+          <label class="field-label" for="eg-desc">Description</label>
+          <textarea class="field-input" id="eg-desc" rows="2">${escapeHtml(g.description || '')}</textarea>
         </div>
-        <div class="field">
-          <label class="field-label">Target date</label>
-          <input class="field-input" id="eg-date" type="date" value="${g.target_date || ''}">
+        <div class="pw-grid2">
+          <div class="field">
+            <label class="field-label" for="eg-status">Status</label>
+            <select class="field-input" id="eg-status">
+              <option value="active"    ${g.status==='active'    ?'selected':''}>Active</option>
+              <option value="completed" ${g.status==='completed' ?'selected':''}>Completed</option>
+              <option value="paused"    ${g.status==='paused'    ?'selected':''}>Paused</option>
+              <option value="abandoned" ${g.status==='abandoned' ?'selected':''}>Abandoned</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="eg-current">Current value</label>
+            <input class="field-input" id="eg-current" type="number" inputmode="decimal" step="any" value="${escapeHtml(String(g.current_value ?? ''))}">
+          </div>
         </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label class="field-label">Current value</label>
-          <input class="field-input" id="eg-current" type="number" value="${g.current_value ?? ''}">
-        </div>
-        <div class="field">
-          <label class="field-label">Target value</label>
-          <input class="field-input" id="eg-target" type="number" value="${g.target_value ?? ''}">
-        </div>
-      </div>
+      </details>
+      <button type="button" class="btn-secondary gl-finish" onclick="_markGoalFinished('${gid}','${cid}','${g.status === 'completed' ? 'active' : 'completed'}')">${g.status === 'completed' ? 'Reopen goal' : 'Mark goal finished'}</button>
       <p class="modal-error" id="eg-error"></p>
       <div class="modal-footer">
-        <button class="btn-danger" onclick="deleteGoal('${goalId}','${clientId}')">Delete goal</button>
-        <div style="flex:1"></div>
+        <button class="btn-danger" onclick="deleteGoal('${gid}','${cid}')">Delete goal</button>
+        <div class="gl-grow"></div>
         <button class="btn-secondary" onclick="closeModal('edit-goal-modal')">Cancel</button>
-        <button class="btn-primary" onclick="saveEditGoal('${goalId}','${clientId}')">Save</button>
+        <button class="btn-primary" onclick="saveEditGoal('${gid}','${cid}')">Save</button>
       </div>
     </div>
   `
   mountModal(overlay)
+}
+
+// "Mark goal finished" / "Reopen goal" save the status the BUTTON names (given when the sheet was drawn, not whatever the Status box says now) through the one save,
+// saveEditGoal: same ownership anchor, same row-count check, same repaint. If that save does not go through, the Status box is put back as it was, so a later plain Save
+// cannot persist a status nobody chose.
+async function _markGoalFinished(goalId, clientId, status) {
+  const box = document.getElementById('eg-status'); if (!box) return
+  const before = box.value
+  box.value = status
+  await saveEditGoal(goalId, clientId)
+  if (document.getElementById('edit-goal-modal')) box.value = before
 }
 
 async function saveEditGoal(goalId, clientId) {
@@ -1131,6 +1295,13 @@ async function saveEditGoal(goalId, clientId) {
   const errorEl = document.getElementById('eg-error')
   const title   = document.getElementById('eg-title').value.trim()
   if (!title) { errorEl.textContent = 'Title is required'; return }
+  // From without To is a typo and so is the same number twice (as on the new-goal sheet). A To without a From is left alone: a goal from the old form can have only a target.
+  const startEl = document.getElementById('eg-start')
+  if (startEl) {
+    const s = _glNum(startEl.value), t = _glNum(document.getElementById('eg-target').value)
+    if (startEl.value.trim() && t == null) { errorEl.textContent = 'Enter To as well, or clear From.'; return }
+    if (s != null && s === t) { errorEl.textContent = 'From and To are the same number.'; return }
+  }
 
   log.info('saveEditGoal', 'updating goal', { goalId })
   // .select('id') + rowcount, as deleteGoal below has: the `created_by` anchor means an account that did not create this goal
@@ -1143,6 +1314,7 @@ async function saveEditGoal(goalId, clientId) {
     target_date:   document.getElementById('eg-date').value            || null,
     current_value: document.getElementById('eg-current').value         || null,
     target_value:  document.getElementById('eg-target').value          || null,
+    ...(document.getElementById('eg-start') ? { start_value: document.getElementById('eg-start').value || null } : {}),
     updated_at:    new Date().toISOString()
   }).eq('id', goalId).eq('created_by', currentUser.id).select('id')
 
@@ -1155,7 +1327,7 @@ async function saveEditGoal(goalId, clientId) {
 
 async function deleteGoal(goalId, clientId) {
   if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
-  if (!(await confirmDialog('Delete this goal and all its milestones and check-ins? This cannot be undone.', { title: 'Delete goal?', confirmLabel: 'Delete', danger: true }))) return
+  if (!(await confirmDialog('Delete this goal and all its steps and updates? This cannot be undone.', { title: 'Delete goal?', confirmLabel: 'Delete', danger: true }))) return
   log.info('deleteGoal', 'deleting goal', { goalId })
   // Rowcount check, matching delete1RM / deletePerfLog / deleteWeightLog (app-progress.js). The
   // confirm promises "this cannot be undone" and deletes milestones and check-ins too, so a silent

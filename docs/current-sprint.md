@@ -20,7 +20,7 @@ Everything from `v2026.09.14` on still awaits Jake's look on a phone (the `fixed
 
 ## In flight
 
-Nothing is unreleased. Next build: the Goals tab (prototype v2 awaiting Jake's reaction). Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
+Unreleased (on master): the Goals tab rework, built 2026-10-14. Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
 end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation:
 leave it); the names "Biggest set" and "View training plan".
 

@@ -32,3 +32,7 @@ The 2026-08-11 fix added a `WITH CHECK` clause for solo to the `goals` policy; t
 ## What is needed
 
 The live policies on `goals`, `goal_milestones` and `goal_check_ins` (a read-only `pg_policies` query, Jake runs it), then a migration with a local verifier and mutations, as for the other policy fixes. Nothing is built before that: a verifier written on a guessed policy proves nothing.
+
+## Update 2026-10-14
+
+The Goals rework made this more visible: the goal page's one-line "Add a step" (the new main way to add a milestone) is offered to a solo user and the database refuses it (the refusal is shown under the box, not swallowed). Still blocked on the read-only `pg_policies` query for `goals`, `goal_milestones` and `goal_check_ins`, then the migration with its local verifier.

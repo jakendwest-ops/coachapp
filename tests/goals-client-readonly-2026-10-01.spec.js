@@ -122,7 +122,7 @@ test('a CLIENT keeps the tracking controls and they WORK: a check-in saves, a mi
     await expect(cl.locator('#add-checkin-modal')).toBeVisible()
     await cl.locator('#ci-value').fill('7')
     await cl.locator('#ci-notes').fill(TAG + ' client check-in')
-    await cl.locator('#add-checkin-modal button:has-text("Save check-in")').click()
+    await cl.locator('#add-checkin-modal').getByRole('button', { name: 'Save', exact: true }).click()
     await expect(cl.locator('#add-checkin-modal'), 'the modal closes only when the save worked').toHaveCount(0, { timeout: 8000 })
     const ci = await pt.evaluate(async ({ goalId }) => {
       const { data } = await db.from('goal_check_ins').select('notes, current_value').eq('goal_id', goalId)

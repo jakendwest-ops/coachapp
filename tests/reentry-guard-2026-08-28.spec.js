@@ -52,9 +52,6 @@ const FROZEN_UNGUARDED = {
   //    the user is already looking at, so a duplicate is visible and one tap to delete. Fails (c).
   saveEvent:                          'one row, modal closes, immediately visible and deletable',
   saveClientEvent:                    'one row, modal closes, immediately visible and deletable',
-  saveNewGoal:                        'one row, modal closes, immediately visible and deletable',
-  saveNewMilestone:                   'one row, appears in the goal detail list, deletable',
-  saveCheckIn:                        'one row, appears in the goal detail list, deletable',
   saveClientPB:                       'one row, appears in the PB list, deletable',
   saveClientCheckIn:                  'one row, appears in the check-in list, deletable',
   saveClientWeight:                   'one row, appears in the weight history, deletable',
@@ -155,7 +152,7 @@ test.describe('A double-pressed write must not insert twice', () => {
     expect(scan.moduleCount, 'index.html must yield the real module list').toBeGreaterThanOrEqual(9)
 
     const found = scanInserters(scan.srcs)
-    // "all 0 inserters are fine" is a switched-off checker. 35 exist today: 37 until 2026-09-27, when
+    // "all 0 inserters are fine" is a switched-off checker. 36 exist today (addStep joined on 2026-10-14): 37 until 2026-09-27, when
     // saveAssignProgram and saveAssignProgramToClient stopped inserting from the browser (both now call the
     // assign_program() database function), which also takes them out of this scan's sight — see the next test.
     expect(found.length, 'the scan found no inserters — it is inspecting nothing').toBeGreaterThanOrEqual(35)

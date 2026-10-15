@@ -1362,3 +1362,76 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 @media (max-width: 900px) {
   .app-shell:has(#mobile-view-switcher.mvs-on) .main-content { padding-bottom: calc(var(--bottom-nav-h) + 76px); }
 }
+
+/* ─── Goals (Jake, 2026-10-14): fuller list cards, a goal page with the number first, a steps checklist, short sheets ──────────────────────────────────────────────────────
+   "Cramped or cluttered, progress unclear, milestones clumsy" (2026-10-13). Shares the Progress page's .pw-* look (card, big number, pill, bar, legend, list, stepper); tokens only. */
+.gl-top { display:flex; justify-content:flex-end; margin-bottom:12px; }
+.gl-list { display:flex; flex-direction:column; gap:10px; }
+.gl-list > .pw-group { margin:4px 2px 0; }
+.gl-list[hidden] { display:none; }
+.gl-none { margin:0 2px; color:var(--text-muted); font-size:var(--text-base); }
+.gl-finished-btn { align-self:flex-start; }
+.gl-card { margin:0; padding:14px 16px; display:flex; flex-direction:column; gap:10px; cursor:pointer; }
+.gl-card:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.gl-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+.gl-name { font-size:var(--text-xl); font-weight:700; overflow-wrap:anywhere; }
+.gl-nums { display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-variant-numeric:tabular-nums; }
+.gl-nums b { font-size:var(--text-xl); }
+.gl-muted { color:var(--text-muted); }
+.gl-late { color:var(--danger); }
+.gl-bar { margin-top:0; }
+.gl-meta { display:flex; flex-direction:column; gap:6px; padding-top:10px; border-top:1px solid var(--border); font-size:var(--text-md); }
+.gl-next { font-size:var(--text-base); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gl-meta-row { display:flex; justify-content:space-between; gap:10px; color:var(--text-muted); }
+.gl-meta-row > span:last-child { text-align:right; }
+
+.gl-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin:6px 0 14px; }
+.gl-head-main { min-width:0; }
+.gl-title { margin:0; font-size:var(--text-3xl); font-weight:700; overflow-wrap:anywhere; }
+.gl-due { margin-top:4px; font-size:var(--text-base); color:var(--text-muted); }
+.gl-desc { margin:8px 0 0; font-size:var(--text-base); color:var(--text-muted); overflow-wrap:anywhere; }
+.gl-edit { flex-shrink:0; padding:6px 12px; font-size:var(--text-base); }
+.gl-progress .pw-label { margin-bottom:4px; overflow-wrap:anywhere; }
+.gl-sub { margin:6px 0 16px; font-size:var(--text-base); color:var(--text-muted); }
+.gl-sub.gl-nothing { margin:0; }
+.gl-barwrap { position:relative; }
+.gl-mark { position:absolute; top:-3px; width:2px; height:16px; margin-left:-1px; border-radius:var(--radius-xs); background:var(--text-muted); opacity:.55; }
+.gl-mark.is-hit { background:var(--success); opacity:1; }
+.gl-end { text-align:right; }
+.gl-update { width:100%; margin-top:16px; padding:13px; font-size:var(--text-xl); }
+.gl-sec { margin:20px 2px 8px; }
+
+.gl-step { display:flex; align-items:center; gap:12px; min-height:52px; padding:6px 14px; border-bottom:1px solid var(--border); }
+.gl-step-main { flex:1; min-width:0; padding:6px 0; }
+.gl-step-t { font-weight:600; overflow-wrap:anywhere; }
+.gl-step.is-done .gl-step-t { font-weight:500; color:var(--text-muted); text-decoration:line-through; }
+.gl-tick { position:relative; flex:0 0 auto; display:grid; place-items:center; width:44px; height:44px; margin:-6px; padding:0; border:0; background:transparent; color:transparent; cursor:pointer; }
+.gl-tick::before { content:''; position:absolute; width:32px; height:32px; box-sizing:border-box; border:2px solid var(--border); border-radius:50%; }
+.gl-tick svg { position:relative; width:14px; height:14px; }
+.gl-tick.on { color:var(--surface); }
+.gl-tick.on::before { border-color:var(--success); background:var(--success); }
+.gl-tick:disabled { cursor:default; }
+.gl-link { display:inline-flex; align-items:center; min-height:44px; }
+.gl-auto { font-size:var(--text-sm); font-weight:600; color:var(--success); }
+.gl-addstep { display:flex; gap:8px; padding:10px 14px; background:var(--surface); }
+.gl-addstep .field-input { flex:1; min-width:0; }
+.gl-step-err { margin:6px 2px 0; font-size:var(--text-md); color:var(--danger); }
+.gl-step-err:empty { display:none; }
+.gl-hist { display:flex; justify-content:space-between; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border); }
+.gl-hist[hidden] { display:none; }
+.gl-hist-v { font-weight:700; font-variant-numeric:tabular-nums; }
+.gl-hist-n { font-size:var(--text-md); overflow-wrap:anywhere; }
+.gl-hist-d { font-size:var(--text-md); white-space:nowrap; }
+.gl-steps > .gl-step:last-child, #gl-history > .gl-hist:last-child { border-bottom:0; }
+
+.gl-sheet [hidden] { display:none !important; }
+.gl-sheet-goal { margin:0 0 12px; font-size:var(--text-base); color:var(--text-muted); overflow-wrap:anywhere; }
+.gl-req { color:var(--danger); }
+.gl-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.gl-chip { padding:8px 14px; border:1.5px solid var(--border); border-radius:var(--radius-full); background:var(--surface); color:var(--text); font-size:var(--text-base); font-weight:600; cursor:pointer; }
+.gl-chip[aria-pressed="true"] { border-color:var(--accent); background:var(--accent-light); color:var(--accent); }
+.gl-more { margin:4px 0 12px; }
+.gl-more > summary { padding:6px 0; font-size:var(--text-base); font-weight:600; color:var(--accent); cursor:pointer; }
+.gl-more[open] > summary { margin-bottom:8px; }
+.gl-finish { width:100%; margin-bottom:8px; }
+.gl-grow { flex:1; }

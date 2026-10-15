@@ -143,8 +143,9 @@ const fns = functionIndex()
 
 describe('FROZEN_UNGUARDED — every exemption states a reason that is actually true', () => {
   test('the list is found and non-trivial', () => {
-    // A regex that stopped matching would make every assertion below pass over an empty set.
-    assert.ok(frozen.size >= 20, `expected 20+ exemptions, parsed ${frozen.size}`)
+    // A regex that stopped matching would make every assertion below pass over an empty set. The floor follows the list down as inserters get guarded and delisted
+    // (21 -> 18 on 2026-10-14, when the goal writers saveNewGoal / saveNewMilestone / saveCheckIn were guarded: a duplicate step or update has no delete button).
+    assert.ok(frozen.size >= 17, `expected 17+ exemptions, parsed ${frozen.size}`)
   })
 
   test('every exempted name is a function that still exists', () => {
