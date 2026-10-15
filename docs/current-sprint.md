@@ -9,11 +9,12 @@ trusting this file for anything time-sensitive. The previous version is archived
 
 ## Last shipped (tagged + deployed)
 
-- **`v2026.10.3`**, cut 2026-10-15, live: deploy green, the 13 live files byte-identical (`verify-live`). Your workouts rows open in place, a dumbbell nav icon,
-  the Body Weight and Personal Bests rework of My Progress, styled form classes, and the Streak tile (plan adherence, or weeks at a weekly target set in Settings;
-  `profiles.weekly_session_target` applied first). 1190 passed / 0 failed / 9 flaky / 4 skipped. [releases/v2026.10.3.md](releases/v2026.10.3.md)
-- **`v2026.10.2`** (2026-10-13): Training plans, "On my plan", the solo Workouts page. **`v2026.10.1`** (2026-10-11): the runner reports. **`v2026.09.15`** and
-  **`v2026.09.14`** (2026-10-04): the program-page rework, RPE periodization, the one-skeleton dashboard. [releases/](releases/)
+- **`v2026.10.4`**, cut 2026-10-15, live: deploy green, the 13 live files byte-identical (`verify-live`). The Goals tab rework (a goal's page with the number first, steps
+  that tick themselves, short sheets) and a solo account can add a step to its own goal (`goal_milestones` INSERT policy applied first). 1251 passed / 0 failed /
+  10 flaky / 4 skipped. [releases/v2026.10.4.md](releases/v2026.10.4.md)
+- **`v2026.10.3`** (2026-10-15): Your workouts rows, the Body Weight and Personal Bests rework, the Streak tile. **`v2026.10.2`** (2026-10-13): Training plans, "On my plan",
+  the solo Workouts page. **`v2026.10.1`** (2026-10-11): the runner reports. **`v2026.09.15`** and **`v2026.09.14`** (2026-10-04): the program-page rework, RPE
+  periodization, the one-skeleton dashboard. [releases/](releases/)
 - **Earlier:** see `docs/releases/` (the full file is archived: [archive/current-sprint-2026-10-12.md](archive/current-sprint-2026-10-12.md)).
 
 Everything from `v2026.09.14` on still awaits Jake's look on a phone (the `fixed-awaiting-jake` rows in [bugs/](bugs/)).
