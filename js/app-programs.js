@@ -1356,7 +1356,7 @@ async function openProgram(programId) {
 // An overview first - phases, weeks, sessions a week, and one bar with a block per phase - then each phase a fold-up card. Inside
 // an open phase the week is a row of tabs and the days are slim rows. The builder underneath is unchanged: the same week tabs,
 // the same day slots (.pwk-*), the same handlers; what moved is WHERE the occasional controls live (Edit / Remove a phase behind
-// its ⋯, Duplicate / Delete a week behind the week's ⋯). A sheet rather than an anchored dropdown, like the runner's ⋯ menu:
+// its ⋯; Duplicate / Delete a week are buttons under the week tabs since 2026-10-16). A sheet rather than an anchored dropdown, like the runner's ⋯ menu:
 // this app has no popover precedent (see _quickPrefsIconHtml). Tests: tests-node/program-page.test.mjs and
 // tests/program-page-rework-2026-10-04.spec.js.
 
@@ -1502,7 +1502,7 @@ function _pgmRefreshSummaries() {
   if (all) { const t = _pgmSessionsLabel(counts); all.textContent = t ? ' · ' + t : '' }
 }
 
-// The week row (tabs + the week's ⋯) and the active week's grid, from the cached sessions. Only an OPEN card has the container, so
+// The week row (the tabs, then the active week's Duplicate / Delete buttons) and the active week's grid, from the cached sessions. Only an OPEN card has the container, so
 // a folded phase costs nothing; unfolding it paints it from the cache with no refetch.
 function _renderPhaseBody(phaseId) {
   const el = document.getElementById(`phase-workouts-${phaseId}`)
@@ -1520,7 +1520,7 @@ function _renderPhaseBody(phaseId) {
     : ''
   // Only the active week's grid is in the DOM at once — keeps the day/add/remove controls unambiguous
   // (one set on screen) and avoids duplicating a whole phase's grid per week.
-  el.innerHTML = `<div class="pgm-wk">${tabsHtml}<button type="button" class="pgm-ibtn" aria-label="Week actions" onclick="openWeekMenu('${phaseId}')">⋯</button></div><div class="bw-week" id="phase-week-${phaseId}" data-phase="${phaseId}">${renderPhaseWeekGrid(d.phase, active, d.byWeek[active] || [])}</div>`
+  el.innerHTML = `${tabsHtml ? `<div class="pgm-wk">${tabsHtml}</div>` : ''}<div class="pgm-wk-actions" id="pgm-wk-actions-${phaseId}">${_pgmWeekActionsHtml(phaseId, d, active)}</div><div class="bw-week" id="phase-week-${phaseId}" data-phase="${phaseId}">${renderPhaseWeekGrid(d.phase, active, d.byWeek[active] || [])}</div>`
 }
 
 // The description is clamped to two lines; "Show more" appears only when it really is cut off (checked after the paint).
@@ -1535,10 +1535,11 @@ function togglePgmDesc() {
   b.textContent = d.classList.toggle('is-clamped') ? 'Show more' : 'Show less'
 }
 
-// ── The ⋯ sheets: a phase's (Edit / Remove) and a week's (Duplicate / Delete) ───────────────────────────────────────────
+// ── The phase's ⋯ sheet (Edit / Remove); the week's Duplicate / Delete are buttons on the page (pgmWeekAction) ───────────────────────────────────────────
 // Same shape as the runner's ⋯ menu. The rows carry only a literal `kind`; which program / phase / week it is about is kept in
-// window._pgmMenu, so no id and no free text ever sits in a handler string.
-function _pgmSheet(title, rows, note) {
+// window._pgmMenu, so no id and no free text ever sits in a sheet row's handler string. (The week's two buttons on the page, below, are the exception:
+// their handler carries the phase's id, a database uuid, and the week that was painted, a number; never free text.)
+function _pgmSheet(title, rows) {
   document.getElementById('pgm-sheet')?.remove()
   const overlay = document.createElement('div')
   overlay.id = 'pgm-sheet'
@@ -1548,7 +1549,6 @@ function _pgmSheet(title, rows, note) {
   overlay.innerHTML = `
     <div class="modal" role="dialog" aria-label="${escapeHtml(title)}">
       <div class="modal-header"><h2 class="modal-title">${escapeHtml(title)}</h2><button class="modal-close" onclick="closePgmSheet()" aria-label="Close">✕</button></div>
-      ${note ? `<p class="pgm-gen">${escapeHtml(note)}</p>` : ''}
       <div class="pgm-sheet-rows">
         ${rows.map(r => `<button type="button" id="${r.id}" class="pgm-sheet-row${r.danger ? ' is-danger' : ''}" onclick="pgmMenuDo('${r.kind}')">${escapeHtml(r.label)}</button>`).join('')}
       </div>
@@ -1568,17 +1568,29 @@ function openPhaseMenu(programId, phaseId) {
   ])
 }
 
-// The week the tab row has selected - its sessions decide whether there is anything to duplicate or delete.
-function openWeekMenu(phaseId) {
+// The week on screen's two actions, as buttons on the page (they sat behind the week's ⋯ sheet until 2026-10-16: Jake, "buttons need to be moved from the ... and put
+// directly on this screen"). A week with no workouts has nothing to duplicate or delete, so it shows none; "+ Add workout…" is right there.
+function _pgmWeekActionsHtml(phaseId, d, week) {
+  if (!d || week == null || !(d.byWeek[week] || []).length) return ''
+  const w = Number(week)
+  return `<button type="button" class="btn btn-secondary" onclick="pgmWeekAction('${phaseId}','dup',${w})">Duplicate week</button><button type="button" class="btn btn-danger" onclick="pgmWeekAction('${phaseId}','del',${w})">Delete week</button>`
+}
+
+// Switching week tabs repaints only the grid, so the buttons are redone with it: the week switched to may have nothing in it.
+function _pgmRefreshWeekActions(phaseId, week) {
+  const el = document.getElementById('pgm-wk-actions-' + phaseId)
+  if (el) el.innerHTML = _pgmWeekActionsHtml(phaseId, window._builderWeekData?.[phaseId], week)
+}
+
+// The week is the one the button was PAINTED for, not whatever _builderActiveWeek says by now: while "Duplicate x N" is mid-run it already names the new week, which
+// is not on screen yet. It must still be in the cache (a week deleted or emptied since the paint does nothing), and an unknown kind does nothing. pgmMenuDo then
+// re-checks that the phase is still on the page.
+function pgmWeekAction(phaseId, kind, week) {
   const d = window._builderWeekData?.[phaseId]
-  const week = window._builderActiveWeek?.[phaseId]
-  if (!d || week == null) return
-  const has = (d.byWeek[week] || []).length > 0
-  const weekNums = Object.keys(d.byWeek).map(Number).sort((a, b) => a - b)
+  if (!d || !(d.byWeek[week] || []).length) return
   window._pgmMenu = { programId: window._openProgramId, phaseId, week }
-  _pgmSheet(`Week ${Math.max(weekNums.indexOf(week), 0) + 1}`, has
-    ? [{ id: 'pgm-dup-week', kind: 'dup-week', label: 'Duplicate week' }, { id: 'pgm-del-week', kind: 'del-week', label: 'Delete week', danger: true }]
-    : [], has ? '' : 'This week has no workouts yet. Add one first, then you can duplicate or delete the week.')
+  if (kind === 'dup') pgmMenuDo('dup-week')
+  else if (kind === 'del') pgmMenuDo('del-week')
 }
 
 function pgmMenuDo(kind) {
@@ -2859,6 +2871,7 @@ function _selectBuilderWeek(phaseId, week) {
   const d = window._builderWeekData?.[phaseId]
   const container = document.getElementById('phase-week-' + phaseId)
   if (d && container) container.innerHTML = renderPhaseWeekGrid(d.phase, week, d.byWeek[week] || [])
+  _pgmRefreshWeekActions(phaseId, week)
   document.querySelectorAll(`.week-tab[data-phase="${phaseId}"]`).forEach(b => {
     b.setAttribute('aria-selected', Number(b.dataset.week) === week)
   })
@@ -3203,6 +3216,7 @@ async function deletePhaseWeek(phaseId, weekNumber) {
   if (phase && durationOk && programId) openProgram(programId)
   else loadAllPhaseWorkouts([{ id: phaseId }])
 }
+guardReentry('deletePhaseWeek')  // the button is on the page now: a second tap during the delete would ask about whichever week has taken the first one's number
 
 // ─── Workout picker (program phase day-slot) ─────────────────────────────────
 // Replaces the old native <select> + sibling filter input. A <select>'s <option> can only hold

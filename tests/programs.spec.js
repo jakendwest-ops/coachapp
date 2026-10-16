@@ -45,12 +45,10 @@ async function programManage(page, label) {
   await page.click(`#program-manage-modal button:text-is("${label}")`)
 }
 
-// 2026-10-04 (the program page rework): Duplicate week / Delete week moved off the week header and behind the week's ⋯ sheet, so a
-// stray tap cannot delete a week. Opens the sheet for the week on screen and taps one row ("Duplicate week" | "Delete week").
+// Duplicate week / Delete week are buttons under the week tabs (the week's ⋯ sheet held them from 2026-10-04 to 2026-10-16). Taps the one
+// for the week on screen ("Duplicate week" | "Delete week"); Delete asks first, so a stray tap cannot delete a week.
 async function weekAction(page, label) {
-  await page.click('button[aria-label="Week actions"]')
-  await page.waitForSelector('#pgm-sheet', { state: 'visible', timeout: 4000 })
-  await page.click(`#pgm-sheet button:text-is("${label}")`)
+  await page.click(`.pgm-wk-actions button:text-is("${label}")`)
 }
 
 // ONE shared sweep for every UI-created program fixture in this file (2026-08-20).
@@ -838,9 +836,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await page.evaluate((programId) => openProgram(programId), setup.programId)
       await page.waitForSelector('.week-tab[data-week="3"]', { timeout: 8000 })
-      await page.click('button[aria-label="Week actions"]')
-      await expect(page.locator('#pgm-sheet button:text-is("Delete week")')).toBeVisible({ timeout: 4000 })
-      await page.click('#pgm-sheet .modal-close')
+      await expect(page.locator('.pgm-wk-actions button:text-is("Delete week")')).toBeVisible({ timeout: 4000 })
 
       const _delWk = page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 2), setup)
       await acceptConfirm(page)
@@ -971,9 +967,8 @@ test.describe('Copy program workouts to Library + duplicate-week auto-extend (20
       await page.waitForSelector('h1:has-text("[E2E] AutoExtend Program")', { timeout: 8000 })
 
       // The row must now be offered even though the phase is already "full" (1 of 1 weeks).
-      await page.click('button[aria-label="Week actions"]')
-      await expect(page.locator('#pgm-sheet button:text-is("Duplicate week")')).toBeVisible({ timeout: 8000 })
-      await page.click('#pgm-sheet button:text-is("Duplicate week")')
+      await expect(page.locator('.pgm-wk-actions button:text-is("Duplicate week")')).toBeVisible({ timeout: 8000 })
+      await page.click('.pgm-wk-actions button:text-is("Duplicate week")')
       await page.click('#dup-week-modal button:has-text("1×")')
       await expect(page.locator('text=phase extended to 2 weeks')).toBeVisible({ timeout: 8000 })
 

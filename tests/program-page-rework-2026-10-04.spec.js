@@ -1,7 +1,7 @@
 // The program page rework (Jake, 2026-10-04: "UI of this page needs to be improved (much like we have just done with the dashboard)").
 //
 // An overview first - phases, weeks, sessions a week, one bar with a block per phase - then each phase a fold-up card; inside an open
-// phase the week is a row of tabs and the days are slim rows; Edit / Remove a phase and Duplicate / Delete a week sit behind ⋯ sheets.
+// phase the week is a row of tabs and the days are slim rows; Edit / Remove a phase sit behind a ⋯ sheet, and Duplicate / Delete a week are buttons under the week tabs (since 2026-10-16).
 // The builder underneath (week tabs, .pwk-* slots, handlers) is unchanged and is covered by the existing builder specs; this file pins
 // what is NEW: what is on screen when, what is NOT in the DOM while a phase is folded, where the occasional controls went, and that
 // nothing a coach types ever becomes markup. The phone is the default viewport of this suite (390 px); the desktop week grid is
@@ -326,24 +326,24 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await expect(page.locator('.pgm-facts')).toContainText('3 phases · 8 weeks')
   })
 
-  test('the week ⋯ holds Duplicate week and Delete week for the week on screen; Delete asks first', async ({ page }) => {
+  test('Duplicate week and Delete week are buttons on the page, for the week on screen; Delete asks first', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
-    // the sheet is about the week the tab row has selected
+    // on the first paint, before any tab is touched (a tab switch repaints the buttons, which would hide a broken first paint)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Delete week' })).toBeVisible()
+    await expect(page.locator(`${card(s, 0)} button[aria-label="Week actions"]`), 'the week ⋯ menu is gone (asked after the paint, so it cannot pass before the page has loaded)').toHaveCount(0)
+    // the buttons are about the week the tab row has selected
     await page.locator(`${card(s, 0)} .week-tab[data-week="3"]`).click()
-    await page.locator(`${card(s, 0)} button[aria-label="Week actions"]`).click()
-    const sheet = page.locator('#pgm-sheet')
-    await expect(sheet.locator('.modal-title')).toHaveText('Week 3')
-    await expect(sheet.getByRole('button', { name: 'Duplicate week' })).toBeVisible()
-    await expect(sheet.getByRole('button', { name: 'Delete week' })).toBeVisible()
+    const row = page.locator(`${card(s, 0)} .pgm-wk-actions`)
+    await expect(row.getByRole('button', { name: 'Duplicate week' })).toBeVisible()
+    await expect(row.getByRole('button', { name: 'Delete week' })).toBeVisible()
 
-    await sheet.getByRole('button', { name: 'Duplicate week' }).click()
+    await row.getByRole('button', { name: 'Duplicate week' }).click()
     await expect(page.locator('#dup-week-modal .modal-title')).toHaveText('Duplicate Week 3')
     await page.click('#dup-week-modal .modal-close')
 
-    await page.locator(`${card(s, 0)} button[aria-label="Week actions"]`).click()
-    await page.locator('#pgm-sheet').getByRole('button', { name: 'Delete week' }).click()
-    await expect(page.locator('#confirm-dialog')).toBeVisible()
+    await row.getByRole('button', { name: 'Delete week' }).click()
+    await expect(page.locator('#confirm-dialog')).toContainText('Delete Week 3?')
     await declineConfirm(page)
     await expect(page.locator(`${card(s, 0)} .week-tab`)).toHaveCount(4)
   })
@@ -355,8 +355,7 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await expect(page.locator(card(s, 0))).toContainText('3 weeks')
     expect(await page.locator('.pgm-seg').evaluate(e => getComputedStyle(e).flexGrow), 'its block is three weeks wide').toBe('3')
     await page.locator(`${card(s, 0)} .week-tab[data-week="2"]`).click()
-    await page.locator(`${card(s, 0)} button[aria-label="Week actions"]`).click()
-    await page.locator('#pgm-sheet').getByRole('button', { name: 'Delete week' }).click()
+    await page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Delete week' }).click()
     await acceptConfirm(page)
     await expect(page.locator(`${card(s, 0)} .week-tab`)).toHaveCount(2, { timeout: 15000 })
     await expect(page.locator('.pgm-facts'), 'the overview line').toContainText('1 phase · 2 weeks')
@@ -390,29 +389,117 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     expect(calls.all, 'and for the phase that is, each row calls its own handler').toEqual(['dup', 'del', 'remove', 'edit'])
   })
 
-  test('Duplicate week from the sheet adds the copy and the new tab', async ({ page }) => {
+  test('Duplicate week from the page adds the copy and the new tab', async ({ page }) => {
     const s = await seed(page, { phases: [{ name: 'Block', weeks: 3, rowsForWeeks: 1, week1: [MON, WED] }] })
     await open(page, s)
     await expect(page.locator(`${card(s, 0)} .pwk-slot`).first(), 'the sessions have loaded').toBeVisible()
     await expect(page.locator(`${card(s, 0)} .week-tab`), 'one week of sessions, so no tab row yet').toHaveCount(0)
-    await page.locator(`${card(s, 0)} button[aria-label="Week actions"]`).click()
-    await page.locator('#pgm-sheet').getByRole('button', { name: 'Duplicate week' }).click()
+    await page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Duplicate week' }).click()
     await page.locator('#dup-week-modal button:text-is("1×")').click()
     await expect(page.locator(`${card(s, 0)} .week-tab[data-week="2"]`)).toBeVisible({ timeout: 15000 })
   })
 
-  test('a week with no workouts says why there is nothing to duplicate or delete', async ({ page }) => {
+  test('on a phone the two buttons sit side by side under the week tabs, each at least 44 px tall and inside the card', async ({ page }) => {
+    const s = await seed(page, MAIN)
+    await open(page, s)
+    const row = page.locator(`${card(s, 0)} .pgm-wk-actions`)
+    const tabs = await page.locator(`${card(s, 0)} .pgm-wk`).boundingBox()
+    const dup = await row.getByRole('button', { name: 'Duplicate week' }).boundingBox()
+    const del = await row.getByRole('button', { name: 'Delete week' }).boundingBox()
+    const body = await page.locator(`${card(s, 0)} .pgm-ph-body`).boundingBox()
+    expect(dup.y, 'under the tabs').toBeGreaterThanOrEqual(tabs.y + tabs.height)
+    expect(Math.abs(dup.y - del.y), 'side by side').toBeLessThan(2)
+    expect(del.x, 'Duplicate on the left, Delete on the right').toBeGreaterThan(dup.x + dup.width - 1)
+    expect(Math.min(dup.height, del.height), 'a thumb-sized target').toBeGreaterThanOrEqual(44)
+    expect(dup.x, 'inside the card').toBeGreaterThanOrEqual(body.x)
+    expect(del.x + del.width, 'inside the card').toBeLessThanOrEqual(body.x + body.width + 1)
+    expect(await page.evaluate(() => document.body.scrollWidth), 'nothing forces a sideways scroll').toBeLessThanOrEqual(390)
+  })
+
+  test('a week with no workouts shows no Duplicate / Delete buttons (nothing to act on), and gets them once it has a workout', async ({ page }) => {
     const s = await seed(page, { phases: [{ name: 'Empty block', weeks: 2 }] })
     await open(page, s)
-    await page.locator(`${card(s, 0)} button[aria-label="Week actions"]`).click()
-    const sheet = page.locator('#pgm-sheet')
-    await expect(sheet).toContainText('no workouts yet')
-    await expect(sheet.getByRole('button', { name: 'Duplicate week' })).toHaveCount(0)
-    await expect(sheet.getByRole('button', { name: 'Delete week' })).toHaveCount(0)
-    await page.click('#pgm-sheet .modal-close')
-    // a phase with a single week has no tabs: its week menu still sits at the right edge, not alone at the left
-    const [btn, body] = [await page.locator(`${card(s, 0)} button[aria-label="Week actions"]`).boundingBox(), await page.locator(`${card(s, 0)} .pgm-ph-body`).boundingBox()]
-    expect(body.x + body.width - (btn.x + btn.width), 'the week menu hugs the right edge').toBeLessThan(20)
+    // the sessions have been read and the week painted: only then does "nothing is there" mean something (an element that does not exist yet is also "hidden")
+    await expect(page.locator(`#phase-week-${s.phases[0].id}`)).toBeVisible()
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions`), 'the strip is there but empty').toBeAttached()
+    expect(await page.locator(`${card(s, 0)} .pgm-wk-actions`).evaluate(e => e.getBoundingClientRect().height), 'an empty strip has no height').toBe(0)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(0)
+    await expect(page.locator(`${card(s, 0)} button[aria-label="Week actions"]`)).toHaveCount(0)
+    // a workout lands the way the add path leaves it: a row, then the phase is reloaded
+    await page.evaluate(async ({ phaseId, programId }) => {
+      const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: programId, client_id: null, name: '[E2E] PgmPage Late' }).select('id').single()
+      await db.from('program_phase_workouts').insert({ phase_id: phaseId, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 })
+      await loadAllPhaseWorkouts([{ id: phaseId }])
+    }, { phaseId: s.phases[0].id, programId: s.programId })
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(2)
+  })
+
+  test('switching to a week that turns out empty takes the buttons away, and switching back brings them', async ({ page }) => {
+    const s = await seed(page, { phases: [{ name: 'Block', weeks: 3, rowsForWeeks: 3, week1: [MON] }] })
+    await open(page, s)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(2)
+    // what a week emptied elsewhere looks like in the cache before the reload
+    await page.evaluate(id => { window._builderWeekData[id].byWeek[2] = []; _selectBuilderWeek(id, 2) }, s.phases[0].id)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(0)
+    await page.evaluate(id => _selectBuilderWeek(id, 1), s.phases[0].id)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(2)
+  })
+
+  test('a double tap on Delete week asks once: the button is on the page now, and a second question would be about whichever week took the first one\'s number', async ({ page }) => {
+    const s = await seed(page, MAIN)
+    await open(page, s)
+    await page.evaluate(() => { window.__asks = 0; window.confirmDialog = () => { window.__asks++; return new Promise(() => {}) } })
+    await page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Delete week' }).dblclick()
+    expect(await page.evaluate(() => window.__asks), 'one question, not two').toBe(1)
+  })
+
+  test('the buttons act on the week they were painted for, even when the active week has moved on (Duplicate x N does this mid-run)', async ({ page }) => {
+    const s = await seed(page, MAIN)
+    await open(page, s)
+    await page.locator(`${card(s, 0)} .week-tab[data-week="3"]`).click()
+    // what duplicatePhaseWeek leaves behind while a x N run is still going: the active week already names the NEW week, the page still shows week 3
+    await page.evaluate(id => { window._builderActiveWeek[id] = 4 }, s.phases[0].id)
+    await page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Delete week' }).click()
+    await expect(page.locator('#confirm-dialog')).toContainText('Delete Week 3?')
+    await declineConfirm(page)
+  })
+
+  test('the week buttons do nothing for a phase that is not on the page, a week that is not in the cache, or an unknown kind', async ({ page }) => {
+    const s = await seed(page, { phases: [{ name: 'One', weeks: 2, rowsForWeeks: 2, week1: [MON] }] })
+    await open(page, s)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`), 'the sessions have loaded (until then there is no cache, and every call would do nothing)').toHaveCount(2)
+    const r = await page.evaluate((realPhaseId) => {
+      const log = []
+      window.showDuplicateWeekModal = (...a) => log.push(['dup', ...a])
+      window.deletePhaseWeek = (...a) => log.push(['del', ...a])
+      pgmWeekAction(crypto.randomUUID(), 'dup', 1); pgmWeekAction(crypto.randomUUID(), 'del', 1)
+      pgmWeekAction(realPhaseId, 'dup', 9); pgmWeekAction(realPhaseId, 'del', 9)
+      pgmWeekAction(realPhaseId, 'zzz', 1)
+      const none = log.length
+      pgmWeekAction(realPhaseId, 'dup', 1); pgmWeekAction(realPhaseId, 'del', 2)
+      return { none, all: log.map(c => c.join(':')) }
+    }, s.phases[0].id)
+    expect(r.none, 'nothing is called').toBe(0)
+    expect(r.all, 'and a real phase, a real week and a real kind call their own handler with that week').toEqual(['dup:' + s.phases[0].id + ':1', 'del:' + s.phases[0].id + ':2'])
+  })
+
+  test('a one-week phase with nothing in it: the first day row does not hug the top border of the card', async ({ page }) => {
+    const s = await seed(page, { phases: [{ name: 'Lone week', weeks: 1 }] })
+    await open(page, s)
+    await expect(page.locator(`${card(s, 0)} .pwk-day`).first()).toBeVisible()
+    const gap = await page.evaluate(id => Math.round(document.querySelector(`#ph-${id} .pwk-day`).getBoundingClientRect().top - document.querySelector(`#ph-${id} .pgm-ph-body`).getBoundingClientRect().top), s.phases[0].id)
+    expect(gap, 'room above the first day (the empty strip keeps its margin)').toBeGreaterThanOrEqual(8)
+  })
+
+  test('on a desktop the two buttons keep their own width instead of stretching across the card', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    const s = await seed(page, MAIN)
+    await open(page, s)
+    const row = page.locator(`${card(s, 0)} .pgm-wk-actions`)
+    const dup = await row.getByRole('button', { name: 'Duplicate week' }).boundingBox()
+    const del = await row.getByRole('button', { name: 'Delete week' }).boundingBox()
+    expect(dup.width, 'its own width, not half the card').toBeLessThan(260)
+    expect(Math.abs(dup.y - del.y), 'still on one row').toBeLessThan(2)
   })
 
   test('a personal program has no Assign button, and no empty strip where it would be', async ({ page }) => {
