@@ -10,6 +10,22 @@ const PT2_PASSWORD = process.env.PT2_PASSWORD
 
 async function loginAs(page, email, password) {
   await page.goto('/')
+  // Either screen can come first: the sign-in form, or the app already signed in (a stored session restored it). Waiting for the form alone timed out after 10 s on an
+  // already-signed-in page and failed the test; it was the suite's most common flake (both first-attempt failures in the 2026-10-17 no-retry full run).
+  // tests/login-already-signed-in-2026-10-17.spec.js reproduces it on demand.
+  await page.waitForFunction(() => {
+    const shown = id => { const e = document.getElementById(id); return !!e && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden' }
+    return shown('auth-screen') || shown('app-shell')
+  }, null, { timeout: 10000 })
+  if (await page.locator('#app-shell').isVisible()) {
+    // currentUser is set a moment after the shell shows; reading it too early would look like "someone else" and wipe a perfectly good session.
+    const who = await page.waitForFunction(() => (typeof currentUser !== 'undefined' && currentUser && currentUser.email) || null, null, { timeout: 10000 })
+      .then(h => h.jsonValue()).catch(() => null)
+    if (who && String(who).toLowerCase() === String(email).toLowerCase()) return
+    // Someone else is signed in: forget them in THIS browser only (a server-side sign-out would end every device's session) and come back to the form.
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
+    await page.goto('/')
+  }
   // Wait for auth screen to appear
   await page.waitForSelector('#auth-screen', { state: 'visible', timeout: 10000 })
   // Fill login form (it's shown by default)
