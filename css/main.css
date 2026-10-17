@@ -980,8 +980,9 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .pgm-replaces { font-size:var(--text-md); color:var(--text-muted); margin:0 0 12px; }
 
 /* The solo Workouts page (Jake, 2026-10-12): start buttons, a folded plan, "Your workouts". */
-.wk-start { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
-.wk-start .btn-primary, .wk-start .btn-secondary { width:100%; min-height:48px; }
+.wk-create { display:flex; flex-direction:column; gap:4px; margin-bottom:16px; }
+.wk-create .btn-primary { width:100%; min-height:48px; }
+.wk-trainnow { align-self:center; min-height:44px; padding:8px 12px; border:0; background:none; color:var(--accent); font-size:var(--text-base); font-weight:700; cursor:pointer; }
 .wk-noplan { padding:12px; margin-bottom:16px; border:1px dashed var(--border); border-radius:var(--radius); color:var(--text-muted); font-size:var(--text-md); }
 .wk-noplan a { color:var(--accent); font-weight:700; }
 .wk-plan { margin-bottom:16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
@@ -1003,6 +1004,20 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .wk-toggle { align-items:stretch; min-width:0; padding:0; border:0; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .wk-chev { width:14px; height:14px; flex-shrink:0; color:var(--text-muted); transition:transform .2s; transform:rotate(0deg); cursor:pointer; }
 .wk-detail { padding:0 12px 12px; }
+.wk-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.wk-acts button { min-height:40px; }
+.wk-lock { display:flex; gap:8px; align-items:flex-start; margin-top:10px; padding:10px 12px; border-radius:var(--radius); background:var(--accent-light); color:var(--text); font-size:var(--text-md); }
+.wk-lock svg { width:14px; height:14px; flex-shrink:0; margin-top:1px; color:var(--accent); }
+.wk-more { display:block; margin:10px auto 0; }
+.wk-count { margin:6px 0 0; text-align:center; }
+.wk-linkbtn { padding:0; border:0; background:none; color:var(--accent); font-weight:700; cursor:pointer; }
+.wk-choice { display:block; width:100%; margin-bottom:8px; padding:14px; border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); color:var(--text); text-align:left; cursor:pointer; }
+.wk-choice b { display:block; margin-bottom:2px; font-size:var(--text-xl); }
+.wk-choice span { font-size:var(--text-md); color:var(--text-muted); }
+.wk-choice:focus-visible, .wk-trainnow:focus-visible, .wk-linkbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.wk-seg { display:flex; gap:6px; margin-bottom:10px; }
+.wk-seg button { flex:1; min-height:40px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); color:var(--text-muted); font-size:var(--text-base); font-weight:700; }
+.wk-seg button[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:var(--surface); }
 
 /* ─── My Progress > Body Weight (Jake, 2026-10-13): a goal card, a log sheet, the entries grouped by month ──────────────────────────────────────────────────────────── */
 .pw-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }

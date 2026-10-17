@@ -38,8 +38,9 @@ const FROZEN_UNGUARDED = {
   _saveMissingOneRMEntries:           'internal — runs inside the assign flow after it has succeeded',
   _resolveExerciseIdForSave:          'internal — runs inside save1RM (a Big 5 lift picked by name), which is re-entry guarded',
   _propagateExerciseChangeToTemplates:'internal — runs inside _applyToAllSessions after a guarded save',
-  _cloneSharedMasterTemplate:         'internal — runs inside _resolveEditableTemplateId',
+  _cloneSharedMasterTemplate:         'internal — runs inside _resolveEditableTemplateId and copyWorkout (guarded)',
   _seedStarterContent:                'internal — runs once from loadUserInfo on first login, no button',
+  _createPersonalWorkout:             'internal — runs inside saveRunnerAsWorkout and createWorkoutFromPastSession, both guarded',
 
   // ── (The confirm-gated category is empty. generatePhasePeriodization lived here as
   //    'confirm()-gated before any write — the dialog blocks re-entry' until 2026-09-04, when

@@ -12,6 +12,12 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-17 — The Personal account's Workouts page: the plan first, "Create a workout" with two choices, a search, Edit in place, and a plan lock.**
+Jake, from a prototype and a clickable plan ("Approved - build"). *Create a workout:* Choose a template (My workouts saves a copy; Past sessions saves a workout of that session's exercises) or Create new (a name, then the existing editor);
+both SAVE at once. "Train now" stays as a small link for a blank live session; "Start from a past session" is gone. *The lock:* a workout in the plan the account is on NOW has no Edit (it names the plan and
+offers "Open in Training plans"; Make a copy still works); a plan that has run its course or been removed unlocks its workouts. *Not chosen:* ready-made starter workouts as templates; locking by workout name.
+*Left for Phase 2:* the PT page (a Client filter, search and paging on the server), the Library page, and one shared code path for both roles. Known limits are in the ledger row.
+
 **2026-10-12 — "Programs" are now "Training plans" everywhere they are read; a solo account is on one plan at a time; the Workouts page is for workouts made and used.**
 Jake, from a prototype and clickable questions. *Words:* every visible "program/programme" became "training plan" (nav, headings, buttons, dialogs, toasts, coach screens); code names, tables,
 ids and routes keep "program". *One plan at a time (solo):* adding a plan takes the other off (assign first, remove second; a failed removal warns and leaves both); "Remove from my plan" keeps every
@@ -19,15 +25,8 @@ logged session, drops the upcoming ones, and the plan stays in Training plans. A
 the plan folded away, "Your workouts" (made and used; a plan session joins once done), Recent sessions. "Start an empty workout" starts blank; "Save as a workout" on the finish screen is the only way
 a session becomes reusable, and only when tapped. Not chosen: saving every session automatically; two plans at once. A coached client's page is unchanged.
 
-**2026-10-11 — CI runs Node 24 like the dev machine, a release is checked live by script, and a database write that can be refused silently is row-checked.**
-Jake approved three tooling fixes from his board ("approved"). *Node:* `deploy.yml` pinned 22 while this machine runs 24, which cost `v2026.09.12` its deploy; it now pins 24
-(not chosen: pinning the machine down to 22, since everything is verified on 24; no `.nvmrc` or `engines` added, and `checks.sh` still prints a `[note]` if the two ever differ).
-*Live check:* `node scripts/verify-live.mjs <tag>` compares every file the app loads with the tag, byte for byte, retrying while Pages catches up (exit 0 identical, 1 differs,
-2 could not check); its self-test runs on every push (`checks.sh` 9t) and eight deliberate breakages each turn it red. *Silent refusals:* `savePeriodizationConfig` now row-checks each
-tier write and the phase write (row-level security answers a refused UPDATE with 200 and no rows) and anchors the tier write on the verified phase, which closes the 2026-09-06 row.
-*Found by the pre-push review:* a self-test that runs git in a temp folder inherits `GIT_DIR` from a pre-push hook run in a LINKED worktree and then commits to the real repo (reproduced);
-the `verify-live` and `bump-versions` self-tests now strip `GIT_*`, and three release-only ones are named in `technical-debt.md`. The reviewers saw the version before the last fixes (the
-anchor, the phase-row check, the self-test hardening): those are covered by tests and by deliberate breakage, not by a second review.
+**2026-10-11** — CI pins Node 24 like the dev machine; `node scripts/verify-live.mjs <tag>` checks a release byte for byte; `savePeriodizationConfig` row-checks its writes. Archived verbatim:
+[archive/decisions-2026-10-11-node24-live-check-row-checks.md](archive/decisions-2026-10-11-node24-live-check-row-checks.md).
 
 **2026-10-05 — The Vault severing was verified on files and never on the session's folder: a desktop session rooted in the Vault ran CoachApp for 16 days. Fixed at the root, and made to refuse** (a SessionStart guard, three `os-lint` checks, one merged memory folder, CLAUDE.md saying the ROOT must be the repo). The summary that stood here, verbatim: [archive/decisions-2026-10-05-vault-rooted-summary.md](archive/decisions-2026-10-05-vault-rooted-summary.md); the full entry: [archive/decisions-2026-10-05-vault-rooted-session.md](archive/decisions-2026-10-05-vault-rooted-session.md).
 

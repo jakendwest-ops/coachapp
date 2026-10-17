@@ -3,7 +3,7 @@ id: 2026-10-16-workouts-page-rework-plan-first-create-a-workout-search-and-edit-
 status: open
 priority: medium
 reported: 2026-10-16
-status_detail: "OPEN, intake 2026-10-16: a page-sized rework of the Workouts page, to be scoped over several sessions (Jake: 'a large piece of work'). Nothing designed or built yet; scoping questions go to Jake first."
+status_detail: "OPEN. Phase 1 (the Personal account's page) approved by Jake 2026-10-16 and BUILT 2026-10-17 on master, NOT released: plan first, Create a workout (Choose a template / Create new), Train now link, search by name, Edit and Make a copy per row, and the plan lock. Library page left alone by his choice. Phase 2 (the PT page: a Client filter, search and paging on the server, one shared code path) is not started and needs its own plan. Closes only on Jake's phone check for BOTH roles; see 'Phase 1' below."
 ---
 
 # Workouts page: plan first, "Create a workout" with two choices, search instead of "Start from a past session", edit in place, and one page for solo AND PT
@@ -43,10 +43,18 @@ Read-only look, 2026-10-16. There are THREE different Workouts pages behind `ren
 - **Create a workout:** two choices, **Choose a template** and **Create new**. Create new opens a BUILDER that saves the workout (name, add exercises, it lands in the list, Start is one tap after). A blank live session stays reachable as a small **"Train now"** link for the in-gym case (the old "Start an empty workout" behaviour).
 - **Choose a template picks from:** his own saved workouts; a past session he logged (this replaces "Start from a past session", so nothing is lost); and, for a PT only, a workout made for another client. NOT ready-made starter workouts.
 - **PT's first look:** one list with a search box and a Client filter beside it (All, Mine, then each client); search and paging done on the server, 20 at a time.
-- **Next step:** a tappable prototype of the SAME page as a solo user and as a PT with about 200 example workouts. Nothing is built into the app until he says approved. **Prototype published 2026-10-16** (private Artifact, example data only): https://claude.ai/artifact/PqNJdoUzPe1ubs6pbcGVz8. It carries six questions for his reaction (the order, Create a workout and "Train now", the plan lock, the PT view, what a PT can do to a workout, what should differ between the two roles). Waiting on his answers.
+- **Next step:** a tappable prototype of the SAME page as a solo user and as a PT with about 200 example workouts. Nothing is built into the app until he says approved. **Prototype published 2026-10-16** (private Artifact, example data only): https://claude.ai/artifact/PqNJdoUzPe1ubs6pbcGVz8. He liked the prototype and approved building Phase 1 (Personal account), leaving the Library page for Phase 2.
 
 **Closes when:** Jake confirms on his phone that the reworked Workouts page works for a solo account AND for a PT (the same page and the same code), and the Playwright specs written red-first as it is built pass in the full suite. A prototype or a merged build is not closure.
 - Assumed, to be confirmed in the prototype: workouts that belong to a plan the user is CURRENTLY on show a lock and "Edit in Training plans" instead of Edit; once a plan finishes or is removed its copies are ordinary workouts and become editable.
+
+## Phase 1 (Personal account), built 2026-10-17
+
+All four of Jake's points, in `js/app-workouts.js`: the plan block first; Create a workout opening two choices (Create new = a name, then the existing editor, saved at once; Choose a template = My workouts, which saves a "Copy of ...", or Past sessions, which saves a workout of that session's exercises); a small "Train now" link for the blank live session; a search by name; Edit and Make a copy on each row. A workout in the plan the account is on NOW has no Edit (it names the plan, offers "Open in Training plans", and Make a copy still works); once that plan has run its course (the "Training plan complete" reading) or is removed, its workouts are ordinary. One shared helper (`_createPersonalWorkout`) now makes a personal workout for the Workouts page and for "Save as a workout" on the finish screen. No database change. Specs: `tests/workouts-page-rework-2026-10-16.spec.js` (18) and `tests-node/workouts-model.test.mjs` (37), each safeguard broken on purpose and caught.
+
+**Known limits (named, not fixed):** editing an unlocked weekly copy edits that one week; the lock follows only the newest assignment; the page reads the account's newest 100 workouts and says so at 100; an expanded row folds when the search changes or Show more is tapped; "Open in Training plans" leaves the sidebar highlight on Workouts.
+
+**Phase 2 (PT), open:** the same page for a coach with hundreds of workouts across clients: a Client filter (All, Mine, each client), search and paging done on the server (20 at a time; the API returns at most 200 rows per request), "a workout made for another client" as a template source, and the Library page folded in. Needs its own plan and a prototype review before any build.
 
 ## Parts (as Jake numbered them)
 

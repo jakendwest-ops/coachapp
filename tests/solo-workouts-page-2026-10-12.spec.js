@@ -5,9 +5,10 @@ const { loginAsPT, loginAsClient } = require('./helpers')
 // workouts that have been created and used" (docs/bugs/2026-10-12-scope-creating-a-workout-on-the-fly-and-renaming-programs-to-training-plans.md; prototype
 // https://claude.ai/artifact/2Qu78DKistXV61n1JhWStu).
 //
-// A solo account's Workouts page: two start buttons, "Up next" only while a plan is on (otherwise a one-line note), the plan folded away, "Your workouts" (workouts the
-// account made and used; a plan session joins once it has been done), then Recent sessions. "Start an empty workout" opens the runner on a blank workout, "Start from a past
-// session" opens a past session's exercises with blank sets, and the finish screen offers "Save as a workout" (only for the account's own session, only when tapped).
+// A solo account's Workouts page: "Up next" only while a plan is on (otherwise a one-line note), the plan folded away, then (reworked 2026-10-16, see
+// tests/workouts-page-rework-2026-10-16.spec.js) Create a workout with a Train now link, "Your workouts" (workouts the account made and used; a plan session joins once it has
+// been done), then Recent sessions. "Train now" opens the runner on a blank workout (it was "Start an empty workout"; "Start from a past session" became Create a workout >
+// Choose a template > Past sessions), and the finish screen offers "Save as a workout" (only for the account's own session, only when tapped).
 // A coached client's page is unchanged.
 //
 // NOTE: assigning a plan to the test account's solo record takes its other plans off ("one plan at a time"), so a run leaves that record on no plan. Specs that
@@ -74,7 +75,8 @@ const makePlan = async (page, name) => {
   await page.evaluate(async (fx) => {
     const realNavigate = window.navigate
     window.navigate = () => {}
-    try { await showAssignProgramToClientModal(fx.programId); document.getElementById('apc-start').value = '2026-10-12'; await saveAssignProgramToClient(fx.programId, fx.soloId) } finally { window.navigate = realNavigate }
+    // start on this week's Monday: week 1 of 2 whatever day the suite runs (a fixed date made the plan read as finished a week later)
+    try { await showAssignProgramToClientModal(fx.programId); document.getElementById('apc-start').value = _ymdLocal(_mondayOfWeek(_ymdLocal(new Date()))); await saveAssignProgramToClient(fx.programId, fx.soloId) } finally { window.navigate = realNavigate }
   }, fx)
   return fx
 }
@@ -92,19 +94,19 @@ const cleanup = (page, soloId, name) => page.evaluate(async ({ soloId, name }) =
 }, { soloId, name })
 
 test.describe('Solo: the Workouts page (2026-10-12)', () => {
-  test('start buttons first, then the no-plan note, Your workouts, Recent sessions; nothing folded when there is no plan', async ({ page }) => {
+  test('the no-plan note, then Create a workout, Your workouts, Recent sessions; nothing folded when there is no plan', async ({ page }) => {
     await soloView(page)
     await renderInto(page, { noPlan: true })
-    await expect(page.locator('#wk-host [data-start-empty]')).toHaveText('Start an empty workout')
-    await expect(page.locator('#wk-host [data-start-past]')).toHaveText('Start from a past session')
+    await expect(page.locator('#wk-host [data-create-workout]')).toHaveText('Create a workout')
+    await expect(page.locator('#wk-host [data-train-now]')).toContainText('Train now')
     await expect(page.locator('#wk-host [data-no-plan]')).toContainText('No training plan is running')
     await expect(page.locator('#wk-host #wk-hero'), 'no Up next while no plan is on').toHaveCount(0)
     await expect(page.locator('#wk-host [data-plan-fold]')).toHaveCount(0)
-    const ps = await positions(page, ['Start an empty workout', 'Start from a past session', 'No training plan is running', 'Your workouts', 'Recent sessions'])
+    const ps = await positions(page, ['No training plan is running', 'Create a workout', 'Your workouts', 'Recent sessions'])
     expect(increasing(ps), `the order on the page: ${ps}`).toBe(true)
   })
 
-  test('with a plan on: start buttons, Up next, the plan folded away (closed), Your workouts, Recent sessions', async ({ page }) => {
+  test('with a plan on: Up next, the plan folded away (closed), Create a workout, Your workouts, Recent sessions', async ({ page }) => {
     test.setTimeout(120_000)
     await soloView(page)
     const name = `${TAG} plan ${Date.now()}`
@@ -117,7 +119,7 @@ test.describe('Solo: the Workouts page (2026-10-12)', () => {
       await expect(fold).toHaveCount(1)
       expect(await fold.evaluate(d => d.open), 'the plan list starts folded').toBe(false)
       await expect(fold.locator('summary')).toContainText(name)
-      const ps = await positions(page, ['Start an empty workout', 'Up next', 'Your plan', 'Your workouts', 'Recent sessions'])
+      const ps = await positions(page, ['Up next', 'Your plan', 'Create a workout', 'Your workouts', 'Recent sessions'])
       expect(increasing(ps), `the order on the page: ${ps}`).toBe(true)
       await expect(page.locator('#wk-host [data-no-plan]')).toHaveCount(0)
 
@@ -164,10 +166,10 @@ test.describe('Solo: the Workouts page (2026-10-12)', () => {
     expect(gone.templates).toBe(1)
   })
 
-  test('Start an empty workout opens the runner on a blank workout for this account', async ({ page }) => {
+  test('Train now opens the runner on a blank workout for this account', async ({ page }) => {
     await soloView(page)
     await renderInto(page, { noPlan: true })
-    await page.locator('#wk-host [data-start-empty]').click()
+    await page.locator('#wk-host [data-train-now]').click()
     await expect(page.locator('#workout-runner button:text-is("End")')).toBeVisible({ timeout: 15000 })
     const s = await page.evaluate(() => ({ client: _runner.clientId, solo: window._soloClientId, exercises: _runner.exercises.length, firstName: _runner.exercises[0]?.name, template: _runner.templateId ?? null, name: _runner.name }))
     expect(s.client, 'it is this account\'s own session').toBe(s.solo)
@@ -177,71 +179,8 @@ test.describe('Solo: the Workouts page (2026-10-12)', () => {
     expect(s.name, 'named for the day').toMatch(/ workout$/)
   })
 
-  test('Start from a past session opens its exercises with blank sets, and the session is not tied to a template', async ({ page }) => {
-    test.setTimeout(120_000)
-    await soloView(page)
-    const name = `${TAG} past ${Date.now()}`
-    let gone
-    const soloId = await page.evaluate(() => window._soloClientId)
-    try {
-      await makeLog(page, { soloId, name }, { exercise: 'Past Bench' })
-      await renderInto(page, { noPlan: true })
-      await page.locator('#wk-host [data-start-past]').click()
-      await expect(page.locator('#sfp-modal')).toBeVisible()
-      const row = page.locator('#sfp-modal [data-past-session]', { hasText: name })
-      await expect(row).toContainText('1 exercise')
-      await row.click()
-      await expect(page.locator('#workout-runner button:text-is("End")')).toBeVisible({ timeout: 15000 })
-      const s = await page.evaluate(() => ({ names: _runner.exercises.map(e => e.name), logged: _runner.exercises.map(e => e.loggedSets.length), template: _runner.templateId ?? null, client: _runner.clientId, standIn: String(window._runnerTemplates?.[0]?.id || '') }))
-      expect(s.names, 'the past session\'s exercises').toEqual(['Past Bench'])
-      expect(s.logged, 'with blank sets').toEqual([0])
-      expect(s.template, 'workout_logs.template_id is a foreign key: the stand-in id must not reach it').toBeNull()
-      expect(s.standIn).toMatch(/^past-/)
-      expect(s.client).toBe(soloId)
-      await expect(page.locator('#sfp-modal'), 'the picker closed').toHaveCount(0)
-    } finally { gone = await cleanup(page, soloId, name) }
-    expect(gone.logs).toBe(1)
-  })
-
-  test('the picker says so when there is nothing to start from', async ({ page }) => {
-    await soloView(page)
-    await page.evaluate(() => {
-      window.__realFrom = window.__realFrom || db.from.bind(db)
-      const o = { select: () => o, eq: () => o, order: () => o, limit: () => o, then: (res, rej) => Promise.resolve({ data: [], error: null }).then(res, rej) }
-      db.from = t => t === 'workout_logs' ? o : window.__realFrom(t)
-    })
-    await page.evaluate(() => showStartFromPast(window._soloClientId))
-    await expect(page.locator('#sfp-modal [data-no-past]')).toContainText('No sessions logged yet')
-  })
-
-  test('Start from a past session with an unsaved draft: the resume question comes first, and "Discard & start fresh" starts the session with no template behind it', async ({ page }) => {
-    test.setTimeout(120_000)
-    await soloView(page)
-    const name = `${TAG} draftpast ${Date.now()}`
-    const soloId = await page.evaluate(() => window._soloClientId)
-    let gone
-    try {
-      await makeLog(page, { soloId, name }, { exercise: 'Past Row' })
-      await page.evaluate(({ soloId }) => localStorage.setItem(`_runnerDraft_${soloId}`, JSON.stringify({
-        clientId: soloId, name: 'Earlier today', date: new Date().toLocaleDateString('en-CA'), startTime: Date.now() - 600000, exIdx: 0, templateId: null, savedAt: Date.now(),
-        exercises: [{ name: 'Draft Squat', type: 'strength', metricType: 'weight_reps', targetSets: 1, loggedSets: [{ weight: 20, reps: '5', effort: null, effortType: 'rpe' }] }]
-      })), { soloId })
-      await renderInto(page, { noPlan: true })
-      await page.locator('#wk-host [data-start-past]').click()
-      await page.locator('#sfp-modal [data-past-session]', { hasText: name }).click()
-      await expect(page.locator('#runner-resume-modal'), 'the unsaved workout is asked about first').toBeVisible()
-      await page.locator('#runner-resume-modal button', { hasText: 'Discard' }).click()
-      await expect(page.locator('#workout-runner button:text-is("End")')).toBeVisible({ timeout: 15000 })
-      const s = await page.evaluate(() => ({ names: _runner.exercises.map(e => e.name), template: _runner.templateId ?? null }))
-      expect(s.names, "the past session's exercises").toEqual(['Past Row'])
-      expect(s.template, "the stand-in template id never becomes the session's template (workout_logs.template_id is a foreign key)").toBeNull()
-    } finally {
-      await page.evaluate(({ soloId }) => localStorage.removeItem(`_runnerDraft_${soloId}`), { soloId })
-      gone = await cleanup(page, soloId, name)
-    }
-    expect(gone.logs).toBe(1)
-  })
-
+  // "Start from a past session" moved (Jake, 2026-10-16): the three tests of its modal and its runner stand-in are replaced by tests/workouts-page-rework-2026-10-16.spec.js
+  // (Create a workout > Choose a template > Past sessions saves a workout from a session).
   test("a periodised plan's weekly copies are one row in Your workouts, under the plain name, with every time added up", async ({ page }) => {
     test.setTimeout(120_000)
     await soloView(page)
@@ -320,7 +259,7 @@ test.describe('Solo: the Workouts page (2026-10-12)', () => {
     await expect(page.locator('[data-page="workouts"] svg path[d^="M18 8h1a4"]'), 'the cup path is gone from the Workouts item').toHaveCount(0)
   })
 
-  test('a coached client\'s Workouts page is unchanged: no start buttons, no Your workouts', async ({ page }) => {
+  test('a coached client\'s Workouts page is unchanged: no Create a workout, no Train now, no Your workouts', async ({ page }) => {
     await loginAsClient(page)
     await page.evaluate(async () => {
       document.getElementById('wk-host')?.remove()
@@ -328,7 +267,7 @@ test.describe('Solo: the Workouts page (2026-10-12)', () => {
       await renderClientWorkoutsPage(el)
     })
     await expect(page.locator('#wk-host .page-title')).toHaveText('Workouts')
-    await expect(page.locator('#wk-host [data-start-empty], #wk-host [data-start-past], #wk-host .wk-sec, #wk-host [data-plan-fold], #wk-host [data-no-plan]')).toHaveCount(0)
+    await expect(page.locator('#wk-host [data-create-workout], #wk-host [data-train-now], #wk-host .wk-sec, #wk-host [data-plan-fold], #wk-host [data-no-plan]')).toHaveCount(0)
   })
 })
 
@@ -402,7 +341,7 @@ test.describe('Solo: Save as a workout (2026-10-12)', () => {
         db.from = t => t === 'workout_template_exercises'
           ? { insert: (...a) => (++exCalls === 1 ? Promise.resolve({ error: { code: 'E2E-REFUSED' } }) : window.__realFrom(t).insert(...a)) }
           : t === 'workout_templates'
-            ? { insert: (...a) => window.__realFrom(t).insert(...a), delete: () => ({ eq: () => ({ select: async () => ({ data: [], error: null }) }) }) }
+            ? { insert: (...a) => window.__realFrom(t).insert(...a), delete: () => ({ eq: () => ({ eq: () => ({ select: async () => ({ data: [], error: null }) }) }) }) }
             : window.__realFrom(t)
       })
       await page.locator('#rf-save-template').click()
