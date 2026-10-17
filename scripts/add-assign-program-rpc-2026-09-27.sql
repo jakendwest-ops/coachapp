@@ -1,3 +1,7 @@
+-- !! SUPERSEDED 2026-10-17 by fix-assign-program-restart-date-2026-10-17.sql. DO NOT RE-RUN THIS SCRIPT on the live database: it would create the
+-- !! four-argument function BESIDE the five-argument one that replaced it, and the API refuses every call to a name with two overlapping candidates as
+-- !! ambiguous, so no plan could be assigned. Kept as history and as the starting point of the local verifiers, which run it first and then the fix.
+--
 -- assign_program(): assigning (or restarting) a programme for a client becomes ONE database transaction.
 -- Additive: creates one function and its grants. Reads and changes no existing data by itself.
 --

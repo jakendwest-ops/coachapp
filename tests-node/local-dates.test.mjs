@@ -32,6 +32,16 @@ describe('_dateOnly - a stored date is the same calendar day in every zone', () 
     for (const bad of [null, undefined, '', 'soon', '15/07/2026', 20260715, {}]) assert.ok(Number.isNaN(get('_dateOnly')(bad).getTime()), String(bad))
   })
 
+  test('_bucketKey (chart buckets) puts a stored date in its own month and week in every zone', () => {
+    // The MONTH key is the displayed-day bug (a stored 1st landing in the month before). The week key has an older, separate quirk (its day arithmetic crosses a daylight-saving
+    // change, so a date on a week boundary can move a week in some zones) and is not asserted here; it is named in the ledger.
+    for (const tz of ZONES) {
+      process.env.TZ = tz
+      assert.equal(get('_bucketKey')('2026-08-01', 'month'), '2026-08', `${tz}: the 1st is in its own month, not the one before`)
+      assert.equal(get('_bucketKey')('2027-01-01', 'month'), '2027-01', `${tz}: nor is New Year's Day in the old year`)
+    }
+  })
+
   test('it is local midnight, so a formatted weekday matches the calendar', () => {
     process.env.TZ = 'America/New_York'
     assert.equal(get('_dateOnly')('2026-07-15').toLocaleDateString('en-GB', { weekday: 'long' }), 'Wednesday')

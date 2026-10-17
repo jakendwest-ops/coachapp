@@ -2094,7 +2094,7 @@ function _metricPointsFor(ex) {
 
 // ISO-week key for weekly buckets; YYYY-MM for monthly.
 function _bucketKey(dateStr, mode) {
-  const d = new Date(dateStr)
+  const d = _dateOnly(dateStr)      // local midnight: new Date('2026-08-01') is UTC midnight, which west of UTC is July and the week before
   if (mode === 'month') return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
   const onejan = new Date(d.getFullYear(), 0, 1)
   const week = Math.ceil((((d - onejan) / 86400000) + onejan.getDay() + 1) / 7)
