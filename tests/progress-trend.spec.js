@@ -272,13 +272,13 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     // Reload clears the post-save 1RM-estimate sheet (which would otherwise intercept the pill click);
     // _activeView='solo' persists in localStorage, so we stay in the solo view the data belongs to.
     await page.reload()
-    await page.waitForTimeout(1000)
+    await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed: a fixed 1 s sleep let a slow evening's late dashboard paint overwrite the view rendered next (the v2026.10.5 gate failed this test twice; it passes alone)
     await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Per exercise'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(1200)
 
     // P1 (2026-09-07): the 1M–All range moved from a pill row to a <select> on the Performance toolbar.
-    await expect(page.locator('#perf-range')).toBeVisible()
-    await expect(page.getByText(tag + ' Bench', { exact: true })).toBeVisible() // the card header span
+    await expect(page.locator('#perf-range')).toBeVisible({ timeout: 20000 })
+    await expect(page.getByText(tag + ' Bench', { exact: true })).toBeVisible({ timeout: 20000 }) // the card header span
     await page.selectOption('#perf-range', '3M') // range switch must not crash
     await page.waitForTimeout(300)
 
