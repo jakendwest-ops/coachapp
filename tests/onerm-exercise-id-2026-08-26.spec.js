@@ -166,7 +166,7 @@ test.describe('client_1rms writers must persist exercise_id', () => {
         // Assign the binding itself, and put it back afterwards.
         const prevRunner = typeof _runner !== 'undefined' ? _runner : null
         _runner = {
-          clientId: c.id, name: tag + ' session', date: new Date().toISOString().split('T')[0],
+          clientId: c.id, name: tag + ' session', date: new Date().toLocaleDateString('en-CA'),
           exIdx: 0, startTime: Date.now(),
           exercises: [{
             name: tag + ' Lift', exerciseId: ex.id, type: 'strength', metricType: 'weight_reps',

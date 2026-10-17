@@ -350,7 +350,7 @@ function showAddEventModal(prefillDate = '') {
   overlay.className = 'modal-overlay'
   overlay.id = 'add-event-modal'
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = _ymdLocal(new Date())
 
   overlay.innerHTML = `
     <div class="modal">
@@ -452,7 +452,7 @@ function showClientAddEventModal(prefillDate = '') {
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'add-event-modal'
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = _ymdLocal(new Date())
 
   overlay.innerHTML = `
     <div class="modal">

@@ -262,7 +262,7 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     const tag = await page.evaluate(async () => {
       const clientId = await _getCurrentClientId()
       const tag = '[E2E] trend ' + Date.now()
-      _runner = { clientId, name: tag, date: new Date().toISOString().split('T')[0], exercises: [
+      _runner = { clientId, name: tag, date: new Date().toLocaleDateString('en-CA'), exercises: [
         { name: tag + ' Bench', type: 'strength', metricType: 'weight_reps', exerciseId: null,
           loggedSets: [{ weight: '100', reps: '5' }, { weight: '100', reps: '5' }] }
       ] }

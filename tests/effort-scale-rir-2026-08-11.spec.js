@@ -47,7 +47,7 @@ async function renderSessionWith (page, label, efforts) {
 
     const { data: logRow, error: logErr } = await db.from('workout_logs').insert({
       coach_id: currentUser.id, client_id: clientId,
-      name: TAG + ' ' + label, date: new Date().toISOString().slice(0, 10)
+      name: TAG + ' ' + label, date: new Date().toLocaleDateString('en-CA')
     }).select().single()
     if (logErr) return { err: 'log: ' + logErr.message }
 

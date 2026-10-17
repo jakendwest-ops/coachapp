@@ -59,7 +59,7 @@ test.describe('set counts agree across surfaces (2026-08-11)', () => {
 
       const { data: logRow, error: e1 } = await db.from('workout_logs').insert({
         coach_id: currentUser.id, client_id: clientId,
-        name: TAG + ' interval', date: new Date().toISOString().slice(0, 10)
+        name: TAG + ' interval', date: new Date().toLocaleDateString('en-CA')
       }).select().single()
       if (e1) return { err: 'log: ' + e1.message }
 
@@ -154,7 +154,7 @@ test.describe('set counts agree across surfaces (2026-08-11)', () => {
 
       const { data: logRow } = await db.from('workout_logs').insert({
         coach_id: currentUser.id, client_id: clientId,
-        name: TAG + ' plain', date: new Date().toISOString().slice(0, 10)
+        name: TAG + ' plain', date: new Date().toLocaleDateString('en-CA')
       }).select().single()
       const { data: exRow } = await db.from('workout_log_exercises').insert({
         log_id: logRow.id, exercise_name: TAG + ' Squat', exercise_type: 'strength', order_index: 0

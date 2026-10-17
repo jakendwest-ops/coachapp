@@ -98,7 +98,7 @@ test.describe('A user-initiated delete must not report success on zero rows', ()
         const { data: ev, error } = await db.from('events')
           .insert({
             title: '[E2E] rowcount ' + Date.now(),
-            date: new Date().toISOString().split('T')[0],
+            date: new Date().toLocaleDateString('en-CA'),
             type: 'session', is_pt_assigned: true, created_by: currentUser.id
           })
           .select('id').single()

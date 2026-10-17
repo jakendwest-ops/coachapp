@@ -19,7 +19,7 @@ test.describe('Sub-project 2d — manual HR capture', () => {
       // card, instead of the rest-timer/next-round path. Bare `_runner` (not window._runner) — it's a
       // top-level `let`, so the bare identifier is the binding renderRunner/logRunnerSet actually read.
       _runner = {
-        clientId, name: '[E2E] 2d hr-capture', date: new Date().toISOString().split('T')[0],
+        clientId, name: '[E2E] 2d hr-capture', date: new Date().toLocaleDateString('en-CA'),
         exIdx: 0, startTime: Date.now(), lastSession: {},
         exercises: [{ name: 'HR Row', type: 'cardio', metricType: 'cardio', exerciseId: null,
           targetSets: 1, loggedSets: [], sets_json: [{ duration: '20:00' }] }]

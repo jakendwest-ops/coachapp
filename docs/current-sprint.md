@@ -21,7 +21,7 @@ Everything from `v2026.09.14` on still awaits Jake's look on a phone (the `fixed
 
 ## In flight
 
-Unreleased (on master): the program page's week buttons and the Personal Workouts rework, Phase 1 (the PT page is Phase 2). Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
+Unreleased (on master): the program page's week buttons and the Personal Workouts rework, Phase 1 (the PT page is Phase 2), and the local-date fix. Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
 end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation:
 leave it); the names "Biggest set" and "View training plan".
 

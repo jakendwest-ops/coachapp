@@ -518,7 +518,7 @@ test.describe('Assignment-time 1RM check', () => {
       await db.from('workout_template_exercises').insert({ template_id: tmpl.id, exercise_name: '[E2E] Have Squat', exercise_type: 'strength', order_index: 0, sets_json: [{ effortType: 'rpe', repsMin: '5', repsMax: '5', intensityMin: '70', intensityMax: '70' }] })
       await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 })
       await db.from('client_1rms').delete().eq('client_id', cid).eq('exercise_name', '[E2E] Have Squat')
-      await db.from('client_1rms').insert({ client_id: cid, exercise_name: '[E2E] Have Squat', one_rm_kg: 123, recorded_at: new Date().toISOString().split('T')[0] })
+      await db.from('client_1rms').insert({ client_id: cid, exercise_name: '[E2E] Have Squat', one_rm_kg: 123, recorded_at: new Date().toLocaleDateString('en-CA') })
       return { programId: prog.id, templateId: tmpl.id, clientId: cid }
     }, clientId)
 

@@ -18,7 +18,7 @@ test.describe('Runner save persists all metric shapes', () => {
       // currentProfile in helpers.js) — assign the bare identifier, not `window._runner`, or
       // saveRunnerSession() reads the real (still-null) `_runner` and silently no-ops.
       _runner = {
-        clientId, name: tag, date: new Date().toISOString().split('T')[0], exercises: [
+        clientId, name: tag, date: new Date().toLocaleDateString('en-CA'), exercises: [
           { name: tag + ' Uni', type: 'strength', metricType: 'unilateral', exerciseId: null,
             loggedSets: [{ leftWeight: '20', leftReps: '10', rightWeight: '18', rightReps: '9' }] },
           { name: tag + ' Hold', type: 'strength', metricType: 'timed_hold', exerciseId: null,

@@ -222,7 +222,7 @@ test.describe('Library orders by last used (2026-09-04)', () => {
       const stamp = Date.now()
       const trainedName = `[E2E] zzz trained ${stamp}`
       const editedName = `[E2E] aaa edited ${stamp}`
-      const today = new Date().toISOString().split('T')[0]
+      const today = new Date().toLocaleDateString('en-CA')
       const out = { built: false, order: [], trainedRowSays: null, cleanup: {} }
 
       const { data: client } = await db.from('clients')
@@ -313,7 +313,7 @@ test.describe('Library orders by last used (2026-09-04)', () => {
 
       const { data: logRow } = await db.from('workout_logs')
         .insert({ coach_id: currentUser.id, client_id: clientId, name: trainedName,
-                  date: new Date().toISOString().split('T')[0], template_id: trainedId })
+                  date: new Date().toLocaleDateString('en-CA'), template_id: trainedId })
         .select('id').single()
       if (!logRow?.id) return out
       out.built = true

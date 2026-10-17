@@ -370,7 +370,7 @@ function switchTab(btn, tab, clientId) {
 
 function clientOverviewTab(client, programName = null) {
   const dob = client.date_of_birth
-    ? new Date(client.date_of_birth).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    ? _dateOnly(client.date_of_birth).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     : '—'
   const age = client.date_of_birth
     ? Math.floor((Date.now() - new Date(client.date_of_birth)) / 31557600000)

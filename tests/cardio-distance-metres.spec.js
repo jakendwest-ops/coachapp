@@ -160,7 +160,7 @@ test.describe('Cardio distance — metres entry, km-legacy compatibility', () =>
       // `_runner` is a top-level `let` in a classic script — assign the BARE identifier, never
       // window._runner, or saveRunnerSession reads the real (still-null) binding and no-ops (les-024).
       _runner = {
-        clientId, name: tag, date: new Date().toISOString().split('T')[0], exercises: [
+        clientId, name: tag, date: new Date().toLocaleDateString('en-CA'), exercises: [
           { name: tag + ' Row', type: 'cardio', metricType: 'cardio', exerciseId: null,
             // A duration-based interval that also recorded how far it went — the exact shape the
             // interval overlay produces. Pre-fix this key was `distanceAchieved` and never persisted.

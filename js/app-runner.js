@@ -60,7 +60,7 @@ async function _startFreshRunner(clientId) {
 
   document.getElementById('runner-setup')?.remove()
 
-  _runner = { clientId, name, date: new Date().toISOString().split('T')[0], exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null, templateId: template ? template.id : null }
+  _runner = { clientId, name, date: _ymdLocal(new Date()), exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null, templateId: template ? template.id : null }
   // Interval exercises store ONE sets_json entry describing the whole block, so the generic
   // `targetSets: ex.sets_json?.length || 3` above always comes out as 1 (or 3, on a legacy fallback)
   // for them — expand now so targetSets reflects the real work-round count everywhere it's read
@@ -3353,7 +3353,7 @@ async function _savePostSessionOneRM(i, clientId, exerciseName, estimate, exerci
   if (!(await _verifyClientAccess('_savePostSessionOneRM', clientId))) { showToast(`Couldn't save 1RM for ${exerciseName} — permission denied`, 'error'); return }
   const { error } = await dbq('savePostSessionOneRM', db.from('client_1rms').insert({
     client_id: clientId, exercise_id: exerciseId || null, exercise_name: exerciseName,
-    one_rm_kg: estimate, recorded_at: new Date().toISOString().split('T')[0]
+    one_rm_kg: estimate, recorded_at: _ymdLocal(new Date())
   }), { showUserError: false })
   if (error) { showToast(`Couldn't save 1RM for ${exerciseName} — try again`, 'error'); return }
   document.getElementById(`psorm-row-${i}`)?.remove()
@@ -3491,7 +3491,7 @@ async function saveRunnerOneRM(exIdx) {
 
   const { error } = await dbq('saveRunnerOneRM', db.from('client_1rms').insert({
     client_id: _runner.clientId, exercise_id: ex.exerciseId || null, exercise_name: ex.name,
-    one_rm_kg: oneRM, recorded_at: new Date().toISOString().split('T')[0]
+    one_rm_kg: oneRM, recorded_at: _ymdLocal(new Date())
   }))
   if (error) { errEl.textContent = 'Save failed — try again'; return }
 
@@ -3685,7 +3685,7 @@ async function showLogSessionModal(clientId) {
         </div>
         <div class="field">
           <label class="field-label">Date</label>
-          <input class="field-input" id="ls-date" type="date" value="${new Date().toISOString().split('T')[0]}">
+          <input class="field-input" id="ls-date" type="date" value="${_ymdLocal(new Date())}">
         </div>
       </div>
       <div class="field">
@@ -3936,7 +3936,7 @@ async function openWorkoutLog(logId, clientId) {
   const session = { ...logRow, workout_log_exercises: (logRow?.workout_log_exercises || []).map(ex => ({ ...ex, workout_log_sets: (allSets || []).filter(s => s.workout_log_exercise_id === ex.id) })) }
 
   const exercises = (session.workout_log_exercises || []).sort((a, b) => a.order_index - b.order_index)
-  const dateStr = new Date(session.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const dateStr = _dateOnly(session.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   // Fetch previous session with same name for comparison
   let prevSession = null

@@ -57,6 +57,24 @@
       "scope": "tests",
       "count": 101,
       "why": "A .catch(() => {}) in a test hides the failure it was meant to tolerate. One of these hid a ReferenceError in program-ownership-anchors-2026-08-22.spec.js:27 for eleven days, during which that spec's cleanup never ran once and left 242 rows in the live database. Raised by exactly 2 on 2026-09-29: tests/progress.spec.js's new Goals-tab-open test opens two extra Playwright browser contexts (an insert fixture and its own cleanup, mirroring tests/goal-ownership-2026-08-21.spec.js:38-49's own ctx.close().catch(() => {}) already in this baseline) and closes each the same way. This is not the shape the cited incident warns about: it swallows a browser-context teardown failure inside a `finally`, not a DB query or assertion result, and the actual cleanup query it wraps still uses .select('id') + a rowcount check per this file's own teardown-hygiene rule, not a bare .catch(). Leaving ctx.close() unguarded would let a teardown-only rejection overwrite a real in-flight assertion failure from the same finally block, which is a worse failure mode than the one this ratchet targets. Raised by exactly 2 more on 2026-09-30, not by the diff that raised it: the RPE-autoregulation merge (a33039d) landed tests/rpe-top-set-2026-09-29.spec.js's cleanupFixture and cleanupBuilderFixture, each ending page.evaluate(...).catch(() => {}) around their own cleanup query -- same shape and same reasoning as the 2026-09-29 pair right above (a teardown-only rejection must not overwrite a real in-flight test failure), just never counted until this session's unrelated runner-UI fixes were the first commit to touch that file since the merge. Verified neither line is new code from this session's own diff."
+    },
+    "UTC calendar date (js)": {
+      "pattern": "(?:toISOString|toJSON)\\(\\)\\s*\\.\\s*(?:split\\(\\s*['\"]T['\"]\\s*\\)\\s*\\[\\s*0\\s*\\]|slice\\(\\s*0\\s*,\\s*10\\s*\\)|substring\\(\\s*0\\s*,\\s*10\\s*\\)|substr\\(\\s*0\\s*,\\s*10\\s*\\))",
+      "scope": "js",
+      "count": 0,
+      "why": "A calendar date taken from toISOString() is the UTC day, not the local one: wrong for the hour after midnight in the UK summer, and for the whole evening west of UTC (a session logged at 8 pm in New York was dated tomorrow). 13 sites were replaced by _ymdLocal(new Date()) on 2026-10-17; this holds the line at 0. A full timestamp (toISOString() alone, for updated_at and the like) is correct and is not counted."
+    },
+    "UTC calendar date (tests)": {
+      "pattern": "(?:toISOString|toJSON)\\(\\)\\s*\\.\\s*(?:split\\(\\s*['\"]T['\"]\\s*\\)\\s*\\[\\s*0\\s*\\]|slice\\(\\s*0\\s*,\\s*10\\s*\\)|substring\\(\\s*0\\s*,\\s*10\\s*\\)|substr\\(\\s*0\\s*,\\s*10\\s*\\))",
+      "scope": "tests",
+      "count": 8,
+      "why": "The same expression in a spec builds \"today\" from the UTC day and fails a release suite that runs between local midnight and 01:00 BST. The 48 `new Date()` ones were replaced by toLocaleDateString('en-CA') on 2026-10-17. What is left is deliberate: UTC calendar ARITHMETIC on a fixed base (Date.UTC(...), a pinned NOW, a synthetic series), two Date.now()-relative series that only order rows (capped-reads), and one that matches the coach summary view, which itself caps at the UTC day (coach-client-summary-2026-09-21.spec.js). Do not raise this; lower it when one goes."
+    },
+    "Stored date parsed as UTC midnight (js)": {
+      "pattern": "new Date\\(\\s*(?:[A-Za-z_$][\\w$]*\\.)*(?:date|date_of_birth|dateStr)\\s*\\)\\s*\\.toLocaleDateString",
+      "scope": "js",
+      "count": 0,
+      "why": "A stored DATE ('2026-07-15') handed straight to new Date() is UTC midnight, so a screen formatting it shows the day BEFORE for anyone west of UTC. Use _dateOnly(ymd) (app-core), which reads it as local midnight. Six display sites were fixed on 2026-10-17 and this holds the line at 0. A timestamp (created_at) is an instant and is correct to hand to new Date(). Comparisons and sorting of the same parse are off by hours, not a displayed day, and are not counted."
     }
   }
 }

@@ -493,7 +493,7 @@ async function renderClientPerformance(clientId, el) {
           </div>
           <div>
             <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Date</label>
-            <input id="pl-date" type="date" class="field-input" value="${new Date().toISOString().split('T')[0]}">
+            <input id="pl-date" type="date" class="field-input" value="${_ymdLocal(new Date())}">
           </div>
         </div>
         <div style="margin-bottom:10px">
@@ -807,7 +807,7 @@ async function renderClientWeight(clientId, el) {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
             <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Date</label>
-            <input id="wl-date" type="date" class="field-input" value="${new Date().toISOString().split('T')[0]}">
+            <input id="wl-date" type="date" class="field-input" value="${_ymdLocal(new Date())}">
           </div>
           <div>
             <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Weight (${window._unitPrefs.weight})</label>
@@ -1657,7 +1657,7 @@ async function renderProgressPerSession(clientId, el) {
       <button onclick="_togglePerfSession(${i})" style="width:100%;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span style="font-size:var(--text-base, 13px);font-weight:700">${escapeHtml(s.name || 'Session')}</span>
-          <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${_dateOnly(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
         </div>
         ${noSetsLogged
           ? `<div style="font-size:var(--text-md, 12px);color:var(--text-muted)">No sets logged</div>`
@@ -1723,7 +1723,7 @@ function _expandPerfSessionExercise(i, ei) {
   container.innerHTML = '<canvas></canvas>'
   const canvas = container.querySelector('canvas')
   _renderMetricChart(canvas, {
-    labels: hist.map(h => new Date(h.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+    labels: hist.map(h => _dateOnly(h.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
     series: [{ data: hist.map(h => h.m.main.raw), colour: _METRIC_COLORS.topWeight, fill: true }],
     height: true,
     legend: false,
@@ -2107,7 +2107,7 @@ function _aggregateSeries(points, metricKey, mode) {
   const vals = points.map(p => ({ date: p.date, v: p[metricKey] })).filter(p => p.v != null && !isNaN(p.v))
   if (!vals.length) return []
   const bucket = vals.length > 120 ? 'month' : vals.length > 40 ? 'week' : null
-  const fmt = (dateStr) => new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const fmt = (dateStr) => _dateOnly(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   if (!bucket) return vals.map(p => ({ label: fmt(p.date), value: p.v }))
   const groups = {}
   vals.forEach(p => { (groups[_bucketKey(p.date, bucket)] ||= []).push(p) })
@@ -2808,7 +2808,7 @@ function _sessionSetsBlockHtml(pts) {
     <div style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">Per session</div>
     ${hidden ? `<div style="font-size:var(--text-xs, 10px);color:var(--text-muted);font-style:italic;margin-bottom:4px">${hidden} earlier session${hidden === 1 ? '' : 's'} not shown</div>` : ''}
     ${shown.map(p => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:var(--text-md, 12px)">
-      <span style="color:var(--text-muted);flex-shrink:0">${new Date(p.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+      <span style="color:var(--text-muted);flex-shrink:0">${_dateOnly(p.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
       <span style="text-align:right;font-weight:600">${escapeHtml(_collapsedSetLine(p.sets))}</span></div>`).join('')}
   </div>`
 }
@@ -3970,7 +3970,7 @@ async function downloadMyData() {
     const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
-    a.href = url; a.download = `coachapp-data-${new Date().toISOString().split('T')[0]}.json`
+    a.href = url; a.download = `coachapp-data-${_ymdLocal(new Date())}.json`
     a.click(); URL.revokeObjectURL(url)
     if (msg) { msg.textContent = 'Download started.'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
   } catch (err) {

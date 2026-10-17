@@ -42,7 +42,7 @@ async function startRunnerWithFixture(page, { sets, storedOneRM = null, unit = n
     if (storedOneRM != null) {
       const { error: rmErr } = await db.from('client_1rms').insert({
         client_id: client.id, exercise_name: tag + ' Exercise', one_rm_kg: storedOneRM,
-        recorded_at: new Date().toISOString().split('T')[0]
+        recorded_at: new Date().toLocaleDateString('en-CA')
       })
       if (rmErr) return { error: 'client_1rms: ' + rmErr.message }
     }

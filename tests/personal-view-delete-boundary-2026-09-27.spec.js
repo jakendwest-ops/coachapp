@@ -28,7 +28,7 @@ test('a Personal-view delete of week copies never touches a real client’s copy
     const phaseId = await one('program_phases', { program_id: programId, name: `${tag} phase`, duration_weeks: 4, order_index: 0 })
     const tmplId = await one('workout_templates', { coach_id: me, name: `${tag} master ${stamp}`, is_personal: false, program_id: programId })
     const pwId = await one('program_phase_workouts', { phase_id: phaseId, template_id: tmplId, day_of_week: 1, day_label: 'Monday', week_number: 2 })
-    const cpId = await one('client_programs', { client_id: clientId, program_id: programId, start_date: new Date().toISOString().split('T')[0] })
+    const cpId = await one('client_programs', { client_id: clientId, program_id: programId, start_date: new Date().toLocaleDateString('en-CA') })
     const cloneId = await one('workout_templates', { coach_id: me, name: `${tag} clone ${stamp}`, is_personal: false, client_id: clientId })
     const cpwId = await one('client_program_workouts', { client_program_id: cpId, program_phase_workout_id: pwId, workout_template_id: cloneId, week_number: 2 })
     return { clientId, programId, pwId, cpwId, cloneId }

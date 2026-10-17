@@ -761,7 +761,7 @@ test.describe('Interval save — phase persistence (2026-07-26, Task 7)', () => 
     const r = await page.evaluate(async () => {
       const clientId = await _getCurrentClientId()
       const tag = '[E2E] interval-phase-save ' + Date.now()
-      _runner = { clientId, name: tag, date: new Date().toISOString().split('T')[0], exercises: [{
+      _runner = { clientId, name: tag, date: new Date().toLocaleDateString('en-CA'), exercises: [{
         name: tag + ' Row', type: 'cardio', metricType: 'interval', exerciseId: null, loggedSets: [],
         sets_json: [{ warmupSecs: 60, workSecs: 30, restSecs: 30, sets: 3, cycles: 1, cooldownSecs: 45 }]
       }], exIdx: 0, startTime: Date.now() }
@@ -804,7 +804,7 @@ test.describe('Interval save — phase persistence (2026-07-26, Task 7)', () => 
       const clientId = await _getCurrentClientId()
       const tag = '[E2E] normal-session-phase-null ' + Date.now()
       _runner = {
-        clientId, name: tag, date: new Date().toISOString().split('T')[0], exercises: [
+        clientId, name: tag, date: new Date().toLocaleDateString('en-CA'), exercises: [
           { name: tag + ' Squat', type: 'strength', metricType: 'weight_reps', exerciseId: null,
             loggedSets: [{ weight: '100', reps: '5' }, { weight: '100', reps: '5' }] },
           { name: tag + ' Bike', type: 'cardio', metricType: 'cardio', exerciseId: null,

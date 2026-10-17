@@ -127,7 +127,7 @@ test.describe('A1-cont — 0 is a real value for jump height/distance too, not j
       const clientId = await _getCurrentClientId()
       const tag = '[E2E] jump-zero ' + Date.now()
       _runner = {
-        clientId, name: tag, date: new Date().toISOString().split('T')[0], exercises: [
+        clientId, name: tag, date: new Date().toLocaleDateString('en-CA'), exercises: [
           { name: tag + ' Height', type: 'strength', metricType: 'jump_height', exerciseId: null, loggedSets: [{ height_cm: 0, reps: '3' }] },
           { name: tag + ' Distance', type: 'strength', metricType: 'jump_distance', exerciseId: null, loggedSets: [{ distance_m: 0, reps: '3' }] }
         ]
@@ -320,7 +320,7 @@ test.describe('openWorkoutLog — jump sets now get their own column, not the em
       const clientId = await _getCurrentClientId()
       const tag = '[E2E] openworkoutlog-jump ' + Date.now()
       _runner = {
-        clientId, name: tag, date: new Date().toISOString().split('T')[0],
+        clientId, name: tag, date: new Date().toLocaleDateString('en-CA'),
         exercises: [{ name: tag, type: 'strength', metricType: 'jump_height', exerciseId: null, loggedSets: [{ height_cm: 0, reps: '4' }] }]
       }
       await saveRunnerSession()
@@ -414,7 +414,7 @@ test.describe('saveRunnerSession/saveWorkoutSession fail loud instead of silentl
       window.showToast = (msg) => { toastMsg = msg }
 
       _runner = {
-        clientId: '00000000-0000-0000-0000-000000000000', name: tag, date: new Date().toISOString().split('T')[0],
+        clientId: '00000000-0000-0000-0000-000000000000', name: tag, date: new Date().toLocaleDateString('en-CA'),
         exercises: [{ name: tag, type: 'strength', metricType: 'weight_reps', exerciseId: null, loggedSets: [{ weight: '10', reps: '5' }] }]
       }
       await saveRunnerSession()
@@ -442,7 +442,7 @@ test.describe('deleteEvent/deleteGoal — anchored by created_by, an unrelated c
       await loginAsPT(ptPage)
       eventId = await ptPage.evaluate(async () => {
         const { data } = await db.from('events').insert({
-          title: '[E2E] created-by-anchor-probe ' + Date.now(), date: new Date().toISOString().split('T')[0],
+          title: '[E2E] created-by-anchor-probe ' + Date.now(), date: new Date().toLocaleDateString('en-CA'),
           type: 'other', is_pt_assigned: true, created_by: currentUser.id
         }).select('id').single()
         return data.id
@@ -519,7 +519,7 @@ test.describe('workout_log_exercises/workout_log_sets + goals/goal_milestones �
         const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
         const { data: log } = await db.from('workout_logs').insert({
           coach_id: currentUser.id, client_id: client.id, name: '[E2E] child-table-probe ' + Date.now(),
-          date: new Date().toISOString().split('T')[0]
+          date: new Date().toLocaleDateString('en-CA')
         }).select('id').single()
         return log.id
       })

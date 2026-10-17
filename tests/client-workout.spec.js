@@ -188,7 +188,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
         // the client-side read of this row goes through RLS as the client, not the coach.
         const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: '[E2E] Hero Card Session' }).select('id').single()
         const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
-        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] }).select('id').single()
+        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toLocaleDateString('en-CA') }).select('id').single()
         await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: tmpl.id, week_number: 1 })
         return { progId: prog.id, cpId: cp.id }
       })
@@ -254,7 +254,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
         const { data: phase2 } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 4, order_index: 1 }).select('id').single()
         const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: '[E2E] Empty Phase Session' }).select('id').single()
         const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase2.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
-        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] }).select('id').single()
+        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toLocaleDateString('en-CA') }).select('id').single()
         await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: tmpl.id, week_number: 1 })
         return { progId: prog.id, cpId: cp.id }
       })
@@ -326,7 +326,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
         const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 4, order_index: 0 }).select('id').single()
         const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: '[E2E] Embed Chain Session' }).select('id').single()
         const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
-        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] }).select('id').single()
+        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toLocaleDateString('en-CA') }).select('id').single()
         await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: tmpl.id, week_number: 1 })
         return { progId: prog.id, cpId: cp.id }
       })
@@ -380,7 +380,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
   test('_buildWorkoutsHero resolves the next scheduled session\'s real templateId when one exists', async ({ page }) => {
     const hero = await page.evaluate(() => {
       const activeAssignment = {
-        start_date: new Date().toISOString().split('T')[0], // starts today -> weeksSinceStart 0, weekInPhase 1
+        start_date: new Date().toLocaleDateString('en-CA'), // starts today -> weeksSinceStart 0, weekInPhase 1
         programs: { name: 'Test Program', program_phases: [{ order_index: 0, name: 'Phase 1', duration_weeks: 4,
           program_phase_workouts: [{ id: 'pw-1', day_of_week: 1, session_order: 1, week_number: 1 }] }] }
       }
@@ -439,7 +439,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
         const { data: tmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, client_id: clientId, program_id: null, name: '[E2E] Exercises Chain Session' }).select('id').single()
         await db.from('workout_template_exercises').insert({ template_id: tmpl.id, exercise_name: '[E2E] Chain Squat', exercise_type: 'strength', order_index: 0, sets_json: [{ repsMin: '5', repsMax: '5' }] })
         const { data: pw } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: tmpl.id, week_number: 1 }).select('id').single()
-        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] }).select('id').single()
+        const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toLocaleDateString('en-CA') }).select('id').single()
         await db.from('client_program_workouts').insert({ client_program_id: cp.id, program_phase_workout_id: pw.id, workout_template_id: tmpl.id, week_number: 1 })
         return { progId: prog.id, cpId: cp.id, templateId: tmpl.id }
       })
@@ -498,7 +498,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
     try {
       const inserted = await page.evaluate(async (clientId) => {
         const { data, error } = await db.from('client_1rms')
-          .insert({ client_id: clientId, exercise_name: '[E2E] 1RM Write Test', one_rm_kg: 100, recorded_at: new Date().toISOString().split('T')[0] })
+          .insert({ client_id: clientId, exercise_name: '[E2E] 1RM Write Test', one_rm_kg: 100, recorded_at: new Date().toLocaleDateString('en-CA') })
           .select('id')
           .single()
         return { data, error: error?.message }
@@ -614,7 +614,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
           .insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: master.id, week_number: 1 })
           .select('id').single()
         const { data: cp } = await db.from('client_programs')
-          .insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] })
+          .insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toLocaleDateString('en-CA') })
           .select('id').single()
         return { progId: prog.id, cpId: cp.id, masterId: master.id, pwId: pw.id }
       })
@@ -669,7 +669,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       const { error } = await db.from('performance_logs').insert({
         client_id: clientId, logged_by: currentUser.id,
         category: 'strength', name: '[E2E] PB Deadlift', value: 200, unit: 'kg',
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toLocaleDateString('en-CA'),
       })
       return error ? error.message : null
     }, clientId)

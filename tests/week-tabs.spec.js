@@ -106,7 +106,7 @@ test.describe('Week-tabs redesign', () => {
         return t.id
       }
       const cUpper = await mkClone('[E2E] WT Upper', ['[E2E] Bench', '[E2E] OHP']); const cLower = await mkClone('[E2E] WT Lower', ['[E2E] Squat'])
-      const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toISOString().split('T')[0] }).select('id').single()
+      const { data: cp } = await db.from('client_programs').insert({ client_id: clientId, program_id: prog.id, start_date: new Date().toLocaleDateString('en-CA') }).select('id').single()
       for (const w of [1, 2, 3]) {
         const { data: mon } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: mUpper, week_number: w }).select('id').single()
         const { data: wed } = await db.from('program_phase_workouts').insert({ phase_id: phase.id, day_of_week: 3, day_label: 'Wednesday', session_order: 1, template_id: mLower, week_number: w }).select('id').single()

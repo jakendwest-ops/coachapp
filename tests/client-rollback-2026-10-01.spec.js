@@ -47,7 +47,7 @@ test("a client's rollback removes a failed save's session and exercise rows, but
       const out = {}
       const { data: me } = await db.from('clients').select('id, coach_id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle()
       if (!me) return { skip: true }
-      const today = new Date().toISOString().split('T')[0]
+      const today = new Date().toLocaleDateString('en-CA')
       const mkLog = async (name) => (await db.from('workout_logs').insert({ coach_id: me.coach_id, client_id: me.id, name: tag + ' ' + name, date: today }).select('id').single()).data.id
       const mkEx = async (logId) => (await db.from('workout_log_exercises').insert([{ log_id: logId, exercise_name: tag + ' Ex', exercise_type: 'strength', metric_type: 'weight_reps', order_index: 0 }]).select('id')).data[0].id
 

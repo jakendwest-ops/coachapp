@@ -387,6 +387,14 @@ function _ymdLocal(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// A stored calendar date ('YYYY-MM-DD', a DATE column) as a Date at LOCAL midnight, for showing it. new Date('2026-07-15') is UTC midnight, which west of UTC is the evening of the
+// 14th, so a screen formatting it showed the day BEFORE (and a session logged in a New York evening, stamped with the UTC day until 2026-10-17, only looked right by accident). The
+// date part of a timestamp is taken too, so a value with a time on it behaves the same. Anything that is not a date is an Invalid Date, as new Date(garbage) is.
+function _dateOnly(ymd) {
+  const s = String(ymd == null ? '' : ymd).slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T00:00:00') : new Date(NaN)
+}
+
 // ─── The PB entry form (2026-08-17) ──────────────────────────────────────────
 // ONE definition. It was hand-copied into three places — renderProgressPBs, and both the coach and
 // solo dashboard cards — and they had already drifted: the SOLO copy never rendered #cpb-notes, but

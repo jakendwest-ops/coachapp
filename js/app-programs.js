@@ -252,7 +252,7 @@ function showAssignProgramModal(clientId) {
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'assign-program-modal'
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = _ymdLocal(new Date())
 
   overlay.innerHTML = `
     <div class="modal">
@@ -369,7 +369,7 @@ async function _archiveAssignmentBlock(clientProgramId, reason) {
     program_name: cp.programs?.name || 'Training plan',
     start_date: cp.start_date || null,
     assigned_at: cp.created_at,
-    ended_at: new Date().toISOString().split('T')[0],
+    ended_at: _ymdLocal(new Date()),
     planned_weeks: plannedWeeks,
     ended_reason: reason || null,
     source_client_program_id: cp.id,
@@ -770,7 +770,7 @@ async function _saveMissingOneRMEntries(clientId) {
   // a refusal here must not imply the assignment failed. The caller already toasts its own result.
   if (!(await _verifyClientAccess('_saveMissingOneRMEntries', clientId))) return
   const missing = window._missingOneRMExercises || []
-  const today = new Date().toISOString().split('T')[0]
+  const today = _ymdLocal(new Date())
   const rows = []
   missing.forEach((m, i) => {
     const val = _readOneRMQuickEntry(`mor-${i}`)
@@ -875,7 +875,7 @@ async function showAssignProgramToClientModal(programId) {
   if (existing) existing.remove()
 
   const isSolo = currentProfile?.role === 'solo'
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = _ymdLocal(new Date())
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'apc-modal'

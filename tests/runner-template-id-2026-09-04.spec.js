@@ -29,7 +29,7 @@ test.describe('The runner records template_id (2026-09-04)', () => {
         // Drive the real state the runner saves from, rather than the whole UI: this test is about
         // the insert carrying the id, not about how the runner is launched.
         _runner = {
-          clientId: client.id, name: tag, date: new Date().toISOString().split('T')[0],
+          clientId: client.id, name: tag, date: new Date().toLocaleDateString('en-CA'),
           // saveRunnerSession bails out before it ever inserts if _loggedExercises() (the same
           // "loggedSets.length" filter the finish screen uses) comes back empty — one real logged
           // set is required to reach the workout_logs insert this test is actually about. reps:15

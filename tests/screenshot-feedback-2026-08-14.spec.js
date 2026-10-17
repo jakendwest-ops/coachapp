@@ -140,7 +140,7 @@ test.describe('Personal Bests is one list: recorded lifts and the Big 5 together
           .insert({ coach_id: currentUser.id, full_name: '[E2E] 1RM grid client' }).select('id').single()
         const { error: iErr } = await db.from('client_1rms').insert({
           client_id: c.id, exercise_name: '[E2E] Grid Lift', one_rm_kg: 100,
-          recorded_at: new Date().toISOString().split('T')[0]
+          recorded_at: new Date().toLocaleDateString('en-CA')
         })
         if (iErr) throw new Error('1rm insert: ' + iErr.message)
         const host = document.createElement('div'); host.id = 'orm-test-host'; document.body.appendChild(host)
@@ -185,7 +185,7 @@ test.describe('Personal Bests is one list: recorded lifts and the Big 5 together
     let clientId = null
     try {
       const r = await page.evaluate(async () => {
-        const today = new Date().toISOString().split('T')[0]
+        const today = new Date().toLocaleDateString('en-CA')
         const names = ['[E2E] Untouched', '[E2E] Edited']
         const { data: c } = await db.from('clients')
           .insert({ coach_id: currentUser.id, full_name: '[E2E] 1RM save client' }).select('id').single()
@@ -244,7 +244,7 @@ test.describe('Personal Bests survives a non-default weight unit', () => {
             .insert({ coach_id: currentUser.id, full_name: `[E2E] 1RM ${u} client` }).select('id').single()
           await db.from('client_1rms').insert({
             client_id: c.id, exercise_name: '[E2E] Unit Lift', one_rm_kg: 100,
-            recorded_at: new Date().toISOString().split('T')[0]
+            recorded_at: new Date().toLocaleDateString('en-CA')
           })
           const prev = window._unitPrefs.weight
           window._unitPrefs.weight = u

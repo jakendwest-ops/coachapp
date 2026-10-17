@@ -57,7 +57,7 @@ test.describe('client health data write surface — behavioural RLS probe', () =
         createdVictim = true
       }
 
-      const today = new Date().toISOString().split('T')[0]
+      const today = new Date().toLocaleDateString('en-CA')
       const errs = []
       const { data: oneRm, error: e1 } = await db.from('client_1rms').insert({
         client_id: victim.id, exercise_name: TAG + ' Squat', one_rm_kg: 100, recorded_at: today
@@ -95,16 +95,16 @@ test.describe('client health data write surface — behavioural RLS probe', () =
           out.rm_delete = rows(await db.from('client_1rms').delete().eq('id', f.oneRmId).select())
           out.rm_insert = rows(await db.from('client_1rms').insert({
             client_id: f.clientId, exercise_name: 'PWNED', one_rm_kg: 1,
-            recorded_at: new Date().toISOString().split('T')[0] }).select())
+            recorded_at: new Date().toLocaleDateString('en-CA') }).select())
           // performance_logs
           out.pf_delete = rows(await db.from('performance_logs').delete().eq('id', f.perfId).select())
           out.pf_insert = rows(await db.from('performance_logs').insert({
-            client_id: f.clientId, date: new Date().toISOString().split('T')[0],
+            client_id: f.clientId, date: new Date().toLocaleDateString('en-CA'),
             category: 'strength', name: 'PWNED', value: 1, unit: 'kg' }).select())
           // weight_logs — special-category health data
           out.wl_delete = rows(await db.from('weight_logs').delete().eq('id', f.weightId).select())
           out.wl_insert = rows(await db.from('weight_logs').insert({
-            client_id: f.clientId, date: new Date().toISOString().split('T')[0], weight_kg: 999 }).select())
+            client_id: f.clientId, date: new Date().toLocaleDateString('en-CA'), weight_kg: 999 }).select())
           // clients — a TENANCY table; saveWeightGoals updates it by id with no anchor.
           out.cl_update = rows(await db.from('clients')
             .update({ starting_weight_kg: 999, goal_weight_kg: 999 }).eq('id', f.clientId).select())

@@ -75,7 +75,7 @@ async function attachRealClient(page, fx) {
       sets_json: [{ repsMin: '5', repsMax: '5' }]
     })
     const { data: cp } = await db.from('client_programs')
-      .insert({ client_id: clientId, program_id: fx.programId, start_date: new Date().toISOString().slice(0, 10) }).select('id').single()
+      .insert({ client_id: clientId, program_id: fx.programId, start_date: new Date().toLocaleDateString('en-CA') }).select('id').single()
     await db.from('client_program_workouts').insert({
       client_program_id: cp.id, program_phase_workout_id: fx.ppwId, workout_template_id: clone.id
     })

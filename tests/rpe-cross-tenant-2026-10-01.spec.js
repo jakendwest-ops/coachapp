@@ -43,7 +43,7 @@ async function makeVictim(pt, { tag, exName, tplName }) {
     const must = (r, what) => { if (r.error) throw new Error(`${what}: ${r.error.message}`); return r.data }
     const ex = must(await db.from('exercises').insert({ coach_id: currentUser.id, name: exName, metric_type: 'weight_reps' }).select('id').single(), 'exercise')
     const client = must(await db.from('clients').insert({ coach_id: currentUser.id, full_name: tag + ' Victim' }).select('id').single(), 'client')
-    const rm = must(await db.from('client_1rms').insert({ client_id: client.id, exercise_id: ex.id, exercise_name: exName, one_rm_kg: 100, recorded_at: new Date().toISOString().split('T')[0] }).select('id').single(), '1rm')
+    const rm = must(await db.from('client_1rms').insert({ client_id: client.id, exercise_id: ex.id, exercise_name: exName, one_rm_kg: 100, recorded_at: new Date().toLocaleDateString('en-CA') }).select('id').single(), '1rm')
     const tpl = must(await db.from('workout_templates').insert({ coach_id: currentUser.id, name: tplName }).select('id').single(), 'template')
     must(await db.from('workout_template_exercises').insert({
       template_id: tpl.id, exercise_id: ex.id, exercise_name: exName, exercise_type: 'strength', metric_type: 'weight_reps', order_index: 0,
@@ -57,7 +57,7 @@ async function makeVictim(pt, { tag, exName, tplName }) {
 function runAttack(page, v, exName) {
   return page.evaluate(async ({ v, exName }) => {
     const out = {}
-    const today = new Date().toISOString().split('T')[0]
+    const today = new Date().toLocaleDateString('en-CA')
     // 1. the app's OWN "Save as my 1RM" function, pointed at the victim's client
     await _savePostSessionOneRM(0, v.clientId, exName + ' via-app', 999, v.exId)
     out.viaApp = (await db.from('client_1rms').select('id').eq('client_id', v.clientId).eq('exercise_name', exName + ' via-app')).data?.length || 0

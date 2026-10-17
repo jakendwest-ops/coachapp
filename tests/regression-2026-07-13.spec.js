@@ -100,7 +100,7 @@ test.describe('Zero-session phase must not crash the client Programs tab', () =>
         if (phErr) throw new Error('phase: ' + phErr.message)
 
         const { data: cp, error: aErr } = await db.from('client_programs')
-          .insert({ client_id: client.id, program_id: prog.id, start_date: new Date().toISOString().slice(0, 10) })
+          .insert({ client_id: client.id, program_id: prog.id, start_date: new Date().toLocaleDateString('en-CA') })
           .select('id').single()
         if (aErr) throw new Error('assignment: ' + aErr.message)
 
@@ -206,7 +206,7 @@ test.describe('Permissions — a client must not get the coach\'s controls', () 
           .insert({ coach_id: currentUser.id, full_name: '[E2E] Perms client' }).select('id').single()
         const { data: l } = await db.from('workout_logs').insert({
           coach_id: currentUser.id, client_id: c.id, name: '[E2E] Perms session',
-          date: new Date().toISOString().slice(0, 10), notes: 'Coach feedback here'
+          date: new Date().toLocaleDateString('en-CA'), notes: 'Coach feedback here'
         }).select('id, client_id').single()
         window.__permsClientId = c.id
         return l.id
@@ -274,7 +274,7 @@ test.describe('XSS class-sweep — sibling sites the first pass missed (found by
         const { data: r, error: rErr } = await db.from('client_1rms').insert({
           client_id: c.id,
           exercise_name: '[E2E]"><img src=x onerror="window.__ORM_XSS=1">',
-          one_rm_kg: 100, recorded_at: new Date().toISOString().split('T')[0]
+          one_rm_kg: 100, recorded_at: new Date().toLocaleDateString('en-CA')
         }).select('id').single()
         if (rErr) throw new Error('1rm insert: ' + rErr.message)
         return { clientId: c.id, ormId: r.id }
@@ -642,7 +642,7 @@ test.describe('Client-profile / dashboard / goals escaping (2026-07-28, whole-br
       await loginAsClient(client)
       const planted = await client.evaluate(async (payload) => {
         const { data: clientRow } = await db.from('clients').select('id').eq('user_id', currentUser.id).single()
-        const date = new Date().toISOString().split('T')[0]
+        const date = new Date().toLocaleDateString('en-CA')
         const { data, error } = await db.from('events')
           .insert({ title: payload, date, type: 'other', notes: null, client_id: clientRow.id, is_pt_assigned: false, created_by: currentUser.id })
           .select('id').single()

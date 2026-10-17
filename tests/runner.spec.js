@@ -859,7 +859,7 @@ test.describe('Workout runner (client)', () => {
     try {
       await page.evaluate((clientId) => {
         const draft = {
-          clientId, name: '[E2E] Draft Resume Test', date: new Date().toISOString().split('T')[0],
+          clientId, name: '[E2E] Draft Resume Test', date: new Date().toLocaleDateString('en-CA'),
           startTime: Date.now() - 60000, exIdx: 1,
           exercises: [
             { name: '[E2E] Draft Ex 1', type: 'strength', targetSets: 3, loggedSets: [{ weight: '50', reps: '10' }] },
@@ -903,7 +903,7 @@ test.describe('Workout runner (client)', () => {
     try {
       await page.evaluate((clientId) => {
         const draft = {
-          clientId, name: '[E2E] Draft Discard Test', date: new Date().toISOString().split('T')[0],
+          clientId, name: '[E2E] Draft Discard Test', date: new Date().toLocaleDateString('en-CA'),
           startTime: Date.now(), exIdx: 1,
           exercises: [
             { name: '[E2E] Discard Ex 1', type: 'strength', targetSets: 3, loggedSets: [{ weight: '50', reps: '10' }] },
