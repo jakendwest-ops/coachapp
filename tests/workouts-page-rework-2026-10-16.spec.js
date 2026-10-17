@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, soloReady } = require('./helpers')
 
 // ─── Jake, 2026-10-16: the Workouts page for a solo account, reworked (docs/bugs/2026-10-16-workouts-page-rework-plan-first-create-a-workout-search-and-edit-in-place.md;
 // prototype https://claude.ai/artifact/PqNJdoUzPe1ubs6pbcGVz8). His four points: (1) the plan first, (2) "Start an empty workout" becomes Create a workout, (3) "Start from a
@@ -10,11 +10,7 @@ const { loginAsPT } = require('./helpers')
 const TAG = '[E2E] WkRework'
 
 async function soloView(page) {
-  await loginAsPT(page)
-  await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
-  await page.goto('/')
-  await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
-  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed (it closes every open modal; a test that opens one first loses it)
+  await soloReady(page)
   // The bottom bar and the floating PT / Personal switch sit over the foot of the page and can cover what a test clicks: this spec is about the page's content, not the chrome.
   await page.addStyleTag({ content: '#mobile-view-switcher, #mobile-view-switcher.mvs-on, .bottom-nav { display: none !important }' })
   page.setDefaultTimeout(30000)      // a stuck step fails in 30 s and names itself, instead of waiting out the whole 2-minute test (the config sets no action timeout)

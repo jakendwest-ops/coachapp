@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, acceptConfirm } = require('./helpers')
+const { loginAsPT, acceptConfirm, soloReady } = require('./helpers')
 
 // ─── Jake, 2026-10-13: the Goals tab is "cramped or cluttered, progress unclear, milestones clumsy" ──────────────────────────────────────────────────────────────────────────────
 // Prototype https://claude.ai/artifact/JEJgr7Q81rjzotfJAfDWox; his reactions: fuller list cards, no pace pill or weekly line, a step with a number ticks itself.
@@ -111,10 +111,7 @@ async function setup(page, { goals = [SQUAT, WEIGHT, RUN, DEAD, PAUSED], ms = MS
   }, { goals, ms, ci, role, fail, render, now: NOW_ISO })
 }
 async function soloView(page) {
-  await loginAsPT(page)
-  await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
-  await page.goto('/')
-  await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+  await soloReady(page)
   // _soloClientId is set BEFORE the dashboard paints. Until it has, a test that mounts into #main-content is overwritten by the late paint (the scroll test
   // failed twice in the 2026-10-15 release suite, on a slow Supabase evening, with the dashboard on screen instead of the goal page).
   await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })

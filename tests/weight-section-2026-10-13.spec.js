@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, soloReady } = require('./helpers')
 
 // ─── Jake, 2026-10-13: "the UI in this section needs a rework" - My Progress > Body Weight ─────────────────────────────────────────────────────────────────────────────
 // docs/bugs/2026-10-13-progress-page-needs-a-ui-rework-starting-with-the-body-weight-section.md; prototype https://claude.ai/artifact/AvgWLiWo4ogERWiRzJJomm.
@@ -16,11 +16,7 @@ const row = (date, kg, extra = {}) => ({ date, weight_kg: kg, body_fat_pct: null
 const LOGS = [row('2026-06-24', 109.2), row('2026-07-15', 108.4), row('2026-08-10', 107.4), row('2026-08-25', 106.8), row('2026-09-03', 107.3), row('2026-09-05', 105.2), row('2026-09-15', 108.0), row('2026-10-06', 109.7), row('2026-10-12', 110.3, { body_fat_pct: 19.5 })]
 
 async function soloView(page) {
-  await loginAsPT(page)
-  await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
-  await page.goto('/')
-  await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
-  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed (it closes every open modal; a test that opens one first loses it)
+  await soloReady(page)
 }
 
 // Renders the real renderProgressWeight into a scratch host over stubbed reads. unit 'lb' puts the page in pounds.

@@ -211,4 +211,16 @@ loginAsClient = __wrap('loginAsClient', loginAsClient)
 loginAsPT2 = __wrap('loginAsPT2', loginAsPT2)
 // ---- END INSTRUMENT ----
 
-module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible, soloNav, acceptConfirm, declineConfirm }
+// Signs in as the test coach and lands in the solo (Personal) view, returning only when the app has FINISHED starting: the dashboard has painted. Waiting for window._soloClientId alone
+// returns too early: the id is set while the app is still booting, and its own start-up navigation then lands and closes every open modal, so a test that opened one first waits for a
+// click target that is gone (the v2026.10.4 release abort; a 2-minute hang in the Workouts spec and a gate failure in progress-trend on 2026-10-17). One copy of this lived in every solo spec.
+async function soloReady(page) {
+  const { expect } = require('@playwright/test')
+  await loginAsPT(page)
+  await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
+  await page.goto('/')
+  await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })
+}
+
+module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible, soloNav, acceptConfirm, declineConfirm, soloReady }

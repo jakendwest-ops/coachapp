@@ -8,16 +8,12 @@
 // shown, nothing claimed). That the database rolls back a failure PART-WAY through the transaction is proven on a real
 // Postgres engine by scripts/sql-verify/assign-program.verify.mjs, which a browser test cannot reach.
 const { test, expect } = require('@playwright/test')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, soloReady } = require('./helpers')
 
 const TAG = '[E2E] AssignTx'
 
 async function soloView(page) {
-  await loginAsPT(page)
-  await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
-  await page.goto('/')
-  await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
-  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed (it closes every open modal; a test that opens one first loses it)
+  await soloReady(page)
 }
 
 // A personal programme owned by the test account: one phase, one session, one exercise. Returns the ids.

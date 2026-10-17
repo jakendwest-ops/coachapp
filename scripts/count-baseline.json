@@ -75,6 +75,12 @@
       "scope": "js",
       "count": 0,
       "why": "A stored DATE ('2026-07-15') handed straight to new Date() is UTC midnight, so a screen formatting it shows the day BEFORE for anyone west of UTC. Use _dateOnly(ymd) (app-core), which reads it as local midnight. Six display sites were fixed on 2026-10-17 and this holds the line at 0. A timestamp (created_at) is an instant and is correct to hand to new Date(). Comparisons and sorting of the same parse are off by hours, not a displayed day, and are not counted."
+    },
+    "solo-start poll copy (tests)": {
+      "pattern": "!!window\\._soloClientId\\), \\{ timeout",
+      "scope": "tests",
+      "count": 4,
+      "why": "A spec that signs in to the solo view and waits only for window._soloClientId returns before the app has finished starting: its own start-up navigation then closes any open modal (the v2026.10.4 release abort, a 2-minute hang and a gate failure on 2026-10-17). tests/helpers.js soloReady() waits for the dashboard too and is the ONE copy to use; ten specs were moved onto it on 2026-10-17. What is left is that helper itself and three specs with a different start (back-to-goals-fallback, delete-template-lands-on-library, personal-view-delete-boundary). Lower it when one of them moves; never raise it."
     }
   }
 }

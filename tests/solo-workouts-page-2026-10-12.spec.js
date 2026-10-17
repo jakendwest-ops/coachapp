@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient } = require('./helpers')
+const { loginAsPT, loginAsClient, soloReady } = require('./helpers')
 
 // ─── Jake, 2026-10-12: "We need to scope how a user creates a workout on the fly, as not all users will want to create programs. Perhaps the 'workouts' page needs to be for
 // workouts that have been created and used" (docs/bugs/2026-10-12-scope-creating-a-workout-on-the-fly-and-renaming-programs-to-training-plans.md; prototype
@@ -18,11 +18,7 @@ const { loginAsPT, loginAsClient } = require('./helpers')
 const TAG = '[E2E] SoloWk'
 
 async function soloView(page) {
-  await loginAsPT(page)
-  await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
-  await page.goto('/')
-  await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
-  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed (it closes every open modal; a test that opens one first loses it)
+  await soloReady(page)
   // The bottom bar and the floating PT / Personal switch are fixed over the foot of the page and can sit over what a test clicks (it intercepted a row's Start): this spec is about the page's content, not the chrome.
   await page.addStyleTag({ content: '#mobile-view-switcher, #mobile-view-switcher.mvs-on, .bottom-nav { display: none !important }' })
 }

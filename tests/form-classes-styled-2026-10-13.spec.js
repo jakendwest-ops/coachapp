@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT } = require('./helpers')
+const { loginAsPT, soloReady } = require('./helpers')
 
 // ─── Jake, 2026-10-13: "the UI in this section needs a rework" (the Body Weight log form on My Progress) ───────────────────────────────────────────────────────────
 // docs/bugs/2026-10-13-progress-page-needs-a-ui-rework-starting-with-the-body-weight-section.md
@@ -14,10 +14,7 @@ const { loginAsPT } = require('./helpers')
 const STYLES = ['borderTopWidth', 'borderTopStyle', 'borderTopLeftRadius', 'paddingTop', 'paddingLeft', 'backgroundColor', 'display', 'fontWeight', 'marginBottom']
 
 async function soloView(page) {
-  await loginAsPT(page)
-  await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
-  await page.goto('/')
-  await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+  await soloReady(page)
   // _soloClientId is set BEFORE the boot's own navigate paints the dashboard; a late boot navigate removes the sheet a test has just opened (see goals-rework-2026-10-14).
   await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })
 }

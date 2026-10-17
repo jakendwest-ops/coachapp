@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient } = require('./helpers')
+const { loginAsPT, loginAsClient, soloReady } = require('./helpers')
 
 // ─── A solo user can add a step to their own goal (docs/bugs/2026-10-01-solo-user-cannot-add-milestones-to-their-own-goals.md) ─────────────────────────────────────────────
 // Against the LIVE database, through the real Goals screen: the master account's own SOLO record (clients.coach_id IS NULL, user_id = the account). Before
@@ -31,11 +31,7 @@ test.afterEach(async ({ browser }) => {
 })
 
 test('a solo user adds a step to their own goal through "Add a step", and it is saved', async ({ page }) => {
-  await loginAsPT(page)
-  await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
-  await page.goto('/')
-  await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
-  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed (it closes every open modal; a test that opens one first loses it)
+  await soloReady(page)
   const soloId = await page.evaluate(() => window._soloClientId)
   const goalId = await page.evaluate(async ({ soloId, title }) => {
     const { data, error } = await db.from('goals').insert({ client_id: soloId, created_by: currentUser.id, title, goal_type: 'custom', priority: 1, status: 'active' }).select('id').single()

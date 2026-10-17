@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, acceptConfirm, declineConfirm } = require('./helpers')
+const { loginAsPT, acceptConfirm, declineConfirm, soloReady } = require('./helpers')
 
 // ─── Jake, 2026-10-12: "There should be a 'add to my calendar/plan' and a 'remove from current plan' on this page. A user may want to create a plan but not assign it
 // to themself. At the moment they can only delete." (docs/bugs/2026-10-12-programs-page-has-no-add-to-my-plan-or-remove-from-my-plan.md)
@@ -17,11 +17,7 @@ const { loginAsPT, acceptConfirm, declineConfirm } = require('./helpers')
 const TAG = '[E2E] OnPlan'
 
 async function soloView(page) {
-  await loginAsPT(page)
-  await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
-  await page.goto('/')
-  await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
-  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed (it closes every open modal; a test that opens one first loses it)
+  await soloReady(page)
 }
 
 const makeFixture = (page, name) => page.evaluate(async ({ name }) => {

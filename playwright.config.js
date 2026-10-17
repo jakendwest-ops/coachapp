@@ -39,7 +39,9 @@ module.exports = defineConfig({
   // [E2E] row, and it returned the same way once before. checks.sh already fails on a stray probe, but
   // that only helps if the gate runs before the suite does; this closes the window where a resurrected
   // file is simply picked up and executed.
-  testIgnore: ['**/zz-*.spec.js', '**/_adhoc*.spec.js'],
+  // `_debug-*.spec.js` is git-ignored like the others but was NOT listed, so the full suite ran two of them from one machine's folder (a release gate whose membership depends on untracked files;
+  // one flaked in both v2026.10.5 gate runs). It is ignored even when named by path. To run a throwaway probe on purpose: `npx playwright test -c playwright.probe.config.js`.
+  testIgnore: ['**/zz-*.spec.js', '**/_adhoc*.spec.js', '**/_debug-*.spec.js'],
 
   // Before 2026-08-29 there was no webServer block, so `npm test` and the pre-push gate both
   // depended on a server someone had started out of band. When it was absent the suite produced
@@ -65,6 +67,9 @@ module.exports = defineConfig({
   retries: 1,
   timeout: 60000,
   use: {
+    // No action timeout used to mean a click on an element that never appears waited out the WHOLE 60-120 s test, with no name on the failure. 30 s fails the stuck step by name
+    // (2026-10-17: a 2-minute hang in the Workouts spec; an aborted release the day before).
+    actionTimeout: 30000,
     baseURL: process.env.BASE_URL || 'http://localhost:3001',
     headless: true,
     screenshot: 'only-on-failure',
