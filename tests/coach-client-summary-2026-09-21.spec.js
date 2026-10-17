@@ -53,7 +53,7 @@ test.describe('coach_client_summary against the live API', () => {
       const { error } = await db.from('weight_logs').insert({ client_id: c.id, date: day(weighInDaysAgo), weight_kg: 80 })
       if (error) return { fatal: 'weigh-in insert: ' + error.message, id: c.id }
     }
-    return { id: c.id, day: { d1: day(1), d3: day(3) } }
+    return { id: c.id, day: { d1: day(1), d3: day(3) }, dates: Object.fromEntries(sessionsDaysAgo.map(n => [String(n), day(n)])) }   // a NEGATIVE n is a date that many days AHEAD of the UTC day
   }, { TAG, name, status, sessionsDaysAgo, weighInDaysAgo })
 
   // A crashed earlier run must not leave rows that skew what follows; and a failure to clear them is itself a failure.
@@ -106,6 +106,39 @@ test.describe('coach_client_summary against the live API', () => {
       cleaned = await sweep(page)
     }
     expect(cleaned, 'the cleanup removed exactly what this test planted: 5 logs, 1 weigh-in, 2 clients').toEqual({ logs: 5, weights: 1, clients: 2, errors: [] })
+  })
+
+  // 2026-10-17: the app stamps a session with the LOCAL day it was started, which for anyone ahead of UTC is one ahead of the UTC date for part of every day. The view used to
+  // ignore a log dated after UTC today, so that session vanished from the coach's lists (scripts/fix-coach-client-summary-utc-cap-2026-10-17.sql, run by Jake the same day,
+  // allows one day ahead). This is the live leg of the local verifier (scripts/sql-verify/coach-client-summary-utc-cap.verify.mjs, which reproduces the bug on the old definition):
+  // it fails against the old view, and it must keep failing a log TWO days ahead, which no time zone can produce (the year-off typo the cap exists for).
+  test('a session dated one day ahead of the UTC date counts; two days ahead still does not', async ({ page }) => {
+    await loginAsPT(page)
+    await preClean(page)
+    let cleaned
+    try {
+      const a = await plant(page, { name: 'One day ahead', sessionsDaysAgo: [-1, 4] })
+      const b = await plant(page, { name: 'Two days ahead', sessionsDaysAgo: [-2, 6] })
+      expect(a.fatal, 'planting the one-day-ahead fixture').toBeUndefined()
+      expect(b.fatal, 'planting the two-days-ahead fixture').toBeUndefined()
+      const r = await page.evaluate(async ({ a, b }) => {
+        const one = async (id) => { const { data, error } = await db.from('coach_client_summary').select('last_session_date, sessions_7d, sessions_28d').eq('client_id', id); return { rows: data, error: error?.message || null } }
+        return { a: await one(a.id), b: await one(b.id) }
+      }, { a, b })
+      expect(r.a.error).toBeNull()
+      expect(r.a.rows, 'one row').toHaveLength(1)
+      expect.soft(r.a.rows[0].last_session_date, 'the session dated one day ahead IS the last session').toBe(a.dates['-1'])
+      expect.soft(r.a.rows[0].sessions_7d, 'and it counts in the week (it and the one 4 days ago)').toBe(2)
+      expect.soft(r.a.rows[0].sessions_28d).toBe(2)
+      expect(r.b.error).toBeNull()
+      expect(r.b.rows, 'one row').toHaveLength(1)
+      expect.soft(r.b.rows[0].last_session_date, 'a log TWO days ahead is ignored: the last session is the real one 6 days ago').toBe(b.dates['6'])
+      expect.soft(r.b.rows[0].sessions_7d).toBe(1)
+      expect.soft(r.b.rows[0].sessions_28d).toBe(1)
+    } finally {
+      cleaned = await sweep(page)
+    }
+    expect(cleaned, 'the cleanup removed exactly what this test planted: 4 logs, 2 clients').toEqual({ logs: 4, weights: 0, clients: 2, errors: [] })
   })
 
   test('another coach, a client account and an anonymous caller see none of it', async ({ browser }) => {
