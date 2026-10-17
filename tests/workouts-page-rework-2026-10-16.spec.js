@@ -14,8 +14,11 @@ async function soloView(page) {
   await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
   await page.goto('/')
   await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed (it closes every open modal; a test that opens one first loses it)
   // The bottom bar and the floating PT / Personal switch sit over the foot of the page and can cover what a test clicks: this spec is about the page's content, not the chrome.
   await page.addStyleTag({ content: '#mobile-view-switcher, #mobile-view-switcher.mvs-on, .bottom-nav { display: none !important }' })
+  page.setDefaultTimeout(30000)      // a stuck step fails in 30 s and names itself, instead of waiting out the whole 2-minute test (the config sets no action timeout)
+  await cleanup(page, await page.evaluate(() => window._soloClientId))      // a retry starts clean: a first attempt that timed out never ran its own cleanup, and its leftovers broke the retry's counts
 }
 
 // The page in a scratch host (the real renderer, the real reads). noPlan stubs only the "which plan am I on" read.

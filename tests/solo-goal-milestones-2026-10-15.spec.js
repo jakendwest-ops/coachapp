@@ -35,6 +35,7 @@ test('a solo user adds a step to their own goal through "Add a step", and it is 
   await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
   await page.goto('/')
   await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed (it closes every open modal; a test that opens one first loses it)
   const soloId = await page.evaluate(() => window._soloClientId)
   const goalId = await page.evaluate(async ({ soloId, title }) => {
     const { data, error } = await db.from('goals').insert({ client_id: soloId, created_by: currentUser.id, title, goal_type: 'custom', priority: 1, status: 'active' }).select('id').single()

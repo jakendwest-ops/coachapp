@@ -17,6 +17,7 @@ async function soloAt(page, at) {
   await page.evaluate(() => localStorage.setItem('_activeView', 'solo'))
   await page.goto('/')
   await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+  await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed (it closes every open modal; a test that opens one first loses it)
   // The pinned time is set AFTER sign-in so the saved login is judged on the real clock; the app only reads "now" from here on.
   await page.clock.setFixedTime(new Date(at))
   await page.evaluate(() => { window._navigateNow = async () => {} })      // the app's late start-up navigation would close the dialogs these tests open
