@@ -17,6 +17,16 @@ closing_conditions: "Jake confirms on his phone that, in a real workout, the gre
 
 Nothing beyond that sentence. Intake first; investigation next (read how the runner builds its placeholders, then ask Jake for one concrete exercise where it was wrong).
 
+## Investigation, read-only (2026-10-17, code only, no data looked at)
+
+The grey weight and reps numbers come from `fetchRunnerLastSession` and `_prevSetsByIndex` in `js/app-runner.js`, then `renderStrengthTable` (~lines 1005-1090). Three things in that path can make the ghost text absent or not what you expect:
+
+1. **Only the 20 newest sessions are searched.** `fetchRunnerLastSession` reads the client's 20 newest `workout_logs` and then looks for the exercise only inside those 20 (`.in('log_id', logIds)`). An exercise last done before the 20th-newest session shows NO grey numbers, with no hint why. An abandoned or empty session uses up one of the 20 slots. Evidenced in the code; whether it is what Jake saw is not known.
+2. **Rows are matched by set NUMBER.** Today's row N is compared with last session's set number N (`prevMap[i]`, keyed `set_number - 1`), and the list is not filtered by warm-up versus working (`phase`), although the Last time panel since 2026-10-04 counts working sets only. If last session had a warm-up set, today's first working row would show the warm-up's weight. Not yet checked against what the runner writes for warm-up sets.
+3. **By design, today's prescription wins.** A prescribed reps target (`repsMin`) wins over last session's reps, and a %1RM-derived load wins over last session's weight (Jake's own 2026-09-30 report asked for the reps one). A top-set exercise shows no ghost numbers at all, by design. So in a prescribed plan the grey numbers are often the plan's, not last session's.
+
+Likely fix for 1 (not started, waiting on Jake's answers): ask the database for the newest log that contains the exercise (by exercise id, then name) instead of windowing the newest 20 logs first. A spec would seed 21 newer sessions that do not contain the exercise and expect last time's numbers still to show.
+
 ## Questions for Jake (so the investigation looks in the right place)
 
 - Which boxes: weight, reps, or the effort box?
