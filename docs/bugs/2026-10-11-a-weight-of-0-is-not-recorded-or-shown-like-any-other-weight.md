@@ -1,9 +1,9 @@
 ---
 id: 2026-10-11-a-weight-of-0-is-not-recorded-or-shown-like-any-other-weight
-status: fixed-awaiting-jake
+status: confirmed
 priority: high
 reported: 2026-10-11
-status_detail: "FIXED 2026-10-11, LIVE in v2026.10.1 (app-runner v114, app-progress v78); awaiting Jake's look on a phone. Red before, green after: tests/runner-zero-weight-and-finish-2026-10-11.spec.js (stats formatters in kg and lb, a 0 saved as 0 and shown on the finish screen and remembered next session, a 0 next to a weighted set). Fourteen deliberate breakages each turn a test red. Jake's answer: '0 should be logged as 0' (not BW)."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item R5). FIXED 2026-10-11, LIVE in v2026.10.1 (app-runner v114, app-progress v78); awaiting Jake's look on a phone. Red before, green after: tests/runner-zero-weight-and-finish-2026-10-11.spec.js (stats formatters in kg and lb, a 0 saved as 0 and shown on the finish screen and remembered next session, a 0 next to a weighted set). Fourteen deliberate breakages each turn a test red. Jake's answer: '0 should be logged as 0' (not BW)."
 ---
 
 # A weight of 0 is not recorded (or shown) like any other weight

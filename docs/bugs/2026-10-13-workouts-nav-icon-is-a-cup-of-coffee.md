@@ -1,9 +1,9 @@
 ---
 id: 2026-10-13-workouts-nav-icon-is-a-cup-of-coffee
-status: fixed-awaiting-jake
+status: confirmed
 priority: low
 reported: 2026-10-13
-status_detail: "FIXED 2026-10-13, on master (not yet in a release); awaits Jake on his phone. The Workouts nav item is a dumbbell in the bottom bar and the sidebar. Test: tests/solo-workouts-page-2026-10-12.spec.js (nav icon test; one breakage caught)."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item W4). FIXED 2026-10-13, on master (not yet in a release); awaits Jake on his phone. The Workouts nav item is a dumbbell in the bottom bar and the sidebar. Test: tests/solo-workouts-page-2026-10-12.spec.js (nav icon test; one breakage caught)."
 ---
 
 # The Workouts nav icon is a cup of coffee

@@ -1,9 +1,9 @@
 ---
 id: 2026-10-13-your-workouts-row-opens-the-slide-in-drawer-instead-of-expanding-in-place
-status: fixed-awaiting-jake
+status: confirmed
 priority: low
 reported: 2026-10-13
-status_detail: "FIXED 2026-10-13, on master (not yet in a release); awaits Jake on his phone. A Your workouts row now expands and collapses in place (the name area or the chevron), showing the same exercise block as a plan day; no drawer. Test: tests/solo-workouts-page-2026-10-12.spec.js (expand test; four breakages caught)."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item W3). FIXED 2026-10-13, on master (not yet in a release); awaits Jake on his phone. A Your workouts row now expands and collapses in place (the name area or the chevron), showing the same exercise block as a plan day; no drawer. Test: tests/solo-workouts-page-2026-10-12.spec.js (expand test; four breakages caught)."
 ---
 
 # Your workouts: a tapped row opens the slide-in drawer, not an in-place expansion

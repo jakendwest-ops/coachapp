@@ -1,9 +1,9 @@
 ---
 id: 2026-10-12-rpe-is-not-labelled-in-the-runner-stats-and-last-time-while-rir-is
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-10-12
-status_detail: "FIXED 2026-10-12 on master, unreleased (app-progress v79); awaiting Jake's look on a phone. Jake confirmed my reading (an RPE had no label while an RIR did): an RPE now reads '@7 RPE' beside '@0 RIR' in the runner's Stats sheet, the Last time strip, the Stats card and the 1RM note (which now says 'effort counted'). Red before, green after: tests-node/exercise-stats.test.mjs, tests/exercise-stats-shared-2026-10-03.spec.js, tests/runner-last-time-top-set-2026-10-04.spec.js."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item R8). FIXED 2026-10-12 on master, unreleased (app-progress v79); awaiting Jake's look on a phone. Jake confirmed my reading (an RPE had no label while an RIR did): an RPE now reads '@7 RPE' beside '@0 RIR' in the runner's Stats sheet, the Last time strip, the Stats card and the 1RM note (which now says 'effort counted'). Red before, green after: tests-node/exercise-stats.test.mjs, tests/exercise-stats-shared-2026-10-03.spec.js, tests/runner-last-time-top-set-2026-10-04.spec.js."
 ---
 
 # In the runner, RPE is not shown whereas RIR is

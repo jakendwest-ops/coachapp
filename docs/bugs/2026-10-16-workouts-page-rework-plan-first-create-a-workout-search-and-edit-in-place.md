@@ -3,7 +3,7 @@ id: 2026-10-16-workouts-page-rework-plan-first-create-a-workout-search-and-edit-
 status: open
 priority: medium
 reported: 2026-10-16
-status_detail: "OPEN. Phase 1 (the Personal account's page) approved by Jake 2026-10-16 and BUILT 2026-10-17 and released in v2026.10.5 (awaiting Jake's phone check): plan first, Create a workout (Choose a template / Create new), Train now link, search by name, Edit and Make a copy per row, and the plan lock. Library page left alone by his choice. Phase 2 (the PT page: a Client filter, search and paging on the server, one shared code path) is not started and needs its own plan. Closes only on Jake's phone check for BOTH roles; see 'Phase 1' below."
+status_detail: "PHASE 1 CONFIRMED by Jake 2026-10-17 on his phone (phone check W1, W5-W8: the plan first, Create new, Choose a template, the search and the plan lock, Train now). The PT page (Phase 2) is not started and the closing condition needs BOTH roles, so the row stays open. OPEN. Phase 1 (the Personal account's page) approved by Jake 2026-10-16 and BUILT 2026-10-17 and released in v2026.10.5 (awaiting Jake's phone check): plan first, Create a workout (Choose a template / Create new), Train now link, search by name, Edit and Make a copy per row, and the plan lock. Library page left alone by his choice. Phase 2 (the PT page: a Client filter, search and paging on the server, one shared code path) is not started and needs its own plan. Closes only on Jake's phone check for BOTH roles; see 'Phase 1' below."
 ---
 
 # Workouts page: plan first, "Create a workout" with two choices, search instead of "Start from a past session", edit in place, and one page for solo AND PT

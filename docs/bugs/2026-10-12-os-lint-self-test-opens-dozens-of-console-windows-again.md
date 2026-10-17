@@ -3,7 +3,7 @@ id: 2026-10-12-os-lint-self-test-opens-dozens-of-console-windows-again
 status: fixed-awaiting-jake
 priority: high
 reported: 2026-10-12
-status_detail: "FIXED 2026-10-12 in the working tree (commit 8a785f6, local until a review has seen it; the hook runs from the working tree, so it is live now). Verified by process inspection: the self-test, launched the way the hook does, ran 20 minutes with no VISIBLE console window (before: windows from the first --report child, within 2 minutes; the incident, not a same-method run on the old code). A guard in os-lint.selftest.mjs refuses a child_process call without windowsHide (mutation-checked). Closes when Jake sees no windows over the next self-test, due about 2026-10-19."
+status_detail: "Jake marked this Works on 2026-10-17, but the weekly self-test it concerns is not due until about 2026-10-19; it stays open until it has run and he says no windows appeared. FIXED 2026-10-12 in the working tree (commit 8a785f6, local until a review has seen it; the hook runs from the working tree, so it is live now). Verified by process inspection: the self-test, launched the way the hook does, ran 20 minutes with no VISIBLE console window (before: windows from the first --report child, within 2 minutes; the incident, not a same-method run on the old code). A guard in os-lint.selftest.mjs refuses a child_process call without windowsHide (mutation-checked). Closes when Jake sees no windows over the next self-test, due about 2026-10-19."
 ---
 
 # The os-lint weekly self-test opened dozens of console windows over Jake's screen, again

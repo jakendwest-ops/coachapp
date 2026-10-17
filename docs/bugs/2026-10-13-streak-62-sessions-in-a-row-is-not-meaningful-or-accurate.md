@@ -1,9 +1,9 @@
 ---
 id: 2026-10-13-streak-62-sessions-in-a-row-is-not-meaningful-or-accurate
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-10-13
-status_detail: "BUILT 2026-10-13, not released. The Streak tile is plan adherence while a plan governs the week, and weeks in a row at a weekly target (set in Settings, default 3) when none does. Needs the SQL in scripts/add-weekly-session-target-2026-10-13.sql run in Supabase BEFORE the release tag (until then Save target fails with a message). Closes when Jake confirms on his phone."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item H2). BUILT 2026-10-13, not released. The Streak tile is plan adherence while a plan governs the week, and weeks in a row at a weekly target (set in Settings, default 3) when none does. Needs the SQL in scripts/add-weekly-session-target-2026-10-13.sql run in Supabase BEFORE the release tag (until then Save target fails with a message). Closes when Jake confirms on his phone."
 ---
 
 # The dashboard Streak tile ("62 sessions in a row") is not meaningful or accurate

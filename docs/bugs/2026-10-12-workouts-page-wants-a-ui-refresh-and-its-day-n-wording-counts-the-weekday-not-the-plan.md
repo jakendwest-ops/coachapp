@@ -1,9 +1,9 @@
 ---
 id: 2026-10-12-workouts-page-wants-a-ui-refresh-and-its-day-n-wording-counts-the-weekday-not-the-plan
-status: fixed-awaiting-jake
+status: confirmed
 priority: low
 reported: 2026-10-12
-status_detail: "FIXED 2026-10-12, released in v2026.10.2; awaits Jake on his phone. (a) Day headings read 'WEDNESDAY' with no 'DAY 3'. (b) The Workouts page refresh was built with Step 2 of the on-the-fly row. Tests: the solo Workouts page spec (tests/solo-workouts-page-2026-10-12.spec.js) and the day-heading specs."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item W2). FIXED 2026-10-12, released in v2026.10.2; awaits Jake on his phone. (a) Day headings read 'WEDNESDAY' with no 'DAY 3'. (b) The Workouts page refresh was built with Step 2 of the on-the-fly row. Tests: the solo Workouts page spec (tests/solo-workouts-page-2026-10-12.spec.js) and the day-heading specs."
 ---
 
 # The Workouts page UI could do with updating, and "Day 3" is the day of the week, not the day of the plan

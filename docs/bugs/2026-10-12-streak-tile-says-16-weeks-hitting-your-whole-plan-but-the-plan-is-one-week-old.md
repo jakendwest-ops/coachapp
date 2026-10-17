@@ -1,9 +1,9 @@
 ---
 id: 2026-10-12-streak-tile-says-16-weeks-hitting-your-whole-plan-but-the-plan-is-one-week-old
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-10-12
-status_detail: "FIXED 2026-10-12 on master, unreleased (app-dashboard v33); awaiting Jake's look on a phone. Jake's final decision: the streak is SESSIONS LOGGED IN A ROW. A finished week inside the plan breaks it if a planned session was left unlogged; with no plan (or outside it) a whole week with no session breaks it; this week never breaks it; extra sessions count. The tile reads 'N sessions in a row'. Red before, green after: tests-node/dashboard-model.test.mjs and tests/dashboard-rework-2026-10-03.spec.js. See the section at the end for the history and what was simplified."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item H2). FIXED 2026-10-12 on master, unreleased (app-dashboard v33); awaiting Jake's look on a phone. Jake's final decision: the streak is SESSIONS LOGGED IN A ROW. A finished week inside the plan breaks it if a planned session was left unlogged; with no plan (or outside it) a whole week with no session breaks it; this week never breaks it; extra sessions count. The tile reads 'N sessions in a row'. Red before, green after: tests-node/dashboard-model.test.mjs and tests/dashboard-rework-2026-10-03.spec.js. See the section at the end for the history and what was simplified."
 ---
 
 # The dashboard streak says "16 week streak, hitting your whole plan", but he has not been on the plan for 16 weeks

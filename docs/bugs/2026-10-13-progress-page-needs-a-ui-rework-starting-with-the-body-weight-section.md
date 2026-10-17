@@ -1,9 +1,9 @@
 ---
 id: 2026-10-13-progress-page-needs-a-ui-rework-starting-with-the-body-weight-section
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-10-13
-status_detail: "ALL THREE TABS BUILT, awaiting Jake on his phone. Body Weight and Personal Bests are live in v2026.10.3 (2026-10-15). Goals was built 2026-10-14 from prototype v2 (his reactions: fuller list cards, no pace pill or weekly line, a step with a number ticks itself) and is pushed to master but NOT released. Closes when Jake confirms the three tabs on his phone. Known: a solo user's one-line Add a step is refused by the database until the pg_policies fix in docs/bugs/2026-10-01-solo-user-cannot-add-milestones-to-their-own-goals.md."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item P3). ALL THREE TABS BUILT, awaiting Jake on his phone. Body Weight and Personal Bests are live in v2026.10.3 (2026-10-15). Goals was built 2026-10-14 from prototype v2 (his reactions: fuller list cards, no pace pill or weekly line, a step with a number ticks itself) and is pushed to master but NOT released. Closes when Jake confirms the three tabs on his phone. Known: a solo user's one-line Add a step is refused by the database until the pg_policies fix in docs/bugs/2026-10-01-solo-user-cannot-add-milestones-to-their-own-goals.md."
 ---
 
 # My Progress: the Body Weight section needs a UI rework, and the whole page after it

@@ -1,9 +1,9 @@
 ---
 id: 2026-09-28-runner-tabs-show-position-not-completion-and-next-exercise-cannot-return-to-a-skipped-one
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-09-28
-status_detail: "FIXED 2026-09-28, uncommitted-to-release until Jake confirms in the real app. Reported by Jake from a walkthrough of the workout runner (screenshots), items 4 and 5 of 8. Red first: tests/runner-exercise-nav-2026-09-28.spec.js went 9 of 9 red on the old code for the intended reasons (tab 1, complete, painted rgba(99,102,241,0.45) instead of green; Next from a finished 3 landed on index 3, not 1), then green. A fresh-context review then found two flaws in my FIRST fix — interval warm-up/cool-down counted as work rounds, and a wrap-round rule that cycles for ever when every exercise is half done — both fixed and each now has a test that fails when the fix is removed (5 deliberate breakages, each turned its test red, file restored byte-identical). Same root: the runner had no notion of an exercise being 'completed', only of a position (exIdx)."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item R3). FIXED 2026-09-28, uncommitted-to-release until Jake confirms in the real app. Reported by Jake from a walkthrough of the workout runner (screenshots), items 4 and 5 of 8. Red first: tests/runner-exercise-nav-2026-09-28.spec.js went 9 of 9 red on the old code for the intended reasons (tab 1, complete, painted rgba(99,102,241,0.45) instead of green; Next from a finished 3 landed on index 3, not 1), then green. A fresh-context review then found two flaws in my FIRST fix — interval warm-up/cool-down counted as work rounds, and a wrap-round rule that cycles for ever when every exercise is half done — both fixed and each now has a test that fails when the fix is removed (5 deliberate breakages, each turned its test red, file restored byte-identical). Same root: the runner had no notion of an exercise being 'completed', only of a position (exIdx)."
 ---
 
 # Runner: the numbered tabs show position, not completion — and "Next exercise" can never go back

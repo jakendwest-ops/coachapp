@@ -1,9 +1,9 @@
 ---
 id: 2026-10-11-finish-workout-and-end-have-no-are-you-sure-and-the-next-page-has-no-back
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-10-11
-status_detail: "FIXED 2026-10-11, LIVE in v2026.10.1 (app-runner v114); awaiting Jake's look on a phone. Red before, green after: tests/runner-zero-weight-and-finish-2026-10-11.spec.js (Finish and End ask first and Cancel changes nothing; the finish screen has 'Back to workout' and what was logged and typed survives; a late PR lookup cannot repaint the finish screen over the runner). Jake's answer: 'there should be a back to workout button'."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item R6). FIXED 2026-10-11, LIVE in v2026.10.1 (app-runner v114); awaiting Jake's look on a phone. Red before, green after: tests/runner-zero-weight-and-finish-2026-10-11.spec.js (Finish and End ask first and Cancel changes nothing; the finish screen has 'Back to workout' and what was logged and typed survives; a late PR lookup cannot repaint the finish screen over the runner). Jake's answer: 'there should be a back to workout button'."
 ---
 
 # Finish workout and End can be tapped by accident, and the page after Finish has no way back

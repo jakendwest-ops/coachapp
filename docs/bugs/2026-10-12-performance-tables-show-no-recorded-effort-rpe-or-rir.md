@@ -1,9 +1,9 @@
 ---
 id: 2026-10-12-performance-tables-show-no-recorded-effort-rpe-or-rir
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-10-12
-status_detail: "FIXED 2026-10-12 on master, unreleased (app-progress v79); awaiting Jake's look on a phone. Per session and Per exercise print each set's effort (@7 RPE, @0 RIR) through the Stats sheet's formatter and the Per session query selects the effort columns; Per program shows each block's average effort (Jake: 'include per block'); a set with no effort scale (logged before it existed) is shown as RPE (Jake: 'show them as RPE'). Red before, green after: tests/performance-effort-2026-10-12.spec.js, tests-node/exercise-stats.test.mjs."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item P2). FIXED 2026-10-12 on master, unreleased (app-progress v79); awaiting Jake's look on a phone. Per session and Per exercise print each set's effort (@7 RPE, @0 RIR) through the Stats sheet's formatter and the Per session query selects the effort columns; Per program shows each block's average effort (Jake: 'include per block'); a set with no effort scale (logged before it existed) is shown as RPE (Jake: 'show them as RPE'). Red before, green after: tests/performance-effort-2026-10-12.spec.js, tests-node/exercise-stats.test.mjs."
 ---
 
 # None of the Progress > Performance tables show recorded effort (RPE or RIR)

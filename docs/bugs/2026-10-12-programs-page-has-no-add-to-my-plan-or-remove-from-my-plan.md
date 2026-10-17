@@ -1,9 +1,9 @@
 ---
 id: 2026-10-12-programs-page-has-no-add-to-my-plan-or-remove-from-my-plan
-status: fixed-awaiting-jake
+status: confirmed
 priority: medium
 reported: 2026-10-12
-status_detail: "FIXED 2026-10-12 (Step 1), released in v2026.10.2; awaits Jake on his phone. A solo account sees 'On my plan' on the list and the plan page with 'Remove from my plan' (otherwise 'Add to my plan'); adding a plan takes the other off; a coach gets the same wording for a client. Test: tests/plan-on-my-plan-2026-10-12.spec.js (7, seven deliberate breakages caught)."
+status_detail: "CONFIRMED by Jake 2026-10-17 on his phone (the phone-check checklist, item T5). FIXED 2026-10-12 (Step 1), released in v2026.10.2; awaits Jake on his phone. A solo account sees 'On my plan' on the list and the plan page with 'Remove from my plan' (otherwise 'Add to my plan'); adding a plan takes the other off; a coach gets the same wording for a client. Test: tests/plan-on-my-plan-2026-10-12.spec.js (7, seven deliberate breakages caught)."
 ---
 
 # Programs: no "add to my calendar/plan" and no "remove from current plan"; the only action is delete
