@@ -12,6 +12,7 @@ import { MUTATIONS as COACH_ID_GUARD } from './clients-coach-id-guard.mutations.
 import { MUTATIONS as ASSIGN_PROGRAM } from './assign-program.mutations.mjs'
 import { MUTATIONS as EMPTY_SESSION_DELETE } from './client-empty-session-delete.mutations.mjs'
 import { MUTATIONS as SOLO_GOAL_MILESTONES } from './solo-goal-milestones.mutations.mjs'
+import { MUTATIONS as SUMMARY_UTC_CAP } from './coach-client-summary-utc-cap.mutations.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const SUITES = [
@@ -20,6 +21,7 @@ const SUITES = [
   { name: 'assign_program() transaction', verifier: 'assign-program.verify.mjs', mutations: ASSIGN_PROGRAM },
   { name: 'client delete of an empty session', verifier: 'client-empty-session-delete.verify.mjs', mutations: EMPTY_SESSION_DELETE },
   { name: 'solo user adds a step to their own goal', verifier: 'solo-goal-milestones.verify.mjs', mutations: SOLO_GOAL_MILESTONES },
+  { name: 'coach_client_summary view: the UTC cap allows one day ahead', verifier: 'coach-client-summary-utc-cap.verify.mjs', mutations: SUMMARY_UTC_CAP },
 ]
 
 const run = (verifier, key) => new Promise((resolve) => {

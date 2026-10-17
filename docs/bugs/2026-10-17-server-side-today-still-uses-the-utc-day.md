@@ -3,7 +3,7 @@ id: 2026-10-17-server-side-today-still-uses-the-utc-day
 status: open
 priority: low
 reported: 2026-10-17
-status_detail: "OPEN, found by the multi-agent review of the local-date fix (2026-10-17): two database objects still take 'today' from the UTC day, so for the first hour after midnight in the UK summer (more east of it) they disagree with the app, which now stamps the LOCAL day. Both are display-level and heal on their own; neither touches ownership. Needs SQL, which Jake runs. Not fixed, on purpose: one is a function signature change."
+status_detail: "OPEN, found by the multi-agent review of the local-date fix (2026-10-17): two database objects still take 'today' from the UTC day, so for the first hour after midnight in the UK summer (more east of it) they disagree with the app, which now stamps the LOCAL day. Both are display-level and heal on their own; neither touches ownership. Needs SQL, which Jake runs. (1) the view cap: script written and proven locally 2026-10-17 (scripts/fix-coach-client-summary-utc-cap-2026-10-17.sql, 25 checks, reproduces the bug first, 8 breakages caught), WAITING for Jake to run it. (2) assign_program(): not built, it is a function signature change plus a browser change."
 closing_conditions: "Jake decides on the two SQL changes below. Each gets a verifier under scripts/sql-verify/ (and a mutation) before he runs it, and a check that fails with the UTC day put back."
 ---
 
@@ -17,7 +17,7 @@ The app side of "today taken from the UTC day" was fixed on master 2026-10-17 ([
 
 `scripts/add-coach-client-summary-2026-09-20.sql` lines 105, 110, 114 and 115 cap and window on `(now() at time zone 'utc')::date`, and ignore a log dated after it (its header says a future-dated log is a typo). With the fix, a session started at 00:30 BST on 16 July is dated `2026-07-16` while the UTC date is `2026-07-15`, so `16 <= 15` is false and the row is dropped from `last_session_date`, `sessions_7d` and `sessions_28d` until 01:00 BST. Readers: the Clients list label (`js/app-clients.js:137`) and the dashboard "Needs attention" (`js/app-dashboard.js:541`). Window: 1 hour in the UK, 2 in central Europe, most of a morning in Australia or New Zealand; west of UTC the cap does not bite. Before the fix the same session was stored as the 15th, so it showed, a day early.
 
-A cap of `+ 1` day would cover every zone up to UTC+14 and still exclude the deliberate typo row the verifier pins (T+400). `scripts/sql-verify/coach-client-summary.verify.mjs` is the place to add the 00:30 BST case.
+**Script written 2026-10-17:** `scripts/fix-coach-client-summary-utc-cap-2026-10-17.sql` makes both caps `+ 1` day (it differs from the live view statement by exactly those two lines; every zone up to UTC+14 is covered and the T+400 typo is still excluded). Verifier `scripts/sql-verify/coach-client-summary-utc-cap.verify.mjs` (25 checks: the bug reproduces on the original first, then the session shows, two days ahead and a year ahead still do not, the window edges did not move, the same 19 columns, `security_invoker` and the privileges kept, other coach / client / no identity / anon refused) and eight breakages in its `.mutations.mjs`, all caught. Run in rule 9m of `checks.sh`. Waiting for Jake to run it; its own read-back SELECT is the last check.
 
 ## 2. `assign_program()` stamps `ended_at = current_date` on a restart
 
