@@ -471,6 +471,9 @@ async function saveAssignProgram(clientId) {
 async function _assignProgramTx(fnName, clientId, programId, startDate, restart) {
   const { data, error } = await db.rpc('assign_program', {
     p_client_id: clientId, p_program_id: programId, p_start_date: startDate || null, p_restart: !!restart,
+    // The day THIS caller is on: a restart archives the old block ending on it (scripts/fix-assign-program-restart-date-2026-10-17.sql). The server clamps it to a day either
+    // side of its own date, so a wrong device clock cannot write a wild date. Not sent, the function falls back to the server's UTC day, which is a day off for part of every day.
+    p_today: _ymdLocal(new Date()),
   })
   if (error) {
     log.error(fnName, 'assign_program refused — nothing was changed', { code: error.code, programId, clientId })
