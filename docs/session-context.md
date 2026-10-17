@@ -13,8 +13,8 @@ with coach/client/solo roles. See [vision.md](vision.md).
 
 ## Current Release Cycle
 
-Last shipped: **`v2026.10.4`** (2026-10-15, live, verified byte-identical to the tag), after `v2026.10.3`,
-`v2026.10.2`, `v2026.10.1`, `.09.15` and `.09.14`. All six await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
+Last shipped: **`v2026.10.5`** (2026-10-17, live, verified byte-identical to the tag), after `v2026.10.4`, `v2026.10.3`,
+`v2026.10.2`, `v2026.10.1`, `.09.15` and `.09.14`. All seven await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
 
 RPE top-set autoregulation is live (since `v2026.09.13`): a coach marks set 1 as the top set with a prescribed RPE, the runner estimates a live
 e1RM from the RTS chart, and backoff sets target a percentage of that. Spec and plan: [superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md](superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md),
@@ -49,7 +49,7 @@ Bug counts live in [backlog.md](backlog.md); pattern analysis in [technical-debt
 
 ## Immediate Next Actions
 
-1. Jake's phone check of `v2026.09.14` to `v2026.10.4` (the Streak tile and Weekly target, My Progress Body Weight and Personal Bests, Your workouts, Goals, plus the unreleased Workouts rework), his answer on which
+1. Jake's phone check of `v2026.09.14` to `v2026.10.5` (the Streak tile and Weekly target, My Progress Body Weight and Personal Bests, Goals, the Workouts rework, the week buttons, the local-day dates), his answer on which
    session went missing in the "unscheduled day" row, and his call on Sign out (end only this device's session?).2. Read the release plan's "START HERE", answer its questions, then start the next unbuilt release.
 3. Housekeeping still open: the ungraded-prediction backlog and duplicate ids ([technical-debt.md](technical-debt.md)).
 4. Start the next session on this repo's folder (not the Vision OS one) and let `/hello-claude` run; confirm the guard per the

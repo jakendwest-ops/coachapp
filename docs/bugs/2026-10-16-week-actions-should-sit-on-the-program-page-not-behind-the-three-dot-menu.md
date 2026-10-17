@@ -3,7 +3,7 @@ id: 2026-10-16-week-actions-should-sit-on-the-program-page-not-behind-the-three-
 status: confirmed
 priority: medium
 reported: 2026-10-16
-status_detail: "CONFIRMED by Jake 2026-10-16 ('looks good!', in a clickable form after seeing it). Built in commit feca794 (on master, NOT yet released): Duplicate week and Delete week are two buttons under the week tabs; the week's three-dot menu is gone. Scope and placement were chosen by Jake in a clickable form (week only, row under the tabs). The phase card's own three-dot menu (Edit phase, Remove phase) is unchanged, by his choice. Ships with the next release."
+status_detail: "CONFIRMED by Jake 2026-10-16 ('looks good!', in a clickable form after seeing it). Built in commit feca794 and released in v2026.10.5 (2026-10-17): Duplicate week and Delete week are two buttons under the week tabs; the week's three-dot menu is gone. Scope and placement were chosen by Jake in a clickable form (week only, row under the tabs). The phase card's own three-dot menu (Edit phase, Remove phase) is unchanged, by his choice. Ships with the next release."
 ---
 
 # Program page: the week's actions should be on the page, not behind the three-dot (⋯) menu
