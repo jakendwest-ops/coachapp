@@ -37,8 +37,8 @@ repo-keyed `MEMORY.md` yourself and write memory only into `~/.claude/projects/c
 ## What this is
 
 A web app for personal trainers to manage clients and build / assign / track workout programmes.
-Solo-built by Jake — a PT, and the app's primary user. Beta 31 July 2026 (possibly stale — see
-`docs/vision.md`'s Requires Validation; not corrected here without Jake's confirmation).
+Solo-built by Jake — a PT, and the app's primary user. No beta date is set (Jake took the timeline pressure
+off on 2026-07-29; the quality gates stayed), and he has no clients on it yet.
 Live: https://jakendwest-ops.github.io/coachapp
 
 ## Stack — do NOT assume otherwise
@@ -63,8 +63,11 @@ Live: https://jakendwest-ops.github.io/coachapp
   otherwise it exits 1 with the tag left local. Without `--push` it stops at the local tag.
   "Pushed" is not "deployed": after a release, confirm with `gh run list --limit 4` that the deploy job
   succeeded, then `node scripts/verify-live.mjs <tag>` (every file the live site serves, byte for byte against the
-  tag; retries while Pages catches up). **The full suite takes 47–59 min**: from Claude Code's Bash tool run it with
-  `run_in_background: true` and `timeout: 7200000` — a background call is killed at exactly its timeout.
+  tag; retries while Pages catches up). **The full suite takes about 65-70 min** (1.1 h on both the
+  `v2026.10.4` and `v2026.10.5` gates): from Claude Code's Bash tool run it with `run_in_background: true` and
+  `timeout: 7200000` — a background call is killed at exactly its timeout. A spec that signs in to the solo view
+  uses `soloReady()` from `tests/helpers.js` (a ratchet pins the copies); a throwaway probe runs with
+  `-c playwright.probe.config.js`, never from the main config.
 
 ## The 9 modules (`js/`)
 
@@ -166,11 +169,8 @@ before investigation starts. **Closure rule:** a Jake-reported item closes only 
 confirming it, or (b) a test that went red before the fix and green after — never by inference,
 never because a commit message claimed it. `docs/technical-debt.md` is for *patterns* (schema gaps,
 test-gate coverage, process decay); `docs/backlog.md` is a periodically-refreshed count snapshot
-over `docs/bugs/`. If a number is going to be repeated in more than one `docs/*.md` file, put it in
-exactly one of them and link to it from the rest — three copies of the same OS-LINT snapshot
-already happened once and needed cleanup, and a stale ledger status (GDPR consent capture marked
-`deferred` for a month after 5 of 6 steps shipped) was caught during the 2026-09-15 migration
-precisely because two places disagreed.
+over `docs/bugs/`. If a number would appear in more than one `docs/*.md` file, keep it in exactly one
+and link to it from the rest (two places always disagree eventually).
 
 ## End-of-session review
 
@@ -192,7 +192,7 @@ ritual exists for the Vault's other, unrelated projects — CoachApp never invok
 **Repo (`docs/*.md`, the source of truth since 2026-09-15):** `vision.md`, `roadmap.md`,
 `schema.md`, `critical.md`, `backlog.md`, `current-sprint.md`, `architecture.md`, `decisions.md`,
 `technical-debt.md`, `session-context.md`, `handover.md`, plus the live bug ledger in `docs/bugs/`
-(227 files as of the migration). `docs/archive/` holds full historical material migrated verbatim
+(one file per bug; count it, don't quote it). `docs/archive/` holds full historical material migrated verbatim
 from the Vault (`LOG.md`, the full pre-migration `STATUS.md`/`roadmap.md`, the 2026-08-12
 architecture audit, and other point-in-time audits) — read it for detail/traceability, don't treat
 it as current. See `docs/handover.md` for how the live docs relate to each other. Every file carries
