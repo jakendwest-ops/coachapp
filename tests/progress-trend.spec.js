@@ -48,8 +48,7 @@ test('resting-HR trend chart shows on the Body tab with >=2 entries (B4)', async
 // Cardio-bests stays deleted.
 test('Cardio-bests stays deleted; a stale Benchmarks tab value lands on Personal Bests without it (B5)', async ({ page }) => {
   await loginAsClient(page)
-  await page.evaluate(() => { window._progressTab = 'Benchmarks'; renderProgress(document.getElementById('main-content')) })
-  await page.waitForTimeout(1200)
+  await page.evaluate(() => { window._progressTab = 'Benchmarks'; return renderProgress(document.getElementById('main-content')) })      // returns the render's promise, so evaluate waits for it (a fixed sleep raced it on a slow evening)
   // It really did land on Personal Bests. Without this the two "gone" assertions below pass on an empty
   // page too: nothing in js/ creates #pb-cardio-section any more, so they can only fail on a re-add.
   expect(await page.locator('#pb-1rms-section').count()).toBe(1)
@@ -61,9 +60,8 @@ test('Cardio-bests stays deleted; a stale Benchmarks tab value lands on Personal
 // section outright would pass the test above just as happily as relocating it did.
 test('Personal Bests has its own Progress tab and renders a row per lift there (2026-08-14, rows since 2026-10-13)', async ({ page }) => {
   await loginAsClient(page)
-  await page.evaluate(() => { window._progressTab = '1RMs'; renderProgress(document.getElementById('main-content')) })
-  await page.waitForTimeout(1200)
-  expect(await page.locator('#pb-1rms-section').count()).toBe(1)
+  await page.evaluate(() => { window._progressTab = '1RMs'; return renderProgress(document.getElementById('main-content')) })      // returns the render's promise: no fixed sleep (it failed once, first attempt, in the 2026-10-18 related-specs run; passes alone 5 of 5)
+  await expect(page.locator('#pb-1rms-section')).toHaveCount(1, { timeout: 20000 })
   await expect(page.locator('#pb-1rms-section .pb-row').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Save all' }), 'the number boxes and Save all are gone (2026-10-13)').toHaveCount(0)
   // Always the list, not only when empty — the whole point of Jake's 2026-08-14 report. The Big 5 are

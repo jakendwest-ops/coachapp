@@ -8,13 +8,12 @@ const { loginAsClient } = require('./helpers')
 // filter was widened so the effort ghost could see a prior rating; but a set that has real work AND an effort already passes the work
 // test, so the widening bought nothing.
 //
-// The three reads fetchRunnerLastSession makes are stubbed (nothing is written to the database), the way runner-layout-2026-09-28 does.
+// The reads fetchRunnerLastSession makes (one per way of matching: library id and name, each joined to its session) are stubbed (nothing is written to the database), the way runner-layout-2026-09-28 does.
 test.describe('runner last session ignores a set that is only an effort rating (2026-10-03)', () => {
   const fetchLast = (page, sets) => page.evaluate(async (sets) => {
     const q = (data) => { const o = { select: () => o, eq: () => o, in: () => o, order: () => o, limit: () => o, then: (res, rej) => Promise.resolve({ data, error: null }).then(res, rej) }; return o }
     const real = db.from.bind(db)
-    db.from = (t) => t === 'workout_logs' ? q([{ id: 'L1', date: '2026-09-25' }])
-      : t === 'workout_log_exercises' ? q([{ log_id: 'L1', workout_log_sets: sets }])
+    db.from = (t) => t === 'workout_log_exercises' ? q([{ id: 'E1', log_id: 'L1', exercise_id: null, workout_logs: { date: '2026-09-25', created_at: '2026-09-25T10:00:00Z', client_id: 'x' }, workout_log_sets: sets }])
       : real(t)
     try {
       _runner = { clientId: 'x', startTime: Date.now(), exIdx: 0, lastSession: {}, exercises: [] }

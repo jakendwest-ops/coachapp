@@ -121,8 +121,7 @@ test.describe('The Last time panel shows the top set (2026-10-04)', () => {
       const q = (data) => { const o = { select: (cols) => { seen.push(cols); return o }, eq: () => o, in: () => o, order: () => o, limit: () => o, then: (res, rej) => Promise.resolve({ data, error: null }).then(res, rej) }; return o }
       const real = db.from.bind(db)
       const set = { set_number: 1, weight_kg: 60, reps_achieved: 8 }
-      db.from = (t) => t === 'workout_logs' ? q([{ id: 'L1', date: '2026-09-25' }])
-        : t === 'workout_log_exercises' ? q([{ log_id: 'L1', workout_log_sets: [set] }])
+      db.from = (t) => t === 'workout_log_exercises' ? q([{ id: 'E1', log_id: 'L1', exercise_id: null, workout_logs: { date: '2026-09-25', created_at: '2026-09-25T10:00:00Z', client_id: 'x' }, workout_log_sets: [set] }])
         : real(t)
       try {
         _runner = { clientId: 'x', startTime: Date.now(), exIdx: 0, lastSession: {}, exercises: [] }
@@ -131,7 +130,7 @@ test.describe('The Last time panel shows the top set (2026-10-04)', () => {
       } finally { db.from = real }
       return seen.filter(s => /workout_log_sets/.test(s))
     })
-    expect(selects.length, 'both ways of finding last time were exercised').toBe(2)
+    expect(selects.length, 'a lookup by library id reads by id AND by name (so a newer name-only session is not hidden); a lookup by name reads once: 3 reads in all').toBe(3)
     for (const s of selects) expect(s, 'asks for phase').toMatch(/\bphase\b/)
   })
 })

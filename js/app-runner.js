@@ -271,39 +271,45 @@ async function _discardRunnerDraftAndStartFresh(clientId) {
   await _startFreshRunner(clientId)
 }
 
+// The grey last-time numbers in a set's boxes and the Last time panel read the MOST RECENT session that contains this exercise. Until 2026-10-18 this looked only inside the client's 20 NEWEST
+// workout_logs (limit(20), then .in('log_id', ...)), so an exercise last done before that window had no last-session numbers at all, with no hint why (Jake's phone check, 2026-10-17, item R2); and
+// it took the newest occurrence even when that session held the exercise with no sets (an abandoned start), which hid the real history behind it. Now the database is asked for the newest logs that
+// hold the exercise, newest first, and the first with real sets wins. tests/runner-last-session-window-2026-10-18.spec.js pins the cases (and the client scope).
 async function fetchRunnerLastSession(exName, exerciseId) {
-  if (!_runner || !exName) return
-  _runner.lastSession = _runner.lastSession || {}
-  if (_runner.lastSession[exName] !== undefined) { renderRunnerLastSession(exName); return }
-  _runner.lastSession[exName] = null
+  // Captured once: the workout can end (and _runner be replaced) while a read is in flight, and the answer must land in, and be scoped to, the runner that asked.
+  const rn = _runner
+  if (!rn || !exName) return
+  rn.lastSession = rn.lastSession || {}
+  if (rn.lastSession[exName] !== undefined) { renderRunnerLastSession(exName); return }
+  rn.lastSession[exName] = null
+  const cid = rn.clientId
 
-  const { data: logs } = await db.from('workout_logs')
-    .select('id, date').eq('client_id', _runner.clientId)
-    .order('date', { ascending: false }).limit(20)
-  if (!logs?.length) { _runner.lastSession[exName] = null; return }
-
-  const logIds = logs.map(l => l.id)
-  // Prefer matching by exercise_id (survives the name being retyped/renamed since); fall back
-  // to the exact-name match for rows logged before this exercise had a library link.
+  // A lift can be logged by library id (exercise_id) and, in older rows, by name only (exercise_id null), so BOTH are read and the newest of the two wins: matching by id alone would
+  // show a months-old id match instead of last week's name-only session. A name match that carries a DIFFERENT library id is another exercise with the same name and is left out.
   // height_cm/distance_m added alongside weight_kg/reps_achieved (2026-07-29) — jump sets never
   // write weight_kg, so they were invisibly excluded from "last session" everywhere below.
   // effort_value/effort_type added 2026-09-30 so the effort ghost (renderStrengthTable's
   // ePlaceholder) can show a REAL previous rating instead of the scale's own bare bounds.
   // phase added 2026-10-04 so the Last time panel counts WORKING sets only, exactly as the Stats card does (_countableSets): without it
   // a warm-up read as a set and could be taken for the top set.
-  let exRows = exerciseId
-    ? (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m, effort_value, effort_type, phase)').eq('exercise_id', exerciseId).in('log_id', logIds)).data
-    : null
-  if (!exRows?.length) {
-    exRows = (await db.from('workout_log_exercises').select('log_id, workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m, effort_value, effort_type, phase)').eq('exercise_name', exName).in('log_id', logIds)).data
+  // `workout_logs!inner` joins each occurrence to its session so the rows can be filtered to THIS client's sessions and ordered by the session's date (then its creation time, so two
+  // sessions on one day are ordered); ten occurrences are read per match so one that holds no sets can be skipped. For a coach, solo or master account row-level security does NOT separate one
+  // client from another under the same coach, so the client filter is the wall, and every returned row's client is checked against it as well.
+  const cols = 'id, log_id, exercise_id, workout_logs!inner(date, created_at, client_id), workout_log_sets(set_number, weight_kg, reps_achieved, height_cm, distance_m, effort_value, effort_type, phase)'
+  const newest = async (col, val) => {
+    const { data, error } = await db.from('workout_log_exercises').select(cols)
+      .eq('workout_logs.client_id', cid).eq(col, val)
+      .order('workout_logs(date)', { ascending: false }).order('workout_logs(created_at)', { ascending: false }).limit(10)
+    if (error) log.warn('fetchRunnerLastSession', 'last-session read failed', { code: error.code })   // warn, not error: error toasts, and this is a background read
+    return (data || []).filter(r => r.workout_logs?.client_id === cid)
   }
-  if (!exRows?.length) { _runner.lastSession[exName] = null; return }
+  const [byId, byName] = await Promise.all([exerciseId ? newest('exercise_id', exerciseId) : [], newest('exercise_name', exName)])
+  const seen = new Set()
+  const exRows = [...byId, ...byName.filter(r => !exerciseId || r.exercise_id == null || r.exercise_id === exerciseId)]
+    .filter(r => !seen.has(r.id) && seen.add(r.id))
+    .sort((a, b) => String(b.workout_logs.date).localeCompare(String(a.workout_logs.date)) || String(b.workout_logs.created_at || '').localeCompare(String(a.workout_logs.created_at || '')))
+  if (!exRows.length) { rn.lastSession[exName] = null; return }
 
-  // Pick the occurrence from the most recent log (logs is already date-desc ordered)
-  const best = exRows.sort((a, b) =>
-    logs.findIndex(l => l.id === a.log_id) - logs.findIndex(l => l.id === b.log_id)
-  )[0]
-  const date = logs.find(l => l.id === best.log_id)?.date
   // A jump set can be logged with height_cm/distance_m set and reps_achieved (contacts) still
   // null (contacts aren't required to log a jump) — must count as real data too. A truthy check
   // on any of these four also excludes a real 0 (0cm/0m/0kg/0 reps) — same falsy-zero shape as the
@@ -314,11 +320,13 @@ async function fetchRunnerLastSession(exName, exerciseId) {
   // see _rowIncompleteReason) and the old manual Log Session form still can, so history may hold some; counting it inflated the
   // "Sets" stat and made the Last-time line read "1 × 0 reps". A set with real work AND an effort passes the test below and keeps
   // its effort_value/effort_type for the effort ghost.
-  const sets = (best.workout_log_sets || [])
-    .filter(s => _hasNumVal(s.weight_kg) || _hasNumVal(s.reps_achieved) || _hasNumVal(s.height_cm) || _hasNumVal(s.distance_m))
-    .sort((a, b) => a.set_number - b.set_number)
-
-  _runner.lastSession[exName] = sets.length ? { date, sets } : null
+  for (const r of exRows) {
+    const sets = (r.workout_log_sets || [])
+      .filter(s => _hasNumVal(s.weight_kg) || _hasNumVal(s.reps_achieved) || _hasNumVal(s.height_cm) || _hasNumVal(s.distance_m))
+      .sort((a, b) => a.set_number - b.set_number)
+    if (sets.length) { rn.lastSession[exName] = { date: r.workout_logs.date, sets }; renderRunnerLastSession(exName); return }
+  }
+  rn.lastSession[exName] = null
   renderRunnerLastSession(exName)
 }
 
@@ -416,8 +424,12 @@ const _RUNNER_CHART_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill
 
 // "25 Sept". A calendar DATE read in local time (new Date("2026-09-25") is UTC midnight, the 24th anywhere west of UTC - found
 // by review, 2026-09-28); the one implementation is _xsDate, shared with the exercise stats card.
+// A session older than about ten months says its year too: now that last time can reach back past the 20 newest sessions, '25 Sept' alone could mean last month or last year.
 function _runnerShortDate(d) {
-  return _xsDate(d)
+  const label = _xsDate(d)
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d))
+  const ageDays = m ? (Date.now() - new Date(+m[1], +m[2] - 1, +m[3]).getTime()) / 864e5 : 0
+  return ageDays > 300 ? `${label} ${m[1]}` : label
 }
 
 // What the "Last time" panel says about a previous session: its TOP SET and how many sets there were (Jake, 2026-10-04: "This panel
