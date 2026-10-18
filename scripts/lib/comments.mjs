@@ -14,7 +14,7 @@
  * Strings and template literals are SKIPPED, not blanked: some callers are looking for things that
  * live inside template literals.
  */
-export function blankComments (src) {
+export function blankComments (src, opts = {}) {
   const out = src.split('')
   const n = src.length
   let i = 0
@@ -42,6 +42,7 @@ export function blankComments (src) {
       continue
     }
     if (c === '/' && /[(,=:[!&|?{};+\-*%~^\n]/.test(prev || '\n')) {
+      const start = i
       i++
       while (i < n) {
         if (src[i] === '\\') { i += 2; continue }
@@ -49,6 +50,9 @@ export function blankComments (src) {
         if (src[i] === '/' || src[i] === '\n') { i++; break }
         i++
       }
+      // opts.regex: also blank the regex LITERAL (delimiters and body), so a quote or a `//` inside one cannot confuse a scanner that tracks strings.
+      // Off by default: the other callers (the count ratchets) count patterns that can live inside a regex.
+      if (opts.regex) for (let k = start; k < Math.min(i, n); k++) if (out[k] !== '\n') out[k] = ' '
       continue
     }
     if (!/\s/.test(c)) prev = c

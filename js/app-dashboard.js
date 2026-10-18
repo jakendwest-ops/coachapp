@@ -535,7 +535,11 @@ async function renderDashboard(el) {
     // Every session in the last week across all clients, PAGED (the API caps a response at 200 rows): the Today card, the week
     // bars and the day you tap all read from this one list. `date` is the calendar day it was logged for.
     ids.length ? _fetchAllRows(() => db.from('workout_logs').select('id, client_id, name, date, created_at, workout_log_exercises(id)', { count: 'exact' }).in('client_id', ids).gte('date', weekAgoStr).order('date', { ascending: false }).order('id', { ascending: false })) : { data: [] },
-    db.from('goals').select('id, title, target_date, client_id, clients(full_name)').eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', in14Str).order('target_date').limit(5),
+    // Joined to the coach's OWN clients (clients!inner + the coach_id filter): without a client filter the read rested on RLS alone, and the master account's
+    // own personal goals (a client row it owns as a user, coach_id NULL) came back in the COACH dashboard's list too. Not `.in('client_id', ids)` like its two
+    // siblings: that list is the first 200 clients (the API's row cap), so a coach past 200 would silently lose goals; the join has no cap, no long URL, and does not
+    // depend on the clients read above succeeding. (The 2026-10-04 review rejected the `ids` form for exactly the cap.)
+    db.from('goals').select('id, title, target_date, client_id, clients!inner(full_name)').eq('clients.coach_id', currentUser.id).eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', in14Str).order('target_date').limit(5),
     // One row per client, computed in the database (scripts/add-coach-client-summary-2026-09-20.sql). PAGED: the API caps every
     // response at 200 rows and that applies to a view too, so a bare read would silently drop the 201st client.
     _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, sessions_7d, last_session_date, last_weigh_in_date, program_name, program_start, program_weeks', { count: 'exact' }).order('full_name').order('client_id')),

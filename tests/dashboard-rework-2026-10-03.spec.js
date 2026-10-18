@@ -92,8 +92,11 @@ function coachTables(uid, { quietToday = false } = {}) {
     workout_logs: logs,
     weight_logs: [['c1', 62.4, -1], ['c2', 91.2, 0], ['c4', 70.8, -2], ['c6', 58.1, -3]].map(([c, kg, d]) => ({ client_id: c, weight_kg: kg, created_at: new Date(NOW.getTime() + d * 86400000).toISOString() })),
     goals: [
-      { id: 'g1', title: 'Bench 100 kg', status: 'active', target_date: addDays(TODAY, 7), client_id: 'c2', clients: { full_name: 'Sam K' } },
-      { id: 'g2', title: 'Body fat 22%', status: 'active', target_date: addDays(TODAY, 11), client_id: 'c1', clients: { full_name: 'Priya M' } },
+      // `clients` is the joined client row: the coach dashboard's goals query is joined to the coach's own clients (clients!inner + .eq('clients.coach_id', uid)), so a real
+      // row carries its owner, and capped-api.js applies that filter to what is here (2026-10-18).
+      { id: 'g1', title: 'Bench 100 kg', status: 'active', target_date: addDays(TODAY, 7), client_id: 'c2', clients: { full_name: 'Sam K', coach_id: uid } },
+      { id: 'g2', title: 'Body fat 22%', status: 'active', target_date: addDays(TODAY, 11), client_id: 'c1', clients: { full_name: 'Priya M', coach_id: uid } },
+      { id: 'g3', title: 'Personal goal on the coach\'s own record', status: 'active', target_date: addDays(TODAY, 3), client_id: 'self', clients: { full_name: 'The coach', coach_id: null } },
     ],
   }
 }
@@ -567,6 +570,7 @@ test.describe('the coach dashboard', () => {
     expect(r.coming).toMatch(/Priya M · training plan ends\s*Operation Strength\s*In 8 days/)
     expect(r.goals).toContain('Bench 100 kg')
     expect(r.goals).toContain('Sam K · In 7 days')
+    expect(r.goals, 'a goal on the coach\'s OWN personal record (coach_id null) is not a client\'s goal and stays out of the coach\'s list').not.toContain('Personal goal on the coach')
   })
 
   test('(review) "Programs ending" counts the way the calendar does: a program that started on a Thursday ends on the Sunday of its last week', async ({ page }) => {

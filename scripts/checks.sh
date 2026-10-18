@@ -36,6 +36,17 @@ if [ -n "$ci_node" ] && [ "$ci_node" != "$local_node" ]; then
 fi
 echo ""
 
+# -- 0a. FILES is exactly the set of modules index.html loads --
+# The scoping, PII-in-logs and escaping gates read only $FILES. A tenth module added to index.html but not to this list would get none of them (found by the
+# 2026-10-18 review), so the list is compared with the page's own script tags.
+MODULES_LOADED=$(grep -o 'src="js/[A-Za-z0-9._/-]*\.js' index.html | sed 's/^src="//' | sort | tr '\n' ' ')
+MODULES_LISTED=$(for f in $FILES; do echo "$f"; done | sort | tr '\n' ' ')
+if [ "$MODULES_LOADED" != "$MODULES_LISTED" ]; then
+  echo "    index.html loads:  $MODULES_LOADED"
+  echo "    FILES lists:       $MODULES_LISTED"
+  fail "FILES in scripts/checks.sh does not match the modules index.html loads -- a module outside this list is checked by none of the scoping / PII / escaping gates."
+fi
+
 # -- 0. JS syntax check --
 echo "Checking JS syntax..."
 for f in $FILES; do
@@ -340,7 +351,15 @@ fi
 # shape in this codebase. Proven with a positive control: `{ full_name: n }` fired, and
 # `{ clientId, full_name: n }` did not. The rule was structurally blind to the shape the newest code
 # is written in. Identical failure, identical fix, as rule 9d below.
+#
+# WIDENED 2026-10-18 (the data-leak audit): it now reads a call across lines, covers console.* as well as log.*, scans
+# `${...}` interpolations and PII members under innocent keys, and refuses a whole-row variable as the data argument. It had
+# NO self-test until that day -- seen to pass, once seen to miss, never seen to fail on purpose.
 echo "Checking for PII in log calls..."
+if ! node scripts/check-pii-logs.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-pii-logs.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-pii-logs self-test FAILED -- the PII-in-logs gate can no longer be trusted."
+fi
 if ! node scripts/check-pii-logs.mjs $FILES; then
   fail "PII found in log call(s) -- strip email/name/weight values, log IDs only"
 fi
@@ -568,6 +587,16 @@ if [ "$FULL" = "1" ]; then
 else
   echo "  [skip] SQL mutation self-test -- runs in CI and at release (CHECKS_FULL=1 to run it here)"
 fi
+# The same proof for the five security gates (rules 9a, 2, 9u, 9v, 9w): scripts/mutate-gates.mjs removes each listed safeguard from a COPY of a gate and
+# requires the gate's own self-test to go red (about 3.5 min, four at a time). FULL-mode only, like the SQL one above: it changes only when a gate or its self-test does.
+if [ "$FULL" = "1" ]; then
+  if ! node scripts/mutate-gates.mjs > /dev/null 2>&1; then
+    node scripts/mutate-gates.mjs 2>&1 | grep -E "MISSED|ERROR|BASELINE|mutations caught" | sed "s/^/    /"
+    fail "the security gates' mutation self-test FAILED -- a safeguard can be removed without its self-test noticing (or a mutation went stale). See the lines above."
+  fi
+else
+  echo "  [skip] security-gate mutation self-test -- runs in CI and at release (CHECKS_FULL=1 to run it here)"
+fi
 if ! node scripts/sql-verify/coach-client-summary.verify.mjs > /dev/null 2>&1; then
   node scripts/sql-verify/coach-client-summary.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
   fail "scripts/add-coach-client-summary-2026-09-20.sql no longer passes its local verification -- see the lines above."
@@ -699,6 +728,49 @@ echo "Checking the live-release verifier (its self-test)..."
 if ! selftest_out=$(node scripts/verify-live.selftest.mjs 2>&1); then
   printf '%s\n' "$selftest_out" | sed "s/^/    /"
   fail "verify-live self-test FAILED -- the post-release 'is it live?' check can no longer be trusted."
+fi
+# -- 9u. No secret in a tracked file or in a commit being pushed -- this repo is PUBLIC --
+# scripts/seed-test-data.js published the password of three real accounts in the live project in four commits, and nothing
+# refused it. Decodes every JWT-shaped string (only role=anon may be committed), refuses known token shapes and a credential
+# assigned a secret-looking literal. Measured on the tracked tree: 0 findings after the seed script was fixed; the pre-fix
+# seed script gives 3. Two scans: the tip of the tree, and the lines ADDED by the commits being pushed ($CB_BASE..HEAD, resolved
+# by the cache-bust rule above), so a secret committed and then deleted inside one push is still seen.
+echo "Checking for secrets in tracked files..."
+if ! node scripts/check-secrets.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-secrets.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-secrets self-test FAILED -- the secrets gate can no longer be trusted."
+fi
+if ! node scripts/check-secrets.mjs; then
+  fail "a secret is committed in a tracked file -- see the lines above. If it was ever pushed, rotate it."
+fi
+if [ -n "$CB_BASE" ]; then
+  if ! node scripts/check-secrets.mjs --since "$CB_BASE"; then
+    fail "a secret is in a commit being pushed (even if a later commit removed it) -- see the lines above. Rotate it."
+  fi
+else
+  echo "  [skip] secrets in the pushed commits -- no usable base commit (CB_BASE), so only the tip of the tree was scanned"
+fi
+# -- 9v. Every SECURITY DEFINER function a script creates is locked down in that script --
+# The live inventory (2026-10-18) found nine functions executable by anon, because Supabase grants EXECUTE to anon on every new
+# function and only some scripts revoked it. A definer function runs past RLS, so who can CALL it is the whole story.
+echo "Checking SECURITY DEFINER functions are locked down..."
+if ! node scripts/check-sql-definer.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-sql-definer.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-sql-definer self-test FAILED -- the definer-function gate can no longer be trusted."
+fi
+if ! node scripts/check-sql-definer.mjs $(git ls-files 'scripts/*.sql'); then
+  fail "a SECURITY DEFINER function is callable by anon or has a mutable search_path -- see the lines above."
+fi
+# -- 9w. The external surface is known and small: hosts the browser talks to, server functions it calls --
+# Allowlist of hosts (a fifth cannot arrive unreviewed), every called Edge Function has its source in the repo, and a function
+# holding the service-role key resolves its caller first. invite-client is the one known gap (KNOWN_MISSING, dated).
+echo "Checking the external surface..."
+if ! node scripts/check-external-surface.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-external-surface.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-external-surface self-test FAILED -- the external-surface gate can no longer be trusted."
+fi
+if ! node scripts/check-external-surface.mjs; then
+  fail "the app talks to an unlisted host, or calls a server function with no source in the repo -- see the lines above."
 fi
 # -- 10. Playwright smoke tests --
 #

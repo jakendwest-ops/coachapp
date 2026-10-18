@@ -117,9 +117,9 @@ calendar days inclusive; `anon` gets "permission denied", `service_role` gets ze
   message raw (~139). **Not exploitable (checked live 2026-09-26):** a client can update their own row, but `clients_status_check`
   limits `status` to `active` / `inactive` / `archived`, so no markup can be stored there. `check-escaping`'s free-text list does
   not include `.status`, so it cannot see it; one `escapeHtml` would still be tidy, but nothing is at risk.
-- **"Goals due soon" has no tenant anchor** (js/app-dashboard.js ~55: `status` and dates only, while the count above it has
-  `.in('client_id', coachClientIds)`). It relies on the goals RLS policy, which is not in any committed script; for the owner's
-  master account it may list personal goals on the coach dashboard.
+- **"Goals due soon" had no tenant anchor** (`status` and dates only) and relied on RLS; for the owner's master account it listed personal
+  goals on the coach dashboard. **FIXED 2026-10-18:** joined to the coach's own clients (`clients!inner` + `coach_id`; not the capped
+  id list), pinned by `tests/dashboard-goals-scoped-2026-10-18.spec.js`.
 - **The list's failure UX is quiet:** "—" on every row, no banner and no Retry (the dashboard has both). Left for R2c, which
   rebuilds the list.
 - **A failed `clients` read with a working view** renders "No active clients." beside a real non-zero tile (the banner names "your

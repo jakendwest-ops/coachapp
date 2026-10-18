@@ -12,18 +12,13 @@ process-level entries below were pulled out and belong here.
 
 ---
 
-**2026-10-17 — The Personal account's Workouts page: the plan first, "Create a workout" with two choices, a search, Edit in place, and a plan lock.**
-Jake, from a prototype and a clickable plan ("Approved - build"). *Create a workout:* Choose a template (My workouts saves a copy; Past sessions saves a workout of that session's exercises) or Create new (a name, then the existing editor);
-both SAVE at once. "Train now" stays as a small link for a blank live session; "Start from a past session" is gone. *The lock:* a workout in the plan the account is on NOW has no Edit (it names the plan and
-offers "Open in Training plans"; Make a copy still works); a plan that has run its course or been removed unlocks its workouts. *Not chosen:* ready-made starter workouts as templates; locking by workout name.
-*Left for Phase 2:* the PT page (a Client filter, search and paging on the server), the Library page, and one shared code path for both roles. Known limits are in the ledger row.
+**2026-10-18 — The data-leak and PII audit, and five push gates.** Jake: "tighten the whole codebase so prevent any data leaks or PII leaks"; plan approved first. *Measured:* a signed-out caller reads 0 rows on all 25 queried tables; no service-role key in any commit; 0 PII in 366 log calls; CDN scripts pinned with integrity hashes.
+*Weak:* the gates were narrower than the code (query scoping covered 3 of 25 tables; the PII-log gate read one line per call and had no self-test) and a script published test-account passwords.
+*Decided:* each gate is calibrated on the real tree, pinned AT the measurement, and `scripts/mutate-gates.mjs` removes each listed safeguard from a copy and requires its self-test to fail (129 of 129): `check-secrets` (9u), `check-sql-definer` (9v), `check-external-surface` (9w), `check-pii-logs` (9a, widened), `check-query-scope` (2, 21 tables; an unanchored read needs a stated `SCOPE-OK`, capped at 1).
+It found two unanchored reads, fixed with live specs: the coach's "Goals due soon" (a join) and the Personal calendar's `events`. Google Fonts is TEMPORARY on the allowlist; `invite-client` is a dated KNOWN_MISSING. *Not chosen:* a CSP first.
 
-**2026-10-12 — "Programs" are now "Training plans" everywhere they are read; a solo account is on one plan at a time; the Workouts page is for workouts made and used.**
-Jake, from a prototype and clickable questions. *Words:* every visible "program/programme" became "training plan" (nav, headings, buttons, dialogs, toasts, coach screens); code names, tables,
-ids and routes keep "program". *One plan at a time (solo):* adding a plan takes the other off (assign first, remove second; a failed removal warns and leaves both); "Remove from my plan" keeps every
-logged session, drops the upcoming ones, and the plan stays in Training plans. A coach gets the same wording for a client. *Workouts page (solo only):* start buttons, "Up next" while a plan is on,
-the plan folded away, "Your workouts" (made and used; a plan session joins once done), Recent sessions. "Start an empty workout" starts blank; "Save as a workout" on the finish screen is the only way
-a session becomes reusable, and only when tapped. Not chosen: saving every session automatically; two plans at once. A coached client's page is unchanged.
+**2026-10-12 to 2026-10-17** — the Personal account's Workouts page (the plan first, "Create a workout", a search, Edit in place, a plan lock) and "Programs" renamed "Training plans" everywhere they are read (one plan at a time for a solo account). Archived verbatim:
+[archive/decisions-2026-10-12-to-2026-10-17-workouts-page.md](archive/decisions-2026-10-12-to-2026-10-17-workouts-page.md).
 
 **2026-10-11** — CI pins Node 24 like the dev machine; `node scripts/verify-live.mjs <tag>` checks a release byte for byte; `savePeriodizationConfig` row-checks its writes. Archived verbatim:
 [archive/decisions-2026-10-11-node24-live-check-row-checks.md](archive/decisions-2026-10-11-node24-live-check-row-checks.md).

@@ -31,7 +31,7 @@ data layer and multi-tenancy (`coach_id` / `client_id`, and the solo `NULL coach
 ## How changes are verified
 
 - **Every push:** `scripts/checks.sh` (static checks and ratchets written for this codebase in place of a
-  linter/type checker, and a local SQL verifier) runs as the pre-push hook in FAST mode (~50 s, no browser tests
+  linter/type checker, and a local SQL verifier) runs as the pre-push hook in FAST mode (about two minutes, no browser tests
   since 2026-09-27).
 - **Every release:** `node scripts/release.mjs vYYYY.MM.N` refuses unless the tree is clean, the FULL suite is
   green on that code, a review saw exactly that code, and release notes exist. Only a `v*` tag deploys.

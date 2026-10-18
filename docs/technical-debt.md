@@ -27,8 +27,7 @@ so check `docs/bugs/` and `docs/releases/` first.
   (`showClientPBForm`, `saveClientPB`, `showGoalProgressForm`, `saveGoalProgress`, `toggleClientMilestone`, `showClientWeightForm`, and in
   `app-core.js` `_pbFormHtml`, `_PB_FORM_CATEGORIES`, `_pbUnitOptions`, `_pbSyncUnits`). Remove them together with the tests that pin their
   ownership checks (`tests/own-client-writes-2026-08-21.spec.js`), not one at a time.
-- **Carried from the 2026-10-04 pre-push review (non-blocking, none fixed):** the coach dashboard's "Goals due soon" read has no coach or client
-  anchor (only the database's permissions scope it; adding `.in('client_id', ids)` would drop goals past 200 clients); the "Up next" button puts
+- **Carried from the 2026-10-04 pre-push review (non-blocking, none fixed):** the "Up next" button puts
   raw uuids in its inline handler; the Stats sheet matches history by NAME only while the Last time panel matches by exercise id first;
   "View as client" works only on the dashboard ([row](bugs/2026-10-04-view-as-client-only-works-on-the-dashboard.md)); `_renderMetricChart` leaves
   a predecessor in `_activeCharts` until the next destroy (harmless); a phase with `duration_weeks` of 0 or null reads 0 weeks on the dashboard tile and
@@ -67,6 +66,13 @@ priority order:
 - **`dbq()` at 8% adoption** (26 of 318 `db.from` calls), and raw writes whose `error` is ignored never reach the error-report card: make it
   mandatory with a ratchet, or delete it.
 - **History in comments:** 23% of `js/` lines are comments, 371 of them dated incident stories.
+
+**From the 2026-10-18 data-leak audit** ([decisions.md](decisions.md)), still open:
+- **`invite-client`** is deployed from the dashboard only, holds the service-role key and has never been read here (`KNOWN_MISSING`, `scripts/check-external-surface.mjs`).
+- **Google Fonts** loads on every page view (allowlisted as temporary): self-host it, then add a CSP.
+- **The coach calendar's `events` read has no client filter** (`SCOPE-OK`, `js/app-calendar-goals.js`): it also returns the master account's events on its own personal record, with no client name.
+- **Gate limits:** `check-secrets` reads the tree's tip, not each pushed commit; `invite-solo-user` imports a floating `esm.sh` supabase-js@2.
+- **Live objects with no origin here:** `audit_log` and its trigger, `sessions`, `session_exercises`, `logged_sessions`, a 2026-08-09 backup table, the `progress-photos` bucket.
 
 ## Test-gate coverage debt
 

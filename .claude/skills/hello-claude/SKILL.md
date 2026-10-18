@@ -210,7 +210,7 @@ tenant. **Only tenancy columns belong in RLS** — a display flag (`is_personal`
 Run `multi-agent-review` (3 fixed angles + a verifier). It has caught real, data-destroying bugs on several
 consecutive pushes. Note: `/code-review ultra` **does** exist in the VSCode extension, but it is
 user-triggered and billed — you cannot launch it. Offer it; never assume it.
-`git push` runs static checks only (~50 s, no browser tests since 2026-09-27), so run the specs for what you touched first.
+`git push` runs static checks only (about two minutes, no browser tests since 2026-09-27), so run the specs for what you touched first.
 
 **There is no browser gate on a push any more** (the old two-spec gate was removed 2026-09-27), so only you stand between a push and a browser
 regression on master: run `npm test`, or the specs for what you touched, before pushing a module you did not hand-test. **Known blind spot:** the solo

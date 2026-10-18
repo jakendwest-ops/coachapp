@@ -4,15 +4,20 @@
  * Safe to re-run — skips creation if accounts already exist.
  */
 
+require('dotenv').config()
 const { createClient } = require('@supabase/supabase-js')
 
 const SUPABASE_URL = 'https://avilxuiacmtgeoxxhfhc.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2aWx4dWlhY210Z2VveHhoZmhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NjExNzcsImV4cCI6MjA5NzQzNzE3N30.SpVc5ZX_yf6gMrCJLxY9CxDki7PhBj2vbENha7tWBrc'
 
-const PT_EMAIL       = 'coachapp.e2e.pt@gmail.com'
-const PT_PASSWORD    = 'E2eTestPass123!'
-const CLIENT_EMAIL   = 'coachapp.e2e.client@gmail.com'
-const CLIENT_PASSWORD = 'E2eTestPass123!'
+// The three test logins come from .env (git-ignored) and nowhere else. They were literals in this file
+// until 2026-10-18, and the repo is PUBLIC: the password of three real accounts in the live project sat in
+// four commits. Deleting the literal does not unpublish it from history, so treat the old value as public and
+// never reuse it. scripts/check-secrets.mjs now refuses a password or a non-anon key in a tracked file.
+const PT_EMAIL       = process.env.PT_EMAIL
+const PT_PASSWORD    = process.env.PT_PASSWORD
+const CLIENT_EMAIL   = process.env.CLIENT_EMAIL
+const CLIENT_PASSWORD = process.env.CLIENT_PASSWORD
 
 // A SECOND, entirely unrelated coach. Added 2026-07-12 for the RLS audit harness.
 // Until this existed there was no way to test cross-COACH isolation at all — every RLS test the
@@ -20,8 +25,15 @@ const CLIENT_PASSWORD = 'E2eTestPass123!'
 // boundary that actually matters once beta puts strangers in the same database) was never once
 // exercised. This account owns NO data of its own here on purpose: the harness creates and destroys
 // its own fixtures at runtime rather than depending on shared seed rows (feedback_test_fixture_isolation).
-const PT2_EMAIL      = 'coachapp.e2e.pt2@gmail.com'
-const PT2_PASSWORD   = 'E2eTestPass123!'
+const PT2_EMAIL      = process.env.PT2_EMAIL
+const PT2_PASSWORD   = process.env.PT2_PASSWORD
+
+const MISSING = Object.entries({ PT_EMAIL, PT_PASSWORD, CLIENT_EMAIL, CLIENT_PASSWORD, PT2_EMAIL, PT2_PASSWORD })
+  .filter(([, v]) => !v).map(([k]) => k)
+if (MISSING.length) {
+  console.error('Seed needs these set in .env (see .env.example): ' + MISSING.join(', '))
+  process.exit(1)
+}
 
 async function signUpOrSignIn(db, email, password, fullName) {
   const { data: signUpData, error: signUpErr } = await db.auth.signUp({
@@ -300,14 +312,7 @@ async function run() {
   console.log(`  PT2 user id: ${pt2Id}`)
 
   // ── Done ────────────────────────────────────────────────────────────────────
-  console.log('\n✓ Seed complete. Add these to .env:\n')
-  console.log(`PT_EMAIL=${PT_EMAIL}`)
-  console.log(`PT_PASSWORD=${PT_PASSWORD}`)
-  console.log(`CLIENT_EMAIL=${CLIENT_EMAIL}`)
-  console.log(`CLIENT_PASSWORD=${CLIENT_PASSWORD}`)
-  console.log(`PT2_EMAIL=${PT2_EMAIL}`)
-  console.log(`PT2_PASSWORD=${PT2_PASSWORD}`)
-  console.log()
+  console.log('\n✓ Seed complete. The suite reads PT_/CLIENT_/PT2_ EMAIL and PASSWORD from .env.\n')
   process.exit(0)
 }
 

@@ -67,7 +67,7 @@ reps x RPE -> %1RM chart instead of Epley, which assumes every set went to failu
 is covered by `tests-node/pure.test.mjs`, not a browser spec.
 
 **A push runs no browser tests (since 2026-09-27).** The pre-push hook runs `checks.sh` in FAST mode
-(static checks only, ~50 s). The full suite runs in `scripts/release.mjs` before any tag. The old
+(static checks only, about two minutes). The full suite runs in `scripts/release.mjs` before any tag. The old
 2-spec smoke run (`runner.spec.js` + `solo-account.spec.js`) is still available per push with
 `CHECKS_SMOKE=1` (see [the decisions archive](archive/decisions-2026-09-26-to-2026-10-04.md)).
 

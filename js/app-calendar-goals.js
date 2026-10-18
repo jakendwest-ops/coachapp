@@ -72,7 +72,13 @@ async function renderCalendar(el) {
 
     // Step 2: events + client_programs in parallel (client_programs uses clients.id not auth uid)
     const [evRes, cpRes] = await Promise.all([
-      db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
+      // Filtered to THIS client record, as the own-dashboard's events read is. It leaned on RLS alone until 2026-10-18, and for a master account in solo view
+      // RLS also returns its coaching clients' events ("coach access"), so the Personal calendar showed them. Every events insert from a client or solo login sets
+      // client_id (saveClientEvent), so their own events all stay; a master account's client-less events made in coach view are coach-calendar events and no longer
+      // appear here (intended). A login with no client record has no events to show.
+      clientsId
+        ? db.from('events').select('*').eq('client_id', clientsId).gte('date', from).lte('date', to).order('date')
+        : Promise.resolve({ data: [] }),
       clientsId
         ? db.from('client_programs').select('id, start_date, programs(program_phases(duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, workout_templates(id, name, workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json)))))').eq('client_id', clientsId).order('created_at', { ascending: false }).limit(1)
         : Promise.resolve({ data: [] })
@@ -107,6 +113,7 @@ async function renderCalendar(el) {
     }
   } else {
     const [evRes, clRes] = await Promise.all([
+      // SCOPE-OK: the coach calendar spans every client AND the coach's own client-less events, so there is no single id to filter on; RLS ("coach access": events on the coach's clients, or any event the coach created) scopes it - which also returns the master account's events on its OWN personal record, drawn with no client name (named in docs/technical-debt.md)
       db.from('events').select('*').gte('date', from).lte('date', to).order('date'),
       db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).order('full_name')
     ])

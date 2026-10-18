@@ -19,9 +19,11 @@ export async function startHarness() {
     catch (e) { return { error: String(e.message) } }
     finally { await db.exec('reset role') }
   }
+  // A short pause before exiting: leaving while the in-memory database is still settling trips a libuv assertion on Windows (!(handle->flags & UV_HANDLE_CLOSING),
+  // a crash exit code such as 127 or 0xC0000409 instead of 1). The mutation runner reads a crash as ERROR, not as "caught"; seen intermittently on 2026-10-18.
   const done = () => {
     console.log(`\n${checks - failures}/${checks} checks passed${failures ? ' — ' + failures + ' FAILED' : ''}`)
-    process.exit(failures ? 1 : 0)
+    setTimeout(() => process.exit(failures ? 1 : 0), 400)
   }
   return { db, ok, rowsOf, as, done }
 }
