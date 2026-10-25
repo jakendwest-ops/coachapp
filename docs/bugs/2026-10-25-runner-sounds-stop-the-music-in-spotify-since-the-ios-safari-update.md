@@ -1,9 +1,9 @@
 ---
 id: 2026-10-25-runner-sounds-stop-the-music-in-spotify-since-the-ios-safari-update
-status: open
+status: fixed-awaiting-jake
 priority: high
 reported: 2026-10-25
-status_detail: "REPORTED by Jake 2026-10-25, from using the runner in the gym this week: since the new iOS Safari update, whenever the runner makes a sound or speaks (rest timer, countdown, logging a set) his music stops playing and he has to restart it manually in Spotify every time. CAUSE (measured on his iPhone, iOS 18.7): any speechSynthesis call, including the silent priming word on every tap; Web Audio beeps are fine. FIX BUILT 2026-10-25: speech removed, the countdown is beeps. Open until Jake confirms in a real workout."
+status_detail: "SHIPPED in v2026.10.6 (live 2026-10-25, verified byte-identical); waiting for Jake to confirm on his phone in a real workout with Spotify playing. REPORTED by Jake 2026-10-25, from using the runner in the gym this week: since the new iOS Safari update, whenever the runner makes a sound or speaks (rest timer, countdown, logging a set) his music stops playing and he has to restart it manually in Spotify every time. CAUSE (measured on his iPhone, iOS 18.7): any speechSynthesis call, including the silent priming word on every tap; Web Audio beeps are fine. FIX BUILT 2026-10-25: speech removed, the countdown is beeps. Open until Jake confirms in a real workout."
 closing_conditions: "Jake confirms on his phone, in a real workout with Spotify playing, that the rest-timer beep, the countdown and a logged set no longer stop or pause his music (the music keeps playing, or the runner's sounds duck it and it resumes by itself); and a spec or a documented device check pins how the runner plays sound so the choice cannot silently change."
 ---
 

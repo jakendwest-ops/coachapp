@@ -9,18 +9,14 @@ trusting this file for anything time-sensitive. The previous version is archived
 
 ## Last shipped (tagged + deployed)
 
-- **`v2026.10.5`**, cut 2026-10-17, live, verified byte-identical (13 files). The Workouts page reworked (Personal account), the week buttons, and "today" is the local day (two SQL changes first).
-  [releases/v2026.10.5.md](releases/v2026.10.5.md)
-- **`v2026.10.4`** (2026-10-15): the Goals tab rework and solo steps. **`v2026.10.3`** (2026-10-15): Your workouts rows, the Body Weight and Personal Bests rework, the Streak tile. **`v2026.10.2`** (2026-10-13): Training plans, "On my plan",
-  the solo Workouts page. **`v2026.10.1`** (2026-10-11): the runner reports. **`v2026.09.15`** and **`v2026.09.14`** (2026-10-04): the program-page rework, RPE
-  periodization, the one-skeleton dashboard. [releases/](releases/)
+- **`v2026.10.6`** (2026-10-25, live, verified byte-identical, 13 files): the runner counts down with beeps so Spotify keeps playing; the ghost text looks past 20 sessions; three SQL changes first. [releases/v2026.10.6.md](releases/v2026.10.6.md)
+- **`v2026.10.5`** (2026-10-17): the Workouts page reworked (Personal account), the week buttons, "today" is the local day. [releases/v2026.10.5.md](releases/v2026.10.5.md)
+- **`v2026.10.4`** and **`.10.3`** (2026-10-15): the Goals tab rework, Your workouts rows, Body Weight and Personal Bests, the Streak tile. **`v2026.10.2`** (2026-10-13): Training plans, "On my plan", the solo Workouts page. **`v2026.10.1`** (2026-10-11): the runner reports. **`v2026.09.15`** and **`.09.14`** (2026-10-04): the program-page rework, RPE periodization, the one-skeleton dashboard. [releases/](releases/)
 - **Earlier:** see `docs/releases/` (the full file is archived: [archive/current-sprint-2026-10-12.md](archive/current-sprint-2026-10-12.md)).
-
-Everything from `v2026.09.14` on still awaits Jake's look on a phone (the `fixed-awaiting-jake` rows in [bugs/](bugs/)).
 
 ## In flight
 
-Nothing unreleased. Next: the PT's Workouts page (Phase 2, needs its own plan). Waiting on Jake: his phone check; which session went missing in the "unscheduled day" row; whether **Sign out should
+Nothing unreleased. Next: the PT's Workouts page (Phase 2, needs its own plan). Waiting on Jake: his phone check (the `fixed-awaiting-jake` rows in [bugs/](bugs/), the runner beeps with Spotify first); whether **Sign out should
 end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation:
 leave it); the names "Biggest set" and "View training plan".
 

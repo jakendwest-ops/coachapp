@@ -13,16 +13,15 @@ with coach/client/solo roles. See [vision.md](vision.md).
 
 ## Current Release Cycle
 
-Last shipped: **`v2026.10.5`** (2026-10-17, live, verified byte-identical to the tag), after `v2026.10.4`, `v2026.10.3`,
-`v2026.10.2`, `v2026.10.1`, `.09.15` and `.09.14`. All seven await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
+Last shipped: **`v2026.10.6`** (2026-10-25, live, verified byte-identical to the tag), after `v2026.10.5`, `v2026.10.4`, `v2026.10.3`,
+`v2026.10.2`, `v2026.10.1`, `.09.15` and `.09.14`. All eight await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
 
 RPE top-set autoregulation is live (since `v2026.09.13`): a coach marks set 1 as the top set with a prescribed RPE, the runner estimates a live
 e1RM from the RTS chart, and backoff sets target a percentage of that. Spec and plan: [superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md](superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md),
 [superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md](superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md).
 
-**Test-harness facts (learned 2026-10-03):** the full suite takes 47-59 min and needs a 2 h Bash timeout; specs that click Sign out as the PT
-revoke the shared saved login for the rest of the run, so a test that needs a live session must sign in for real; CI runs Node 24 like this machine
-(pinned 2026-10-11); "pushed" is not "deployed", so check `gh run list`, then `node scripts/verify-live.mjs <tag>`.
+**Test-harness facts:** the full suite takes about an hour (CLAUDE.md has the timeout); a spec that clicks Sign out revokes the shared saved login for the rest of the
+run; "pushed" is not "deployed": `gh run list`, then `node scripts/verify-live.mjs <tag>`.
 
 ## Current Priorities
 
