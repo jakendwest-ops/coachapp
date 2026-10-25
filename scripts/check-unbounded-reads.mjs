@@ -81,7 +81,7 @@ const GROWING = [
 // Pinned AT the 2026-09-21 measurement (see the header): 9. Lowered to 8 the same day when `_buildExerciseSeries` was paged —
 // the first fix this ratchet asked for, on the first run after it was written — and to 7 when the library's `.limit(500)` (which
 // returns 200) was made `.limit(200)`. Lower it in this file whenever a site is bounded.
-const BASELINE = readBaseline('UNBOUNDED_READS_BASELINE', 7)
+const BASELINE = readBaseline('UNBOUNDED_READS_BASELINE', 5)
 const CAP = 200   // the API's max_rows — a limit or range wider than this bounds nothing
 
 const JS = join(REPO, 'js')
