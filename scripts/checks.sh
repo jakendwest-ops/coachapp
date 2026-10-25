@@ -625,6 +625,18 @@ if ! node scripts/sql-verify/assign-program-today.verify.mjs > /dev/null 2>&1; t
   node scripts/sql-verify/assign-program-today.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
   fail "scripts/fix-assign-program-restart-date-2026-10-17.sql no longer passes its local verification -- see the lines above."
 fi
+if ! node scripts/sql-verify/client-link-guard.verify.mjs > /dev/null 2>&1; then
+  node scripts/sql-verify/client-link-guard.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
+  fail "scripts/add-client-link-guard-2026-10-18.sql no longer passes its local verification -- see the lines above."
+fi
+if ! node scripts/sql-verify/harden-anon-access.verify.mjs > /dev/null 2>&1; then
+  node scripts/sql-verify/harden-anon-access.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
+  fail "scripts/harden-anon-access-2026-10-18.sql no longer passes its local verification -- see the lines above."
+fi
+if ! node scripts/sql-verify/pin-trigger-search-path.verify.mjs > /dev/null 2>&1; then
+  node scripts/sql-verify/pin-trigger-search-path.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
+  fail "scripts/pin-trigger-search-path-2026-10-25.sql no longer passes its local verification -- see the lines above."
+fi
 # -- 9n. A read of a table that grows with use must be bounded, or say why it need not be --
 # The API returns at most 200 rows per response and says NOTHING when it cuts a list short (measured 2026-09-20: 200 rows
 # even for .limit(1000)). A read of a per-session / per-weigh-in table is right for a new account and silently wrong for a

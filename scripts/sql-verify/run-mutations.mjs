@@ -14,6 +14,9 @@ import { MUTATIONS as EMPTY_SESSION_DELETE } from './client-empty-session-delete
 import { MUTATIONS as SOLO_GOAL_MILESTONES } from './solo-goal-milestones.mutations.mjs'
 import { MUTATIONS as SUMMARY_UTC_CAP } from './coach-client-summary-utc-cap.mutations.mjs'
 import { MUTATIONS as ASSIGN_PROGRAM_TODAY } from './assign-program-today.mutations.mjs'
+import { MUTATIONS as CLIENT_LINK_GUARD } from './client-link-guard.mutations.mjs'
+import { MUTATIONS as HARDEN_ANON_ACCESS } from './harden-anon-access.mutations.mjs'
+import { MUTATIONS as PIN_TRIGGER_SEARCH_PATH } from './pin-trigger-search-path.mutations.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const SUITES = [
@@ -24,6 +27,9 @@ const SUITES = [
   { name: 'solo user adds a step to their own goal', verifier: 'solo-goal-milestones.verify.mjs', mutations: SOLO_GOAL_MILESTONES },
   { name: 'coach_client_summary view: the UTC cap allows one day ahead', verifier: 'coach-client-summary-utc-cap.verify.mjs', mutations: SUMMARY_UTC_CAP },
   { name: 'assign_program(): a restart\'s end date is the caller\'s day (p_today)', verifier: 'assign-program-today.verify.mjs', mutations: ASSIGN_PROGRAM_TODAY },
+  { name: 'client_id guard: an event, template or goal cannot be linked to another user\'s client', verifier: 'client-link-guard.verify.mjs', mutations: CLIENT_LINK_GUARD },
+  { name: 'anon access: no table privilege and no function execute for the signed-out role', verifier: 'harden-anon-access.verify.mjs', mutations: HARDEN_ANON_ACCESS },
+  { name: 'trigger functions: the Advisor\'s search_path warning is closed without changing what they do', verifier: 'pin-trigger-search-path.verify.mjs', mutations: PIN_TRIGGER_SEARCH_PATH },
 ]
 
 const run = (verifier, key) => new Promise((resolve) => {
