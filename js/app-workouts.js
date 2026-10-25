@@ -4059,7 +4059,6 @@ function _wkPlanBlock(isOwn, planName, html) {
 // person adds exercises as they go. launchRunner owns the draft-resume check.
 function startEmptyWorkout(clientId) {
   _unlockAudio()
-  _unlockSpeech()
   window._runnerTemplates = []
   window._fakeRsTemplate = ''
   window._fakeRsName = `${_dashFormatDate(_ymdLocal(new Date()))} workout`
@@ -4337,11 +4336,10 @@ function _cwDrawList(clientId) {
 }
 
 async function startWorkoutRunner(clientId, templateId) {
-  // Unlock audio/speech here (the earliest real user gesture) instead of waiting for
+  // Unlock audio here (the earliest real user gesture) instead of waiting for
   // the first LOG tap — gives the AudioContext maximum time to resume before the
   // first rest period needs it.
   _unlockAudio()
-  _unlockSpeech()
   // .not('coach_id','is',null) + maybeSingle(): a MASTER account holds TWO clients rows (a coached one
   // and a solo one, coach_id NULL). A bare .single() on user_id throws PGRST116 on two rows, leaving
   // coachId undefined and the template dropdown silently empty. Solo/coach fall through to their own

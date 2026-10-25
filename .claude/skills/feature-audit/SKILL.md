@@ -68,7 +68,7 @@ Walk the runner / client surface as someone **mid-workout**: tired, sweaty, one-
 - **Destructive-adjacent-to-primary spacing:** any delete/remove control sitting next to the primary tap-every-set action (complete/✓) needs deliberate visual+spatial separation, not just default flex gap. Found 2026-07-05: the runner's delete-set button sat 6px from the complete-set tick — an accidental-tap risk this lens is specifically meant to catch.
 - **Tap count:** how many taps to log a set and move on? Every extra tap is friction under fatigue. Pre-fill wherever last-session data exists.
 - **Glanceability:** can they see the next thing to do in one glance without reading? Is the current set/target obvious?
-- **Interruptibility:** if they lock the phone / take a call mid-set, is state preserved? Does the rest timer / voice cue behave?
+- **Interruptibility:** if they lock the phone / take a call mid-set, is state preserved? Does the rest timer / its beeps behave?
 - **One-handed reach:** are primary actions in thumb range at the bottom, not stranded at the top?
 - **Failure under real conditions:** empty/null data, no last-session, a superset pair, a bodyweight exercise — walk the unhappy paths, don't assume the happy one. Specifically: for any render that groups/tallies a collection and branches on count (a `.length`-based `if`), check the **zero** case explicitly, not just "one" vs "many" — found 2026-07-10 as a real live crash where a phase with zero sessions (a normal, valid state) broke an accordion that only ever had "1 week" vs "many weeks" tested. If this build made an existing branch newly common (not just added new code), that branch's edge cases are in scope here too, even if its own code wasn't touched. See [[feedback-edge-case-testing]].
 

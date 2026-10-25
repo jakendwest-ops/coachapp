@@ -28,10 +28,9 @@
 guardReentry('launchRunner')
 
 async function _startFreshRunner(clientId) {
-  // Unlock audio/speech here too — this function can be reached directly from the
+  // Unlock audio here too — this function can be reached directly from the
   // runner setup modal's Start button, bypassing startWorkoutRunner entirely.
   _unlockAudio()
-  _unlockSpeech()
   const name     = document.getElementById('rs-name')?.value.trim() || window._fakeRsName || 'Workout'
   const tmplId   = document.getElementById('rs-template')?.value || window._fakeRsTemplate || ''
   window._fakeRsName = null; window._fakeRsTemplate = null
@@ -245,10 +244,9 @@ function _showRunnerResumeModal(clientId, draft) {
 
 async function _resumeRunnerFromDraft(clientId) {
   // The "Resume" tap is itself a valid user gesture -- unlock here too, same as
-  // _startFreshRunner does, or a resumed session's rest-timer beeps/voice cues can silently
+  // _startFreshRunner does, or a resumed session's rest-timer beeps can silently
   // never fire on iOS Safari / strict-autoplay Chrome. Found by multi-agent review 2026-07-10.
   _unlockAudio()
-  _unlockSpeech()
   document.getElementById('runner-resume-modal')?.remove()
   const draft = _loadRunnerDraft(clientId)
   if (!draft) { await _startFreshRunner(clientId); return } // vanished between modal open and tap
@@ -699,7 +697,6 @@ function toggleTableSet(rowIdx) {
     const missing = _rowIncompleteReason(ex, row)
     if (missing) { showToast(missing, 'warn'); return }
     _unlockAudio()
-    _unlockSpeech()
     row.done = true
     row._dropped = false   // ticked again on purpose: no longer "left out"
     _syncLoggedSetsFromTable(ex)
@@ -1452,7 +1449,6 @@ function _fitRunnerTitle() {
 
 function logRunnerSet() {
   _unlockAudio() // user gesture — unlock AudioContext for iOS
-  _unlockSpeech() // prime speechSynthesis for iOS mid-timer calls
   // A rest belonging to a DIFFERENT exercise (2026-07-29 redesign) must not block THIS exercise's
   // own LOG — only a rest/count-in for the exercise currently on screen should.
   if ((_runner._restInterval && _runner._restForExIdx === _runner.exIdx) || _runner._countInInterval) return // block LOG during rest or the get-ready count-in
@@ -1546,43 +1542,22 @@ function _unlockAudio() {
   // context unlocked so timer-fired playBeep calls work for the session.
   try {
     if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-    if (_audioCtx.state === 'suspended') _audioCtx.resume()
+    // 'interrupted' is the state WebKit reports after a call, Siri or another app (Spotify) took the audio session; only a resume() from a tap brings it back.
+    if (_audioCtx.state === 'suspended' || _audioCtx.state === 'interrupted') { const p = _audioCtx.resume(); if (p && p.catch) p.catch(() => {}) }
   } catch(e) {}
 }
 
-function _unlockSpeech() {
-  // Prime speechSynthesis on first user gesture so iOS/Chrome allow mid-timer calls —
-  // an actual speak() tied to the gesture is required, cancel() alone doesn't register it.
-  if (!window.speechSynthesis) return
-  try {
-    window.speechSynthesis.cancel()
-    const utt = new SpeechSynthesisUtterance(' ')
-    utt.volume = 0
-    window.speechSynthesis.speak(utt)
-  } catch(e) {}
-}
+// Timer cues are TONES, never speech. On iOS 18 any speechSynthesis call — even a silent one — stops the
+// lifter's music in Spotify, and Web Audio tones mix with it (measured on a phone 2026-10-25; bug ledger
+// 2026-10-25-runner-sounds-stop-the-music-in-spotify-since-the-ios-safari-update). Do not bring speech back.
+// A tick has a deadline: a context that was not running starts a tone only once it resumes, and a tick that sounds late names the wrong second (and a backlog would all sound at once).
+function playCountdownTick() { playBeep(880, 0.12, 0.8, 600) }
+function playTenSecondWarning() { playBeep(660, 0.3, 0.8, 1500) } // lower and longer than a tick, so it is not mistaken for one
 
-function _pickFemaleVoice() {
-  const voices = window.speechSynthesis?.getVoices() || []
-  return voices.find(v => /hazel|susan|zira|female|samantha|victoria|karen/i.test(v.name)) || null
-}
-
-function speakCue(text) {
-  if (!window.speechSynthesis) return
-  try {
-    window.speechSynthesis.cancel()
-    const utt = new SpeechSynthesisUtterance(text)
-    utt.rate = 1.1
-    utt.volume = 1
-    const voice = _pickFemaleVoice()
-    if (voice) utt.voice = voice
-    window.speechSynthesis.speak(utt)
-  } catch(e) {}
-}
-
-function playBeep(freq = 880, duration = 0.15, volume = 0.8) {
+function playBeep(freq = 880, duration = 0.15, volume = 0.8, maxLateMs = Infinity) {
   try {
     if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const asked = Date.now()
     const _fire = () => {
       try {
         const ctx = _audioCtx
@@ -1599,7 +1574,8 @@ function playBeep(freq = 880, duration = 0.15, volume = 0.8) {
       } catch(e) {}
     }
     if (_audioCtx.state !== 'running') {
-      _audioCtx.resume().then(_fire).catch(() => {})
+      // The finish beeps pass no deadline: a rest that ended is worth announcing however late.
+      _audioCtx.resume().then(() => { if (Date.now() - asked <= maxLateMs) _fire() }).catch(() => {})
     } else {
       _fire()
     }
@@ -1608,7 +1584,6 @@ function playBeep(freq = 880, duration = 0.15, volume = 0.8) {
 
 function startStrengthSetTimer() {
   _unlockAudio()
-  _unlockSpeech()
   const ex = _runner.exercises[_runner.exIdx]
   const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
   const secs = tgt.duration ? (parseRest(tgt.duration) || 0) : 0
@@ -1634,8 +1609,8 @@ function startStrengthSetTimer() {
       if (durInput && dur) durInput.value = dur
       return
     }
-    if (_runner._setTimerRemaining === 10) speakCue('10 seconds')
-    if (_runner._setTimerRemaining <= 3) speakCue(String(_runner._setTimerRemaining))
+    if (_runner._setTimerRemaining === 10) playTenSecondWarning()
+    if (_runner._setTimerRemaining <= 3) playCountdownTick()
     const el = document.getElementById('wr-set-countdown')
     if (el) {
       el.textContent = fmtRestCountdown(_runner._setTimerRemaining)
@@ -1686,7 +1661,6 @@ function renderStrengthSetTimer() {
 
 function startCardioTimer() {
   _unlockAudio() // user gesture — unlock AudioContext for iOS
-  _unlockSpeech() // prime speechSynthesis for the interval timer's spoken countdown
   const ex = _runner.exercises[_runner.exIdx]
   // Interval exercises fork here into the phase walk instead of the legacy single-round count-in ->
   // startIntervalTimer chain. `if (!ex.phases)` covers an exercise that reached the runner without
@@ -1704,7 +1678,7 @@ function startCardioTimer() {
 }
 
 // Get-ready lead-in before the FIRST work interval of a round only — every round after that already
-// gets a spoken count-in for free (startRestTimer speaks the last 5 seconds of rest, which doubles as
+// gets a counted-in lead for free (startRestTimer ticks the last 5 seconds of rest, which doubles as
 // the count-in for the next round). This is purely a lead-in: at 0 it hands off to the existing
 // startIntervalTimer(workSecs), which already owns the whole work→rest→work loop.
 function startRunnerCountIn(workSecs) {
@@ -1720,7 +1694,7 @@ function startRunnerCountIn(workSecs) {
       startIntervalTimer(workSecs)
       return
     }
-    speakCue(String(_runner._countInRemaining))
+    playCountdownTick()
     const el = document.getElementById('wr-countin-countdown')
     if (el) el.textContent = _runner._countInRemaining
   }, 1000)
@@ -1891,7 +1865,7 @@ function startIntervalTimer(secs) {
       renderRunner()
       return
     }
-    if (_runner._intervalRemaining <= 5) speakCue(String(_runner._intervalRemaining))
+    if (_runner._intervalRemaining <= 5) playCountdownTick()
     const el = document.getElementById('wr-interval-countdown')
     if (el) {
       el.textContent = fmtRestCountdown(_runner._intervalRemaining)
@@ -1947,7 +1921,7 @@ function startIntervalPhaseTimer(secs) {
       if (_advancePhase()) renderRunner()
       return
     }
-    if (_runner._intervalRemaining <= 5) speakCue(String(_runner._intervalRemaining))
+    if (_runner._intervalRemaining <= 5) playCountdownTick()
     const el = document.getElementById('wr-interval-countdown')
     if (el) {
       el.textContent = fmtRestCountdown(_runner._intervalRemaining)
@@ -2066,7 +2040,6 @@ function renderIntervalTimer() {
 // confusing on the countdown-skip case, which beeps for something that was just deliberately NOT logged.
 function _doneIntervalPhase() {
   _unlockAudio()
-  _unlockSpeech()
   if ((_runner._restInterval && _runner._restForExIdx === _runner.exIdx) || _runner._countInInterval) return // same guard logRunnerSet uses
   const ex = _runner.exercises[_runner.exIdx]
   const p = (ex.phases || [])[_runner._phaseIdx]
@@ -2091,14 +2064,14 @@ function startRestTimer(secs) {
   _runner.restTotal     = secs
   // The rest counts to an END TIME, not down a counter (2026-09-20). It used to `restRemaining--` once per
   // interval tick, so a tab the OS suspended — screen locked, another app in front — simply stopped
-  // counting: 60 s away from a 90 s rest came back as ~89 s left, its voice cues and finish beep never
+  // counting: 60 s away from a 90 s rest came back as ~89 s left, its countdown ticks and finish beep never
   // having fired. Now the displayed second is derived from Date.now() (see _restTick), so it is right the
   // moment the tab wakes. restRemaining stays a plain integer that the renderers read.
   _runner._restEndsAt = Date.now() + secs * 1000
   _runner._restShown  = secs
   // Which exercise this rest belongs to — kept stable even if the athlete navigates elsewhere to
   // look ahead, so a returning tap (or the chip) knows where to reattach. `_restPendingFire` marks
-  // a rest that reached zero while the athlete was looking at a DIFFERENT exercise: the beep/voice
+  // a rest that reached zero while the athlete was looking at a DIFFERENT exercise: the beep
   // cues still fire on schedule, but any queued _afterRest is deliberately held until they actually
   // return to the owning exercise — firing it immediately would run against whatever exercise is
   // currently on screen (the exact corruption runnerJumpTo already guards against
@@ -2117,7 +2090,7 @@ function startRestTimer(secs) {
 
 // One tick of the rest countdown. It polls four times a second but does the per-second work (cues,
 // display, finish) only when the displayed second CHANGES, so every second is handled exactly once — the
-// 10 s and 5..1 voice cues cannot double-fire — while the number itself comes from the clock, not from
+// 10 s and 5..1 beep cues cannot double-fire — while the number itself comes from the clock, not from
 // how many ticks the OS happened to let through. Also called from the visibilitychange handler, so a tab
 // that was frozen shows the truth before its next timer callback runs.
 function _restTick() {
@@ -2157,8 +2130,8 @@ function _restTick() {
     }
   } else {
     _unlockAudio()
-    if (_runner.restRemaining === 10) speakCue('10 seconds')
-    if (_runner.restRemaining <= 5) speakCue(String(_runner.restRemaining))
+    if (_runner.restRemaining === 10) playTenSecondWarning()
+    if (_runner.restRemaining <= 5) playCountdownTick()
     const onScreen = _runner.exIdx === _runner._restForExIdx
     const el = onScreen ? document.getElementById('rt-countdown') : null
     if (el) {
@@ -2525,7 +2498,7 @@ function runnerJumpTo(i) {
 
   if (restActive) {
     // Navigating to a DIFFERENT exercise while a rest is running elsewhere. Redesigned 2026-07-29
-    // (Jake: "the timer stops" when glancing ahead) — the countdown (and its beep/voice cues) keeps
+    // (Jake: "the timer stops" when glancing ahead) — the countdown (and its beeps) keeps
     // running; only the big page-top overlay DOM node is dropped, since the persistent chip
     // (rendered by renderRunner, gated on _restForExIdx !== exIdx) takes over visually. Deliberately
     // NOT touching _restInterval/_afterRest/_restForExIdx — nulling _afterRest here (as this

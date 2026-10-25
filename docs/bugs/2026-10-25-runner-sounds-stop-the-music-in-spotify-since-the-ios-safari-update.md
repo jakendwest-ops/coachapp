@@ -1,0 +1,36 @@
+---
+id: 2026-10-25-runner-sounds-stop-the-music-in-spotify-since-the-ios-safari-update
+status: open
+priority: high
+reported: 2026-10-25
+status_detail: "REPORTED by Jake 2026-10-25, from using the runner in the gym this week: since the new iOS Safari update, whenever the runner makes a sound or speaks (rest timer, countdown, logging a set) his music stops playing and he has to restart it manually in Spotify every time. CAUSE (measured on his iPhone, iOS 18.7): any speechSynthesis call, including the silent priming word on every tap; Web Audio beeps are fine. FIX BUILT 2026-10-25: speech removed, the countdown is beeps. Open until Jake confirms in a real workout."
+closing_conditions: "Jake confirms on his phone, in a real workout with Spotify playing, that the rest-timer beep, the countdown and a logged set no longer stop or pause his music (the music keeps playing, or the runner's sounds duck it and it resumes by itself); and a spec or a documented device check pins how the runner plays sound so the choice cannot silently change."
+---
+
+# Runner sounds stop the music in Spotify (since the new iOS Safari update)
+
+## Jake's report (verbatim, 2026-10-25)
+
+> i also noticed an issue in the runner in the gym this week. Since the new IOS safari update, whenever the runner speaks (timer, countdown, log a set etc) music stop playing and i have to restart my music manually in spotify every time
+
+## What is known (2026-10-25, code read only; nothing reproduced, there is no iPhone here)
+
+**Jake's answers:** he uses the runner in a Safari tab (not a Home Screen app); he believed BOTH the beeps and the spoken numbers stopped the music (the measurement below shows only speech does), and he first wanted to KEEP the spoken countdown.
+
+**How the runner makes sound** (`js/app-runner.js`): beeps through the Web Audio API (`playBeep`, one `AudioContext` held for the whole workout, created and resumed by `_unlockAudio()`), and spoken cues through `speechSynthesis` (`speakCue`: "10 seconds" and 5-4-3-2-1 on the rest, set and interval timers, plus the count-in). `_unlockSpeech()` also SPEAKS a silent word (volume 0) at every tap that starts a timer or logs a set (about seven call sites), so iOS's speech audio session is activated even when nothing is audible. There is no sound setting.
+
+**Public reports** (not specific to this iOS version): web speech on iPhone ducks or pauses other apps' audio and `navigator.audioSession.type` did not change that for speech (WebKit 218815, 278598); `audioSession.type = "ambient"` is the documented way to let Web Audio mix with other apps (MDN AudioSession.type) but a related WebKit report (264473) says other apps can still be paused.
+
+**MEASURED on Jake's phone, 2026-10-25 (iOS 18.7, Safari tab; the Runner Audio Test page, which plays each sound alone while Spotify plays):** a plain Web Audio beep KEPT the music playing (also with `audioSession.type = "ambient"`, and as a 6-second beeps-only countdown); ANY `speechSynthesis` call STOPPED it: the spoken word, the SILENT word the runner uses to prime speech (volume 0), the word after `ambient`, the word after `transient`, and the whole 5-4-3-2-1 countdown. So the cause is `speechSynthesis`, including `_unlockSpeech()` on every tap; the audio-session setting does not rescue speech; the tones are not the problem (the first run of the page, on a desktop browser, showed nothing and was discarded).
+
+**Fix chosen (Jake, 2026-10-25: "use beeps if it is easier", then "we know the beeps work as i just tested this"):** drop `speechSynthesis` from the runner entirely and count down with tones through the same Web Audio path as the existing beeps. Jake first preferred spoken numbers, so recorded number clips were prepared (six trimmed WAVs, 114 KB, and a phone-test page) and then NOT used: beeps are already measured on his phone and need no assets, no decoding and no fallback. If he ever misses the voice, clips played through Web Audio are the way back; speech is not.
+
+**Built 2026-10-25 (uncommitted at the time of writing):** `_unlockSpeech()`, `_pickFemaleVoice()` and `speakCue()` deleted, and `_unlockSpeech()` removed from its nine call sites (7 in `js/app-runner.js`, 2 in `js/app-workouts.js`). New `playCountdownTick()` (880 Hz, 0.12 s) for each of the last 5 s of a rest or interval, the last 3 s of a timed set, and each count-in number; new `playTenSecondWarning()` (660 Hz, 0.3 s, lower and longer so it is not mistaken for a tick) at 10 s. The finish beeps (1046 Hz) are unchanged. `tests-node/runner-cues-are-tones.test.mjs` pins it: no module mentions speech outside a comment, and driving the rest countdown 12 to 0 gives exactly one 660 Hz at 10, one 880 Hz at each of 5 to 1, one 1046 Hz at 0, and no speech call; 7 deliberate breaks of the code were each caught.
+
+**Added after the pre-commit review (2026-10-25):** a tick has a deadline (a tone queued while the audio context was not running is dropped if it would sound more than 600 ms late, the 10 s warning 1500 ms; the finish beep has none), because beeps are now the only cue channel and a backlog would all sound at once; a tap now also resumes an `interrupted` context (what WebKit reports after a call, Siri or switching to Spotify), not only a `suspended` one; and the four timers the rest-timer test does not drive (set timer, count-in, interval, interval phase) are pinned by source so deleting a tick from one goes red. 17 of 17 deliberate breaks are caught.
+
+**What the beeps cannot do (named, not hidden):** you no longer hear WHICH second it is; 5 to 1 are identical ticks, so the lifter counts them. The count-in ticks 4 to 1. Not known: whether the ticks obey the iPhone's ring/silent switch the way speech did (the finish beeps already behaved however they behave).
+
+**Not verified on a phone yet:** the real runner in a real workout with Spotify playing. That is the closing condition below, and it is Jake's to confirm.
+
+**Closes when:** Jake confirms on his phone, in a real workout with Spotify playing, that the rest-timer beep, the countdown and a logged set no longer stop or pause his music (the music keeps playing, or the runner's sounds duck it and it resumes by itself); and a spec or a documented device check pins how the runner plays sound so the choice cannot silently change.

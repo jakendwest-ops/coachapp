@@ -8,7 +8,7 @@ const { loginAsClient, logTableSet } = require('./helpers')
 //
 //   1. WAKE LOCK. A workout logger left on a bench dims and locks the phone mid-rest.
 //   2. REST TIMER. `restRemaining--` per tick means a tab the OS suspended (screen locked, app switched)
-//      simply stops counting: come back after 60 s and the rest still says ~90 s, its voice cues and finish
+//      simply stops counting: come back after 60 s and the rest still says ~90 s, its countdown ticks and finish
 //      beep never having fired. The fix counts to an END TIME instead — the displayed second is derived from
 //      Date.now() — so the countdown is right the moment the tab comes back.
 //

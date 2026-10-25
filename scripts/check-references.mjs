@@ -74,9 +74,7 @@ const GLOBALS = new Set([
   'IntersectionObserver', 'ResizeObserver', 'DOMParser', 'HTMLElement', 'Node', 'NodeList', 'Element',
   'atob', 'btoa', 'open', 'close', 'print', 'scrollTo', 'addEventListener', 'removeEventListener',
   // third-party globals loaded by <script> in index.html, not by js/
-  'supabase', 'Chart',
-  // Web Speech API -- app-runner.js uses it for the rest-timer announcements.
-  'SpeechSynthesisUtterance', 'speechSynthesis'
+  'supabase', 'Chart'
 ])
 
 const files = scriptOrder()

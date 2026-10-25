@@ -126,7 +126,7 @@ describe('a set that was left out is SAID — _droppedTickedCount (Jake chose "w
     get('_loggedExercises')()
     assert.equal(get('_droppedTickedCount')(), 1)
     ex.tableRows[0].reps = '8'                         // the lifter retypes the reps...
-    run('_unlockAudio = function () {}; _unlockSpeech = function () {}; startRestTimer = function () {}')
+    run('_unlockAudio = function () {}; startRestTimer = function () {}')
     get('toggleTableSet')(0)                           // ...and ticks it again
     assert.equal(ex.tableRows[0].done, true)
     assert.equal(get('_droppedTickedCount')(), 0)
