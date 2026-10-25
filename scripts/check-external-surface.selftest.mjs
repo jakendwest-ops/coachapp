@@ -13,7 +13,10 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const CHECK = join(dirname(fileURLToPath(import.meta.url)), 'check-external-surface.mjs')
-const { hosts, knownMissing } = JSON.parse(execFileSync(process.execPath, [CHECK, '--list'], { encoding: 'utf8' }))
+const { hosts } = JSON.parse(execFileSync(process.execPath, [CHECK, '--list'], { encoding: 'utf8' }))
+// The real KNOWN_MISSING list is empty (invite-client's source is committed), so the fixtures bring their own entry, handed to the check through the self-test-only
+// SURFACE_KNOWN_MISSING variable.
+const knownMissing = ['legacy-fn']
 
 const GOOD_FN = `Deno.serve(async (req) => {\n  const caller = createClient(url, anon, { global: { headers: { Authorization: h } } })\n  const { data: { user } } = await caller.auth.getUser()\n  const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))\n})\n`
 const BASE = () => ({
@@ -23,6 +26,12 @@ const BASE = () => ({
   'css/main.css': 'body{}\n',
 })
 const withFiles = (extra, drop = []) => { const b = BASE(); for (const d of drop) delete b[d]; return { ...b, ...extra } }
+// The key is read into a variable (as invite-client does), so where it is READ and where it is USED are different places.
+const CALLER = `  const caller = createClient(url, anon, { global: { headers: { Authorization: h } } })\n  const { data: { user } } = await caller.auth.getUser()\n`
+const VAR_FN = (head, between, tail) => `Deno.serve(async (req) => {\n${head}${between}${tail}})\n`
+const READ = "  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!\n"
+const READ_TYPED = "  const serviceKey: string = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!\n"
+const BUILD = '  const admin = createClient(url, serviceKey)\n'
 
 const CASES = [
   { want: 'PASS', why: 'the repo\'s real shape (every allowed host referenced, every function accounted for)', files: BASE() },
@@ -62,6 +71,20 @@ const CASES = [
     files: withFiles({ 'index.html': BASE()['index.html'] + '<img src=https://tracker.example.org>\n' }) },
   { want: 'BLOCK', why: 'a service-role function written in .js is judged too (only .ts used to be scanned)',
     files: withFiles({ 'supabase/functions/other/index.js': "Deno.serve(async (req) => {\n  const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))\n})\n" }) },
+  { want: 'PASS', why: 'invite-client\'s shape: the key is READ into a variable before the caller is known, and USED to build the client only after',
+    files: withFiles({ 'supabase/functions/invite-solo-user/index.ts': VAR_FN(READ, CALLER, BUILD) }) },
+  { want: 'PASS', why: 'the same with a type annotation on the variable (const serviceKey: string = ...)',
+    files: withFiles({ 'supabase/functions/invite-solo-user/index.ts': VAR_FN(READ_TYPED, CALLER, BUILD) }) },
+  { want: 'BLOCK', why: 'the key variable builds the client BEFORE the caller is resolved',
+    files: withFiles({ 'supabase/functions/invite-solo-user/index.ts': VAR_FN(READ, BUILD, CALLER) }) },
+  { want: 'BLOCK', why: 'an INLINE client (createClient(url, Deno.env.get(KEY))) built before the caller is known, even though it is first used after: the key is judged where it is written',
+    files: withFiles({ 'supabase/functions/invite-solo-user/index.ts': VAR_FN('', "  const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))\n" + CALLER, "  await admin.from('x').select()\n") }) },
+  { want: 'BLOCK', why: 'a comma declaration (const a = 1, serviceKey = Deno.env.get(KEY)) before the caller is not a followed binding: the key is judged where it is written',
+    files: withFiles({ 'supabase/functions/invite-solo-user/index.ts': VAR_FN("  const a = 1, serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')\n", CALLER, BUILD) }) },
+  { want: 'BLOCK', why: 'the key sits in a variable and the caller is never resolved',
+    files: withFiles({ 'supabase/functions/invite-solo-user/index.ts': VAR_FN(READ, BUILD, '') }) },
+  { want: 'BLOCK', why: 'the key is read into a variable and no use of it can be seen: judged where it is READ (conservative), which is before the caller',
+    files: withFiles({ 'supabase/functions/invite-solo-user/index.ts': VAR_FN(READ, CALLER, '') }) },
   { want: 'BLOCK', why: 'a KNOWN_MISSING function whose source is now committed (stale entry)',
     files: withFiles({ [`supabase/functions/${knownMissing[0]}/index.ts`]: GOOD_FN }) },
   { want: 'BLOCK', why: 'a KNOWN_MISSING function the app no longer calls (stale entry)',
@@ -77,7 +100,7 @@ CASES.forEach((c, i) => {
     writeFileSync(p, body, 'utf8')
   }
   let exit = 0, out = ''
-  try { out = execFileSync(process.execPath, [CHECK], { encoding: 'utf8', env: { ...process.env, SURFACE_ROOT: dir } }) }
+  try { out = execFileSync(process.execPath, [CHECK], { encoding: 'utf8', env: { ...process.env, SURFACE_ROOT: dir, SURFACE_KNOWN_MISSING: JSON.stringify(Object.fromEntries(knownMissing.map(n => [n, 'self-test entry']))) } }) }
   catch (err) { exit = err.status; out = (err.stdout || '') + (err.stderr || '') }
   rmSync(dir, { recursive: true, force: true })
   const got = exit === 0 ? 'PASS' : 'BLOCK'

@@ -16,14 +16,18 @@
  *
  * 2. Every server function the browser calls has its SOURCE in the repo, and any function that holds the service-role key
  *    resolves WHO IS CALLING (auth.getUser) inside its request handler before it uses that client. supabase/functions/
- *    invite-solo-user does. invite-client -- called from the same Settings code -- is deployed only, never read by anyone since
- *    2026-06; KNOWN_MISSING names it so the gap is a counted, dated debt and not an invisible one. The moment its source is
- *    committed the entry must be deleted (the check fails on a stale entry), and the caller rule then applies to it like any other.
+ *    invite-solo-user and invite-client both do. invite-client was deployed only, never read by anyone since 2026-06, and was listed in KNOWN_MISSING
+ *    (a counted, dated debt) until its source was committed on 2026-10-25; a function with no source and no entry fails, and an entry
+ *    whose source is committed fails as stale. A key read into a variable is judged where the variable is USED.
  *
  * KNOWN LIMITS (named): the caller rule proves the caller is IDENTIFIED, not that they are AUTHORISED (invite-solo-user's real
- * guard is an email comparison the gate cannot see); only the literal SERVICE_ROLE_KEY is recognised, not the key under another
- * name; a host built by string concatenation or a URL read from a variable is invisible; a floating-major import in an Edge
- * Function (esm.sh/@supabase/supabase-js@2) is not checked here.
+ * guard is an email comparison the gate cannot see) and does not check that the result of auth.getUser() is looked at; only the
+ * literal SERVICE_ROLE_KEY is recognised, and a key variable is followed ONE hop, by file position and not control flow (an alias,
+ * a key handed through a helper function such as makeAdmin(), a client built at module level and then used in the handler before
+ * the caller is known, and a comma declaration are not followed -- the last is judged at the key itself, which errs towards a
+ * finding); a host built by string concatenation or a URL read from a variable is invisible; a floating-major import in an Edge
+ * Function (esm.sh/@supabase/supabase-js@2) is not checked here; and the gate reads the copy in the REPO, not the one deployed
+ * from the Supabase dashboard, so nothing notices if the two drift.
  *
  * Usage: node scripts/check-external-surface.mjs        (reads the tracked files; SURFACE_ROOT points it at a temp tree for the self-test)
  */
@@ -45,10 +49,10 @@ const ALLOWED_HOSTS = {
   'fonts.googleapis.com': 'TEMPORARY - the Inter stylesheet; leaks every visitor\'s IP to Google; to be self-hosted and this line deleted',
 }
 
-// A function the browser calls whose source is not in the repo. Dated; delete the line when the source is committed.
-const KNOWN_MISSING = {
-  'invite-client': '2026-10-18: deployed from the Supabase dashboard only; holds the service-role key; never audited',
-}
+// A function the browser calls whose source is not in the repo. Dated; delete the line when the source is committed. Empty since 2026-10-25, when invite-client's
+// source was committed. The self-test supplies its own entries through SURFACE_KNOWN_MISSING (honoured ONLY together with SURFACE_ROOT, i.e. against a temp tree),
+// so the stale-entry cases stay testable while the real list is empty.
+const KNOWN_MISSING = (process.env.SURFACE_ROOT && process.env.SURFACE_KNOWN_MISSING) ? JSON.parse(process.env.SURFACE_KNOWN_MISSING) : {}
 
 // The self-test builds miniature repos from these, so it can never drift from the real lists.
 if (process.argv.includes('--list')) {
@@ -115,14 +119,30 @@ for (const name of Object.keys(KNOWN_MISSING)) {
 for (const rel of functionFiles) {
   // blankComments, not a bare //-stripper: `https://...` in a string is not a comment, and eating it once hid the service key from this check
   const src = blankComments(readFileSync(join(ROOT, rel), 'utf8'))
-  const svc = src.search(/SERVICE_ROLE_KEY/)
-  if (svc === -1) continue
+  const key = src.search(/SERVICE_ROLE_KEY/)
+  if (key === -1) continue
+  // The key is often read into a variable first (`const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!`) and only handed to createClient later, after the
+  // caller is known. Reading it is not building the client, so the position that matters is where it is USED: follow the variable. A key that is read and never used is
+  // judged where it is read (conservative: it also covers a use this scan cannot see).
+  // A binding counts only when its right-hand side IS the environment read, so `const admin = createClient(url, Deno.env.get('..SERVICE_ROLE_KEY'))` is NOT a binding (the key is
+  // used right there) and a comma declaration (`const a = 1, k = Deno.env.get(..)`) is not followed: both are judged at the key itself, which is the conservative side.
+  const bound = [...src.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*Deno\.env\.get\(\s*(['"])[^'"\n]*SERVICE_ROLE_KEY\2\s*\)\s*(?:!|\s+as\s+string)?\s*(?=;|\n|$)/g)]
+  let svc = -1
+  const note = (i) => { if (i !== -1 && (svc === -1 || i < svc)) svc = i }
+  for (const m of src.matchAll(/SERVICE_ROLE_KEY/g)) if (!bound.some(b => m.index >= b.index && m.index < b.index + b[0].length)) note(m.index)
+  for (const b of bound) {
+    const re = new RegExp('(?<![\\w$])' + b[1].replace(/\$/g, '\\$') + '(?![\\w$])', 'g')
+    re.lastIndex = b.index + b[0].length
+    const u = re.exec(src)
+    if (u) note(u.index)
+  }
+  if (svc === -1) svc = key
   const who = src.search(/\.auth\.getUser\s*\(|auth\.getUser\s*\(/)
   // A client built at MODULE level (before the request handler) is fine as long as the handler identifies the caller; a client built INSIDE the
   // handler must come after the caller is known.
   const handlerAt = src.search(/\b(?:Deno\.)?serve\s*\(|addEventListener\s*\(\s*['"]fetch['"]/)
   if (who === -1) findings.push(`${rel}  builds a service-role client but never resolves the caller (.auth.getUser)`)
-  else if (handlerAt !== -1 && svc > handlerAt && who > svc) findings.push(`${rel}  builds the service-role client BEFORE it resolves the caller -- check who is calling first`)
+  else if (handlerAt !== -1 && svc > handlerAt && who > svc) findings.push(`${rel}  uses the service-role key BEFORE it resolves the caller -- check who is calling first`)
   else if (handlerAt !== -1 && who !== -1 && who < handlerAt) findings.push(`${rel}  resolves the caller outside the request handler -- it must happen per request, inside it`)
 }
 
