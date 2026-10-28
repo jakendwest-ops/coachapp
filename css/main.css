@@ -1453,3 +1453,59 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .gl-more[open] > summary { margin-bottom:8px; }
 .gl-finish { width:100%; margin-bottom:8px; }
 .gl-grow { flex:1; }
+
+/* ─── Workout builder (2026-10-28) ──────────────────────────────────────────────────────────────────────────
+   The grouped set editor (one block for "all the sets", or one for the top set and one for the back-offs) and the workout page's
+   compact exercise cards. Design: the tappable prototype Jake approved 2026-10-28 ("the exercise builder is looking much better").
+   Tokens only: the style-literal ratchet counts hex colours and px font sizes in this file. */
+.wb-blk { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:12px; margin-bottom:10px; display:grid; gap:10px; }
+.wb-blk h4 { margin:0; font-size:var(--text-lg); font-weight:700; display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.wb-blk h4 em { font-style:normal; font-weight:500; font-size:var(--text-md); color:var(--text-muted); }
+.wb-hint { margin:0; font-size:var(--text-md); color:var(--text-muted); }
+.wb-seg { display:grid; grid-template-columns:1fr 1fr; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
+.wb-seg button { min-height:44px; padding:6px 8px; font-size:var(--text-base); font-weight:500; line-height:1.2; color:var(--text-muted); background:var(--surface); border-right:1px solid var(--border); cursor:pointer; }
+.wb-seg button:last-child { border-right:0; }
+.wb-seg button[aria-pressed="true"] { background:var(--accent); color:white; font-weight:700; }
+.wb-step { display:grid; grid-template-columns:44px 1fr 44px; align-items:center; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; background:var(--surface); }
+.wb-step button { min-height:44px; font-size:var(--text-3xl); line-height:1; color:var(--accent); background:var(--surface); cursor:pointer; }
+.wb-step output { text-align:center; font-weight:700; font-size:var(--text-xl); font-variant-numeric:tabular-nums; }
+.wb-load { display:grid; grid-template-columns:minmax(0, 1fr); gap:8px; }
+.wb-load select { font-size:var(--text-base); }
+.wb-example { background:var(--accent-light); border-radius:var(--radius-sm); padding:10px; display:grid; gap:6px; font-size:var(--text-base); }
+.wb-example .wb-try { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:var(--text-md); color:var(--text-muted); }
+.wb-example .wb-try input { width:80px; min-width:0; padding:4px 6px; text-align:center; }
+.wb-example .wb-calc { overflow-wrap:anywhere; }
+.wb-fine { font-size:var(--text-sm); color:var(--text-muted); }
+.wb-link { color:var(--accent); font-weight:600; font-size:var(--text-base); min-height:36px; padding:0 4px; text-align:left; background:none; cursor:pointer; }
+.wb-same { font-size:var(--text-md); font-weight:600; color:var(--accent); background:var(--accent-light); border-radius:var(--radius-sm); padding:4px 10px; min-height:32px; cursor:pointer; }
+.wb-notice { padding:8px 10px; margin-bottom:10px; border-radius:var(--radius-sm); background:var(--warning-light); color:var(--text); font-size:var(--text-md); }
+.wb-bw { display:flex; align-items:center; gap:8px; justify-content:space-between; }
+.wb-bw > span { font-size:var(--text-base); font-weight:600; color:var(--text); }
+.wb-eff { padding:4px 10px; font-size:var(--text-sm); font-weight:700; border:1px solid var(--border); background:transparent; color:var(--text-muted); cursor:pointer; }
+.wb-eff:first-child { border-radius:var(--radius-sm) 0 0 var(--radius-sm); }
+.wb-eff:last-child { border-radius:0 var(--radius-sm) var(--radius-sm) 0; border-left:none; }
+.wb-eff[aria-pressed="true"] { border-color:var(--accent); background:var(--accent); color:white; }
+
+/* The workout page's exercise cards: one short summary per exercise, the whole card is the Edit button. */
+.tpl-ex-main { display:flex; gap:10px; align-items:flex-start; width:100%; min-height:44px; padding:12px; background:transparent; border:0; border-radius:var(--radius-lg); color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.tpl-ex-main:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.tpl-ex-badge { width:28px; height:28px; flex:none; border-radius:50%; background:var(--accent-light); color:var(--accent); display:grid; place-items:center; font-weight:700; font-size:var(--text-md); }
+.tpl-ex-text { flex:1; min-width:0; display:grid; gap:3px; }
+.tpl-ex-name { font-weight:600; font-size:var(--text-xl); display:flex; flex-wrap:wrap; gap:6px; align-items:center; overflow-wrap:anywhere; }
+.tpl-ex-line { font-size:var(--text-base); color:var(--text-muted); overflow-wrap:anywhere; }
+.tpl-ex-line b { color:var(--text); font-weight:600; }
+.tpl-ex-chev { flex:none; align-self:center; color:var(--text-muted); font-size:var(--text-3xl); line-height:1; }
+.tpl-ex-moves { display:grid; gap:4px; flex:none; }
+.tpl-ex-moves button { width:44px; height:36px; border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); background:transparent; cursor:pointer; }
+.tpl-ex-moves button[disabled] { color:var(--border); cursor:default; }
+.tpl-add { display:block; width:100%; min-height:56px; margin-top:10px; border:1.5px dashed var(--border); border-radius:var(--radius-lg); color:var(--accent); font-weight:600; font-size:var(--text-lg); background:transparent; cursor:pointer; }
+div.tpl-ex-main { cursor:default; }
+.tpl-undo { scroll-margin-bottom:9rem; display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding:10px 12px; border-radius:var(--radius); background:var(--text); color:var(--surface); font-size:var(--text-base); }
+.tpl-undo button { color:var(--surface); font-weight:700; text-decoration:underline; min-height:32px; padding:0 6px; cursor:pointer; background:none; }
+.tpl-chip { font-size:var(--text-xs); font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:2px 7px; border-radius:var(--radius-full); background:var(--accent-light); color:var(--accent); }
+.tpl-chip-cardio { background:var(--surface-2); color:var(--text-muted); }
+.tpl-chip-ss { background:var(--warning-light); color:var(--text); }
+.tpl-chip-bw { background:var(--success-light); color:var(--text); }
+.tpl-ex-note { display:grid; gap:2px; margin-top:4px; font-size:var(--text-sm); color:var(--text-muted); }
+.tpl-ex-note em { font-style:italic; }
+.tpl-ex-tag { justify-self:start; font-size:var(--text-xs); font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:1px 7px; border-radius:var(--radius-xs); background:var(--accent-light); color:var(--accent); }

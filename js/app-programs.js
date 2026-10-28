@@ -609,8 +609,8 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
 // anchor the client_1rms row on. Pure (no DB), so tests-node/needed-one-rms.test.mjs can pin it.
 //
 // Two separate questions, deliberately answered separately:
-//  - does this exercise NEED a stored 1RM?  A %1RM row does — unless it is a 'topSet'-basis row,
-//    which resolves against the e1RM this session's top set produces and so needs none.
+//  - does this exercise NEED a stored 1RM?  A %1RM row does — unless it is a top-set-basis row ('topSet' or 'topSetWeight'),
+//    which resolves against what this session's top set produced and so needs none.
 //  - which exercise_id identifies it?  Harvested from EVERY slot, whether or not that slot needs a
 //    stored 1RM. Round 1 folded both into one `usesPct`-gated step, so a programme with "Squat" as a
 //    top set on day 1 (library id set) and as a stored-basis %1RM on day 3 (id null — several writers
@@ -626,7 +626,7 @@ function _neededOneRMsByName(phases) {
     ;(phase.program_phase_workouts || []).filter(pw => (pw.week_number || 1) === 1).forEach(pw => {
       ;(pw.workout_templates?.workout_template_exercises || []).forEach(ex => {
         if (ex.exercise_id && !idByName.get(ex.exercise_name)) idByName.set(ex.exercise_name, ex.exercise_id)
-        if ((ex.sets_json || []).some(s => (s.intensityMin != null || s.intensityMax != null) && s.intensityBasis !== 'topSet')) {
+        if ((ex.sets_json || []).some(s => (s.intensityMin != null || s.intensityMax != null) && !_isTopSetBasis(s.intensityBasis))) {
           needsStored.add(ex.exercise_name)
         }
       })
@@ -2715,14 +2715,14 @@ async function _cleanupPhaseWeeksBeyond(phaseId, maxWeek, programId) {
 }
 
 // Does the weekly percentage wave rewrite this set? Only a % of the STORED 1RM — that is what the wave numbers are. A set
-// pointed at "today's top set" (intensityBasis 'topSet') has a different base, and a wave number meant for a max would land on
+// pointed at "today's top set" (intensityBasis 'topSet' or 'topSetWeight') has a different base, and a wave number meant for a max would land on
 // a back-off set as, say, "95% of the top set" — nearly as heavy as the top set itself, chosen by nobody. Those sets keep the
 // percentage the coach typed, every week (Jake, 2026-10-01: "option 2"); the coach can still edit any week by hand.
 // `pctOf` is a function so the wave is only computed for a set that actually carries a percentage. Pure — tested in
 // tests-node/periodization-basis.test.mjs. Before 2026-10-01 this was inline in generatePhasePeriodization and basis-blind.
 function _applyWavePct(s, pctOf) {
   if (s.intensityMin == null && s.intensityMax == null) return s
-  if (s.intensityBasis === 'topSet') return s
+  if (_isTopSetBasis(s.intensityBasis)) return s
   const pct = pctOf()
   return pct == null ? s : { ...s, intensityMin: pct, intensityMax: pct }
 }
@@ -2819,7 +2819,7 @@ function _pzWeek1Report(basis, pws) {
           const raw = rpe ? (_hasNumVal(s.effortMin) ? s.effortMin : s.effortMax) : (_hasNumVal(s.intensityMin) ? s.intensityMin : s.intensityMax)
           const n = _pzNum(raw)
           if (n !== null) seen.add(rpe && s.effortType === 'rir' ? 10 - n : n)
-        } else if (!rpe && s.intensityBasis === 'topSet' && (s.intensityMin != null || s.intensityMax != null)) held++
+        } else if (!rpe && _isTopSetBasis(s.intensityBasis) && (s.intensityMin != null || s.intensityMax != null)) held++
       }
     }
   }

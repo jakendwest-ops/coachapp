@@ -185,10 +185,13 @@ test.describe('Set prescription formatting', () => {
         formatterPassesThrough: out.includes(payload),
         // …so assert every interpolation of its output is wrapped in escapeHtml
         sessionDetailEscapes: /\$\{escapeHtml\(detail\)\}/.test(openSessionDetail.toString()),
-        // 2026-09-13 (template-draft-save): this escape now lives in _renderTemplateExerciseList, which
-        // Task 2 of that plan extracted out of openTemplate — the escaping itself never moved or weakened,
-        // only which function's source literally contains it.
-        templateCardEscapes: /\$\{escapeHtml\(summary\)\}/.test(_renderTemplateExerciseList.toString()),
+        // 2026-09-13 (template-draft-save): this escape moved into _renderTemplateExerciseList; 2026-10-28 (builder
+        // rebuild) the card markup moved again, into _tplCardHtml. A source regexp keeps going stale each time the
+        // function changes hands, so this renders a card holding the hostile value and looks at what reaches innerHTML.
+        templateCardEscapes: (() => {
+          const html = _tplCardHtml({ _draftKey: 'k1', exercise_name: 'Bench', metric_type: 'weight_reps', sets_json: [{ effortType: 'rpe', repsMin: '8', tempo: payload }] }, 0, 1, 'tid', false)
+          return !html.includes(payload) && html.includes('&lt;img')
+        })(),
         escapedPayload: escapeHtml(out).includes('&lt;img'),
       }
     })

@@ -57,10 +57,13 @@ describe('review C4 — deleting row 0 when the ONLY prescription is the top set
 })
 
 describe('review B3 — the builder shows a prescribed effort of 0 instead of a blank box', () => {
-  function render(sets, type = 'weight_reps') {
+  // `custom` = the per-set cards ("Customise each set", 2026-10-28). Identical sets otherwise render as ONE grouped block that draws only
+  // set 1's inputs, so a check on set 2's ids needs the per-set view.
+  function render(sets, type = 'weight_reps', custom = false) {
     const els = {}
     ctx.document.getElementById = id => (els[id] ||= { innerHTML: '', style: {}, dataset: {}, value: '' })
     ctx._templateSets = sets
+    run(`_tsView = { custom: ${custom} }`)
     get('renderTemplateSets')('att-sets-container', type)
     return els['att-sets-container'].innerHTML
   }
@@ -78,10 +81,20 @@ describe('review B3 — the builder shows a prescribed effort of 0 instead of a 
     assert.equal(valueOf(b, 'ts-emin-0'), '7'); assert.equal(valueOf(b, 'ts-emax-0'), '9')
   })
   test('no effort prescribed renders no value attribute (the fix must not invent one)', () => {
-    const html = render([{ repsMin: '5' }, { repsMin: '5', effortMin: '', effortMax: null }])
+    const html = render([{ repsMin: '5' }, { repsMin: '5', effortMin: '', effortMax: null }], 'weight_reps', true)
     assert.equal(valueOf(html, 'ts-emin-0'), null)
     assert.equal(valueOf(html, 'ts-emin-1'), null)
     assert.equal(valueOf(html, 'ts-emax-1'), null)
+  })
+  test('the same holds in the grouped view (set 1 only)', () => {
+    const html = render([{ repsMin: '5' }, { repsMin: '5', effortMin: '', effortMax: null }])
+    assert.equal(valueOf(html, 'ts-emin-0'), null)
+    assert.equal(valueOf(html, 'ts-emax-0'), null)
+    assert.equal(valueOf(html, 'ts-emin-1'), undefined, 'the grouped view draws set 1 only')
+  })
+  test('a prescribed effort of 0 shows in the grouped view too', () => {
+    const html = render([{ repsMin: '5', effortType: 'rir', effortMin: 0, effortMax: 0 }])
+    assert.equal(valueOf(html, 'ts-emin-0'), '0'); assert.equal(valueOf(html, 'ts-emax-0'), '0')
   })
 })
 

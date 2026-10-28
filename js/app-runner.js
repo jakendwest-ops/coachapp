@@ -716,11 +716,24 @@ function toggleTableSet(rowIdx) {
 // tick and every edit of that row, so correcting a typo corrects the backoff targets with it.
 function _recomputeLiveE1RM(ex) {
   const tgt0 = ex.sets_json?.[0]
-  if (!tgt0?.isTopSet) { ex._liveE1RM = null; return }
+  if (!tgt0?.isTopSet) { ex._liveE1RM = null; ex._liveTopWeight = null; return }
   const row = ex.tableRows?.[0]
+  // The weight actually LIFTED on the top set (kg): what a 'topSetWeight' back-off percentage is a percentage of. It needs only a ticked
+  // row with a real weight: no reps and no effort, which the e1RM estimate below also needs (so this exists when that cannot).
+  ex._liveTopWeight = (row?.done && _hasNumVal(row.weight) && parseFloat(row.weight) > 0) ? parseFloat(row.weight) : null
   const effort = _effortOrNull(row?.effort)   // null for blank AND for an impossible value — see _effortOrNull
   if (!row?.done || !_hasNumVal(row.weight) || !row.reps || effort === null) { ex._liveE1RM = null; return }
   ex._liveE1RM = _estimate1RM(row.weight, row.reps, { effortType: tgt0.effortType, effortValue: effort })
+}
+
+// The kg a set's percentage is a percentage OF, for that set's basis, or null/undefined while it cannot be worked out yet (the caller then
+// shows an honest blank, never a stale number): 'topSetWeight' = the weight lifted on today's top set, 'topSet' = today's ESTIMATED 1RM
+// worked out from it, anything else = the client's saved 1RM. Pure, so tests-node can pin all three.
+function _basisKgFor(ex, tgt) {
+  const b = tgt?.intensityBasis
+  if (b === 'topSetWeight') return ex._liveTopWeight
+  if (b === 'topSet') return ex._liveE1RM
+  return ex.oneRM
 }
 
 function addTableRow() {
@@ -836,9 +849,11 @@ function _buildTargetCols(tgt, ex) {
     // the same instant its kg ghost started resolving correctly: the screen showed a working target
     // beside a warning that no target could be shown. Sibling of basisRM in renderStrengthTable —
     // that one learned about intensityBasis and this one did not (multi-agent review, 2026-09-30).
-    const ofTopSet = tgt.intensityBasis === 'topSet'
+    const ofTopSet = _isTopSetBasis(tgt.intensityBasis)
     if (!ex.oneRM && !ofTopSet) needsOneRM = true   // banner still offers to set it; without a 1RM there is no kg to ghost
-    cols.push({ val: escapeHtml(pct) + '%', label: ofTopSet ? 'OF TOP SET' : '1RM TARGET', accent: true })
+    // Said in the label too: "OF TOP SET" is the weight lifted, "OF E1RM" the estimated 1RM (Jake, 2026-10-28: the old single
+    // "Today's top set" read as the former and meant the latter).
+    cols.push({ val: escapeHtml(pct) + '%', label: tgt.intensityBasis === 'topSetWeight' ? 'OF TOP SET' : tgt.intensityBasis === 'topSet' ? 'OF E1RM' : '1RM TARGET', accent: true })
   }
   // Value carries the NUMBER only — the column's own label already says RPE or RIR, so prefixing
   // the value with it just says the same word twice ("RPE / RPE 8–9"). Jake, 2026-07-11.
@@ -1026,11 +1041,12 @@ function renderStrengthTable(ex) {
     // estimate, so `!basisRM` covers both — and when it's falsy a topSet row deliberately falls through
     // to '' rather than to ex.oneRM. Never fall back to the stored 1RM here: a plausible-looking stale
     // number sitting on the bar is worse than an honest blank.
-    const usesTopSet = rowTgt0?.intensityBasis === 'topSet'
-    const basisRM = usesTopSet ? ex._liveE1RM : ex.oneRM
+    const usesTopSet = _isTopSetBasis(rowTgt0?.intensityBasis)
+    const basisRM = _basisKgFor(ex, rowTgt0)
     // The %1RM rounding (nearest 2.5kg, a barbell-plate constraint) stays in kg regardless of
     // preference — only the DISPLAYED number converts, same as every other weight ghost value.
-    const oneRMPh = (rowTgt0?.intensityMin && basisRM)
+    // A load that floors to 0 (a very light base) is no target: "0" is a truthy string and would be drawn as a ghost weight.
+    const oneRMPh = (rowTgt0?.intensityMin && basisRM && parseFloat(_calcWeightFromPct(basisRM, rowTgt0.intensityMin)) > 0)
       ? weightToPref(_calcWeightFromPct(basisRM, rowTgt0.intensityMin)) + (rowTgt0.intensityMax && rowTgt0.intensityMax !== rowTgt0.intensityMin ? '–' + weightToPref(_calcWeightFromPct(basisRM, rowTgt0.intensityMax)) : '')
       : ''
     // The row for the set you're currently on is highlighted so it's visually obvious which set the
@@ -1146,8 +1162,11 @@ function renderStrengthTable(ex) {
     const topRow0 = ex.tableRows?.[0]
     const hasTopSet = !!ex.sets_json?.[0]?.isTopSet
     const topLogged = !!(hasTopSet && topRow0?.done)
+    // A percentage of the top set's WEIGHT needs no effort, so the effort message (case 2) never applies to it; its third case is a
+    // ticked top set with no usable weight (a bodyweight row).
     const basisNoteText = !hasTopSet ? 'No top set left in this workout — enter the weight yourself'
       : !topLogged ? 'Log the top set first'
+      : rowTgt0?.intensityBasis === 'topSetWeight' ? "Can't work out a weight from this set"
       : _effortOrNull(topRow0.effort) === null
         ? `Enter the top set's ${ex.sets_json[0].effortType === 'rir' ? 'RIR' : 'RPE'} (0–10), then tick it again`
         : "Can't estimate from this set"
@@ -2653,6 +2672,7 @@ async function _confirmRunnerExerciseFromModal(mode) {
     // permanently on a cardio swap, which never calls renderStrengthTable at all. _saveRunnerDraft
     // persisted it too, so a rowing machine kept a barbell e1RM across a resume.
     delete ex._liveE1RM
+    delete ex._liveTopWeight
     ex.oneRM = oneRM
     // targetSets above is cleanSets.length, always 1 for an interval block — _initIntervalPhases
     // overwrites it with the real work-round count, matching how the initial session-load path

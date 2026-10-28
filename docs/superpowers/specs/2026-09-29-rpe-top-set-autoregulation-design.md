@@ -156,7 +156,7 @@ and lose the flag — which is precisely how the cardio targets died."*
 | Field | Values | Meaning |
 |---|---|---|
 | `isTopSet` | boolean | This row is the exercise's top set. Only ever set on row 0. |
-| `intensityBasis` | `'stored'` \| `'topSet'` | What this row's `intensityMin/Max` is a percentage **of**. Defaults to `'stored'` = today's behaviour. |
+| `intensityBasis` | `'stored'` \| `'topSet'` \| `'topSetWeight'` | What this row's `intensityMin/Max` is a percentage **of**. Defaults to `'stored'` = today's behaviour. **`'topSetWeight'` was added 2026-10-28** (Jake: "a % of the weight of the top set, or a % of the e1RM"). `'topSet'` keeps its original meaning, today's *estimated 1RM* from the top set's weight, reps and RPE, so no saved template changes; the new value is the weight actually lifted on the top set and needs no effort. The editor labels them "Last saved 1RM" / "Today's estimated 1RM" / "Today's top set weight" and a new back-off set starts on `'topSetWeight'`. |
 
 Both gated on `metricType === 'weight_reps'`, the same way `amrap` and `bodyweight` already are — so
 switching an exercise to Cardio/Jump/Timed cannot leave a stale `isTopSet` behind for the runner to

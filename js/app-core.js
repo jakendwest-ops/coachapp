@@ -533,7 +533,7 @@ function weightInputAttrs(kg, shownOverride = null) {
   if (kg == null || kg === '') return 'value=""'
   const shown = shownOverride != null ? shownOverride : weightToPref(kg)
   if (shown === '') return 'value=""'
-  return `value="${shown}" data-shown="${shown}" data-kg="${kg}"`
+  return `value="${shown}" data-shown="${shown}" data-kg="${escapeHtml(String(kg))}"`
 }
 // Full display string with unit suffix, for read-only contexts. `spaced` matches each call site's
 // existing convention (some sites render "100kg", others "100 kg") — not standardized here, only the
@@ -777,6 +777,27 @@ function escapeAttr(str) {
 // once the weight fix shipped and Jake tried 0 on a Depth Jump instead. Moved here from app-runner.js
 // 2026-10-01 so the builder (app-workouts) and the runner share ONE definition instead of each growing its own.
 const _hasNumVal = w => w != null && w !== ''
+
+// What a set's intensity percentage (sets_json[].intensityMin/Max) is a percentage OF, stored as `intensityBasis`:
+//   'stored'        the client's last saved 1RM (client_1rms). Every template saved before 2026-10-28, and the default.
+//   'topSet'        TODAY's estimated 1RM, worked out from the top set's weight, reps and effort. The name predates the option below and is
+//                   kept so no saved template changes meaning; the screens call it "Today's estimated 1RM".
+//   'topSetWeight'  the weight actually LIFTED on today's top set (added 2026-10-28, Jake: "% of the actual weight of the top set, or a %
+//                   of the weight of the e1rm").
+// The last two resolve against what was lifted TODAY, so they need no stored 1RM and are never rewritten by the weekly percentage wave.
+// ONE definition: the builder, the runner and the programme code each used to compare against 'topSet' on their own.
+function _isTopSetBasis(b) { return b === 'topSet' || b === 'topSetWeight' }
+// Only the three known values survive a save; anything else (a hand-edited sets_json) is the stored-1RM default it always meant.
+function _intensityBasisOrDefault(b) { return _isTopSetBasis(b) ? b : 'stored' }
+// The short label for a set's percentage in a summary line ("70% of e1RM") and the long label for the builder's dropdown.
+function _intensityBasisShort(b) { return b === 'topSetWeight' ? '% of top set' : b === 'topSet' ? '% of e1RM' : '% 1RM' }
+function _intensityBasisLabel(b) { return b === 'topSetWeight' ? "Today's top set weight" : b === 'topSet' ? "Today's estimated 1RM" : 'Last saved 1RM' }
+// One plain sentence per basis, shown under the builder's dropdown so the choice explains itself.
+function _intensityBasisHelp(b) {
+  return b === 'topSetWeight' ? 'The weight you lift on set 1.'
+    : b === 'topSet' ? "Worked out from set 1's weight, reps and RPE."
+    : "The 1RM saved on the client's profile."
+}
 
 // A PRESCRIBED effort as text: "8", "7–9", "0", "0–2", or null when neither end is set. The ONE formatter for the
 // builder's set summary, the jump summary and the runner's target bar — they each had their own truthy test

@@ -16,6 +16,12 @@
 // does not reopen the "two clicks to add a set" problem this file's other tests guard — those bottom
 // buttons, and the "+ Add new set" / "Copy previous set" split, are untouched.
 //
+// 2026-10-28 builder — two changes that touch this file. (1) Jake: the "↑" "only makes sense to me because I know what it
+// means". The per-row button is now the labelled text "Same as set N" (still `copyPrevTsSet`). (2) The editor opens on a
+// GROUPED view for sets that match ("3 sets" + one row of fields), so the per-set cards these tests exercise now sit behind
+// "Customise each set"; MOUNT turns that view on the way the link does (`window._tsView`). The bottom "Copy previous set" and
+// "+ Add new set" buttons and what they do are unchanged.
+//
 // These drive the editor through the DOM rather than through the set objects, because the whole
 // point is what the person tapping actually gets — and because the set-object keys differ per metric
 // type, so asserting on them would test the wrong layer.
@@ -31,6 +37,7 @@ const MOUNT = `
     return e
   }
   mk('att-type', 'select'); mk('att-sets-container', 'div'); mk('att-metric-pills', 'div')
+  window._tsView = { custom: true }
 `
 
 test.describe('Set editor: one tap to repeat a set (2026-09-06)', () => {
@@ -41,10 +48,10 @@ test.describe('Set editor: one tap to repeat a set (2026-09-06)', () => {
       window._templateSets = [{ effortType: 'rpe' }, { effortType: 'rpe' }, { effortType: 'rpe' }]
       renderTemplateSets('att-sets-container', 'weight_reps')
       return {
-        // The 2026-09-06 pill read "Copy set N" as its own VISIBLE button label. Today's
-        // replacement (copyPrevTsSet, tested below) is an unlabelled "↑" icon beside "Set N" —
-        // its aria-label/title carry "Copy set N" for a screen reader/tooltip, which is why this
-        // checks rendered textContent (what a person tapping actually sees), not raw innerHTML.
+        // The 2026-09-06 pill read "Copy set N" in the AMRAP/BW row. Today's replacement
+        // (copyPrevTsSet, tested below) sits beside "Set N" and reads "Same as set N-1" (2026-10-28; it was an
+        // unlabelled "↑" before). Its aria-label carries "Copy set N into set M" for a screen reader, which is why
+        // this checks rendered textContent (what a person tapping actually sees), not raw innerHTML.
         oldPillText: [...document.querySelectorAll('#att-sets-container button')].some(b => /Copy set \\d/.test(b.textContent)),
         fnGone: typeof copyPrevTemplateSet === 'undefined'
       }
@@ -68,12 +75,14 @@ test.describe('Set editor: one tap to repeat a set (2026-09-06)', () => {
       const set1HasNoCopyBtn = !document.querySelector('[onclick^="copyPrevTsSet(0,"]')
       const copyBtn = document.querySelector('[onclick^="copyPrevTsSet(1,"]')
       if (!copyBtn) return { built: true, set1HasNoCopyBtn, copyBtn: false }
+      const copyLabel = copyBtn.textContent.trim()
       copyBtn.click()
 
       return {
         built: true,
         set1HasNoCopyBtn,
         copyBtn: true,
+        copyLabel,
         weight1: document.getElementById('ts-weight-1')?.value ?? null,
         reps1: document.getElementById('ts-rmin-1')?.value ?? null,
         // the source row must survive the round trip
@@ -83,6 +92,7 @@ test.describe('Set editor: one tap to repeat a set (2026-09-06)', () => {
     expect(r.built, 'the editor must render its weight/reps inputs or this test asserts nothing').toBe(true)
     expect(r.set1HasNoCopyBtn, 'Set 1 has nothing above it, so it gets no copy button').toBe(true)
     expect(r.copyBtn, 'Set 2 must have a "copy set above" button').toBe(true)
+    expect(r.copyLabel, 'and it says what it does in words (Jake 2026-10-28: the bare "↑" only made sense to someone who already knew)').toBe('Same as set 1')
     expect(r.weight1, 'Set 2 now matches Set 1\'s weight').toBe('60')
     expect(r.reps1, 'Set 2 now matches Set 1\'s reps').toBe('8')
     expect(r.weight0, 'and the row it copied from is untouched').toBe('60')

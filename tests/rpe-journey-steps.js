@@ -24,7 +24,7 @@ function journeyTag(prefix, exSuffix = 'Bench') {
 }
 
 // From the page that lists templates: New template -> Add exercise -> pick it -> TOP SET, 3 reps @ RPE 8 ->
-// Copy previous set -> 8 reps at 70% of TODAY'S top set -> confirm -> Save. The headline workflow.
+// back-off set (made by choosing "Top set + back-offs") -> 8 reps at 70% of TODAY'S estimated 1RM -> confirm -> Save. The headline workflow.
 async function buildTopSetTemplate(page, { tplName, exName, shotPrefix }) {
   await page.getByRole('button', { name: '+ New template' }).click()
   await page.locator('#ct-name').fill(tplName)
@@ -40,10 +40,10 @@ async function buildTopSetTemplate(page, { tplName, exName, shotPrefix }) {
   await page.locator('#ts-rmin-0').fill('3')
   await page.locator('#ts-emin-0').fill('8')
   await expect(page.locator('#ts-topset-effort-warning'), 'an RPE is prescribed, so no warning').toBeHidden()
-  await page.locator('button:has-text("Copy previous set")').click()
+  // 2026-10-28 builder: choosing "Top set + back-offs" already makes the back-off set (no Copy previous set tap), and its
+  // "% of" dropdown + percentage are on screen (no "More options" fold to open).
   await expect(page.locator('#ts-rmin-1')).toBeVisible()
   await page.locator('#ts-rmin-1').fill('8')
-  await page.locator('details.ts-more:has(#ts-imin-1) > summary').click()
   await page.locator('#ts-basis-1').selectOption('topSet')
   await page.locator('#ts-imin-1').fill('70')
   if (shotPrefix) await shot(page, `${shotPrefix}-builder`)

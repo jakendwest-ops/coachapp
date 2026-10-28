@@ -373,7 +373,8 @@ function _fmtSetDetail(s, { isCardio = false, isInterval = false, includeRest = 
     // showing "70% 1RM" for it tells the coach the wrong thing about their own programme. Sibling
     // of _runnerTargetCols' label and of renderStrengthTable's basisRM (multi-agent review,
     // 2026-09-30 — the first fix taught one of the three and left these two behind).
-    const intensity = range(s.intensityMin, s.intensityMax, s.intensityBasis === 'topSet' ? '% of top set' : '% 1RM')
+    // 2026-10-28: 'topSet' is the ESTIMATED 1RM, so it reads "% of e1RM"; "% of top set" now means what it says (the weight lifted).
+    const intensity = range(s.intensityMin, s.intensityMax, _intensityBasisShort(s.intensityBasis))
     const effort = effortText(s) ?? (s.rpe ? 'RPE ' + s.rpe : null)
     parts = [repsPart, weight, intensity, effort, s.tempo ? `@${s.tempo}` : null]
   }
@@ -467,8 +468,8 @@ function _cleanTemplateSets(sets, derived, metricType) {
     isTopSet: isTop,
     // What intensityMin/Max is a percentage OF. 'stored' = the client's last saved 1RM, which is
     // every existing template's behaviour and therefore the default. 'topSet' = the e1RM this
-    // session's top set produced.
-    intensityBasis: metricType === 'weight_reps' && s.intensityBasis === 'topSet' ? 'topSet' : 'stored',
+    // session's top set produced; 'topSetWeight' = the weight lifted on it (see _isTopSetBasis).
+    intensityBasis: metricType === 'weight_reps' ? _intensityBasisOrDefault(s.intensityBasis) : 'stored',
     repsMin: s.repsMin || null, repsMax: s.repsMax || null,
     // Gated for the same reason as `amrap`/`bodyweight` above, one layer along: the builder HIDES
     // the Weight and Intensity cells on a top-set row ("Weight isn't prescribed — logged live"),
@@ -1586,6 +1587,8 @@ async function openTemplate(id, ctx = {}) {
     exercises: exercises.map(_toDraftRow),
     exercisesBaseline: exercises.map(_toDraftRow),
   }
+  window._tplReorder = false     // the page opens on the plain cards (the Reorder button turns the arrows on)
+  clearTimeout(window._tplUndoTimer); window._tplRemoved = null
 
   el.innerHTML = `
     <a class="back-btn" href="#" onclick="_templateGoBack();return false">
@@ -1608,7 +1611,7 @@ async function openTemplate(id, ctx = {}) {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${_quickPrefsIconHtml()}
-        <button class="btn-secondary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
+        <button class="btn-secondary" id="tpl-reorder-btn" style="display:none" onclick="_toggleTemplateReorder()">Reorder</button>
         ${currentProfile?.role === 'solo' && window._soloClientId
           ? `<button class="btn-primary" onclick="startWorkoutRunner('${window._soloClientId}','${id}')">▶ Start</button>`
           : _ctx.clientId
@@ -1645,59 +1648,103 @@ function _renderTemplateExerciseList() {
 
   const id = d.templateId
   const exercises = d.exercises
-  listHost.innerHTML = exercises.length === 0 ? `
+  const reorder = !!window._tplReorder && exercises.length > 1
+  const reorderBtn = document.getElementById('tpl-reorder-btn')
+  if (reorderBtn) { reorderBtn.style.display = exercises.length > 1 ? '' : 'none'; reorderBtn.textContent = reorder ? 'Done' : 'Reorder' }
+  listHost.innerHTML = (exercises.length === 0 ? `
     <div class="empty-state">
       <div class="empty-icon">➕</div>
       <div class="empty-title">No exercises yet</div>
       <div class="empty-text">Add exercises to build this template</div>
       <button class="btn-primary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
     </div>
-  ` : `<div class="list" id="tpl-ex-list">${exercises.map((ex, i) => {
-    const _mt = ex.metric_type || ex.exercise_type
-    const isCardio = _mt === 'cardio'
-    const isInterval = _mt === 'interval'
-    const meta = isCardio
-      ? [ex.sets ? `${ex.sets} sets` : null, 'Cardio'].filter(Boolean).join(' · ')
-      : [ex.sets ? `${ex.sets} sets` : null, ex.reps ? `${escapeHtml(String(ex.reps))} reps` : null, ex.weight_kg ? `${ex.weight_kg}kg` : null].filter(Boolean).join(' · ') || 'No defaults set'
-    return `
-    <div class="card" style="margin-bottom:0" data-draft-key="${ex._draftKey}" data-ex-name="${escapeHtml(ex.exercise_name)}">
-      <div class="card-body" style="padding:12px 16px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
-            <button data-move="-1" onclick="_stageReorderExercise('${ex._draftKey}',-1)" ${i===0?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===0?'var(--border)':'var(--text-muted)'};cursor:${i===0?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▲</button>
-            <button data-move="1" onclick="_stageReorderExercise('${ex._draftKey}',1)" ${i===exercises.length-1?'disabled':''} style="width:22px;height:20px;border-radius:4px;border:1px solid var(--border);background:transparent;color:${i===exercises.length-1?'var(--border)':'var(--text-muted)'};cursor:${i===exercises.length-1?'default':'pointer'};font-size:10px;display:flex;align-items:center;justify-content:center">▼</button>
-          </div>
-          <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);flex-shrink:0">${i + 1}</div>
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span style="font-weight:600;font-size:var(--text-lg, 14px)">${escapeHtml(ex.exercise_name)}</span>
-              ${isCardio ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
-              ${ex.superset_group ? `<span style="font-size:var(--text-sm, 11px);font-weight:700;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(245,158,11,.15);color:#d97706">SS: ${escapeHtml(ex.superset_group)}</span>` : ''}
-              ${ex.sets_json?.[0]?.bodyweight ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(16,185,129,.12);color:#059669">BW</span>` : ''}
-            </div>
-            ${ex.sets_json?.length ? (() => {
-              const rows = ex.sets_json.map((s, si) => {
-                const summary = _fmtSetDetail(s, { isCardio, isInterval, includeRest: true, markAmrap: false, isUnilateral: _mt === 'unilateral' })
-                const setLabel = s.amrap ? 'AMRAP:' : `Set ${si+1}:`
-                return summary && summary !== '—' ? `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted)"><span style="font-weight:600;color:var(--text-muted)">${setLabel}</span> ${escapeHtml(summary)}</div>` : null
-              }).filter(Boolean)
-              return rows.length ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:4px">${rows.join('')}</div>` : `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${meta}</div>`
-            })() : `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${meta}</div>`}
-            ${(() => {
-              if (!ex.notes) return ''
-              const m = ex.notes.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
-              if (m) return `<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px"><span style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(99,102,241,.1);color:var(--accent);display:inline-block">${escapeHtml(m[1])}</span>${m[2] ? `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-top:1px;font-style:italic">${escapeHtml(m[2])}</div>` : ''}</div>`
-              return `<div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--accent);margin-top:3px;font-style:italic">${escapeHtml(ex.notes)}</div>`
-            })()}
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <button class="btn-secondary" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="showEditTemplateExerciseModal('${ex._draftKey}','${id}')">Edit</button>
-          <button class="btn-danger" style="flex:1;font-size:var(--text-md, 12px);padding:8px" onclick="_stageRemoveExercise('${ex._draftKey}')">Remove</button>
-        </div>
-      </div>
-    </div>`
-  }).join('')}</div>`
+  ` : `<div class="list" id="tpl-ex-list">${exercises.map((ex, i) => _tplCardHtml(ex, i, exercises.length, id, reorder)).join('')}</div>
+    <button type="button" class="tpl-add" id="tpl-add-btn" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>`) + _tplUndoHtml()
+}
+
+// ─── THE WORKOUT PAGE'S EXERCISE CARDS (2026-10-28) ──────────────────────────────────────────────────────────────
+// Jake, 2026-10-28, with the prototype: "the exercise builder is looking much better". One SHORT summary per exercise (identical sets collapse to
+// "3 × 5–8 reps · RPE 8–9 · 2:00 rest", a top set reads "Top set · 4 reps · RPE 7" then the back-offs), the whole card is the Edit button, and
+// Remove lives in the editor with an Undo here afterwards. The 2026-09-28 layout (an Edit and a Remove button on every card, one line per set)
+// is gone. Pure helper first (tests-node/template-card-lines.test.mjs).
+function _tplExerciseLines(ex) {
+  const mt = ex.metric_type || ex.exercise_type
+  const isCardio = mt === 'cardio', isInterval = mt === 'interval'
+  const sets = (Array.isArray(ex.sets_json) ? ex.sets_json : []).filter(s => s && typeof s === 'object')
+  const meta = isCardio
+    ? [ex.sets ? `${ex.sets} sets` : null, 'Cardio'].filter(Boolean).join(' · ')
+    : [ex.sets ? `${ex.sets} sets` : null, ex.reps ? `${ex.reps} reps` : null, ex.weight_kg ? `${ex.weight_kg}kg` : null].filter(Boolean).join(' · ') || 'No defaults set'
+  if (!sets.length) return [meta]
+  const opts = { isCardio, isInterval, isUnilateral: mt === 'unilateral', includeRest: true }
+  const top = !!sets[0].isTopSet && !isCardio && !isInterval
+  const lines = []
+  if (top) {
+    const d = _fmtSetDetail(sets[0], { ...opts, includeRest: false })
+    lines.push('Top set' + (d && d !== '—' ? ' · ' + d : ''))
+  }
+  const groups = []
+  sets.slice(top ? 1 : 0).forEach(s => {
+    const detail = _fmtSetDetail(s, opts)
+    const g = groups[groups.length - 1]
+    if (g && g.detail === detail) g.n++; else groups.push({ detail, n: 1 })
+  })
+  groups.forEach((g, gi) => {
+    if (g.detail === '—') return          // an empty set is noise, as everywhere else
+    lines.push((top || gi > 0 ? 'then ' : '') + (g.n > 1 ? g.n + ' × ' : '') + g.detail)
+  })
+  return lines.length ? lines : [meta]
+}
+
+function _tplCardHtml(ex, i, n, id, reorder) {
+  const _mt = ex.metric_type || ex.exercise_type
+  const key = ex._draftKey
+  const name = escapeHtml(ex.exercise_name)
+  const chips = [
+    ex.sets_json?.[0]?.isTopSet && _mt !== 'cardio' && _mt !== 'interval' ? '<span class="tpl-chip">Top set</span>' : '',
+    _mt === 'cardio' ? '<span class="tpl-chip tpl-chip-cardio">Cardio</span>' : '',
+    ex.superset_group ? `<span class="tpl-chip tpl-chip-ss">SS: ${escapeHtml(ex.superset_group)}</span>` : '',
+    ex.sets_json?.[0]?.bodyweight ? '<span class="tpl-chip tpl-chip-bw">BW</span>' : ''
+  ].join('')
+  const lines = _tplExerciseLines(ex).map(l => `<span class="tpl-ex-line">${escapeHtml(l).replace(/^Top set/, '<b>Top set</b>')}</span>`).join('')
+  const notes = (() => {
+    if (!ex.notes) return ''
+    const m = ex.notes.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
+    if (m) return `<span class="tpl-ex-note"><span class="tpl-ex-tag">${escapeHtml(m[1])}</span>${m[2] ? `<em>${escapeHtml(m[2])}</em>` : ''}</span>`
+    return `<span class="tpl-ex-note"><em>${escapeHtml(ex.notes)}</em></span>`
+  })()
+  const lead = reorder
+    ? `<span class="tpl-ex-moves"><button type="button" data-move="-1" aria-label="Move ${name} up" ${i === 0 ? 'disabled' : ''} onclick="_stageReorderExercise('${key}',-1)">▲</button><button type="button" data-move="1" aria-label="Move ${name} down" ${i === n - 1 ? 'disabled' : ''} onclick="_stageReorderExercise('${key}',1)">▼</button></span>`
+    : `<span class="tpl-ex-badge" aria-hidden="true">${i + 1}</span>`
+  const text = `<span class="tpl-ex-text"><span class="tpl-ex-name">${name}${chips}</span>${lines}${notes}</span>`
+  return `<div class="card" style="margin-bottom:0" data-draft-key="${key}" data-ex-name="${name}">` + (reorder
+    ? `<div class="tpl-ex-main">${lead}${text}</div>`
+    : `<button type="button" class="tpl-ex-main" aria-label="Edit ${name}" onclick="showEditTemplateExerciseModal('${key}','${id}')">${lead}${text}<span class="tpl-ex-chev" aria-hidden="true">›</span></button>`) + '</div>'
+}
+
+function _toggleTemplateReorder() {
+  window._tplReorder = !window._tplReorder
+  _renderTemplateExerciseList()
+}
+
+// The Undo bar after a removal. The removal is only staged (nothing is written until Save workout), so undoing is putting the row back where it was.
+function _tplUndoHtml() {
+  const r = window._tplRemoved
+  return r ? `<div class="tpl-undo" role="status"><span>Removed ${escapeHtml(r.name)}</span><button type="button" id="tpl-undo-btn" onclick="_undoRemoveExercise()">Undo</button></div>` : ''
+}
+function _dismissRemovedExercise() {
+  window._tplRemoved = null
+  _renderTemplateExerciseList()
+}
+function _undoRemoveExercise() {
+  const r = window._tplRemoved, d = window._templateDraft
+  clearTimeout(window._tplUndoTimer)
+  window._tplRemoved = null
+  if (r && d) {
+    d.exercises.splice(Math.min(r.index, d.exercises.length), 0, r.row)
+    d.exercises.forEach((e, idx) => { e.order_index = idx })
+  }
+  _renderTemplateExerciseList()
+  _renderSaveWorkoutButton()
 }
 
 async function _templateGoBack() {
@@ -1876,6 +1923,10 @@ function flushTemplateSets(containerId) {
     { const jhEl = document.getElementById(`ts-jheight-${i}`); s.targetHeightCm = jhEl ? (jumpHeightFromPref(jhEl.value) ?? '') : s.targetHeightCm }
     s.targetDistanceM  = document.getElementById(`ts-jdist-${i}`)?.value   ?? s.targetDistanceM
   })
+  // The grouped set editor (2026-10-28) draws only the FIRST set of each group, so copy it onto the rest: with a top set the back-offs (set 2
+  // onwards) follow set 2, otherwise every set follows set 1. Per-set cards (the default for every other type) are untouched.
+  const host = document.getElementById(containerId)
+  if (host && host.dataset.tsView === 'uniform') _tsPropagate(window._templateSets, host.dataset.tsTop === '1')
 }
 
 function toggleTsSet(i, prop, containerId) {
@@ -1907,6 +1958,9 @@ function toggleTsSteady(containerId) {
 function setTsEffort(i, type, containerId) {
   flushTemplateSets(containerId)
   window._templateSets[i].effortType = type
+  // In the grouped view the scale belongs to the whole group: copy it on, or the sets differ and the editor falls back to per-set cards.
+  const host = document.getElementById(containerId)
+  if (host?.dataset.tsView === 'uniform') _tsPropagate(window._templateSets, host.dataset.tsTop === '1')
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
   renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
@@ -1917,7 +1971,7 @@ function setTsEffort(i, type, containerId) {
 // in every call site — never interpolate user text through it without escaping.
 // `id` is optional (4th arg) so a caller that needs a stable hook for a test/label-for can ask for
 // one without disturbing every existing call site, none of which pass it.
-const _togPill = (label, active, onclick, id) => `<button type="button"${id ? ` id="${id}"` : ''} onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
+const _togPill = (label, active, onclick, id) => `<button type="button"${id ? ` id="${id}"` : ''} aria-pressed="${!!active}" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
 
 // Unilateral is a metric_type, i.e. per EXERCISE, so unlike AMRAP its pill cannot live in a per-set
 // card — _deriveFromMetricType stamps every set from it uniformly, and a per-set unilateral flag
@@ -1948,9 +2002,266 @@ function _syncTopSetEffortWarning() {
   banner.style.display = present ? 'none' : ''
 }
 
+// ─── WORKOUT BUILDER: THE GROUPED SET EDITOR (2026-10-28) ─────────────────────────────────────────────────────
+// Jake, 2026-10-28, with a tappable prototype in hand: "the exercise builder is looking much better". The old editor gave every set its own
+// six-field card, so a four-set exercise was four screens of the same numbers. A weight-and-reps or unilateral exercise now opens as ONE
+// block for "all the sets" or, with a top set, one block for the top set and one for the back-offs; "Customise each set" opens the old per-set
+// cards for the exceptions (a drop set, an AMRAP last set). Every input keeps the id the per-set cards always had: the grouped view edits set 0
+// (straight sets) or sets 0 and 1 (top set + back-offs), and flushTemplateSets copies the group's first set onto the rest (_tsPropagate), so
+// the specs, the save path and sets_json are all unchanged. Pure helpers first (tests-node/set-editor-groups.test.mjs).
+
+// The fields the sets of one group share. AMRAP is per-set and never shared: a group with an AMRAP set is not uniform.
+const _TS_SHARED = ['repsMin', 'repsMax', 'weight', 'intensityMin', 'intensityMax', 'intensityBasis', 'restMin', 'restMax', 'effortType', 'effortMin', 'effortMax', 'tempo', 'countdown', 'bodyweight']
+// A field's value as the grouped view would compare it: an unset field and an empty one are the same, and the two defaults are spelled out.
+const _tsVal = (s, k) => {
+  const v = s?.[k]
+  if (k === 'effortType') return v || 'rpe'
+  if (k === 'intensityBasis') return _intensityBasisOrDefault(v)
+  return (v == null || v === false || v === '') ? '' : String(v)
+}
+// The sets one edit changes together: with a top set, every set after the first; otherwise all of them.
+function _tsGroupStart(topMode) { return topMode ? 1 : 0 }
+
+// True when the grouped view can show the group as ONE row without hiding a difference: every set of the group carries the same shared
+// fields, and only the LAST set may be AMRAP (the "3 × 8, then 1 × AMRAP" idiom has its own switch in the grouped view; an AMRAP set anywhere
+// else would be hidden by it). A top set cannot be AMRAP or bodyweight in the grouped view (neither switch is drawn on it).
+function _tsGroupUniform(sets, topMode) {
+  const list = Array.isArray(sets) ? sets : []
+  if (!list.length) return true
+  if (topMode && (list[0]?.amrap || list[0]?.bodyweight)) return false
+  const g = list.slice(_tsGroupStart(topMode))
+  if (!g.length) return true
+  return g.every((s, i) => (i === g.length - 1 || !s?.amrap) && _TS_SHARED.every(k => _tsVal(s, k) === _tsVal(g[0], k)))
+}
+
+// Copies the group's first set onto the rest of the group. Called by flushTemplateSets while the grouped view is on screen (only the first
+// set's inputs exist there), and by "Make every set the same". The LAST set keeps its own AMRAP flag (it has a switch); every other set is
+// never AMRAP here. Mutates and returns the array.
+function _tsPropagate(sets, topMode) {
+  const start = _tsGroupStart(topMode)
+  const src = sets?.[start]
+  if (!src) return sets
+  for (let i = start + 1; i < sets.length; i++) {
+    for (const k of _TS_SHARED) sets[i][k] = src[k]
+    if (i !== sets.length - 1) sets[i].amrap = false
+  }
+  return sets
+}
+
+// The one plain sentence under the "% of" dropdown that shows what each choice gives, with a top set the lifter can try numbers on.
+// Pure: returns the HTML. Every interpolated value is a number this function parsed and formatted itself (effortValue is the RAW stored string, so it is parseFloat'd, never echoed).
+function _tsExampleHtml({ basis, pct, topKg, reps, effortType, effortValue, storedKg = 120 }) {
+  const p = parseFloat(pct)
+  if (!(p > 0)) return 'Enter a percentage to see the weight it gives.'
+  const load = kg => { const w = parseFloat(_calcWeightFromPct(kg, p)); return w > 0 ? fmtWeight(w, { spaced: true }) : '—' }
+  const b = _intensityBasisOrDefault(basis)
+  if (b === 'topSetWeight') {
+    if (!(topKg > 0)) return 'Enter a top set weight to try it.'
+    return `Top set ${fmtWeight(topKg, { spaced: true })} → ${p}% = <b>${load(topKg)}</b>`
+  }
+  if (b === 'topSet') {
+    const e = _estimate1RM(topKg, reps, { effortType, effortValue })
+    if (!e) return "Needs the top set's reps (1–12) and weight to estimate a 1RM."
+    const eff = Number.isFinite(parseFloat(effortValue)) ? ` @ ${effortType === 'rir' ? 'RIR' : 'RPE'} ${parseFloat(effortValue)}` : ''
+    return `Top set ${fmtWeight(topKg, { spaced: true })} × ${parseInt(reps, 10)}${eff} → estimated 1RM ${fmtWeight(e, { spaced: true, decimals: 1 })} → ${p}% = <b>${load(e)}</b>`
+  }
+  return `A saved 1RM of ${fmtWeight(storedKg, { spaced: true })} → ${p}% = <b>${load(storedKg)}</b>`
+}
+
+function _tsTid(containerId) { return containerId === 'att-sets-container' ? 'att-type' : 'ett-type' }
+function _tsRerender(containerId) {
+  renderTemplateSets(containerId, document.getElementById(_tsTid(containerId))?.value || 'weight_reps')
+}
+
+// "Straight sets" / "Top set + back-offs": the two buttons that replace the old TOP SET pill (#ts-topset-0 is the second one).
+function tsSetStructure(mode, containerId) {
+  flushTemplateSets(containerId)
+  const sets = window._templateSets
+  const wantTop = mode === 'top'
+  if (!sets?.[0] || !!sets[0].isTopSet === wantTop) return
+  sets[0].isTopSet = wantTop
+  if (!wantTop) {
+    // The back-off bases this control set up itself ("% of the top set weight", no percentage typed) go back to the default, so straight ->
+    // top -> straight leaves an untouched template exactly as it was. A basis the coach chose, or any set carrying a percentage, stays.
+    for (let i = 1; i < sets.length; i++) {
+      if (sets[i].intensityBasis === 'topSetWeight' && !sets[i].intensityMin && !sets[i].intensityMax) sets[i].intensityBasis = 'stored'
+    }
+  }
+  if (wantTop) {
+    // The grouped top-set block has no bodyweight or AMRAP switch for set 1, so a flag carried over from straight sets would make the
+    // editor refuse the grouped view with a notice that "Make every set the same" cannot clear.
+    sets[0].bodyweight = false; sets[0].amrap = false
+    // A top set with nothing after it is not worth much: make sure there is at least one back-off set to point at it.
+    if (sets.length < 2) sets.push({ ...sets[0], isTopSet: false, weight: '', intensityMin: '', intensityMax: '', amrap: false })
+    // A back-off set that has no percentage yet is pointed at the weight lifted on the top set (the usual "drop 10%" idiom), not at a
+    // saved 1RM the client may not have. One that already carries a percentage is left exactly as the coach set it.
+    for (let i = 1; i < sets.length; i++) {
+      if (!_isTopSetBasis(sets[i].intensityBasis) && !sets[i].intensityMin && !sets[i].intensityMax) sets[i].intensityBasis = 'topSetWeight'
+    }
+  }
+  _tsRerender(containerId)
+}
+
+// The number-of-sets stepper. It changes the size of the group (a top set is not part of the back-off group), copying the last set of it.
+function tsStep(delta, containerId) {
+  flushTemplateSets(containerId)
+  const sets = window._templateSets
+  if (!sets?.length) return
+  const top = !!sets[0].isTopSet
+  const start = _tsGroupStart(top)
+  if (delta > 0) {
+    const last = sets[sets.length - 1]
+    sets.push(top && sets.length === 1
+      ? { ...last, isTopSet: false, weight: '', intensityMin: '', intensityMax: '', intensityBasis: 'topSetWeight', amrap: false }
+      // "Last set: as many reps as possible" belongs to the LAST set: the new copy takes the flag and the old last set gives it up, so the group
+      // stays one group (an AMRAP set anywhere else would send the editor back to per-set cards).
+      : (() => { const wasAmrap = !!last.amrap; last.amrap = false; return { ...last, isTopSet: false, amrap: wasAmrap } })())
+  } else if (sets.length > start + 1) {
+    sets.pop()
+  }
+  _tsRerender(containerId)
+}
+
+// "Customise each set" / "Set them all the same": the switch between the grouped view and the per-set cards.
+function tsShowEachSet(on, containerId) {
+  flushTemplateSets(containerId)
+  window._tsView = { custom: !!on }
+  _tsRerender(containerId)
+}
+
+// Makes every set of the group match the group's first set, explicitly (the one place the grouped view overwrites a difference, on a tap).
+function tsMakeSetsSame(containerId) {
+  flushTemplateSets(containerId)
+  const sets = window._templateSets
+  _tsPropagate(sets, !!sets?.[0]?.isTopSet)
+  window._tsView = { custom: false }
+  _tsRerender(containerId)
+}
+
+// The grouped view's AMRAP switch: the LAST set of the group is "as many reps as possible". Every other set keeps its own targets, so this
+// stays in the grouped view; an AMRAP set anywhere else needs "Customise each set" (and is then listed one by one).
+function tsToggleLastAmrap(containerId) {
+  flushTemplateSets(containerId)
+  const sets = window._templateSets
+  const top = !!sets?.[0]?.isTopSet
+  if (!sets?.length || sets.length <= _tsGroupStart(top)) return
+  const last = sets[sets.length - 1]
+  last.amrap = !last.amrap
+  _tsRerender(containerId)
+}
+
+// The grouped view's bodyweight switch (straight sets only): one switch for every set. Per-set BW is still on each card under "Customise".
+function tsToggleAllBodyweight(containerId) {
+  flushTemplateSets(containerId)
+  const sets = window._templateSets
+  const next = !sets?.[0]?.bodyweight
+  ;(sets || []).forEach(s => { s.bodyweight = next })
+  _tsRerender(containerId)
+}
+
+// The "% of" dropdown changed in the grouped view: no re-render (it would drop the focus the lifter is typing in), just the sentence under it
+// and the worked example. flushTemplateSets stores the value itself at the next action or save.
+function tsBasisChanged() {
+  const b = document.getElementById('ts-basis-1')?.value
+  const help = document.getElementById('ts-basis-help')
+  if (help && b) help.textContent = _intensityBasisHelp(b)
+  tsExampleRefresh()
+}
+
+// Re-draws only the worked example from what is typed now (the example's own weight box, set 1's reps and effort, set 2's percentage and basis).
+function tsExampleRefresh() {
+  const calc = document.getElementById('ts-example-calc')
+  if (!calc) return
+  const kgEl = document.getElementById('ts-example-kg')
+  const topKg = weightFromInput(kgEl) || 0   // weightFromInput, not weightFromPref: the box is stamped (see _tsGroupedHtml), so an untouched box returns its kg verbatim
+  window._tsExampleKg = topKg
+  calc.innerHTML = _tsExampleHtml({
+    basis: document.getElementById('ts-basis-1')?.value,
+    pct: document.getElementById('ts-imin-1')?.value,
+    topKg,
+    reps: document.getElementById('ts-rmin-0')?.value,
+    effortType: window._templateSets?.[0]?.effortType || 'rpe',
+    effortValue: document.getElementById('ts-emin-0')?.value
+  })
+}
+
+// The two-button structure control, drawn above both views of a weight-and-reps exercise (the top set exists only for that type).
+function _tsStructureHtml(containerId, topMode) {
+  return `<div class="wb-blk">
+    <h4>How are the sets set up?</h4>
+    <div class="wb-seg" role="group" aria-label="Set structure">
+      <button type="button" id="ts-straight-0" aria-pressed="${!topMode}" onclick="tsSetStructure('straight','${containerId}')">Straight sets</button>
+      <button type="button" id="ts-topset-0" aria-pressed="${topMode}" onclick="tsSetStructure('top','${containerId}')">Top set + back-offs</button>
+    </div>
+    <p class="wb-hint">${topMode
+      ? 'Set 1 is a heavy top set at an effort you choose. The sets after it are worked out from what you lifted.'
+      : 'Every set has the same targets, unless you customise them below.'}</p>
+  </div>`
+}
+
+// The grouped view's blocks. `ui` carries the little field builders renderTemplateSets already owns (mini/gmini/cell/more/dash), so this
+// function and the per-set cards cannot drift apart. Inline handlers are literal names (checks.sh verifies each against the declared functions).
+function _tsGroupedHtml({ containerId, topMode, sets, ui }) {
+  const { gmini, cell, more, dash } = ui
+  const esc = escapeHtml
+  const val = v => (v == null || v === '' ? '' : ` value="${esc(String(v))}"`)
+  const eff = (i, type, label) => `<button type="button" class="wb-eff" aria-pressed="${(sets[i].effortType || 'rpe') === type}" onclick="setTsEffort(${i},'${type}','${containerId}')">${label}</button>`
+  const repsCell = (i, sync = '') => cell('Reps', gmini(`ts-rmin-${i}`, 'type="number" placeholder="0"' + sync + val(sets[i].repsMin)) + dash + gmini(`ts-rmax-${i}`, 'type="number" placeholder="0"' + val(sets[i].repsMax)))
+  const restCell = i => cell('Rest between sets',
+    gmini(`ts-restmin-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${esc(String(sets[i].restMin || '0:00'))}"`) + dash +
+    gmini(`ts-restmax-${i}`, `type="text" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)" value="${esc(String(sets[i].restMax || '0:00'))}"`))
+  const effortCell = i => {
+    const sync = i === 0 ? ' oninput="_syncTopSetEffortWarning();tsExampleRefresh()"' : ''
+    return `<div class="ts-cell effort"><div class="ts-toggle2" role="group" aria-label="Effort scale">${eff(i, 'rpe', 'RPE')}${eff(i, 'rir', 'RIR')}</div><div class="ts-cell-inputs">` +
+      gmini(`ts-emin-${i}`, 'type="number" step="0.5" min="0" max="10" placeholder="Min"' + sync + (_hasNumVal(sets[i].effortMin) ? ` value="${esc(String(sets[i].effortMin))}"` : '')) + dash +
+      gmini(`ts-emax-${i}`, 'type="number" step="0.5" min="0" max="10" placeholder="Max"' + sync + (_hasNumVal(sets[i].effortMax) ? ` value="${esc(String(sets[i].effortMax))}"` : '')) + `</div></div>`
+  }
+  const tempoCd = i => `<div class="ts-grid">${cell('Tempo', gmini(`ts-tempo-${i}`, 'type="text" maxlength="4" placeholder="e.g. 3011"' + val(sets[i].tempo)))}${cell('Countdown (s)', gmini(`ts-cd-${i}`, 'type="number" placeholder="—"' + val(sets[i].countdown)))}</div>`
+  const stepper = (label) => {
+    const n = sets.length - _tsGroupStart(topMode)
+    return `<div class="ts-cell"><label>${label}</label><div class="wb-step"><button type="button" id="ts-step-dec" aria-label="One fewer set" onclick="tsStep(-1,'${containerId}')">−</button><output id="ts-step-n" aria-live="polite">${n}</output><button type="button" id="ts-step-inc" aria-label="One more set" onclick="tsStep(1,'${containerId}')">+</button></div></div>`
+  }
+  const fixedWeight = i => cell(`Weight (${window._unitPrefs.weight})`, gmini(`ts-weight-${i}`, 'type="text" placeholder="—"' + (sets[i].weight ? ` ${weightInputAttrs(sets[i].weight)}` : '')))
+
+  if (topMode) {
+    const b = _intensityBasisOrDefault(sets[1]?.intensityBasis)
+    const topKg = window._tsExampleKg > 0 ? window._tsExampleKg : 100
+    const exampleHtml = sets[1] ? `<div class="wb-example"><div class="wb-try"><label for="ts-example-kg">Try it: your top set was</label><input id="ts-example-kg" class="field-input" inputmode="decimal" aria-label="Example top set weight" ${weightInputAttrs(topKg)} oninput="tsExampleRefresh()"> ${window._unitPrefs.weight}</div><div class="wb-calc" id="ts-example-calc">${_tsExampleHtml({ basis: b, pct: sets[1].intensityMin, topKg, reps: sets[0].repsMin, effortType: sets[0].effortType || 'rpe', effortValue: sets[0].effortMin })}</div><div class="wb-fine">Rounded down to the nearest 2.5 kg, as in the runner.</div></div>` : ''
+    return `<div class="wb-blk" id="ts-block-top">
+        <h4>Top set <em>set 1</em></h4>
+        <div class="ts-grid">${repsCell(0, ' oninput="tsExampleRefresh()"')}${restCell(0)}${effortCell(0)}</div>
+        <p class="wb-hint">You choose the weight on the day. The runner works out your 1RM from it, with the reps and RPE you log.</p>
+        ${more('Tempo and countdown', !!(sets[0].tempo || sets[0].countdown), tempoCd(0))}
+      </div>
+      <div class="wb-blk" id="ts-block-back">
+        <h4>Back-off sets <em>${sets.length > 1 ? (sets.length > 2 ? `sets 2–${sets.length}` : 'set 2') : 'none yet'}</em></h4>
+        <div class="ts-grid">${stepper('Number of sets')}${repsCell(1)}${restCell(1)}${effortCell(1)}</div>
+        <div class="wb-load">
+          ${cell('Percentage', gmini('ts-imin-1', 'type="number" placeholder="Min" oninput="tsExampleRefresh()"' + val(sets[1].intensityMin)) + dash + gmini('ts-imax-1', 'type="number" placeholder="Max"' + val(sets[1].intensityMax)))}
+          <div class="ts-cell"><label for="ts-basis-1">Of</label><div class="ts-cell-inputs"><select id="ts-basis-1" class="field-input" onchange="tsBasisChanged()">${['topSetWeight', 'topSet', 'stored'].map(x => `<option value="${x}"${b === x ? ' selected' : ''}>${_intensityBasisLabel(x)}</option>`).join('')}</select></div></div>
+          <p class="wb-hint" id="ts-basis-help">${_intensityBasisHelp(b)}</p>
+        </div>
+        ${exampleHtml}
+        <div class="wb-bw"><span>Last back-off set: as many reps as possible</span>${_togPill('AMRAP', !!sets[sets.length - 1].amrap, `tsToggleLastAmrap('${containerId}')`, 'ts-amrap-last')}</div>
+        ${more('Fixed weight, tempo and countdown', !!(sets[1].weight || sets[1].tempo || sets[1].countdown), `<div class="ts-grid">${fixedWeight(1)}</div>` + tempoCd(1))}
+      </div>`
+  }
+  return `<div class="wb-blk" id="ts-block-all">
+      <h4>Sets <em>all the same</em></h4>
+      <div class="ts-grid">${stepper('Number of sets')}${repsCell(0)}${sets[0].bodyweight ? '' : fixedWeight(0)}${restCell(0)}${effortCell(0)}</div>
+      <div class="wb-bw"><span>Bodyweight exercise</span>${_togPill('BW', !!sets[0].bodyweight, `tsToggleAllBodyweight('${containerId}')`, 'ts-bw-all')}</div>
+      <div class="wb-bw"><span>Last set: as many reps as possible</span>${_togPill('AMRAP', !!sets[sets.length - 1].amrap, `tsToggleLastAmrap('${containerId}')`, 'ts-amrap-last')}</div>
+      ${more('% of 1RM, tempo and countdown', !!(sets[0].intensityMin || sets[0].intensityMax || sets[0].tempo || sets[0].countdown), `<div class="ts-grid">${cell('Intensity (%1RM)', gmini('ts-imin-0', 'type="number" placeholder="Min"' + val(sets[0].intensityMin)) + dash + gmini('ts-imax-0', 'type="number" placeholder="Max"' + val(sets[0].intensityMax)))}</div>` + tempoCd(0))}
+    </div>`
+}
+
 function renderTemplateSets(containerId, type) {
   const container = document.getElementById(containerId)
   if (!container) return
+  // Per-set cards unless the grouped view below says otherwise: flushTemplateSets copies a group's first set onto the rest ONLY while
+  // the grouped view is on screen, so a stale 'uniform' left by a previous type (an interval block has no grouped view) must never survive.
+  container.dataset.tsView = 'custom'
+  container.dataset.tsTop = '0'
   // type is a metric_type value (weight_reps/unilateral/timed_hold/cardio/jump_height/jump_distance).
   // Any unrecognised/legacy value (e.g. old 'strength' rows not yet resaved) falls into the
   // weight_reps/unilateral bucket below, matching the picker's own default-selected logic.
@@ -2105,8 +2416,8 @@ function renderTemplateSets(containerId, type) {
   // at it — a training day's loads changing with no visible cause is the same silent-loss shape as
   // the rest of this file's allowlist guards, just at the UI layer instead of the save layer. Warn
   // instead, and leave the orphaned rows exactly as the coach left them until they act on it.
-  const topSetWarning = (!topSetActive && window._templateSets.some(s => s.intensityBasis === 'topSet'))
-    ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warning-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set ${window._templateSets.map((s, n) => s.intensityBasis === 'topSet' ? n + 1 : null).filter(Boolean).join(', ')} still uses "Today's top set", but set 1 is no longer a top set. Those sets have no percentage to work from until you switch set 1 back on or change them to "Last saved 1RM".</div>`
+  const topSetWarning = (!topSetActive && window._templateSets.some(s => _isTopSetBasis(s.intensityBasis)))
+    ? `<div style="padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warning-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set ${window._templateSets.map((s, n) => _isTopSetBasis(s.intensityBasis) ? n + 1 : null).filter(Boolean).join(', ')} still works from today's top set, but set 1 is no longer a top set. Those sets have no percentage to work from until you switch set 1 back on or change them to "Last saved 1RM".</div>`
     : ''
 
   // The banner is rendered whenever a top set exists and merely HIDDEN once an effort is present, so
@@ -2129,32 +2440,69 @@ function renderTemplateSets(containerId, type) {
   const ts0 = window._templateSets?.[0]
   const tsEffortSet = [ts0?.effortMin, ts0?.effortMax].some(v => v !== null && v !== undefined && v !== '')
   const topSetNoEffort = topSetActive
-    ? `<div id="ts-topset-effort-warning" style="${tsEffortSet ? 'display:none;' : ''}padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warning-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set 1 is a top set but has no ${(ts0?.effortType === 'rir') ? 'RIR' : 'RPE'} prescribed. Without one the runner has no effort to record, so it cannot estimate a 1RM and any set using "Today's top set" will have no target.</div>`
+    ? `<div id="ts-topset-effort-warning" style="${tsEffortSet ? 'display:none;' : ''}padding:8px 10px;margin-bottom:8px;border-radius:var(--radius-sm, 8px);background:var(--warning-light, rgba(234,179,8,.12));color:var(--text);font-size:var(--text-sm, 11px)">Set 1 is a top set but has no ${(ts0?.effortType === 'rir') ? 'RIR' : 'RPE'} prescribed. Without one the runner has no effort to record, so it cannot estimate a 1RM and any set using "Today's estimated 1RM" will have no target.</div>`
     : ''
 
-  container.innerHTML = topSetWarning + topSetNoEffort + (window._templateSets || []).map((s, i) => {
+  // WEIGHT-AND-REPS AND UNILATERAL (2026-10-28): the grouped view, or the per-set cards when the coach asks for them or when the sets already
+  // differ (an existing template with a drop set must show the difference, never hide it). `container.dataset.tsView` tells
+  // flushTemplateSets which inputs exist, so it knows whether to copy the group's first set onto the rest.
+  const strength = !isCardio && !isTimedHold && !isJump
+  let headHtml = topSetWarning + topSetNoEffort
+  if (strength) {
+    const sets0 = window._templateSets || []
+    const uniform = _tsGroupUniform(sets0, topSetActive)
+    // An empty group (a lone top set with no back-off yet, or no sets at all) counts as uniform but has nothing to draw, and the grouped view
+    // reads the group's first set: that state uses the per-set cards, where "+ Add new set" works.
+    const hasGroup = sets0.length > _tsGroupStart(topSetActive)
+    const custom = !!window._tsView?.custom || !uniform || !hasGroup
+    container.dataset.tsTop = topSetActive ? '1' : '0'
+    // The structure control only exists for weight_reps: the top set is not offered on a unilateral exercise.
+    headHtml = (type === 'weight_reps' ? _tsStructureHtml(containerId, topSetActive) : '') + headHtml
+    if (!custom) {
+      const ui = { mini, gmini, cell, more, dash }
+      // Drawn BEFORE the flag is written: a throw while drawing must not leave the container saying "grouped" over per-set cards
+      // (flushTemplateSets would then copy set 1 over the rest).
+      const groupedHtml = headHtml + _tsGroupedHtml({ containerId, topMode: topSetActive, sets: sets0, ui }) +
+        `<button type="button" class="wb-link" id="ts-show-each" onclick="tsShowEachSet(true,'${containerId}')">Customise each set (${sets0.length})</button>`
+      container.dataset.tsView = 'uniform'
+      container.innerHTML = groupedHtml
+      return
+    }
+    if (!uniform) {
+      headHtml += `<div class="wb-notice">These sets have different targets, so they are listed one by one.
+        <button type="button" class="wb-same" id="ts-make-same" onclick="tsMakeSetsSame('${containerId}')">Make every ${topSetActive ? 'back-off ' : ''}set the same as set ${_tsGroupStart(topSetActive) + 1}</button></div>`
+    }
+  }
+  container.innerHTML = headHtml + (window._templateSets || []).map((s, i) => {
     const et = s.effortType || 'rpe'
     const tog = _togPill
     const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'var(--border)'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'var(--text-muted)'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
+    // A top-set basis makes this row's percentage a percentage OF something the lifter did today, so the dropdown sits with it, full width
+    // ("Today's top set weight" does not fit half a row), and the field is called "Percentage" instead of "Intensity (%1RM)".
+    //
+    // Only offered on a row that ISN'T the top set itself, and only once row 0 actually IS one — a top set has no %1RM of anything to speak of,
+    // and this control means nothing until there is a top set for it to point at.
+    const showBasis = i > 0 && (topSetActive || _isTopSetBasis(s.intensityBasis))
+    // Intensity (%1RM) has nothing to be a percentage OF on the top set's own row -- its whole point is to PRODUCE today's e1RM, not consume
+    // one. Omitted only for that row; every other row keeps it exactly as before.
+    const pctCell = (i === 0 && topSetActive) ? '' : cell(showBasis ? 'Percentage' : 'Intensity (%1RM)', gmini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${escapeHtml(String(s.intensityMin))}"`:'')) + dash + gmini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${escapeHtml(String(s.intensityMax))}"`:'')))
+    const basisCell = showBasis ? cell('Of', `<select id="ts-basis-${i}" class="field-input" style="font-size:var(--text-base, 13px)" onchange="flushTemplateSets('${containerId}');window._templateSets[${i}].intensityBasis=this.value">
+      ${['topSetWeight', 'topSet', 'stored'].map(b => `<option value="${b}"${_intensityBasisOrDefault(s.intensityBasis) === b ? ' selected' : ''}>${_intensityBasisLabel(b)}</option>`).join('')}
+    </select>`) : ''
     return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:6px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:var(--text-md, 12px);font-weight:700;color:var(--text)">Set ${i+1}</span>
-          ${i > 0 ? `<button type="button" onclick="copyPrevTsSet(${i},'${containerId}')" aria-label="Copy set ${i} into set ${i+1}" title="Copy set ${i}" style="width:22px;height:22px;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--text-sm, 11px);line-height:1">↑</button>` : ''}
+          ${i > 0 ? `<button type="button" class="wb-same" onclick="copyPrevTsSet(${i},'${containerId}')" aria-label="Same as set ${i} (copy set ${i} into set ${i+1})">Same as set ${i}</button>` : ''}
         </div>
         <div style="display:flex;gap:4px">
           ${showToggleRow ? `
             ${showAmrap ? tog('AMRAP', s.amrap, `toggleTsSet(${i},'amrap','${containerId}')`) : ''}
             ${showBodyweight ? tog('BW', s.bodyweight, `toggleTsSet(${i},'bodyweight','${containerId}')`) : ''}
           ` : ''}
-          ${/* Controller ruling overriding the plan's original `showAmrap && i === 0` gate: showAmrap
-               is true for weight_reps OR unilateral, but the _cleanTemplateSets allowlist entry above
-               gates isTopSet on weight_reps ONLY. Gating the pill on showAmrap would let it render,
-               toggle and save without error on a unilateral exercise, then lose the flag on save —
-               the exact silent-drop shape this task exists to guard against. Gate on the resolved
-               metric type directly so the render gate and the allowlist gate match exactly. */''}
-          ${type === 'weight_reps' && i === 0 ? tog('TOP SET', s.isTopSet, `toggleTsSet(${i},'isTopSet','${containerId}')`, `ts-topset-${i}`) : ''}
-          <button type="button" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--legacy-text-15, 15px);line-height:1">×</button>
+          ${/* The TOP SET pill that sat here moved to the structure control above both views (_tsStructureHtml, 2026-10-28): same gate (the top set
+               exists on weight_reps ONLY, matching the _cleanTemplateSets allowlist), same id (#ts-topset-0). Rendering it here too would duplicate that id. */''}
+          <button type="button" aria-label="Remove set ${i+1}" onclick="flushTemplateSets('${containerId}');window._templateSets.splice(${i},1);renderTemplateSets('${containerId}',document.getElementById('${tid}')?.value||'weight_reps')" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:var(--legacy-text-15, 15px);line-height:1">×</button>
         </div>
       </div>
       ${isCardio ? `
@@ -2221,17 +2569,7 @@ function renderTemplateSets(containerId, type) {
         ${(i === 0 && topSetActive) ? `<div style="padding:8px 0;font-size:var(--text-sm, 11px);color:var(--text-muted)">Weight isn't prescribed — logged live in the runner, then used to calculate this session's e1RM for the sets below.</div>` : ''}
         ${more('+ More targets', !!(s.intensityMin || s.intensityMax || s.tempo || s.countdown), `
           <div class="ts-grid">
-            ${/* Intensity (%1RM) has nothing to be a percentage OF on the top set's own row -- its
-                 whole point is to PRODUCE today's e1RM, not consume one. Omitted only for that row;
-                 every other row keeps it exactly as before. */''}
-            ${(i === 0 && topSetActive) ? '' : cell('Intensity (%1RM)', gmini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${escapeHtml(String(s.intensityMin))}"`:'')) + dash + gmini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${escapeHtml(String(s.intensityMax))}"`:'')))}
-            ${/* Only offered on a row that ISN'T the top set itself, and only once row 0 actually IS
-                 one — a top set has no %1RM of anything to speak of, and this control means nothing
-                 until there is a top set for it to point at. */''}
-            ${i > 0 && topSetActive ? cell('% of', `<select id="ts-basis-${i}" class="field-input" style="font-size:var(--text-base, 13px)" onchange="flushTemplateSets('${containerId}');window._templateSets[${i}].intensityBasis=this.value">
-              <option value="stored"${s.intensityBasis !== 'topSet' ? ' selected' : ''}>Last saved 1RM</option>
-              <option value="topSet"${s.intensityBasis === 'topSet' ? ' selected' : ''}>Today's top set</option>
-            </select>`) : ''}
+            ${showBasis ? `<div class="wb-load" style="grid-column:1/-1">${pctCell}${basisCell}</div>` : pctCell}
             ${cell('Tempo', gmini(`ts-tempo-${i}`,'type="text" maxlength="4" placeholder="e.g. 3011"'+(s.tempo?` value="${escapeHtml(String(s.tempo))}"`:'')))}
             ${cell('Countdown (s)', gmini(`ts-cd-${i}`,'type="number" placeholder="—"'+(s.countdown?` value="${escapeHtml(String(s.countdown))}"`:'')))}
           </div>
@@ -2242,7 +2580,8 @@ function renderTemplateSets(containerId, type) {
   <div style="display:flex;gap:8px;margin-top:8px;justify-content:center">
     ${_addSetBtn(containerId, tid, 'copy', 'Copy previous set')}
     ${_addSetBtn(containerId, tid, 'blank', '+ Add new set')}
-  </div>`
+  </div>
+  ${strength && _tsGroupUniform(window._templateSets, topSetActive) && window._templateSets.length > _tsGroupStart(topSetActive) ? `<button type="button" class="wb-link" id="ts-hide-each" onclick="tsShowEachSet(false,'${containerId}')">Set them all the same instead</button>` : ''}`
 }
 
 // Two buttons, not one, and none on the rows.
@@ -2425,6 +2764,7 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
     </div>
   `
   mountModal(overlay)
+  window._tsView = { custom: false }   // every editor opens on the grouped view; "Customise each set" switches it for this edit only
   window._templateSets = existingSets && existingSets.length ? existingSets.map(s => ({...s})) : [{ effortType: 'rpe' }]
   // Same normalization as the Type <select>'s own 'interval' option above (:1697) — a legacy
   // metric_type='cardio' row must render the interval block editor it's now labeled as, not the old
@@ -2857,10 +3197,19 @@ function _stageEditExercise(draftKey) {
 // written until Save.
 function _stageRemoveExercise(draftKey) {
   const d = window._templateDraft
+  // Remembered for the page's Undo bar (_tplUndoHtml): the row and where it was, for 8 seconds.
+  const at = d.exercises.findIndex(e => e._draftKey === draftKey)
+  if (at !== -1) {
+    clearTimeout(window._tplUndoTimer)
+    window._tplRemoved = { row: d.exercises[at], index: at, name: d.exercises[at].exercise_name }
+    window._tplUndoTimer = setTimeout(_dismissRemovedExercise, 8000)
+  }
   d.exercises = d.exercises.filter(e => e._draftKey !== draftKey)
   d.exercises.forEach((e, i) => { e.order_index = i })
   _renderTemplateExerciseList()
   _renderSaveWorkoutButton()
+  // The Undo bar sits after the list, which on a long workout is below the fold: bring it into view (clear of the bottom nav, see .tpl-undo).
+  document.querySelector('.tpl-undo')?.scrollIntoView({ block: 'nearest' })
 }
 
 function _renderSaveWorkoutButton() {
@@ -2874,6 +3223,8 @@ function _renderSaveWorkoutButton() {
 async function saveTemplateDraft() {
   const d = window._templateDraft
   if (!d || !_templateDraftIsDirty()) return 'ok'
+  // A removal still on offer must not outlive the Save that is about to make it final: Undo would put back a row whose id is already deleted.
+  clearTimeout(window._tplUndoTimer); window._tplRemoved = null
 
   // Snapshotted HERE, before the first await -- the role this edit is being SAVED under. The batch
   // writes and propagation below span many awaited round-trips; a same-tab role switch during that

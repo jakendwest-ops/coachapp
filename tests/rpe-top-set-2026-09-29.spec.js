@@ -285,7 +285,7 @@ test.describe('builder: top set + intensity basis (Task 3, 2026-09-29)', () => {
     const before = await page.locator('#att-sets-container').innerText()
     expect(before, 'no warning while set 1 IS still a top set').not.toContain('no longer a top set')
 
-    await page.click('#ts-topset-0')   // turn set 1's top-set flag back off
+    await page.click('#ts-straight-0')   // turn set 1's top-set flag back off (the 2026-10-28 builder's "Straight sets" button)
     const after = await page.locator('#att-sets-container').innerText()
     expect(after).toContain('Set 2')
     expect(after).toContain('no longer a top set')
@@ -471,6 +471,99 @@ test.describe('runner: backoff sets resolve against the live e1RM (Task 5, 2026-
     // pinned, because that belongs to weightToPref's own tests, not this one.
     const lbPh = parseFloat(await page.getAttribute('#set-1-weight', 'placeholder'))
     expect(lbPh, 'an lb backoff target must be the converted number, not the kg one').toBeGreaterThan(150)
+  })
+
+  // ── "% of top set weight" (2026-10-28, Jake: choose between a % of the weight lifted and a % of the e1RM) ──
+  // 'topSetWeight' is the NEW basis: the percentage is taken of the weight actually lifted on the top set. 'topSet' (above)
+  // keeps meaning "of today's estimated 1RM", so no saved template changes. Same set, two answers:
+  // 100 kg x 3 @ RPE 8 -> e1RM 115.9, so 70% is 80 kg of the e1RM (above) but 70 kg of the weight.
+  test('a topSetWeight backoff is a % of the weight lifted, not of the estimated 1RM', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSetWeight' }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.fill('#set-0-effort', '8');   await page.click('#set-0-done')
+    await expect(page.locator('#set-1-weight')).toHaveAttribute('placeholder', '70')
+  })
+
+  test('a topSetWeight backoff needs no effort on the top set', async ({ page }) => {
+    // The weight lifted is known without an RPE; only the estimated-1RM basis needs one.
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSetWeight' }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.click('#set-0-done')
+    await expect(page.locator('#set-1-weight')).toHaveAttribute('placeholder', '70')
+  })
+
+  test('before the top set is logged, a topSetWeight row says so and never falls back to the stored 1RM', async ({ page }) => {
+    await startRunnerWithFixture(page, {
+      storedOneRM: 140,
+      sets: [
+        { repsMin: 3, effortType: 'rpe', effortMin: 8, isTopSet: true },
+        { repsMin: 8, intensityMin: 70, intensityBasis: 'topSetWeight' }
+      ]
+    })
+    await expect(page.locator('#set-1-basis-note')).toContainText('Log the top set first')
+    expect(await page.getAttribute('#set-1-weight', 'placeholder')).not.toContain('97.5')  // 70% of 140
+  })
+
+  test('correcting the top set weight moves the topSetWeight target with it', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSetWeight' }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.click('#set-0-done')
+    await expect(page.locator('#set-1-weight')).toHaveAttribute('placeholder', '70')
+    // Same as the estimated-1RM basis (see "correcting the top set recomputes the e1RM" above): a ticked set is
+    // un-ticked and re-ticked to take the correction.
+    await page.fill('#set-0-weight', '120')
+    await page.click('#set-0-done')
+    await page.click('#set-0-done')
+    await expect(page.locator('#set-1-weight')).toHaveAttribute('placeholder', '82.5')   // 70% of 120 = 84 -> floors to 82.5
+  })
+
+  test('un-ticking the top set takes the topSetWeight target away again', async ({ page }) => {
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSetWeight' }
+    ] })
+    await page.fill('#set-0-weight', '100'); await page.fill('#set-0-reps', '3')
+    await page.click('#set-0-done')
+    await expect(page.locator('#set-1-weight')).toHaveAttribute('placeholder', '70')
+    await page.click('#set-0-done')                       // un-tick: the weight is no longer "what was lifted"
+    await expect(page.locator('#set-1-basis-note')).toContainText('Log the top set first')
+    expect(await page.getAttribute('#set-1-weight', 'placeholder')).not.toBe('70')
+  })
+
+  test('a target that floors to zero is no target, not a ghost "0" (review, 2026-10-28)', async ({ page }) => {
+    // 70% of a 3 kg top set is 2.1 kg, which the runner's 2.5 kg rounding floors to 0; "0" is a truthy string and was drawn as a weight.
+    await startRunnerWithFixture(page, { sets: [
+      { repsMin: 3, isTopSet: true },
+      { repsMin: 8, intensityMin: 70, intensityBasis: 'topSetWeight' }
+    ] })
+    await page.fill('#set-0-weight', '3'); await page.fill('#set-0-reps', '3')
+    await page.click('#set-0-done')
+    expect(await page.getAttribute('#set-1-weight', 'placeholder')).not.toBe('0')
+  })
+
+  test('a topSetWeight target renders in lb for an lb account', async ({ page }) => {
+    // 220 lb = 99.79 kg -> 70% = 69.85 kg -> floors to 67.5 kg -> about 149 lb. The kg value (67.5) vs lb (149) is the discriminator.
+    await startRunnerWithFixture(page, {
+      unit: 'lb',
+      sets: [
+        { repsMin: 3, isTopSet: true },
+        { repsMin: 8, intensityMin: 70, intensityBasis: 'topSetWeight' }
+      ]
+    })
+    await page.fill('#set-0-weight', '220'); await page.fill('#set-0-reps', '3')
+    await page.click('#set-0-done')
+    const lbPh = parseFloat(await page.getAttribute('#set-1-weight', 'placeholder'))
+    expect(lbPh).toBeGreaterThan(140)
+    expect(lbPh).toBeLessThan(155)
   })
 })
 
@@ -904,6 +997,12 @@ test.describe('builder: Copy previous set after a top set (review round 2, 2026-
     await openTemplateBuilderWithFixture(page, { sets: 1 })
     await page.click('#ts-topset-0')
     await page.fill('#ts-emin-0', '8')                         // keep the no-effort warning out of it
+    // 2026-10-28 builder: "Top set + back-offs" now makes the back-off set itself, so the flagged-row copy
+    // can only happen on the per-set cards ("Customise each set"): remove the made set, leaving the lone
+    // top set, then Copy previous set copies that flagged row. Same bug, same guard.
+    await page.click('#ts-show-each')
+    await page.locator('button[aria-label="Remove set 2"]').click()
+    await expect(page.locator('#ts-rmin-1')).toHaveCount(0)
     await page.locator('button', { hasText: 'Copy previous set' }).click()
     await page.selectOption('#ts-basis-1', 'topSet')
     await page.fill('#ts-imin-1', '70')
