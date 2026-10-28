@@ -1,0 +1,16 @@
+---
+id: 2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again
+status: open
+priority: high
+reported: 2026-10-28
+status_detail: "REPORTED by Jake 2026-10-28, about the morning of 2026-10-27, on v2026.10.6 (the release that replaced the spoken countdown with beeps): the beeps worked for the first two exercises of his workout and were never heard again for the rest of it. CAUSE MEASURED on Jake's iPhone (iOS 18.7, Safari tab) with the Sound recovery test page on 2026-10-28: after he switched to Spotify and changed the song (away 6 s), the sound engine (AudioContext) reported state 'running' but its clock moved 0 s in 2 s, i.e. it was dead while claiming to be alive, and the automatic beeps were silent. 'Wake it' (resume(), what _unlockAudio does) did nothing; REBUILDING the engine (close it, make a new one, resume) brought the sound back. That is why the beeps stopped for good: _unlockAudio only acts on a 'suspended' or 'interrupted' engine, so every later tap found 'running' and left the dead engine alone. (Methods C and D, tested after B had already rebuilt the engine, prove nothing.) A SECOND RUN the same day (away 2 s, switched to Spotify): the engine reported 'interrupted' on return (not 'running'), the clock again moved 0 s in 2 s, the automatic beeps were silent, a tap-time resume() (method A) was STILL silent and a rebuild (B) was heard. So resume() does not revive it in either state, which means the interrupted-context hardening shipped in v2026.10.6 would not have saved the sound either: the fix has to REBUILD the engine. CONFIRMED IN THE REAL WORKOUT by Jake, 2026-10-28: he left Safari and the beeps stopped; when he came back to Safari they neither continued nor rebuilt. Still open: whether the page can rebuild by itself on return with no tap (round 2 of the test, switch 'Rebuild by itself'; the second run was still 'did nothing'), which decides whether a rest that is running when he comes back can be saved without a visible prompt."
+closing_conditions: "Jake confirms on his phone, in a real workout with Spotify playing, that the rest-timer ticks, the 10-second warning and the finish beep keep sounding for every exercise through to the end of the session; and a unit test or documented device check pins the recovery path that brings the sound back after the audio context is interrupted or stops producing sound."
+---
+
+# Runner beeps worked for two exercises, then were never heard again
+
+## Jake's report (verbatim, 2026-10-28)
+
+> I also noticed a bug in the runner yesterday morning with the new beeps we introduced. The beeps all worked on the first 2 exercises of my workout, but I didnt hear them again for any exercise for the remainder of my workout
+
+**Closes when:** Jake confirms on his phone, in a real workout with Spotify playing, that the rest-timer ticks, the 10-second warning and the finish beep keep sounding for every exercise through to the end of the session; and a unit test or documented device check pins the recovery path that brings the sound back after the audio context is interrupted or stops producing sound.

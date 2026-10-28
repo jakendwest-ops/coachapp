@@ -12,6 +12,8 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-28 — Beeps stay, and the sound engine is rebuilt after the page is hidden.** Jake's gym use showed the beeps die for good once Safari is left (measured twice on his iPhone: the engine's clock stops while it still says "running" or "interrupted"; `resume()` does nothing, a new engine works). Voices never had this (speech does not use that engine) but pause Spotify on every cue, the original bug; Jake chose beeps ("fix using beeps"). `_unlockAudio` replaces a stale, closed, interrupted or clock-frozen engine at the next tap, a tap anywhere in the runner counts, and the rest timer never rebuilds. Known gap: a rest already running when he switches away stays silent until his first touch of the screen; a "Tap to turn beeps back on" prompt waits for his go-ahead.
+
 **2026-10-25** — three SQL scripts applied (a guard so a coach cannot link a row to another coach's client; every `anon` privilege revoked, so signed-out requests answer 401; two `search_path` pins), the Security Advisor read (5 by design, 2 fixed, 1 not on this plan), `invite-client`'s source committed. And the runner never speaks: timer cues are tones, because any `speechSynthesis` call stops Spotify on iOS 18. Archived verbatim:
 [archive/decisions-2026-10-25-security-and-runner.md](archive/decisions-2026-10-25-security-and-runner.md).
 

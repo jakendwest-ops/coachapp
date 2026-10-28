@@ -116,6 +116,7 @@ async function _runnerWakeLockOff() {
 // Back on the tab: the browser will have dropped the lock, and a suspended tab could not tick its rest
 // countdown — so re-take the lock and re-derive the countdown NOW, before the next timer callback.
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { _noteAudioHidden(); return }   // Safari was left: the sound engine may die while we are away
   if (document.visibilityState !== 'visible' || !_runner) return
   _runnerWakeLockOn()
   _restTick()
@@ -1536,16 +1537,55 @@ function logRunnerSet() {
 }
 
 let _audioCtx = null
+let _audioStale = false   // the page was hidden since the engine was last proven alive: do not trust it
+let _audioProbe = null    // { ct, wall }: the engine's own clock and the wall clock at the last tap, to see whether that clock is really moving
 
-function _unlockAudio() {
-  // Must be called from a user gesture (tap). Once resumed, iOS keeps the
-  // context unlocked so timer-fired playBeep calls work for the session.
+function _newAudioCtx() { return new (window.AudioContext || window.webkitAudioContext)() }
+
+// THE SOUND ENGINE DIES WHEN SAFARI IS LEFT (measured on Jake's iPhone, iOS 18.7, 2026-10-28; bug ledger
+// 2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again). After a switch to Spotify the engine's
+// clock stops while its state still says 'running' (or 'interrupted'), every beep goes nowhere, and resume() does NOT bring
+// it back; only a brand-new engine does. So an engine that has been out of sight is replaced at the next tap, never resumed.
+function _noteAudioHidden() { _audioStale = true }
+
+// 'running' with a clock that is not keeping up with the wall clock is the dead engine's signature (it moved 0 s in 2 s on the
+// phone). Needs a few seconds of history so a tap right after another tap proves nothing.
+function _audioLooksDead() {
+  if (!_audioCtx || _audioCtx.state !== 'running' || !_audioProbe) return false
+  const wallMs = Date.now() - _audioProbe.wall
+  return wallMs >= 3000 && (_audioCtx.currentTime - _audioProbe.ct) < (wallMs / 1000) * 0.25
+}
+
+function _rebuildAudio() {
+  const old = _audioCtx
+  _audioCtx = _newAudioCtx()
+  _audioStale = false
+  _audioProbe = null
+  try { const p = old && old.close && old.close(); if (p && p.catch) p.catch(() => {}) } catch(e) {}
+}
+
+// fromTap = true (the default) is for a real tap: a new engine only starts from one, so ONLY a tap may replace the engine,
+// clear the stale flag or record the clock probe. The rest timer calls this every second with fromTap = false: it may build the
+// first engine and ask a suspended one to resume, nothing more. (A rebuild on a timer would swap a possibly healthy engine for one that
+// stays silent until the next tap, burn the stale flag, and, as it ran every second, could loop; and its probe refresh would stop the
+// dead-clock check ever seeing the 3 s of history it needs during a rest.)
+function _unlockAudio(fromTap = true) {
   try {
-    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-    // 'interrupted' is the state WebKit reports after a call, Siri or another app (Spotify) took the audio session; only a resume() from a tap brings it back.
-    if (_audioCtx.state === 'suspended' || _audioCtx.state === 'interrupted') { const p = _audioCtx.resume(); if (p && p.catch) p.catch(() => {}) }
+    if (!_audioCtx) _audioCtx = _newAudioCtx()
+    else if (fromTap && (_audioStale || _audioCtx.state === 'closed' || _audioCtx.state === 'interrupted' || _audioLooksDead())) _rebuildAudio()
+    if (_audioCtx.state !== 'running') { const p = _audioCtx.resume(); if (p && p.catch) p.catch(() => {}) }
+    if (fromTap) {
+      _audioStale = false
+      _audioProbe = { ct: _audioCtx.currentTime, wall: Date.now() }
+    }
   } catch(e) {}
 }
+
+// A tap ANYWHERE while the runner is open and the engine is stale rebuilds it, not only a tap on a button whose handler happens to call
+// _unlockAudio: the get-ready count-in, the interval timer and the set-timer overlay have no such button, and coming back to a rest in
+// progress usually starts with touching the screen. Capture phase, on touchend AND click (iOS counts those as the gesture, not touchstart).
+function _audioTapUnlock() { if (_runner && _audioStale) _unlockAudio() }
+for (const ev of ['touchend', 'click']) document.addEventListener(ev, _audioTapUnlock, true)
 
 // Timer cues are TONES, never speech. On iOS 18 any speechSynthesis call — even a silent one — stops the
 // lifter's music in Spotify, and Web Audio tones mix with it (measured on a phone 2026-10-25; bug ledger
@@ -1556,7 +1596,7 @@ function playTenSecondWarning() { playBeep(660, 0.3, 0.8, 1500) } // lower and l
 
 function playBeep(freq = 880, duration = 0.15, volume = 0.8, maxLateMs = Infinity) {
   try {
-    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    if (!_audioCtx) _audioCtx = _newAudioCtx()
     const asked = Date.now()
     const _fire = () => {
       try {
@@ -2129,7 +2169,7 @@ function _restTick() {
       renderRunner() // updates the chip on whichever exercise is currently on screen
     }
   } else {
-    _unlockAudio()
+    _unlockAudio(false)   // a timer, not a tap: see _unlockAudio
     if (_runner.restRemaining === 10) playTenSecondWarning()
     if (_runner.restRemaining <= 5) playCountdownTick()
     const onScreen = _runner.exIdx === _runner._restForExIdx
