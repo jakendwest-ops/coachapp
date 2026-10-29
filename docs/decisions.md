@@ -12,9 +12,8 @@ process-level entries below were pulled out and belong here.
 
 ---
 
-## 2026-10-29 - Coach work starts now, designed for a 25-client roster; the current plan is chosen by date
-
-**Decided (Jake, 2026-10-29):** "Yes, design for 25" - this overrides the 2026-09-26 deferral of roster-size features (search, sort, Needs attention, invite state), which waited for a real roster. First build (approved the same day): a client's current training plan is the most recently STARTED one (else the soonest upcoming), never the most recently assigned, and calendars draw back-to-back blocks each in their own weeks; the client's Training plans tab gains "Assign next block". **Why:** booking a next block made it current at once everywhere and hid the running one ([row](bugs/2026-10-29-current-plan-is-picked-by-assignment-order-not-by-date.md)). **Rejected:** one-plan-at-a-time for coached clients (solo keeps it) - a PT books the next block before the current one ends.
+**2026-10-29** — coach work starts, for a 25-client roster (overrides the 2026-09-26 roster deferral); a client's current plan is the most recently STARTED one, never the newest-assigned. Archived verbatim:
+[archive/decisions-2026-10-29-coach-current-plan.md](archive/decisions-2026-10-29-coach-current-plan.md).
 
 ## 2026-10-29 - The old wiki is dead to CoachApp too
 

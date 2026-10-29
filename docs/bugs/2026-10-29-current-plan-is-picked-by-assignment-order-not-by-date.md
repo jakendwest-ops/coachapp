@@ -9,6 +9,10 @@ closing_conditions: "A red-then-green unit test for the date rule (_currentAssig
 
 # The current plan is picked by assignment order, not by date
 
+**Closes when:** Jake confirms on his phone that a client with a next block booked still shows the running block as current (Overview,
+calendar, dashboard) and the next block from its start date. The automated half is already green: `tests-node/current-assignment.test.mjs`
+and `tests/current-assignment-2026-10-29.spec.js` (each red on the old rule), and the view verifier against the applied SQL.
+
 ## What happened
 
 A client can hold more than one assignment (`client_programs`), but every screen chose "the current one" as
