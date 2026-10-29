@@ -19,6 +19,7 @@ repeated here. PTHub (the other project) ended 2026-09-15.
 | `claim-check.mjs`, this project's Claude memory | `~/.claude` (its own private `claude-config` repo). Memory has ONE home, `~/.claude/projects/c--Users-jaken-OneDrive-coachapp/memory/`; the Vault-keyed folder beside it is a frozen stub (`os-lint`'s `memory-split` goes RED if anything new appears there). (`standing-behaviours.mjs` is still there but unregistered since 2026-09-27; its text moved into this file.) |
 | `session-root-guard.mjs` | this repo's `.claude/hooks/`, REGISTERED in `~/.claude/settings.json` (user level) so it fires in the Vault folder too; `os-lint`'s `hooks` check goes RED if the registration is lost |
 | The Vault | nothing CoachApp needs, and no CoachApp session may be rooted in it. Old CoachApp files are archived at `Vault/projects/_archive/CoachApp/`; `os-lint`'s `no-vault-pointers` check warns if a live path to the Vault - its data folder OR the folder above it that sessions start in - reappears in a hook or skill |
+| The LLM wiki (`OneDrive/Documents/LLM wiki`) | nothing: dead to CoachApp, said by Jake repeatedly and again 2026-10-29. Never read or write it (no glossary, roadmap mirror, log or board); `os-lint`'s `no-vault-pointers` warns if a skill or hook points at it |
 
 **Conversational memory is never authoritative.** Never rely on what a previous session said
 happened, what you remember doing, or an unverified summary carried over in context — if `docs/`

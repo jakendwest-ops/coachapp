@@ -12,6 +12,10 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+## 2026-10-29 - The old wiki is dead to CoachApp too
+
+**Decided (Jake, repeatedly; again today):** everything lives in the GitHub repo and nowhere else. A `/save` that day still wrote a glossary entry, a roadmap banner, a log entry and the kanban board into the wiki, because the `save` skill (Step 7), `hello-claude` (Step 6) and a memory note all said to. **Done:** Step 7 retired, Step 6 now starts from `docs/current-sprint.md`, the memory note rewritten, a CLAUDE.md table row added, and `os-lint`'s `no-vault-pointers` now warns on a skill or hook that points at the wiki. **Rejected:** keeping a mirror "in case" (two places always disagree).
+
 **2026-10-28** — the exercise builder is rebuilt around set groups with a third "% of" choice (`intensityBasis: 'topSetWeight'`, the old `'topSet'` keeping its meaning of today's estimated 1RM), and the runner's beeps are rebuilt after the page is hidden (Jake: "fix using beeps"). Archived verbatim:
 [archive/decisions-2026-10-28-builder-and-beeps.md](archive/decisions-2026-10-28-builder-and-beeps.md).
 

@@ -225,7 +225,6 @@ dual-copy incident — the global copy is deleted for the 3 that moved, never ke
   A new *generic* skill still registers at the global path above.
 - Was an existing skill found to be wrong or incomplete? → update it now
 - Code review (pre-commit for ownership/RLS, pre-push otherwise) = the `multi-agent-review` skill (a pinned prompt: 3 fixed angles + verifier, plus a weekly full-file mode). If the review angles genuinely need to change, edit that skill deliberately and note it in the LOG — never improvise a different review ad hoc, that reintroduces the rigor-drift/diff-only-blind-spot the pinned skill exists to prevent
-- LLM-wiki ingests: read `wiki/sources.md` (the manifest) and append to `wiki/log.md`. **Never run bare `/ingest`** — that is the framework Vault-OS pipeline, a different thing entirely.
 - **Back up ~/.claude's generic skills + memory if either changed this session.** `~/.claude` is otherwise local-disk-only (not OneDrive, no cloud sync). CoachApp's own skills/hooks back up as part of the normal CoachApp repo push (Step 10) — nothing extra needed for those.
 
   > **🔒 GATE — run `os-lint` BEFORE any push. It must be clean of `skills-pii`.**
@@ -250,22 +249,9 @@ Update `MEMORY.md` index if any files were added or changed.
 
 ---
 
-## Step 7 — Documentation and glossary check
+## Step 7 — (retired 2026-10-29) there is no wiki step
 
-Check whether this session introduced anything that needs capturing outside this repo's `docs/*.md`:
-
-- **New jargon explained to Jake this session** (race condition, RLS policy, etc.) not yet in the LLM
-  wiki glossary (`...\wiki\guide-glossary.md`) — add it, with a real example from this session as the
-  worked illustration, matching existing entries' style.
-- **Roadmap-wiki-sync backstop** — verify (don't assume) that any `roadmap.md` change this session was
-  already mirrored into `guide-coachapp-roadmap.md` + the relevant topic page; do it now if not.
-- **Wiki `log.md`** — confirm an entry exists for this session (append if missing).
-- **Kanban board "Proposed for Next Session" column** (`...\wiki\board-coachapp.md`) — rewrite every
-  save: a curated 3-5 item shortlist (fully-scoped first, then deadline-driven, then new quick wins),
-  not everything open. Add a one-line "Last generated" date + summary. Read automatically at the next
-  session's `/hello-claude` Step 6.
-
-If nothing from this session needs any of the above, say so explicitly rather than skipping silently.
+CoachApp works only from this repo. The wiki folder is dead to it: Jake has said so repeatedly, and again on 2026-10-29 after a save had written a glossary entry, a roadmap banner, a log entry and the "Proposed for Next Session" board there. Do not read or write it: no glossary, no roadmap mirror, no log, no board. Everything a session produces belongs in `docs/` (Steps 3-4 above); the next-session shortlist is `docs/current-sprint.md`'s "In flight" section. Say in the report that Step 7 was skipped on purpose.
 
 ---
 

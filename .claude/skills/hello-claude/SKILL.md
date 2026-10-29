@@ -110,10 +110,7 @@ named-but-unscoped backlog items.
 
 ## Step 6 — Propose the plan
 
-**Start from the kanban board's shortlist** — `...\wiki\board-coachapp.md`'s "Proposed for Next
-Session" column (the previous `/save` wrote it to anchor this step). Cross-check against
-`docs/current-sprint.md`/`docs/roadmap.md` for anything stale, then propose 2-3 items as a numbered
-list, recommending one if the priority is obvious.
+**Start from `docs/current-sprint.md`'s "In flight" section** (the previous `/save` keeps it current) and `docs/session-context.md`'s priorities. Cross-check against `docs/roadmap.md` for anything stale, then propose 2-3 items as a numbered list, recommending one if the priority is obvious. (The old wiki board is dead: never read it.)
 
 ## Step 7 — Surface the bug ledger
 

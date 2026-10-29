@@ -1159,7 +1159,7 @@ function checkHooks () {
 //     else, so the launch root itself - the Vision OS folder one level up - passed everywhere, while a desktop session rooted in it ran CoachApp for 16 days
 //     (docs/decisions.md, 2026-10-05). The second alternative catches the root: `Users/jaken/Claude` not followed by a name character, so `.claude`,
 //     `Claude-other` and `claude` (case) are not hits.
-const VAULT_PATH_RE = /Claude[/\\]+Vault|Users[/\\]+jaken[/\\]+Claude(?![\w.-])/
+const VAULT_PATH_RE = /Claude[/\\]+Vault|Users[/\\]+jaken[/\\]+Claude(?![\w.-])|LLM[ _-]?[Ww]iki|board-coach[a]pp/   // 2026-10-29: the old knowledge-base wiki is dead to CoachApp too (Jake, repeatedly)
 function checkNoVaultPointers () {
   const hits = []
 
