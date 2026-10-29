@@ -1,0 +1,28 @@
+// Type-checks js/ as the browser runs it: nine CLASSIC scripts sharing one global, in index.html
+// order. noEmit - nothing is compiled; the browser still loads js/*.js exactly as written.
+// Gate: scripts/check-types.mjs, which also fails if this files list drifts from index.html.
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "files": [
+    "types/globals.d.ts",
+    "js/app-core.js",
+    "js/starter-content.js",
+    "js/app-dashboard.js",
+    "js/app-programs.js",
+    "js/app-clients.js",
+    "js/app-calendar-goals.js",
+    "js/app-workouts.js",
+    "js/app-runner.js",
+    "js/app-progress.js"
+  ]
+}

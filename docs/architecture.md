@@ -17,17 +17,17 @@ Each has its own `?v=N` cache-bust query string on its `<script>` tag in `index.
 
 | Module | Lines | Responsibility |
 |---|---|---|
-| app-workouts | 3,639 | Workout templates/library, template editor, session-detail drawer |
-| app-runner | 3,476 | In-gym logger: strength table + wizard, rest timer, session autosave/resume; per-set effort (RPE/RIR) capture and a live top-set e1RM that backoff sets target |
-| app-progress | 3,356 | Body weight, personal bests, cardio, charts. A "progress photos" feature was built then code-removed — data/bucket retained (per an in-file comment) |
-| app-programs | 2,821 | Programmes, phases, periodization, assign/clone to clients; heaviest raw-query module, with its own ownership-anchor verification |
-| app-calendar-goals | 1,134 | Calendar (maps assigned programmes onto real dates) and goals |
-| app-core | 1,455 | Auth, app shell/routing, shared helpers (`escapeHtml`/`escapeAttr`/`mountModal`), the `db` client, role + client-record resolution, consent versioning |
-| app-dashboard | 984 | The three role dashboards (coach/client/solo), including fetch-failure-visibility banners |
-| app-clients | 565 | Client list + profile tabs; PB/weight/check-in forms |
-| starter-content | 169 | New-coach first-login seed data (~40 exercises + sample workout + programme) |
+| app-workouts | 4,748 | Workout templates/library, template editor, session-detail drawer |
+| app-runner | 4,220 | In-gym logger: strength table + wizard, rest timer, session autosave/resume; per-set effort (RPE/RIR) capture and a live top-set e1RM that backoff sets target |
+| app-progress | 4,024 | Body weight, personal bests, cardio, charts. A "progress photos" feature was built then code-removed — data/bucket retained (per an in-file comment) |
+| app-programs | 3,468 | Programmes, phases, periodization, assign/clone to clients; heaviest raw-query module, with its own ownership-anchor verification |
+| app-core | 1,763 | Auth, app shell/routing, shared helpers (`escapeHtml`/`escapeAttr`/`mountModal`), the `db` client, role + client-record resolution, consent versioning |
+| app-calendar-goals | 1,356 | Calendar (maps assigned programmes onto real dates) and goals |
+| app-dashboard | 906 | The three role dashboards (coach/client/solo), including fetch-failure-visibility banners |
+| app-clients | 587 | Client list + profile tabs; PB/weight/check-in forms |
+| starter-content | 184 | New-coach first-login seed data (~40 exercises + sample workout + programme) |
 
-**Total: 17,599 lines.** `app-core` is the shared foundation every other module depends on for
+**Total: 21,256 lines** (`wc -l js/*.js`, 2026-10-29). `app-core` is the shared foundation every other module depends on for
 auth, escaping, and role/client-id resolution. The four largest modules (workouts, runner, progress,
 programs) are also where open-bug themes concentrate — see
 [technical-debt.md](technical-debt.md).
