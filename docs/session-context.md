@@ -32,6 +32,8 @@ RPE top-set autoregulation is live (since `v2026.09.13`); its spec and plan are 
   days with none of them. `session-root-guard.mjs`, three `os-lint` checks and `CLAUDE.md` now cover it ([decisions.md](decisions.md), 2026-10-05); the
   [bug row](bugs/2026-10-05-coachapp-session-ran-in-the-vault-folder-for-16-days.md) closes on Jake's check.
 - 1 deferred **critical** bug: GDPR consent capture (deferred 2026-08-19; 5 of 6 steps shipped since, see [roadmap.md](roadmap.md)).
+- A push runs a type check (since 2026-10-29, released in `v2026.10.8`): a rising per-file `tsc` error count, e.g. a wrong column name, blocks it.
+  After any schema change, regenerate `types/database.d.ts` in the same commit ([schema.md](schema.md)).
 - Screens that read growing tables through the API's silent 200-row cap: the known ones are fixed and `checks.sh` rule 9n pins the rest
   ([technical-debt.md](technical-debt.md)).
 
@@ -42,6 +44,8 @@ RPE top-set autoregulation is live (since `v2026.09.13`); its spec and plan are 
 3. Housekeeping still open: the ungraded-prediction backlog and duplicate ids ([technical-debt.md](technical-debt.md)).
 4. Start the next session on this repo's folder (not the Vision OS one) and let `/hello-claude` run; confirm the guard per the
    [bug row](bugs/2026-10-05-coachapp-session-ran-in-the-vault-folder-for-16-days.md).
+5. Later, no rush: Phase 2 of the [type-check plan](superpowers/plans/2026-10-29-type-check-then-modules.md) (split the big files, or modules), and
+   burning the type-error baseline down one file per commit.
 
 ## Important Reference Documents
 
