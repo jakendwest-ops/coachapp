@@ -89,6 +89,7 @@ function coachTables(uid, { quietToday = false } = {}) {
   return {
     clients: PEOPLE.map(p => ({ id: p[0], full_name: p[1], status: 'active', coach_id: uid })),
     coach_client_summary: summaries,
+    client_check_ins: [],   // the coach Home's "Check-ins to review" read (2026-10-29); its own spec is checkin-loop-2026-10-29
     workout_logs: logs,
     weight_logs: [['c1', 62.4, -1], ['c2', 91.2, 0], ['c4', 70.8, -2], ['c6', 58.1, -3]].map(([c, kg, d]) => ({ client_id: c, weight_kg: kg, created_at: new Date(NOW.getTime() + d * 86400000).toISOString() })),
     goals: [
@@ -420,7 +421,9 @@ test.describe('the client and solo dashboard', () => {
     expect(r.banner).toContain('Your weekly check-in is due.')
     expect(r.checkin).toBe(true)
     await expect(page.locator('#checkin-form')).toBeVisible()
-    await expect(page.locator('#ci-sleep')).toBeVisible()
+    // Since 2026-10-29 the answers are tap buttons and #ci-sleep is the hidden input saveClientCheckIn reads: present, not visible.
+    await expect(page.locator('#ci-sleep')).toBeAttached()
+    await expect(page.locator('[data-ci-metric="sleep"]')).toHaveCount(5)
     await expect(page.locator('.dash-banner button')).toHaveText('Do it now')
     // Recently done: no banner, the scores show instead of the form.
     await restoreCappedApi(page)
@@ -662,7 +665,7 @@ test.describe('the coach dashboard', () => {
 
   test('no clients yet: a calm card that offers the one thing to do', async ({ page }) => {
     const uid = await page.evaluate(() => currentUser.id)
-    await install(page, { clients: [], coach_client_summary: [], workout_logs: [], weight_logs: [], goals: [] })
+    await install(page, { clients: [], coach_client_summary: [], client_check_ins: [], workout_logs: [], weight_logs: [], goals: [] })
     await render(page, 'renderDashboard')
     const r = await coachRead(page)
     expect(r.hero).toMatchObject({ kind: 'empty', calm: true, title: 'No clients yet' })

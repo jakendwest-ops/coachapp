@@ -530,7 +530,8 @@ async function renderDashboard(el) {
   const { data: coachClients, error: coachClientsErr } = await db.from('clients').select('id, full_name, status').eq('coach_id', currentUser.id).order('full_name')
   const ids = (coachClients || []).map(c => c.id)
 
-  const [weightsR, logsR, goalsR, summariesR] = await Promise.all([
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 864e5).toISOString()
+  const [weightsR, logsR, goalsR, summariesR, checkInsR] = await Promise.all([
     ids.length ? db.from('weight_logs').select('client_id, created_at, weight_kg').in('client_id', ids).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30) : { data: [] },
     // Every session in the last week across all clients, PAGED (the API caps a response at 200 rows): the Today card, the week
     // bars and the day you tap all read from this one list. `date` is the calendar day it was logged for.
@@ -543,6 +544,11 @@ async function renderDashboard(el) {
     // One row per client, computed in the database (scripts/add-coach-client-summary-2026-09-20.sql). PAGED: the API caps every
     // response at 200 rows and that applies to a view too, so a bare read would silently drop the 201st client.
     _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, sessions_7d, last_session_date, last_weigh_in_date, program_name, program_start, program_weeks, next_program_start', { count: 'exact' }).order('full_name').order('client_id')),
+    // "Check-ins to review" (2026-10-29): unreviewed, the last 14 days, the coach's OWN clients - joined like the goals read above, for the same
+    // two reasons (the master account's personal record has coach_id NULL and must not appear; no 200-client cap). No back-fill: an old check-in
+    // nobody reviewed simply ages out of the window rather than being marked reviewed.
+    // 50, counted: 25 clients checking in weekly is up to 50 in the window, and a cut list must say so ("+N more"), never drop rows silently.
+    db.from('client_check_ins').select('id, client_id, created_at, sleep, energy, stress, soreness, notes, clients!inner(full_name)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).is('reviewed_at', null).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(50),
   ])
 
   const failed = _failedFetches({
@@ -551,6 +557,7 @@ async function renderDashboard(el) {
     'recent sessions': logsR.error,
     'upcoming goals': goalsR.error,
     'session summaries': summariesR.error,
+    'check-ins to review': checkInsR.error,
   })
   // When the summaries could not be read the numbers they feed are UNAVAILABLE, not zero - shown as "—", never as "0 trained".
   const summariesUnavailable = !!summariesR.error
@@ -673,6 +680,7 @@ async function renderDashboard(el) {
           <button type="button" class="dash-icon" aria-label="Build a workout" onclick="navigate('workouts')">${_DASH_ICONS.build}</button>
         </div>
       </header>
+      ${roster.length || checkInsR.error ? _dashCheckInsHtml(checkInsR.data || [], { unavailable: !!checkInsR.error, total: checkInsR.count }) : ''}
       ${heroFor(null)}
       ${weekFor(null)}
       ${tiles}
@@ -684,6 +692,48 @@ async function renderDashboard(el) {
   const root = el.querySelector('#dash-root')
   if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor }
   log.ok('renderDashboard', 'rendered', { clients: roster.length, sessionsThisWeek: logs.length, needAttention: needAttention.length })
+}
+
+// "Check-ins to review" on the coach Home (2026-10-29): unreviewed check-ins of the last 14 days, flagged ones first (any red score -
+// _checkInFlagged), then newest first. Each row: the client (opens their profile), the date, the four scores in their tone colours, the start of
+// the note, and Seen ✓ / Reply (markCheckInSeen / showCheckInReplyModal, app-clients.js). Pure: rows in, markup out. `unavailable` = the read
+// failed, which says so rather than "Nothing to review". `total` = how many there are in all (the read's exact count); when the read was cut
+// short the card says "+N more" - newest first, so it is the oldest that wait.
+function _dashCheckInsHtml(rows, { unavailable = false, total = null } = {}) {
+  const shown = (rows || []).length, more = Number.isInteger(total) && total > shown ? total - shown : 0
+  const head = `<div class="dash-card-head"><h2 class="dash-card-title">Check-ins to review</h2><span class="dash-card-sub">${shown ? `<b data-checkins-count>${shown + more}</b> · ` : ''}Last 14 days</span></div>`
+  if (unavailable) return `<section class="dash-card" id="dash-checkins">${head}<p class="dash-empty">Could not load check-ins.</p></section>`
+  const list = [...(rows || [])].sort((a, b) => (Number(_checkInFlagged(b)) - Number(_checkInFlagged(a))) || _cmpText(b.created_at, a.created_at))
+  if (!list.length) return `<section class="dash-card" id="dash-checkins">${head}<p class="dash-empty">Nothing to review.</p></section>`
+  const note = s => { const t = [...String(s || '').trim()]; return t.length > 80 ? t.slice(0, 79).join('') + '…' : t.join('') }   // by character, so an emoji is never cut in half
+  return `<section class="dash-card" id="dash-checkins">${head}${list.map(r => {
+    const flagged = _checkInFlagged(r)
+    const day = r.created_at ? _dashFormatDate(_ymdLocal(new Date(r.created_at))) : ''
+    const cid = escapeAttr(r.client_id), id = escapeAttr(r.id)
+    return `<div class="dash-ci" data-checkin-id="${id}">
+        <button type="button" class="dash-ci-who" onclick="openClient('${cid}')"><b>${escapeHtml(r.clients?.full_name || 'Client')}</b><i>${escapeHtml(day)}</i>${flagged ? '<em class="dash-ci-flag" data-flagged>Flagged</em>' : ''}</button>
+        <div class="dash-ci-scores">${CHECKIN_METRICS.map(m => `<span style="color:${_checkInColour(m.key, r[m.key])}">${m.abbr} ${r[m.key] ?? '–'}</span>`).join('')}</div>
+        ${r.notes ? `<p class="dash-ci-note">${escapeHtml(note(r.notes))}</p>` : ''}
+        <div class="dash-ci-actions">
+          <button type="button" class="dash-btn dash-btn-ghost dash-ci-btn" data-checkin-seen onclick="markCheckInSeen('${id}','${cid}',this)">Seen ✓</button>
+          <button type="button" class="dash-btn dash-btn-ghost dash-ci-btn" data-checkin-reply onclick="showCheckInReplyModal('${id}','${cid}')">Reply</button>
+        </div>
+      </div>`
+  }).join('')}${more ? `<p class="dash-empty" data-checkins-more>+${more} more - the oldest are not shown. Review these to see them.</p>` : ''}</section>`
+}
+
+// After Seen / Reply on the coach Home: the reviewed row leaves the card IN PLACE and the count drops - no full repaint (review, 2026-10-29).
+// Returns false when the row is not on screen (the action came from a client's Overview), so the caller updates that view instead.
+function _dashCheckInReviewed(checkInId) {
+  const card = document.getElementById('dash-checkins')
+  const item = card ? [...card.querySelectorAll('[data-checkin-id]')].find(el => el.getAttribute('data-checkin-id') === String(checkInId)) : null
+  if (!card || !item) return false
+  item.remove()
+  const count = card.querySelector('[data-checkins-count]')
+  const left = Math.max(0, (Number(count?.textContent) || 1) - 1)
+  if (count) count.textContent = String(left)
+  if (!card.querySelector('[data-checkin-id]') && !card.querySelector('[data-checkins-more]')) card.insertAdjacentHTML('beforeend', '<p class="dash-empty">Nothing to review.</p>')
+  return true
 }
 
 // ─── CLIENT DASHBOARD ─────────────────────────────────────────────────────────
@@ -730,7 +780,8 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     // A year of sessions, paged (_fetchAllRows, app-core.js): the API caps a response at 200 rows and says nothing when it
     // truncates. The week strip, the streak and "done" all read from this one list.
     _fetchAllRows(() => db.from('workout_logs').select('id, name, date, workout_log_exercises(id)', { count: 'exact' }).eq('client_id', clientId).gte('date', lookbackStart).order('date', { ascending: false }).order('id', { ascending: false })),
-    checkIn ? db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1) : Promise.resolve({ data: [], error: null }),
+    // Two: the last check-in and the one before it, for the "vs last week" arrows (2026-10-29).
+    checkIn ? db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(2) : Promise.resolve({ data: [], error: null }),
   ])
 
   // Second round-trip, only when a programme exists. Deliberately NOT a nested embed on the query above: PostgREST silently NULLs a
@@ -756,6 +807,7 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     goals: goalsR.data, events: eventsR.data, weights: weightsR.data, cp0, progByDate, currentByDate, logs,
     upcoming: _soloUpcoming(eventsR.data, progByDate, todayStr),
     lastCheckIn: checkInR.data?.[0] || null,
+    prevCheckIn: checkInR.data?.[1] || null,
     failed: {
       'your goals': goalsR.error, 'upcoming events': eventsR.error, 'weight history': weightsR.error,
       'your training plan': programsR.error || cpwErr, 'recent sessions': logsR.error, 'check-ins': checkInR.error,
@@ -769,43 +821,75 @@ function _dashCheckInBanner() {
   return `<div class="dash-banner"><span>Your weekly check-in is due.</span><button type="button" onclick="document.getElementById('checkin-card').scrollIntoView({behavior:'smooth'})">Do it now</button></div>`
 }
 
-function _dashCheckInHtml(lastCheckIn, clientId) {
+// The client's weekly check-in card (reworked 2026-10-29, docs/bugs/2026-10-29-client-check-ins-get-no-response.md). The form was four range
+// sliders pre-filled with last week's answers, so submitting without touching them sent last week's numbers as this week's. Now each question is
+// five tap buttons with NOTHING chosen, the two ends say what 1 and 5 mean (CHECKIN_METRICS lo / hi), and Submit stays disabled until all four
+// are answered. The chosen values live in hidden #ci-<metric> inputs - the ids saveClientCheckIn reads and specs set. Under the last check-in:
+// arrows against the one before it, and the coach's side of the loop ("Seen by your coach", their reply).
+// opts: readFailed - the check-in read failed (the page's banner names it), so this must not say "Your first check-in" to someone who has
+// some; sudo - the owner's "view as client", where only the client can submit (the INSERT policy refuses anyone else), so no Submit is offered.
+function _dashCheckInHtml(lastCheckIn, clientId, prevCheckIn = null, { readFailed = false, sudo = false } = {}) {
   const daysSince = lastCheckIn ? Math.floor((Date.now() - new Date(lastCheckIn.created_at)) / 86400000) : null
   const due = daysSince === null || daysSince >= 7
+  // Both values must be real numbers: Number(null) is 0, which would draw "down from 3" beside a missing score (review, 2026-10-29).
+  const arrow = (key) => {
+    const ra = lastCheckIn?.[key], rb = prevCheckIn?.[key]
+    if (ra == null || rb == null || ra === '' || rb === '') return ''
+    const a = Number(ra), b = Number(rb)
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return ''
+    return `<span class="ci-arrow" aria-label="${a > b ? 'up' : 'down'} from ${b} last time">${a > b ? '↑' : '↓'}</span>`
+  }
+  // The newest reply the client has: on the last check-in, or - when they checked in again before the coach answered - on the one before.
+  // Without this a reply to the earlier check-in was never shown anywhere on the client's side (review, 2026-10-29).
+  const replyOnPrev = !lastCheckIn?.coach_reply && prevCheckIn?.coach_reply
   return `
     <div class="dashboard-card dash-checkin" id="checkin-card">
       <div class="card-header">
         <h2 class="card-title">Weekly check-in</h2>
-        ${lastCheckIn ? `<span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${daysSince === 0 ? 'Submitted today' : daysSince + 'd ago'}</span>` : ''}
+        ${lastCheckIn ? `<span class="ci-when">${daysSince === 0 ? 'Submitted today' : daysSince + 'd ago'}</span>` : ''}
       </div>
-      ${!due && lastCheckIn ? `
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px">
-          ${[['Sleep', lastCheckIn.sleep], ['Energy', lastCheckIn.energy], ['Stress', lastCheckIn.stress], ['Soreness', lastCheckIn.soreness]].map(([label, val]) => `
-          <div style="text-align:center;background:var(--surface-2);border-radius:var(--radius-sm, 8px);padding:8px">
-            <div style="font-size:var(--text-2xl, 18px);font-weight:700;color:var(--accent)">${val}/5</div>
-            <div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${label}</div>
+      ${lastCheckIn ? `
+        <div class="ci-last">
+          ${CHECKIN_METRICS.map(m => `
+          <div class="ci-last-tile">
+            <div class="ci-last-val" style="color:${_checkInColour(m.key, lastCheckIn[m.key])}">${lastCheckIn[m.key] ?? '–'}/5${arrow(m.key)}</div>
+            <div class="ci-last-label">${m.label}</div>
           </div>`).join('')}
         </div>
-        ${lastCheckIn.notes ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 10px">${escapeHtml(lastCheckIn.notes)}</p>` : ''}
-        <button onclick="document.getElementById('checkin-form').style.display='block'" class="btn-secondary" style="font-size:var(--text-base, 13px)">Submit new check-in</button>
-      ` : `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 10px">${due ? 'Your weekly check-in is due. Let your coach know how you\'re feeling.' : 'No check-ins yet.'}</p>`}
-      <div id="checkin-form" style="${due ? '' : 'display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)'}">
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px">
-          ${[['sleep', 'Sleep (1–5)'], ['energy', 'Energy (1–5)'], ['stress', 'Stress (1–5)'], ['soreness', 'Soreness (1–5)']].map(([id, label]) => `
-          <div>
-            <label class="field-label">${label}</label>
-            <input type="range" id="ci-${id}" min="1" max="5" step="1" value="${lastCheckIn?.[id] || 3}" class="field-input" style="padding:6px 0">
-            <div style="display:flex;justify-content:space-between;font-size:var(--text-xs, 10px);color:var(--text-muted);margin-top:2px"><span>Low</span><span>High</span></div>
-          </div>`).join('')}
-        </div>
+        ${lastCheckIn.notes ? `<p class="ci-last-note">${escapeHtml(lastCheckIn.notes)}</p>` : ''}
+        ${lastCheckIn.reviewed_at ? '<p class="ci-seen">Seen by your coach ✓</p>' : ''}
+        ${lastCheckIn.coach_reply ? `<p class="ci-reply"><b>Your coach:</b> ${escapeHtml(lastCheckIn.coach_reply)}</p>` : ''}
+        ${replyOnPrev ? `<p class="ci-reply"><b>Your coach, on your previous check-in:</b> ${escapeHtml(prevCheckIn.coach_reply)}</p>` : ''}
+        ${due || sudo ? '' : `<button onclick="document.getElementById('checkin-form').style.display='block'" class="btn-secondary ci-new">Submit new check-in</button>`}
+      ` : ''}
+      ${due ? `<p class="ci-due">${lastCheckIn ? 'Your weekly check-in is due.' : readFailed ? '' : 'Your first check-in.'} Let your coach know how you're feeling.</p>` : ''}
+      <div id="checkin-form" class="ci-form" style="${due ? '' : 'display:none'}">
+        ${CHECKIN_METRICS.map(m => `
+        <div class="ci-q" role="group" aria-label="${m.label}">
+          <div class="ci-q-label">${m.label}</div>
+          <div class="ci-taps">${[1, 2, 3, 4, 5].map(n => `<button type="button" class="ci-tap" data-ci-metric="${m.key}" data-ci-value="${n}" aria-pressed="false" onclick="_ciPick('${m.key}',${n})">${n}</button>`).join('')}</div>
+          <div class="ci-ends"><span>${m.lo}</span><span>${m.hi}</span></div>
+          <input type="hidden" id="ci-${m.key}" value="">
+        </div>`).join('')}
         <div class="field">
-          <label class="field-label">Notes for your coach <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
-          <textarea id="ci-notes" class="field-input" rows="2" placeholder="How's training feeling? Any injuries or concerns?">${escapeHtml(lastCheckIn?.notes || '')}</textarea>
+          <label class="field-label" for="ci-notes">Notes for your coach <span class="ci-optional">(optional)</span></label>
+          <textarea id="ci-notes" class="field-input" rows="2" placeholder="How's training feeling? Any injuries or concerns?"></textarea>
         </div>
-        <p id="ci-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:4px 0"></p>
-        <button onclick="saveClientCheckIn('${escapeAttr(clientId)}')" class="btn-primary" style="margin-top:8px">Submit check-in</button>
+        <p id="ci-error" class="ci-error"></p>
+        ${sudo ? '<p class="ci-due">Viewing as your client: only they can submit a check-in.</p>'
+          : `<button id="ci-submit" onclick="saveClientCheckIn('${escapeAttr(clientId)}')" class="btn-primary ci-submit" disabled>Submit check-in</button>`}
       </div>
     </div>`
+}
+
+// One tap on the check-in form: records the answer in the hidden input, marks that one button pressed, and enables Submit once all four are in.
+function _ciPick(key, n) {
+  const input = /** @type {HTMLInputElement|null} */ (document.getElementById('ci-' + key))
+  if (!input) return
+  input.value = String(n)
+  document.querySelectorAll(`[data-ci-metric="${key}"]`).forEach(b => b.setAttribute('aria-pressed', String(b.getAttribute('data-ci-value') === String(n))))
+  const submit = /** @type {HTMLButtonElement|null} */ (document.getElementById('ci-submit'))
+  if (submit) submit.disabled = CHECKIN_METRICS.some(m => !(/** @type {HTMLInputElement|null} */ (document.getElementById('ci-' + m.key)))?.value)
 }
 
 async function _dashRenderOwn(el, role) {
@@ -883,7 +967,7 @@ async function _dashRenderOwn(el, role) {
       ${_dashWeightHtml(d.weights)}
       ${_dashCalendarHtml(d.upcoming, todayStr)}
       ${_dashGoalsHtml(d.goals, todayStr, isClient)}
-      ${isClient ? _dashCheckInHtml(lastCheckIn, clientId) : ''}
+      ${isClient ? _dashCheckInHtml(lastCheckIn, clientId, d.prevCheckIn, { readFailed: !!d.failed['check-ins'], sudo: isSudo }) : ''}
     </div>`
   const root = el.querySelector('#dash-root')
   if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor }

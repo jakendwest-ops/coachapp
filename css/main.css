@@ -1372,6 +1372,43 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .dash-checkin .card-title { font-size: var(--text-lg); font-weight: 700; }
 .dash-checkin .card-header { margin-bottom: 10px; }
 
+/* Weekly check-in loop (2026-10-29): the client's tap-button form and the coach's Seen / Reply. Tokens only. */
+.ci-when, .ci-optional { font-size: var(--text-md); color: var(--text-muted); font-weight: 400; }
+.ci-last { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px; }
+.ci-last-tile { text-align: center; background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px; }
+.ci-last-val { font-size: var(--text-2xl); font-weight: 700; }
+.ci-last-label { font-size: var(--text-sm); color: var(--text-muted); margin-top: 2px; }
+.ci-arrow { font-size: var(--text-md); margin-left: 4px; color: var(--text-muted); }
+.ci-last-note, .ci-due { font-size: var(--text-base); color: var(--text-muted); margin: 0 0 10px; overflow-wrap: anywhere; }
+.ci-seen { font-size: var(--text-md); font-weight: 700; color: var(--success-text); margin: 0 0 6px; }
+.ci-seen-mark { font-size: var(--text-md); font-weight: 700; color: var(--success-text); }
+.ci-reply { font-size: var(--text-base); overflow-wrap: anywhere; margin: 0 0 10px; padding: 8px 10px; background: var(--surface-2); border-left: 3px solid var(--accent); border-radius: 0; white-space: pre-line; }
+.ci-new { font-size: var(--text-base); min-height: 44px; }
+.ci-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.ci-q { margin-bottom: 12px; }
+.ci-q-label { font-size: var(--text-base); font-weight: 700; margin-bottom: 6px; }
+.ci-taps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.ci-tap { min-height: 44px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: inherit; font-family: inherit; font-size: var(--text-lg); font-weight: 700; cursor: pointer; }
+.ci-tap[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.ci-ends { display: flex; justify-content: space-between; font-size: var(--text-sm); color: var(--text-muted); margin-top: 4px; }
+.ci-error { color: var(--danger-text); font-size: var(--text-md); margin: 4px 0; }
+.ci-submit { margin-top: 8px; min-height: 44px; }
+.ci-submit:disabled { opacity: .5; cursor: not-allowed; }
+.ci-review { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ci-review-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ci-review-actions .ci-seen { margin: 0; }
+.ci-act { min-height: 44px; }
+.ci-reply-hint { font-weight: 400; color: var(--text-muted); }
+.dash-ci { padding: 10px 0; border-top: 1px solid var(--border); }
+.dash-card-head + .dash-ci { border-top: 0; }
+.dash-ci-who { display: flex; align-items: center; min-height: 44px; gap: 8px; flex-wrap: wrap; width: 100%; padding: 0; border: 0; background: none; color: inherit; font-family: inherit; text-align: left; cursor: pointer; }
+.dash-ci-who i { font-style: normal; font-size: var(--text-md); color: var(--text-muted); }
+.dash-ci-flag { font-style: normal; font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--danger-text); border: 1px solid var(--danger); border-radius: var(--radius-full); padding: 1px 8px; }
+.dash-ci-scores { display: flex; gap: 12px; font-size: var(--text-md); font-weight: 700; margin-top: 4px; }
+.dash-ci-note { font-size: var(--text-base); color: var(--text-muted); margin: 4px 0 0; overflow-wrap: anywhere; }
+.dash-ci-actions { display: flex; gap: 8px; margin-top: 8px; }
+.dash-ci-btn { min-height: 44px; flex: 1; font-size: var(--text-base); }
+
 /* The week: seven tappable days (client, solo) or seven bars (coach). */
 .dash-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; }
 .dash-day { border: 0; background: none; padding: 4px 0; cursor: pointer; color: inherit; border-radius: var(--radius); font-family: inherit; }

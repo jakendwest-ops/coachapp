@@ -161,11 +161,12 @@ const log = {
 // because the coach Overview coloured all four as if high were good — so stress 5/5 and soreness 5/5, the
 // two answers a coach most needs to notice, showed GREEN and a calm, fresh client showed red
 // (bugs/2026-09-19-check-in-stress-soreness-colours-inverted).
+// lo / hi are what 1 and 5 MEAN, shown at the two ends of the client's tap buttons (2026-10-29): a bare 1-5 scale left "is 5 good?" to guess.
 const CHECKIN_METRICS = [
-  { key: 'sleep',    label: 'Sleep',    abbr: 'S',  goodWhen: 'high' },
-  { key: 'energy',   label: 'Energy',   abbr: 'E',  goodWhen: 'high' },
-  { key: 'stress',   label: 'Stress',   abbr: 'St', goodWhen: 'low'  },
-  { key: 'soreness', label: 'Soreness', abbr: 'So', goodWhen: 'low'  }
+  { key: 'sleep',    label: 'Sleep',    abbr: 'S',  goodWhen: 'high', lo: 'Slept badly', hi: 'Slept great' },
+  { key: 'energy',   label: 'Energy',   abbr: 'E',  goodWhen: 'high', lo: 'Drained',     hi: 'Full of energy' },
+  { key: 'stress',   label: 'Stress',   abbr: 'St', goodWhen: 'low',  lo: 'Calm',        hi: 'Very stressed' },
+  { key: 'soreness', label: 'Soreness', abbr: 'So', goodWhen: 'low',  lo: 'Fresh',       hi: 'Very sore' }
 ]
 
 // 'good' | 'ok' | 'bad' for one answer, or null when there is nothing to judge (missing, non-numeric, or a
@@ -185,6 +186,10 @@ function _checkInTone(metricKey, val) {
 // judge is muted rather than coloured: the old function read a missing value as 0 and painted it red.
 const CHECKIN_TONE_COLOUR = { good: 'var(--success, #10b981)', ok: 'var(--accent)', bad: 'var(--danger, #ef4444)' }
 function _checkInColour(metricKey, val) { return CHECKIN_TONE_COLOUR[_checkInTone(metricKey, val)] ?? 'var(--text-muted)' }
+
+// A check-in a coach should look at first: any answer on the bad end (sleep or energy 2 or under, stress or soreness 4 or over) - the same
+// thresholds as the colours, from _checkInTone, so a flagged row is exactly one with a red score.
+function _checkInFlagged(row) { return CHECKIN_METRICS.some(m => _checkInTone(m.key, row?.[m.key]) === 'bad') }
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
 // Dark is the default (docs/bugs/2026-10-28-dark-mode-should-be-the-default-across-the-app.md). The choice is

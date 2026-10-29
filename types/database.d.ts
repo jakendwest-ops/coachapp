@@ -168,30 +168,39 @@ export type Database = {
       client_check_ins: {
         Row: {
           client_id: string
+          coach_reply: string | null
           created_at: string
           energy: number | null
           id: string
           notes: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
           sleep: number | null
           soreness: number | null
           stress: number | null
         }
         Insert: {
           client_id: string
+          coach_reply?: string | null
           created_at?: string
           energy?: number | null
           id?: string
           notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           sleep?: number | null
           soreness?: number | null
           stress?: number | null
         }
         Update: {
           client_id?: string
+          coach_reply?: string | null
           created_at?: string
           energy?: number | null
           id?: string
           notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           sleep?: number | null
           soreness?: number | null
           stress?: number | null
@@ -210,6 +219,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "coach_client_summary"
             referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "client_check_ins_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1621,6 +1637,7 @@ export type Database = {
           last_check_in_at: string | null
           last_session_date: string | null
           last_weigh_in_date: string | null
+          next_program_start: string | null
           program_id: string | null
           program_name: string | null
           program_start: string | null

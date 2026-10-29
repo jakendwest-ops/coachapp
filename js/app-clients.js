@@ -413,7 +413,7 @@ async function renderClientOverview(id, el) {
   }
 
   const ciHtml = latestCI ? `
-    <div class="card" style="margin-top:16px">
+    <div class="card" style="margin-top:16px" data-checkin-card data-checkin-client="${escapeHtml(id)}">
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <div style="font-size:var(--text-base, 13px);font-weight:700">Latest check-in</div>
@@ -428,6 +428,7 @@ async function renderClientOverview(id, el) {
           </div>`).join('')}
         </div>
         ${latestCI.notes ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0;font-style:italic">"${escapeHtml(latestCI.notes)}"</p>` : ''}
+        ${_checkInReviewHtml(latestCI, id)}
         ${(checkIns?.length || 0) > 1 ? `
         <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
           <div style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Previous check-ins</div>
@@ -437,12 +438,107 @@ async function renderClientOverview(id, el) {
             <div style="display:flex;gap:8px">
               ${CHECKIN_METRICS.map(({ key, abbr }) => `
               <span style="font-size:12px;font-weight:600;color:${_checkInColour(key, ci[key])}">${abbr}:${ci[key]}</span>`).join('')}
+              ${ci.reviewed_at ? '<span class="ci-seen-mark" title="Seen">✓</span>' : ''}
             </div>
           </div>`).join('')}
         </div>` : ''}
       </div>
     </div>` : ''
   el.innerHTML = clientOverviewTab(client, progCurrent?.programs?.name || null) + ciHtml
+}
+
+// ─── CHECK-IN REVIEW (the coach's side of the loop, 2026-10-29) ───────────────
+// docs/bugs/2026-10-29-client-check-ins-get-no-response.md. A coach marks a client's check-in seen and replies; the database lets a coach
+// write ONLY coach_reply / reviewed_at / reviewed_by, only on their own clients' rows, and stamps reviewed_at and reviewed_by itself
+// (scripts/add-checkin-review-2026-10-29.sql) - so the reviewed_at sent here is only a signal; the server's time is what is stored.
+// ONE write path for both places that offer it: the coach Home's "Check-ins to review" card and the client Overview.
+
+// Seen / reply for one check-in on the coach's Overview: Seen ✓ while it is unreviewed, the reply once there is one, and Reply (or Edit reply).
+function _checkInReviewHtml(ci, clientId) {
+  if (!ci?.id) return ''
+  const seenOn = ci.reviewed_at ? _dashFormatDate(_ymdLocal(new Date(ci.reviewed_at))) : ''
+  return `<div class="ci-review">
+      ${ci.coach_reply ? `<p class="ci-reply"><b>Your reply:</b> ${escapeHtml(ci.coach_reply)}</p>` : ''}
+      <div class="ci-review-actions">
+        ${ci.reviewed_at ? `<span class="ci-seen">Seen ✓ ${seenOn}</span>`
+          : `<button type="button" class="btn-secondary ci-act" data-checkin-seen onclick="markCheckInSeen('${escapeAttr(ci.id)}','${escapeAttr(clientId)}',this)">Seen ✓</button>`}
+        <button type="button" class="btn-secondary ci-act" data-checkin-reply onclick="showCheckInReplyModal('${escapeAttr(ci.id)}','${escapeAttr(clientId)}')">${ci.coach_reply ? 'Edit reply' : 'Reply'}</button>
+      </div>
+    </div>`
+}
+
+// The one write. Keyed on BOTH ids (the access check verifies the client; the write must not key on an id it did not check), and it must
+// change exactly one row: a write the policy refuses comes back as zero rows and no error, which must never read as success.
+async function _reviewCheckIn(fnName, checkInId, clientId, patch) {
+  if (!(await _verifyClientAccess(fnName, clientId))) return false
+  const { data, error } = await db.from('client_check_ins').update(patch).eq('id', checkInId).eq('client_id', clientId).select('id')
+  if (error) { log.error(fnName, 'update failed', error); return false }
+  if (data?.length !== 1) { log.error(fnName, 'update changed no row - refused', { checkInId, clientId }); return false }
+  log.ok(fnName, 'saved', { checkInId })
+  return true
+}
+
+// Updates whichever view offered the action (review, 2026-10-29). On the coach Home the reviewed row is taken out IN PLACE
+// (_dashCheckInReviewed): a full renderDashboard wiped the page to "Loading…", lost the scroll, and - called outside navigate()'s
+// _pageScopedContainer - could land late on top of a page the coach had moved to. On a profile, only THIS client's Overview is redrawn
+// (data-checkin-client), so a write that finishes after the coach opened another client never paints the first client into the second's tab.
+function _refreshCheckInViews(clientId, checkInId) {
+  if (_dashCheckInReviewed(checkInId)) return
+  if ([...document.querySelectorAll('#tab-content [data-checkin-card]')].some(el => el.getAttribute('data-checkin-client') === String(clientId))) {
+    const pane = _freshTabPane()
+    if (pane) renderClientOverview(clientId, pane)
+  }
+}
+
+async function markCheckInSeen(checkInId, clientId, btn) {
+  if (btn?.disabled) return
+  if (btn) btn.disabled = true
+  const ok = await _reviewCheckIn('markCheckInSeen', checkInId, clientId, { reviewed_at: new Date().toISOString() })
+  if (!ok) { if (btn) btn.disabled = false; showToast('Could not mark it as seen. Try again.', 'error'); return }
+  showToast('Marked as seen', 'success')
+  _refreshCheckInViews(clientId, checkInId)
+}
+
+async function showCheckInReplyModal(checkInId, clientId) {
+  const { data, error } = await db.from('client_check_ins').select('coach_reply').eq('id', checkInId).eq('client_id', clientId).maybeSingle()
+  if (error || !data) { log.error('showCheckInReplyModal', 'check-in not readable', error); showToast('Could not open that check-in.', 'error'); return }
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'ci-reply-modal'
+  overlay.innerHTML = `
+    <div class="modal modal-fullscreen-mobile">
+      <div class="modal-header">
+        <h2 class="modal-title">Reply to check-in</h2>
+        <button class="modal-close" onclick="closeModal('ci-reply-modal')">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label" for="ci-reply-text">Your reply <span class="ci-reply-hint">(your client sees this on their dashboard)</span></label>
+        <textarea class="field-input" id="ci-reply-text" rows="4" maxlength="500" placeholder="A line or two is plenty">${escapeHtml(data.coach_reply || '')}</textarea>
+      </div>
+      <p class="modal-error" id="ci-reply-error"></p>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('ci-reply-modal')">Cancel</button>
+        <button class="btn-primary" id="ci-reply-save" onclick="replyToCheckIn('${escapeAttr(checkInId)}','${escapeAttr(clientId)}')">Send reply</button>
+      </div>
+    </div>`
+  mountModal(overlay)
+  document.getElementById('ci-reply-text')?.focus()
+}
+
+async function replyToCheckIn(checkInId, clientId) {
+  // Read the form BEFORE any await (the "values read after an awaited check" class).
+  const text = (/** @type {HTMLTextAreaElement|null} */ (document.getElementById('ci-reply-text'))?.value || '').trim()
+  const errEl = document.getElementById('ci-reply-error')
+  const btn = /** @type {HTMLButtonElement|null} */ (document.getElementById('ci-reply-save'))
+  if (!text) { if (errEl) errEl.textContent = 'Write a reply first.'; return }
+  if (text.length > 500) { if (errEl) errEl.textContent = 'Keep it to 500 characters.'; return }
+  if (btn?.disabled) return
+  if (btn) btn.disabled = true
+  const ok = await _reviewCheckIn('replyToCheckIn', checkInId, clientId, { coach_reply: text, reviewed_at: new Date().toISOString() })
+  if (!ok) { if (btn) btn.disabled = false; if (errEl) errEl.textContent = 'Could not send the reply. Try again.'; return }
+  closeModal('ci-reply-modal')
+  showToast('Reply sent', 'success')
+  _refreshCheckInViews(clientId, checkInId)
 }
 
 function infoItem(label, value) {

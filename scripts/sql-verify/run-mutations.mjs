@@ -18,6 +18,7 @@ import { MUTATIONS as CLIENT_LINK_GUARD } from './client-link-guard.mutations.mj
 import { MUTATIONS as HARDEN_ANON_ACCESS } from './harden-anon-access.mutations.mjs'
 import { MUTATIONS as PIN_TRIGGER_SEARCH_PATH } from './pin-trigger-search-path.mutations.mjs'
 import { MUTATIONS as SUMMARY_CURRENT_PLAN } from './coach-client-summary-current-plan.mutations.mjs'
+import { MUTATIONS as CHECKIN_REVIEW } from './checkin-review.mutations.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const SUITES = [
@@ -32,6 +33,7 @@ const SUITES = [
   { name: 'anon access: no table privilege and no function execute for the signed-out role', verifier: 'harden-anon-access.verify.mjs', mutations: HARDEN_ANON_ACCESS },
   { name: 'trigger functions: the Advisor\'s search_path warning is closed without changing what they do', verifier: 'pin-trigger-search-path.verify.mjs', mutations: PIN_TRIGGER_SEARCH_PATH },
   { name: 'coach_client_summary view: the current plan is chosen by date', verifier: 'coach-client-summary-current-plan.verify.mjs', mutations: SUMMARY_CURRENT_PLAN },
+  { name: 'check-in review: a coach reviews only their own clients' check-ins, the server stamps it', verifier: 'checkin-review.verify.mjs', mutations: CHECKIN_REVIEW },
 ]
 
 const run = (verifier, key) => new Promise((resolve) => {

@@ -12,6 +12,8 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-29** — check-ins get a coach review: UPDATE narrowed to 3 columns, server-stamped, never pre-filled on insert ([row](bugs/2026-10-29-client-check-ins-get-no-response.md)).
+
 **2026-10-29** — coach work starts, for a 25-client roster (overrides the 2026-09-26 roster deferral); a client's current plan is the most recently STARTED one, never the newest-assigned. Archived verbatim:
 [archive/decisions-2026-10-29-coach-current-plan.md](archive/decisions-2026-10-29-coach-current-plan.md).
 

@@ -638,6 +638,10 @@ if ! node scripts/sql-verify/coach-client-summary-current-plan.verify.mjs > /dev
   node scripts/sql-verify/coach-client-summary-current-plan.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
   fail "scripts/fix-coach-client-summary-current-plan-2026-10-29.sql no longer passes its local verification -- see the lines above."
 fi
+if ! node scripts/sql-verify/checkin-review.verify.mjs > /dev/null 2>&1; then
+  node scripts/sql-verify/checkin-review.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
+  fail "scripts/add-checkin-review-2026-10-29.sql no longer passes its local verification -- see the lines above."
+fi
 if ! node scripts/sql-verify/assign-program-today.verify.mjs > /dev/null 2>&1; then
   node scripts/sql-verify/assign-program-today.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
   fail "scripts/fix-assign-program-restart-date-2026-10-17.sql no longer passes its local verification -- see the lines above."

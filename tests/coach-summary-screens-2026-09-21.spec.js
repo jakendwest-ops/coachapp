@@ -55,7 +55,8 @@ test.describe('the coach dashboard and the client list read the per-client summa
   const myId = (page) => page.evaluate(() => currentUser.id)
 
   // Renders the coach dashboard and reads what a coach reads off it.
-  const dashboard = (page, tables) => withApi(page, tables, async () => {
+  // client_check_ins defaults to empty: the coach Home reads "Check-ins to review" since 2026-10-29, which these tests do not exercise.
+  const dashboard = (page, tables) => withApi(page, { client_check_ins: [], ...tables }, async () => {
     const r = await page.evaluate(async () => {
       const el = document.createElement('div'); document.body.appendChild(el)
       await renderDashboard(el)
