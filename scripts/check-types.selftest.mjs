@@ -20,24 +20,33 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const CHECK = join(dirname(fileURLToPath(import.meta.url)), 'check-types.mjs')
 
-function makeRepo ({ scripts = ['a.js', 'b.js'], configFiles = scripts, counts, tsc = '', exit,
+const CANARY_ERR = "types/type-gate-canary.js(9,7): error TS2322: Type 'string' is not assignable to type 'number'.\n"
+
+function makeRepo ({ scripts = ['a.js', 'b.js'], configFiles = scripts, counts, tsc = '', exit, canary = 1,
+  canaryListed = true, src = {},
   cdn = '<script src="https://unpkg.com/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>', pkg = '2.117.2' }) {
   const repo = mkdtempSync(join(tmpdir(), 'types-selftest-'))
   writeFileSync(join(repo, 'index.html'),
     [cdn, ...scripts.map(n => `<script src="js/${n}?v=1"></script>`)].join('\n'), 'utf8')
+  mkdirSync(join(repo, 'js'))
+  for (const n of scripts) writeFileSync(join(repo, 'js', n), src[n] ?? 'function f () {}\n', 'utf8')
   writeFileSync(join(repo, 'package.json'),
     JSON.stringify({ devDependencies: pkg === null ? {} : { '@supabase/supabase-js': pkg } }), 'utf8')
   writeFileSync(join(repo, 'jsconfig.json'),
     '// header comment, as the real file has\n' +
-    JSON.stringify({ compilerOptions: {}, files: ['types/globals.d.ts', ...configFiles.map(n => `js/${n}`)] }, null, 2), 'utf8')
+    JSON.stringify({ compilerOptions: {}, files: ['types/globals.d.ts', ...(canaryListed ? ['types/type-gate-canary.js'] : []),
+      ...configFiles.map(n => `js/${n}`)] }, null, 2), 'utf8')
   if (counts) writeFileSync(join(repo, 'baseline.json'), JSON.stringify({ _why: 'fixture', counts }, null, 2), 'utf8')
+  // Every fixture run carries the canary's one error unless a case says otherwise -- a real tsc run that
+  // is actually checking always does.
+  tsc = CANARY_ERR.repeat(canary) + tsc
   writeFileSync(join(repo, 'tsc.txt'), tsc, 'utf8')
   const env = { TYPES_REPO: repo, TYPES_BASELINE: join(repo, 'baseline.json'), TYPES_TSC_OUTPUT: join(repo, 'tsc.txt') }
   env.TYPES_TSC_EXIT = String(exit ?? (tsc.includes('error TS') ? 2 : 0))
@@ -83,8 +92,32 @@ const CASES = [
     repo: () => makeRepo({ counts: { 'js/a.js': 5 }, tsc: "error TS5023: Unknown compiler option 'nope'.\n" }),
     want: r => r.exit === 1 && r.out.includes('TS5023') },
 
+  { why: 'the CANARY error missing (checkJs:false / noCheck / empty output, exit 0) refuses -- tsc checked nothing',
+    repo: () => makeRepo({ counts: { 'js/a.js': 5 }, canary: 0, exit: 0 }),
+    want: r => r.exit === 1 && r.out.includes('canary') },
+
+  { why: 'the canary reporting TWO errors refuses (the canary itself changed)',
+    repo: () => makeRepo({ counts: { 'js/a.js': 0 }, canary: 2 }),
+    want: r => r.exit === 1 && r.out.includes('canary') },
+
+  { why: 'the canary NOT LISTED in jsconfig refuses',
+    repo: () => makeRepo({ counts: { 'js/a.js': 0 }, canaryListed: false }),
+    want: r => r.exit === 1 && r.out.includes('canary') },
+
+  { why: 'a // @ts-nocheck in a js/ file refuses (it silences the whole file and reads as 115 -> 0)',
+    repo: () => makeRepo({ counts: { 'js/a.js': 3 }, src: { 'a.js': '// @ts-nocheck\nfunction f () {}\n' } }),
+    want: r => r.exit === 1 && r.out.includes('@ts-nocheck') && r.out.includes('js/a.js') },
+
+  { why: 'a @ts-ignore COUNTS as an error -- suppressing a new error cannot keep the count level',
+    repo: () => makeRepo({ counts: { 'js/a.js': 1 }, tsc: err('a.js', 1), src: { 'a.js': '// @ts-ignore\nfoo()\n' } }),
+    want: r => r.exit === 1 && r.out.includes('js/a.js 1 -> 2') },
+
+  { why: 'a @ts-expect-error COUNTS as an error too',
+    repo: () => makeRepo({ counts: { 'js/a.js': 0 }, src: { 'a.js': '/** @ts-expect-error reason */\nfoo()\n' } }),
+    want: r => r.exit === 1 && r.out.includes('js/a.js 0 -> 1') },
+
   { why: 'tsc exiting non-zero with nothing parseable refuses',
-    repo: () => makeRepo({ counts: { 'js/a.js': 5 }, tsc: 'Segmentation fault\n', exit: 3 }),
+    repo: () => makeRepo({ counts: { 'js/a.js': 5 }, tsc: 'Segmentation fault\n', exit: 3, canary: 0 }),
     want: r => r.exit === 1 && /reported no errors/.test(r.out) },
 
   { why: 'jsconfig files OUT OF index.html ORDER refuses',

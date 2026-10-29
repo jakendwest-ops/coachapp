@@ -12,8 +12,11 @@
  * baseline to be lowered (a baseline left above the real count is a permit, not a ratchet).
  *
  * It refuses, rather than passes, when it cannot trust the run: a tsc CONFIG error, a non-zero exit
- * with nothing parseable, or jsconfig's file list drifting from index.html (a dropped file's errors
- * would simply vanish). Each of those would otherwise read as "every file improved to 0".
+ * with nothing parseable, jsconfig's file list drifting from index.html (a dropped file's errors
+ * would simply vanish), the canary (types/type-gate-canary.js) not reporting exactly its one error
+ * (tsc checked nothing: checkJs off, noCheck on, an empty run), or a @ts-nocheck in js/. Each of
+ * those would otherwise read as "every file improved to 0". Each @ts-ignore / @ts-expect-error in
+ * js/ counts as an error, so suppressing a new error cannot keep a file's count level.
  *
  * Usage:  node scripts/check-types.mjs [--write]
  *         --write lowers fallen counts (never raises, never adds a file). With NO baseline file it
@@ -37,11 +40,17 @@ function scriptOrder () {
   return [...html.matchAll(/<script\s+src="(js\/[a-zA-Z0-9._-]+\.js)\?v=\d+"/g)].map(m => m[1])
 }
 
-/** jsconfig.json's js/ files. Strips whole-line // comments only (jsconfig allows them, JSON does not). */
+/** jsconfig.json's files list. Strips whole-line // comments only (jsconfig allows them, JSON does not). */
 function configFiles () {
   const raw = readFileSync(join(REPO, 'jsconfig.json'), 'utf8').replace(/^﻿/, '').replace(/^\s*\/\/.*$/gm, '')
-  return (JSON.parse(raw).files || []).filter(f => f.startsWith('js/'))
+  return JSON.parse(raw).files || []
 }
+
+// The canary: a file with exactly ONE deliberate type error. tsc can be told to check nothing and
+// still exit 0 -- `"checkJs": false`, `"noCheck": true`, an empty run -- and then every file reads
+// "improved to 0" (review, 2026-10-29: all three passed before this). A real check always reports the
+// canary's one error, so its absence means tsc did not check, whatever the reason.
+const CANARY = 'types/type-gate-canary.js'
 
 function runTsc () {
   if (process.env.TYPES_TSC_OUTPUT) {
@@ -55,7 +64,9 @@ function runTsc () {
 
 const order = scriptOrder()
 if (!order.length) refuse('no <script src="js/..."> tags found in index.html.')
-const listed = configFiles()
+const allListed = configFiles()
+if (!allListed.includes(CANARY)) refuse(`jsconfig.json "files" must include the canary ${CANARY} -- without it a check that checks nothing cannot be told from a clean one.`)
+const listed = allListed.filter(f => f.startsWith('js/'))
 if (order.join('\n') !== listed.join('\n')) {
   refuse(`jsconfig.json "files" must list index.html's scripts in the same order.\n` +
     `    index.html:    ${order.join(', ')}\n    jsconfig.json: ${listed.join(', ')}`)
@@ -83,8 +94,25 @@ for (const line of out.split(/\r?\n/)) {
   } else if (/error TS\d+/.test(line)) unattributed.push(line)
 }
 if (unattributed.length) refuse(`tsc reported errors not tied to a file (config?) -- the counts cannot be trusted:\n    ${unattributed.slice(0, 10).join('\n    ')}`)
+const canaryErrors = counts[CANARY] || 0
+delete counts[CANARY]
+if (exit !== 0 && canaryErrors === 0 && Object.values(counts).every(n => n === 0)) {
+  refuse(`tsc exited ${exit} but reported no errors -- it did not run cleanly:\n    ${out.trim().split('\n').slice(0, 10).join('\n    ')}`)
+}
+if (canaryErrors !== 1) {
+  refuse(`the canary ${CANARY} reported ${canaryErrors} errors, not exactly 1 -- tsc is not checking ` +
+    `(checkJs off? noCheck? an empty run?) or the canary was edited. The counts cannot be trusted.`)
+}
+
+// Suppression comments. @ts-nocheck silences a whole file (one line turned app-runner's 115 into 0 in
+// review), so it is refused outright. Each @ts-ignore / @ts-expect-error COUNTS as an error: hiding a
+// new error behind one keeps the count where it was instead of letting it sit level with a new bug.
+for (const file of order) {
+  const src = readFileSync(join(REPO, file), 'utf8')
+  if (/@ts-nocheck\b/.test(src)) refuse(`${file} contains @ts-nocheck, which silences the type check for the whole file. Remove it.`)
+  counts[file] += (src.match(/@ts-(ignore|expect-error)\b/g) || []).length
+}
 const total = Object.values(counts).reduce((a, b) => a + b, 0)
-if (exit !== 0 && total === 0) refuse(`tsc exited ${exit} but reported no errors -- it did not run cleanly:\n    ${out.trim().split('\n').slice(0, 10).join('\n    ')}`)
 
 if (!existsSync(BASELINE)) {
   if (!WRITE) refuse(`no baseline at ${BASELINE} -- seed it with --write.`)
