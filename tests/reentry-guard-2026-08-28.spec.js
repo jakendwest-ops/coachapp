@@ -94,8 +94,11 @@ const MUST_BE_GUARDED = [
 
   // ── Added 2026-08-29 by the weekly full-file review, all three moved out of FROZEN_UNGUARDED.
   //    Their shared exemption ("torn down on success") described what happens AFTER the awaits.
-  'saveWorkoutSession',       // double-tap = TWO workout_logs rows plus their exercises and sets
-  'saveRunnerOneRM',          // double-tap = two identical client_1rms rows; modal .remove() is after
+  // 'saveWorkoutSession' left this list 2026-10-29 (R4a): it no longer inserts. It writes through _persistSession, whose
+  // writes are skip-existing upserts on ids fixed for the session, so a repeat converges to one session - idempotent like
+  // an update keyed by id, criterion (a). It KEEPS its guard (a second press still costs a round trip and a toast); that
+  // guard is pinned by the last test in this file, since this scan can no longer see the function.
+  'saveRunnerOneRM',         // double-tap = two identical client_1rms rows; modal .remove() is after
   '_savePostSessionOneRM',    // same; the psorm-row-N .remove() is after both awaits
 
   // ── Added by Task 12b (2026-09-13), closing the gap Task 12 correctly left red: the ONE remaining
@@ -156,7 +159,9 @@ test.describe('A double-pressed write must not insert twice', () => {
     // "all 0 inserters are fine" is a switched-off checker. 36 exist today (addStep joined on 2026-10-14): 37 until 2026-09-27, when
     // saveAssignProgram and saveAssignProgramToClient stopped inserting from the browser (both now call the
     // assign_program() database function), which also takes them out of this scan's sight — see the next test.
-    expect(found.length, 'the scan found no inserters — it is inspecting nothing').toBeGreaterThanOrEqual(35)
+    // 34 since 2026-10-29: saveRunnerSession and saveWorkoutSession write through _persistSession's skip-existing upserts
+    // (R4a) and are pinned by their own test below.
+    expect(found.length, 'the scan found no inserters — it is inspecting nothing').toBeGreaterThanOrEqual(34)
 
     for (const name of MUST_BE_GUARDED) {
       const fn = found.find(f => f.name === name)
@@ -195,6 +200,36 @@ test.describe('A double-pressed write must not insert twice', () => {
       expect(guardAt, `${name} must disable its button`).toBeGreaterThanOrEqual(0)
       expect(guardAt, `${name} must disable its button BEFORE calling the transaction`).toBeLessThan(body.indexOf('_assignProgramTx('))
     }
+  })
+
+  // R4a (2026-10-29): both workout saves left the inserter scan above when they moved to _persistSession's skip-existing
+  // writes. What makes a double press harmless now is that writer plus the session id being fixed BEFORE the first await;
+  // pin both, and the guards the two saves still carry, so neither can quietly drop out.
+  test('the two workout saves write through the retry-safe writer and keep their guards', async ({ page }) => {
+    await loginAsPT(page)
+    const scan = await readModules(page)
+    expect(scan.fatal).toBeUndefined()
+    const src = scan.srcs['js/app-runner.js']
+    const bodyOf = (name) => {
+      const start = src.search(new RegExp(`^async function ${name}\\s*\\(`, 'm'))
+      expect(start, `${name} must still exist`).toBeGreaterThanOrEqual(0)
+      const rest = src.slice(start)
+      return rest.slice(0, rest.slice(1).search(/\n(async )?function /) + 1)
+    }
+    for (const name of ['saveRunnerSession', 'saveWorkoutSession']) {
+      const body = bodyOf(name)
+      expect(body, `${name} must write through _persistSession`).toMatch(/_persistSession\(/)
+      expect(body, `${name} must not insert directly`).not.toMatch(/\.insert\(/)
+    }
+    const run = bodyOf('saveRunnerSession')
+    // The first await EXPRESSION (`await name.` / `await name(`), not the word in a comment.
+    const firstAwait = run.search(/\bawait [A-Za-z_$][\w$]*[.(]/)
+    expect(firstAwait, 'saveRunnerSession still awaits something').toBeGreaterThan(0)
+    expect(run.indexOf('_runner.saveLogId = crypto.randomUUID()'), 'the session id is fixed before the first await').toBeLessThan(firstAwait)
+    expect(run, 'saveRunnerSession still disables its button').toMatch(/\.disabled\s*=\s*true/)
+    expect(src, 'saveWorkoutSession is still re-entry guarded').toMatch(/guardReentry\(['"]saveWorkoutSession['"]\)/)
+    const persist = bodyOf('_persistSession')
+    expect((persist.match(/ignoreDuplicates: true/g) || []).length, 'all three writes skip existing rows').toBe(3)
   })
 
   test('no bespoke in-flight flag remains — the release must live in one try/finally', async ({ page }) => {

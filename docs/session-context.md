@@ -35,7 +35,7 @@ RPE top-set autoregulation is live (since `v2026.09.13`); its spec and plan are 
 - A push runs a type check (since 2026-10-29, released in `v2026.10.8`): a rising per-file `tsc` error count, e.g. a wrong column name, blocks it.
   After any schema change, regenerate `types/database.d.ts` in the same commit ([schema.md](schema.md)).
 - Screens that read growing tables through the API's silent 200-row cap: the known ones are fixed and `checks.sh` rule 9n pins the rest
-  ([technical-debt.md](technical-debt.md)); a workout save that is not retry-safe is also named there.
+  ([technical-debt.md](technical-debt.md)).
 
 ## Immediate Next Actions
 

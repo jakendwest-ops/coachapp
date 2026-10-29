@@ -51,8 +51,8 @@ flip `currentProfile.role` before the dirty-draft check (the shape of the `switc
 triplicated leave-guard block (`app-core.js` x2, `app-workouts.js` `_templateGoBack()`) wants one shared helper.
 
 **From planning the product-review releases (2026-09-20; read from code, impact unmeasured):** capped reads (still open: the unpaged `clients`
-roster reads and the sites `checks.sh` rule 9n pins); writes with no retry safety or transaction (workout save, program assignment,
-`deletePhaseWeek`); two propagation regimes (a content edit *offers* "Update assigned clients?", week-structure edits change plans with no prompt:
+roster reads and the sites `checks.sh` rule 9n pins); writes with no retry safety or transaction (program assignment, `deletePhaseWeek`;
+the workout save became retry-safe in R4a, 2026-10-29: phone-chosen ids and skip-existing writes, still not one transaction); two propagation regimes (a content edit *offers* "Update assigned clients?", week-structure edits change plans with no prompt:
 Jake's call); stale backlog premises (3 of 20 ranked items rested on lines the code had left behind: check code first); and an unrunnable ad-hoc
 probe recipe (`_adhoc*` is in `testIgnore`; the skills say `_debug-adhoc`, which is gitignored but not runner-ignored, so a leftover runs in `npm test`).
 

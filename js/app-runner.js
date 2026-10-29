@@ -8,6 +8,8 @@
     _showRunnerResumeModal(clientId, draft)
     return
   }
+  // Another account's unsaved workout for this client is on this phone: a fresh runner would overwrite it (R4a).
+  if (_foreignPendingDraft(clientId)) { _refuseOverForeignDraft(); return }
   await _startFreshRunner(clientId)
 }
 // Guarded 2026-08-29 (weekly full-file review). Double-tapping ▶ Start ran _startFreshRunner twice:
@@ -60,6 +62,7 @@ async function _startFreshRunner(clientId) {
   document.getElementById('runner-setup')?.remove()
 
   _runner = { clientId, name, date: _ymdLocal(new Date()), exercises, exIdx: 0, startTime: Date.now(), _timerInterval: null, templateDesc: template?.description || null, templateId: template ? template.id : null }
+  _refreshPendingSaveBar()
   // Interval exercises store ONE sets_json entry describing the whole block, so the generic
   // `targetSets: ex.sets_json?.length || 3` above always comes out as 1 (or 3, on a legacy fallback)
   // for them — expand now so targetSets reflects the real work-round count everywhere it's read
@@ -164,6 +167,9 @@ function _runnerDraftKey(clientId) {
 
 function _saveRunnerDraft() {
   if (!_runner) return
+  // Never write over another account's unsaved workout (the key is per client, not per person). launchRunner refuses to
+  // start in that case; this is the backstop for any other route to a runner.
+  if (_foreignPendingDraft(_runner.clientId)) { log.warn('_saveRunnerDraft', "another account's unsaved workout holds this draft slot — not overwritten", { clientId: _runner.clientId }); return }
   try {
     const draft = {
       clientId: _runner.clientId,
@@ -174,6 +180,17 @@ function _saveRunnerDraft() {
       templateDesc: _runner.templateDesc || null,
       templateId: _runner.templateId || null,
       exercises: _runner.exercises,
+      // R4a: a save that failed keeps its session id (a retry must write the SAME rows) and its "not saved" mark; the
+      // user id lets the bar show a pending workout only to the person it belongs to on a shared phone.
+      saveLogId: _runner.saveLogId || null,
+      pendingSave: _runner.pendingSave || null,
+      // A write was actually sent: from here the workout's sets are locked (see backToRunnerFromFinish).
+      saveWritesStarted: !!_runner.saveWritesStarted,
+      userId: currentUser?.id || null,
+      // What was typed on the finish screen, so a retry days later saves THAT name and those notes (not the start name).
+      finishNotes: _runner.finishNotes || '',
+      // A coach's unsaved workout for a client is named for that client on the bar (display only, never logged).
+      clientName: _runner.clientName || null,
       savedAt: Date.now()
     }
     localStorage.setItem(_runnerDraftKey(_runner.clientId), JSON.stringify(draft))
@@ -190,8 +207,16 @@ function _loadRunnerDraft(clientId) {
     if (!raw) return null
     const draft = JSON.parse(raw)
     // Same-day staleness cutoff -- a draft from a previous calendar day is presumed abandoned
-    // and never offered for resume.
-    if (new Date(draft.savedAt).toDateString() !== new Date().toDateString()) {
+    // and never offered for resume. EXCEPT a workout whose save failed (R4a): it was finished, the user tapped Save, and
+    // it is the only copy - it is kept for PENDING_SAVE_DAYS, so a save that failed in a basement gym can still be
+    // saved tomorrow. An unfinished workout keeps Jake's same-day rule.
+    const pendingFresh = _isPendingDraft(draft) && (Date.now() - draft.savedAt) < PENDING_SAVE_DAYS * 86400000
+    // An unsaved workout belongs to the person who logged it. On a shared phone someone else signed in (a coach opening
+    // that client's runner, say) must neither see it nor discard it, and nothing here writes over it (launchRunner and
+    // _saveRunnerDraft refuse). It stays until it expires or until a deliberate sign-out on this phone, which clears every
+    // draft - that sign-out says how many are unsaved, other accounts' included (R4a review, 2026-10-29).
+    if (pendingFresh && draft.userId && draft.userId !== currentUser?.id) return null
+    if (!pendingFresh && new Date(draft.savedAt).toDateString() !== new Date().toDateString()) {
       localStorage.removeItem(_runnerDraftKey(clientId))
       return null
     }
@@ -212,6 +237,227 @@ function _clearRunnerDraft(clientId) {
   if (clientId) localStorage.removeItem(_runnerDraftKey(clientId))
 }
 
+// True when this client's draft slot holds ANOTHER account's unsaved workout that has not expired (R4a). Read raw:
+// _loadRunnerDraft hides such a draft, and "hidden" must not be mistaken for "free to overwrite".
+function _foreignPendingDraft(clientId) {
+  try {
+    const d = JSON.parse(localStorage.getItem(_runnerDraftKey(clientId)) || 'null')
+    return _isPendingDraft(d) && !!d.userId && d.userId !== currentUser?.id && (Date.now() - d.savedAt) < PENDING_SAVE_DAYS * 86400000
+  } catch (e) { return false }
+}
+
+function _refuseOverForeignDraft() {
+  showToast('Another account has an unsaved workout for this client on this phone. Sign in as that account to save it — starting one here would overwrite it.', 'warn', 8000)
+}
+
+// ─── A SAVE THAT CONVERGES AND CANNOT BE LOST (R4a, 2026-10-29) ───────────────────────────────────────────────────────
+// Ledger: docs/bugs/2026-10-29-workout-save-is-not-retry-safe.md. Both writers (the runner and the manual Log session
+// form) used to insert the session, its exercises and its sets with server-made ids and "roll back" with deletes whose
+// results were never checked. On a gym connection that produced duplicates (a reply lost after the server committed),
+// empty sessions (the rollback dying with the connection) and lost workouts (a failed save discarded the next day).
+//
+// Now: every id is chosen on the phone (the session id once, the rest derived from it by _stableUuid), and each write
+// skips rows that already exist. A retry of the same workout therefore converges to ONE complete session however the
+// earlier attempt died, with no deletes. Checked live (Jake, 2026-10-29): all three tables take a client-supplied uuid,
+// and children cascade from the session.
+
+const PENDING_SAVE_DAYS = 14      // how long a finished-but-unsaved workout is kept on the phone
+
+// The app's own window globals (_soloClientId, _masterClientId, _masterAccount) are not declared to the type checker; this
+// section reads them through one any-typed handle rather than adding to the type-error count (scripts/check-types.mjs).
+const _win = /** @type {any} */ (window)
+
+// A draft is an unsaved FINISHED workout once a save has been attempted: marked failed, or holding a session id (the app
+// was closed mid-save, before the result came back - that save may or may not have landed).
+function _isPendingDraft(d) { return !!(d && (d.pendingSave || d.saveLogId)) }
+
+// Writes one session. Resolves { ok: true, renameRefused, storedName } or { ok: false, stage, error }. Never throws.
+async function _persistSession(tag, input) {
+  // The rows are rebuilt HERE rather than written as handed in, so the writer itself guarantees what it writes: the session
+  // row carries only these columns, every exercise row belongs to THIS session, and a set is refused unless it belongs to
+  // one of this session's exercises. (It is also what lets checks.sh's scoping rule see each write's tenant key.)
+  const s = input.logRow
+  const logRow = { id: s.id, coach_id: s.coach_id, client_id: s.client_id, template_id: s.template_id ?? null, name: s.name, date: s.date, notes: s.notes ?? null }
+  const exerciseRows = input.exerciseRows.map(r => ({ ...r, log_id: logRow.id }))
+  const exIds = new Set(exerciseRows.map(r => r.id))
+  if (input.setRows.some(r => !exIds.has(r.workout_log_exercise_id))) return _persistFailed(tag, 'sets', { message: 'a set names an exercise outside this session', code: 'R4A03' })
+  const setRows = input.setRows.map(r => ({ ...r, workout_log_exercise_id: r.workout_log_exercise_id }))
+  try {
+    // ignoreDuplicates is ON CONFLICT DO NOTHING; select('id') returns the row only when THIS call inserted it, which is
+    // how a retry learns the session was already there.
+    const { data: inserted, error: logErr } = await db.from('workout_logs').upsert(logRow, { onConflict: 'id', ignoreDuplicates: true }).select('id')
+    if (logErr) return _persistFailed(tag, 'session', logErr)
+    let renameRefused = null, storedName = logRow.name      // renameRefused: which change could not be applied, if any
+    if (!(inserted || []).length) {
+      // Already there from an earlier attempt, which wrote ITS name and notes. "Do nothing on conflict" would quietly keep
+      // those, so a rename made between attempts is applied here. A client account cannot update its own session
+      // (workout_logs UPDATE is USING coach_id = auth.uid()), so for it the first values stand and the caller says so -
+      // never a silent no-op.
+      const { data: cur, error: readErr } = await db.from('workout_logs').select('name, notes').eq('id', logRow.id).maybeSingle()
+      if (readErr) return _persistFailed(tag, 'session', readErr)
+      if (!cur) return _persistFailed(tag, 'session', { message: 'session id taken by a row this account cannot see', code: 'R4A01' })
+      const nameChanged = cur.name !== logRow.name, notesChanged = (cur.notes || null) !== (logRow.notes || null)
+      if (nameChanged || notesChanged) {
+        const { data: upd, error: updErr } = await db.from('workout_logs').update({ name: logRow.name, notes: logRow.notes }).eq('id', logRow.id).select('id')
+        if (updErr && _isNetworkError(updErr)) return _persistFailed(tag, 'session', updErr)
+        if (updErr || !(upd || []).length) { renameRefused = nameChanged && notesChanged ? 'name and notes' : nameChanged ? 'name' : 'notes'; storedName = cur.name }
+      }
+    }
+    const { error: exErr } = await db.from('workout_log_exercises').upsert(exerciseRows, { onConflict: 'id', ignoreDuplicates: true })
+    if (exErr) return _persistFailed(tag, 'exercises', exErr)
+    if (setRows.length) {
+      const { error: setsErr } = await db.from('workout_log_sets').upsert(setRows, { onConflict: 'id', ignoreDuplicates: true })
+      if (setsErr) return _persistFailed(tag, 'sets', setsErr)
+    }
+    // "Skip what exists" also skips a row that exists but is not ours, and reports success while writing nothing. Count
+    // what is really there before saying "saved": the ids are known, so two head-only counts settle it.
+    const count = async (table, ids) => {
+      if (!ids.length) return { n: 0 }
+      const { count: n, error } = await db.from(table).select('id', { count: 'exact', head: true }).in('id', ids)
+      return { n, error }
+    }
+    const [exC, setC] = await Promise.all([count('workout_log_exercises', exerciseRows.map(r => r.id)), count('workout_log_sets', setRows.map(r => r.id))])
+    if (exC.error || setC.error) return _persistFailed(tag, 'check', exC.error || setC.error)
+    if (exC.n !== exerciseRows.length || setC.n !== setRows.length) {
+      return _persistFailed(tag, 'check', { message: `saved ${exC.n}/${exerciseRows.length} exercises, ${setC.n}/${setRows.length} sets`, code: 'R4A02' })
+    }
+    return { ok: true, renameRefused, storedName }
+  } catch (e) {
+    return _persistFailed(tag, 'session', { message: String(e?.message || e) })
+  }
+}
+
+// A lost connection is expected in a gym and is not a fault worth reporting; a refusal by the server is. log.error
+// toasts its own raw "tag: message", so the caller's plain-English toast is shown AFTER this (it replaces that one).
+function _persistFailed(tag, stage, error) {
+  if (_isNetworkError(error) && !/^R4A/.test(String(error?.code || ''))) log.warn(tag, `${stage} write did not reach the server — kept on this device`, { code: error?.code || null })
+  // Code and message only: a database error's `details` can quote the refused row's values (notes, weights).
+  else log.error(tag, `${stage} write refused`, { code: error?.code || null, message: error?.message || null })
+  return { ok: false, stage, error }
+}
+
+function _saveFailMessage(res, { form = false } = {}) {
+  const kept = form ? 'what you entered is still here' : 'your workout is kept on this phone'
+  const code = String(res?.error?.code || '')
+  if (code === 'R4A02') return `The workout may not have saved completely — ${kept}. Tap Save again.`
+  // An expired sign-in is not a reason to throw the workout away (the generic line below would suggest exactly that).
+  if (code === 'PGRST301' || code === 'PGRST303') return `Your sign-in has expired — ${kept}. Sign in again, then tap Save.`
+  if (_isNetworkError(res?.error) && !/^R4A/.test(code)) return `Couldn't reach the server — ${kept}. Tap Save again when you have signal.`
+  return `The workout couldn't be saved — ${kept}. Try Save again; if it keeps failing, discard it.`
+}
+
+// Discarding a workout whose save failed also removes what an earlier attempt left on the server - but only a PARTIAL
+// save. "Not saved" can be wrong: when the last reply was lost the whole workout may be stored, and deleting it then would
+// destroy a real session (a coach's delete cascades) or, for a client, silently do nothing. So it looks first: any set on
+// the server means the save completed and nothing is deleted. Sets are written in one batch, so a partial save is at most
+// a session plus exercises without sets, which a client may delete too (children first). Resolves:
+//   'removed' - nothing of it is left on the server   'saved' - it had saved; nothing was deleted
+//   'offline' - no signal; nothing changed            'refused' - the server kept part of it
+async function _removePartialSave(logId) {
+  const fail = (tag, e) => { log.warn('_removePartialSave', `${tag} did not complete`, { logId, code: e?.code || null }); return _isNetworkError(e) ? 'offline' : 'refused' }
+  const { data: log0, error: eL } = await db.from('workout_logs').select('id').eq('id', logId).maybeSingle()
+  if (eL) return fail('session read', eL)
+  if (!log0) return 'removed'      // nothing of it ever reached the server (or it is already gone)
+  const { data: exs, error: e0 } = await db.from('workout_log_exercises').select('id').eq('log_id', logId).limit(200)
+  if (e0) return fail('read', e0)
+  const exIds = (exs || []).map(r => r.id)
+  if (exIds.length) {
+    const { count, error: e1 } = await db.from('workout_log_sets').select('id', { count: 'exact', head: true }).in('workout_log_exercise_id', exIds)
+    if (e1) return fail('count', e1)
+    if (count) return 'saved'
+    // Exactly the rows just counted - not "every exercise of this session", which could include one written since.
+    const { data: goneEx, error: e2 } = await db.from('workout_log_exercises').delete().in('id', exIds).select('id')
+    if (e2) return fail('exercise delete', e2)
+    if ((goneEx || []).length !== exIds.length) return 'refused'
+  }
+  const { data: goneLog, error: e3 } = await db.from('workout_logs').delete().eq('id', logId).select('id')
+  if (e3) return fail('session delete', e3)
+  // The session was there a moment ago: a delete that removed no row was refused (row-level security answers with
+  // no rows, not an error).
+  return (goneLog || []).length ? 'removed' : 'refused'
+}
+
+// A client account cannot update its own session, so a change made between a failed attempt and the retry may not apply.
+function _renameRefusedMessage(what, res) {
+  if (res.renameRefused === 'notes') return `${what} saved. The new notes could not be applied.`
+  return `${what} saved. The new ${res.renameRefused} could not be applied, so it is saved as "${res.storedName}".`
+}
+
+// The one Discard path for a workout whose save failed: runs _removePartialSave and says what happened. Resolves true when
+// the phone's copy may now be dropped - never while there is no signal, because then nothing on the server was tidied.
+async function _discardPartialSave(logId) {
+  const r = await _removePartialSave(logId)
+  if (r === 'offline') { showToast("Discard needs signal — the workout is kept on this phone. Try again when you're back online.", 'warn', 6000); return false }
+  if (r === 'saved') showToast('This workout had already saved — it is in your history, so nothing was deleted.', 'info', 6000)
+  if (r === 'refused') showToast('Part of this workout could not be removed from the server.', 'warn', 6000)
+  return true
+}
+
+// Every finished-but-unsaved workout on this phone that belongs to the person signed in - or, with anyUser, every one on
+// the phone whoever logged it (sign-out clears them all, so its warning counts them all).
+function _pendingSaveDrafts({ anyUser = false } = {}) {
+  const out = []
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (!k || !k.startsWith('_runnerDraft_')) continue
+      const d = JSON.parse(localStorage.getItem(k) || 'null')
+      if (_isPendingDraft(d) && d.userId && (anyUser || d.userId === currentUser?.id) && (Date.now() - d.savedAt) < PENDING_SAVE_DAYS * 86400000) out.push(d)
+    }
+  } catch (e) { log.warn('_pendingSaveDrafts', 'could not read saved drafts', e?.name || e) }
+  return out.sort((a, b) => b.savedAt - a.savedAt)
+}
+
+// The "Workout not saved" bar: on every page while such a workout exists and no runner is open. A page-level element, not
+// part of any render, so a page repaint cannot wipe it. Retry reopens the workout on its finish screen (never a silent
+// background write); Discard asks, then removes it.
+function _refreshPendingSaveBar() {
+  const old = document.getElementById('pending-save-bar')
+  // A master account shows each unsaved workout in the view it belongs to - its own record's in that record's view (Personal,
+  // or its client view), a real client's in the coach view - so Retry reopens it, and a successful save returns, in the
+  // right place (switchView sets the role).
+  const ownIds = [_win._soloClientId, _win._masterClientId].filter(Boolean)
+  const viewRecord = currentProfile?.role === 'coach' ? null : currentProfile?.role === 'client' ? _win._masterClientId : _win._soloClientId
+  const inThisView = d => !_win._masterAccount || (viewRecord ? d.clientId === viewRecord : !ownIds.includes(d.clientId))
+  const d = (_runner || !currentUser) ? null : _pendingSaveDrafts().find(inThisView)
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!d || !UUID.test(String(d.clientId))) { old?.remove(); return }
+  const bar = old || document.createElement('div')
+  bar.id = 'pending-save-bar'
+  bar.className = 'pending-save-bar'
+  bar.setAttribute('role', 'status')
+  bar.innerHTML = `
+    <span class="pending-save-text">Workout not saved — <strong>${escapeHtml(d.name || 'Workout')}</strong>${d.clientName ? ` · ${escapeHtml(d.clientName)}` : ''}</span>
+    <button type="button" class="btn-primary pending-save-btn" onclick="retryPendingSave('${d.clientId}')">Retry</button>
+    <button type="button" class="btn-secondary pending-save-btn" onclick="discardPendingSave('${d.clientId}')">Discard</button>`
+  if (!old) document.body.appendChild(bar)
+}
+
+async function retryPendingSave(clientId) {
+  // Gone since the bar was drawn (discarded in another tab, signed out): redraw the bar, never open an empty runner.
+  if (!_loadRunnerDraft(clientId)) { _refreshPendingSaveBar(); return }
+  _unlockAudio()
+  await _resumeRunnerFromDraft(clientId)
+}
+guardReentry('retryPendingSave')   // a double tap must not open two runners
+
+async function discardPendingSave(clientId) {
+  if (!(await confirmDialog('Discard this unsaved workout? Everything logged in it will be lost — this cannot be undone.', { title: 'Discard workout?', confirmLabel: 'Discard', danger: true }))) return
+  const d = _loadRunnerDraft(clientId)
+  // Gone, or not this person's (the slot may now hold another account's workout): clear nothing, just redraw the bar.
+  if (!d) { _refreshPendingSaveBar(); return }
+  if (d.saveLogId && !(await _discardPartialSave(d.saveLogId))) return
+  _clearRunnerDraft(clientId)
+  _refreshPendingSaveBar()
+}
+guardReentry('discardPendingSave')
+
+window.addEventListener('online', () => {
+  if (_runner?.pendingSave) showToast("You're back online — tap Save to save your workout.", 'info', 5000)
+  else if (!_runner && _pendingSaveDrafts().length) showToast("You're back online — tap Retry to save your workout.", 'info', 5000)
+  _refreshPendingSaveBar()
+})
+
 function _startRunnerDraftSafetyNet() {
   _runnerDraftSafetyNetInterval = clearTimer(_runnerDraftSafetyNetInterval)
   _runnerDraftSafetyNetInterval = setInterval(() => { if (_runner) _saveRunnerDraft() }, 10000)
@@ -231,9 +477,11 @@ function _showRunnerResumeModal(clientId, draft) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">Resume in-progress workout?</h2>
+        <h2 class="modal-title">${draft.pendingSave ? 'Workout not saved yet' : 'Resume in-progress workout?'}</h2>
       </div>
-      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px">You have an unsaved workout from earlier today (${escapeHtml(draft.name || 'Workout')}${loggedCount ? `, ${loggedCount} set${loggedCount === 1 ? '' : 's'} logged` : ''}). Resume where you left off, or discard it and start fresh?</p>
+      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px">${draft.pendingSave
+        ? `Your workout (${escapeHtml(draft.name || 'Workout')}${loggedCount ? `, ${loggedCount} set${loggedCount === 1 ? '' : 's'} logged` : ''}) has not been saved yet. Open it to save it, or discard it and start fresh?`
+        : `You have an unsaved workout from earlier today (${escapeHtml(draft.name || 'Workout')}${loggedCount ? `, ${loggedCount} set${loggedCount === 1 ? '' : 's'} logged` : ''}). Resume where you left off, or discard it and start fresh?`}</p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="_discardRunnerDraftAndStartFresh('${clientId}')">Discard &amp; start fresh</button>
         <button class="btn-primary" onclick="_resumeRunnerFromDraft('${clientId}')">Resume</button>
@@ -250,22 +498,37 @@ async function _resumeRunnerFromDraft(clientId) {
   _unlockAudio()
   document.getElementById('runner-resume-modal')?.remove()
   const draft = _loadRunnerDraft(clientId)
-  if (!draft) { await _startFreshRunner(clientId); return } // vanished between modal open and tap
+  if (!draft) {      // vanished between modal open and tap
+    if (_foreignPendingDraft(clientId)) { _refuseOverForeignDraft(); return }
+    await _startFreshRunner(clientId); return
+  }
   window._fakeRsTemplate = null; window._fakeRsName = null      // the start this draft blocked is abandoned: it must not leak into the next one
   _runner = {
     clientId: draft.clientId, name: draft.name, date: draft.date, exercises: draft.exercises,
     exIdx: draft.exIdx || 0, startTime: draft.startTime, _timerInterval: null,
     templateDesc: draft.templateDesc || null,
-    templateId: draft.templateId || null
+    templateId: draft.templateId || null,
+    saveLogId: draft.saveLogId || null,
+    // A draft with a session id but no "failed" mark was closed mid-save: treat it the same, it may have half landed.
+    pendingSave: _isPendingDraft(draft) ? (draft.pendingSave || { since: draft.savedAt }) : null,
+    saveWritesStarted: !!draft.saveWritesStarted,
+    finishNotes: draft.finishNotes || '',
+    clientName: draft.clientName || null
   }
+  _refreshPendingSaveBar()
   renderRunner()
   _startRunnerTimerTick()
   _startRunnerDraftSafetyNet()
   _runnerWakeLockOn()
+  // A workout whose save failed was already finished: it reopens on the finish screen, where Save is.
+  if (_runner?.pendingSave) await showRunnerFinish()
 }
 
 async function _discardRunnerDraftAndStartFresh(clientId) {
   document.getElementById('runner-resume-modal')?.remove()
+  const draft = _loadRunnerDraft(clientId)
+  if (!draft && _foreignPendingDraft(clientId)) { _refuseOverForeignDraft(); return }      // not this person's to discard
+  if (_isPendingDraft(draft) && draft.saveLogId && !(await _discardPartialSave(draft.saveLogId))) return
   _clearRunnerDraft(clientId)
   await _startFreshRunner(clientId)
 }
@@ -2992,10 +3255,17 @@ guardReentry('confirmEndRunner')
 function backToRunnerFromFinish() {
   if (!_runner) return
   // Not while a save is under way. saveRunnerSession's ONLY re-entry guard is the disabled Save button it captured: going Back and finishing again would
-  // draw a fresh, ENABLED Save beside the one still saving (a second tap inserts a second log), and the first save ends by tearing the runner down
+  // draw a fresh, ENABLED Save beside the one still saving (a second tap starts a second save), and the first save ends by tearing the runner down
   // under whatever was ticked after Back. After a FAILED save the button is enabled again and Back works. Same test showRunnerFinish uses for its
   // late repaint. (Found by all three 2026-10-11 reviewers.)
   if (document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')?.disabled) return
+  // Nor after a save attempt that may have reached the server (R4a). The retry writes rows whose ids come from the
+  // session's exercise and set positions; adding or removing a set now would leave an earlier attempt's rows that the
+  // retry cannot know about. The name and notes stay editable - the retry updates those. A session id alone counts: the app
+  // can be closed mid-save, before the result is known.
+  // Only once a write was actually SENT (R4a review): a save that failed before reaching the database - no signal for its
+  // first check - wrote nothing, so the sets can still be corrected.
+  if (_runner.saveWritesStarted) { showToast('This workout is waiting to be saved - save it or discard it first.', 'warn', 4000); return }
   const typedName = document.getElementById('rf-name')?.value.trim()
   if (typedName) _runner.name = typedName
   _runner.finishNotes = document.getElementById('rf-notes')?.value || ''
@@ -3016,7 +3286,11 @@ function backToRunnerFromFinish() {
 // single accidental press; every other caller (confirmEndRunner's empty-session branch, which has just
 // asked its own question, and the post-save teardown in saveRunnerSession) must not ask again.
 async function confirmDiscardRunner() {
+  // Not while a save is running: it could land between Discard's check for saved sets and its delete (R4a review).
+  if (/** @type {HTMLButtonElement|null} */ (document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]'))?.disabled) { showToast('Saving — wait for it to finish before discarding.', 'warn', 4000); return }
   if (!(await confirmDialog('Discard this workout? Everything logged will be lost — this cannot be undone.', { title: 'Discard workout?', confirmLabel: 'Discard', danger: true }))) return
+  // A failed save may have left part of the session on the server; discarding the workout removes that too (R4a).
+  if (_runner?.saveLogId && !(await _discardPartialSave(_runner.saveLogId))) return
   discardRunner()
 }
 
@@ -3041,6 +3315,7 @@ function discardRunner() {
   document.getElementById('rest-timer-overlay')?.remove()
   document.getElementById('wr-set-timer-overlay')?.remove()
   _runner = null
+  _refreshPendingSaveBar()
 }
 
 // The single definition of "an exercise worth saving" — used by BOTH the finish screen and
@@ -3123,11 +3398,20 @@ async function saveRunnerSession() {
   const leftOut = _droppedTickedCount()
   if (leftOut) showToast(`${leftOut} ticked set${leftOut > 1 ? 's' : ''} left out — reps or weight were blank`, 'warn', 5000)
   if (!exercises.length) { showToast('No sets logged — nothing to save.', 'warn', 3000); return }
+  // R4a: the session id is chosen HERE, once, before the first await, and kept in the draft. Every attempt to save this
+  // workout - a retry after a dropped connection, a second overlapping call, a retry after a reload days later - writes
+  // the same ids, so the database ends with one session however earlier attempts died.
+  // The typed name and notes go into the runner first, so the draft keeps them: a retry days later must save what was
+  // typed, not the name the workout started with (R4a review, 2026-10-29).
+  _runner.name = name; _runner.finishNotes = notes || ''
+  if (!_runner.saveLogId) _runner.saveLogId = crypto.randomUUID()
+  _saveRunnerDraft()
+  const logId = _runner.saveLogId
 
   const saveBtn = document.querySelector('#workout-runner button[onclick="saveRunnerSession()"]')
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…' }
 
-  // showUserError: false — this shows its own error message below, tailored to what actually failed
+  // The client lookup shows its own error message below, tailored to what actually failed
   // (a real network blip vs. a clientId that doesn't resolve to a client this account can see at all).
   // MUST fail loud, not fall back to currentUser.id: a solo/coach's own record legitimately comes back
   // with coach_id:null (a real row, not a lookup failure) and correctly falls through to currentUser.id
@@ -3140,61 +3424,52 @@ async function saveRunnerSession() {
   // function and saveWorkoutSession were never migrated onto it while the two 1RM writers in this
   // same file were. 2 of 4 client-scoped writers had the strong check; now 4 of 4.
   // Any clients SELECT policy broader than "mine" (a support role, a future gym/team feature) and the
-  // readability check alone passes. Costs one extra round-trip on a save that already awaits eight —
+  // readability check alone passes. Costs one extra round-trip —
   // deliberately preferred over inlining the ownership test, because a second copy of that logic is
   // exactly how these two drifted from the helper they inspired.
-  if (!(await _verifyClientAccess('saveRunnerSession', clientId))) {
-    showToast('Could not verify this client — please refresh and try again.', 'error')
+  //
+  // R4a: these checks are the save's first requests, so on a dead connection they are what fails. Whatever stops the save
+  // from here on, the finished workout is kept on the phone as "not saved" (see _keepUnsaved). The client lookup goes
+  // FIRST and without the shared error toast so a missing signal can be told apart from a real refusal: the ownership
+  // helper cannot say which, and it reports what it sees as "client not visible".
+  const _keepUnsaved = (msg) => {
+    if (_runner && _runner.saveLogId === logId) { _runner.pendingSave = _runner.pendingSave || { since: Date.now() }; _saveRunnerDraft() }
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
-    return
+    showToast(msg, 'error', 7000)
   }
-  const { data: clientRecord, error: clientErr } = await dbq('saveRunnerSession:clientLookup', db.from('clients').select('coach_id').eq('id', clientId).single(), { showUserError: false })
-  if (!clientRecord) {
-    log.error('saveRunnerSession', 'client ownership could not be verified — refusing to save', clientErr)
-    showToast('Could not verify this client — please refresh and try again.', 'error')
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
+  const { data: clientRecord, error: clientErr } = await db.from('clients').select('coach_id, full_name').eq('id', clientId).maybeSingle()
+  if (clientErr && _isNetworkError(clientErr)) { log.warn('saveRunnerSession', 'no connection — workout kept on this device', { logId }); _keepUnsaved(_saveFailMessage({ error: clientErr })); return }
+  if (!clientRecord || !(await _verifyClientAccess('saveRunnerSession', clientId))) {
+    if (!clientRecord) log.error('saveRunnerSession', 'client ownership could not be verified — refusing to save', clientErr)
+    _keepUnsaved('Could not verify this client — your workout is kept on this phone. Refresh and try again.')
     return
   }
   const coachId = clientRecord.coach_id || currentUser.id
+  // A coach logging for one of their clients: if this save fails, the "not saved" bar names the client (display only).
+  if (_runner?.saveLogId === logId && clientRecord.coach_id === currentUser.id && clientId !== _win._soloClientId && clientId !== _win._masterClientId) _runner.clientName = clientRecord.full_name || null
 
-  const { data: sessionLog, error } = await db.from('workout_logs').insert({
+  const logRow = {
+    id: logId,
     // template_id is what lets the Library page say when a session was last TRAINED. Its sibling
     // saveWorkoutSession has always recorded it; this path never did, so until 2026-09-04 a session
     // trained in the actual runner left no link back to the template it came from.
     coach_id: coachId, client_id: clientId, template_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(_runner?.templateId || '') ? _runner.templateId : null, name, date, notes      // a uuid or nothing: the column is a foreign key
-  }).select().single()
-  if (error) {
-    log.error('saveRunnerSession', 'workout_logs insert failed', error)
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
-    showToast(`Save failed — ${error.message}. Please try again.`, 'error')
-    return
   }
 
-  // Batched: one insert for all exercise rows, then one insert for all set rows across every
-  // exercise — replaces the old one-exercise-at-a-time loop (N sequential round trips) that was
-  // the main cause of "save feels slow" on multi-exercise sessions.
+  // Batched: one write for all exercise rows, then one for all set rows across every exercise — replaces the old
+  // one-exercise-at-a-time loop (N sequential round trips) that was the main cause of "save feels slow". Every id is
+  // derived from the session id and the row's position (R4a), so the sets can name their exercise before it is written
+  // and a retry names the same rows.
   const exerciseRows = exercises.map((ex, bi) => ({
-    log_id: sessionLog.id, exercise_id: ex.exerciseId || null, exercise_name: ex.name, exercise_type: ex.type,
+    id: _stableUuid(`${logId}|ex|${bi}`),
+    log_id: logId, exercise_id: ex.exerciseId || null, exercise_name: ex.name, exercise_type: ex.type,
     metric_type: ex.metricType || 'weight_reps', order_index: bi,
     client_notes: ex.clientNotes || null
   }))
-  const { data: insertedExercises, error: exErr } = await db.from('workout_log_exercises').insert(exerciseRows).select()
-  if (exErr) {
-    log.error('saveRunnerSession', 'exercises batch insert failed', exErr)
-    await db.from('workout_logs').delete().eq('id', sessionLog.id)
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
-    showToast(`Save failed — ${exErr.message}. Please try again.`, 'error')
-    return
-  }
-  // Correlate by order_index, not response array position — a multi-row insert's response order
-  // isn't a documented PostgREST guarantee, and getting this wrong would silently attach sets to
-  // the wrong exercise.
-  const exerciseIdByOrderIndex = Object.fromEntries(insertedExercises.map(r => [r.order_index, r.id]))
-  const insertedExerciseIds = insertedExercises.map(r => r.id)
 
   const allSets = []
   exercises.forEach((ex, bi) => {
-    const logExId = exerciseIdByOrderIndex[bi]
+    const logExId = exerciseRows[bi].id
     ex.loggedSets.forEach((s, si) => {
       const setNumber = si + 1
       // HR/watts/pace/stroke rate are common to any set shape (populated once, at exercise-finish,
@@ -3230,7 +3505,7 @@ async function saveRunnerSession() {
           if (sd.reps) row.reps_achieved = parseInt(sd.reps)
           if (sd.weight !== 'BW' && _hasNumVal(sd.weight)) row.weight_kg = parseFloat(sd.weight)
           applyCardioMetrics(row)
-          if (Object.keys(row).length > 3) allSets.push(row)
+          if (Object.keys(row).length > 3) allSets.push({ id: _stableUuid(`${logId}|set|${bi}|${si}|${sd.side}`), ...row })
         }
         return
       }
@@ -3271,27 +3546,19 @@ async function saveRunnerSession() {
         }
       }
       applyCardioMetrics(row)
-      if (Object.keys(row).length > 2) allSets.push(row)
+      if (Object.keys(row).length > 2) allSets.push({ id: _stableUuid(`${logId}|set|${bi}|${si}|`), ...row })
     })
   })
 
-  if (allSets.length) {
-    const { error: setsErr } = await db.from('workout_log_sets').insert(allSets)
-    if (setsErr) {
-      log.error('saveRunnerSession', 'sets batch insert failed', setsErr)
-      // Sets are one batched insert now, so a failure here means none of the session's sets
-      // saved (not just one exercise's, as in the old per-exercise loop) -- roll back the
-      // exercises + log too rather than leave a log with zero real data behind a misleading
-      // "partially saved" toast.
-      await db.from('workout_log_exercises').delete().in('id', insertedExerciseIds)
-      await db.from('workout_logs').delete().eq('id', sessionLog.id)
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save workout' }
-      showToast(`Save failed — ${setsErr.message}. Please try again.`, 'error')
-      return
-    }
-  }
-  log.ok('saveRunnerSession', 'session saved', { logId: sessionLog.id, exercises: exercises.length })
-  showToast('Workout saved!', 'success', 2500)
+  // No compensating deletes any more (R4a): they ran on the same dead connection that failed the write, so they failed
+  // too and left an empty session behind. A failed save is now kept on the phone and the retry IS the repair.
+  // From here a write is sent: the sets are locked until this saves or is discarded (backToRunnerFromFinish).
+  if (_runner?.saveLogId === logId && !_runner.saveWritesStarted) { _runner.saveWritesStarted = true; _saveRunnerDraft() }
+  const res = await _persistSession('saveRunnerSession', { logRow, exerciseRows, setRows: allSets })
+  if (!res.ok) { _keepUnsaved(_saveFailMessage(res)); return }
+  log.ok('saveRunnerSession', 'session saved', { logId, exercises: exercises.length })
+  if (res.renameRefused) showToast(_renameRefusedMessage('Workout', res), 'warn', 6000)
+  else showToast('Workout saved!', 'success', 2500)
 
   const candidates = exercises
     .filter(ex => ex.type !== 'cardio')
@@ -3359,7 +3626,9 @@ async function _askAboutNewOneRMs(clientId, candidates) {
 }
 
 function _afterRunnerSave(clientId) {
-  if (currentProfile?.role === 'client' || currentProfile?.role === 'solo') navigate('workouts')
+  // By whose session it was, not by role (R4a review): a master account can retry a client's unsaved workout from its
+  // Personal view, or its own from the coach view.
+  if (currentProfile?.role === 'client' || currentProfile?.role === 'solo' || clientId === _win._soloClientId) navigate('workouts')
   else openClient(clientId)
 }
 
@@ -3721,7 +3990,7 @@ async function showLogSessionModal(clientId) {
     <div class="modal modal-fullscreen-mobile" style="max-width:580px;max-height:90vh;overflow-y:auto">
       <div class="modal-header">
         <h2 class="modal-title">Log session</h2>
-        <button class="modal-close" onclick="closeModal('log-session-modal')">✕</button>
+        <button class="modal-close" onclick="closeLogSessionModal()">✕</button>
       </div>
       <div class="field-row">
         <div class="field">
@@ -3743,7 +4012,7 @@ async function showLogSessionModal(clientId) {
 
       <div id="ls-exercises" style="margin-top:4px"></div>
 
-      <button onclick="flushLogState();window._logBlocks.push({name:'',type:'strength',sets:[{}]});renderLogExercises();setTimeout(()=>{const blocks=document.querySelectorAll('#ls-exercises > div');const last=blocks[blocks.length-1];if(last){const inp=last.querySelector('input');if(inp)inp.focus()}},50)" style="margin:4px 0 12px;font-size:var(--text-base, 13px);color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600;display:block">+ Add exercise</button>
+      <button id="ls-add-exercise" onclick="flushLogState();window._logBlocks.push({name:'',type:'strength',sets:[{}]});renderLogExercises();setTimeout(()=>{const blocks=document.querySelectorAll('#ls-exercises > div');const last=blocks[blocks.length-1];if(last){const inp=last.querySelector('input');if(inp)inp.focus()}},50)" style="margin:4px 0 12px;font-size:var(--text-base, 13px);color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-weight:600;display:block">+ Add exercise</button>
 
       <div class="field">
         <label class="field-label">Session notes</label>
@@ -3751,12 +4020,13 @@ async function showLogSessionModal(clientId) {
       </div>
       <p class="modal-error" id="ls-error"></p>
       <div class="modal-footer">
-        <button class="btn-secondary" onclick="closeModal('log-session-modal')">Cancel</button>
+        <button class="btn-secondary" onclick="closeLogSessionModal()">Cancel</button>
         <button class="btn-primary" onclick="saveWorkoutSession('${clientId}')">Save session</button>
       </div>
     </div>
   `
   mountModal(overlay)
+  _logSaveId = null; _logSaveFailed = false      // a fresh form is a fresh session (R4a: saveWorkoutSession keeps one id across retries)
   window._logTemplates = templates || []
 }
 
@@ -3801,6 +4071,10 @@ function loadTemplateIntoLog(templateId) {
   renderLogExercises()
 }
 
+// The manual Log session form's session id: one per opening of the form, kept across retries of its Save (R4a).
+let _logSaveId = null
+let _logSaveFailed = false      // the last Save of this form failed: its rows are locked, and closing it tidies the server
+
 async function saveWorkoutSession(clientId) {
   flushLogState()
   const name = document.getElementById('ls-name').value.trim()
@@ -3827,18 +4101,20 @@ async function saveWorkoutSession(clientId) {
   }
   const coachId = clientRecord.coach_id || currentUser.id
 
+  // R4a: one session id per opening of this form (reset in showLogSessionModal), chosen at the first Save; every id
+  // below derives from it, so a second Save after a dropped connection writes the same rows instead of a second session.
+  if (!_logSaveId) _logSaveId = crypto.randomUUID()
+  const logId = _logSaveId
   log.info('saveWorkoutSession', 'saving session', { clientId, exerciseCount: blocks.length })
-  const { data: sessionLog, error } = await db.from('workout_logs').insert({
+  const logRow = {
+    id:          logId,
     coach_id:    coachId,
     client_id:   clientId,
     template_id: document.getElementById('ls-template').value || null,
     name,
     date:        document.getElementById('ls-date').value,
     notes:       document.getElementById('ls-notes').value.trim() || null
-  }).select().single()
-
-  if (error) { log.error('saveWorkoutSession', 'workout_logs insert failed', error); errorEl.textContent = error.message; return }
-  log.ok('saveWorkoutSession', 'workout log created', { logId: sessionLog.id })
+  }
 
   // Resolve exercise names to library ids in parallel, not one lookup-per-block -- dedupe by
   // trimmed/lowercased name first so two blocks sharing a name (e.g. two "Bench Press" blocks)
@@ -3856,26 +4132,17 @@ async function saveWorkoutSession(clientId) {
   const idByKey = new Map(uniqueKeys.map((k, i) => [k, resolvedIds[i]]))
 
   const exerciseRows = blocks.map((block, bi) => ({
-    log_id:        sessionLog.id,
+    id:            _stableUuid(`${logId}|ex|${bi}`),
+    log_id:        logId,
     exercise_id:   idByKey.get(block.name.trim().toLowerCase()),
     exercise_name: block.name.trim(),
     exercise_type: block.type,
     order_index:   bi
   }))
-  const { data: insertedExercises, error: exErr } = await db.from('workout_log_exercises').insert(exerciseRows).select()
-  if (exErr) {
-    log.error('saveWorkoutSession', 'exercises batch insert failed', exErr)
-    await db.from('workout_logs').delete().eq('id', sessionLog.id)
-    errorEl.textContent = exErr.message
-    return
-  }
-  // Correlate by order_index, not response array position -- see saveRunnerSession for why.
-  const exerciseIdByOrderIndex = Object.fromEntries(insertedExercises.map(r => [r.order_index, r.id]))
-  const insertedExerciseIds = insertedExercises.map(r => r.id)
 
   const allSets = []
   blocks.forEach((block, bi) => {
-    const logExId = exerciseIdByOrderIndex[bi]
+    const logExId = exerciseRows[bi].id
     block.sets.forEach((s, si) => {
       const row = { workout_log_exercise_id: logExId, set_number: si + 1 }
       if (block.type === 'cardio') {
@@ -3905,26 +4172,28 @@ async function saveWorkoutSession(clientId) {
         }
         if (s.rest) row.notes = (row.notes || '') + `rest:${s.rest}`
       }
-      if (Object.keys(row).length > 2) allSets.push(row)
+      if (Object.keys(row).length > 2) allSets.push({ id: _stableUuid(`${logId}|set|${bi}|${si}|`), ...row })
     })
   })
 
-  if (allSets.length) {
-    const { error: setsErr } = await db.from('workout_log_sets').insert(allSets)
-    if (setsErr) {
-      log.error('saveWorkoutSession', 'sets batch insert failed', setsErr)
-      // Batched sets means an all-or-nothing failure now -- roll back the exercises + log too,
-      // matching saveRunnerSession, instead of leaving a log with zero real set data behind.
-      await db.from('workout_log_exercises').delete().in('id', insertedExerciseIds)
-      await db.from('workout_logs').delete().eq('id', sessionLog.id)
-      errorEl.textContent = setsErr.message
-      return
-    }
-    log.ok('saveWorkoutSession', 'sets saved', { count: allSets.length })
+  // Same writer as the runner (R4a): no compensating deletes; the form stays open with what was typed, and Save again
+  // completes the same session. After a failure the exercises, sets, date and template are locked: Save again rewrites
+  // rows by their position, so an edit there would be skipped (the row already exists) or leave an old row behind while
+  // the save still said "saved". The name and notes stay editable - the retry updates those.
+  const res = await _persistSession('saveWorkoutSession', { logRow, exerciseRows, setRows: allSets })
+  if (!res.ok) {
+    _logSaveFailed = true
+    _lockLogFormAfterFailedSave()
+    const msg = _saveFailMessage(res, { form: true })
+    errorEl.textContent = msg + ' The exercises and date are locked until it saves — close the form to discard it instead.'
+    showToast(msg, 'error', 7000)      // replaces log.error's own "tag: message" toast
+    return
   }
 
-  log.ok('saveWorkoutSession', 'session fully saved', { clientId, logId: sessionLog.id })
-  showToast('Session saved ✓', 'success', 2000)
+  log.ok('saveWorkoutSession', 'session fully saved', { clientId, logId })
+  if (res.renameRefused) showToast(_renameRefusedMessage('Session', res), 'warn', 6000)
+  else showToast('Session saved ✓', 'success', 2000)
+  _logSaveId = null; _logSaveFailed = false
   closeModal('log-session-modal')
   window._logBlocks = []
   const tabContent = document.getElementById('tab-content')
@@ -3932,8 +4201,30 @@ async function saveWorkoutSession(clientId) {
   else _renderOwnDashboard()                                   // see app-core.js — solo-safe fallback
 }
 
-// saveWorkoutSession: double-tap = TWO workout_logs rows plus their exercises and sets. closeModal is at the END, after eight awaits including three inserts.
+// saveWorkoutSession: a double tap now converges on one session (R4a), but the guard stays: a second press still costs a
+// round trip and a duplicate toast, and closeModal is at the END, after every await.
 guardReentry('saveWorkoutSession')
+
+function _lockLogFormAfterFailedSave() {
+  /** @type {NodeListOf<HTMLInputElement>} */ (document.querySelectorAll('#ls-date, #ls-template, #ls-add-exercise, #ls-exercises input, #ls-exercises select, #ls-exercises button, #ls-exercises textarea'))
+    .forEach(el => { el.disabled = true })
+}
+
+// Closing the Log session form (✕ or Cancel). After a failed save, part of the session may be on the server: it is
+// tidied the same way as a runner Discard. With no signal nothing can be tidied, and the form closes anyway with a note.
+async function closeLogSessionModal() {
+  // Not while a save is running (guardReentry's in-flight set): the save could land between the tidy's check and its delete.
+  if (_writesInFlight.has('saveWorkoutSession')) return
+  if (_logSaveId && _logSaveFailed) {
+    const r = await _removePartialSave(_logSaveId)
+    if (r === 'offline') showToast('No signal — part of this session may stay in the history. Delete it there if it appears.', 'warn', 7000)
+    else if (r === 'saved') showToast('This session had already saved — it is in the history.', 'info', 6000)
+    else if (r === 'refused') showToast('Part of this session could not be removed from the server.', 'warn', 6000)
+  }
+  _logSaveId = null; _logSaveFailed = false
+  closeModal('log-session-modal')
+}
+guardReentry('closeLogSessionModal')
 
 async function openWorkoutLog(logId, clientId) {
   // This screen is reachable by a CLIENT from their own session history (app-workouts.js), and it had

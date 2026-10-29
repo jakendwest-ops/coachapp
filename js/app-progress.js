@@ -3575,7 +3575,7 @@ async function renderSettings(el) {
       <!-- Sign out -->
       <div class="card">
         <div class="card-body" style="padding:16px 20px">
-          <button id="settings-sign-out-btn" onclick="signOutAndClearDrafts().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:var(--danger-text);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Sign out</button>
+          <button id="settings-sign-out-btn" onclick="signOutAndClearDrafts({ ask: true }).then(ok => { if (ok) location.reload() })" style="background:none;border:1px solid #ef4444;color:var(--danger-text);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Sign out</button>
         </div>
       </div>
 
