@@ -61,6 +61,14 @@ if (order.join('\n') !== listed.join('\n')) {
     `    index.html:    ${order.join(', ')}\n    jsconfig.json: ${listed.join(', ')}`)
 }
 
+// The supabase-js TYPES (devDependency) must be the exact version index.html's CDN tag runs, or the
+// checker validates queries against a different client from the one the browser loads.
+const cdn = readFileSync(join(REPO, 'index.html'), 'utf8').match(/@supabase\/supabase-js@(\d+\.\d+\.\d+)\//)
+if (!cdn) refuse('no versioned supabase-js CDN <script> in index.html (expected .../@supabase/supabase-js@X.Y.Z/...).')
+const typesVer = (JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).devDependencies || {})['@supabase/supabase-js']
+if (!typesVer) refuse('@supabase/supabase-js is missing from package.json devDependencies (it supplies the db types).')
+if (typesVer !== cdn[1]) refuse(`package.json pins @supabase/supabase-js "${typesVer}" but index.html's CDN tag loads ${cdn[1]} -- they must be the same exact version.`)
+
 const { out, exit } = runTsc()
 const counts = Object.fromEntries(order.map(f => [f, 0]))
 const linesByFile = {}

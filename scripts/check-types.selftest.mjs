@@ -27,10 +27,13 @@ import { fileURLToPath } from 'node:url'
 
 const CHECK = join(dirname(fileURLToPath(import.meta.url)), 'check-types.mjs')
 
-function makeRepo ({ scripts = ['a.js', 'b.js'], configFiles = scripts, counts, tsc = '', exit }) {
+function makeRepo ({ scripts = ['a.js', 'b.js'], configFiles = scripts, counts, tsc = '', exit,
+  cdn = '<script src="https://unpkg.com/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>', pkg = '2.117.2' }) {
   const repo = mkdtempSync(join(tmpdir(), 'types-selftest-'))
   writeFileSync(join(repo, 'index.html'),
-    scripts.map(n => `<script src="js/${n}?v=1"></script>`).join('\n'), 'utf8')
+    [cdn, ...scripts.map(n => `<script src="js/${n}?v=1"></script>`)].join('\n'), 'utf8')
+  writeFileSync(join(repo, 'package.json'),
+    JSON.stringify({ devDependencies: pkg === null ? {} : { '@supabase/supabase-js': pkg } }), 'utf8')
   writeFileSync(join(repo, 'jsconfig.json'),
     '// header comment, as the real file has\n' +
     JSON.stringify({ compilerOptions: {}, files: ['types/globals.d.ts', ...configFiles.map(n => `js/${n}`)] }, null, 2), 'utf8')
@@ -91,6 +94,22 @@ const CASES = [
   { why: 'jsconfig MISSING a script refuses (its errors would silently vanish)',
     repo: () => makeRepo({ configFiles: ['a.js'], counts: { 'js/a.js': 0 } }),
     want: r => r.exit === 1 && r.out.includes('js/b.js') },
+
+  { why: 'supabase-js types version DIFFERENT from the CDN tag refuses, naming both',
+    repo: () => makeRepo({ counts: { 'js/a.js': 0 }, pkg: '2.117.3' }),
+    want: r => r.exit === 1 && r.out.includes('2.117.2') && r.out.includes('2.117.3') },
+
+  { why: 'a RANGE (^) for the supabase-js types refuses -- npm could drift it from the CDN pin',
+    repo: () => makeRepo({ counts: { 'js/a.js': 0 }, pkg: '^2.117.2' }),
+    want: r => r.exit === 1 && r.out.includes('^2.117.2') },
+
+  { why: 'supabase-js types MISSING from package.json refuses',
+    repo: () => makeRepo({ counts: { 'js/a.js': 0 }, pkg: null }),
+    want: r => r.exit === 1 && r.out.includes('package.json') },
+
+  { why: 'no versioned supabase-js CDN tag in index.html refuses',
+    repo: () => makeRepo({ counts: { 'js/a.js': 0 }, cdn: '<script src="https://unpkg.com/@supabase/supabase-js/dist/umd/supabase.js"></script>' }),
+    want: r => r.exit === 1 && r.out.includes('CDN') },
 
   { why: 'a missing baseline without --write refuses',
     repo: () => makeRepo({ tsc: err('a.js', 1) }),
