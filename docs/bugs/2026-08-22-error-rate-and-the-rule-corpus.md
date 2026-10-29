@@ -196,3 +196,9 @@ classes that already had a rule") was measured on a session in which NO rule was
   checked WHICH corpus a session had. That is now checked (`session-root-guard.mjs`, `os-lint` `memory-split` / `vault-rooted-session`).
 
 The row stays open.
+
+## 2026-10-29 - repo-rooted session (v2026.10.7 release, beeps and voices): count ONE
+
+- **The mistake that reached a claim:** I told Jake the flaky RPE-journey spec failed at a step that "comes before the builder is used". Reading the spec afterwards, the failing line (62) is in step 2, AFTER the builder has built and saved the template; only the cause (a client-profile tab re-render, "element was detached") is unrelated to the builder, and I had not shown that it is unrelated to this release, only that it passed on retry. Class: `CLAUDE.md` standing behaviour 3 (no claim without a check you actually ran): I wrote it from the log, not from the spec. Caught by this save, not by Jake.
+- **Not counted (a judgment call, named):** the one-tap gap in the beeps fix was disclosed in the release notes and the summary, so it is a limit of the technology and not an error; Jake still rejected it, and the row is reopened. Not counted either: the stray probe files that blocked a push (the gate worked) and the docs-budget overshoot (caught by os-lint before the commit).
+- The row stays open.

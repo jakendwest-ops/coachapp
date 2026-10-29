@@ -14,7 +14,7 @@ trusting this file for anything time-sensitive. The previous version is archived
 
 ## In flight
 
-Nothing unreleased. Next: dark mode as the default ([row](bugs/2026-10-28-dark-mode-should-be-the-default-across-the-app.md); waits for Jake's go), then the PT's Workouts page. Waiting on Jake: his phone check of the `fixed-awaiting-jake` rows in [bugs/](bugs/) (the beeps with Spotify first, then the exercise builder); a "Tap to turn beeps back on" message (a rest running when he returns stays silent until his first tap); whether **Sign out should end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation: leave it); the names "Biggest set" and "View training plan".
+Nothing unreleased. Next: dark mode as the default (waits for Jake's go), then the PT's Workouts page. Waiting on Jake: his phone check of the `fixed-awaiting-jake` rows in [bugs/](bugs/); the round-2 sound test on avoiding a tap after returning to Safari ([row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)); whether **Sign out should end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (leave it, my view); the names "Biggest set" and "View training plan".
 
 ## Next: the release plans
 
