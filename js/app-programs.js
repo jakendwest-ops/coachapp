@@ -92,7 +92,7 @@ async function renderClientPrograms(clientId, el) {
 
   if (error) {
     el.innerHTML = `<div class="card"><div class="card-body" style="padding:20px">
-      <p style="color:var(--danger);font-size:var(--text-base, 13px)">${error.message}</p>
+      <p style="color:var(--danger-text);font-size:var(--text-base, 13px)">${error.message}</p>
     </div></div>`
     return
   }
@@ -168,7 +168,7 @@ async function renderClientPrograms(clientId, el) {
               <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
                 ${nextBtn}
                 <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditStartDateModal('${clientId}','${a.id}','${a.start_date||''}')">Edit date</button>
-                <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;color:var(--danger);border-color:var(--danger)" onclick="unassignProgram('${clientId}','${a.id}')">Remove from plan</button>
+                <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;color:var(--danger-text);border-color:var(--danger)" onclick="unassignProgram('${clientId}','${a.id}')">Remove from plan</button>
               </div>
             </div>
             ${phases.map((phase, pi) => {
@@ -298,7 +298,7 @@ function showAssignProgramModal(clientId, opts = {}) {
       </div>
       ${opts.nextBlock ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 12px">Starts after the current plan ends. To repeat the same plan, duplicate it in Training plans first.</p>` : ''}
       <div class="field">
-        <label class="field-label">Training plan <span style="color:var(--danger)">*</span></label>
+        <label class="field-label">Training plan <span style="color:var(--danger-text)">*</span></label>
         <select class="field-input" id="ap-program" onchange="_refreshMissingOneRMs(this.value,'${targetClientId}','ap-missing-1rm')">
           <option value="">Select a training plan…</option>
         </select>
@@ -801,7 +801,7 @@ function _renderProgramOneRMChecklist(status) {
   const missingHtml = status.missing.map((m, i) => _renderOneRMQuickEntry(`mor-${i}`, m.name)).join('')
   return `
     <div style="background:rgba(245,158,11,.08);border:1px solid #f59e0b;border-radius:var(--radius, 10px);padding:12px;margin-bottom:14px">
-      <div style="font-size:var(--text-md, 12px);font-weight:700;color:#b45309;margin-bottom:8px">This training plan uses %1RM for ${total} lift${total!==1?'s':''}${status.missing.length ? ` — missing ${status.missing.length}` : ' — all on file'}</div>
+      <div style="font-size:var(--text-md, 12px);font-weight:700;color:var(--warning-text);margin-bottom:8px">This training plan uses %1RM for ${total} lift${total!==1?'s':''}${status.missing.length ? ` — missing ${status.missing.length}` : ' — all on file'}</div>
       ${haveHtml}
       ${missingHtml}
     </div>`
@@ -951,7 +951,7 @@ async function showAssignProgramToClientModal(programId) {
       </div>
       ${isSolo ? '' : `
       <div class="field">
-        <label class="field-label">Client <span style="color:var(--danger)">*</span></label>
+        <label class="field-label">Client <span style="color:var(--danger-text)">*</span></label>
         <select class="field-input" id="apc-client" onchange="_refreshMissingOneRMs('${programId}',this.value,'apc-missing-1rm')"><option value="">Loading…</option></select>
       </div>`}
       <div id="apc-missing-1rm"></div>
@@ -1108,7 +1108,7 @@ async function renderPrograms(el) {
             <div class="row-right">
               ${p.id in planStarts ? '<span class="badge badge-active" data-onplan>On my plan</span>' : ''}
               <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}</span>
-              <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              <svg style="width:15px;height:15px;color:var(--border-strong)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
           </div>`).join('')}
       </div>
@@ -1122,14 +1122,14 @@ async function renderPrograms(el) {
           <button class="btn-icon" onclick="closeProgramModal()">✕</button>
         </div>
         <div style="margin-bottom:14px">
-          <label class="form-label">Training plan name <span style="color:var(--danger, #ef4444)">*</span></label>
+          <label class="form-label">Training plan name <span style="color:var(--danger-text)">*</span></label>
           <input type="text" id="pm-name" class="form-input" placeholder="e.g. 12-Week Strength Block">
         </div>
         <div style="margin-bottom:14px">
           <label class="form-label">Description <span style="color:var(--text-muted)">(optional)</span></label>
           <textarea id="pm-desc" class="form-input" rows="3" placeholder="What is this training plan for?" style="resize:vertical"></textarea>
         </div>
-        <p id="pm-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 10px"></p>
+        <p id="pm-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:0 0 10px"></p>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-secondary" onclick="closeProgramModal()">Cancel</button>
           <button class="btn btn-primary" id="pm-save-btn" onclick="saveProgram()">Create training plan</button>
@@ -1352,7 +1352,7 @@ async function openProgram(programId) {
       <input type="hidden" id="pf-order-index">
       <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:10px">
         <div>
-          <label class="form-label">Phase name <span style="color:var(--danger, #ef4444)">*</span></label>
+          <label class="form-label">Phase name <span style="color:var(--danger-text)">*</span></label>
           <input type="text" id="pf-name" class="form-input" placeholder="e.g. Base Building">
         </div>
         <div>
@@ -1360,7 +1360,7 @@ async function openProgram(programId) {
           <input type="number" id="pf-weeks" class="form-input" placeholder="4" min="1" max="52" style="width:90px">
         </div>
       </div>
-      <p id="pf-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 8px"></p>
+      <p id="pf-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:0 0 8px"></p>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" id="pf-save-btn" onclick="savePhase('${program.id}')">Add phase</button>
         <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('phase-form').style.display='none'">Cancel</button>
@@ -1378,14 +1378,14 @@ async function openProgram(programId) {
           <button class="btn-icon" onclick="closeProgramModal()">✕</button>
         </div>
         <div style="margin-bottom:14px">
-          <label class="form-label">Training plan name <span style="color:var(--danger, #ef4444)">*</span></label>
+          <label class="form-label">Training plan name <span style="color:var(--danger-text)">*</span></label>
           <input type="text" id="pm-name" class="form-input">
         </div>
         <div style="margin-bottom:14px">
           <label class="form-label">Description <span style="color:var(--text-muted)">(optional)</span></label>
           <textarea id="pm-desc" class="form-input" rows="3" style="resize:vertical"></textarea>
         </div>
-        <p id="pm-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 10px"></p>
+        <p id="pm-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:0 0 10px"></p>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-secondary" onclick="closeProgramModal()">Cancel</button>
           <button class="btn btn-primary" id="pm-save-btn" onclick="saveProgram('${program.id}')">Save changes</button>
@@ -2259,7 +2259,7 @@ function renderPeriodizationBody(durationWeeks) {
   const cfg = window._pzConfig || {}
   const deloadOn = !!cfg.deloadWeek
   const tierDefault = { heavy: 85, moderate: 70, light: 55 }
-  const tog = (label, val) => `<button type="button" onclick="setPeriodizationType('${val}',${durationWeeks})" style="padding:6px 14px;font-size:12px;font-weight:700;border-radius:6px;border:1px solid ${type===val?'var(--accent)':'#d1d5db'};background:${type===val?'var(--accent)':'transparent'};color:${type===val?'white':'#6b7280'};cursor:pointer">${label}</button>`
+  const tog = (label, val) => `<button type="button" onclick="setPeriodizationType('${val}',${durationWeeks})" style="padding:6px 14px;font-size:12px;font-weight:700;border-radius:6px;border:1px solid ${type===val?'var(--accent)':'var(--border-strong)'};background:${type===val?'var(--accent)':'transparent'};color:${type===val?'var(--on-accent)':'var(--text-muted)'};cursor:pointer">${label}</button>`
 
   // The RPE method's fields (2026-10-04). Same rule as everything above: each cfg.* reaching an attribute is escaped. The ids are
   // new (pz-start-rpe, pz-end-rpe, pz-deload-rpe, pz-tier-<t>-rpe); the deload checkbox and week keep the % side's ids because only

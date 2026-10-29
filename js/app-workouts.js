@@ -711,11 +711,11 @@ function _buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr, logs
 
 function _renderWorkoutsHeroHtml(hero) {
   return `
-    <div id="wk-hero" style="background:var(--accent);border-radius:var(--radius-md, 12px);padding:18px 20px;margin-bottom:16px;color:#fff">
+    <div id="wk-hero" style="background:var(--accent);border-radius:var(--radius-md, 12px);padding:18px 20px;margin-bottom:16px;color:var(--on-accent)">
       <div data-hero-eyebrow style="font-size:var(--text-sm, 11px);font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px">${escapeHtml(hero.eyebrow || 'Up next')}</div>
       <div data-hero-title style="font-size:var(--legacy-text-19, 19px);font-weight:700;margin-bottom:3px">${escapeHtml(hero.title)}</div>
       <div data-hero-meta style="font-size:var(--text-base, 13px);opacity:.8;margin-bottom:14px">${escapeHtml(hero.meta)}</div>
-      <button data-hero-start onclick="${hero.action}" style="padding:8px 20px;border-radius:var(--radius-sm, 8px);background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">${hero.btnLabel} →</button>
+      <button data-hero-start onclick="${hero.action}" style="padding:8px 20px;border-radius:var(--radius-sm, 8px);background:rgba(255,255,255,.18);color:var(--on-accent);border:1.5px solid rgba(255,255,255,.35);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer">${hero.btnLabel} →</button>
     </div>`
 }
 
@@ -1071,7 +1071,7 @@ async function renderWorkoutTemplates(el) {
       </div>
       <div class="row-right">
         <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${t.workout_template_exercises.length} ex</span>
-        <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        <svg style="width:15px;height:15px;color:var(--border-strong)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
     </div>`
 
@@ -1170,7 +1170,7 @@ function showAddExerciseModal() {
         <button class="modal-close" onclick="closeModal('add-exercise-modal')">✕</button>
       </div>
       <div class="field">
-        <label class="field-label">Exercise name <span style="color:var(--danger)">*</span></label>
+        <label class="field-label">Exercise name <span style="color:var(--danger-text)">*</span></label>
         <input class="field-input" id="ae-name" placeholder="e.g. Barbell Back Squat">
       </div>
       <div class="field-row">
@@ -1391,7 +1391,7 @@ function showCreateTemplateModal(phaseCtx = null, back = null) {
         <button class="modal-close" onclick="closeModal('create-template-modal')">✕</button>
       </div>
       <div class="field">
-        <label class="field-label">${back ? 'Workout' : 'Template'} name <span style="color:var(--danger)">*</span></label>
+        <label class="field-label">${back ? 'Workout' : 'Template'} name <span style="color:var(--danger-text)">*</span></label>
         <input class="field-input" id="ct-name" placeholder="${back ? 'e.g. Back and biceps' : 'e.g. Upper Body A, Full Body Strength'}">
       </div>
       <div class="field">
@@ -1972,7 +1972,7 @@ function setTsEffort(i, type, containerId) {
 // in every call site — never interpolate user text through it without escaping.
 // `id` is optional (4th arg) so a caller that needs a stable hook for a test/label-for can ask for
 // one without disturbing every existing call site, none of which pass it.
-const _togPill = (label, active, onclick, id) => `<button type="button"${id ? ` id="${id}"` : ''} aria-pressed="${!!active}" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'white':'var(--text-muted)'};cursor:pointer">${label}</button>`
+const _togPill = (label, active, onclick, id) => `<button type="button"${id ? ` id="${id}"` : ''} aria-pressed="${!!active}" onclick="${onclick}" style="padding:4px 10px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'var(--on-accent)':'var(--text-muted)'};cursor:pointer">${label}</button>`
 
 // Unilateral is a metric_type, i.e. per EXERCISE, so unlike AMRAP its pill cannot live in a per-set
 // card — _deriveFromMetricType stamps every set from it uniformly, and a per-set unilateral flag
@@ -2477,7 +2477,7 @@ function renderTemplateSets(containerId, type) {
   container.innerHTML = headHtml + (window._templateSets || []).map((s, i) => {
     const et = s.effortType || 'rpe'
     const tog = _togPill
-    const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'var(--border)'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'white':'var(--text-muted)'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
+    const etbtn = (label, type) => `<button type="button" onclick="setTsEffort(${i},'${type}','${containerId}')" style="padding:4px 10px;font-size:11px;font-weight:700;border:1px solid ${et===type?'var(--accent)':'var(--border)'};background:${et===type?'var(--accent)':'transparent'};color:${et===type?'var(--on-accent)':'var(--text-muted)'};cursor:pointer;${type==='rpe'?'border-radius:6px 0 0 6px':'border-radius:0 6px 6px 0;border-left:none'}">${label}</button>`
     // A top-set basis makes this row's percentage a percentage OF something the lifter did today, so the dropdown sits with it, full width
     // ("Today's top set weight" does not fit half a row), and the field is called "Percentage" instead of "Intensity (%1RM)".
     //
@@ -4315,7 +4315,7 @@ async function renderClientWorkouts(clientId, el) {
                 <div class="row-meta">Tap to edit for this client</div>
               </div>
               <div class="row-right">
-                <svg style="width:15px;height:15px;color:#d1d5db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                <svg style="width:15px;height:15px;color:var(--border-strong)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
               </div>
             </div>`).join('')}
         </div>`

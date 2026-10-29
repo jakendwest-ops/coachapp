@@ -298,9 +298,9 @@ function _showOneRMDetailModal(clientId, picked, opts = {}) {
           <label class="field-label">Reps</label>
           <input class="field-input" id="orm-est-reps" type="number" inputmode="numeric" oninput="_updateAdd1RMEpleyPreview()">
         </div>
-        <div id="orm-epley-result" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--radius-sm, 8px);padding:10px;text-align:center;margin-bottom:14px">
-          <div style="font-size:var(--text-sm, 11px);color:#15803d">Estimated 1RM (Epley)</div>
-          <div id="orm-epley-value" style="font-size:var(--text-3xl, 20px);font-weight:800;color:#15803d"></div>
+        <div id="orm-epley-result" style="display:none;background:var(--success-light);border:1px solid var(--success);border-radius:var(--radius-sm, 8px);padding:10px;text-align:center;margin-bottom:14px">
+          <div style="font-size:var(--text-sm, 11px);color:var(--success-text)">Estimated 1RM (Epley)</div>
+          <div id="orm-epley-value" style="font-size:var(--text-3xl, 20px);font-weight:800;color:var(--success-text)"></div>
         </div>
       </div>
       <div class="field">
@@ -516,7 +516,7 @@ async function renderClientPerformance(clientId, el) {
           <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Notes <span style="font-weight:400">(optional)</span></label>
           <input id="pl-notes" type="text" class="field-input" placeholder="e.g. Competition day, fresh, with belt">
         </div>
-        <p id="perf-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
+        <p id="perf-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
         <button onclick="savePerformanceLog('${clientId}')" class="btn-primary" style="width:100%">Save record</button>
       </div>
 
@@ -822,7 +822,7 @@ async function renderClientWeight(clientId, el) {
           <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Notes <span style="font-weight:400">(optional)</span></label>
           <input id="wl-notes" type="text" class="field-input" placeholder="e.g. morning, fasted">
         </div>
-        <p id="wl-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
+        <p id="wl-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
         <button onclick="saveWeightLog('${clientId}')" class="btn-primary" style="width:100%">Save entry</button>
       </div>
 
@@ -840,7 +840,7 @@ async function renderClientWeight(clientId, el) {
             <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" ${weightInputAttrs(goalWeightKg)}>
           </div>
         </div>
-        <p id="wg-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
+        <p id="wg-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
         <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>
       </div>
 
@@ -867,7 +867,7 @@ async function renderClientWeight(clientId, el) {
       <!-- Chart -->
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:20px">
         <div style="display:flex;gap:6px;margin-bottom:14px">
-          ${['1M','3M','6M','All'].map(r => `<button onclick="weightChartRange('${r}')" id="wcr-${r}" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:${r==='3M'?'var(--accent)':'transparent'};color:${r==='3M'?'#fff':'var(--text-muted)'};font-size:12px;font-weight:600;cursor:pointer">${r}</button>`).join('')}
+          ${['1M','3M','6M','All'].map(r => `<button onclick="weightChartRange('${r}')" id="wcr-${r}" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:${r==='3M'?'var(--accent)':'transparent'};color:${r==='3M'?'var(--on-accent)':'var(--text-muted)'};font-size:12px;font-weight:600;cursor:pointer">${r}</button>`).join('')}
         </div>
         <canvas id="weight-chart" height="120"></canvas>
       </div>` : ''}
@@ -970,7 +970,7 @@ async function renderClientWeight(clientId, el) {
       document.querySelectorAll('[id^="wcr-"]').forEach(b => {
         const active = b.id === `wcr-${range}`
         b.style.background = active ? 'var(--accent)' : 'transparent'
-        b.style.color = active ? '#fff' : 'var(--text-muted)'
+        b.style.color = active ? 'var(--on-accent)' : 'var(--text-muted)'
       })
       buildChart(range)
     }
@@ -1007,7 +1007,7 @@ async function sendClientInvite(clientId, email) {
     log.error('sendClientInvite', 'edge function returned error', { status: res.status, error: json.error })
     btn.disabled = false
     btn.textContent = '✗ ' + (json.error || 'Failed to send')
-    btn.style.color = 'var(--danger)'
+    btn.style.color = 'var(--danger-text)'
     setTimeout(() => { btn.textContent = '✉ Send invite'; btn.style.color = '' }, 3000)
     return
   }
@@ -1021,7 +1021,7 @@ async function sendClientInvite(clientId, email) {
   if (stampErr) log.error('sendClientInvite', 'failed to stamp invited_at', stampErr)
 
   btn.textContent = '✓ Invite sent'
-  btn.style.color = 'var(--success, #16a34a)'
+  btn.style.color = 'var(--success-fg)'
   setTimeout(() => openClient(clientId), 1200)
 }
 
@@ -1871,7 +1871,7 @@ async function renderProgressWeight(el) {
           <input id="wg-goal" type="number" step="0.1" class="field-input" placeholder="e.g. 82" ${weightInputAttrs(goalWeightKg)}>
         </div>
       </div>
-      <p id="wg-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
+      <p id="wg-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
       <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>`
   const hasBothGoals = startingWeightKg != null && goalWeightKg != null
   const goalsCard = hasBothGoals && logs?.length
@@ -3398,7 +3398,7 @@ async function renderSettings(el) {
             <div style="margin-bottom:10px">
               <img id="branding-logo-preview" src="${currentLogoUrl}" alt="Logo" style="height:64px;width:auto;max-width:200px;object-fit:contain;border-radius:var(--radius-sm, 8px);border:1px solid var(--border);padding:8px;background:var(--surface-2)">
             </div>
-            <button onclick="removeBrandingLogo()" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:5px 12px;border-radius:var(--legacy-radius-7, 7px);font-size:var(--text-md, 12px);font-weight:600;cursor:pointer;margin-bottom:10px">Remove logo</button>
+            <button onclick="removeBrandingLogo()" style="background:none;border:1px solid #ef4444;color:var(--danger-text);padding:5px 12px;border-radius:var(--legacy-radius-7, 7px);font-size:var(--text-md, 12px);font-weight:600;cursor:pointer;margin-bottom:10px">Remove logo</button>
             ` : `
             <div id="branding-logo-preview" style="height:64px;width:180px;border:2px dashed var(--border);border-radius:var(--radius-sm, 8px);display:flex;align-items:center;justify-content:center;margin-bottom:10px">
               <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">No logo uploaded</span>
@@ -3441,6 +3441,7 @@ async function renderSettings(el) {
         </div>
       </div>`
 
+  const themeNow = getThemeChoice()
   el.innerHTML = `
     <div class="page-header">
       <div>
@@ -3476,6 +3477,24 @@ async function renderSettings(el) {
       ${errorReportsCard}
 
       ${brandingCard}
+
+      <!-- Appearance (2026-10-29): applies the moment it changes; kept on this device only -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px 0">
+          <h2 class="section-title">Appearance</h2>
+        </div>
+        <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
+          <div class="field">
+            <label class="field-label" for="settings-theme">Theme</label>
+            <select class="field-input" id="settings-theme" onchange="setThemeChoice(this.value)">
+              <option value="dark"${themeNow === 'dark' ? ' selected' : ''}>Dark</option>
+              <option value="light"${themeNow === 'light' ? ' selected' : ''}>Light</option>
+              <option value="system"${themeNow === 'system' ? ' selected' : ''}>Match my phone</option>
+            </select>
+          </div>
+          <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0">Saved on this phone only.</p>
+        </div>
+      </div>
 
       <!-- Units -->
       <div class="card">
@@ -3556,7 +3575,7 @@ async function renderSettings(el) {
       <!-- Sign out -->
       <div class="card">
         <div class="card-body" style="padding:16px 20px">
-          <button id="settings-sign-out-btn" onclick="signOutAndClearDrafts().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Sign out</button>
+          <button id="settings-sign-out-btn" onclick="signOutAndClearDrafts().then(()=>location.reload())" style="background:none;border:1px solid #ef4444;color:var(--danger-text);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Sign out</button>
         </div>
       </div>
 
@@ -3568,7 +3587,7 @@ async function renderSettings(el) {
         <div class="card-body" style="padding:12px 20px 20px;display:flex;flex-direction:column;gap:10px">
           <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 4px">Your data is stored in the EU under UK GDPR. You can download a copy or permanently delete your account at any time.</p>
           <button onclick="downloadMyData()" style="background:none;border:1px solid var(--border);color:var(--text);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer;text-align:left">Download my data</button>
-          <button onclick="deleteAccount()" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer;text-align:left">Delete account</button>
+          <button onclick="deleteAccount()" style="background:none;border:1px solid #ef4444;color:var(--danger-text);padding:8px 18px;border-radius:var(--radius-sm, 8px);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer;text-align:left">Delete account</button>
           <a href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener" id="settings-privacy-link" style="font-size:var(--text-base, 13px);color:var(--accent, #6366f1);font-weight:600;text-decoration:none">Read the Privacy Policy →</a>
           <span id="settings-data-msg" style="font-size:var(--text-base, 13px);color:var(--text-muted)"></span>
         </div>
@@ -3749,7 +3768,7 @@ async function inviteSoloUser() {
     log.error('inviteSoloUser', 'edge function returned error', { status: res.status, error: json.error })
     btn.disabled = false
     btn.textContent = '✗ ' + (json.error || 'Failed to send')
-    btn.style.color = 'var(--danger)'
+    btn.style.color = 'var(--danger-text)'
     _soloInviteRevertTimer = setTimeout(() => { btn.textContent = 'Send invite'; btn.style.color = '' }, 3000)
     return
   }
@@ -3758,7 +3777,7 @@ async function inviteSoloUser() {
   if (nameEl) nameEl.value = ''
   if (emailEl) emailEl.value = ''
   btn.textContent = '✓ Invite sent'
-  btn.style.color = 'var(--success, #16a34a)'
+  btn.style.color = 'var(--success-fg)'
   btn.disabled = false
   _soloInviteRevertTimer = setTimeout(() => { btn.textContent = 'Send invite'; btn.style.color = '' }, 3000)
 }
@@ -3784,16 +3803,16 @@ async function saveSettingsTarget() {
   const n = Number(document.getElementById('settings-weekly-target')?.value)
   const msg = document.getElementById('settings-target-msg')
   if (!Number.isInteger(n) || n < _DASH_TARGET_MIN || n > _DASH_TARGET_MAX) {
-    if (msg) { msg.style.color = 'var(--danger)'; msg.textContent = `Pick a number from ${_DASH_TARGET_MIN} to ${_DASH_TARGET_MAX}.` }
+    if (msg) { msg.style.color = 'var(--danger-text)'; msg.textContent = `Pick a number from ${_DASH_TARGET_MIN} to ${_DASH_TARGET_MAX}.` }
     return
   }
   const error = await _saveWeeklyTarget(n)
   if (error) {
     log.error('saveSettingsTarget', 'update failed', error)
-    if (msg) { msg.style.color = 'var(--danger)'; msg.textContent = 'Save failed. Try again.' }
+    if (msg) { msg.style.color = 'var(--danger-text)'; msg.textContent = 'Save failed. Try again.' }
     return
   }
-  if (msg) { msg.style.color = 'var(--success)'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
+  if (msg) { msg.style.color = 'var(--success-fg)'; msg.textContent = 'Saved ✓'; setTimeout(() => { if (msg) msg.textContent = '' }, 3000) }
 }
 
 async function saveSettingsPassword() {
@@ -3985,14 +4004,14 @@ function deleteAccount() {
   overlay.style.cssText = 'align-items:flex-start;padding-top:60px'
   overlay.innerHTML = `
     <div class="modal" style="max-width:400px">
-      <h2 style="font-size:var(--text-2xl, 18px);font-weight:700;margin:0 0 8px;color:var(--danger)">Delete account</h2>
+      <h2 style="font-size:var(--text-2xl, 18px);font-weight:700;margin:0 0 8px;color:var(--danger-text)">Delete account</h2>
       <p style="font-size:var(--text-lg, 14px);color:var(--text-muted);margin:0 0 16px;line-height:1.5">This will permanently delete your account and all your data. This cannot be undone.</p>
       <p style="font-size:var(--text-lg, 14px);color:var(--text);margin:0 0 8px;font-weight:600">Type <strong>DELETE</strong> to confirm:</p>
       <input id="delete-confirm-input" type="text" class="field-input" placeholder="DELETE" autocomplete="off" style="margin-bottom:16px;font-size:var(--text-xl, 16px)">
-      <p id="delete-confirm-error" style="font-size:var(--text-base, 13px);color:var(--danger);margin:0 0 12px;display:none">You must type DELETE exactly to proceed.</p>
+      <p id="delete-confirm-error" style="font-size:var(--text-base, 13px);color:var(--danger-text);margin:0 0 12px;display:none">You must type DELETE exactly to proceed.</p>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-        <button id="delete-confirm-btn" class="btn-primary" style="background:var(--danger)" onclick="deleteAccountConfirmed(this.closest('.modal-overlay'))">Delete my account</button>
+        <button id="delete-confirm-btn" class="btn-primary" style="background:var(--danger);color:#fff" onclick="deleteAccountConfirmed(this.closest('.modal-overlay'))">Delete my account</button>
       </div>
     </div>`
   mountModal(overlay)

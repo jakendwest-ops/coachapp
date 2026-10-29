@@ -452,7 +452,7 @@ function _renderLastTimeCard(ex) {
   const count = `${sum.count} ${sum.count === 1 ? 'set' : 'sets'}`
   return `<button id="wr-lasttime" type="button" onclick="openRunnerStats()" aria-haspopup="dialog" aria-label="View stats for ${escapeHtml(ex.name)}. Last time ${escapeHtml(dateStr)}, ${count}, top set ${escapeHtml(sum.top)}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;margin-top:14px;padding:10px 10px 10px 14px;background:var(--accent-light);border:1px solid rgba(99,102,241,.3);border-radius:var(--radius, 10px);text-align:left;cursor:pointer">
     <span style="min-width:0"><span data-lt-label style="display:block;font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Last time · ${escapeHtml(dateStr)} · ${count}</span><span data-lt-top style="display:block;font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-top:2px">Top set ${escapeHtml(sum.top)}</span></span>
-    <span aria-hidden="true" style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-height:40px;padding:0 14px 0 12px;border-radius:var(--radius-lg, 14px);background:var(--accent);color:#fff;font-size:var(--text-base, 13px);font-weight:700;box-shadow:0 1px 2px rgba(79,70,229,.35)">${_RUNNER_CHART_ICON}Stats</span></button>`
+    <span aria-hidden="true" style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-height:40px;padding:0 14px 0 12px;border-radius:var(--radius-lg, 14px);background:var(--accent);color:var(--on-accent);font-size:var(--text-base, 13px);font-weight:700;box-shadow:0 1px 2px rgba(79,70,229,.35)">${_RUNNER_CHART_ICON}Stats</span></button>`
 }
 
 // ── The Stats sheet: the SAME exercise card My progress shows (2026-10-03) ──────────────────────────────────────────────────
@@ -910,8 +910,8 @@ function renderStrengthTable(ex) {
   const { needsOneRM } = _runnerTargetCols(ex)
   const oneRMBanner = needsOneRM ? `
     <div id="wr-onerm-banner" onclick="showRunnerOneRMSheet(${_runner.exIdx})" style="background:rgba(245,158,11,.1);border:1.5px solid #f59e0b;border-radius:var(--radius, 10px);padding:12px;text-align:center;cursor:pointer;margin-bottom:10px">
-      <div style="font-size:var(--text-base, 13px);font-weight:700;color:#b45309">⚠ Set your 1RM to see target weight</div>
-      <div style="font-size:var(--text-sm, 11px);color:#b45309;margin-top:2px">Tap to add</div>
+      <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--warning-text)">⚠ Set your 1RM to see target weight</div>
+      <div style="font-size:var(--text-sm, 11px);color:var(--warning-text);margin-top:2px">Tap to add</div>
     </div>` : ''
 
   let restBar = ''
@@ -1002,7 +1002,7 @@ function renderStrengthTable(ex) {
   // for screen readers, so the shrunk visual label costs nothing there.
   // margin-left stays >=8px — a separate Jake request from 2026-07-05 (deliberate spacing so the delete
   // is not mis-tapped) with its own regression test. Smaller AND spaced; the two are not in conflict.
-  const inDel = (i) => ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="width:32px;height:32px;flex-shrink:0;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger);font-size:var(--legacy-text-15, 15px);font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center">&times;</button>` : ''
+  const inDel = (i) => ex.tableRows.length > 1 ? `<button onclick="deleteTableRow(${i})" aria-label="Delete set ${i+1}" style="width:32px;height:32px;flex-shrink:0;margin-left:8px;border:none;border-radius:6px;cursor:pointer;background:var(--danger-light);color:var(--danger-text);font-size:var(--legacy-text-15, 15px);font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center">&times;</button>` : ''
   const inSetNum = (i, isCurrent) => `<span style="width:22px;flex-shrink:0;font-size:13px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text-muted)'};text-align:center">${i+1}</span>`
 
   // Hoisted above the row map (was computed only for the header, further down) so each row can also
@@ -1276,7 +1276,7 @@ function renderRunner() {
              light purple, so a skipped exercise looked done. The tabs are also the way back — the Back button
              is gone. A finished exercise you are ON keeps its green and gets a white inner ring, so "done"
              and "here" both show. -->
-        ${_runner.exercises.length > 1 ? `<div id="wr-tabs" style="position:relative;display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px">${_runner.exercises.map((e,i)=>`<button type="button" onclick="runnerJumpTo(${i})" title="${escapeHtml(e.name||'Exercise '+(i+1))}${doneFlags[i]?' — done':''}"${i===_runner.exIdx?' aria-current="step"':''} style="flex-shrink:0;width:40px;height:40px;border-radius:var(--radius-sm, 8px);border:none;display:flex;align-items:center;justify-content:center;font-size:var(--text-base, 13px);font-weight:800;cursor:pointer;background:${doneFlags[i]?'var(--success)':i===_runner.exIdx?'var(--accent)':'var(--surface-2)'};color:${doneFlags[i]||i===_runner.exIdx?'#fff':'var(--text-muted)'};box-shadow:${doneFlags[i]&&i===_runner.exIdx?'inset 0 0 0 3px rgba(255,255,255,.85)':'none'}">${i+1}</button>`).join('')}</div>` : ''}
+        ${_runner.exercises.length > 1 ? `<div id="wr-tabs" style="position:relative;display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px">${_runner.exercises.map((e,i)=>`<button type="button" onclick="runnerJumpTo(${i})" title="${escapeHtml(e.name||'Exercise '+(i+1))}${doneFlags[i]?' — done':''}"${i===_runner.exIdx?' aria-current="step"':''} style="flex-shrink:0;width:40px;height:40px;border-radius:var(--radius-sm, 8px);border:none;display:flex;align-items:center;justify-content:center;font-size:var(--text-base, 13px);font-weight:800;cursor:pointer;background:${doneFlags[i]?'var(--success)':i===_runner.exIdx?'var(--accent)':'var(--surface-2)'};color:${doneFlags[i]?'#fff':i===_runner.exIdx?'var(--on-accent)':'var(--text-muted)'};box-shadow:${doneFlags[i]&&i===_runner.exIdx?'inset 0 0 0 3px rgba(255,255,255,.85)':'none'}">${i+1}</button>`).join('')}</div>` : ''}
         <!-- MOVED 2026-09-30 (Jake: "these boxes should fill the width of the row... and move below
              the exercise number boxes"). Used to live inside the flex:1 title column above, which
              only gets the width left over after the ⋯/End buttons -- #wr-tabs is a sibling of that
@@ -1364,7 +1364,7 @@ function renderRunner() {
           const untouchedLast = isLast && !started
           const label = untouchedLast ? 'Finish workout' : isLast ? 'Finish 🏁' : started ? 'Next exercise →' : 'Skip exercise →'
           const bg = started ? (isLast ? 'var(--success)' : 'var(--accent)') : 'var(--surface-2)'
-          const ctaStyle = `width:100%;min-height:52px;border:none;border-radius:var(--radius, 10px);background:${bg};color:${started ? '#fff' : 'var(--text-muted)'};font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:6px 10px`
+          const ctaStyle = `width:100%;min-height:52px;border:none;border-radius:var(--radius, 10px);background:${bg};color:${started ? (isLast ? '#fff' : 'var(--on-accent)') : 'var(--text-muted)'};font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:6px 10px`
           const ctaBody = `${label}${nextEx ? `<span id="wr-cta-next" style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-sm, 11px);font-weight:600;opacity:.85">Next: ${escapeHtml(nextEx.name)}</span>` : ''}`
           // Two literal buttons, not one with a computed onclick: scripts/check-inline-handlers only accepts literal names.
           return untouchedLast
@@ -1396,9 +1396,9 @@ function renderRunner() {
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
             ${distBased && _cardioDistanceM(tgt) ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${fmtDistanceM(_cardioDistanceM(tgt))}</span>` : ''}
             ${!distBased && effDuration && effDuration !== '0:00' ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">Target: ${escapeHtml(normalizeDuration(effDuration))}</span>` : ''}
-            ${_hasTimeTarget(tgt.pace500Min) ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.pace500Min))}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+escapeHtml(String(tgt.pace500Max)):''} /500m</span>` : ''}
-            ${_hasTimeTarget(tgt.paceKmMin) ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.paceKmMin))}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+escapeHtml(String(tgt.paceKmMax)):''} /km</span>` : ''}
-            ${tgt.wattsMin ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--accent);color:#fff;font-weight:600">${escapeHtml(String(tgt.wattsMin))}${tgt.wattsMax && tgt.wattsMax!==tgt.wattsMin?'–'+escapeHtml(String(tgt.wattsMax)):''} W</span>` : ''}
+            ${_hasTimeTarget(tgt.pace500Min) ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--accent);color:var(--on-accent);font-weight:600">${escapeHtml(String(tgt.pace500Min))}${tgt.pace500Max && tgt.pace500Max!==tgt.pace500Min?'–'+escapeHtml(String(tgt.pace500Max)):''} /500m</span>` : ''}
+            ${_hasTimeTarget(tgt.paceKmMin) ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--accent);color:var(--on-accent);font-weight:600">${escapeHtml(String(tgt.paceKmMin))}${tgt.paceKmMax && tgt.paceKmMax!==tgt.paceKmMin?'–'+escapeHtml(String(tgt.paceKmMax)):''} /km</span>` : ''}
+            ${tgt.wattsMin ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--accent);color:var(--on-accent);font-weight:600">${escapeHtml(String(tgt.wattsMin))}${tgt.wattsMax && tgt.wattsMax!==tgt.wattsMin?'–'+escapeHtml(String(tgt.wattsMax)):''} W</span>` : ''}
             ${tgt.hrZoneMin ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">HR: ${escapeHtml(String(tgt.hrZoneMin))}${tgt.hrZoneMax?'–'+escapeHtml(String(tgt.hrZoneMax)):''} bpm</span>` : ''}
             ${effRestMin && effRestMin !== '0:00' ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">Rest: ${typeof effRestMin === 'number' ? fmtDuration(effRestMin) : escapeHtml(effRestMin)}</span>` : ''}
             ${tgt.strokeRateMin ? `<span style="font-size:var(--text-md, 12px);padding:3px 8px;border-radius:var(--radius-xl, 20px);background:var(--surface-2);color:var(--text-muted);font-weight:600">${escapeHtml(String(tgt.strokeRateMin))}${tgt.strokeRateMax?'–'+escapeHtml(String(tgt.strokeRateMax)):''} spm</span>` : ''}
@@ -1427,7 +1427,7 @@ function renderRunner() {
           <div style="display:flex;gap:8px;margin-bottom:6px">
             ${ex.loggedSets.length > 0 ? `<button onclick="skipToNextExercise()" style="flex:0 0 auto;padding:0 14px;height:52px;border:1px solid var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-md, 12px);font-weight:700;cursor:pointer;color:var(--text-muted)">${isLast?'Finish 🏁':'Skip →'}</button>` : ''}
             ${(!distBased || _isIntervalExercise(ex)) ? `<button onclick="event.stopPropagation();startCardioTimer()" style="flex:1;height:52px;border:none;border-radius:var(--radius, 10px);background:var(--surface-2);color:var(--text);font-size:var(--text-lg, 14px);font-weight:700;cursor:pointer">▶ Start timer</button>` : ''}
-            ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:#fff;font-size:var(--text-2xl, 18px);font-weight:800;cursor:pointer">LOG</button>` : ''}
+            ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();logRunnerSet()" style="flex:1;height:52px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:var(--on-accent);font-size:var(--text-2xl, 18px);font-weight:800;cursor:pointer">LOG</button>` : ''}
           </div>
           ${(!_isIntervalExercise(ex) || _isSteadyEffortBlock(ex)) ? `<button onclick="event.stopPropagation();addExtraCardioSet()" style="width:100%;padding:8px;border:1px dashed var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-md, 12px);font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add extra set</button>` : ''}`
         })() : ''}
@@ -2081,7 +2081,7 @@ function renderIntervalTimer() {
           style="width:100%;padding:10px 12px;font-size:var(--text-2xl, 18px);font-weight:700;border:2px solid var(--border);border-radius:var(--radius, 10px);text-align:center;background:var(--surface);color:var(--text)">
       </div>
     </div>
-    <button onclick="event.stopPropagation();${doneOnclick}" style="width:100%;max-width:340px;padding:16px;border:none;border-radius:var(--radius-md, 12px);background:var(--accent);color:#fff;font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer">${escapeHtml(doneLabel)}</button>
+    <button onclick="event.stopPropagation();${doneOnclick}" style="width:100%;max-width:340px;padding:16px;border:none;border-radius:var(--radius-md, 12px);background:var(--accent);color:var(--on-accent);font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer">${escapeHtml(doneLabel)}</button>
   `
   mountModal(overlay)
 }
@@ -2305,7 +2305,7 @@ function renderCardioCaptureCard(ex, onContinue, prefill = {}) {
   // Same prescribed-target lookup the pre-Start card used — carries the hrZoneMin/wattsMin hint
   // through so the placeholder regression Agent C flagged (values shown while typing) doesn't reappear.
   const tgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
-  const chip = (label, key) => `<button type="button" onclick="_toggleCardioCaptureMetric('${key}')" style="padding:8px 14px;font-size:13px;font-weight:700;border-radius:20px;cursor:pointer;border:1px solid ${t[key]?'var(--accent)':'var(--border)'};background:${t[key]?'var(--accent)':'var(--surface-2)'};color:${t[key]?'#fff':'var(--text-muted)'}">${label}</button>`
+  const chip = (label, key) => `<button type="button" onclick="_toggleCardioCaptureMetric('${key}')" style="padding:8px 14px;font-size:13px;font-weight:700;border-radius:20px;cursor:pointer;border:1px solid ${t[key]?'var(--accent)':'var(--border)'};background:${t[key]?'var(--accent)':'var(--surface-2)'};color:${t[key]?'var(--on-accent)':'var(--text-muted)'}">${label}</button>`
   const field = (label, id, val, opts, wrapStyle) => `
     <div style="${wrapStyle || 'margin-bottom:10px'}">
       <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px">${label}</div>
@@ -2332,7 +2332,7 @@ function renderCardioCaptureCard(ex, onContinue, prefill = {}) {
         ${!t.hr && !t.watts && !t.pace && !t.strokeRate ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px);text-align:center;padding:24px 0">Nothing toggled on — tap a chip above, or just continue.</p>` : ''}
       </div>
       <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px">
-        <button onclick="_applyCardioCapture(_runner.exercises[_runner.exIdx]);_runner._captureOnContinue()" style="width:100%;padding:16px;border:none;border-radius:var(--radius-md, 12px);background:var(--accent);color:#fff;font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer">Continue</button>
+        <button onclick="_applyCardioCapture(_runner.exercises[_runner.exIdx]);_runner._captureOnContinue()" style="width:100%;padding:16px;border:none;border-radius:var(--radius-md, 12px);background:var(--accent);color:var(--on-accent);font-size:var(--text-xl, 16px);font-weight:800;cursor:pointer">Continue</button>
         <button onclick="_runner._captureOnContinue()" style="width:100%;padding:8px;border:none;background:none;font-size:var(--text-base, 13px);font-weight:600;cursor:pointer;color:var(--text-muted)">Skip — don't log numbers this time</button>
       </div>
     </div>
@@ -2429,8 +2429,8 @@ function editRunnerSet(exIdx, setIdx) {
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="document.getElementById('wr-edit-overlay').remove()" style="flex:1;padding:13px;border:1px solid var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Cancel</button>
-        <button onclick="deleteRunnerSet(${exIdx},${setIdx})" style="flex:1;padding:13px;border:1px solid #ef4444;border-radius:var(--radius, 10px);background:transparent;color:var(--danger, #ef4444);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Delete</button>
-        <button onclick="saveEditRunnerSet(${exIdx},${setIdx})" style="flex:2;padding:13px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:#fff;font-size:var(--text-lg, 14px);font-weight:700;cursor:pointer">Save</button>
+        <button onclick="deleteRunnerSet(${exIdx},${setIdx})" style="flex:1;padding:13px;border:1px solid #ef4444;border-radius:var(--radius, 10px);background:transparent;color:var(--danger-text);font-size:var(--text-lg, 14px);font-weight:600;cursor:pointer">Delete</button>
+        <button onclick="saveEditRunnerSet(${exIdx},${setIdx})" style="flex:2;padding:13px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:var(--on-accent);font-size:var(--text-lg, 14px);font-weight:700;cursor:pointer">Save</button>
       </div>
     </div>`
   mountModal(overlay)
@@ -2929,8 +2929,8 @@ async function showRunnerFinish() {
         </div>
 
         <div style="padding:12px 16px 24px;border-top:1px solid var(--border);display:flex;gap:8px">
-          <button onclick="confirmDiscardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-base, 13px);font-weight:600;cursor:pointer;color:var(--danger)">Discard</button>
-          <button onclick="saveRunnerSession()" style="flex:1;height:48px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:#fff;font-size:var(--text-xl, 16px);font-weight:700;cursor:pointer">Save workout</button>
+          <button onclick="confirmDiscardRunner()" style="flex:0 0 auto;padding:0 16px;height:48px;border:1px solid var(--border);border-radius:var(--radius, 10px);background:transparent;font-size:var(--text-base, 13px);font-weight:600;cursor:pointer;color:var(--danger-text)">Discard</button>
+          <button onclick="saveRunnerSession()" style="flex:1;height:48px;border:none;border-radius:var(--radius, 10px);background:var(--accent);color:var(--on-accent);font-size:var(--text-xl, 16px);font-weight:700;cursor:pointer">Save workout</button>
         </div>
       </div>
     `
@@ -3618,8 +3618,8 @@ function renderLogExercises() {
       </div>
       <div style="text-align:center">
         <div style="display:flex;border-radius:var(--legacy-radius-5, 5px);border:1px solid var(--border);overflow:hidden">
-          <button onclick="flushLogState();window._logBlocks[${bi}].effortMode='RPE';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${!isRIR?'var(--accent)':'transparent'};color:${!isRIR?'#fff':'var(--text-muted)'}">RPE</button>
-          <button onclick="flushLogState();window._logBlocks[${bi}].effortMode='RIR';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${isRIR?'var(--accent)':'transparent'};color:${isRIR?'#fff':'var(--text-muted)'}">RIR</button>
+          <button onclick="flushLogState();window._logBlocks[${bi}].effortMode='RPE';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${!isRIR?'var(--accent)':'transparent'};color:${!isRIR?'var(--on-accent)':'var(--text-muted)'}">RPE</button>
+          <button onclick="flushLogState();window._logBlocks[${bi}].effortMode='RIR';renderLogExercises()" style="flex:1;padding:2px 0;font-size:9px;font-weight:600;border:none;cursor:pointer;background:${isRIR?'var(--accent)':'transparent'};color:${isRIR?'var(--on-accent)':'var(--text-muted)'}">RIR</button>
         </div>
       </div>
       ${hdr('Rest')}
@@ -3663,7 +3663,7 @@ function renderLogExercises() {
     return `
       <div style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);overflow:hidden;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(99,102,241,.06);border-bottom:1px solid var(--border)">
-          <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:600;flex-shrink:0">${String.fromCharCode(65+bi)}</div>
+          <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:600;flex-shrink:0">${String.fromCharCode(65+bi)}</div>
           <input id="ls-exname-${bi}" class="field-input" style="padding:5px 8px;font-size:var(--text-xl, 16px);font-weight:500;flex:1;background:transparent;border-color:transparent" placeholder="Exercise name" value="${escapeHtml(String(block.name || ''))}" oninput="window._logBlocks[${bi}].name=this.value">
           <select id="ls-extype-${bi}" class="field-input" style="padding:5px 8px;font-size:var(--text-xl, 16px);width:100px;flex-shrink:0" onchange="flushLogState();window._logBlocks[${bi}].type=this.value;renderLogExercises()">
             <option value="strength" ${!isCardio?'selected':''}>Strength</option>
@@ -3725,7 +3725,7 @@ async function showLogSessionModal(clientId) {
       </div>
       <div class="field-row">
         <div class="field">
-          <label class="field-label">Session name <span style="color:var(--danger)">*</span></label>
+          <label class="field-label">Session name <span style="color:var(--danger-text)">*</span></label>
           <input class="field-input" id="ls-name" placeholder="e.g. Upper Body A">
         </div>
         <div class="field">
@@ -4138,7 +4138,7 @@ async function openWorkoutLog(logId, clientId) {
         ${_isCoachView
           ? `<textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${escapeHtml(session.notes)}</textarea>
              <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:var(--text-base, 13px);padding:7px 16px">Save notes</button>
-             <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:var(--text-md, 12px);color:var(--success, #10b981);font-weight:600">Saved ✓</span>`
+             <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:var(--text-md, 12px);color:var(--success-fg);font-weight:600">Saved ✓</span>`
           : session.notes
             ? `<div style="white-space:pre-wrap;font-size:var(--text-lg, 14px);line-height:1.5">${escapeHtml(session.notes)}</div>`
             : `<div style="font-size:var(--text-base, 13px);color:var(--text-muted)">No notes from your coach yet.</div>`}

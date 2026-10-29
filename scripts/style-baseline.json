@@ -1,12 +1,12 @@
 {
-  "js/app-calendar-goals.js": 9,
-  "js/app-clients.js": 21,
+  "js/app-calendar-goals.js": 7,
+  "js/app-clients.js": 20,
   "js/app-core.js": 16,
   "js/app-dashboard.js": 2,
-  "js/app-programs.js": 14,
-  "js/app-progress.js": 64,
-  "js/app-runner.js": 56,
-  "js/app-workouts.js": 13,
+  "js/app-programs.js": 10,
+  "js/app-progress.js": 59,
+  "js/app-runner.js": 41,
+  "js/app-workouts.js": 9,
   "js/starter-content.js": 0,
-  "css/main.css": 111
+  "css/main.css": 144
 }

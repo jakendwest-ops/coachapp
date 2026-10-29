@@ -188,7 +188,7 @@ async function renderClients(el) {
             <span style="font-size:11px;font-weight:600;color:${lastColour}">${lastText}</span>
           </div>
           ${_isOwnerAccount() ? `<button onclick="event.stopPropagation();sudoAsClient('${c.id}','${escapeAttr(c.full_name)}')" style="font-size:var(--text-sm, 11px);font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:var(--warning, #f59e0b);cursor:pointer;white-space:nowrap">View as</button>` : ''}
-          <svg style="width:15px;height:15px;color:#d1d5db;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg style="width:15px;height:15px;color:var(--border-strong);flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>`
       }).join('')}
     </div>
@@ -216,7 +216,7 @@ function showAddClientModal() {
       </div>
 
       <div class="field">
-        <label class="field-label">Full name <span style="color:var(--danger)">*</span></label>
+        <label class="field-label">Full name <span style="color:var(--danger-text)">*</span></label>
         <input class="field-input" id="nc-name" placeholder="Jane Smith" required>
       </div>
       <div class="field-row">
@@ -506,7 +506,7 @@ async function showEditClientModal(id) {
         <button class="modal-close" onclick="closeModal('edit-client-modal')">✕</button>
       </div>
       <div class="field">
-        <label class="field-label">Full name <span style="color:var(--danger)">*</span></label>
+        <label class="field-label">Full name <span style="color:var(--danger-text)">*</span></label>
         <input class="field-input" id="ec-name" value="${escapeHtml(c.full_name)}">
       </div>
       <div class="field-row">

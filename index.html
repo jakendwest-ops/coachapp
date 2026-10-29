@@ -12,7 +12,21 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236366f1'/%3E%3Ctext x='16' y='22' font-family='Inter,system-ui,sans-serif' font-size='19' font-weight='700' fill='white' text-anchor='middle'%3EC%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=39">
+  <!-- Theme (2026-10-29): dark is the default. The saved choice (Dark / Light / Match my phone, kept on this device) is applied
+       here, BEFORE the stylesheet paints, so there is no flash of the wrong theme. Same rule as applyTheme() in js/app-core.js. -->
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#11131a">
+  <script>
+    (function () {
+      var c = 'dark', t
+      try { c = localStorage.getItem('coachapp-theme') || 'dark' } catch (e) {}
+      t = c === 'light' || (c === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'
+      document.documentElement.setAttribute('data-theme', t)
+      var m = document.querySelector('meta[name="theme-color"]')
+      if (m) m.setAttribute('content', t === 'light' ? '#f4f5f7' : '#11131a')
+    })()
+  </script>
+  <link rel="stylesheet" href="css/main.css?v=40">
 </head>
 <body>
 
@@ -53,7 +67,7 @@
           <input class="field-input" type="email" id="reset-email" placeholder="you@example.com" required>
         </div>
         <p class="auth-error" id="reset-error"></p>
-        <p id="reset-sent" style="display:none;font-size:13px;color:var(--success,#16a34a);margin:0 0 10px"></p>
+        <p id="reset-sent" style="display:none;font-size:13px;color:var(--success-fg);margin:0 0 10px"></p>
         <button class="btn-primary btn-full" type="submit" id="reset-submit">Send reset link</button>
         <p style="text-align:center;margin:12px 0 0">
           <a href="#" id="reset-back-link" style="font-size:13px;color:var(--text-muted);text-decoration:none">Back to sign in</a>
@@ -152,15 +166,15 @@
        (curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A). -->
   <script src="https://unpkg.com/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
-  <script src="js/app-core.js?v=49"></script>
+  <script src="js/app-core.js?v=50"></script>
   <script src="js/starter-content.js?v=9"></script>
-  <script src="js/app-dashboard.js?v=38"></script>
-  <script src="js/app-programs.js?v=79"></script>
-  <script src="js/app-clients.js?v=26"></script>
-  <script src="js/app-calendar-goals.js?v=34"></script>
-  <script src="js/app-workouts.js?v=152"></script>
-  <script src="js/app-runner.js?v=123"></script>
-  <script src="js/app-progress.js?v=87"></script>
+  <script src="js/app-dashboard.js?v=39"></script>
+  <script src="js/app-programs.js?v=80"></script>
+  <script src="js/app-clients.js?v=27"></script>
+  <script src="js/app-calendar-goals.js?v=35"></script>
+  <script src="js/app-workouts.js?v=153"></script>
+  <script src="js/app-runner.js?v=124"></script>
+  <script src="js/app-progress.js?v=88"></script>
 </body>
 </html>
 

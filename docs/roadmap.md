@@ -11,6 +11,11 @@ Shipped 2026-08-25: privacy policy, consent checkbox, a consent gate in `showApp
 gate. Left: confirming `delete_current_user()` exists in the database (needs Jake). Only Jake can change the row's status:
 [the ledger row](bugs/2026-08-11-gdpr-no-consent-capture-and-no-privacy-policy.md).
 
+## Solo product review (2026-10-29, nothing decided)
+
+A product-level review of Solo with a ranked MVP / V2 / V3 roadmap:
+[superpowers/plans/2026-10-29-solo-product-review.md](superpowers/plans/2026-10-29-solo-product-review.md). Recommendations only.
+
 ## Current priorities (corrected 2026-10-05)
 
 - **Awaiting Jake's look on a phone:** every release from `v2026.09.14` to `v2026.10.7` (Training plans, the Workouts page, the Goals tab, the new exercise builder) — the one-skeleton dashboard (D1, built from the prototype he
