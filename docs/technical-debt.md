@@ -98,7 +98,8 @@ mechanism are logged in [decisions.md](decisions.md) as they land (and in the ar
   `.nvmrc` or `engines`, so a future machine upgrade is caught only by `checks.sh`'s `[note]`, which is not a gate.
 - **Git-in-a-temp-folder self-tests that inherit git's environment.** From a LINKED worktree, `git push` runs its hook with `GIT_DIR` pointing at
   the real repo, so a self-test that runs `git init / add / commit` in a temp folder instead commits to the worktree's own branch and leaves tracked
-  files deleted (reproduced 2026-10-11). Fixed in `scripts/bump-versions.selftest.mjs` (it runs on every push) and `scripts/verify-live.selftest.mjs`.
+  files deleted (reproduced 2026-10-11). Fixed in `scripts/bump-versions.selftest.mjs` (it runs on every push), `scripts/verify-live.selftest.mjs` and,
+  2026-10-29, `scripts/check-secrets.selftest.mjs` (every push), whose `git init` set `core.bare = true` in the SHARED `.git/config` and broke every checkout until set back.
   Still inherited, in release-only self-tests that need `CHECKS_FULL=1 git push` from a linked worktree to matter: `.claude/hooks/guardrails.selftest.mjs`,
   `scripts/check-guardrails-worktree.selftest.mjs` and `.claude/hooks/os-lint.selftest.mjs`. The worktree one tests worktree behaviour on purpose, so it needs
   care rather than a blanket strip.

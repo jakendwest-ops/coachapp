@@ -130,7 +130,11 @@ const CASES = [
     diff: [{ f: 'a.js', body: 'const a = 1\n' }, { f: 'a.js', body: 'const a = 1\nconst b = 2\n' }] },
 ]
 
-const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+// No inherited GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE: checks.sh runs this from inside git's pre-push hook, and from a LINKED worktree
+// GIT_DIR points at the real repository, so `git init` here re-initialised it instead of the temp folder. On 2026-10-29 that set
+// core.bare = true in the shared .git/config, which broke the main checkout and every worktree until it was set back by hand.
+const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')))
+const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: cleanEnv }).trim()
 
 const dir = mkdtempSync(join(tmpdir(), 'secrets-selftest-'))
 let failures = 0
@@ -142,7 +146,7 @@ CASES.forEach((c, i) => {
       const repo = join(dir, `repo${i}`); mkdirSync(repo); git(repo, 'init', '-q')
       let base = null
       c.diff.forEach((step, k) => { writeFileSync(join(repo, step.f), step.body); git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'c' + k); if (k === 0) base = git(repo, 'rev-parse', 'HEAD') })
-      out = execFileSync(process.execPath, [CHECK, '--since', base], { cwd: repo, encoding: 'utf8' })
+      out = execFileSync(process.execPath, [CHECK, '--since', base], { cwd: repo, encoding: 'utf8', env: cleanEnv })
     } else {
       // each case in its own folder, so a config-style name (.env.example, settings.yml) keeps its real basename
       const sub = join(dir, `case${i}`); mkdirSync(sub)
