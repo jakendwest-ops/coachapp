@@ -1,0 +1,14 @@
+{
+  "_why": "tsc errors per js/ file; may only fall. See scripts/check-types.mjs.",
+  "counts": {
+    "js/app-core.js": 79,
+    "js/starter-content.js": 1,
+    "js/app-dashboard.js": 36,
+    "js/app-programs.js": 209,
+    "js/app-clients.js": 27,
+    "js/app-calendar-goals.js": 56,
+    "js/app-workouts.js": 252,
+    "js/app-runner.js": 115,
+    "js/app-progress.js": 219
+  }
+}

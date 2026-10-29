@@ -108,7 +108,8 @@ decision; see `docs/decisions.md`'s 2026-09-18 "Full severing" entry and 2026-10
   time caught things a full cycle late — every ownership commit reviewed that day came back with a real
   finding. `hooks/guardrails.mjs` **blocks** `git commit` on unreviewed ownership diffs; the review skill
   writes the marker that clears it. `checks.sh` (pre-push hook) enforces
-  column names, query scoping, cache-bust, PII-in-logs, secrets, SQL function lock-down, outside hosts and duplicate functions on every push.
+  column names, query scoping, cache-bust, PII-in-logs, secrets, SQL function lock-down, outside hosts and duplicate functions on every push,
+  plus a type-error ratchet (`scripts/check-types.mjs`: tsc over `js/` as classic scripts, no emit; per-file count may only fall; `npm run typecheck` lists them).
 - **A push runs NO browser tests (since 2026-09-27).** `git push` runs `checks.sh` in FAST mode —
   every static check, about two minutes — and skips the browser smoke run and the mutation self-tests. Browser
   tests run only as the FULL suite inside `release.mjs`, which is what stands between master and the

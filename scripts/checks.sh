@@ -530,6 +530,19 @@ fi
 if ! node scripts/check-count-ratchet.mjs; then
   fail "a ratcheted pattern grew -- see the lines above."
 fi
+# -- 9i-b. Type-error ratchet -- tsc over js/ as classic scripts, per-file count may only fall --
+# Added 2026-10-29 (docs/superpowers/plans/2026-10-29-type-check-then-modules.md). Seeded AT the
+# measurement: 994 errors, mostly undeclared window._x state and `.value` on a plain HTMLElement.
+# A NEW error anywhere (typo'd function, missing argument, wrong column once Supabase types land)
+# raises its file's count and fails here. ~3 s; needs `npm ci` (CI already runs it before this file).
+echo "Checking type-error ratchet..."
+if ! node scripts/check-types.selftest.mjs > /dev/null 2>&1; then
+  node scripts/check-types.selftest.mjs 2>&1 | sed "s/^/    /"
+  fail "check-types self-test FAILED -- the type ratchet can no longer be trusted, fix it before relying on the result below."
+fi
+if ! node scripts/check-types.mjs; then
+  fail "type errors rose in a js/ file -- see the lines above (npm run typecheck lists them all)."
+fi
 # -- 9j. Single-source registry -- a registered fact has ONE definition, in the file that owns it --
 # Not the same as rule 9i. A ratchet says "do not add a 37th"; this says "there is exactly one, and it
 # lives HERE" -- so it also catches a definition that MOVED, and the refusal names the surviving home.
