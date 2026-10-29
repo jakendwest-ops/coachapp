@@ -50,3 +50,6 @@ docs/bugs/embargo/
 
 # tsc incremental state (scripts/check-types.mjs)
 *.tsbuildinfo
+
+# Supabase CLI scratch (project ref, CLI version) written by `supabase login` / `gen types`
+supabase/.temp/

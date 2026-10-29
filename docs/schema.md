@@ -220,10 +220,11 @@ Script and rollback: `scripts/add-client-empty-session-delete-2026-10-01.sql`; l
 - The source of truth for actual constraints is Supabase itself (`information_schema`) and
   [critical.md](critical.md), not this file — this is the design reference.
 - Don't duplicate this elsewhere — one file.
-- Once `types/database.d.ts` exists (generated, not hand-written: Task 3 of
-  `docs/superpowers/plans/2026-10-29-type-check-then-modules.md`, which needs Jake's Supabase login),
-  regenerate it in the same commit as any schema change:
-  `npx supabase gen types typescript --project-id avilxuiacmtgeoxxhfhc > types/database.d.ts`.
+- `types/database.d.ts` is generated, never hand-written (first generated 2026-10-29; it needs Jake's
+  Supabase login, `npx.cmd supabase login`). Regenerate it in the same commit as any schema change, from
+  PowerShell in the repo folder (`npx.cmd`, because PowerShell blocks `npx.ps1`; `Out-File -Encoding utf8`,
+  because PowerShell 5.1's `>` writes UTF-16):
+  `npx.cmd supabase gen types typescript --project-id avilxuiacmtgeoxxhfhc | Out-File -Encoding utf8 types/database.d.ts`.
   A NEW column shows up as a type error until regenerated, which is safe. A DROPPED column keeps
   type-checking against the stale file, which is not.
 

@@ -351,6 +351,7 @@ const clearTimer = id => { clearInterval(id); return null }
 
 const SUPABASE_URL = 'https://avilxuiacmtgeoxxhfhc.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2aWx4dWlhY210Z2VveHhoZmhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NjExNzcsImV4cCI6MjA5NzQzNzE3N30.SpVc5ZX_yf6gMrCJLxY9CxDki7PhBj2vbENha7tWBrc'
+/** @type {import('@supabase/supabase-js').SupabaseClient<import('../types/database').Database>} */
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
