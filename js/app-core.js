@@ -188,6 +188,7 @@ function _checkInColour(metricKey, val) { return CHECKIN_TONE_COLOUR[_checkInTon
 
 // ─── TOAST NOTIFICATIONS ──────────────────────────────────────────────────────
 // Surface DB errors and key events to the user — not just the console.
+/** @param {string} msg  @param {'error'|'success'|'info'|'warn'} [type]  @param {number} [duration] ms */
 function showToast(msg, type = 'error', duration = 4000) {
   const existing = document.getElementById('app-toast')
   if (existing) existing.remove()
@@ -743,6 +744,7 @@ async function _saveQuickPrefs() {
 const NO_SESSIONS_EMPTY_STATE =
   '<div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">No sessions added to this phase yet</div>'
 
+/** Anything in, safe HTML text out; falsy (null/undefined/''/0) gives ''.  @param {unknown} str  @returns {string} */
 function escapeHtml(str) {
   if (!str) return ''
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
@@ -758,6 +760,7 @@ function escapeHtml(str) {
 // Escaping in the other order, or with escapeHtml alone, decodes &#39; back to a bare quote and
 // terminates the JS string. A bare .replace(/'/g,"\\'") — the pattern this replaces — left `"` live,
 // which closes the HTML attribute itself and allows an injected event handler.
+/** @param {unknown} str  @returns {string} */
 function escapeAttr(str) {
   if (!str) return ''
   // Newlines too: a raw newline inside a JS string literal in an inline handler is a SyntaxError and
@@ -821,6 +824,7 @@ const _effortRange = (min, max) => {
 //
 // Guarding at function entry does NOT fix the await version — both callers pass the check before
 // either appends. It has to happen at mount.
+/** @param {HTMLElement} node */
 function mountModal(node) {
   if (node.id) document.getElementById(node.id)?.remove()
   document.body.appendChild(node)
@@ -837,6 +841,7 @@ function mountModal(node) {
 // Backdrop tap and the ✕/Cancel button all resolve false — the safe default for a guard. So does the
 // overlay being torn down by anything else (a second confirmDialog, navigate()'s .modal-overlay
 // sweep): otherwise the awaiting caller hangs forever (review, 2026-09-08).
+/** @param {string} message  @param {{title?: string, confirmLabel?: string, cancelLabel?: string, danger?: boolean}} [opts]  @returns {Promise<boolean>} */
 function confirmDialog(message, { title = 'Please confirm', confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false } = {}) {
   // A confirm already on screen means a prior caller is still awaiting — resolve it false first so its
   // frame unwinds rather than leaking.
@@ -1373,6 +1378,7 @@ function updateViewSwitcherButtons(activeView) {
   if (mp) { mp.style.cssText = (activeView==='solo'   ? active : inactive) + mBase; mp.style.display = window._soloClientId   ? 'block' : 'none' }
 }
 
+/** @param {string} view */
 function switchView(view) {
   // Needs its own guard even though navigate() has one: switchView calls applyRoleUI() FIRST, which
   // paints the nav behind the modal before navigate() ever refuses. The overlay is z-index:1000 so
@@ -1575,6 +1581,7 @@ function _navigateNow(page, _historyOp = 'push') {
   }
 }
 
+/** @param {string} page  @param {'push'|'replace'|'none'} [_historyOp] */
 function navigate(page, _historyOp = 'push') {
   // Unsaved-changes guard for the template builder. _templateDraftIsDirty() safely returns false
   // when window._templateDraft is null/undefined, so this is a no-op for the other 99% of
@@ -1676,6 +1683,7 @@ async function _verifyClientAccess(fnName, clientId) {
   return false
 }
 
+/** null when the user has no client record yet. Never assume an id: check it.  @returns {Promise<string|null>} */
 async function _getCurrentClientId() {
   if (currentProfile?.role === 'solo') return window._soloClientId || null
   const { data } = await db.from('clients').select('id').eq('user_id', currentUser.id).not('coach_id', 'is', null).maybeSingle()
