@@ -21,6 +21,14 @@ History only, not current instructions. The live files now point at `roadmap.md`
 
 Bug counts live in [backlog.md](backlog.md); pattern analysis in [technical-debt.md](technical-debt.md); not repeated here.
 
+## From `docs/roadmap.md` ("Current priorities", the first bullet, after v2026.10.8 shipped; the rows it points at carry the detail)
+
+- **Awaiting Jake's look on a phone:** every release from `v2026.09.14` to `v2026.10.7` (Training plans, the Workouts page, the Goals tab, the new exercise builder) — the one-skeleton dashboard (D1, built from the prototype he
+  approved; the coach page is logged-only until a database view exists, [row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md)),
+  the shared exercise stats card, My progress fold-ups, the "Up next" card, the Last time top set, the program-page rework and the RPE method for
+  periodization. The rows are the `fixed-awaiting-jake` files in [bugs/](bugs/).
+- **Waiting on Jake:** beeps with no extra tap (his sound test, [row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)); dark mode as the default ([row](bugs/2026-10-28-dark-mode-should-be-the-default-across-the-app.md)).
+
 ## From `docs/technical-debt.md` ("Test-gate coverage debt"; fixed and ratcheted, so no longer debt)
 
 **Specs that build "today" from the UTC date**: fixed 2026-10-17, with the app itself (48 uses in 24 spec files now use `toLocaleDateString('en-CA')`). The 8 left are UTC calendar arithmetic on a fixed base and stay; `scripts/count-baseline.json` pins both counts, so none can come back.

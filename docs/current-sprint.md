@@ -9,12 +9,12 @@ trusting this file for anything time-sensitive. The previous version is archived
 
 ## Last shipped (tagged + deployed)
 
-- **`v2026.10.7`** (live 2026-10-29, verified byte-identical; 1334 passed, 0 failed, 2 flaky): the exercise builder rebuilt (sets edited as a group, "Today's top set weight", "Same as set N"); beeps survive leaving Safari. [releases/v2026.10.7.md](releases/v2026.10.7.md)
-- **Earlier:** `v2026.10.6` (beeps keep Spotify playing; ghost text past 20 sessions) back to `v2026.09.14`: [releases/](releases/) (the full old file: [archive/current-sprint-2026-10-12.md](archive/current-sprint-2026-10-12.md)).
+- **`v2026.10.8`** (live 2026-10-29, verified byte-identical; 1343 passed, 0 failed, 2 flaky): dark mode is the default; Settings > Appearance (Dark, Light, Match my phone, kept on the phone). [releases/v2026.10.8.md](releases/v2026.10.8.md)
+- **Earlier:** `v2026.10.7` (the exercise builder rebuilt; beeps survive leaving Safari) back to `v2026.09.14`: [releases/](releases/) (the full old file: [archive/current-sprint-2026-10-12.md](archive/current-sprint-2026-10-12.md)).
 
 ## In flight
 
-Nothing unreleased. Next: dark mode as the default (waits for Jake's go), then the PT's Workouts page. Waiting on Jake: his phone check of the `fixed-awaiting-jake` rows in [bugs/](bugs/); the round-2 sound test on avoiding a tap after returning to Safari ([row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)); whether **Sign out should end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (leave it, my view); the names "Biggest set" and "View training plan".
+Nothing unreleased. Next: the PT's Workouts page. Waiting on Jake: his phone check of the `fixed-awaiting-jake` rows in [bugs/](bugs/) (dark mode among them); the round-2 sound test on avoiding a tap after returning to Safari ([row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)); whether **Sign out should end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (leave it, my view); the names "Biggest set" and "View training plan".
 
 ## Next: the release plans
 

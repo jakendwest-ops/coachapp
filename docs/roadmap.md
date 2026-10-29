@@ -18,11 +18,8 @@ A product-level review of Solo with a ranked MVP / V2 / V3 roadmap:
 
 ## Current priorities (corrected 2026-10-05)
 
-- **Awaiting Jake's look on a phone:** every release from `v2026.09.14` to `v2026.10.7` (Training plans, the Workouts page, the Goals tab, the new exercise builder) — the one-skeleton dashboard (D1, built from the prototype he
-  approved; the coach page is logged-only until a database view exists, [row](bugs/2026-10-03-dashboard-needs-a-mobile-rework-as-a-landing-page.md)),
-  the shared exercise stats card, My progress fold-ups, the "Up next" card, the Last time top set, the program-page rework and the RPE method for
-  periodization. The rows are the `fixed-awaiting-jake` files in [bugs/](bugs/).
-- **Waiting on Jake:** beeps with no extra tap (his sound test, [row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)); dark mode as the default ([row](bugs/2026-10-28-dark-mode-should-be-the-default-across-the-app.md)).
+- **Awaiting Jake's look on a phone:** every release from `v2026.09.14` to `v2026.10.8` (dark mode is the newest). The rows are the `fixed-awaiting-jake` files in [bugs/](bugs/).
+- **Waiting on Jake:** beeps with no extra tap (his sound test, [row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)).
 - **Open product question:** should Sign out end only *this device's* session? Today it ends every session for the account, so another device
   looks signed in and then fails with "session expired". `signOut({ scope: 'local' })` would change that; it is a product and security call, so
   it is not changed: [the row](bugs/2026-10-03-sign-out-ends-every-device-session.md).
