@@ -37,7 +37,7 @@ For **every** interactive element on the new/changed surface, answer explicitly.
 
 **c) Does the backend actually permit what the UI offers? (RLS)**
 - For each `db.from('<table>')` the feature calls, list the operation used (SELECT/INSERT/UPDATE/DELETE) and confirm a covering RLS policy exists for **that operation and that role** — check all four separately, a working INSERT does not imply UPDATE/DELETE. Query `pg_policies` if unsure. (See [[feedback-new-role-audit]], sql-safety.)
-- Multi-tenant scoping present (coach_id / client_id) on every read? (Step 4 of the hello-claude review.)
+- Multi-tenant scoping present (coach_id / client_id) on every read? (Agent A of `multi-agent-review` checks the same thing.)
 - Solo-mode fallback present anywhere a fetch is gated on `isClientPlan` or a coach path? (Solo silently returns empty otherwise.)
 
 ---

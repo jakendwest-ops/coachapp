@@ -88,8 +88,7 @@ module you change**, in the same commit. Full module map + data layer: `docs/arc
 
 ## Session startup
 
-Start the session IN the repo folder (all 22 desktop sessions listed so far started in the Vision OS folder, so choose this one explicitly), then run `/hello-claude` - it
-boots the preview server and scans for bugs. **Repo only, since 2026-09-18** — it no longer reads any Vault path at all (the full severing
+Start the session IN the repo folder (all 22 desktop sessions listed so far started in the Vision OS folder, so choose this one explicitly), then run `/hello-claude` - it is a short orientation: root check, preview server, where we left off, the open bug rows. **Repo only, since 2026-09-18** — it no longer reads any Vault path at all (the full severing
 decision; see `docs/decisions.md`'s 2026-09-18 "Full severing" entry and 2026-10-05 for why the folder matters). For anything about current priorities/risks/bugs, prefer:
 
 - `docs/session-context.md` — priorities, risks, immediate next actions (point-in-time snapshot)
@@ -137,6 +136,8 @@ text in this file costs nothing. Rules 2 and 3 are still enforced by hooks (`gua
    narrowed by your own judgment about tradeoffs. State any cost AFTER doing it.
 7. Minimise shell calls: each one fires two hooks, i.e. two windows. Use file tools where they fit and
    batch shell work into one script.
+8. Before building anything: present ONE summary of every file, change and SQL statement, and wait for "approved". Silence or "looks good" is not approval; never start building mid-discussion.
+9. Before every commit, the blast-radius sweep: every other caller of what changed; coach, client AND solo; every exercise type (cardio, timed, unilateral, %1RM, bodyweight); empty, zero and null (zero is its own case); what the old code hid that the new code exposes; which spec covers the changed line.
 
 ## Documentation maintenance
 

@@ -10,7 +10,7 @@ This is the fixed, versioned review prompt. **Do not improvise a new set of angl
 Two modes:
 - **Diff mode** (default) — before the COMMIT for ownership/RLS work (enforced by hooks/guardrails.mjs),
   before the push for everything else. Reviews only what changed this session.
-- **Full-file mode** — the weekly deep pass (hello-claude Step 4). Reviews whole high-churn modules, not a diff, to catch latent bugs in code no recent session touched.
+- **Full-file mode** — the weekly deep pass (`os-lint`'s weekly digest says when it is due). Reviews whole high-churn modules, not a diff, to catch latent bugs in code no recent session touched.
 
 **On `/code-review ultra` (corrected 2026-07-13):** it *does* exist in the VSCode extension — the long-standing claim across four skill files that it "is NOT available" was true of the desktop app and went stale here. It is **user-triggered and billed**, so you cannot launch it yourself. You may *offer* it (it's a deeper cloud review than this local substitute); never assume it, and never depend on it. This skill remains the default, because it always works and costs nothing extra.
 
@@ -129,4 +129,4 @@ review-fix edit, and refusing the legitimate user is this project's most-shipped
 ## Notes
 
 - Keep the three angles fixed. If a genuinely new class of bug appears repeatedly, add it to the relevant agent's checklist here (and note it in the LOG) — evolve the pinned prompt deliberately, never silently per-session.
-- This skill is referenced by hello-claude ("Before any git push" standing behaviour + Step 4 weekly deep pass) and by deploy-check Step 2.
+- This skill is referenced by CLAUDE.md (standing behaviour 5), hello-claude (the weekly deep-pass note) and by deploy-check Step 2.

@@ -85,6 +85,8 @@ passing. Widening the old push gate had been tried once and reverted (2026-08-20
 
 **Specs that wait only for `_soloClientId`:** the app's start-up navigation can still land and close an open modal (the `v2026.10.4` release abort; a 2-minute hang on 2026-10-17, not reproduced). Ten specs now use `soloReady()` (`tests/helpers.js`, which also waits for `#dash-goals`) and a ratchet pins the rest; three keep their own start (`back-to-goals-fallback`, `delete-template-lands-on-library`, `personal-view-delete-boundary`, never seen failing).
 
+**Solo specs skip silently:** they are `test.skip`-gated on `soloAvailable`; if `window._soloClientId` fails to populate they all skip and the run passes green. Nothing counts the skips.
+
 ## Process/tracking debt
 
 The tracking system regularly self-reports its own decay (`os-lint --report` at session start); the live numbers belong to that report and
@@ -114,11 +116,6 @@ mechanism are logged in [decisions.md](decisions.md) as they land (and in the ar
   user-level registration lives in `~/.claude/settings.json`, which is not backed up (`os-lint`'s `hooks` check goes RED if it is lost;
   `reference_vault_system.md` records how to re-add it); (4) stale July worktrees under the Vault still carry the old CoachApp launch config (inert);
   (5) memory notes are not scanned for Vault paths (`no-vault-pointers` reads hooks and skills only).
-
-**Cleared 2026-10-05:** `os-lint` had been RED at every session start on four checks (`context-budget`, `ritual-budget`, `docs-budget`,
-`doc-obligations`) that predated the Vault-root work: `docs/*.md` had grown from 79.5k (2026-09-27) to 159.6k, 63.8k of it `decisions.md`, because the
-conversation that grew it was rooted in the Vault and never ran `os-lint`. Fixed by moving detail VERBATIM into `docs/archive/`, not by raising a ceiling
-(see [decisions.md](decisions.md), 2026-10-05).
 
 ## Minor hygiene debt
 

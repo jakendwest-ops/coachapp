@@ -1,0 +1,272 @@
+<!-- Archived verbatim 2026-10-29 when /hello-claude was slimmed to a short orientation card (docs/decisions.md). Everything below is the 270-line ritual as it stood; it is history, not current instructions. -->
+
+---
+name: hello-claude
+description: Session-start ritual for CoachApp — boots the preview server, reads the repo's live docs (docs/*.md, the system of record since 2026-09-15), summarises the last session, scans for bugs, surfaces the bug ledger, and proposes today's plan. Trigger at the start of any CoachApp working session, however the user opens it (saying "hello claude", a casual greeting, or just starting to describe work).
+---
+
+# Session start ritual
+
+**Step 0a — the session's ROOT must be the repo, `C:\Users\jaken\OneDrive\coachapp`** (or a worktree of it): the first command's "Shell cwd was reset to …"
+line, and the memory path in your system prompt (`…\c--Users-jaken-OneDrive-coachapp\memory`). A miss (the Vision OS folder, say): STOP and tell Jake - a NEW session
+on the repo is the clean fix. A `mcp__ccd_directory__change_directory` move keeps hooks and skills at once, CLAUDE.md only after a later compaction and the memory path never: Read the repo's `CLAUDE.md`
+and its `MEMORY.md` yourself, and never `cd` past it (`docs/decisions.md`, 2026-10-05).
+
+**Step 0b — write the checklist to `~/.claude/state/ritual-hello-claude.md`, one `- [ ]` line per step below**, and tick each one off as you complete it, so an
+interrupted ritual is *visibly* unfinished (on 2026-07-13 Jake typed `/brainstorming` at Step 6 and the steps after it silently never ran).
+
+`os-lint` runs on SessionStart and prints anything rotten before you act. If it printed RED, **read it
+first** — it is telling you the machinery itself is broken, which outranks whatever you were about to do.
+
+---
+
+## Who Jake is — how to work with him
+
+Jake is a personal trainer building CoachApp as both developer and primary user. No software engineering
+background, learns fast, wants the *why* behind every decision.
+
+- Messages are short, lowercase, direct. Don't pad responses.
+- Silence + continuing = positive feedback. He doesn't say "great job."
+- "both" / "all" / "please add" = execute everything, no follow-up needed.
+- "make a note" = write it to `docs/` (decisions.md/technical-debt.md as fits) — repo only, always.
+- "are you able to..." = genuine feasibility check, not rhetorical — answer directly.
+- Ships small, sees it, moves on. He doesn't like long planning phases.
+- Turns failures into permanent systems — when something breaks badly, a skill or lint check comes out of it.
+- Proactively audits his own tooling for gaps — surface them at session start, don't wait to be asked.
+- **All-caps restatement** ("PLEASE FIX THIS") = patience exhausted. Next attempt must work. No more probing.
+- **Research-justified features have no protection.** Real use is the only vote that counts. (The plate
+  calculator: shipped from competitor research, deleted 8 days later after one real gym session.)
+
+See [[user-jake]] for the full profile.
+
+---
+
+## Step 1 — Start the preview server
+
+**Check before starting** — it is usually already up, and a second listener on 3001 just errors:
+
+```bash
+curl -s http://localhost:3001/ | grep -o '<title>[^<]*</title>'
+```
+
+Must return `<title>CoachApp</title>` **specifically**. Serving *something* and serving the *right app* are
+different checks — a dead config for a now-ended project (PTHub) serves perfectly valid HTML. If it's not up,
+or it's the wrong app, follow the `run-coachapp` skill. This step blocks until CoachApp is confirmed.
+
+## Step 2 — Read the repo docs
+
+**The repo (`docs/*.md`) is CoachApp's system of record — repo only, no Vault reads.** (See
+`CLAUDE.md`'s "Repository source of truth", `docs/decisions.md`'s 2026-09-15 and 2026-09-18 entries.)
+The owner-voice file was dropped 2026-09-18 with no repo replacement: if a session must draft external-facing prose in Jake's voice, say so explicitly rather than
+silently guessing at tone.
+
+1. `coachapp/docs/session-context.md` — priorities/risks/next-actions snapshot, then
+   `coachapp/docs/current-sprint.md` — live release-cycle state
+   (the **bug ledger** is `coachapp/docs/bugs/` — one file per bug, not a table)
+2. `git -C coachapp log --oneline -20` — recent commit history (LOG.md's old role; LOG.md itself is
+   now a frozen archive at `coachapp/docs/archive/log.md` and no longer grows)
+3. `coachapp/docs/critical.md` — infra, security constraints, GDPR, security incident timeline
+4. `coachapp/docs/roadmap.md` — current-state summary (full historical detail:
+   `coachapp/docs/archive/roadmap-2026-09-08.md`)
+
+## Step 3 — Summarise the last session
+
+3–5 bullets from recent `git log` + `docs/releases/` (most recent 1-2 notes): what was built/fixed,
+what's still broken, module versions (from `index.html`'s `?v=N` tags — there are **9 module files**
+in `js/`, including `starter-content.js`), and whether CI is green (`gh run list --limit 1`).
+
+**Then check for uncommitted work:** `git status --porcelain`. `docs/current-sprint.md` is a
+point-in-time snapshot and says nothing about the working tree right now. Anything uncommitted gets
+the full pre-commit/pre-push discipline (Playwright + multi-agent review) regardless of who wrote it
+or when — found via a real gap on 2026-07-02, six files with no record anywhere.
+
+## Step 4 — Bug scan
+
+`checks.sh` already enforces column names, query scoping, cache-bust, PII-in-logs and duplicate functions
+on **every push**. Do not re-grep them here — that is theatre, and it crowded out the checks that matter.
+Grep the 9 module files in `js/` for the three things the hook **cannot** catch:
+
+**a) Client-side `coach_id` errors** — when a *client* is logged in, queries for coach-owned tables
+(`workout_templates`, `exercises`) must use the coach's id from `clients.coach_id`, never `currentUser.id`.
+
+**b) Role routing** — anywhere `currentProfile?.role` decides what renders: does a null/missing role
+silently fall through to the PT view?
+
+**c) `isClientPlan` gates missing a solo branch** — grep `isClientPlan`. Every hit that gates a **fetch**
+needs a `role === 'solo'` branch or a `window._soloClientId` fallback, or it silently returns empty data in
+solo mode. (Context-flag *reads* are fine — only fetch gates matter.) Recurring bug class: solo shares the
+coach's `auth.uid()`, which masks whole categories of failure.
+
+Report findings with line numbers. If clean, say "Code review: clean." **Do not fix — just report.**
+
+**Weekly full-file review — driven by the marker, not self-assessment.** `os-lint` lists it in the
+weekly digest when `~/.claude/state/last-full-file-review` is missing or >7 days old. When it does: run
+`multi-agent-review` in **full-file mode** against the 2-3 highest-churn modules, then stamp the
+marker exactly as that skill says — with the real result, not a bare timestamp.
+
+## Step 5 — Roadmap cross-check
+
+Compare `docs/roadmap.md` against recent `git log`/`docs/releases/`. Anything it still calls current that
+those show as shipped → flag it for update. Then show: everything currently in flight, then the top 3
+named-but-unscoped backlog items.
+
+## Step 6 — Propose the plan
+
+**Start from `docs/current-sprint.md`'s "In flight" section** (the previous `/save` keeps it current) and `docs/session-context.md`'s priorities. Cross-check against `docs/roadmap.md` for anything stale, then propose 2-3 items as a numbered list, recommending one if the priority is obvious. (The old wiki board is dead: never read it.)
+
+## Step 7 — Surface the bug ledger
+
+**The live ledger is `docs/bugs/` — one file per bug.** Check `docs/backlog.md` for the current snapshot
+(counts + themes), then read any stale row `os-lint` listed (in the weekly digest, or `--report`) from `docs/bugs/`.
+
+Surface every row whose status is `open` or `fixed-awaiting-jake`. Lead with whatever `os-lint` turned RED.
+If `os-lint` printed a **WEEKLY DIGEST**, give Jake ONE short list from it, and offer
+`node scripts/ledger-batch.mjs` — the oldest waiting rows as a yes/no list he can answer in one message.
+
+> ### 🔒 The closure rule
+> A Jake-reported item may be closed **only** by **(a)** Jake confirming it, or **(b)** a test that went
+> **RED before the fix and GREEN after**.
+>
+> Never by inference. Never by "likely the same root cause." Never because Playwright covers an adjacent
+> flow. Never because a robot looked instead of Jake.
+>
+> **An empty ledger is not a good outcome. An honest one is.**
+
+_Predictions aren't a manual ritual step — `os-lint`'s `stale-predictions` lists any past `verify_by`
+and still ungraded in the weekly digest. Grade each with Jake (the closure rule applies) and set
+`outcome`. Don't re-add a manual step._
+
+---
+
+# Standing behaviours
+
+Thirteen. Not thirty-three. The old list nominally required **17 mandatory gates on a single feature build**
+— nothing could run that, so skipping became the default and the decay was invisible. Everything below has
+either caught a real bug, or was explicitly asked for by Jake.
+
+### 🩸 The bug ledger — the intake rule
+**The moment Jake reports a bug, it becomes a FILE in the repo's `docs/bugs/` directory — BEFORE you
+start investigating.** One file per bug: `docs/bugs/YYYY-MM-DD-slug.md`, frontmatter `status` /
+`priority` / `reported`. (It was a markdown table in STATUS.md until 2026-08-11, then per-file in the
+Vault; the repo replaced the Vault as system of record 2026-09-15 — see `docs/decisions.md`.)
+Not at `/save`. Not "if it's still relevant." Every row carries a `Reported` date and a `Status`
+(`open` / `fixed-awaiting-jake` / `confirmed` / `deferred` / `closed` / `unverified-accepted` — only Jake sets
+`deferred` and `unverified-accepted`).
+The rituals had five mechanical rules for *removing* to-dos and **zero** for adding them. That is the whole
+reason reports rotted. `os-lint` lists any `open` row older than 7 days in the weekly digest.
+
+### 🔁 FIX THE CLASS, NOT THE INSTANCE
+> The *trigger* is `CLAUDE.md`'s standing behaviour 2 (loaded every session). This section
+> keeps only what the hook has no room for: the shared-helper requirement and the incident behind it.
+
+**Put the guard in ONE shared helper** — grepping the siblings is not enough if each gets its own copy.
+A review's fix lands where the bug was *found*, not where it *lives*. `deletePhaseWeek` got two delete
+guards on 2026-07-10; its sibling `_cleanupPhaseWeeksBeyond` did not, and destroyed real Week-1 workouts
+for a day. Three more sibling-misses landed on 2026-07-13 alone.
+
+### Before any new feature → sounding board + product principles
+Don't build immediately. Ask 2–3 targeted questions: what problem does this solve? Where does it fit the
+existing flow? Is there a simpler version? Does it conflict with anything? Then state both principles
+explicitly: **(1) friction at point of use** — does it surface information at the moment it's needed?
+**(2) copy-paste simplicity, no feature gating** — sensible default, complexity opt-in, all features
+included (never a premium tier). Challenge gently but directly; Jake wants a partner who pushes back.
+Does *not* apply to bug fixes or clearly-scoped tasks. **Ask who asked for this, and when they last felt
+the pain** — if the answer is "a research doc", say so, and prefer to defer.
+
+### Before writing any code or SQL → explicit approval
+Present one consolidated summary of everything about to be built (all files, all changes, all SQL) and wait
+for "approved" or equivalent. Silence or "looks good" is not approval. Never start building mid-discussion.
+
+### Before every commit → blast radius sweep
+Active reasoning, not a grep:
+1. **Every other caller** of each changed function — does my change break it?
+2. **All roles** — coach, client, AND solo. Never verify only the role being developed.
+3. **All exercise types** — cardio, timed, unilateral, %1RM, bodyweight. Never assume strength covers the rest.
+4. **Data flow** — if this writes to a table, grep every other `db.from('<table>')`. Will those reads behave?
+5. **Empty / null / unexpected shape.** The **zero** case is a distinct third state from one-vs-many, and it's
+   the one fixtures never construct (a phase with zero sessions crashed live).
+6. **What did the old code hide that the new code now exposes?** (Removed overlays, changed nav, replaced queries.)
+7. **Does this touch a Playwright test path?** Run `npm test` before pushing, not after.
+
+Fix anything this surfaces before committing. Never defer a known risk to "check on live."
+
+### After every feature build → feature-audit
+Run `feature-audit`. It subsumes the old UI-consistency check, verify-before-done, smoke-tests, the
+Supabase API-log check, and the RLS role audit. Affordances & permissions (all four verbs checked
+separately), the PT lens, the gym-user lens, and **proof rather than claims**. Jake should never be your QA.
+
+### After any UI change → mobile-check
+Run `mobile-check`. 390×844. **Look at the screenshot** — a passing assertion is not a mobile check.
+
+### Before any SQL → sql-safety
+Run `sql-safety` before any DELETE, UPDATE, or schema change. Non-negotiable: RLS on every table before its
+first INSERT; never `qual = 'true'`; never query `auth.users` in a policy (use `auth.uid()`/`auth.email()`);
+new tables get added to `downloadMyData()` and `delete_current_user()`; **a private bucket is not a secure
+bucket** — object policies must be path-scoped, and proven behaviourally by attempting the op as the wrong
+tenant. **Only tenancy columns belong in RLS** — a display flag (`is_personal`) is not a security boundary.
+
+### Before any git push → multi-agent-review
+Run `multi-agent-review` (3 fixed angles + a verifier). It has caught real, data-destroying bugs on several
+consecutive pushes. Note: `/code-review ultra` **does** exist in the VSCode extension, but it is
+user-triggered and billed — you cannot launch it. Offer it; never assume it.
+`git push` runs static checks only (about two minutes, no browser tests since 2026-09-27), so run the specs for what you touched first.
+
+**There is no browser gate on a push any more** (the old two-spec gate was removed 2026-09-27), so only you stand between a push and a browser
+regression on master: run `npm test`, or the specs for what you touched, before pushing a module you did not hand-test. **Known blind spot:** the solo
+specs are `test.skip`-gated on `soloAvailable`; if `window._soloClientId` fails to populate (the bug class that has shipped four times) they all skip
+and the run passes green. The 2026-08-20 attempt to widen the old gate, and its three traps, are in `docs/archive/hello-claude-trimmed-2026-10-05.md`.
+
+### 🎯 Before concluding from a neutered guard → NAME THE SPEC THAT COVERS THAT LINE
+**When you break code deliberately to establish red-before, state which spec covers *that exact line*
+BEFORE you run anything — and if the run disagrees with your expectation, suspect the mapping first,
+not the test.**
+
+Three times on 2026-08-22 a conclusion was drawn from testing the wrong path:
+1. Neutered `app-workouts.js:747`, ran the **app-programs** spec, and nearly reported a live test as
+   decorative. The guard exists at two sites; each has its own spec.
+2. Filed a bug row saying that guard was untested. It has `client-workout.spec.js:225`. The row was
+   wrong and had to be closed as a false premise.
+3. A guard verified `clientId` while the write keyed on `.eq('id', existingId)` — the same shape one
+   layer down: *verifying one fact while the thing that matters is another.*
+
+All three were caught (twice by review, once by me). The rate is the signal, not the catches.
+
+**Mechanical, not a maxim.** Before neutering:
+```bash
+grep -rln "<the function that owns that line>" tests/*.spec.js   # which spec drives this path?
+```
+Then run **that** spec. A neuter that produces no failure means one of: wrong spec, wrong line, or a
+genuinely dead check — and they are indistinguishable until you have named the mapping.
+
+### Whenever a bug's root cause is "I checked A but not the closely-related B"
+Add the Playwright test **in the same commit as the fix**, not as a follow-up. This is RULE 0 at bug
+scope — the incident produces a check, or it produces nothing.
+
+### Always repost code in full when correcting
+Never ask Jake to scroll up and patch a previous block.
+
+### At session end → /save
+When Jake signals wrap-up ("that's it", "let's stop here", "/save"), run `save`. Don't wait to be asked.
+
+---
+
+## If work goes in circles, or a fix fails twice
+
+**The Iron Law: no fixes without root-cause investigation first.** A guess that happens to work is still a
+guess that got lucky.
+
+- **Attempts 1-2:** re-read the actual error, re-check what changed, re-verify the reproduction — *with
+  the new information the failed attempt revealed*, not just a different guess.
+- **3+ failed attempts: STOP** — this is now an architecture problem, not a debugging one. Don't attempt
+  fix #4; surface it to Jake and discuss whether the approach is sound first.
+
+**Red flags — if you catch yourself thinking any of these, stop:** "quick fix for now, investigate later" ·
+"just try changing X and see" · "I don't fully understand this but it might work" · "one more attempt" ·
+proposing a fix before tracing where the bad value actually originates.
+
+**Jake's own signals that this is happening:** "is that not happening?" (you assumed without verifying) ·
+"stop guessing" · any all-caps restatement.
+
+Before writing more code: re-read everything touched this session, web-search the official docs (Supabase,
+supabase-js v2, MDN), check for duplicate/conflicting code, then propose **one** clean solution and get
+agreement before building.
