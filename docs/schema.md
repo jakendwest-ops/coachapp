@@ -207,7 +207,7 @@ Script and rollback: `scripts/add-client-empty-session-delete-2026-10-01.sql`; l
   link was never recorded. **Not ownership-checked by the INSERT/UPDATE policies** — see
   `docs/bugs/2026-09-05-workout-logs-template-id-is-not-ownership-checked.md`.
 - Program blocks — new table, 2026-08-15.
-- `client_check_ins.coach_reply` / `reviewed_at` / `reviewed_by` (2026-10-29, `scripts/add-checkin-review-2026-10-29.sql`): coach UPDATE on these 3 only, server-stamped by `stamp_check_in_review`.
+- `client_check_ins.coach_reply` / `reviewed_at` / `reviewed_by` (2026-10-29, `scripts/add-checkin-review-2026-10-29.sql`): coach UPDATE on these 3 only; `stamp_check_in_review` stamps the first review, and on an app INSERT clears them and sets `created_at`.
 - Current `client_programs` row = most recently STARTED, never newest-assigned (2026-10-29): `_currentAssignment` + the view's copy; [detail](archive/decisions-2026-10-29-coach-current-plan.md).
 - `app_errors` — new table, 2026-09-19 (`scripts/add-app-errors-2026-09-19.sql`). Automatic error capture:
   `user_id` (→ `auth.users`, ON DELETE CASCADE), `kind`, `tag`, `detail`, `code`, `frame`, `page`, `build`,
