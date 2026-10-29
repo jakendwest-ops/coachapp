@@ -132,6 +132,8 @@ Three options to decide between then:
 
 My recommendation now, before the Phase 1 data: option 1.
 
+**Known module blocker found by Phase 1 (2026-10-29):** `js/app-workouts.js:4707-4708` assigns `_fakeRsTemplate` and `_fakeRsName` without `window.` (TS2304). This works in sloppy classic scripts, which create the global implicitly. In a module (strict mode) it throws a ReferenceError and breaks the "start this template" path. Options 2 and 3 must fix it first. Option 1 doesn't need to.
+
 ## Also found
 
 `docs/architecture.md` says 17,599 lines across the nine modules. Today it's 21,256 (`wc -l js/*.js`). Fix it in Task 1's commit.
