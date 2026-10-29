@@ -224,14 +224,15 @@ describe('FROZEN_UNGUARDED — every exemption states a reason that is actually 
     }
   })
 
-  test('the insert counter can actually count — saveWorkoutSession really does write three tables', () => {
+  test('the insert counter can actually count — copyProgramToCoaching really does write three tables', () => {
     // A non-zero denominator for the test above. If insertCalls() silently returned [] for everything,
-    // every "one row" claim would pass vacuously. saveWorkoutSession is the known positive: it is the
-    // function whose multi-insert body made the original exemption dangerous, and it is now guarded.
-    const fn = fns.get('saveWorkoutSession')
-    assert.ok(fn, 'saveWorkoutSession must exist for this control to mean anything')
+    // every "one row" claim would pass vacuously. The known positive was saveWorkoutSession until 2026-10-29, when R4a moved
+    // its writes into _persistSession's skip-existing upserts and it stopped inserting at all; copyProgramToCoaching (a
+    // programme deep copy: the programme, its phases, their workouts and day slots) is the multi-insert body now.
+    const fn = fns.get('copyProgramToCoaching')
+    assert.ok(fn, 'copyProgramToCoaching must exist for this control to mean anything')
     const n = insertCalls(fn.node).length
-    assert.ok(n >= 3, `expected saveWorkoutSession to perform 3+ inserts, counted ${n} — ` +
+    assert.ok(n >= 3, `expected copyProgramToCoaching to perform 3+ inserts, counted ${n} — ` +
       `if this is 0 the counter is broken and every "one row" assertion above is vacuous`)
   })
 })

@@ -145,6 +145,38 @@ window.addEventListener('unhandledrejection', ev => {
   _reportProblem('rejection', 'rejection', null, r && typeof r === 'object' ? r : null, r?.stack || '')
 })
 
+// ─── SAVES THAT SURVIVE A BAD CONNECTION (R4a, 2026-10-29) ─────────────────────────────────────────
+// A uuid-shaped id that is the same every time for the same input. A workout save picks its session id once (a random
+// uuid) and derives every exercise and set id from it, so a retry writes the SAME rows again and the database skips the
+// ones it already has: however an earlier attempt died, the session converges to one copy. Not cryptographic and it does
+// not need to be: the ids only have to be stable across retries and distinct within one session (cyrb128, four 32-bit
+// lanes). tests-node/stable-uuid.test.mjs pins shape, stability and 10,000 distinct inputs without a collision.
+function _stableUuid(str) {
+  let h1 = 1779033703, h2 = 3144134277, h3 = 1013904242, h4 = 2773480762
+  for (let i = 0; i < str.length; i++) {
+    const k = str.charCodeAt(i)
+    h1 = h2 ^ Math.imul(h1 ^ k, 597399067)
+    h2 = h3 ^ Math.imul(h2 ^ k, 2869860233)
+    h3 = h4 ^ Math.imul(h3 ^ k, 951274213)
+    h4 = h1 ^ Math.imul(h4 ^ k, 2716044179)
+  }
+  h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067)
+  h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233)
+  h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213)
+  h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179)
+  h1 ^= (h2 ^ h3 ^ h4); h2 ^= h1; h3 ^= h1; h4 ^= h1
+  const hex = [h1, h2, h3, h4].map(h => (h >>> 0).toString(16).padStart(8, '0')).join('')
+  // Version 4 and the RFC 4122 variant, so the value is a well-formed uuid wherever one is checked.
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((parseInt(hex[16], 16) & 3) | 8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
+// A failed request that never got a database answer (no signal, a dropped connection, a lost reply) carries no
+// PostgREST / Postgres code; a refusal by the server does (23xxx integrity, 42501 RLS, PGRSTxxx). The two need different
+// words: the first is "try again when you have signal", the second is a real fault worth reporting.
+function _isNetworkError(err) {
+  return !!err && !/^(\d{5}|PGRST\w+)$/.test(String(err.code || ''))
+}
+
 // ─── LOGGER ───────────────────────────────────────────────────────────────────
 // Structured console logging + user-visible error toasts.
 // Open DevTools → Console to trace any failure instantly.
@@ -990,6 +1022,9 @@ function showAuth() {
   // it is up (token-refresh failure, sign-out in another tab) would leave it painted over the login
   // form, and "Agree and continue" would then throw on a null currentUser.
   document.getElementById('consent-gate-modal')?.remove()
+  // Same reason for the "Workout not saved" bar (R4a): it is fixed to the page and names the workout, so it must not stay
+  // painted over the login form for the next person.
+  document.getElementById('pending-save-bar')?.remove()
   document.getElementById('auth-screen').style.display = 'flex'
   document.getElementById('app-shell').style.display   = 'none'
 }
@@ -1523,14 +1558,20 @@ document.getElementById('login-form').addEventListener('submit', async e => {
 // on the sidebar button, which is hidden on phones, so a phone sign-out (Settings) left the drafts behind.
 // Deliberately NOT done in onAuthStateChange: that also fires when a session simply expires, and wiping
 // there would throw away the genuine user's unsaved workout.
-async function signOutAndClearDrafts () {
+//
+// `ask` (the two Sign out buttons): a workout whose save failed is the only copy of it (R4a), so signing out over one asks
+// first. Resolves false when the person keeps it (nothing is signed out); account deletion and the consent gate do not ask.
+async function signOutAndClearDrafts ({ ask = false } = {}) {
+  const unsaved = ask ? _pendingSaveDrafts({ anyUser: true }).length : 0      // every account's: the wipe below clears them all
+  if (unsaved && !(await confirmDialog(`${unsaved === 1 ? '1 workout has' : unsaved + ' workouts have'} not been saved yet and will be lost if you sign out. Sign out anyway?`, { title: 'Workout not saved', confirmLabel: 'Sign out', danger: true }))) return false
   try {
     Object.keys(localStorage).filter(k => k.startsWith('_runnerDraft_')).forEach(k => localStorage.removeItem(k))
   } catch (e) { console.warn('[signOut] could not clear runner drafts', e?.name) }
   await db.auth.signOut()
+  return true
 }
 
-document.getElementById('sign-out-btn').addEventListener('click', () => signOutAndClearDrafts())
+document.getElementById('sign-out-btn').addEventListener('click', () => signOutAndClearDrafts({ ask: true }))
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
 // Hands a render a container that STOPS ACCEPTING PAINT once the user has navigated away.
@@ -1593,6 +1634,8 @@ function _navigateNow(page, _historyOp = 'push') {
   // Solo's bottom-bar "More" tab owns Library / Calendar / Settings — light it while on one of them.
   document.querySelector('.bottom-nav-item[data-page="__more__"]')
     ?.classList.toggle('active', _NAV_MORE_SOLO.includes(page))
+  // A workout that failed to save stays on the phone; its "not saved" bar is re-drawn on every page (R4a, app-runner.js).
+  _refreshPendingSaveBar()
 
   // Scoped to THIS navigation. `currentPage` was set to `page` a few lines above, so a render
   // dispatched here paints freely until some later navigate() moves currentPage on.

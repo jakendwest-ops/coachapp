@@ -1569,3 +1569,21 @@ div.tpl-ex-main { cursor:default; }
 .tpl-ex-note { display:grid; gap:2px; margin-top:4px; font-size:var(--text-sm); color:var(--text-muted); }
 .tpl-ex-note em { font-style:italic; }
 .tpl-ex-tag { justify-self:start; font-size:var(--text-xs); font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:1px 7px; border-radius:var(--radius-xs); background:var(--accent-light); color:var(--accent); }
+
+/* ─── "Workout not saved" bar (R4a, 2026-10-29) ─────────────────────────────────────────────────────────────────────────
+   A finished workout whose save failed stays on the phone; this bar sits on every page until it is saved or discarded.
+   Page-level (appended to body by _refreshPendingSaveBar), above the bottom nav on a phone. Tokens only; 44 px targets. */
+.pending-save-bar { position:fixed; left:16px; right:16px; bottom:16px; z-index:150; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 12px; background:var(--warning-light); color:var(--text); border:1px solid var(--warning); border-radius:var(--radius); box-shadow:var(--shadow-md); }
+.pending-save-text { flex:1 1 160px; min-width:0; font-size:var(--text-base, 13px); overflow-wrap:anywhere; }
+.pending-save-btn { min-height:44px; padding:0 16px; }
+@media (max-width: 900px) {
+  .pending-save-bar { bottom:calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 8px); }
+}
+/* The bar must not hide the end of the page it sits over, nor sit under the master account's PT/Personal switcher
+   (fixed at bottom:68px on a phone). Review finding, 2026-10-29. */
+body:has(#pending-save-bar) .main-content { padding-bottom: 120px; }
+@media (max-width: 900px) {
+  body:has(#pending-save-bar) .app-shell .main-content { padding-bottom: calc(var(--bottom-nav-h) + 130px); }
+  body:has(#mobile-view-switcher.mvs-on) .pending-save-bar { bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 56px); }
+  body:has(#pending-save-bar):has(#mobile-view-switcher.mvs-on) .app-shell .main-content { padding-bottom: calc(var(--bottom-nav-h) + 180px); }
+}

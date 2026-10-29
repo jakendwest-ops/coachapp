@@ -979,18 +979,19 @@ test.describe('Workout runner (client)', () => {
   })
 })
 
-// ─── saveWorkoutSession rollback (2026-07-07 perf refactor) ─────────────────
-// The N+1 per-exercise save loop was replaced with two batched inserts (all exercises, then all
-// sets). saveWorkoutSession previously had no rollback at all on failure; the refactor added one,
-// matching saveRunnerSession's existing log->exercises->sets rollback chain. This test proves the
-// new rollback actually cleans up, not just that the happy path still saves.
+// ─── saveWorkoutSession: a failed sets write is repaired by Save again (R4a, 2026-10-29) ─────────────────
+// Until 2026-10-29 this proved a ROLLBACK: a failed sets insert deleted the session and its exercises. R4a removed the
+// rollback on purpose — its deletes ran on the same dead connection that failed the write, so they failed too and left
+// an empty session. Now every row has an id fixed for the session and each write skips what exists, so the repair is the
+// retry: the form stays open with a plain message, and a second Save completes ONE session.
+// (tests/runner-save-retry-2026-10-29.spec.js covers the network faults; this keeps the original stubbed-error shape.)
 
-test.describe('saveWorkoutSession rollback', () => {
+test.describe('saveWorkoutSession: a failed save is completed by saving again', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
   })
 
-  test('rolls back workout_logs and workout_log_exercises when the sets batch insert fails', async ({ page }) => {
+  test('a failed sets write leaves the form open, and Save again gives one complete session', async ({ page }) => {
     const setup = await page.evaluate(async () => {
       const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
       return { clientId: clients?.[0]?.id || null }
@@ -1015,7 +1016,7 @@ test.describe('saveWorkoutSession rollback', () => {
       const originalFrom = db.from.bind(db)
       db.from = (table) => {
         if (table === 'workout_log_sets') {
-          return { insert: async () => ({ error: { message: 'Simulated failure for rollback test' } }) }
+          return { upsert: async () => ({ error: { message: 'Simulated failure', code: '23514' } }) }
         }
         return originalFrom(table)
       }
@@ -1027,32 +1028,33 @@ test.describe('saveWorkoutSession rollback', () => {
         // the monkey-patched db.from active for the rest of this page.
         db.from = originalFrom
       }
+      const errorText = document.getElementById('ls-error')?.textContent || ''
+      const formStillOpen = !!document.getElementById('log-session-modal')
+      // The same form, saved again with the connection healthy.
+      await saveWorkoutSession(clientId)
 
       const { data: logs } = await db.from('workout_logs').select('id').eq('name', sessionName)
-      const { data: exercises } = await db.from('workout_log_exercises').select('id').eq('exercise_name', exerciseName)
-      const errorText = document.getElementById('ls-error')?.textContent || ''
+      const { data: exercises } = await db.from('workout_log_exercises').select('id, workout_log_sets(id)').eq('exercise_name', exerciseName)
 
-      // Unconditional cleanup — captured logCount/exerciseCount above already reflect whatever the
-      // rollback under test actually did, so cleaning up here regardless doesn't weaken the
-      // assertions. This matters specifically because if a future regression breaks the rollback
-      // (the exact failure this test exists to catch), the test would otherwise both fail AND
-      // permanently leave a "[E2E] Rollback Test ..." row behind in the real account.
+      // Unconditional cleanup — the counts above already reflect what the save did, so cleaning up here doesn't weaken the
+      // assertions. Deleting the session cascades to its exercises and sets. Each delete reports what it removed, so a
+      // refused delete cannot read as a clean one.
+      let cleaned = { logs: 0, library: 0 }
       try {
-        for (const ex of exercises || []) {
-          await db.from('workout_log_sets').delete().eq('workout_log_exercise_id', ex.id)
-        }
-        if (exercises?.length) await db.from('workout_log_exercises').delete().in('id', exercises.map(e => e.id))
-        if (logs?.length) await db.from('workout_logs').delete().in('id', logs.map(l => l.id))
-        // The exercise-library auto-create isn't part of the rollback (it's a legitimate library
-        // entry, not orphaned session data) — remove the test artifact directly.
-        await db.from('exercises').delete().eq('coach_id', currentUser.id).eq('name', exerciseName)
+        if (logs?.length) cleaned.logs = ((await db.from('workout_logs').delete().in('id', logs.map(l => l.id)).select('id')).data || []).length
+        // The exercise-library auto-create is a library entry, not session data — remove the test artifact directly.
+        cleaned.library = ((await db.from('exercises').delete().eq('coach_id', currentUser.id).eq('name', exerciseName).select('id')).data || []).length
       } catch (_) { /* best-effort cleanup — never let it mask the real assertion results */ }
 
-      return { logCount: logs.length, exerciseCount: exercises.length, errorText }
+      return { logCount: logs.length, exerciseCount: exercises.length, setCount: (exercises || []).reduce((n, e) => n + e.workout_log_sets.length, 0), errorText, formStillOpen, cleaned }
     }, { clientId: setup.clientId, sessionName, exerciseName })
 
-    expect(result.logCount).toBe(0)
-    expect(result.exerciseCount).toBe(0)
-    expect(result.errorText).toContain('Simulated failure')
+    expect(result.formStillOpen, 'the form stays open with what was typed').toBe(true)
+    expect(result.errorText).toContain("couldn't be saved")
+    expect(result.errorText, 'no raw database text').not.toContain('Simulated failure')
+    expect(result.logCount, 'one session').toBe(1)
+    expect(result.exerciseCount).toBe(1)
+    expect(result.setCount).toBe(1)
+    expect(result.cleaned, 'cleanup removed the session and the library exercise').toEqual({ logs: 1, library: 1 })
   })
 })
