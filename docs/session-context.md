@@ -27,9 +27,7 @@ run; "pushed" is not "deployed": `gh run list`, then `node scripts/verify-live.m
 
 - **Build from the release plans:** [superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md).
   R1, R2a/b/d and R4b are shipped; the rest is not started. Ownership work needs `multi-agent-review` before the commit.
-- **What only Jake can unblock:** his phone check of `v2026.09.14`/`.15`; the Sign-out question ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md));
-  the plan's yes/no questions (photos, AMRAP/EMOM, pre-fill, whether week-structure edits should ask before changing clients' plans, a PR badge);
-  the read-only `pg_policies` query that unblocks the solo-milestones fix; the ledger's confirmation backlog.
+- **What only Jake can unblock:** the open questions listed under "Current priorities" in [roadmap.md](roadmap.md); the read-only `pg_policies` query that unblocks the solo-milestones fix.
 - GDPR consent capture is closer to done than its row says: see [roadmap.md](roadmap.md).
 
 ## Active Risks
@@ -38,18 +36,13 @@ run; "pushed" is not "deployed": `gh run list`, then `node scripts/verify-live.m
   days with none of them. `session-root-guard.mjs`, three `os-lint` checks and `CLAUDE.md` now cover it ([decisions.md](decisions.md), 2026-10-05); the
   [bug row](bugs/2026-10-05-coachapp-session-ran-in-the-vault-folder-for-16-days.md) closes on Jake's check.
 - 1 deferred **critical** bug: GDPR consent capture (deferred 2026-08-19; 5 of 6 steps shipped since, see [roadmap.md](roadmap.md)).
-- A push runs no browser tests (since 2026-09-27); only the release's full suite does. See `CLAUDE.md` and [technical-debt.md](technical-debt.md).
 - Screens that read growing tables through the API's silent 200-row cap: the known ones are fixed and `checks.sh` rule 9n pins the rest
   ([technical-debt.md](technical-debt.md)); a workout save that is not retry-safe is also named there.
 
-## Technical Debt Summary
-
-Bug counts live in [backlog.md](backlog.md); pattern analysis in [technical-debt.md](technical-debt.md); not repeated here.
-
 ## Immediate Next Actions
 
-1. Jake's phone check of `v2026.09.14` to `v2026.10.5` (the Streak tile and Weekly target, My Progress Body Weight and Personal Bests, Goals, the Workouts rework, the week buttons, the local-day dates), his answer on which
-   session went missing in the "unscheduled day" row, and his call on Sign out (end only this device's session?).2. Read the release plan's "START HERE", answer its questions, then start the next unbuilt release.
+1. Jake's phone check of every release since `v2026.09.14` and his answers to the open questions ([roadmap.md](roadmap.md), [current-sprint.md](current-sprint.md)).
+2. Read the release plan's "START HERE", answer its questions, then start the next unbuilt release.
 3. Housekeeping still open: the ungraded-prediction backlog and duplicate ids ([technical-debt.md](technical-debt.md)).
 4. Start the next session on this repo's folder (not the Vision OS one) and let `/hello-claude` run; confirm the guard per the
    [bug row](bugs/2026-10-05-coachapp-session-ran-in-the-vault-folder-for-16-days.md).

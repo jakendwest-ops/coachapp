@@ -81,8 +81,6 @@ Since 2026-09-27 a push runs **no** browser tests: the 2-spec smoke run was drop
 That is the accepted tradeoff: master can carry a browser regression between releases, but nothing reaches the live site without the full suite
 passing. Widening the old push gate had been tried once and reverted (2026-08-20: silent glob no-op, cleanup-unsafe cross-tenant probes at push frequency).
 
-**Specs that build "today" from the UTC date**: fixed 2026-10-17, with the app itself (48 uses in 24 spec files now use `toLocaleDateString('en-CA')`). The 8 left are UTC calendar arithmetic on a fixed base and stay; `scripts/count-baseline.json` pins both counts, so none can come back.
-
 **Specs that wait only for `_soloClientId`:** the app's start-up navigation can still land and close an open modal (the `v2026.10.4` release abort; a 2-minute hang on 2026-10-17, not reproduced). Ten specs now use `soloReady()` (`tests/helpers.js`, which also waits for `#dash-goals`) and a ratchet pins the rest; three keep their own start (`back-to-goals-fallback`, `delete-template-lands-on-library`, `personal-view-delete-boundary`, never seen failing).
 
 **Solo specs skip silently:** they are `test.skip`-gated on `soloAvailable`; if `window._soloClientId` fails to populate they all skip and the run passes green. Nothing counts the skips.
