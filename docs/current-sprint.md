@@ -9,16 +9,12 @@ trusting this file for anything time-sensitive. The previous version is archived
 
 ## Last shipped (tagged + deployed)
 
-- **`v2026.10.6`** (2026-10-25, live, verified byte-identical, 13 files): the runner counts down with beeps so Spotify keeps playing; the ghost text looks past 20 sessions; three SQL changes first. [releases/v2026.10.6.md](releases/v2026.10.6.md)
-- **`v2026.10.5`** (2026-10-17): the Workouts page reworked (Personal account), the week buttons, "today" is the local day. [releases/v2026.10.5.md](releases/v2026.10.5.md)
-- **`v2026.10.4`** and **`.10.3`** (2026-10-15): the Goals tab rework, Your workouts rows, Body Weight and Personal Bests, the Streak tile. **`v2026.10.2`** (2026-10-13): Training plans, "On my plan", the solo Workouts page. **`v2026.10.1`** (2026-10-11): the runner reports. **`v2026.09.15`** and **`.09.14`** (2026-10-04): the program-page rework, RPE periodization, the one-skeleton dashboard. [releases/](releases/)
-- **Earlier:** see `docs/releases/` (the full file is archived: [archive/current-sprint-2026-10-12.md](archive/current-sprint-2026-10-12.md)).
+- **`v2026.10.7`** (live 2026-10-29, verified byte-identical; 1334 passed, 0 failed, 2 flaky): the exercise builder rebuilt (sets edited as a group, "Today's top set weight", "Same as set N"); beeps survive leaving Safari. [releases/v2026.10.7.md](releases/v2026.10.7.md)
+- **Earlier:** `v2026.10.6` (beeps keep Spotify playing; ghost text past 20 sessions) back to `v2026.09.14`: [releases/](releases/) (the full old file: [archive/current-sprint-2026-10-12.md](archive/current-sprint-2026-10-12.md)).
 
 ## In flight
 
-Nothing unreleased. Next: the PT's Workouts page (Phase 2, needs its own plan). Waiting on Jake: his phone check (the `fixed-awaiting-jake` rows in [bugs/](bugs/), the runner beeps with Spotify first); whether **Sign out should
-end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation:
-leave it); the names "Biggest set" and "View training plan".
+Nothing unreleased. Next: dark mode as the default ([row](bugs/2026-10-28-dark-mode-should-be-the-default-across-the-app.md); waits for Jake's go), then the PT's Workouts page. Waiting on Jake: his phone check of the `fixed-awaiting-jake` rows in [bugs/](bugs/) (the beeps with Spotify first, then the exercise builder); a "Tap to turn beeps back on" message (a rest running when he returns stays silent until his first tap); whether **Sign out should end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (recommendation: leave it); the names "Biggest set" and "View training plan".
 
 ## Next: the release plans
 

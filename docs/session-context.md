@@ -13,8 +13,8 @@ with coach/client/solo roles. See [vision.md](vision.md).
 
 ## Current Release Cycle
 
-Last shipped: **`v2026.10.6`** (2026-10-25, live, verified byte-identical to the tag), after `v2026.10.5`, `v2026.10.4`, `v2026.10.3`,
-`v2026.10.2`, `v2026.10.1`, `.09.15` and `.09.14`. All eight await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
+Last shipped: **`v2026.10.7`** (2026-10-29, live, verified byte-identical to the tag), after `v2026.10.6`, `v2026.10.5`, `v2026.10.4`, `v2026.10.3`,
+`v2026.10.2`, `v2026.10.1`, `.09.15` and `.09.14`. All nine await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
 
 RPE top-set autoregulation is live (since `v2026.09.13`): a coach marks set 1 as the top set with a prescribed RPE, the runner estimates a live
 e1RM from the RTS chart, and backoff sets target a percentage of that. Spec and plan: [superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md](superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md),
