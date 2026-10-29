@@ -28,8 +28,8 @@ A product-level review of Solo with a ranked MVP / V2 / V3 roadmap:
 - **The release plans:** R1, R2a/b/d and R4b shipped in `v2026.09.7`-`v2026.09.9`; the rest is not started
   ([plan](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md), which supersedes this list for *what to build next*).
   Week-structure edits (duplicate/delete/generate weeks) still change assigned clients' plans with no prompt: Jake's call (R5).
-- **Roster-size features deferred (Jake, 2026-09-26: no clients yet):** client-list search/filter/sort (R2c), the "Needs attention" list (R3c),
-  invite state, the programme-and-week row on the client list. Not to be built speculatively; they need a session with a real roster.
+- **Roster-size features (R2c, R3c, invite state, programme-and-week row):** Jake overrode the 2026-09-26 deferral on 2026-10-29 ("design for 25",
+  [decisions.md](decisions.md)). Built, unreleased: the current plan by date and "Assign next block". The rest is not started.
 - **Solo/signup:** the data model and invite-based onboarding are done; open public self-signup for new solo accounts is a deliberate deferral.
 - **Security follow-up (2026-07-30):** `workout_log_exercises`/`workout_log_sets` are reasoned-safe but not behaviourally tested; several goal
   writes (`saveGoalProgress`, `saveEditGoal`, `toggleMilestone`, `toggleClientMilestone`) share the same unanchored-write shape, lower priority.

@@ -3,7 +3,7 @@
 A quick-orientation snapshot for picking up work on CoachApp. **This is a manually-refreshed, point-in-time file, not a live feed.** For anything
 time-sensitive run the `/hello-claude` skill: it reads the live docs and checks current state every session.
 
-Snapshot date: 2026-10-13. The longer version of this file is archived verbatim:
+Snapshot date: 2026-10-29. The longer version of this file is archived verbatim:
 [archive/session-context-2026-10-05.md](archive/session-context-2026-10-05.md).
 
 ## Project Summary
@@ -13,22 +13,18 @@ with coach/client/solo roles. See [vision.md](vision.md).
 
 ## Current Release Cycle
 
-Last shipped: **`v2026.10.8`** (2026-10-29, live, verified byte-identical to the tag), after `v2026.10.7`, `v2026.10.6`, `v2026.10.5`, `v2026.10.4`, `v2026.10.3`,
-`v2026.10.2`, `v2026.10.1`, `.09.15` and `.09.14`. All ten await Jake's look on a phone. See [current-sprint.md](current-sprint.md).
+Last shipped: **`v2026.10.8`** (2026-10-29, live, verified byte-identical to the tag); every release since `v2026.09.14` awaits Jake's look on a phone.
+Unreleased on master: the current training plan chosen by date, which needs one SQL run first. See [current-sprint.md](current-sprint.md).
 
-RPE top-set autoregulation is live (since `v2026.09.13`): a coach marks set 1 as the top set with a prescribed RPE, the runner estimates a live
-e1RM from the RTS chart, and backoff sets target a percentage of that. Spec and plan: [superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md](superpowers/specs/2026-09-29-rpe-top-set-autoregulation-design.md),
-[superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md](superpowers/plans/2026-09-29-rpe-top-set-autoregulation.md).
+RPE top-set autoregulation is live (since `v2026.09.13`); its spec and plan are the `2026-09-29-rpe-top-set-autoregulation*` files under `docs/superpowers/`.
 
-**Test-harness facts:** the full suite takes about an hour (CLAUDE.md has the timeout); a spec that clicks Sign out revokes the shared saved login for the rest of the
-run; "pushed" is not "deployed": `gh run list`, then `node scripts/verify-live.mjs <tag>`.
+**Test-harness fact:** a spec that clicks Sign out revokes the shared saved login for the rest of the run. (Suite length and the deploy check: `CLAUDE.md`.)
 
 ## Current Priorities
 
 - **Build from the release plans:** [superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md).
   R1, R2a/b/d and R4b are shipped; the rest is not started. Ownership work needs `multi-agent-review` before the commit.
 - **What only Jake can unblock:** the open questions listed under "Current priorities" in [roadmap.md](roadmap.md); the read-only `pg_policies` query that unblocks the solo-milestones fix.
-- GDPR consent capture is closer to done than its row says: see [roadmap.md](roadmap.md).
 
 ## Active Risks
 
@@ -50,8 +46,7 @@ run; "pushed" is not "deployed": `gh run list`, then `node scripts/verify-live.m
 ## Important Reference Documents
 
 - `CLAUDE.md` (repo root) — stack constraints and rules that must not break; `README.md` — the front page of the GitHub repo
-- [vision.md](vision.md), [roadmap.md](roadmap.md), [architecture.md](architecture.md), [schema.md](schema.md), [decisions.md](decisions.md),
-  [technical-debt.md](technical-debt.md), [backlog.md](backlog.md), [current-sprint.md](current-sprint.md), [handover.md](handover.md)
+- The live docs are the `docs/*.md` files; [handover.md](handover.md) says how they relate.
 - `docs/releases/*.md` — per-release notes; `docs/superpowers/plans/` — dated implementation plans; `docs/archive/` — verbatim history
 - **Not the Vault.** This repo is the system of record; the Vault's old CoachApp copy is archived and must not be read as current.
 

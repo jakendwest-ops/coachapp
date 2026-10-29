@@ -85,6 +85,8 @@ passing. Widening the old push gate had been tried once and reverted (2026-08-20
 
 **Solo specs skip silently:** they are `test.skip`-gated on `soloAvailable`; if `window._soloClientId` fails to populate they all skip and the run passes green. Nothing counts the skips.
 
+**Dark mode's sweep asserts only the 3:1 floor** (`tests/dark-mode-sweep-2026-10-29.spec.js`): text between 3 and 4.5:1 is not asserted, and a chart open while the theme flips keeps its old colours until redrawn ([releases/v2026.10.8.md](releases/v2026.10.8.md)).
+
 ## Process/tracking debt
 
 The tracking system regularly self-reports its own decay (`os-lint --report` at session start); the live numbers belong to that report and
