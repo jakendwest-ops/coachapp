@@ -22,7 +22,7 @@ function _fetchFailureBanner (failed, page) {
   return `
     <div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;border-radius:var(--radius, 10px);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <span style="font-size:var(--text-base, 13px);color:var(--text)">Couldn't load: ${escapeHtml(failed.join(', '))}. What you see below may be incomplete.</span>
-      <button onclick="navigate('${page}','replace')" style="background:none;border:1px solid #ef4444;color:var(--danger, #ef4444);padding:5px 14px;border-radius:var(--radius-sm, 8px);font-size:var(--text-base, 13px);font-weight:600;cursor:pointer">Retry</button>
+      <button onclick="navigate('${page}','replace')" style="background:none;border:1px solid #ef4444;color:var(--danger-text);padding:5px 14px;border-radius:var(--radius-sm, 8px);font-size:var(--text-base, 13px);font-weight:600;cursor:pointer">Retry</button>
     </div>`
 }
 
@@ -795,7 +795,7 @@ function _dashCheckInHtml(lastCheckIn, clientId) {
           <label class="field-label">Notes for your coach <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
           <textarea id="ci-notes" class="field-input" rows="2" placeholder="How's training feeling? Any injuries or concerns?">${escapeHtml(lastCheckIn?.notes || '')}</textarea>
         </div>
-        <p id="ci-error" style="color:var(--danger);font-size:var(--text-md, 12px);margin:4px 0"></p>
+        <p id="ci-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:4px 0"></p>
         <button onclick="saveClientCheckIn('${escapeAttr(clientId)}')" class="btn-primary" style="margin-top:8px">Submit check-in</button>
       </div>
     </div>`

@@ -186,6 +186,34 @@ function _checkInTone(metricKey, val) {
 const CHECKIN_TONE_COLOUR = { good: 'var(--success, #10b981)', ok: 'var(--accent)', bad: 'var(--danger, #ef4444)' }
 function _checkInColour(metricKey, val) { return CHECKIN_TONE_COLOUR[_checkInTone(metricKey, val)] ?? 'var(--text-muted)' }
 
+// ─── THEME ────────────────────────────────────────────────────────────────────
+// Dark is the default (docs/bugs/2026-10-28-dark-mode-should-be-the-default-across-the-app.md). The choice is
+// kept on THIS device only (localStorage): no database column, and it also works on the login page. The head
+// script in index.html applies it before first paint; these functions are what Settings uses afterwards. The
+// stored value is 'dark' | 'light' | 'system' ("Match my phone"); anything else reads as dark.
+const THEME_KEY = 'coachapp-theme'
+const THEME_CHOICES = ['dark', 'light', 'system']
+function getThemeChoice() {
+  try {
+    const v = localStorage.getItem(THEME_KEY)
+    return THEME_CHOICES.includes(v) ? v : 'dark'
+  } catch (e) { return 'dark' }
+}
+function applyTheme(choice = getThemeChoice()) {
+  const light = choice === 'light' || (choice === 'system' && !!window.matchMedia?.('(prefers-color-scheme: light)')?.matches)
+  const theme = light ? 'light' : 'dark'
+  document.documentElement.setAttribute('data-theme', theme)
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', light ? '#f4f5f7' : '#11131a')
+  return theme
+}
+function setThemeChoice(choice) {
+  if (!THEME_CHOICES.includes(choice)) return
+  try { localStorage.setItem(THEME_KEY, choice) } catch (e) { /* storage blocked: the choice lasts until reload */ }
+  applyTheme(choice)
+}
+// "Match my phone" follows the phone live: flipping the phone to light or dark while the app is open re-applies.
+window.matchMedia?.('(prefers-color-scheme: light)')?.addEventListener?.('change', () => { if (getThemeChoice() === 'system') applyTheme('system') })
+
 // ─── TOAST NOTIFICATIONS ──────────────────────────────────────────────────────
 // Surface DB errors and key events to the user — not just the console.
 /** @param {string} msg  @param {'error'|'success'|'info'|'warn'} [type]  @param {number} [duration] ms */
@@ -197,7 +225,7 @@ function showToast(msg, type = 'error', duration = 4000) {
   el.id = 'app-toast'
   el.textContent = msg
   el.style.cssText = `position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9999;
-    background:${colours[type]||colours.info};color:#fff;padding:10px 20px;border-radius:10px;
+    background:${colours[type]||colours.info};color:${(!colours[type] || type === 'info') ? 'var(--on-accent)' : '#fff'};padding:10px 20px;border-radius:10px;
     font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.18);
     max-width:90vw;text-align:center;pointer-events:none;
     animation:toastIn .2s ease`
@@ -452,7 +480,7 @@ function _pbFormHtml(clientId, { todayStr } = {}) {
     </div>
     <div style="margin-bottom:8px"><label class="form-label">Notes <span style="color:var(--text-muted)">(optional)</span></label><input type="text" id="cpb-notes" class="form-input" placeholder="Any notes…"></div>
     <p style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin:0 0 6px">Logging a lift? Records go on the <strong>Personal Bests</strong> tab.</p>
-    <p id="cpb-error" style="color:var(--danger, #ef4444);font-size:var(--text-md, 12px);margin:0 0 6px"></p>
+    <p id="cpb-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:0 0 6px"></p>
     <div style="display:flex;gap:8px">
       <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="saveClientPB('${escapeAttr(clientId)}')">Save</button>
       <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('client-pb-form').style.display='none'">Cancel</button>
@@ -642,7 +670,7 @@ function _openQuickPrefsPopover(prefill = null) {
   // second of two entry points into that SAME localStorage-backed state (the runner's own
   // exercise-finish capture card is the other), so a change from either place is visible in both.
   const capture = typeof _loadCardioCaptureToggles === 'function' ? _loadCardioCaptureToggles() : null
-  const chip = (label, key) => `<button type="button" onclick="_toggleQuickPrefsCapture('${key}')" style="padding:7px 12px;font-size:12.5px;font-weight:700;border-radius:20px;cursor:pointer;border:1px solid ${capture[key]?'var(--accent)':'var(--border)'};background:${capture[key]?'var(--accent)':'var(--surface-2)'};color:${capture[key]?'#fff':'var(--text-muted)'}">${label}</button>`
+  const chip = (label, key) => `<button type="button" onclick="_toggleQuickPrefsCapture('${key}')" style="padding:7px 12px;font-size:12.5px;font-weight:700;border-radius:20px;cursor:pointer;border:1px solid ${capture[key]?'var(--accent)':'var(--border)'};background:${capture[key]?'var(--accent)':'var(--surface-2)'};color:${capture[key]?'var(--on-accent)':'var(--text-muted)'}">${label}</button>`
 
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
@@ -1002,7 +1030,7 @@ function showConsentGate (isReconsent) {
                  onchange="document.getElementById('consent-gate-accept').disabled = !this.checked">
           <span>I have read and agree to the <a href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener" style="color:var(--accent, #6366f1);font-weight:600">Privacy Policy</a>.</span>
         </label>
-        <p id="consent-gate-error" style="font-size:var(--text-base, 13px);color:var(--danger, #ef4444);margin:0 0 12px;min-height:18px"></p>
+        <p id="consent-gate-error" style="font-size:var(--text-base, 13px);color:var(--danger-text);margin:0 0 12px;min-height:18px"></p>
         <div style="display:flex;gap:10px">
           <button id="consent-gate-accept" class="btn-primary" disabled onclick="acceptConsent()" style="flex:1">Agree and continue</button>
           <button class="btn-secondary" onclick="signOutFromConsentGate()" style="flex:none">Sign out</button>
@@ -1359,7 +1387,7 @@ function applyRoleUI() {
 }
 
 function updateViewSwitcherButtons(activeView) {
-  const active   = 'background:var(--accent);color:#fff'
+  const active   = 'background:var(--accent);color:var(--on-accent)'
   const inactive = 'background:transparent;color:var(--text-muted)'
   const sBase    = ';border:none;cursor:pointer;font-weight:700;transition:all .15s;flex:1;padding:5px 8px;border-radius:6px;font-size:12px'
   const mBase    = ';border:none;cursor:pointer;font-weight:700;transition:all .15s;padding:5px 16px;border-radius:16px;font-size:12px'

@@ -4,33 +4,45 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Policy — CoachApp</title>
+  <meta name="color-scheme" content="dark light">
+  <script>
+    // Theme before first paint (2026-10-29): same rule as applyTheme() in js/app-core.js; the choice is kept on this device.
+    (function () {
+      var c = 'dark', t
+      try { c = localStorage.getItem('coachapp-theme') || 'dark' } catch (e) {}
+      t = c === 'light' || (c === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'
+      document.documentElement.setAttribute('data-theme', t)
+    })()
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    :root { color-scheme: dark; --p-bg: #11131a; --p-card: #1a1d27; --p-ink: #eef0f6; --p-body: #c9cedb; --p-muted: #9aa3b5; --p-accent: #8387f7; --p-on-accent: #0b0c12; --p-hl-bg: #262b4d; --p-shadow: rgba(0,0,0,.45); }
+    :root[data-theme="light"] { color-scheme: light; --p-bg: #f8f9fc; --p-card: #fff; --p-ink: #1a1a2e; --p-body: #374151; --p-muted: #6b7280; --p-accent: #6366f1; --p-on-accent: #fff; --p-hl-bg: #f0f0ff; --p-shadow: rgba(0,0,0,.07); }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', sans-serif;
       font-size: 15px;
       line-height: 1.7;
-      color: #1a1a2e;
-      background: #f8f9fc;
+      color: var(--p-ink);
+      background: var(--p-bg);
       padding: 40px 20px 80px;
     }
-    .container { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 48px 48px; box-shadow: 0 2px 16px rgba(0,0,0,.07); }
+    .container { max-width: 720px; margin: 0 auto; background: var(--p-card); border-radius: 16px; padding: 48px 48px; box-shadow: 0 2px 16px var(--p-shadow); }
     @media (max-width: 600px) { .container { padding: 28px 20px; } }
     .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 36px; }
-    .brand-logo { width: 36px; height: 36px; background: #6366f1; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 18px; }
-    .brand-name { font-weight: 700; font-size: 18px; color: #1a1a2e; }
+    .brand-logo { width: 36px; height: 36px; background: var(--p-accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--p-on-accent); font-weight: 700; font-size: 18px; }
+    .brand-name { font-weight: 700; font-size: 18px; color: var(--p-ink); }
     h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
-    .meta { font-size: 13px; color: #6b7280; margin-bottom: 36px; }
-    h2 { font-size: 17px; font-weight: 600; margin: 32px 0 10px; color: #1a1a2e; }
-    p { margin-bottom: 12px; color: #374151; }
-    ul { margin: 8px 0 12px 20px; color: #374151; }
+    .meta { font-size: 13px; color: var(--p-muted); margin-bottom: 36px; }
+    h2 { font-size: 17px; font-weight: 600; margin: 32px 0 10px; color: var(--p-ink); }
+    p { margin-bottom: 12px; color: var(--p-body); }
+    ul { margin: 8px 0 12px 20px; color: var(--p-body); }
     ul li { margin-bottom: 6px; }
-    a { color: #6366f1; text-decoration: none; }
+    a { color: var(--p-accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .highlight { background: #f0f0ff; border-left: 3px solid #6366f1; border-radius: 6px; padding: 14px 16px; margin: 16px 0; font-size: 14px; color: #374151; }
-    .back { display: inline-flex; align-items: center; gap: 6px; color: #6366f1; font-size: 14px; font-weight: 500; margin-bottom: 28px; cursor: pointer; }
+    .highlight { background: var(--p-hl-bg); border-left: 3px solid var(--p-accent); border-radius: 6px; padding: 14px 16px; margin: 16px 0; font-size: 14px; color: var(--p-body); }
+    .back { display: inline-flex; align-items: center; gap: 6px; color: var(--p-accent); font-size: 14px; font-weight: 500; margin-bottom: 28px; cursor: pointer; }
     .back:hover { text-decoration: underline; }
   </style>
 </head>
