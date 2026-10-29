@@ -747,7 +747,8 @@ async function renderClientWorkoutsPage(el) {
 
   const [{ data: logs }, { data: cpAssignments }] = await Promise.all([
     db.from('workout_logs').select('id, name, date, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
-    db.from('client_programs').select('id, start_date, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1)
+    // Every assignment: _currentAssignment below picks the current plan by date, not the newest-assigned one (2026-10-29).
+    db.from('client_programs').select('id, start_date, created_at, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))').eq('client_id', clientId).order('created_at', { ascending: false })
   ])
 
   // D3 (2026-09-07): drop 0-exercise logs (abandoned starts / test probes) from the history list,
@@ -755,7 +756,7 @@ async function renderClientWorkoutsPage(el) {
   const loggedLogs = (logs || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
 
   let cpwMap = {}
-  const activeAssignment = cpAssignments?.[0]
+  const activeAssignment = _currentAssignment(cpAssignments, _ymdLocal(new Date())).current
   if (activeAssignment) {
     const { data: cpwRows } = await db.from('client_program_workouts')
       .select('program_phase_workout_id, workout_template_id, workout_templates(id, name, description, workout_template_exercises(id, exercise_name, exercise_type, metric_type, order_index, sets_json, notes))')
@@ -4282,15 +4283,19 @@ async function renderClientWorkouts(clientId, el) {
 
   const [{ data: logs, error }, { data: clientProgs }, { data: clientData }] = await Promise.all([
     db.from('workout_logs').select('*, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
-    db.from('client_programs').select('id, programs(id, name)').eq('client_id', clientId).order('created_at', { ascending: false }),
+    db.from('client_programs').select('id, start_date, created_at, programs(id, name)').eq('client_id', clientId).order('created_at', { ascending: false }),
     db.from('clients').select('full_name').eq('id', clientId).single()
   ])
 
   if (error) { log.error('renderClientWorkouts', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
 
   let programWorkoutsHtml = ''
-  if (clientProgs?.length) {
-    const cpIds = clientProgs.map(cp => cp.id)
+  // The CURRENT plan's workouts only, picked by date (_currentAssignment). Until 2026-10-29 this listed the workouts of EVERY assignment under the
+  // newest one's name and opened each with the newest one's id, so with a next block booked, a workout of the running block was edited through
+  // the wrong assignment.
+  const currentProg = _currentAssignment(clientProgs, _ymdLocal(new Date())).current
+  if (currentProg) {
+    const cpIds = [currentProg.id]
     const { data: cpwRows } = await db.from('client_program_workouts')
       .select('workout_template_id, workout_templates(id, name)')
       .in('client_program_id', cpIds)
@@ -4298,7 +4303,7 @@ async function renderClientWorkouts(clientId, el) {
     if (cpwRows?.length) {
       const seen = new Set()
       const unique = cpwRows.filter(r => { const id = r.workout_template_id; if (seen.has(id)) return false; seen.add(id); return true })
-      const programName = clientProgs[0]?.programs?.name || 'Training plan'
+      const programName = currentProg.programs?.name || 'Training plan'
       programWorkoutsHtml = `
         <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${escapeHtml(programName)}</div>
         <div class="list" style="margin-bottom:20px">

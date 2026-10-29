@@ -48,6 +48,26 @@ function _programWorkoutsByDate(cp0, cpwMap) {
   return byDate
 }
 
+// Several assignments on one map - in practice the current plan and the one booked after it (_currentAssignment, app-core.js). Each plan owns
+// its dates until the NEXT plan's start DATE, the day _currentAssignment hands over on: a plan booked to start on a Thursday leaves Monday to
+// Wednesday to the plan before it, never empty and never the new plan's (review, 2026-10-29). So every plan after the first also drops its own
+// days before its start date; `fromStart` drops the FIRST plan's too - the dashboard's rule (_dashPlannedFrom), which used to be applied to the
+// one plan it drew. Before 2026-10-29 every screen drew one plan only, so a block booked for next Monday left next week empty until it began.
+// Plans with no usable start date draw nothing, as in _programWorkoutsByDate.
+function _programWorkoutsByDateAll(assignments, cpwMap, { fromStart = false } = {}) {
+  const dated = (assignments || []).filter(cp => cp?.start_date && _mondayOfWeek(cp.start_date))
+    .sort((a, b) => _cmpText(String(a.start_date).slice(0, 10), String(b.start_date).slice(0, 10)) || _cmpText(a.created_at, b.created_at) || _cmpText(a.id, b.id))
+  const out = {}
+  dated.forEach((cp, i) => {
+    const stop = dated[i + 1] ? String(dated[i + 1].start_date).slice(0, 10) : null
+    const own = _programWorkoutsByDate(cp, cpwMap)
+    for (const [ds, arr] of Object.entries(fromStart || i > 0 ? _dashPlannedFrom(own, cp.start_date) : own)) {
+      if (!stop || ds < stop) out[ds] = arr
+    }
+  })
+  return out
+}
+
 async function renderCalendar(el) {
   const now = new Date()
   calendarYear  = calendarYear  ?? now.getFullYear()
@@ -80,21 +100,23 @@ async function renderCalendar(el) {
         ? db.from('events').select('*').eq('client_id', clientsId).gte('date', from).lte('date', to).order('date')
         : Promise.resolve({ data: [] }),
       clientsId
-        ? db.from('client_programs').select('id, start_date, programs(program_phases(duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, workout_templates(id, name, workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json)))))').eq('client_id', clientsId).order('created_at', { ascending: false }).limit(1)
+        // Every assignment, not the newest: the current plan is picked by date and the block booked after it is drawn too (2026-10-29).
+        ? db.from('client_programs').select('id, start_date, created_at, programs(program_phases(duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, workout_templates(id, name, workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json)))))').eq('client_id', clientsId).order('created_at', { ascending: false })
         : Promise.resolve({ data: [] })
     ])
     events = evRes.data
 
-    // Step 3: client_program_workouts scoped to this assignment
+    // Step 3: client_program_workouts scoped to the current plan and the one booked after it
     const _cpwMap = {}
-    const cp0 = cpRes.data?.[0]
-    if (cp0?.id) {
+    const { current: cp0, next: cpNext } = _currentAssignment(cpRes.data, _ymdLocal(now))
+    const drawn = [cp0, cpNext].filter(Boolean)
+    if (drawn.length) {
       // Embed the CLIENT'S cloned template's exercises, not just its id. The day modal renders the
       // full prescription as of 2026-08-14, and the clone is what ▶ Start actually runs — reading the
       // master template's sets_json here would print numbers the runner never uses the moment a
       // client's copy diverges. Same embed shape as renderClientWorkoutsPage (app-workouts.js:588),
       // which is the screen Jake compared this one against.
-      const cpwRes = await db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id, workout_templates(workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json))').eq('client_program_id', cp0.id)
+      const cpwRes = await db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id, workout_templates(workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json))').in('client_program_id', drawn.map(cp => cp.id))
       ;(cpwRes.data || []).forEach(r => { _cpwMap[r.program_phase_workout_id] = { templateId: r.workout_template_id, exercises: r.workout_templates?.workout_template_exercises || [] } })
     }
     window._calClientTemplateMap = _cpwMap
@@ -107,8 +129,8 @@ async function renderCalendar(el) {
     // tiles resolve dates by THIS exact rule instead of a second copy that would drift from the
     // grid. Guard and assignment kept verbatim: the original only published the global when the
     // start_date parsed, and a null _mondayOfWeek would throw and kill the whole calendar render.
-    if (cp0?.start_date && _mondayOfWeek(cp0.start_date)) {
-      Object.assign(programWorkoutsByDate, _programWorkoutsByDate(cp0, _cpwMap))
+    if (drawn.some(cp => cp.start_date && _mondayOfWeek(cp.start_date))) {
+      Object.assign(programWorkoutsByDate, _programWorkoutsByDateAll(drawn, _cpwMap))
       window._calProgramWorkouts = programWorkoutsByDate
     }
   } else {

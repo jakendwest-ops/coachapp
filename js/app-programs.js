@@ -85,7 +85,7 @@ async function renderClientPrograms(clientId, el) {
 
   const [{ data: assignments, error }, { data: clientData }] = await Promise.all([
     db.from('client_programs')
-      .select('id, start_date, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))')
+      .select('id, start_date, created_at, programs(id, name, program_phases(id, name, order_index, duration_weeks, program_phase_workouts(id, day_of_week, session_order, week_number)))')
       .eq('client_id', clientId),
     db.from('clients').select('full_name').eq('id', clientId).single()
   ])
@@ -122,24 +122,51 @@ async function renderClientPrograms(clientId, el) {
 
   const clientName = escapeAttr(clientData?.full_name || 'Client')
 
+  // Current plan first, then the one booked after it, then the rest (latest start first): the order a coach reads them in (2026-10-29).
+  const todayStr = _ymdLocal(new Date())
+  const { current, next } = _currentAssignment(assignments, todayStr)
+  const rest = assignments.filter(a => a !== current && a !== next)
+    .sort((x, y) => _cmpText(_assignmentStart(y), _assignmentStart(x)))
+  const ordered = [current, next, ...rest].filter(Boolean)
+  const fmtDay = ymd => _dateOnly(ymd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const chip = (label, tone) => `<span class="badge" data-plan-chip="${tone}" style="font-size:var(--text-xs, 10px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:var(--radius-full);border:1px solid ${tone === 'current' ? 'var(--accent)' : 'var(--border)'};color:${tone === 'current' ? 'var(--accent)' : 'var(--text-muted)'};background:transparent">${label}</span>`
+  // "Assign next block": on the current plan, for a coach, while nothing is booked after it. It starts the Monday after the plan's last week, or
+  // today when that has passed (a plan that ended in June must not book a block in June). Not offered when the plan's end is unknown (no start
+  // date, or no weeks): "starts after the current plan ends" would be a claim the prefill could not keep (review, 2026-10-29).
+  const currentEnd = current ? _assignmentEnd(current) : null
+  const afterEnd = currentEnd ? _dashAddDays(currentEnd, 1) : null
+  const nextBlockStart = afterEnd && afterEnd < todayStr ? todayStr : afterEnd
+
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h2 class="section-title">Assigned training plans</h2>
       <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign training plan</button>
     </div>
-    ${assignments.map(a => {
+    ${ordered.map(a => {
       const p = a.programs
       const phases = [...(p?.program_phases || [])].sort((x, y) => x.order_index - y.order_index)
-      const startLabel = a.start_date ? new Date(a.start_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No start date'
+      const startLabel = a.start_date ? fmtDay(a.start_date) : 'No start date'
+      const end = _assignmentEnd(a)
+      const started = !a.start_date || a.start_date <= todayStr
+      const state = a === current
+        ? (end && end < todayStr ? chip(`Current · ended ${fmtDay(end)}`, 'current') : chip('Current', 'current'))
+        : a === next ? chip('Next', 'next') : chip(started ? 'Earlier' : 'Upcoming', 'other')
+      const when = started ? `Started ${startLabel}` : `Starts ${startLabel}`
+      const nextBtn = a === current && !next && nextBlockStart && currentProfile?.role !== 'solo'
+        ? `<button class="btn-primary" data-assign-next-block style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showAssignProgramModal('${clientId}',{ startDate: '${nextBlockStart}', excludeProgramId: '${escapeAttr(p?.id || '')}', nextBlock: true })">Assign next block</button>`
+        : ''
       return `
-        <div class="card" style="margin-bottom:16px">
+        <div class="card" style="margin-bottom:16px" data-assignment-id="${a.id}">
           <div class="card-body">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:16px">
               <div>
-                <div style="font-size:var(--text-xl, 16px);font-weight:700">${escapeHtml(p?.name || 'Unknown training plan')}</div>
-                <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">Started ${startLabel}</div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:var(--text-xl, 16px);font-weight:700">${escapeHtml(p?.name || 'Unknown training plan')}</span>${state}
+                </div>
+                <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${when}${end ? ` · ends ${fmtDay(end)}` : ''}</div>
               </div>
-              <div style="display:flex;gap:6px;flex-shrink:0">
+              <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+                ${nextBtn}
                 <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px" onclick="showEditStartDateModal('${clientId}','${a.id}','${a.start_date||''}')">Edit date</button>
                 <button class="btn-secondary" style="font-size:var(--text-md, 12px);padding:4px 10px;color:var(--danger);border-color:var(--danger)" onclick="unassignProgram('${clientId}','${a.id}')">Remove from plan</button>
               </div>
@@ -242,7 +269,15 @@ function toggleClientPhase(panelId) {
   if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)'
 }
 
-function showAssignProgramModal(clientId) {
+// The last day of an assignment: the Sunday of its last week (_dashProgramEnd, the calendar's reading). null without a start date or any weeks.
+function _assignmentEnd(cp) {
+  const weeks = (cp?.programs?.program_phases || []).reduce((n, ph) => n + (ph.duration_weeks || 0), 0)
+  return weeks > 0 ? _dashProgramEnd(cp?.start_date, weeks) : null
+}
+
+// opts (2026-10-29, "Assign next block"): startDate prefills the start; excludeProgramId leaves the client's current plan out of the list (the same
+// plan cannot be assigned to one client twice - choosing it would RESTART it); nextBlock retitles the modal.
+function showAssignProgramModal(clientId, opts = {}) {
   const existing = document.getElementById('assign-program-modal')
   if (existing) existing.remove()
 
@@ -253,13 +288,15 @@ function showAssignProgramModal(clientId) {
   overlay.className = 'modal-overlay'
   overlay.id = 'assign-program-modal'
   const todayStr = _ymdLocal(new Date())
+  const startValue = /^\d{4}-\d{2}-\d{2}$/.test(opts.startDate || '') ? opts.startDate : todayStr
 
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">${currentProfile?.role === 'solo' ? 'Add to my plan' : 'Assign training plan'}</h2>
+        <h2 class="modal-title">${opts.nextBlock ? 'Assign next block' : currentProfile?.role === 'solo' ? 'Add to my plan' : 'Assign training plan'}</h2>
         <button class="modal-close" onclick="closeModal('assign-program-modal')">✕</button>
       </div>
+      ${opts.nextBlock ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 12px">Starts after the current plan ends. To repeat the same plan, duplicate it in Training plans first.</p>` : ''}
       <div class="field">
         <label class="field-label">Training plan <span style="color:var(--danger)">*</span></label>
         <select class="field-input" id="ap-program" onchange="_refreshMissingOneRMs(this.value,'${targetClientId}','ap-missing-1rm')">
@@ -269,7 +306,7 @@ function showAssignProgramModal(clientId) {
       <div id="ap-missing-1rm"></div>
       <div class="field">
         <label class="field-label">Start date</label>
-        <input class="field-input" id="ap-start" type="date" value="${todayStr}">
+        <input class="field-input" id="ap-start" type="date" value="${startValue}">
       </div>
       <p class="modal-error" id="ap-error"></p>
       <div class="modal-footer">
@@ -295,7 +332,7 @@ function showAssignProgramModal(clientId) {
       if (errEl) errEl.textContent = 'Could not load your training plans. Please reload.'
       return
     }
-    ;(data || []).forEach(p => {
+    ;(data || []).filter(p => p.id !== opts.excludeProgramId).forEach(p => {
       const opt = document.createElement('option')
       opt.value = p.id
       opt.textContent = p.name
@@ -309,7 +346,7 @@ function showAssignProgramModal(clientId) {
 // all — so assigning the same program twice silently stacked a second assignment AND re-cloned every
 // template in it. Found 2026-07-13: Jake's own account had 32 stacked self-assignments of one
 // program, each having minted a fresh client-owned clone of all ~30 of its sessions. Nothing looked
-// broken because every read does .order('created_at', desc).limit(1) and takes the newest, leaving
+// broken because every read did .order('created_at', desc).limit(1) and took the newest (until 2026-10-29), leaving
 // the rest as invisible debris. Preventing silent double-assign has been the stated intent since
 // 2026-07-03; it was never actually built. ONE shared helper, called by BOTH paths.
 async function _existingAssignment(clientId, programId) {
@@ -426,6 +463,25 @@ async function _removeAssignmentAndClones(clientProgramId, reason) {
   return true
 }
 
+// Before a DIFFERENT plan is assigned to a client: if it starts while their current plan is still running (on or after that plan's start, on or
+// before its end), it becomes current from its start date (_currentAssignment, _programWorkoutsByDateAll) - so say so first. A plan that starts
+// after the current one ends needs no question (that is "Assign next block"), nor does a back-dated one that would not become current. Used by
+// BOTH coach assign paths (saveAssignProgram, saveAssignProgramToClient - review, 2026-10-29). Returns 'ok', 'cancel', or 'error' (the lookup
+// failed: callers stop, as the duplicate check does - a failed read must not skip the warning silently).
+async function _confirmStartBeforeCurrentEnds(fnName, clientId, startDate) {
+  const { data: held, error } = await db.from('client_programs').select('id, program_id, start_date, created_at, programs(name, program_phases(duration_weeks))').eq('client_id', clientId)
+  if (error) { log.error(fnName, 'current plan lookup failed', error); return 'error' }
+  const today = _ymdLocal(new Date())
+  const { current } = _currentAssignment(held, today)
+  const currentEnd = current ? _assignmentEnd(current) : null
+  const currentStart = current ? _assignmentStart(current) : null
+  const from = startDate || today
+  if (!current || !currentEnd || currentEnd < today || from > currentEnd || (currentStart && from < currentStart)) return 'ok'
+  const name = current.programs?.name || 'the current plan'
+  const ok = await confirmDialog(`This starts before ${name} ends (${_dashFormatDate(currentEnd)}).\n\nFrom its start date it becomes the current plan, and ${name}'s sessions after that leave the calendar.`, { title: 'Start before the current plan ends?', confirmLabel: 'Assign anyway' })
+  return ok ? 'ok' : 'cancel'
+}
+
 async function saveAssignProgram(clientId) {
   const programId = document.getElementById('ap-program').value
   const startDate = document.getElementById('ap-start').value || null
@@ -450,6 +506,10 @@ async function saveAssignProgram(clientId) {
   if (existing) {
     const started = existing.start_date ? ` (started ${existing.start_date})` : ''
     if (!(await confirmDialog(`That client already has this training plan${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`, { title: 'Restart training plan?', confirmLabel: 'Restart', danger: true }))) { _release(); return }
+  } else {
+    const overlap = await _confirmStartBeforeCurrentEnds('saveAssignProgram', clientId, startDate)
+    if (overlap === 'error') { errorEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
+    if (overlap === 'cancel') { _release(); return }
   }
 
   // ONE transaction: archive + remove (on restart), the new assignment, and every session copy either all
@@ -947,8 +1007,8 @@ async function saveAssignProgramToClient(programId, soloClientId) {
   if (btn) { btn.disabled = true; btn.textContent = 'Assigning…' }
   const _release = () => { if (btn) { btn.disabled = false; btn.textContent = 'Assign' } }
 
-  // Already assigned? Do NOT just refuse. Every "which program am I on?" read takes the NEWEST
-  // assignment (.order('created_at', desc).limit(1)), and solo view had no Remove/Edit-date control
+  // Already assigned? Do NOT just refuse. Every "which program am I on?" read took the NEWEST
+  // assignment until 2026-10-29 (now the most recently started - _currentAssignment), and solo view had no Remove/Edit-date control
   // (since 2026-10-12 the program page has "Remove from my plan", which also covers a restart as remove, then add) —
   // those live in renderClientPrograms, which is only reachable from a coach's
   // client-detail tab, and a solo client record (coach_id IS NULL) is never listed there. So
@@ -970,12 +1030,18 @@ async function saveAssignProgramToClient(programId, soloClientId) {
       : `That client already has this training plan${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`,
       { title: 'Restart training plan?', confirmLabel: 'Restart', danger: true })
     if (!ok) { _release(); return }
+  } else if (!ownPlan) {
+    // A coach assigning to a client from the plan's page gets the same overlap question as the client's Training plans tab. Not the solo
+    // account's own plan: its other plans come off when this one goes on (above), so nothing is left to overlap.
+    const overlap = await _confirmStartBeforeCurrentEnds('saveAssignProgramToClient', clientId, startDate)
+    if (overlap === 'error') { errEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
+    if (overlap === 'cancel') { _release(); return }
   }
 
   // One transaction for the restart and the copy, same as saveAssignProgram (see _assignProgramTx).
   const res = await _assignProgramTx('saveAssignProgramToClient', clientId, programId, startDate, !!existing)
   if (!res.ok) { errEl.textContent = res.message; _release(); return }
-  // Assign FIRST, take the others off second: a failed removal then leaves two assignments (the newest still wins) and a warning, never a person whose new plan did not go on.
+  // Assign FIRST, take the others off second: a failed removal then leaves two assignments (the most recently STARTED is current - _currentAssignment) and a warning, never a person whose new plan did not go on.
   const notTakenOff = []
   for (const other of replaced) {
     const gone = (await _verifyAssignmentAccess('saveAssignProgramToClient', other.id)) && (await _removeAssignmentAndClones(other.id, 'replaced'))
