@@ -12,6 +12,10 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+## 2026-10-29 - Coach work starts now, designed for a 25-client roster; the current plan is chosen by date
+
+**Decided (Jake, 2026-10-29):** "Yes, design for 25" - this overrides the 2026-09-26 deferral of roster-size features (search, sort, Needs attention, invite state), which waited for a real roster. First build (approved the same day): a client's current training plan is the most recently STARTED one (else the soonest upcoming), never the most recently assigned, and calendars draw back-to-back blocks each in their own weeks; the client's Training plans tab gains "Assign next block". **Why:** booking a next block made it current at once everywhere and hid the running one ([row](bugs/2026-10-29-current-plan-is-picked-by-assignment-order-not-by-date.md)). **Rejected:** one-plan-at-a-time for coached clients (solo keeps it) - a PT books the next block before the current one ends.
+
 ## 2026-10-29 - The old wiki is dead to CoachApp too
 
 **Decided (Jake, 2026-10-29):** everything lives in the GitHub repo and nowhere else. **Why it was missed:** no repo file ever said so. On 2026-09-20 Jake asked "confirm if wiki is vault or repo"; I answered "a third, separate location" and the rituals kept using it (`save` Step 7, `hello-claude` Step 6, a memory note) until a `/save` wrote to it on 2026-10-29. **Done:** Step 7 retired, Step 6 starts from `docs/current-sprint.md`, memory rewritten, a `CLAUDE.md` table row, and `os-lint` warns on a pointer to it. Scope: CoachApp only; the wiki's other content is Jake's call. **Rejected:** a mirror "in case" (two places disagree).

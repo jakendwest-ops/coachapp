@@ -207,6 +207,11 @@ Script and rollback: `scripts/add-client-empty-session-delete-2026-10-01.sql`; l
   link was never recorded. **Not ownership-checked by the INSERT/UPDATE policies** — see
   `docs/bugs/2026-09-05-workout-logs-template-id-is-not-ownership-checked.md`.
 - Program blocks — new table, 2026-08-15.
+- **Which assignment is "current"** (2026-10-29): a client may hold several `client_programs` rows. Current = the most recently
+  STARTED (start_date, else the UTC day of created_at); with none started, the soonest upcoming. Never "newest-assigned".
+  One rule, two copies kept in step: `_currentAssignment` (`js/app-core.js`) and `coach_client_summary`'s programme lateral
+  (`scripts/fix-coach-client-summary-current-plan-2026-10-29.sql`, which also appends `next_program_start`, column 20).
+  `scripts/sql-verify/coach-client-summary-current-plan.verify.mjs` runs both on the same fixtures and fails if they disagree.
 - `app_errors` — new table, 2026-09-19 (`scripts/add-app-errors-2026-09-19.sql`). Automatic error capture:
   `user_id` (→ `auth.users`, ON DELETE CASCADE), `kind`, `tag`, `detail`, `code`, `frame`, `page`, `build`,
   `role`, each length-CHECKed; never error text (privacy policy). RLS: INSERT own; SELECT and DELETE own or owner;

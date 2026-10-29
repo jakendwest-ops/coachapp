@@ -397,8 +397,10 @@ async function renderClientOverview(id, el) {
   const [{ data: client }, { data: checkIns }, { data: progAssign }] = await Promise.all([
     db.from('clients').select('*').eq('id', id).eq('coach_id', currentUser.id).single(),
     db.from('client_check_ins').select('*').eq('client_id', id).order('created_at', { ascending: false }).limit(4),
-    db.from('client_programs').select('id, programs(name)').eq('client_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    // Every assignment: the "Active training plan" is the one _currentAssignment picks by date, not the newest-assigned (2026-10-29).
+    db.from('client_programs').select('id, start_date, created_at, programs(name)').eq('client_id', id).order('created_at', { ascending: false })
   ])
+  const progCurrent = _currentAssignment(progAssign, _ymdLocal(new Date())).current
   const latestCI = checkIns?.[0]
 
   // Colour comes from _checkInColour (js/app-core.js), which knows each metric's polarity — stress and
@@ -440,7 +442,7 @@ async function renderClientOverview(id, el) {
         </div>` : ''}
       </div>
     </div>` : ''
-  el.innerHTML = clientOverviewTab(client, progAssign?.programs?.name || null) + ciHtml
+  el.innerHTML = clientOverviewTab(client, progCurrent?.programs?.name || null) + ciHtml
 }
 
 function infoItem(label, value) {

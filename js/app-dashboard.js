@@ -542,7 +542,7 @@ async function renderDashboard(el) {
     db.from('goals').select('id, title, target_date, client_id, clients!inner(full_name)').eq('clients.coach_id', currentUser.id).eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', in14Str).order('target_date').limit(5),
     // One row per client, computed in the database (scripts/add-coach-client-summary-2026-09-20.sql). PAGED: the API caps every
     // response at 200 rows and that applies to a view too, so a bare read would silently drop the 201st client.
-    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, sessions_7d, last_session_date, last_weigh_in_date, program_name, program_start, program_weeks', { count: 'exact' }).order('full_name').order('client_id')),
+    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, sessions_7d, last_session_date, last_weigh_in_date, program_name, program_start, program_weeks, next_program_start', { count: 'exact' }).order('full_name').order('client_id')),
   ])
 
   const failed = _failedFetches({
@@ -578,9 +578,10 @@ async function renderDashboard(el) {
   const trained = summariesUnavailable ? null : active.length - needAttention.length
 
   // Programs whose last day falls in the next 14 days. The end is the Sunday of the program's last week (_dashProgramEnd), where the calendar runs out.
+  // The view's plan is the CURRENT one by date (2026-10-29); a client whose next block is already booked (next_program_start) is handled, so not listed.
   const ending = summariesUnavailable ? [] : active.map(c => {
     const s = summary[c.id]
-    if (!s?.program_start || !(Number(s.program_weeks) > 0)) return null
+    if (!s?.program_start || !(Number(s.program_weeks) > 0) || s.next_program_start) return null
     const endDs = _dashProgramEnd(s.program_start, s.program_weeks)
     return endDs && endDs >= todayStr && endDs <= in14Str ? { id: c.id, name: c.full_name, program: s.program_name, endDs } : null
   }).filter(Boolean).sort((a, b) => a.endDs.localeCompare(b.endDs))
@@ -723,8 +724,9 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     // 14, not 5: the card draws a trend and weigh-ins are not daily, so 5 rows can span a fortnight and leave the window empty.
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(14),
     // `id` and `week_number` are load-bearing. Without week_number every week of a periodised phase collapses onto week 1's
-    // sessions; without id the clone lookup below cannot run.
-    db.from('client_programs').select('id, start_date, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
+    // sessions; without id the clone lookup below cannot run. ALL of the client's assignments, not the newest one: _currentAssignment
+    // picks the current plan by date, and a block booked to follow it is drawn too (2026-10-29).
+    db.from('client_programs').select('id, start_date, created_at, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }),
     // A year of sessions, paged (_fetchAllRows, app-core.js): the API caps a response at 200 rows and says nothing when it
     // truncates. The week strip, the streak and "done" all read from this one list.
     _fetchAllRows(() => db.from('workout_logs').select('id, name, date, workout_log_exercises(id)', { count: 'exact' }).eq('client_id', clientId).gte('date', lookbackStart).order('date', { ascending: false }).order('id', { ascending: false })),
@@ -733,20 +735,25 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
 
   // Second round-trip, only when a programme exists. Deliberately NOT a nested embed on the query above: PostgREST silently NULLs a
   // level the reader cannot see, and a silently empty clone map would render a Start button that launches the wrong template.
-  const cp0 = programsR.data?.[0] || null
+  const { current: cp0, next: cpNext } = _currentAssignment(programsR.data, todayStr)
+  const drawn = [cp0, cpNext].filter(Boolean)
   const cpwMap = {}
   let cpwErr = null
-  if (cp0?.id) {
-    const r = await db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id').eq('client_program_id', cp0.id)
+  if (drawn.length) {
+    const r = await db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id').in('client_program_id', drawn.map(cp => cp.id))
     cpwErr = r.error
     ;(r.data || []).forEach(row => { cpwMap[row.program_phase_workout_id] = { templateId: row.workout_template_id } })
   }
-  const progByDate = _dashPlannedFrom(_programWorkoutsByDate(cp0, cpwMap), cp0?.start_date)
+  // fromStart: each plan's days before its own start date are not planned sessions (_dashPlannedFrom's rule, per plan).
+  const progByDate = _programWorkoutsByDateAll(drawn, cpwMap, { fromStart: true })
+  // The CURRENT plan's dates alone, for the adherence tile: _dashPlanAdherence runs a plan to the last week that has a session, so the next
+  // block's weeks would read as this plan's ("Week 2 of 4" for a two-week plan; a finished plan at 0%) - review, 2026-10-29.
+  const currentByDate = _programWorkoutsByDateAll([cp0].filter(Boolean), cpwMap, { fromStart: true })
   // The runner/save path can leave a 0-exercise workout_log (an abandoned start): those are not sessions (D3, 2026-09-07).
   const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
 
   return {
-    goals: goalsR.data, events: eventsR.data, weights: weightsR.data, cp0, progByDate, logs,
+    goals: goalsR.data, events: eventsR.data, weights: weightsR.data, cp0, progByDate, currentByDate, logs,
     upcoming: _soloUpcoming(eventsR.data, progByDate, todayStr),
     lastCheckIn: checkInR.data?.[0] || null,
     failed: {
@@ -839,7 +846,7 @@ async function _dashRenderOwn(el, role) {
   const counts = _dashWeekCounts(days)
   const program = _dashProgramInfo(d.cp0, todayStr)
   // The sudo view (an owner looking at a client's page) has no way to read that client's own weekly target, so it shows the default rather than the owner's.
-  const streak = _dashStreakModel(d.progByDate, d.logs.map(l => l.date), todayStr, { planStart: d.cp0?.start_date || null, totalWeeks: program?.totalWeeks || 0, target: isSudo ? null : window._weeklyTarget })
+  const streak = _dashStreakModel(d.currentByDate, d.logs.map(l => l.date), todayStr, { planStart: d.cp0?.start_date || null, totalWeeks: program?.totalWeeks || 0, target: isSudo ? null : window._weeklyTarget })
   const next = d.upcoming.find(u => u.kind === 'session' && u.date > todayStr) || null
   const ctx = { role, clientId, todayStr, days, hasProgram: !!d.cp0, program, next }
   const byDs = Object.fromEntries(days.map(x => [x.ds, x]))

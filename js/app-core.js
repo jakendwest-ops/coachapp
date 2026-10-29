@@ -496,6 +496,42 @@ function _mondayOfWeek(dateStr) {
   return d
 }
 
+// ─── WHICH TRAINING PLAN IS CURRENT ───────────────────────────────────────────
+// A client can hold several assignments (client_programs rows). Until 2026-10-29 every screen took the newest-ASSIGNED one, so booking the
+// next block for a future date made it current at once and the running block left the client's calendar
+// (docs/bugs/2026-10-29-current-plan-is-picked-by-assignment-order-not-by-date.md). The rule now, approved by Jake:
+//   current = of the plans that have started, the one that started most recently; with none started, the soonest upcoming one
+//   next    = the soonest plan that starts after today (other than current)
+// A plan with no start date starts on the day it was assigned, as the block history (_loadProgramBlocks) reads it. The coach_client_summary
+// view orders by the SAME rule (scripts/fix-coach-client-summary-current-plan-2026-10-29.sql): change one, change the other.
+// tests-node/current-assignment.test.mjs pins it.
+
+// The day an assignment counts as starting: its start date, else the (UTC) day it was assigned, else null.
+function _assignmentStart(cp) {
+  if (cp?.start_date) return String(cp.start_date).slice(0, 10)
+  return cp?.created_at ? String(cp.created_at).slice(0, 10) : null
+}
+
+// Plain code-unit order, as Postgres compares these values: localeCompare does NOT order timestamps by time ('…:00.5+00:00' sorts before
+// '…:00+00:00' under it - review, 2026-10-29). null and undefined read as '' (lowest).
+function _cmpText(a, b) {
+  const x = a == null ? '' : String(a), y = b == null ? '' : String(b)
+  return x < y ? -1 : x > y ? 1 : 0
+}
+
+// { current, next } from a client's assignments; either may be null. Does not reorder `rows`.
+function _currentAssignment(rows, todayStr) {
+  const list = (rows || []).filter(Boolean)
+  // Ties: the most recently assigned, then the id, so the pick never depends on the order the API returned.
+  const newerFirst = (a, b) => _cmpText(b.created_at, a.created_at) || _cmpText(b.id, a.id)
+  const started = list.filter(cp => { const s = _assignmentStart(cp); return !s || s <= todayStr })
+    .sort((a, b) => _cmpText(_assignmentStart(b), _assignmentStart(a)) || newerFirst(a, b))
+  const upcoming = list.filter(cp => { const s = _assignmentStart(cp); return !!s && s > todayStr })
+    .sort((a, b) => _cmpText(_assignmentStart(a), _assignmentStart(b)) || newerFirst(a, b))
+  const current = started[0] || upcoming[0] || null
+  return { current, next: upcoming.find(cp => cp !== current) || null }
+}
+
 // Strips a trailing .0 the same way fmtDistanceM already does, so a converted "100.0" reads "100".
 function _stripTrailingZero(v) { return String(v).replace(/\.0$/, '') }
 
