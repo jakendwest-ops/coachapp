@@ -37,7 +37,8 @@ const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon', '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2',
-  '.map': 'application/json', '.txt': 'text/plain'
+  '.map': 'application/json', '.txt': 'text/plain',
+  '.webmanifest': 'application/manifest+json'      // the home-screen install file (2026-10-30)
 }
 const HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`, `[::1]:${PORT}`])
 

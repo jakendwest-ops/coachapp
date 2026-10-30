@@ -1,0 +1,16 @@
+{
+  "name": "CoachApp",
+  "short_name": "CoachApp",
+  "description": "Plan, run and track training: for coaches, their clients, and anyone coaching themselves.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#11131a",
+  "theme_color": "#11131a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

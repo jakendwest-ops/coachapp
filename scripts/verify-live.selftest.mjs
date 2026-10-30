@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import http from 'node:http'
-import { appFiles, verify } from './verify-live.mjs'
+import { appFiles, manifestIcons, verify } from './verify-live.mjs'
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'verify-live.mjs')
 let failures = 0
@@ -30,6 +30,22 @@ const check = (label, ok, extra = '') => { if (!ok) { failures++; console.log(` 
   const got = appFiles(html)
   check('appFiles: local loads only, query/fragment stripped, deduped, comments and third-party ignored',
     JSON.stringify(got) === JSON.stringify(['index.html', 'css/main.css', 'js/app-core.js', 'js/app-dashboard.js', 'img/logo.png']), JSON.stringify(got))
+}
+
+// ---- manifestIcons: the icons a manifest lists, resolved against the manifest's folder (2026-10-30)
+{
+  const m = JSON.stringify({ icons: [
+    { src: 'icons/a.png?v=2' }, { src: './icons/b.png#x' }, { src: 'icons/a.png' },
+    { src: 'https://cdn.example/c.png' }, { src: 'data:image/png;base64,AAA' }, { src: '' }, {}
+  ] })
+  const root = manifestIcons(m, 'manifest.webmanifest')
+  check('manifestIcons: local icons only, query/fragment stripped, deduped, third-party and data: skipped',
+    JSON.stringify(root) === JSON.stringify(['icons/a.png', 'icons/b.png']), JSON.stringify(root))
+  const nested = manifestIcons(m, 'app/site.webmanifest')
+  check('manifestIcons: paths resolve against the manifest\'s own folder',
+    JSON.stringify(nested) === JSON.stringify(['app/icons/a.png', 'app/icons/b.png']), JSON.stringify(nested))
+  check('manifestIcons: a manifest that is not JSON yields nothing (and does not throw)', manifestIcons('{not json', 'm.webmanifest').length === 0)
+  check('manifestIcons: a manifest with no icons yields nothing', manifestIcons('{}', 'm.webmanifest').length === 0)
 }
 
 // ---- verify(): the loop, with a fake clock and fake network
