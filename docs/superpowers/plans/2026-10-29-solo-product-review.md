@@ -117,8 +117,9 @@ the training itself. The target is shown beside the set ("aim 80 x 8, 8, 8"), ne
 
 **MVP: sellable to the first 10 outside users**
 1. Real outside users on real phones for two weeks. No code.
-2. A workout save that can never be lost or doubled (planned as R4a in the 2026-09-19 plan).
-3. A next-session target in the runner: a target to aim for, not a pre-filled value.
+2. A workout save that can never be lost or doubled (planned as R4a in the 2026-09-19 plan). SHIPPED in v2026.10.9.
+3. ~~A next-session target in the runner~~ DROPPED 2026-10-30 by Jake after a prototype: last time's grey text already shows
+   weight and reps. Revisit only if real training shows a need, then as a bare "↑ +2.5 kg" signal (docs/decisions.md).
 4. Sign-up and a three-question setup that picks a starter plan.
 5. Four to six proven plans written by Jake.
 6. Installable to the home screen (PWA).
