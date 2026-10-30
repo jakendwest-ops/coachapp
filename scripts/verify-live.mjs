@@ -36,6 +36,25 @@ export function appFiles (indexHtml) {
   return out
 }
 
+// The icons a web app manifest lists (2026-10-30). index.html links the manifest, so appFiles finds it, but the icons are named
+// only inside it: without this a broken or stale home-screen icon would pass the live check. Paths resolve against the
+// manifest's own folder; third-party and data: icons are skipped, as in appFiles. A manifest that is not JSON yields nothing
+// (the manifest file itself is still compared byte for byte).
+export function manifestIcons (manifestText, manifestPath) {
+  let m
+  try { m = JSON.parse(manifestText) } catch { return [] }
+  const dir = manifestPath.includes('/') ? manifestPath.slice(0, manifestPath.lastIndexOf('/') + 1) : ''
+  const out = []
+  for (const icon of Array.isArray(m?.icons) ? m.icons : []) {
+    const ref = String(icon?.src || '').trim()
+    if (!ref || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(ref)) continue
+    if (ref.split(/[\/\\]/).includes('..')) continue        // never a path outside the manifest's folder
+    const path = dir + ref.split('#')[0].split('?')[0].replace(/^\.?\//, '')
+    if (!out.includes(path)) out.push(path)
+  }
+  return out
+}
+
 /**
  * The loop, with every outside effect injected so the self-test can drive it without a network or a clock.
  *   readTag(path) -> Buffer          fetchLive(path) -> { status, body: Buffer }          sleep(ms)          now() -> ms
@@ -106,6 +125,9 @@ async function main () {
   try {
     files = appFiles(git('show', `${rev}:index.html`).toString('utf8'))
     for (const p of EXTRA_FILES) if (inTag(p) && !files.includes(p)) files.push(p)
+    for (const mf of files.filter(p => p.endsWith('.webmanifest') && inTag(p))) {
+      for (const p of manifestIcons(git('show', `${rev}:${mf}`).toString('utf8'), mf)) if (!files.includes(p)) files.push(p)
+    }
   } catch (e) { console.error(`verify-live: cannot read index.html from ${args.tag}: ${e.message}`); process.exit(2) }
   const missingInTag = files.filter(p => !inTag(p))
   if (missingInTag.length) { console.error(`verify-live: index.html in ${args.tag} references files the tag does not contain: ${missingInTag.join(', ')}`); process.exit(2) }

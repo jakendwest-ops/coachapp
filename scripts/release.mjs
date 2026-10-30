@@ -44,8 +44,12 @@ const RECEIPT_MAX_AGE_MS = 24 * 60 * 60 * 1000
 // which is exactly the question "does the last suite run still describe this code?". Paths NOT listed
 // — docs/, .github/, CLAUDE.md, .gitignore — cannot change a test outcome, so editing them does not
 // invalidate the run. scripts/ IS listed: several specs shell out to scripts/check-*.mjs.
+// The last five were added 2026-10-30 (the installable-app review): the manifest and icons ship and have their own spec,
+// privacy-policy.html and 404.html ship, and .claude/launch.json is the server the suite runs against - a change to any of
+// them after the run or the review must invalidate both, as a js/ change does.
 const CODE_PATHS = ['js', 'css', 'tests', 'tests-node', 'scripts',
-                    'index.html', 'playwright.config.js', 'package.json', 'package-lock.json']
+                    'index.html', 'playwright.config.js', 'package.json', 'package-lock.json',
+                    'manifest.webmanifest', 'icons', 'privacy-policy.html', '404.html', '.claude/launch.json']
 const REVIEW_MARKER = join(homedir(), '.claude', 'state', 'review-ran')
 
 const version = process.argv[2]

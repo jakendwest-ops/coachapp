@@ -22,7 +22,8 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 
 export const REVIEW_PATHS = ['js', 'css', 'tests', 'tests-node', 'scripts', 'index.html', 'playwright.config.js',
-  'package.json', 'package-lock.json', '.github', 'supabase']
+  'package.json', 'package-lock.json', 'manifest.webmanifest', 'icons', 'privacy-policy.html', '404.html', '.claude/launch.json',
+  '.github', 'supabase']
 export const FINGERPRINT_FILE = join(homedir(), '.claude', 'state', 'review-fingerprint.json')
 
 const git = (args, env) => execFileSync('git', args, { encoding: 'utf8', windowsHide: true, env: { ...process.env, ...env } }).trim()
