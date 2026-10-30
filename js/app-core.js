@@ -569,6 +569,72 @@ function _currentAssignment(rows, todayStr) {
   return { current, next: upcoming.find(cp => cp !== current) || null }
 }
 
+// ─── NEEDS ATTENTION (the coach Home's ranked list, MVP item 3, approved by Jake 2026-10-30) ──────────────
+// The thresholds live HERE, once, so every screen that ranks clients (the Home card now, the client list next) reads the same rules.
+// Until 2026-10-30 the card had one rule - no session in 7 days - so a client who missed three planned sessions but logged one extra
+// looked fine, a planned rest week was flagged, and a plan running out said nothing. tests-node/attention.test.mjs pins every rule.
+const ATTENTION_RULES = {
+  missedAtLeast: 2,        // planned sessions missed in the last 7 days (up to yesterday) - or ALL of them, however few
+  quietDays: 10,           // days since the last session
+  newClientGraceDays: 7,   // a client who has never trained is chased once they have been on the roster this long
+  planEndsWithinDays: 7,   // the current plan ends this soon with nothing booked after it
+  checkInOverdueDays: 10,  // only for someone who has checked in before
+  weighInOverdueDays: 14,  // only for someone who has weighed in before
+  holidayDays: 14,         // a Holiday event dated this far back (to today) mutes "missed" and "gone quiet"
+}
+const _ATTENTION_WEIGHT = { high: 3, medium: 2, low: 1 }
+
+// Whole days from YYYY-MM-DD `a` to `b` (b - a); null if either is unreadable. Calendar days, no clock time involved.
+function _daysBetweenYmd(a, b) {
+  const p = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : NaN }
+  const d = (p(b) - p(a)) / 864e5
+  return Number.isFinite(d) ? Math.round(d) : null
+}
+
+// One client's reasons, worst first: [{ key, severity, label, detail, action? }]. `s` is their coach_client_summary row. `planned` and
+// `logged` count sessions in the last 7 days up to yesterday (planned null = no dated plan, so nothing can be missed); logged is capped at
+// planned, so training on a different day than planned is not a miss and extra sessions never count against anyone. `onHoliday` mutes the
+// two training reasons only.
+/** @param {any} s @param {{ todayStr: string, planned?: number|null, logged?: number, onHoliday?: boolean }} ctx */
+function _attentionFor(s, { todayStr, planned = null, logged = 0, onHoliday = false }) {
+  const R = ATTENTION_RULES, out = []
+  // A timestamp (created_at, last_check_in_at) is read as the LOCAL day it happened, like todayStr - its UTC day is one early for part of every
+  // summer evening (review, 2026-10-30). A plain date column (last_session_date, last_weigh_in_date) is already a calendar day.
+  const day = (v) => (/T/.test(String(v)) ? _ymdLocal(new Date(v)) : String(v).slice(0, 10))
+  const ago = (v) => (v ? _daysBetweenYmd(day(v), todayStr) : null)
+  if (!onHoliday && Number(planned) > 0) {
+    const missed = planned - Math.min(Number(logged) || 0, planned)
+    if (missed >= R.missedAtLeast || (missed > 0 && missed === planned)) {
+      out.push({ key: 'missed', severity: 'high', label: 'Missed sessions', detail: `Missed ${missed} of ${planned} planned this week` })
+    }
+  }
+  if (!onHoliday) {
+    const quiet = ago(s.last_session_date)
+    if (quiet !== null && quiet >= R.quietDays) out.push({ key: 'quiet', severity: 'medium', label: 'Gone quiet', detail: `No session for ${quiet} days` })
+    else if (quiet === null && (ago(s.created_at) ?? 0) >= R.newClientGraceDays) out.push({ key: 'quiet', severity: 'medium', label: 'No sessions yet', detail: 'Has not logged a session' })
+  }
+  const weeks = Number(s.program_weeks)
+  const end = s.program_start && weeks > 0 && !s.next_program_start ? _dashProgramEnd(s.program_start, weeks) : null
+  if (end) {
+    const until = _daysBetweenYmd(todayStr, end)
+    const name = s.program_name || 'Their training plan'
+    if (until < 0) out.push({ key: 'plan_ended', severity: 'medium', label: 'Plan ended', detail: `${name} ended ${-until} day${until === -1 ? '' : 's'} ago`, action: 'next-block' })
+    else if (until <= R.planEndsWithinDays) out.push({ key: 'plan_ending', severity: 'medium', label: 'Plan ending', detail: `${name} ends ${until === 0 ? 'today' : `in ${until} day${until === 1 ? '' : 's'}`}`, action: 'next-block' })
+  }
+  const ci = ago(s.last_check_in_at)
+  if (ci !== null && ci >= R.checkInOverdueDays) out.push({ key: 'checkin', severity: 'medium', label: 'Check-in overdue', detail: `Last check-in ${ci} days ago` })
+  const wi = ago(s.last_weigh_in_date)
+  if (wi !== null && wi >= R.weighInOverdueDays) out.push({ key: 'weighin', severity: 'low', label: 'No weigh-in', detail: `Last weigh-in ${wi} days ago` })
+  // Worst first; within a severity, the order above (stable sort).
+  return out.sort((a, b) => _ATTENTION_WEIGHT[b.severity] - _ATTENTION_WEIGHT[a.severity])
+}
+
+// The roster order: the worst reason first, then the most reasons, then name. Items are { id, name, reasons }. Does not reorder its input.
+function _attentionRank(items) {
+  const top = (i) => Math.max(0, ...(i.reasons || []).map(r => _ATTENTION_WEIGHT[r.severity] || 0))
+  return [...(items || [])].sort((a, b) => (top(b) - top(a)) || ((b.reasons?.length || 0) - (a.reasons?.length || 0)) || String(a.name || '').localeCompare(String(b.name || '')))
+}
+
 // Strips a trailing .0 the same way fmtDistanceM already does, so a converted "100.0" reads "100".
 function _stripTrailingZero(v) { return String(v).replace(/\.0$/, '') }
 

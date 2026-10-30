@@ -14,6 +14,8 @@ process-level entries below were pulled out and belong here.
 
 **2026-10-30** — the runner's next-session target is DROPPED for now (Jake, after a prototype): last time's grey text already shows weight and reps, so a target only repeats it. It came from the product review, not from real use; rebuild only if Jake finds himself unsure what to lift, then as a bare "↑ +2.5 kg" signal ([plan](superpowers/plans/2026-10-29-solo-product-review.md)).
 
+**2026-10-30** — Needs attention is ranked by `ATTENTION_RULES` (js/app-core.js); a client's own Holiday mutes it; missed counts from the day a plan was assigned (Jake).
+
 **2026-10-29** — check-ins get a coach review: UPDATE narrowed to 3 columns, server-stamped, never pre-filled on insert ([row](bugs/2026-10-29-client-check-ins-get-no-response.md)).
 
 ## 2026-10-29 - Type-check the classic scripts before any move to ES modules

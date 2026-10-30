@@ -531,11 +531,11 @@ async function renderDashboard(el) {
   const ids = (coachClients || []).map(c => c.id)
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 864e5).toISOString()
-  const [weightsR, logsR, goalsR, summariesR, checkInsR] = await Promise.all([
+  const [weightsR, logsR, goalsR, summariesR, checkInsR, holidaysR] = await Promise.all([
     ids.length ? db.from('weight_logs').select('client_id, created_at, weight_kg').in('client_id', ids).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30) : { data: [] },
     // Every session in the last week across all clients, PAGED (the API caps a response at 200 rows): the Today card, the week
     // bars and the day you tap all read from this one list. `date` is the calendar day it was logged for.
-    ids.length ? _fetchAllRows(() => db.from('workout_logs').select('id, client_id, name, date, created_at, workout_log_exercises(id)', { count: 'exact' }).in('client_id', ids).gte('date', weekAgoStr).order('date', { ascending: false }).order('id', { ascending: false })) : { data: [] },
+    ids.length ? _fetchAllRows(() => db.from('workout_logs').select('id, client_id, name, date, created_at, workout_log_exercises(id)', { count: 'exact' }).in('client_id', ids).gte('date', weekAgoStr).order('date', { ascending: false }).order('id', { ascending: false })) : { data: [], error: null },
     // Joined to the coach's OWN clients (clients!inner + the coach_id filter): without a client filter the read rested on RLS alone, and the master account's
     // own personal goals (a client row it owns as a user, coach_id NULL) came back in the COACH dashboard's list too. Not `.in('client_id', ids)` like its two
     // siblings: that list is the first 200 clients (the API's row cap), so a coach past 200 would silently lose goals; the join has no cap, no long URL, and does not
@@ -543,13 +543,31 @@ async function renderDashboard(el) {
     db.from('goals').select('id, title, target_date, client_id, clients!inner(full_name)').eq('clients.coach_id', currentUser.id).eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', in14Str).order('target_date').limit(5),
     // One row per client, computed in the database (scripts/add-coach-client-summary-2026-09-20.sql). PAGED: the API caps every
     // response at 200 rows and that applies to a view too, so a bare read would silently drop the 201st client.
-    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, sessions_7d, last_session_date, last_weigh_in_date, program_name, program_start, program_weeks, next_program_start', { count: 'exact' }).order('full_name').order('client_id')),
+    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, created_at, sessions_7d, last_session_date, last_weigh_in_date, last_check_in_at, program_id, program_name, program_start, program_weeks, next_program_start', { count: 'exact' }).order('full_name').order('client_id')),
     // "Check-ins to review" (2026-10-29): unreviewed, the last 14 days, the coach's OWN clients - joined like the goals read above, for the same
     // two reasons (the master account's personal record has coach_id NULL and must not appear; no 200-client cap). No back-fill: an old check-in
     // nobody reviewed simply ages out of the window rather than being marked reviewed.
     // 50, counted: 25 clients checking in weekly is up to 50 in the window, and a cut list must say so ("+N more"), never drop rows silently.
     db.from('client_check_ins').select('id, client_id, created_at, sleep, energy, stress, soreness, notes, clients!inner(full_name)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).is('reviewed_at', null).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(50),
+    // Holidays (Needs attention, 2026-10-30): a Holiday event dated in the last ATTENTION_RULES.holidayDays, to today, mutes "missed" and "gone quiet" for
+    // that client. Joined to the coach's own clients like the reads above. PAGED: a holiday is one event per day, so 25 clients away for a fortnight
+    // is already past the API's silent 200-row cap.
+    _fetchAllRows(() => db.from('events').select('id, client_id, date, clients!inner(coach_id)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).eq('type', 'holiday').gte('date', _dashAddDays(todayStr, -ATTENTION_RULES.holidayDays)).lte('date', todayStr).order('date').order('id')),
   ])
+
+  // When the summaries could not be read the numbers they feed are UNAVAILABLE, not zero - shown as "—", never as "0 trained".
+  const summariesUnavailable = !!summariesR.error
+  const summary = Object.fromEntries((summariesR.data || []).map(r => [r.client_id, r]))
+
+  // Needs attention, second round: the structure of each DISTINCT plan the active clients are on, read once per plan (not per client), so
+  // "planned this week" comes from the calendar's own date function (_programWorkoutsByDateAll) and can never disagree with a client's calendar.
+  const planIds = summariesUnavailable ? [] : [...new Set((summariesR.data || []).filter(r => r.status === 'active' && r.program_id && r.program_start).map(r => r.program_id))]
+  // And WHEN each of those plans was assigned (Jake, 2026-10-30: "count from assigned day"): a plan assigned on Thursday but dated from Monday must
+  // not flag Monday-to-Wednesday as missed - the client did not have it yet. One row per assignment, the coach's own clients only.
+  const [phasesR, assignedR] = planIds.length ? await Promise.all([
+    _fetchAllRows(() => db.from('program_phases').select('program_id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number)', { count: 'exact' }).in('program_id', planIds).order('program_id').order('order_index').order('id')),
+    _fetchAllRows(() => db.from('client_programs').select('id, client_id, program_id, created_at, clients!inner(coach_id)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).in('program_id', planIds).order('id')),
+  ]) : [{ data: [], error: null }, { data: [], error: null }]
 
   const failed = _failedFetches({
     'your clients': coachClientsErr,
@@ -558,10 +576,9 @@ async function renderDashboard(el) {
     'upcoming goals': goalsR.error,
     'session summaries': summariesR.error,
     'check-ins to review': checkInsR.error,
+    'holidays': holidaysR.error,
+    'training plans': phasesR.error || assignedR.error,
   })
-  // When the summaries could not be read the numbers they feed are UNAVAILABLE, not zero - shown as "—", never as "0 trained".
-  const summariesUnavailable = !!summariesR.error
-  const summary = Object.fromEntries((summariesR.data || []).map(r => [r.client_id, r]))
   // The roster behind every count is the SUMMARY: it is paged, so it is complete. The clients read above is cut at the API's 200
   // rows, so it only scopes the logs / weigh-ins queries and stands in when the summary could not be read.
   const roster = summariesUnavailable
@@ -578,11 +595,35 @@ async function renderDashboard(el) {
   const weekDates = Array.from({ length: 7 }, (_, i) => _dashAddDays(monday, i))
   const dayCounts = weekDates.map(ds => (logsByDate[ds] || []).length)
 
-  // Who has not trained in the last 7 days (the old "At risk"), most overdue first; someone who has never trained leads.
-  const needAttention = summariesUnavailable ? [] : active
-    .filter(c => (Number(summary[c.id]?.sessions_7d) || 0) === 0)
-    .sort((a, b) => (summary[a.id]?.last_session_date || '').localeCompare(summary[b.id]?.last_session_date || ''))
-  const trained = summariesUnavailable ? null : active.length - needAttention.length
+  // "Trained this week": who logged a session in the last 7 days (the view's rolling count). Its own figure - not the attention list below.
+  const notTrained = summariesUnavailable ? [] : active.filter(c => (Number(summary[c.id]?.sessions_7d) || 0) === 0)
+  const trained = summariesUnavailable ? null : active.length - notTrained.length
+
+  // Needs attention (MVP item 3, 2026-10-30): every active client's reasons from _attentionFor (app-core.js), ranked by _attentionRank.
+  // "This week" for missed sessions is the last 7 days up to YESTERDAY - today's session is not missed yet.
+  const winFrom = _dashAddDays(todayStr, -7), winTo = _dashAddDays(todayStr, -1)
+  const phasesByPlan = {}
+  ;(phasesR.data || []).forEach(ph => (phasesByPlan[ph.program_id] ||= []).push(ph))
+  const loggedIn = {}
+  logs.forEach(l => { if (l.date >= winFrom && l.date <= winTo) loggedIn[l.client_id] = (loggedIn[l.client_id] || 0) + 1 })
+  const onHoliday = new Set(holidaysR.error ? [] : (holidaysR.data || []).map(e => e.client_id))
+  // Sessions are read for the clients in `ids` only (the clients read is one request, so past 200 it is cut). For anyone whose sessions were
+  // NOT read - that read failed, or they are past the cut - "missed" is never claimed: logged would be 0 by omission (review, 2026-10-30).
+  const sessionsRead = new Set(coachClientsErr || logsR.error ? [] : ids)
+  // The LOCAL day each current plan was assigned, by client and plan (client + plan is unique). Missed counts from the later of that and the window.
+  const assignedOn = {}
+  ;(assignedR.data || []).forEach(a => { if (a.created_at) assignedOn[a.client_id + '|' + a.program_id] = _ymdLocal(new Date(a.created_at)) })
+  const plannedFor = (s) => {
+    if (phasesR.error || assignedR.error || !sessionsRead.has(s.client_id) || !s.program_id || !s.program_start || !phasesByPlan[s.program_id]) return null
+    const byDate = _programWorkoutsByDateAll([{ start_date: s.program_start, programs: { program_phases: phasesByPlan[s.program_id] } }], {}, { fromStart: true })
+    const assigned = assignedOn[s.client_id + '|' + s.program_id] || ''
+    const from = assigned > winFrom ? assigned : winFrom
+    return Object.entries(byDate).reduce((n, [ds, arr]) => n + (ds >= from && ds <= winTo ? arr.length : 0), 0)
+  }
+  const attention = summariesUnavailable ? [] : _attentionRank(active.map(c => {
+    const s = summary[c.id]
+    return { id: c.id, name: c.full_name, reasons: _attentionFor(s, { todayStr, planned: plannedFor(s), logged: loggedIn[c.id] || 0, onHoliday: onHoliday.has(c.id) }) }
+  }).filter(i => i.reasons.length))
 
   // Programs whose last day falls in the next 14 days. The end is the Sunday of the program's last week (_dashProgramEnd), where the calendar runs out.
   // The view's plan is the CURRENT one by date (2026-10-29); a client whose next block is already booked (next_program_start) is handled, so not listed.
@@ -598,10 +639,9 @@ async function renderDashboard(el) {
   const latestWeights = (weightsR.data || []).filter(w => (seen.has(w.client_id) ? false : seen.add(w.client_id))).slice(0, 3)
   const weighedThisWeek = summariesUnavailable ? null : active.filter(c => (summary[c.id]?.last_weigh_in_date || '') >= weekAgoStr && summary[c.id]?.last_weigh_in_date).length
 
-  const lastTrained = c => (summary[c.id]?.last_session_date ? `Last trained ${_dashFormatDate(summary[c.id].last_session_date)}` : 'No sessions yet')
   // The time it was logged; empty (never "Invalid Date") when the timestamp is missing or unreadable.
   const doneAt = l => { const t = new Date(l.created_at); return l.created_at && !isNaN(t) ? t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '' }
-  const attnBtn = needAttention.length ? _dashAttention(needAttention.length) : ''
+  const attnBtn = attention.length ? _dashAttention(attention.length) : ''
 
   // The Today card for one day: the sessions clients logged that day. Saturated only for today with something logged.
   const heroFor = sel => {
@@ -613,7 +653,7 @@ async function renderDashboard(el) {
         `<div class="dash-hero-meta">Add your first client to see their sessions here.</div><div class="dash-hero-actions">${_dashAddClient()}</div></section>`
     }
     if (!dayLogs.length) {
-      const meta = isToday ? (needAttention.length ? `${_dashPlural(needAttention.length, 'client has', 'clients have')} not trained in 7 days.` : 'Early yet.') : 'Across all clients.'
+      const meta = isToday ? (attention.length ? `${_dashPlural(attention.length, 'client needs', 'clients need')} attention.` : 'Early yet.') : 'Across all clients.'
       return `<section class="dash-hero dash-hero-calm" id="dash-hero" data-kind="none"><div class="dash-hero-eyebrow">${label} · Your clients</div>` +
         `<div class="dash-hero-title">${isToday ? 'Nothing logged yet' : 'No sessions logged'}</div><div class="dash-hero-meta">${meta}</div>` +
         `<div class="dash-hero-actions">${_dashSeeClients()}${isToday ? attnBtn : back}</div></section>`
@@ -639,13 +679,6 @@ async function renderDashboard(el) {
   const tiles = `<div class="dash-two">` +
     `<section class="dash-card dash-tap" id="dash-trained" onclick="navigate('clients')"><div class="dash-ico">Trained this week</div><div class="dash-big">${trained ?? '—'} <small>of ${active.length}</small></div><div class="dash-sub">clients logged a session in the last 7 days</div></section>` +
     `<section class="dash-card" id="dash-ending"><div class="dash-ico">Training plans ending</div><div class="dash-big">${summariesUnavailable ? '—' : ending.length} <small>soon</small></div><div class="dash-sub">in the next 14 days</div></section></div>`
-
-  const attention = needAttention.length
-    ? `<section class="dash-card" id="dash-attn"><div class="dash-card-head"><h2 class="dash-card-title">Needs attention</h2><span class="dash-card-sub">No session in 7 days</span></div>` +
-      needAttention.slice(0, 5).map(c => `<button type="button" class="dash-row dash-row-btn" onclick="openClient('${escapeAttr(c.id)}')"><span class="dash-pip dash-pip-danger"></span><span class="dash-row-main"><b>${escapeHtml(c.full_name)}</b><i>${lastTrained(c)}</i></span></button>`).join('') +
-      (needAttention.length > 5 ? `<p class="dash-sub">+${needAttention.length - 5} more</p>` : '') +
-      `<button type="button" class="dash-link" onclick="navigate('clients')">See all clients</button></section>`
-    : ''
 
   const weighIns = `<section class="dash-card" id="dash-weighins"><div class="dash-card-head"><h2 class="dash-card-title">Weigh-ins</h2>` +
     `<span class="dash-card-sub">${weighedThisWeek === null ? '' : `<b>${weighedThisWeek} of ${active.length}</b> this week`}</span></div>` +
@@ -680,18 +713,43 @@ async function renderDashboard(el) {
           <button type="button" class="dash-icon" aria-label="Build a workout" onclick="navigate('workouts')">${_DASH_ICONS.build}</button>
         </div>
       </header>
+      ${roster.length || summariesUnavailable ? _dashAttentionHtml(attention, { unavailable: summariesUnavailable, partial: !!(coachClientsErr || logsR.error || holidaysR.error || phasesR.error || assignedR.error) }) : ''}
       ${roster.length || checkInsR.error ? _dashCheckInsHtml(checkInsR.data || [], { unavailable: !!checkInsR.error, total: checkInsR.count }) : ''}
       ${heroFor(null)}
       ${weekFor(null)}
       ${tiles}
-      ${attention}
       ${weighIns}
       ${coming}
       ${goalsDue}
     </div>`
   const root = el.querySelector('#dash-root')
   if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor }
-  log.ok('renderDashboard', 'rendered', { clients: roster.length, sessionsThisWeek: logs.length, needAttention: needAttention.length })
+  log.ok('renderDashboard', 'rendered', { clients: roster.length, sessionsThisWeek: logs.length, needAttention: attention.length })
+}
+
+// "Needs attention" on the coach Home (MVP item 3, 2026-10-30): the ranked list from _attentionRank / _attentionFor (app-core.js). Up to 10 rows,
+// then "+N more"; each row is the client (opens their profile), up to two reason chips coloured by severity plus "+N", the worst reason's detail,
+// and its one action where it has one ("Assign next block" opens the client's Training plans tab, openClientProgramsTab). Pure: items in, markup
+// out. `unavailable` = the summaries could not be read, which says so - never "Nobody needs attention" when nobody was looked at. `partial` = a
+// supporting read failed (sessions, holidays or plans), so some reasons could not be checked: the card says so rather than quietly flagging or
+// dropping clients (review, 2026-10-30).
+function _dashAttentionHtml(items, { unavailable = false, partial = false } = {}) {
+  const list = items || []
+  const head = `<div class="dash-card-head"><h2 class="dash-card-title">Needs attention</h2><span class="dash-card-sub">${list.length ? `<b>${list.length}</b> ${list.length === 1 ? 'client' : 'clients'}` : ''}</span></div>`
+  if (unavailable) return `<section class="dash-card" id="dash-attn">${head}<p class="dash-empty">Could not check your clients just now.</p></section>`
+  const note = partial ? '<p class="dash-empty" data-attn-partial>Some reasons could not be checked just now.</p>' : ''
+  if (!list.length) return `<section class="dash-card" id="dash-attn">${head}${note}${partial ? '' : '<p class="dash-empty">Nobody needs attention.</p>'}</section>`
+  const MAX = 10
+  return `<section class="dash-card" id="dash-attn">${head}${note}${list.slice(0, MAX).map(i => {
+    const id = escapeAttr(i.id), top = i.reasons[0], extra = i.reasons.length - 2
+    const chips = i.reasons.slice(0, 2).map(r => `<em class="dash-attn-chip dash-attn-${r.severity}" data-reason="${escapeHtml(r.key)}">${escapeHtml(r.label)}</em>`).join('') +
+      (extra > 0 ? `<em class="dash-attn-chip dash-attn-more">+${extra}</em>` : '')
+    const act = i.reasons.find(r => r.action === 'next-block')
+    return `<div class="dash-attn-row" data-attn-client="${escapeHtml(i.id)}">
+        <button type="button" class="dash-attn-who" onclick="openClient('${id}')"><b>${escapeHtml(i.name || 'Client')}</b><span class="dash-attn-chips">${chips}</span><i>${escapeHtml(top.detail)}</i></button>
+        ${act ? `<button type="button" class="dash-btn dash-btn-ghost dash-attn-act" data-attn-action="next-block" onclick="openClientProgramsTab('${id}')">Assign next block</button>` : ''}
+      </div>`
+  }).join('')}${list.length > MAX ? `<p class="dash-empty" data-attn-more>+${list.length - MAX} more</p>` : ''}</section>`
 }
 
 // "Check-ins to review" on the coach Home (2026-10-29): unreviewed check-ins of the last 14 days, flagged ones first (any red score -
