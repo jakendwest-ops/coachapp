@@ -127,72 +127,149 @@ async function saveClientWeight(clientId) {
 }
 
 // ─── CLIENTS LIST ─────────────────────────────────────────────────────────────
+// The list's toolbar state (MVP item 4, 2026-10-30): kept for the session, so leaving for a client's profile and coming back keeps the
+// search, the status chip and the sort. Defaults: Active clients, ranked like the Home's Needs attention. It belongs to ONE account: a
+// different user signing in on the same tab starts fresh, never with the last coach's search text (a client's name) - review, 2026-10-30.
+const _CLIENT_LIST_DEFAULTS = { q: '', status: 'active', sort: 'attention' }
+let _clientListState = { uid: null, ..._CLIENT_LIST_DEFAULTS }
+let _clientListRows = [], _clientListCtx = { summaryErr: null, todayStr: '' }
+
+// Filters, sorts and counts the rows renderClients draws. Pure. rows: [{ id, full_name, status, last_session_date, reasons }]. state: { q,
+// status: 'active'|'inactive'|'archived'|'all', sort: 'attention'|'name'|'last' }; anything else falls back to the default. Counts are over the
+// whole roster, so a chip says how many it holds whatever is typed in the search. Does not reorder `rows`.
+function _clientListSelect(rows, state) {
+  const all = rows || []
+  const status = ['active', 'inactive', 'archived', 'all'].includes(state?.status) ? state.status : 'active'
+  const sort = ['attention', 'name', 'last'].includes(state?.sort) ? state.sort : 'attention'
+  const q = String(state?.q || '').trim().toLowerCase()
+  const counts = { all: all.length, active: 0, inactive: 0, archived: 0 }
+  all.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++ })
+  const kept = all.filter(r => (status === 'all' || r.status === status) && (!q || String(r.full_name || '').toLowerCase().includes(q)))
+  const byName = (a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''))
+  const ordered = sort === 'attention'
+    ? _attentionRank(kept.map(r => ({ ...r, name: r.full_name }))).map(({ name, ...r }) => r)
+    : sort === 'last'
+      ? [...kept].sort((a, b) => _cmpText(a.last_session_date, b.last_session_date) || byName(a, b))   // never trained ('' sorts first), then the oldest
+      : [...kept].sort(byName)
+  return { rows: ordered, counts, status, sort, q }
+}
+
+// One change to the toolbar: the list redraws from the rows already loaded - no new read, and the search box keeps its focus.
+function _clientListSet(key, value) {
+  _clientListState = { ..._clientListState, [key]: value }
+  _clientListDraw()
+}
+
+function _clientListDraw() {
+  const list = document.getElementById('client-list')
+  const bar = document.getElementById('client-toolbar')
+  if (!list || !bar) return
+  const v = _clientListSelect(_clientListRows, _clientListState)
+  bar.querySelectorAll('[data-status-chip]').forEach(b => {
+    const k = b.getAttribute('data-status-chip')
+    b.setAttribute('aria-pressed', String(k === v.status))
+    const n = b.querySelector('b'); if (n) n.textContent = String(v.counts[k] ?? 0)
+  })
+  list.innerHTML = v.rows.length ? v.rows.map(_clientRowHtml).join('')
+    : `<p class="dash-empty client-none">No ${v.status === 'all' ? '' : v.status + ' '}clients${v.q ? ` match "${escapeHtml(v.q)}"` : ''}.</p>`
+}
+
+function _clientRowHtml(c) {
+  const { summaryErr, todayStr } = _clientListCtx
+  const last = _lastSessionLabel(c.last_session_date, !!summaryErr, todayStr)
+  const top = (c.reasons || [])[0]
+  const id = escapeAttr(c.id)
+  // Every value is escaped, constants included, so a future data-driven severity or label cannot become markup (review, 2026-10-30).
+  return `
+        <div class="list-row" data-client-row="${escapeHtml(c.id)}" onclick="openClient('${id}')">
+          <div class="avatar">${escapeHtml(String(c.full_name || '?').charAt(0).toUpperCase())}</div>
+          <div class="row-info">
+            <div class="row-name">${escapeHtml(c.full_name)}</div>
+            <div class="row-meta">${summaryErr ? '—' : escapeHtml(_planWeekLabel(c, todayStr))}</div>
+          </div>
+          <div class="row-right client-row-right">
+            ${top ? `<em class="dash-attn-chip dash-attn-${escapeHtml(top.severity)}" data-reason="${escapeHtml(top.key)}">${escapeHtml(top.label)}</em>` : ''}
+            ${c.status !== 'active' ? `<span class="badge badge-${escapeHtml(c.status)}">${escapeHtml(c.status)}</span>` : ''}
+            <span class="client-last" style="color:${escapeHtml(last.colour)}">${escapeHtml(last.text)}</span>
+          </div>
+          ${_isOwnerAccount() ? `<button onclick="event.stopPropagation();sudoAsClient('${id}','${escapeAttr(c.full_name)}')" style="font-size:var(--text-sm, 11px);font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:var(--warning, #f59e0b);cursor:pointer;white-space:nowrap">View as</button>` : ''}
+          <svg style="width:15px;height:15px;color:var(--border-strong);flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>`
+}
+
+// "Today / Yesterday / 3d ago / 35d ago", coloured by how long ago. A failed summaries read is "—" (unknown), never "No sessions" - which means
+// the client genuinely has none. Counted in CALENDAR days (_daysBetweenYmd), the same count "Gone quiet" uses - elapsed milliseconds came out a day
+// short the night the clocks go forward (review, 2026-10-30). A date in the future (a typo) reads as today.
+function _lastSessionLabel(d, unavailable, todayStr = _ymdLocal(new Date())) {
+  if (unavailable) return { text: '—', colour: 'var(--text-muted)' }
+  if (!d) return { text: 'No sessions', colour: 'var(--text-muted)' }
+  const days = Math.max(0, _daysBetweenYmd(String(d).slice(0, 10), todayStr) ?? 0)
+  if (days === 0) return { text: 'Today', colour: 'var(--success)' }
+  if (days === 1) return { text: 'Yesterday', colour: 'var(--success)' }
+  if (days <= 7)  return { text: `${days}d ago`, colour: 'var(--warning)' }
+  return { text: `${days}d ago`, colour: 'var(--danger)' }
+}
+
 async function renderClients(el) {
   log.info('renderClients', 'fetching client list')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
+  const todayStr = _ymdLocal(new Date())
+  if (_clientListState.uid !== currentUser.id) { _clientListState = { uid: currentUser.id, ..._CLIENT_LIST_DEFAULTS }; _clientListRows = [] }
 
+  // Both PAGED (2026-10-30): the API caps every response at 200 rows - the roster read used to be one request, so a coach past 200 clients
+  // silently lost the rest of the list.
   const [{ data: clients, error }, { data: summaries, error: summaryErr }] = await Promise.all([
-    db.from('clients').select('*').eq('coach_id', currentUser.id).order('full_name'),
-    // PAGED: the API caps every response at 200 rows, and that applies to a view too.
-    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, last_session_date', { count: 'exact' }).order('full_name').order('client_id'))
+    _fetchAllRows(() => db.from('clients').select('*', { count: 'exact' }).eq('coach_id', currentUser.id).order('full_name').order('id')),
+    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, created_at, sessions_7d, last_session_date, last_weigh_in_date, last_check_in_at, program_id, program_name, program_start, program_weeks, next_program_start', { count: 'exact' }).order('full_name').order('client_id'))
   ])
 
-  if (error) { log.error('renderClients', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  if (error) { log.error('renderClients', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${escapeHtml(error.message)}</div>`; return }
   log.ok('renderClients', `loaded ${clients.length} clients`)
 
-  // Last session date per client — computed in the database (coach_client_summary), so it is right for every client the list
-  // shows, however many sessions the whole roster has logged. It used to come from the newest 200 logs across ALL clients: a
-  // client outside that window read "No sessions" (grey) instead of "35d ago" (red) — exactly the clients a coach needs to
-  // chase — and a FAILED read looked identical. Now a failed read is "—" (unknown), and "No sessions" means the client
-  // genuinely has none. (The roster read above is still one request, so past 200 clients the API cuts the LIST itself —
-  // a separate, named limit; see the ledger row for this change.)
+  // Last session, plan and Needs-attention reasons per client - all computed from coach_client_summary (and, for the reasons, the shared
+  // _attentionForRoster the Home uses, so the list and the Home card rank alike). A failed summary read shows "—" (unknown), never "No
+  // sessions", and gives nobody a reason: an unchecked client is not accused of anything.
   if (summaryErr) log.error('renderClients', 'summary fetch failed', summaryErr)
-  const lastSession = {}
-  ;(summaries || []).forEach(r => { lastSession[r.client_id] = r.last_session_date })
+  const summary = Object.fromEntries((summaries || []).map(r => [r.client_id, r]))
+  // ONE status per client - the clients table's, which the chips and badges use - so a client never shows under Active without being checked.
+  const statusOf = Object.fromEntries(clients.map(c => [c.id, c.status]))
+  const attn = summaryErr || !clients.length ? { byClient: {}, partial: false }
+    : await _attentionForRoster((summaries || []).map(r => ({ ...r, status: statusOf[r.client_id] ?? r.status })), todayStr)
+  _clientListCtx = { summaryErr, todayStr }
+  _clientListRows = clients.map(c => ({ ...(summary[c.id] || {}), id: c.id, full_name: c.full_name, status: c.status, reasons: attn.byClient[c.id] || [] }))
 
-  function lastSessionLabel(clientId) {
-    if (summaryErr) return { text: '—', colour: 'var(--text-muted)' }
-    const d = lastSession[clientId]
-    if (!d) return { text: 'No sessions', colour: 'var(--text-muted)' }
-    const days = Math.floor((Date.now() - new Date(d + 'T00:00:00')) / 86400000)
-    if (days === 0) return { text: 'Today', colour: '#22c55e' }
-    if (days === 1) return { text: 'Yesterday', colour: '#22c55e' }
-    if (days <= 7)  return { text: `${days}d ago`, colour: '#f59e0b' }
-    return { text: `${days}d ago`, colour: '#ef4444' }
-  }
-
+  const st = _clientListState
+  const chip = (k, label) => `<button type="button" class="client-chip" data-status-chip="${k}" aria-pressed="false" onclick="_clientListSet('status','${k}')">${label} <b>0</b></button>`
   el.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Clients</h1>
       <button class="btn-primary" onclick="showAddClientModal()">+ Add client</button>
     </div>
-    <div class="list" id="client-list">
-      ${clients.length === 0 ? `
+    ${clients.length === 0 ? `
+      <div class="list" id="client-list">
         <div class="empty-state">
           <div class="empty-icon">👥</div>
           <div class="empty-title">No clients yet</div>
           <div class="empty-text">Add your first client to start tracking their goals and workouts</div>
           <button class="btn-primary" onclick="showAddClientModal()">+ Add your first client</button>
         </div>
-      ` : clients.map(c => {
-        const { text: lastText, colour: lastColour } = lastSessionLabel(c.id)
-        return `
-        <div class="list-row" onclick="openClient('${c.id}')">
-          <div class="avatar">${c.full_name.charAt(0).toUpperCase()}</div>
-          <div class="row-info">
-            <div class="row-name">${escapeHtml(c.full_name)}</div>
-            <div class="row-meta">${c.email ? escapeHtml(c.email) : 'No email'}</div>
-          </div>
-          <div class="row-right" style="flex-direction:column;align-items:flex-end;gap:4px">
-            <span class="badge badge-${c.status}">${c.status}</span>
-            <span style="font-size:11px;font-weight:600;color:${lastColour}">${lastText}</span>
-          </div>
-          ${_isOwnerAccount() ? `<button onclick="event.stopPropagation();sudoAsClient('${c.id}','${escapeAttr(c.full_name)}')" style="font-size:var(--text-sm, 11px);font-weight:700;padding:4px 8px;border-radius:6px;border:1px solid #f59e0b;background:transparent;color:var(--warning, #f59e0b);cursor:pointer;white-space:nowrap">View as</button>` : ''}
-          <svg style="width:15px;height:15px;color:var(--border-strong);flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>`
-      }).join('')}
-    </div>
+      </div>` : `
+      <div class="client-toolbar" id="client-toolbar">
+        <input type="search" class="field-input client-search" id="client-search" placeholder="Search clients" aria-label="Search clients" value="${escapeHtml(st.q || '')}" oninput="_clientListSet('q', this.value)">
+        <div class="client-chips" role="group" aria-label="Status">${chip('active', 'Active')}${chip('inactive', 'Inactive')}${chip('archived', 'Archived')}${chip('all', 'All')}</div>
+        <label class="client-sort">Sort
+          <select class="field-input" id="client-sort" onchange="_clientListSet('sort', this.value)">
+            <option value="attention"${st.sort === 'attention' ? ' selected' : ''}>Needs attention</option>
+            <option value="name"${st.sort === 'name' ? ' selected' : ''}>Name</option>
+            <option value="last"${st.sort === 'last' ? ' selected' : ''}>Last session</option>
+          </select>
+        </label>
+        ${summaryErr ? '<p class="dash-empty" data-attn-partial>Could not check who needs attention just now - listed by name.</p>'
+          : attn.partial ? '<p class="dash-empty" data-attn-partial>Some reasons could not be checked just now.</p>' : ''}
+      </div>
+      <div class="list" id="client-list"></div>`}
   `
+  if (clients.length) _clientListDraw()
 }
 
 // ─── ADD CLIENT MODAL ─────────────────────────────────────────────────────────

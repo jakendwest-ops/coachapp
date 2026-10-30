@@ -629,6 +629,23 @@ function _attentionFor(s, { todayStr, planned = null, logged = 0, onHoliday = fa
   return out.sort((a, b) => _ATTENTION_WEIGHT[b.severity] - _ATTENTION_WEIGHT[a.severity])
 }
 
+// The plan and week a client is on, for one line of text (client list, MVP item 4, 2026-10-30): "Hypertrophy · Wk 3/12", "Block A · Ended 26d
+// ago", "Block B · Starts Mon 9 Nov", "No plan". `s` is a coach_client_summary row (the CURRENT plan by date). Weeks are Monday to Sunday,
+// as the calendar and the dashboard's plan tile count them (_programWeeksElapsed, _dashProgramEnd). Pure.
+function _planWeekLabel(s, todayStr) {
+  if (!s?.program_name && !s?.program_start) return 'No plan'
+  const name = s.program_name || 'Training plan'
+  const weeks = Number(s.program_weeks)
+  const start = s.program_start ? String(s.program_start).slice(0, 10) : null
+  if (start && start > todayStr) return `${name} · Starts ${_dashFormatDate(start)}`
+  if (!start || !(weeks > 0)) return name
+  const end = _dashProgramEnd(start, weeks)
+  // Ended, and the next block already booked: say so, as the Needs-attention rules do by not flagging it (review, 2026-10-30).
+  const next = s.next_program_start ? ` · next ${_dashFormatDate(String(s.next_program_start).slice(0, 10))}` : ''
+  if (end && end < todayStr) return `${name} · Ended ${_daysBetweenYmd(end, todayStr)}d ago${next}`
+  return `${name} · Wk ${Math.min(_programWeeksElapsed(start, todayStr) + 1, weeks)}/${weeks}`
+}
+
 // The roster order: the worst reason first, then the most reasons, then name. Items are { id, name, reasons }. Does not reorder its input.
 function _attentionRank(items) {
   const top = (i) => Math.max(0, ...(i.reasons || []).map(r => _ATTENTION_WEIGHT[r.severity] || 0))

@@ -531,7 +531,7 @@ async function renderDashboard(el) {
   const ids = (coachClients || []).map(c => c.id)
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 864e5).toISOString()
-  const [weightsR, logsR, goalsR, summariesR, checkInsR, holidaysR] = await Promise.all([
+  const [weightsR, logsR, goalsR, summariesR, checkInsR] = await Promise.all([
     ids.length ? db.from('weight_logs').select('client_id, created_at, weight_kg').in('client_id', ids).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(30) : { data: [] },
     // Every session in the last week across all clients, PAGED (the API caps a response at 200 rows): the Today card, the week
     // bars and the day you tap all read from this one list. `date` is the calendar day it was logged for.
@@ -549,35 +549,26 @@ async function renderDashboard(el) {
     // nobody reviewed simply ages out of the window rather than being marked reviewed.
     // 50, counted: 25 clients checking in weekly is up to 50 in the window, and a cut list must say so ("+N more"), never drop rows silently.
     db.from('client_check_ins').select('id, client_id, created_at, sleep, energy, stress, soreness, notes, clients!inner(full_name)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).is('reviewed_at', null).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(50),
-    // Holidays (Needs attention, 2026-10-30): a Holiday event dated in the last ATTENTION_RULES.holidayDays, to today, mutes "missed" and "gone quiet" for
-    // that client. Joined to the coach's own clients like the reads above. PAGED: a holiday is one event per day, so 25 clients away for a fortnight
-    // is already past the API's silent 200-row cap.
-    _fetchAllRows(() => db.from('events').select('id, client_id, date, clients!inner(coach_id)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).eq('type', 'holiday').gte('date', _dashAddDays(todayStr, -ATTENTION_RULES.holidayDays)).lte('date', todayStr).order('date').order('id')),
   ])
 
   // When the summaries could not be read the numbers they feed are UNAVAILABLE, not zero - shown as "—", never as "0 trained".
   const summariesUnavailable = !!summariesR.error
   const summary = Object.fromEntries((summariesR.data || []).map(r => [r.client_id, r]))
 
-  // Needs attention, second round: the structure of each DISTINCT plan the active clients are on, read once per plan (not per client), so
-  // "planned this week" comes from the calendar's own date function (_programWorkoutsByDateAll) and can never disagree with a client's calendar.
-  const planIds = summariesUnavailable ? [] : [...new Set((summariesR.data || []).filter(r => r.status === 'active' && r.program_id && r.program_start).map(r => r.program_id))]
-  // And WHEN each of those plans was assigned (Jake, 2026-10-30: "count from assigned day"): a plan assigned on Thursday but dated from Monday must
-  // not flag Monday-to-Wednesday as missed - the client did not have it yet. One row per assignment, the coach's own clients only.
-  const [phasesR, assignedR] = planIds.length ? await Promise.all([
-    _fetchAllRows(() => db.from('program_phases').select('program_id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number)', { count: 'exact' }).in('program_id', planIds).order('program_id').order('order_index').order('id')),
-    _fetchAllRows(() => db.from('client_programs').select('id, client_id, program_id, created_at, clients!inner(coach_id)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).in('program_id', planIds).order('id')),
-  ]) : [{ data: [], error: null }, { data: [], error: null }]
+  // A log with no exercises is an abandoned start, not a session (D3, 2026-09-07).
+  const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
+  // Needs attention (MVP item 3): the shared roster read (_attentionForRoster), the same one the client list uses.
+  const attn = summariesUnavailable ? { byClient: {}, failed: {}, partial: false } : await _attentionForRoster(summariesR.data || [], todayStr)
+  const { 'recent sessions': attnSessionsErr, ...attnFailed } = attn.failed
 
   const failed = _failedFetches({
     'your clients': coachClientsErr,
     'recent weigh-ins': weightsR.error,
-    'recent sessions': logsR.error,
+    'recent sessions': logsR.error || attnSessionsErr,
     'upcoming goals': goalsR.error,
     'session summaries': summariesR.error,
     'check-ins to review': checkInsR.error,
-    'holidays': holidaysR.error,
-    'training plans': phasesR.error || assignedR.error,
+    ...attnFailed,
   })
   // The roster behind every count is the SUMMARY: it is paged, so it is complete. The clients read above is cut at the API's 200
   // rows, so it only scopes the logs / weigh-ins queries and stands in when the summary could not be read.
@@ -586,8 +577,6 @@ async function renderDashboard(el) {
     : (summariesR.data || []).map(r => ({ id: r.client_id, full_name: r.full_name, status: r.status }))
   const active = roster.filter(c => c.status === 'active')
   const nameOf = Object.fromEntries(roster.map(c => [c.id, c.full_name]))
-  // A log with no exercises is an abandoned start, not a session (D3, 2026-09-07).
-  const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
   const logsByDate = {}
   logs.forEach(l => (logsByDate[l.date] ||= []).push(l))
 
@@ -599,31 +588,8 @@ async function renderDashboard(el) {
   const notTrained = summariesUnavailable ? [] : active.filter(c => (Number(summary[c.id]?.sessions_7d) || 0) === 0)
   const trained = summariesUnavailable ? null : active.length - notTrained.length
 
-  // Needs attention (MVP item 3, 2026-10-30): every active client's reasons from _attentionFor (app-core.js), ranked by _attentionRank.
-  // "This week" for missed sessions is the last 7 days up to YESTERDAY - today's session is not missed yet.
-  const winFrom = _dashAddDays(todayStr, -7), winTo = _dashAddDays(todayStr, -1)
-  const phasesByPlan = {}
-  ;(phasesR.data || []).forEach(ph => (phasesByPlan[ph.program_id] ||= []).push(ph))
-  const loggedIn = {}
-  logs.forEach(l => { if (l.date >= winFrom && l.date <= winTo) loggedIn[l.client_id] = (loggedIn[l.client_id] || 0) + 1 })
-  const onHoliday = new Set(holidaysR.error ? [] : (holidaysR.data || []).map(e => e.client_id))
-  // Sessions are read for the clients in `ids` only (the clients read is one request, so past 200 it is cut). For anyone whose sessions were
-  // NOT read - that read failed, or they are past the cut - "missed" is never claimed: logged would be 0 by omission (review, 2026-10-30).
-  const sessionsRead = new Set(coachClientsErr || logsR.error ? [] : ids)
-  // The LOCAL day each current plan was assigned, by client and plan (client + plan is unique). Missed counts from the later of that and the window.
-  const assignedOn = {}
-  ;(assignedR.data || []).forEach(a => { if (a.created_at) assignedOn[a.client_id + '|' + a.program_id] = _ymdLocal(new Date(a.created_at)) })
-  const plannedFor = (s) => {
-    if (phasesR.error || assignedR.error || !sessionsRead.has(s.client_id) || !s.program_id || !s.program_start || !phasesByPlan[s.program_id]) return null
-    const byDate = _programWorkoutsByDateAll([{ start_date: s.program_start, programs: { program_phases: phasesByPlan[s.program_id] } }], {}, { fromStart: true })
-    const assigned = assignedOn[s.client_id + '|' + s.program_id] || ''
-    const from = assigned > winFrom ? assigned : winFrom
-    return Object.entries(byDate).reduce((n, [ds, arr]) => n + (ds >= from && ds <= winTo ? arr.length : 0), 0)
-  }
-  const attention = summariesUnavailable ? [] : _attentionRank(active.map(c => {
-    const s = summary[c.id]
-    return { id: c.id, name: c.full_name, reasons: _attentionFor(s, { todayStr, planned: plannedFor(s), logged: loggedIn[c.id] || 0, onHoliday: onHoliday.has(c.id) }) }
-  }).filter(i => i.reasons.length))
+  // Needs attention (MVP item 3, 2026-10-30): every active client's reasons (_attentionForRoster above), ranked by _attentionRank (app-core.js).
+  const attention = summariesUnavailable ? [] : _attentionRank(active.map(c => ({ id: c.id, name: c.full_name, reasons: attn.byClient[c.id] || [] })).filter(i => i.reasons.length))
 
   // Programs whose last day falls in the next 14 days. The end is the Sunday of the program's last week (_dashProgramEnd), where the calendar runs out.
   // The view's plan is the CURRENT one by date (2026-10-29); a client whose next block is already booked (next_program_start) is handled, so not listed.
@@ -713,7 +679,7 @@ async function renderDashboard(el) {
           <button type="button" class="dash-icon" aria-label="Build a workout" onclick="navigate('workouts')">${_DASH_ICONS.build}</button>
         </div>
       </header>
-      ${roster.length || summariesUnavailable ? _dashAttentionHtml(attention, { unavailable: summariesUnavailable, partial: !!(coachClientsErr || logsR.error || holidaysR.error || phasesR.error || assignedR.error) }) : ''}
+      ${roster.length || summariesUnavailable ? _dashAttentionHtml(attention, { unavailable: summariesUnavailable, partial: attn.partial }) : ''}
       ${roster.length || checkInsR.error ? _dashCheckInsHtml(checkInsR.data || [], { unavailable: !!checkInsR.error, total: checkInsR.count }) : ''}
       ${heroFor(null)}
       ${weekFor(null)}
@@ -725,6 +691,47 @@ async function renderDashboard(el) {
   const root = el.querySelector('#dash-root')
   if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor }
   log.ok('renderDashboard', 'rendered', { clients: roster.length, sessionsThisWeek: logs.length, needAttention: attention.length })
+}
+
+// Every ACTIVE client's Needs-attention reasons, for any screen that ranks clients - the coach Home and the client list (MVP item 4,
+// 2026-10-30) - so the two can never disagree. `summaryRows` are coach_client_summary rows (the caller has them already). It reads, in one
+// round: Holiday events (mute the training reasons), the structure of each DISTINCT plan once (so "planned" comes from the calendar's own
+// _programWorkoutsByDateAll), when each plan was assigned (missed counts from that day - Jake, 2026-10-30), and the last 7 days of sessions.
+// All joined to the coach's own clients and paged - the SAME reads for every caller, so the Home and the list cannot disagree (the Home used to
+// pass its own week read, which is cut at 200 clients - review, 2026-10-30). Returns { byClient: { id: reasons[] }, failed: { label: error },
+// partial }; `partial` = a read failed, so some reasons could not be checked. "missed" is never claimed when the sessions could not be read.
+async function _attentionForRoster(summaryRows, todayStr) {
+  const active = (summaryRows || []).filter(r => r.status === 'active')
+  const winFrom = _dashAddDays(todayStr, -7), winTo = _dashAddDays(todayStr, -1)
+  const planIds = [...new Set(active.filter(r => r.program_id && r.program_start).map(r => r.program_id))]
+  const EMPTY = { data: [], error: null }
+  const [holidaysR, phasesR, assignedR, logsR] = await Promise.all([
+    _fetchAllRows(() => db.from('events').select('id, client_id, date, clients!inner(coach_id)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).eq('type', 'holiday').gte('date', _dashAddDays(todayStr, -ATTENTION_RULES.holidayDays)).lte('date', todayStr).order('date').order('id')),
+    planIds.length ? _fetchAllRows(() => db.from('program_phases').select('program_id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number)', { count: 'exact' }).in('program_id', planIds).order('program_id').order('order_index').order('id')) : EMPTY,
+    planIds.length ? _fetchAllRows(() => db.from('client_programs').select('id, client_id, program_id, created_at, clients!inner(coach_id)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).in('program_id', planIds).order('id')) : EMPTY,
+    _fetchAllRows(() => db.from('workout_logs').select('id, client_id, date, workout_log_exercises(id), clients!inner(coach_id)', { count: 'exact' }).eq('clients.coach_id', currentUser.id).gte('date', winFrom).lte('date', winTo).order('date').order('id')),
+  ])
+  // A log with no exercises is an abandoned start, not a session (D3, 2026-09-07).
+  const sessions = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
+  const sessionsRead = new Set(logsR.error ? [] : active.map(r => r.client_id))
+  const loggedIn = {}
+  sessions.forEach(l => { if (l.date >= winFrom && l.date <= winTo) loggedIn[l.client_id] = (loggedIn[l.client_id] || 0) + 1 })
+  const onHoliday = new Set(holidaysR.error ? [] : (holidaysR.data || []).map(e => e.client_id))
+  const phasesByPlan = {}
+  ;(phasesR.data || []).forEach(ph => (phasesByPlan[ph.program_id] ||= []).push(ph))
+  // The LOCAL day each current plan was assigned, by client and plan (client + plan is unique). Missed counts from the later of that and the window.
+  const assignedOn = {}
+  ;(assignedR.data || []).forEach(a => { if (a.created_at) assignedOn[a.client_id + '|' + a.program_id] = _ymdLocal(new Date(a.created_at)) })
+  const plannedFor = (s) => {
+    if (phasesR.error || assignedR.error || !sessionsRead.has(s.client_id) || !s.program_id || !s.program_start || !phasesByPlan[s.program_id]) return null
+    const byDate = _programWorkoutsByDateAll([{ start_date: s.program_start, programs: { program_phases: phasesByPlan[s.program_id] } }], {}, { fromStart: true })
+    const assigned = assignedOn[s.client_id + '|' + s.program_id] || ''
+    const from = assigned > winFrom ? assigned : winFrom
+    return Object.entries(byDate).reduce((n, [ds, arr]) => n + (ds >= from && ds <= winTo ? arr.length : 0), 0)
+  }
+  const byClient = Object.fromEntries(active.map(s => [s.client_id, _attentionFor(s, { todayStr, planned: plannedFor(s), logged: loggedIn[s.client_id] || 0, onHoliday: onHoliday.has(s.client_id) })]))
+  const failed = { 'holidays': holidaysR.error, 'training plans': phasesR.error || assignedR.error, 'recent sessions': logsR.error }
+  return { byClient, failed, partial: Object.values(failed).some(Boolean) }
 }
 
 // "Needs attention" on the coach Home (MVP item 3, 2026-10-30): the ranked list from _attentionRank / _attentionFor (app-core.js). Up to 10 rows,

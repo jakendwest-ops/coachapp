@@ -74,7 +74,9 @@ test.describe('the coach dashboard and the client list read the per-client summa
   })
 
   // Renders the client list and reads each row's name and last-session label (text and painted colour).
-  const clientList = (page, tables) => withApi(page, tables, async () => {
+  // events / workout_logs / program_phases / client_programs default to empty: since 2026-10-30 the list ranks by Needs attention through the
+  // shared _attentionForRoster, which these tests do not exercise (client-list-2026-10-30 does).
+  const clientList = (page, tables) => withApi(page, { events: [], workout_logs: [], program_phases: [], client_programs: [], ...tables }, async () => {
     const r = await page.evaluate(async () => {
       const el = document.createElement('div'); document.body.appendChild(el)
       await renderClients(el)
@@ -214,7 +216,9 @@ test.describe('the coach dashboard and the client list read the per-client summa
     expect.soft(r.rows[nm(0)]?.text, 'the client last seen 35 days ago').toBe('35d ago')
     expect.soft(isRed(r.rows[nm(0)]?.colour || ''), 'in red — a client to chase').toBe(true)
     expect.soft(r.rows[nm(1)]?.text, 'and a client seen yesterday still reads Yesterday').toBe('Yesterday')
-    expect(r.calls.filter(c => c.table === 'workout_logs'), 'the list no longer reads a slice of the session logs at all').toEqual([])
+    // Since 2026-10-30 the list reads ONE bounded window of sessions for its Needs-attention sort (the last 7 days, dated both ends). What must
+    // never come back is an open-ended slice of the logs standing in for "last session".
+    expect(r.calls.filter(c => c.table === 'workout_logs' && !(c.desc.includes('gte(date)') && c.desc.includes('lte(date)'))), 'the list reads no open-ended slice of the session logs').toEqual([])
   })
 
   test('LIST: a client whose summary row sits past the first 200 still shows its true last session', async ({ page }) => {

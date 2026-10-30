@@ -1420,6 +1420,18 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .dash-attn-medium { color: var(--text-accent); border-color: var(--accent); }
 .dash-attn-act { min-height: 44px; flex-shrink: 0; font-size: var(--text-base); }
 
+/* Client list toolbar and rows (MVP item 4, 2026-10-30). Tokens only; every control >= 44px. */
+.client-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.client-search { flex: 1 1 180px; min-height: 44px; }
+.client-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.client-chip { min-height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface); color: var(--text-muted); font-family: inherit; font-size: var(--text-base); font-weight: 600; cursor: pointer; }
+.client-chip b { font-weight: 700; margin-left: 2px; }
+.client-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.client-sort { display: flex; align-items: center; gap: 6px; font-size: var(--text-base); color: var(--text-muted); }
+.client-sort select { min-height: 44px; width: auto; }
+.client-row-right { flex-direction: column; align-items: flex-end; gap: 4px; }
+.client-last { font-size: var(--text-sm); font-weight: 600; }
+
 /* The week: seven tappable days (client, solo) or seven bars (coach). */
 .dash-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; }
 .dash-day { border: 0; background: none; padding: 4px 0; cursor: pointer; color: inherit; border-radius: var(--radius); font-family: inherit; }
