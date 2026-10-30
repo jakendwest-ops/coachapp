@@ -55,8 +55,9 @@ test.describe('the coach dashboard and the client list read the per-client summa
   const myId = (page) => page.evaluate(() => currentUser.id)
 
   // Renders the coach dashboard and reads what a coach reads off it.
-  // client_check_ins defaults to empty: the coach Home reads "Check-ins to review" since 2026-10-29, which these tests do not exercise.
-  const dashboard = (page, tables) => withApi(page, { client_check_ins: [], ...tables }, async () => {
+  // client_check_ins / events / program_phases default to empty: the coach Home reads "Check-ins to review" (2026-10-29) and Needs attention's holidays
+  // and plan structures (2026-10-30), which these tests do not exercise (needs-attention-2026-10-30 does).
+  const dashboard = (page, tables) => withApi(page, { client_check_ins: [], events: [], program_phases: [], ...tables }, async () => {
     const r = await page.evaluate(async () => {
       const el = document.createElement('div'); document.body.appendChild(el)
       await renderDashboard(el)
@@ -64,7 +65,7 @@ test.describe('the coach dashboard and the client list read the per-client summa
       return {
         text: el.textContent,
         trained: t('#dash-trained'), ending: t('#dash-ending'), weekSub: t('#dash-week .dash-card-sub'), attention: t('#dash-attn'),
-        attentionNames: [...el.querySelectorAll('#dash-attn .dash-row-main b')].map(b => b.textContent),
+        attentionNames: [...el.querySelectorAll('#dash-attn .dash-attn-who b')].map(b => b.textContent),
         attentionButton: [...el.querySelectorAll('#dash-hero .dash-btn')].map(b => b.textContent.trim()).find(x => /need attention/.test(x)) || null,
       }
     })
@@ -96,19 +97,20 @@ test.describe('the coach dashboard and the client list read the per-client summa
   // ── the dashboard ──────────────────────────────────────────────────────────────────────────────────�
   test('DASHBOARD: "Trained this week" is what the summaries say, not what fits in a slice of the logs', async ({ page }) => {
     const me = await myId(page)
-    const N = 40
-    // Client i trained (i % 4) times this week (0..3): 30 of the 40 trained at least once, 10 did not. The logs table holds 300 rows,
-    // all client 0's and none with an exercise in it, so a count built from "the newest logs" would see ONE client (or none).
+    const N = 48
+    // Client i trained (i % 4) times this week (0..3): 36 of the 48 trained at least once (last session yesterday), 12 did not (last session 12 days
+    // ago, so Needs attention calls them gone quiet). The logs table holds 300 rows, all client 0's and none with an exercise in it, so a count built
+    // from "the newest logs" would see ONE client (or none).
     const r = await dashboard(page, {
       clients: many(N, (i) => roster(me, i)),
-      coach_client_summary: many(N, (i) => summary(i, { sessions_7d: i % 4 })),
+      coach_client_summary: many(N, (i) => summary(i, { sessions_7d: i % 4, last_session_date: daysAgo(i % 4 ? 1 : 12) })),
       workout_logs: many(300, () => ({ client_id: pid(0), date: daysAgo(0), created_at: NOW.toISOString() })),
       weight_logs: [], goals: [],
     })
-    expect.soft(r.trained, 'the tile is the summaries\' count: 30 of 40 clients trained').toContain('30 of 40')
-    expect.soft(r.attentionButton, 'the 10 who did not are the ones to chase').toBe('10 need attention')
-    expect.soft(r.attentionNames.length, 'the list shows the first five...').toBe(5)
-    expect.soft(r.attention, '...and says how many more').toContain('+5 more')
+    expect.soft(r.trained, 'the tile is the summaries\' count: 36 of 48 clients trained').toContain('36 of 48')
+    expect.soft(r.attentionButton, 'the 12 who did not are the ones to chase').toBe('12 need attention')
+    expect.soft(r.attentionNames.length, 'the list shows the first ten...').toBe(10)
+    expect.soft(r.attention, '...and says how many more').toContain('+2 more')
     expect(r.weekSub, 'and the week\'s bars come from real sessions only (the 300 empty starts are not sessions)').toBe('0 sessions logged')
   })
 
@@ -116,7 +118,7 @@ test.describe('the coach dashboard and the client list read the per-client summa
     const me = await myId(page)
     const r = await dashboard(page, {
       clients: [roster(me, 0), roster(me, 1), roster(me, 2, { status: 'inactive' })],
-      coach_client_summary: [summary(0, { sessions_7d: 0 }), summary(1, { sessions_7d: 2 }), summary(2, { sessions_7d: 3, status: 'inactive' })],
+      coach_client_summary: [summary(0, { sessions_7d: 0, last_session_date: daysAgo(12) }), summary(1, { sessions_7d: 2, last_session_date: daysAgo(1) }), summary(2, { sessions_7d: 3, status: 'inactive', last_session_date: daysAgo(30) })],
       workout_logs: [], weight_logs: [], goals: [],
     })
     expect.soft(r.trained, 'two active clients, one of them trained - the inactive client is neither counted nor in the total').toContain('1 of 2')
@@ -133,7 +135,9 @@ test.describe('the coach dashboard and the client list read the per-client summa
     expect.soft(r.text, 'the failure banner names it').toContain('session summaries')
     expect.soft(r.trained, 'the tile does not claim zero trained').toContain('—')
     expect.soft(r.ending, 'nor that no program is ending').toContain('—')
-    expect.soft(r.attention, 'and nobody is accused of not training').toBeNull()
+    // Since 2026-10-30 the Needs attention card says it could not check, rather than vanishing - and still names nobody.
+    expect.soft(r.attention, 'nobody is accused: the card says it could not check').toContain('Could not check')
+    expect.soft(r.attentionNames, 'and lists no client').toEqual([])
     expect(r.text, 'nor is the roster called empty').not.toContain('No clients yet')
   })
 

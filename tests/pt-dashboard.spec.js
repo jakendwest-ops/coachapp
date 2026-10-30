@@ -8,7 +8,7 @@ test.describe('PT Dashboard', () => {
 
   // REWORKED 2026-10-03 (Jake: the dashboard is a landing page and hub). The "Total clients / Sessions this week / Active goals" strip
   // and the per-client adherence list with its At risk / Active filter are replaced by the Today card (who logged today), the week as
-  // bars, a "Trained this week" tile and a "Needs attention" list of the clients with no session in 7 days
+  // bars, a "Trained this week" tile and a ranked "Needs attention" list (since 2026-10-30: missed planned sessions, gone quiet, plan ending, overdue check-in / weigh-in)
   // (tests/dashboard-rework-2026-10-03.spec.js drives the numbers; this file keeps the coach's first-screen smoke checks).
   test('shows the Today card, the week and the two number tiles', async ({ page }) => {
     await expect(page.locator('#dash-hero')).toBeVisible()

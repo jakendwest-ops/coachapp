@@ -66,7 +66,8 @@ function ownTables(cid, uid, { program = true, logs, goals, events, weights, che
 // ── data for the coach page ─────────────────────────────────────────────────────────────────────────────────────────────────
 const PEOPLE = [['c1', 'Priya M'], ['c2', 'Sam K'], ['c3', 'Dan R'], ['c4', 'Lena W'], ['c5', 'Tom B'], ['c6', 'Ana C']]
 const summaryRow = (id, name, over = {}) => ({
-  client_id: id, full_name: name, status: 'active', sessions_7d: 0, last_session_date: null, last_weigh_in_date: null,
+  // created_at: the real view always carries it, and Needs attention (2026-10-30) reads it for "No sessions yet".
+  client_id: id, full_name: name, status: 'active', created_at: '2026-01-05T09:00:00Z', sessions_7d: 0, last_session_date: null, last_weigh_in_date: null,
   program_name: null, program_start: null, program_weeks: null, ...over,
 })
 function coachTables(uid, { quietToday = false } = {}) {
@@ -90,6 +91,7 @@ function coachTables(uid, { quietToday = false } = {}) {
     clients: PEOPLE.map(p => ({ id: p[0], full_name: p[1], status: 'active', coach_id: uid })),
     coach_client_summary: summaries,
     client_check_ins: [],   // the coach Home's "Check-ins to review" read (2026-10-29); its own spec is checkin-loop-2026-10-29
+    events: [], program_phases: [],   // Needs attention's holidays and plan structures (2026-10-30); its own spec is needs-attention-2026-10-30
     workout_logs: logs,
     weight_logs: [['c1', 62.4, -1], ['c2', 91.2, 0], ['c4', 70.8, -2], ['c6', 58.1, -3]].map(([c, kg, d]) => ({ client_id: c, weight_kg: kg, created_at: new Date(NOW.getTime() + d * 86400000).toISOString() })),
     goals: [
@@ -539,7 +541,7 @@ test.describe('the coach dashboard', () => {
       hero: { kind: hero.dataset.kind, calm: hero.classList.contains('dash-hero-calm'), eyebrow: t('#dash-hero .dash-hero-eyebrow'), title: t('#dash-hero .dash-hero-title'), buttons: [...hero.querySelectorAll('.dash-btn')].map(b => b.textContent.trim()), rows: [...hero.querySelectorAll('.dash-hrow')].map(r => r.textContent.replace(/\s+/g, ' ').trim()) },
       weekSub: t('#dash-week .dash-card-sub'),
       bars: [...document.querySelectorAll('#dash-week .dash-bar-col')].map(b => ({ n: b.querySelector('.dash-bn').textContent, day: b.querySelector('.dash-dn').textContent, pressed: b.getAttribute('aria-pressed') })),
-      trained: t('#dash-trained'), ending: t('#dash-ending'), attention: t('#dash-attn'), attentionNames: [...document.querySelectorAll('#dash-attn .dash-row-main b')].map(b => b.textContent),
+      trained: t('#dash-trained'), ending: t('#dash-ending'), attention: t('#dash-attn'), attentionNames: [...document.querySelectorAll('#dash-attn .dash-attn-who b')].map(b => b.textContent),
       weighins: t('#dash-weighins'), coming: t('#dash-coming'), goals: t('#dash-goals'), banner: t('.dash-banner'),
     }
   })
@@ -554,7 +556,7 @@ test.describe('the coach dashboard', () => {
     expect(r.hero.rows, 'each row: who, which session, when').toHaveLength(2)
     expect(r.hero.rows.join(' ')).toMatch(/Ana C\s*Lower A/)
     expect(r.hero.rows.join(' ')).toMatch(/Priya M\s*Upper B/)
-    expect(r.hero.buttons).toEqual(['See clients', '2 need attention'])
+    expect(r.hero.buttons).toEqual(['See clients', '3 need attention'])
 
     expect(r.weekSub, "this week's bars: 4+3+5+4+3+2+0 - last Sunday's session is not in them").toBe('21 sessions logged')
     expect(r.bars.map(b => b.n)).toEqual(['4', '3', '5', '4', '3', '2', '–'])
@@ -563,9 +565,12 @@ test.describe('the coach dashboard', () => {
 
     expect(r.trained, '4 of 6 clients logged a session in the last 7 days').toContain('4 of 6')
     expect(r.ending, 'Sam K ends tomorrow, Priya M in 8 days').toContain('2 soon')
-    expect(r.attentionNames, 'someone who never trained comes first, then the longest gap').toEqual(['Tom B', 'Dan R'])
+    // Needs attention (2026-10-30): Dan R has gone quiet (12 days), Sam K's plan ends tomorrow with nothing booked, Tom B has never trained - all
+    // medium with one reason each, so by name. Lena (last trained 3 days ago) and Ana are fine; Priya's plan ends in 8 days, outside the 7.
+    expect(r.attentionNames).toEqual(['Dan R', 'Sam K', 'Tom B'])
     expect(r.attention).toContain('No sessions yet')
-    expect(r.attention).toContain('Last trained Mon 21 Sept')
+    expect(r.attention).toContain('No session for 12 days')
+    expect(r.attention).toContain('Hypertrophy block ends in 1 day')
     expect(r.weighins).toContain('4 of 6 this week')
     expect(r.weighins).toContain('Sam K')
     expect(r.weighins).toContain('91.2 kg')
@@ -595,7 +600,7 @@ test.describe('the coach dashboard', () => {
     await withData(page, { quietToday: true })
     const r = await coachRead(page)
     expect(r.hero).toMatchObject({ kind: 'none', calm: true, eyebrow: 'Today · Your clients', title: 'Nothing logged yet' })
-    expect(r.hero.buttons).toEqual(['See clients', '2 need attention'])
+    expect(r.hero.buttons).toEqual(['See clients', '3 need attention'])
     expect(r.bars.map(b => b.n).at(-2), "Saturday has no sessions yet").toBe('–')
   })
 
@@ -626,7 +631,8 @@ test.describe('the coach dashboard', () => {
     expect(await page.locator('#dash-root').innerText(), 'the shared failure notice names the read that failed').toContain("Couldn't load: session summaries")
     expect(r.trained, 'the tile does not claim 0 trained').toContain('—')
     expect(r.ending).toContain('—')
-    expect(r.attention, 'and does not accuse anyone of not training').toBeNull()
+    expect(r.attention, 'and does not accuse anyone - it says it could not check').toContain('Could not check')
+    expect(r.attention, 'nor claim nobody needs attention').not.toContain('Nobody')
     await expect(page.locator('#dash-root')).not.toContainText('No active clients')
   })
 
@@ -637,14 +643,14 @@ test.describe('the coach dashboard', () => {
     await render(page, 'renderDashboard')
     const r = await coachRead(page)
     expect(r.trained, '250 clients x 1 session, not the 200 that fit in one response').toContain('250 of 250')
-    expect(r.attention, 'all 250 trained: nobody needs a nudge').toBeNull()
+    expect(r.attention, 'all 250 trained today: nobody needs attention').toContain('Nobody needs attention')
     expect((await cappedApiCalls(page)).filter(c => c.table === 'coach_client_summary').length, 'read in pages').toBeGreaterThan(1)
   })
 
   test('only ACTIVE clients are counted or chased; an inactive client is neither', async ({ page }) => {
     const uid = await page.evaluate(() => currentUser.id)
     const t = coachTables(uid)
-    t.coach_client_summary = [summaryRow('c1', 'Priya M', { sessions_7d: 2, last_session_date: TODAY }), summaryRow('c2', 'Sam K', { sessions_7d: 0, last_session_date: addDays(TODAY, -8) }), summaryRow('c3', 'Old Client', { status: 'inactive', sessions_7d: 0 })]
+    t.coach_client_summary = [summaryRow('c1', 'Priya M', { sessions_7d: 2, last_session_date: TODAY }), summaryRow('c2', 'Sam K', { sessions_7d: 0, last_session_date: addDays(TODAY, -12) }), summaryRow('c3', 'Old Client', { status: 'inactive', sessions_7d: 0 })]
     await install(page, t)
     await render(page, 'renderDashboard')
     const r = await coachRead(page)
@@ -665,7 +671,7 @@ test.describe('the coach dashboard', () => {
 
   test('no clients yet: a calm card that offers the one thing to do', async ({ page }) => {
     const uid = await page.evaluate(() => currentUser.id)
-    await install(page, { clients: [], coach_client_summary: [], client_check_ins: [], workout_logs: [], weight_logs: [], goals: [] })
+    await install(page, { clients: [], coach_client_summary: [], client_check_ins: [], events: [], program_phases: [], workout_logs: [], weight_logs: [], goals: [] })
     await render(page, 'renderDashboard')
     const r = await coachRead(page)
     expect(r.hero).toMatchObject({ kind: 'empty', calm: true, title: 'No clients yet' })
