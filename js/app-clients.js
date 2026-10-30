@@ -210,6 +210,61 @@ function _lastSessionLabel(d, unavailable, todayStr = _ymdLocal(new Date())) {
   return { text: `${days}d ago`, colour: 'var(--danger)' }
 }
 
+// ─── CLIENT PROFILE COCKPIT (MVP item 5, approved by Jake 2026-10-30) ─────────
+// A strip under the client's name: where they are, why they need the coach, what to do next. Contact is Call / Text / Email only - no
+// WhatsApp (Jake, 2026-10-30: not a feature he wants yet; it would also hand the client's number to a third party).
+
+// The contact links a client's details allow: [{ kind, label, href }]. A phone keeps digits and a leading + only (so nothing typed into it
+// can leave the href); an email must look like an address or it gives no link. Pure.
+function _contactLinks(c) {
+  const out = []
+  const p = String(c?.phone || '').trim()
+  const digits = p.replace(/\D/g, '')
+  if (digits) {
+    const num = (p.startsWith('+') ? '+' : '') + digits
+    out.push({ kind: 'call', label: 'Call', href: 'tel:' + num }, { kind: 'text', label: 'Text', href: 'sms:' + num })
+  }
+  const e = String(c?.email || '').trim()
+  // Plain address characters only: a `?` or `&` would let a typed "email" preset a hidden BCC, subject or body in the coach's mail app (review).
+  if (/^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(e)) out.push({ kind: 'email', label: 'Email', href: 'mailto:' + e })
+  return out
+}
+
+// The cockpit's markup. Pure. id: the client; s: their coach_client_summary row (null when the read failed - `unavailable`); reasons: their
+// Needs-attention reasons; week: { planned, logged } from _attentionForRoster (planned null = no dated plan); client: the clients row (phone,
+// email); todayStr: the local day. A failed read says so and accuses nobody, but Start session and contact still work.
+function _clientCockpitHtml({ id, s, reasons = [], week = null, client = {}, todayStr, unavailable = false, partial = false }) {
+  const cid = escapeAttr(id)
+  const contact = _contactLinks(client).map(l => `<a class="cockpit-btn" data-contact="${l.kind}" href="${escapeHtml(l.href)}">${l.label}</a>`).join('')
+  const nextBlock = (reasons || []).some(r => r.action === 'next-block')
+  const actions = `<div class="cockpit-actions">
+      <button type="button" class="btn-primary cockpit-btn" data-cockpit-action="start" onclick="startWorkoutRunner('${cid}')">▶ Start session</button>
+      ${nextBlock ? `<button type="button" class="btn-secondary cockpit-btn" data-cockpit-action="next-block" onclick="openClientProgramsTab('${cid}')">Assign next block</button>` : ''}
+      ${contact}
+    </div>`
+  if (unavailable || !s) return `<section class="cockpit" data-cockpit-client="${escapeHtml(id)}"><p class="dash-empty">Could not load this client's summary just now.</p>${actions}</section>`
+  // One window whatever the plan: the shared read's count for the 7 days before today (abandoned starts dropped). Never the view's
+  // sessions_7d, which counts a different window and every start (review, 2026-10-30). Unknown (inactive client, or the read failed): "—".
+  const n = week && week.logged != null ? Number(week.logged) : null
+  const weekText = n === null ? '—' : Number(week.planned) > 0 ? `${n} of ${week.planned} planned` : `${n} session${n === 1 ? '' : 's'}`
+  const last = _lastSessionLabel(s.last_session_date, false, todayStr)
+  const ciDays = s.last_check_in_at ? _daysBetweenYmd(_ymdLocal(new Date(s.last_check_in_at)), todayStr) : null
+  const flagged = ciDays !== null && _checkInFlagged({ sleep: s.check_in_sleep, energy: s.check_in_energy, stress: s.check_in_stress, soreness: s.check_in_soreness })
+  const ci = ciDays === null ? 'None yet' : ciDays <= 0 ? 'Today' : ciDays + 'd ago'
+  const chips = (reasons || []).map(r => `<em class="dash-attn-chip dash-attn-${escapeHtml(r.severity)}" data-reason="${escapeHtml(r.key)}" title="${escapeHtml(r.detail || '')}">${escapeHtml(r.label)}</em>`).join('')
+  return `<section class="cockpit" data-cockpit-client="${escapeHtml(id)}">
+      <div class="cockpit-facts">
+        <div class="cockpit-fact"><i>Plan</i><b>${escapeHtml(_planWeekLabel(s, todayStr))}</b></div>
+        <div class="cockpit-fact"><i>7 days to yesterday</i><b>${escapeHtml(weekText)}</b></div>
+        <div class="cockpit-fact"><i>Last session</i><b style="color:${escapeHtml(last.colour)}">${escapeHtml(last.text)}</b></div>
+        <div class="cockpit-fact"><i>Check-in</i><b>${escapeHtml(ci)}${flagged ? ' <em class="dash-ci-flag" data-checkin-flagged>Flagged</em>' : ''}</b></div>
+      </div>
+      ${chips ? `<div class="cockpit-reasons">${chips}</div>` : ''}
+      ${partial ? '<p class="dash-empty" data-attn-partial>Some reasons could not be checked just now.</p>' : ''}
+      ${actions}
+    </section>`
+}
+
 async function renderClients(el) {
   log.info('renderClients', 'fetching client list')
   el.innerHTML = '<div class="loading-state">Loading…</div>'
@@ -399,6 +454,8 @@ async function openClient(id) {
       </div>
     </div>
 
+    <div id="client-cockpit" data-cockpit-client="${escapeHtml(id)}"></div>
+
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab(this,'tab-overview','${id}')">Overview</button>
       <button class="tab-btn" onclick="switchTab(this,'tab-goals','${id}')">Goals</button>
@@ -411,7 +468,34 @@ async function openClient(id) {
 
     <div id="tab-content"></div>
   `
+  renderClientCockpit(id, client)
   renderClientOverview(id, document.getElementById('tab-content'))
+}
+
+// Fills the cockpit (MVP item 5) from this client's coach_client_summary row and the shared Needs-attention read, so the strip says exactly
+// what the Home card and the client list say. Writes only into the container it started with: open a second client before this lands and
+// the first client's strip is dropped, never painted over the second (the container is replaced, so this one is no longer in the page).
+async function renderClientCockpit(id, client) {
+  const box = document.getElementById('client-cockpit')
+  if (!box) return
+  const todayStr = _ymdLocal(new Date())
+  let html
+  try {
+    const { data, error } = await db.from('coach_client_summary').select('*').eq('client_id', id).maybeSingle()
+    if (error || !data) {
+      if (error) log.error('renderClientCockpit', 'summary read failed', { clientId: id, code: error.code })
+      html = _clientCockpitHtml({ id, s: null, client, todayStr, unavailable: true })
+    } else {
+      const attn = await _attentionForRoster([data], todayStr)
+      html = _clientCockpitHtml({ id, s: data, reasons: attn.byClient[id] || [], week: attn.week?.[id] || null, client, todayStr, partial: attn.partial })
+    }
+  } catch (e) {
+    // A thrown read or render must not leave the strip blank: say so, keep Start session and contact (review, 2026-10-30).
+    log.error('renderClientCockpit', 'render failed', { clientId: id })
+    html = _clientCockpitHtml({ id, s: null, client, todayStr, unavailable: true })
+  }
+  if (!box.isConnected || box.getAttribute('data-cockpit-client') !== String(id)) return
+  box.innerHTML = html
 }
 
 // Each tab render gets its OWN pane (docs/bugs/2026-10-12-client-profile-shows-the-overview-under-another-tab-when-the-overview-loads-last.md).

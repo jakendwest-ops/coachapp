@@ -699,7 +699,7 @@ async function renderDashboard(el) {
 // _programWorkoutsByDateAll), when each plan was assigned (missed counts from that day - Jake, 2026-10-30), and the last 7 days of sessions.
 // All joined to the coach's own clients and paged - the SAME reads for every caller, so the Home and the list cannot disagree (the Home used to
 // pass its own week read, which is cut at 200 clients - review, 2026-10-30). Returns { byClient: { id: reasons[] }, failed: { label: error },
-// partial }; `partial` = a read failed, so some reasons could not be checked. "missed" is never claimed when the sessions could not be read.
+// week: { id: { planned, logged } }, partial }; `partial` = a read failed, so some reasons could not be checked. "missed" is never claimed when the sessions could not be read.
 async function _attentionForRoster(summaryRows, todayStr) {
   const active = (summaryRows || []).filter(r => r.status === 'active')
   const winFrom = _dashAddDays(todayStr, -7), winTo = _dashAddDays(todayStr, -1)
@@ -729,9 +729,16 @@ async function _attentionForRoster(summaryRows, todayStr) {
     const from = assigned > winFrom ? assigned : winFrom
     return Object.entries(byDate).reduce((n, [ds, arr]) => n + (ds >= from && ds <= winTo ? arr.length : 0), 0)
   }
-  const byClient = Object.fromEntries(active.map(s => [s.client_id, _attentionFor(s, { todayStr, planned: plannedFor(s), logged: loggedIn[s.client_id] || 0, onHoliday: onHoliday.has(s.client_id) })]))
+  // `week` (the client profile cockpit, MVP item 5): the same planned / logged counts the reasons were judged on, so the strip and the chips
+  // cannot disagree. planned null = no dated plan or a read failed; logged null = the sessions could not be read.
+  const week = {}
+  const byClient = Object.fromEntries(active.map(s => {
+    const planned = plannedFor(s), logged = loggedIn[s.client_id] || 0
+    week[s.client_id] = { planned, logged: sessionsRead.has(s.client_id) ? logged : null }
+    return [s.client_id, _attentionFor(s, { todayStr, planned, logged, onHoliday: onHoliday.has(s.client_id) })]
+  }))
   const failed = { 'holidays': holidaysR.error, 'training plans': phasesR.error || assignedR.error, 'recent sessions': logsR.error }
-  return { byClient, failed, partial: Object.values(failed).some(Boolean) }
+  return { byClient, week, failed, partial: Object.values(failed).some(Boolean) }
 }
 
 // "Needs attention" on the coach Home (MVP item 3, 2026-10-30): the ranked list from _attentionRank / _attentionFor (app-core.js). Up to 10 rows,

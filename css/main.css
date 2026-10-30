@@ -1432,6 +1432,16 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .client-row-right { flex-direction: column; align-items: flex-end; gap: 4px; }
 .client-last { font-size: var(--text-sm); font-weight: 600; }
 
+/* Client profile cockpit (MVP item 5, 2026-10-30): facts, reasons, actions under the client's name. Tokens only; every control >= 44px. */
+.cockpit { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+.cockpit-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.cockpit-fact i { display: block; font-style: normal; font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.cockpit-fact b { font-size: var(--text-md); font-weight: 600; overflow-wrap: anywhere; }
+.cockpit-reasons { display: flex; gap: 6px; flex-wrap: wrap; }
+.cockpit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.cockpit-btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; font-size: var(--text-base); }
+a.cockpit-btn { padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); text-decoration: none; }
+
 /* The week: seven tappable days (client, solo) or seven bars (coach). */
 .dash-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; }
 .dash-day { border: 0; background: none; padding: 4px 0; cursor: pointer; color: inherit; border-radius: var(--radius); font-family: inherit; }

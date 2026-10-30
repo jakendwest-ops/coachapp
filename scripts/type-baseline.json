@@ -3,9 +3,9 @@
   "counts": {
     "js/app-core.js": 79,
     "js/starter-content.js": 1,
-    "js/app-dashboard.js": 35,
+    "js/app-dashboard.js": 34,
     "js/app-programs.js": 206,
-    "js/app-clients.js": 26,
+    "js/app-clients.js": 25,
     "js/app-calendar-goals.js": 56,
     "js/app-workouts.js": 241,
     "js/app-runner.js": 117,
