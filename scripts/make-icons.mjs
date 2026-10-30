@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Draws the home-screen icons from the app's "C" mark (the same mark as index.html's inline favicon and .auth-logo:
 // a white bold C on the #6366f1 indigo) and writes them to icons/. Run when the mark changes; the PNGs are committed.
+// The icons carry no ?v= cache-bust: a phone that installed the app may keep the old icon until it is re-added to the
+// home screen. That is normal for installed web apps; rename the files if a change must show at once.
 //
 //   node scripts/make-icons.mjs
 //

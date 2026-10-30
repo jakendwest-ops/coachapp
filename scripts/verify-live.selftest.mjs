@@ -46,6 +46,9 @@ const check = (label, ok, extra = '') => { if (!ok) { failures++; console.log(` 
     JSON.stringify(nested) === JSON.stringify(['app/icons/a.png', 'app/icons/b.png']), JSON.stringify(nested))
   check('manifestIcons: a manifest that is not JSON yields nothing (and does not throw)', manifestIcons('{not json', 'm.webmanifest').length === 0)
   check('manifestIcons: a manifest with no icons yields nothing', manifestIcons('{}', 'm.webmanifest').length === 0)
+  const up = manifestIcons(JSON.stringify({ icons: [{ src: '../x.png' }, { src: 'icons/../../.env' }, { src: 'icons/ok.png' }] }), 'app/m.webmanifest')
+  check('manifestIcons: a path with .. is skipped, never resolved outside the manifest\'s folder',
+    JSON.stringify(up) === JSON.stringify(['app/icons/ok.png']), JSON.stringify(up))
 }
 
 // ---- verify(): the loop, with a fake clock and fake network

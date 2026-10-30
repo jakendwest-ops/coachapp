@@ -48,6 +48,7 @@ export function manifestIcons (manifestText, manifestPath) {
   for (const icon of Array.isArray(m?.icons) ? m.icons : []) {
     const ref = String(icon?.src || '').trim()
     if (!ref || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(ref)) continue
+    if (ref.split(/[\/\\]/).includes('..')) continue        // never a path outside the manifest's folder
     const path = dir + ref.split('#')[0].split('?')[0].replace(/^\.?\//, '')
     if (!out.includes(path)) out.push(path)
   }
