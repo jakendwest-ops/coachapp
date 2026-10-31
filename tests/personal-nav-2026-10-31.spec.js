@@ -112,6 +112,45 @@ test.describe('Personal view: Progress', () => {
   })
 })
 
+test.describe('Personal view: old links, saved pages and switching view', () => {
+  // An old link opens a fresh page: goto with only a new #hash is a same-document jump the app never sees, so reload after it.
+  const lands = async (page, hash) => {
+    await page.goto('/' + hash)
+    await page.reload()
+    await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
+    await expect.poll(() => page.evaluate(() => currentProfile?.role), { timeout: 15000 }).toBe('solo')
+    await page.waitForTimeout(1500)
+    return page.evaluate(() => ({ page: currentPage, lit: document.querySelector('.bottom-nav-item.active')?.dataset.page || null,
+      h1: document.querySelector('#main-content h1')?.textContent?.trim() || '', tab: window._progressTab || null }))
+  }
+
+  test('#library, #calendar, #programs and #goals each land on a real page with the right tab lit', async ({ page }) => {
+    await soloReady(page)
+    expect(await lands(page, '#library')).toMatchObject({ page: 'library', lit: '__more__', h1: 'Exercise library' })
+    expect(await lands(page, '#calendar')).toMatchObject({ page: 'calendar', lit: 'solo-dashboard', h1: 'Calendar' })
+    expect(await lands(page, '#programs')).toMatchObject({ page: 'programs', lit: 'workouts', h1: 'Training plans' })
+    expect(await lands(page, '#goals'), 'Goals live in Progress').toMatchObject({ page: 'progress', lit: 'progress', tab: 'Goals' })
+  })
+
+  test('a saved page of goals (from before) reopens on Progress > Goals', async ({ page }) => {
+    await soloReady(page)
+    await page.evaluate(() => localStorage.setItem('_activePage', 'goals'))
+    expect(await lands(page, '')).toMatchObject({ page: 'progress', lit: 'progress', tab: 'Goals' })
+  })
+
+  test('the master account: Calendar in Personal view, switch to PT, then back - the nav follows the view each time', async ({ page }) => {
+    await soloReady(page)
+    await page.evaluate(() => navigate('calendar'))
+    await expect.poll(() => page.evaluate(() => currentPage)).toBe('calendar')
+    await page.evaluate(() => switchView('coach'))
+    await expect.poll(() => page.evaluate(() => currentProfile?.role)).toBe('coach')
+    await expect(page.locator('.bottom-nav-item')).toHaveText(['Dashboard', 'Clients', 'Workouts', 'Calendar', 'Training plans', 'Settings'])
+    await page.evaluate(() => switchView('solo'))
+    await expect.poll(() => page.evaluate(() => currentProfile?.role)).toBe('solo')
+    await expect(page.locator('.bottom-nav-item')).toHaveText(['Today', 'Train', 'Progress', 'More'])
+  })
+})
+
 test.describe('Personal view: Train', () => {
   test('Train opens on Workouts with a Workouts | Plans switch; Plans keeps Train lit', async ({ page }) => {
     await soloReady(page)
