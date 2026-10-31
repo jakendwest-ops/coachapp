@@ -1,0 +1,34 @@
+// Personal view's four destinations (2026-10-31, docs/superpowers/plans/2026-10-31-personal-view-four-tabs.md, approved by Jake).
+// Pure parts only: which tab a page lights, the four labels, and that the coach and client navs did not change.
+
+import { test, describe } from 'node:test'
+import assert from 'node:assert/strict'
+import { get } from './load-app.mjs'
+
+const json = (v) => JSON.parse(JSON.stringify(v))
+
+describe('Personal view nav', () => {
+  test('four destinations, in order: Today, Train, Progress, More', () => {
+    assert.deepEqual(json(get('_NAV_ITEMS').solo.map(i => i.label)), ['Today', 'Train', 'Progress', 'More'])
+    assert.deepEqual(json(get('_NAV_ITEMS').solo.map(i => i.page)), ['solo-dashboard', 'workouts', 'progress', '__more__'])
+    assert.deepEqual(json(get('_NAV_BOTTOM').solo.map(i => i.label)), ['Today', 'Train', 'Progress', 'More'], 'the phone bar is the same four')
+  })
+
+  test('each retired page lights its parent tab; the four light themselves; anything else lights nothing', () => {
+    const p = get('_soloNavParent')
+    assert.equal(p('calendar'), 'solo-dashboard')
+    assert.equal(p('programs'), 'workouts')
+    assert.equal(p('goals'), 'progress')
+    assert.equal(p('library'), '__more__')
+    assert.equal(p('settings'), '__more__')
+    for (const own of ['solo-dashboard', 'workouts', 'progress']) assert.equal(p(own), own)
+    assert.equal(p('clients'), null)
+    assert.equal(p(undefined), null)
+  })
+
+  test('the coach and client navs are unchanged', () => {
+    const items = json(get('_NAV_ITEMS'))
+    assert.deepEqual(items.client.map(i => [i.page, i.label]), [['client-dashboard', 'Dashboard'], ['workouts', 'Workouts'], ['calendar', 'Calendar'], ['progress', 'Progress'], ['settings', 'Settings']])
+    assert.deepEqual(items.coach.map(i => i.page), ['dashboard', 'clients', 'workouts', 'calendar', 'programs', 'settings'])
+  })
+})

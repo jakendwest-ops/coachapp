@@ -1443,7 +1443,7 @@ async function loadUserInfo() {
   // its solo view at all (role stays 'coach' downstream, _masterAccount correctly never gets set so
   // switchView is a no-op). Both pre- and post-migration shapes now hit this SAME branch AND end up
   // with the same in-memory role.
-  if (currentProfile?.role === 'solo' || (currentProfile?.role === 'coach' && currentProfile?.solo_only)) {
+  if (_isPersonalView() || (currentProfile?.role === 'coach' && currentProfile?.solo_only)) {
     // role='solo' is now a genuine, permanently-stored value for a MIGRATED account (2026-08-01).
     // For the transitional (not-yet-migrated) shape above, currentProfile.role is still 'coach' at
     // this point — reassign it so applyRoleUI/renderNav, defaultPage/validPages (below), and every
@@ -1555,62 +1555,71 @@ const _NAV_ITEMS = {
     { page: 'progress',         label: 'Progress'  },
     { page: 'settings',         label: 'Settings'  },
   ],
+  // Four destinations, the same on the phone bar and the desktop sidebar (Jake, 2026-10-31,
+  // docs/superpowers/specs/2026-10-31-personal-view-four-tabs-design.md). The page ids are unchanged; the retired destinations
+  // (programs, calendar, library, goals, settings) stay routable and light their parent tab (_soloNavParent).
   solo: [
-    { page: 'solo-dashboard', label: 'Dashboard' },
-    { page: 'workouts',       label: 'Workouts'  },
-    { page: 'library',       label: 'Library'    },
-    { page: 'programs',       label: 'Training plans'  },
-    { page: 'calendar',       label: 'Calendar'  },
-    { page: 'progress',       label: 'Progress'  },
-    { page: 'settings',       label: 'Settings'  },
+    { page: 'solo-dashboard', label: 'Today'    },
+    { page: 'workouts',       label: 'Train'    },
+    { page: 'progress',       label: 'Progress' },
+    { page: '__more__',       label: 'More'     },
   ],
 }
 
-// Solo has seven destinations — too many for a phone bottom bar (coach shows six, client five). On
-// mobile the bottom bar shows four primary ones plus a "More" sheet holding the rest (D2,
-// 2026-09-07). The desktop sidebar is unchanged and still lists all seven. Derived from _NAV_ITEMS
-// so labels can't drift; only the split lives here.
-const _NAV_MORE_SOLO = ['library', 'calendar', 'settings']
-const _NAV_BOTTOM = {
-  solo: [
-    ..._NAV_ITEMS.solo.filter(i => !_NAV_MORE_SOLO.includes(i.page)),
-    { page: '__more__', label: 'More' },
-  ],
-}
+// The phone bar is the sidebar list for every role now; the solo split of D2 (2026-09-07) is gone with its seven destinations.
+const _NAV_BOTTOM = { solo: _NAV_ITEMS.solo }
+
+// Personal view's own pages are the four; each page that is no longer a destination lights the tab it now lives under.
+const _SOLO_NAV_PARENT = { 'solo-dashboard': 'solo-dashboard', workouts: 'workouts', progress: 'progress',
+  calendar: 'solo-dashboard', programs: 'workouts', goals: 'progress', library: '__more__', settings: '__more__' }
+/** @param {string|undefined} page */
+function _soloNavParent(page) { return (page && _SOLO_NAV_PARENT[page]) || null }
+
+// The active VIEW, not the account: a master account in Personal view is solo here, in coach view it is not.
+function _isPersonalView() { return currentProfile?.role === 'solo' }
+
+// Which nav item a page lights: in Personal view its parent tab, everywhere else the page itself.
+function _navLit(page) { return (_isPersonalView() && _soloNavParent(page)) || page }
 
 function renderNav(role) {
   const items = _NAV_ITEMS[role] || _NAV_ITEMS.coach
   const sidebarNav = document.querySelector('.sidebar-nav')
   const bottomNav  = document.querySelector('.bottom-nav')
+  const lit = _navLit(currentPage)
   if (sidebarNav) {
     sidebarNav.innerHTML = items.map(({ page, label }) => `
-      <a href="#" class="nav-item${currentPage === page ? ' active' : ''}" data-page="${page}">
+      <a href="#" class="nav-item${lit === page ? ' active' : ''}" data-page="${page}">
         ${_NAV_ICONS[page] || ''}${label}
       </a>`).join('')
   }
   if (bottomNav) {
     const bottomItems = _NAV_BOTTOM[role] || items
     bottomNav.innerHTML = bottomItems.map(({ page, label }) => `
-      <a href="#" class="bottom-nav-item${currentPage === page ? ' active' : ''}" data-page="${page}">
+      <a href="#" class="bottom-nav-item${lit === page ? ' active' : ''}" data-page="${page}">
         ${_NAV_ICONS[page] || ''}<span>${label}</span>
       </a>`).join('')
   }
 }
 
-// The solo bottom bar's "More" tab (D2, 2026-09-07). Body-level via mountModal so it sits above the
-// bottom nav and the floating mobile view-switcher pill, same as every other modal here. navigate()
-// tears down .modal-overlay on its own, so the row handlers just call it. A plain centred .modal
-// (like _openQuickPrefsPopover) rather than modal-fullscreen-mobile: only three short items, and a
-// bottom-flush sheet would tuck its last row under the fixed bottom nav.
+// Personal view's "More" (D2, 2026-09-07; rows rewritten 2026-10-31 for the four destinations). Body-level via mountModal so it sits
+// above the bottom nav and the floating mobile view-switcher pill, same as every other modal here. navigate() tears down
+// .modal-overlay on its own, so the row handlers just call it. A plain centred .modal (like _openQuickPrefsPopover) rather than
+// modal-fullscreen-mobile: a bottom-flush sheet would tuck its last row under the fixed bottom nav.
 function _openMoreSheet() {
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'more-sheet-modal'
   overlay.onclick = e => { if (e.target === overlay) closeModal('more-sheet-modal') }
-  const rows = _NAV_MORE_SOLO.map(pg => {
-    const label = (_NAV_ITEMS.solo.find(i => i.page === pg) || {}).label || pg
-    return `<button class="btn btn-secondary" onclick="navigate('${pg}')">${label}</button>`
-  }).join('')
+  // Literal handlers, one per row: scripts/check-inline-handlers can only verify a name it can read.
+  const rows = [
+    `<button class="btn btn-secondary" onclick="navigate('library')">Exercise library</button>`,
+    `<button class="btn btn-secondary" onclick="navigate('settings')">Settings</button>`,
+    `<button class="btn btn-secondary" onclick="closeModal('more-sheet-modal');downloadMyData()">Download my data</button>`,
+    `<a class="btn btn-secondary" href="${escapeHtml(_feedbackMailto())}">Send feedback</a>`,
+    `<a class="btn btn-secondary" href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener">Privacy policy</a>`,
+    /** @type {any} */ (window)._masterAccount ? `<button class="btn btn-secondary" onclick="switchView('coach')">Switch to PT view</button>` : '',
+    `<button class="btn btn-secondary" onclick="closeModal('more-sheet-modal');signOutAndClearDrafts({ ask: true })">Sign out</button>`,
+  ].join('')
   overlay.innerHTML = `
     <div class="modal" style="max-width:340px">
       <div class="modal-header">
@@ -1792,18 +1801,19 @@ function _navigateNow(page, _historyOp = 'push') {
   // people who are already using the app and already have history.
   if (document.getElementById('consent-gate-modal')) return
   document.querySelectorAll('.modal-overlay').forEach(m => m.remove())
+  // Personal view's Goals live in Progress (2026-10-31): an old link, a saved page or the dashboard card that names 'goals' lands there.
+  if (page === 'goals' && _isPersonalView()) { /** @type {any} */ (window)._progressTab = 'Goals'; page = 'progress' }
   if (currentPage && currentPage !== page) window._prevPage = currentPage
   currentPage = page
   localStorage.setItem('_activePage', page)
   if (_historyOp === 'push')    history.pushState({ page }, '', '#' + page)
   else if (_historyOp === 'replace') history.replaceState({ page }, '', '#' + page)
 
+  // In Personal view a page that is no longer a destination lights the tab it lives under (Calendar → Today, Library → More…).
+  const lit = _navLit(page)
   document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.page === page)
+    el.classList.toggle('active', el.dataset.page === lit)
   })
-  // Solo's bottom-bar "More" tab owns Library / Calendar / Settings — light it while on one of them.
-  document.querySelector('.bottom-nav-item[data-page="__more__"]')
-    ?.classList.toggle('active', _NAV_MORE_SOLO.includes(page))
   // A workout that failed to save stays on the phone; its "not saved" bar is re-drawn on every page (R4a, app-runner.js).
   _refreshPendingSaveBar()
 
