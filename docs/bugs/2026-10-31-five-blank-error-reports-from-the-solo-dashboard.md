@@ -3,7 +3,7 @@ id: 2026-10-31-five-blank-error-reports-from-the-solo-dashboard
 status: open
 priority: medium
 reported: 2026-10-31
-status_detail: "open — 4 rejections + 1 uncaught in app_errors, 04:27-04:31 UTC 2026-10-31, Jake's account, solo view, solo-dashboard, v2026.10.10 code (core53 dashboard41). No code, no frame, no detail, so the capture cannot say what failed. Not reproduced on desktop (solo dashboard loaded clean, nothing thrown)."
+status_detail: "open — Jake: from his iPhone, testing the home-screen app. 4 rejections + 1 uncaught in app_errors, 04:27-04:31 UTC 2026-10-31, Jake's account, solo view, solo-dashboard, v2026.10.10 code (core53 dashboard41). No code, no frame, no detail, so the capture cannot say what failed. Not reproduced on desktop (solo dashboard loaded clean, nothing thrown)."
 ---
 
 # Five error reports from the solo dashboard carry nothing to diagnose
@@ -16,7 +16,7 @@ listeners): a real `Error` would have given at least its name (e.g. `TypeError`)
 An `uncaught` with no error object is what a browser reports for a cross-origin script error ("Script error.") or a
 ResizeObserver loop; a rejection with no code is a promise rejected with something other than an Error.
 
-**Not known:** which device it was (likely Jake's phone, possibly the newly installed home-screen app), and whether he saw
+**Device (Jake, 2026-10-31):** his iPhone, testing the newly installed home-screen app (v2026.10.10). **Not known:** whether he saw
 anything go wrong.
 
 **Investigated 2026-10-31:** the solo dashboard on desktop (localhost, signed in as Jake) loaded with no error or rejection.
