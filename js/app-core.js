@@ -10,7 +10,7 @@ const _initialHash = window.location.hash
 // these two disagree is BLOCKED. Until then this paragraph was the only thing holding the invariant,
 // and its failure mode is silent — _needsConsent() re-prompts only on a version mismatch, so a
 // policy edit without a bump leaves everyone consented to a text they never saw, with no symptom.
-const PRIVACY_POLICY_VERSION = '2026-06-29'
+const PRIVACY_POLICY_VERSION = '2026-10-31'
 const PRIVACY_POLICY_URL = 'privacy-policy.html'
 
 // The owner's account — the single definition. Until 2026-08-25 this literal was pasted at THREE
@@ -34,14 +34,17 @@ function _isOwnerAccount () { return currentUser?.email === OWNER_EMAIL }
 // table and read, grouped, in an owner-only Settings card (renderSettings, app-progress.js).
 //
 // WHAT IS STORED IS BOUNDED BY THE PRIVACY POLICY, NOT BY CONVENIENCE. privacy-policy.html promises error
-// logs hold "only internal IDs and timestamps — never your name, email, or health values". Postgres puts row
+// logs hold "internal IDs, timestamps and technical details such as the page, the app version and the type of device
+// … — never your name, email, or health values" (reworded 2026-10-31 for env; it said "only internal IDs and timestamps"
+// until then, which page/role/build already stretched). Postgres puts row
 // values in an error's message / details / hint, so those are NEVER read here. A report is: the kind, the
 // static tag and message LITERAL the developer wrote (log.* calls are already policed for PII by checks.sh
 // 9a), an error CODE, a code LOCATION (file?v=N:line), and technical context (page, role, module versions, and since
 // 2026-10-31 a four-word device line, _reportEnv). For a thrown or rejected value that is not an Error, detail holds
 // its TYPE only (_reportValueType), never the value.
 // The user id is the table's own default (auth.uid()), so it is not sent. Because nothing outside that list
-// is stored, no policy edit and no consent re-prompt were needed.
+// is stored, no policy edit and no consent re-prompt were needed in 2026-09; adding the device line (env) on 2026-10-31
+// did need one: the policy was reworded and PRIVACY_POLICY_VERSION bumped, so everyone re-consents once.
 //
 // FEEDBACK IS NOT CAPTURED HERE. "Send feedback" is a mailto: link (renderSettings): nothing a person types is
 // stored, which is what keeps this inside the policy as written.
