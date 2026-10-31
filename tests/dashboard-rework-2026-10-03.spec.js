@@ -312,7 +312,7 @@ test.describe('the client and solo dashboard', () => {
     const r = await read(page)
     expect(r.eyebrow).toBe('My training')
     expect(r.hero).toMatchObject({ kind: 'rest', calm: true, eyebrow: 'Today', title: 'Nothing planned', meta: 'Start a freeform session whenever you like.' })
-    expect(r.hero.buttons).toEqual(['Log a workout'])
+    expect(r.hero.buttons, 'Personal view says Train anyway (2026-10-31); the client test above keeps Log a workout').toEqual(['Train anyway'])
     expect(kinds(r)).toEqual(Array(7).fill('rest'))
     expect(r.weekSub).toBe('Nothing planned this week')
     // One session in each of the last two weeks and none yet this week: short of the default target of 3, so no run, and the tile says what to aim for.

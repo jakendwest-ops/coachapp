@@ -5,6 +5,64 @@ const { loginAsPT, soloReady } = require('./helpers')
 
 const activeTab = (page) => page.locator('.bottom-nav-item.active').getAttribute('data-page')
 
+test.describe('Personal view: Today', () => {
+  test('the calendar opens from Today (no My calendar card), shows a way back, and keeps Today lit', async ({ page }) => {
+    await soloReady(page)
+    await expect(page.locator('#dash-calendar'), 'the My calendar card is gone in Personal view').toHaveCount(0)
+    await page.locator('[data-open-calendar]').click()
+    await expect.poll(() => page.evaluate(() => currentPage)).toBe('calendar')
+    expect(await activeTab(page), 'Calendar lives under Today').toBe('solo-dashboard')
+    await page.locator('[data-today-back]').click()
+    await expect.poll(() => page.evaluate(() => currentPage)).toBe('solo-dashboard')
+  })
+
+  test('log today\'s weight from Today: empty and zero are refused, a number is stored for today', async ({ page }) => {
+    await soloReady(page)
+    const input = page.locator('#dash-weight-input')
+    const msg = page.locator('#dash-weight-msg')
+    await page.locator('[data-quick-weight]').click()
+    await expect(msg).toContainText('Enter your weight')
+    await input.fill('0')
+    await page.locator('[data-quick-weight]').click()
+    await expect(msg, '0 is its own case, not a weight').toContainText('Enter your weight')
+    expect(await page.evaluate(() => currentPage), 'tapping inside the card does not open the Weight page').toBe('solo-dashboard')
+    const today = await page.evaluate(() => _ymdLocal(new Date()))
+    // The shared insert itself refuses 0 and negatives, so the Weight page's form (which only checked "not empty") refuses them too.
+    const refused = await page.evaluate(async (d) => {
+      const out = []
+      for (const w of [0, -5]) out.push((await _insertWeightLog(window._soloClientId, { date: d, weight: w })).error?.message || null)
+      const { data } = await db.from('weight_logs').select('id').eq('client_id', window._soloClientId).eq('date', d).lte('weight_kg', 0)
+      return { out, stored: (data || []).length }
+    }, today)
+    expect(refused.out).toEqual(['Enter a weight above 0.', 'Enter a weight above 0.'])
+    expect(refused.stored, 'nothing at or below 0 was stored').toBe(0)
+    try {
+      await input.fill('80.4')
+      await page.locator('[data-quick-weight]').click()
+      await expect.poll(async () => page.evaluate(async (d) => {
+        const { data } = await db.from('weight_logs').select('id, weight_kg').eq('client_id', window._soloClientId).eq('date', d)
+        return (data || []).some(r => Math.abs(weightToPref(r.weight_kg) - 80.4) < 0.05)
+      }, today), { timeout: 8000 }).toBe(true)
+    } finally {
+      // Removes only the row this test wrote: today's date, this exact value.
+      await page.evaluate(async (d) => {
+        const { data } = await db.from('weight_logs').select('id, weight_kg').eq('client_id', window._soloClientId).eq('date', d)
+        const mine = (data || []).filter(r => Math.abs(weightToPref(r.weight_kg) - 80.4) < 0.05).map(r => r.id)
+        if (mine.length) await db.from('weight_logs').delete().in('id', mine)
+      }, today)
+    }
+  })
+
+  test('CLIENT: the client dashboard still has My calendar and no quick weight box', async ({ page }) => {
+    const { loginAsClient } = require('./helpers')
+    await loginAsClient(page)
+    await page.evaluate(() => navigate('client-dashboard'))
+    await expect(page.locator('#dash-calendar')).toHaveCount(1, { timeout: 15000 })
+    await expect(page.locator('#dash-weight-input')).toHaveCount(0)
+    await expect(page.locator('[data-open-calendar]')).toHaveCount(0)
+  })
+})
+
 test.describe('Personal view: Train', () => {
   test('Train opens on Workouts with a Workouts | Plans switch; Plans keeps Train lit', async ({ page }) => {
     await soloReady(page)

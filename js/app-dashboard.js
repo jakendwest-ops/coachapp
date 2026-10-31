@@ -321,7 +321,8 @@ const _dashPlural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 const _dashBack = () => '<button type="button" class="dash-btn dash-btn-ghost" onclick="_dashPickDay(null)">Back to today</button>'
 const _dashToProgram = (cls, label) => `<button type="button" class="dash-btn ${cls} dash-nav" onclick="navigate('workouts')">${label}</button>`
 const _dashStart = (cid, tid) => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}','${tid}')">▶ Start workout</button>`
-const _dashLogWorkout = cid => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}')">Log a workout</button>`
+// "Train anyway" in Personal view (Jake, 2026-10-31: rest day = the next session + Train anyway); a coached client keeps "Log a workout".
+const _dashLogWorkout = (cid, label = 'Log a workout') => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}')">${label}</button>`
 const _dashViewSession = (id, cid) => `<button type="button" class="dash-btn dash-btn-primary" onclick="openWorkoutLog('${id}','${cid}')">View session</button>`
 const _dashSeeClients = () => '<button type="button" class="dash-btn dash-btn-primary" onclick="navigate(\'clients\')">See clients</button>'
 const _dashAddClient = () => '<button type="button" class="dash-btn dash-btn-primary" onclick="showAddClientModal()">+ Add client</button>'
@@ -376,7 +377,7 @@ function _dashHeroHtml(day, ctx) {
     if (day.today) {
       title = ctx.hasProgram ? 'Rest day' : 'Nothing planned'
       meta = ctx.next ? `Next up: ${escapeHtml(ctx.next.title)}, ${_dashFormatDate(ctx.next.date)}` : 'Start a freeform session whenever you like.'
-      actions = _dashLogWorkout(cid) + (ctx.next ? _dashToProgram('dash-btn-ghost', 'View training plan') : '')
+      actions = _dashLogWorkout(cid, ctx.role === 'client' ? 'Log a workout' : 'Train anyway') + (ctx.next ? _dashToProgram('dash-btn-ghost', 'View training plan') : '')
     } else if (day.ds < ctx.todayStr) {
       title = ctx.hasProgram ? 'Rest day' : 'No session'
       meta = ctx.hasProgram ? 'Nothing was planned.' : 'Nothing logged.'
@@ -394,12 +395,14 @@ function _dashHeroHtml(day, ctx) {
 
 // The week as seven tappable days. `sel` is the date the person tapped (null = today); the pressed day is the one the Today card is
 // showing, so the strip and the card never disagree.
-function _dashWeekHtml(days, counts, sel) {
+// `calendar` true (Personal view, 2026-10-31): the card carries the Calendar button, the calendar's way in now that it is not a destination.
+function _dashWeekHtml(days, counts, sel, calendar = false) {
   const words = { done: 'done', plan: 'planned for today', later: 'planned', miss: 'missed', rest: 'rest day' }
   const glyph = { done: _DASH_ICONS.check, plan: '▶', later: '', miss: '×', rest: '–' }
   const shown = sel || days.find(d => d.today)?.ds
   const sub = counts.planned ? `<b>${counts.done} of ${counts.planned}</b> ${counts.planned === 1 ? 'session' : 'sessions'} done` : 'Nothing planned this week'
-  return `<section class="dash-card" id="dash-week"><div class="dash-card-head"><h2 class="dash-card-title">This week</h2><span class="dash-card-sub">${sub}</span></div>` +
+  const calBtn = calendar ? '<button type="button" class="dash-link" data-open-calendar onclick="navigate(\'calendar\')">Calendar</button>' : ''
+  return `<section class="dash-card" id="dash-week"><div class="dash-card-head"><h2 class="dash-card-title">This week</h2><span class="dash-card-sub">${sub}</span>${calBtn}</div>` +
     `<div class="dash-days" role="group" aria-label="This week">${days.map(d =>
       `<button type="button" class="dash-day${d.today ? ' dash-day-today' : ''}" data-day="${d.ds}" aria-pressed="${d.ds === shown}" aria-label="${d.label} ${d.num}: ${words[d.kind]}" onclick="_dashPickDay('${d.ds}')">` +
       `<span class="dash-dn">${d.label}</span><span class="dash-dc dash-dc-${d.kind}">${glyph[d.kind]}</span><span class="dash-dd">${d.num}</span></button>`).join('')}</div>` +
@@ -440,11 +443,18 @@ function _dashTilesHtml(streak, program, isSolo, streakLink = true) {
 }
 
 // Body weight: the latest figure, how it moved since the weigh-in before, and the trend. Keeps the canvas id the sparkline is drawn into.
-function _dashWeightHtml(weights) {
+// `quickFor` (Personal view's own client id, 2026-10-31): the card also takes today's weight in place. Its clicks stop at the box so they
+// never open the Weight page behind it.
+function _dashWeightHtml(weights, quickFor = null) {
   const latest = weights?.[0] ?? null, prev = weights?.[1] ?? null
+  const unit = /** @type {any} */ (window)._unitPrefs.weight
+  const quick = quickFor ? `<div class="dash-quickweight" onclick="event.stopPropagation()">` +
+    `<input id="dash-weight-input" class="field-input" type="number" inputmode="decimal" step="0.1" min="0" placeholder="${unit}" aria-label="Today's weight in ${unit}" onkeydown="if (event.key === 'Enter') _dashQuickWeight('${escapeAttr(quickFor)}')">` +
+    `<button type="button" class="btn-secondary" data-quick-weight onclick="_dashQuickWeight('${escapeAttr(quickFor)}')">Log</button>` +
+    `<p id="dash-weight-msg" class="dash-empty" role="status"></p></div>` : ''
   if (!latest) {
     return `<section class="dash-card dash-tap" id="dash-weight" onclick="_dashOpenWeight()"><div class="dash-card-head"><h2 class="dash-card-title">Body weight</h2></div>` +
-      '<p class="dash-empty">No weigh-ins yet. Tap to log one.</p></section>'
+      `<p class="dash-empty">No weigh-ins yet. ${quickFor ? 'Log today\'s below.' : 'Tap to log one.'}</p>${quick}</section>`
   }
   // ABSOLUTE change in the user's preferred unit, as the Weight page showed it. No value judgement on direction: the app does not
   // know whether this person is cutting or bulking. The diff is taken in KG and handed to fmtWeight, which owns unit conversion;
@@ -457,9 +467,24 @@ function _dashWeightHtml(weights) {
   return `<section class="dash-card dash-tap" id="dash-weight" onclick="_dashOpenWeight()"><div class="dash-card-head"><h2 class="dash-card-title">Body weight</h2>` +
     `<span class="dash-card-sub">${weights.length > 1 ? `Last ${weights.length} weigh-ins` : _dashFormatDate(latest.date)}</span></div>` +
     `<div class="dash-wv"><b>${weightToPref(latest.weight_kg)}</b><span>${window._unitPrefs.weight}</span></div><div class="dash-delta">${delta}</div>` +
-    '<div class="solo-spark"><canvas id="solo-weight-spark"></canvas></div>' +
-    `<button type="button" class="dash-link" onclick="event.stopPropagation();_dashOpenWeight()">Log or view weight</button></section>`
+    '<div class="solo-spark"><canvas id="solo-weight-spark"></canvas></div>' + quick +
+    `<button type="button" class="dash-link" onclick="event.stopPropagation();_dashOpenWeight()">${quickFor ? 'View weight' : 'Log or view weight'}</button></section>`
 }
+
+// Today's weight from the Today card (Personal view). Empty, zero, negative and non-numbers are refused with a message (0 is not a weight),
+// then the same insert the Weight page makes, and the page repaints so the card shows it.
+async function _dashQuickWeight(clientId) {
+  const input = /** @type {HTMLInputElement|null} */ (document.getElementById('dash-weight-input'))
+  const msg = document.getElementById('dash-weight-msg')
+  const raw = (input?.value || '').trim(), n = Number(raw)
+  if (!raw || !Number.isFinite(n) || n <= 0) { if (msg) msg.textContent = `Enter your weight in ${/** @type {any} */ (window)._unitPrefs.weight}.`; return }
+  if (msg) msg.textContent = 'Saving…'
+  const { error } = await _insertWeightLog(clientId, { date: _ymdLocal(new Date()), weight: raw })
+  if (error) { if (msg) msg.textContent = 'Could not save. Check your connection and try again.'; return }
+  showToast('Weight logged ✓', 'success', 2000)
+  navigate(currentPage, 'none')
+}
+guardReentry('_dashQuickWeight')  // a second tap on Log while the first save is in flight would store the weight twice
 
 // What is coming up: calendar events and programmed sessions on one date-ordered timeline (_soloUpcoming).
 function _dashCalendarHtml(upcoming, todayStr) {
@@ -1007,7 +1032,7 @@ async function _dashRenderOwn(el, role) {
   const ctx = { role, clientId, todayStr, days, hasProgram: !!d.cp0, program, next }
   const byDs = Object.fromEntries(days.map(x => [x.ds, x]))
   const heroFor = sel => _dashHeroHtml(byDs[sel || todayStr], ctx)
-  const weekFor = sel => _dashWeekHtml(days, counts, sel)
+  const weekFor = sel => _dashWeekHtml(days, counts, sel, !isClient)
 
   const biz = window._branding?.businessName
   const eyebrow = isClient ? (biz ? 'Coached by ' + escapeHtml(biz) : 'Coached by your PT') : 'My training'
@@ -1036,8 +1061,8 @@ async function _dashRenderOwn(el, role) {
       ${heroFor(null)}
       ${weekFor(null)}
       ${_dashTilesHtml(streak, program, !isClient, !isSudo)}
-      ${_dashWeightHtml(d.weights)}
-      ${_dashCalendarHtml(d.upcoming, todayStr)}
+      ${_dashWeightHtml(d.weights, isClient ? null : clientId)}
+      ${isClient ? _dashCalendarHtml(d.upcoming, todayStr) : ''}
       ${_dashGoalsHtml(d.goals, todayStr, isClient)}
       ${isClient ? _dashCheckInHtml(lastCheckIn, clientId, d.prevCheckIn, { readFailed: !!d.failed['check-ins'], sudo: isSudo }) : ''}
     </div>`

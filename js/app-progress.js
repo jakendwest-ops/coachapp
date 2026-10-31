@@ -1025,8 +1025,26 @@ async function sendClientInvite(clientId, email) {
   setTimeout(() => openClient(clientId), 1200)
 }
 
+// The one weight insert: the Weight page's form and Today's quick log (2026-10-31) both write through it, ownership-checked here.
+// `weight` is in the person's unit (weightFromPref converts). Resolves { error } — never throws.
+/** @param {string} clientId @param {{ date: string, weight: string|number, bf?: string|null, notes?: string|null }} entry */
+async function _insertWeightLog(clientId, { date, weight, bf = null, notes = null }) {
+  // 0 and negatives are not weights (the Weight page's form let them through until 2026-10-31; Today's box refuses them too).
+  if (!(Number(weight) > 0)) return { error: { message: 'Enter a weight above 0.' } }
+  if (!(await _verifyClientAccess('_insertWeightLog', clientId))) return { error: { message: 'Save failed — permission denied.' } }
+  log.info('_insertWeightLog', 'inserting weight entry', { clientId, date })
+  const { error } = await db.from('weight_logs').insert({
+    client_id:    clientId,
+    date,
+    weight_kg:    weightFromPref(weight),
+    body_fat_pct: bf ? parseFloat(bf) : null,
+    notes:        notes || null
+  })
+  if (error) log.error('_insertWeightLog', 'insert failed', error)
+  return { error }
+}
+
 async function saveWeightLog(clientId) {
-  if (!(await _verifyClientAccess('saveWeightLog', clientId))) { const e = document.getElementById('wl-error'); if (e) e.textContent = 'Save failed — permission denied.'; return }
   const date   = document.getElementById('wl-date')?.value
   const weight = document.getElementById('wl-weight')?.value
   const bf     = document.getElementById('wl-bf')?.value
@@ -1038,16 +1056,8 @@ async function saveWeightLog(clientId) {
     return
   }
 
-  log.info('saveWeightLog', 'inserting weight entry', { clientId, date })
-  const { error } = await db.from('weight_logs').insert({
-    client_id:    clientId,
-    date,
-    weight_kg:    weightFromPref(weight),
-    body_fat_pct: bf ? parseFloat(bf) : null,
-    notes:        notes || null
-  })
-
-  if (error) { log.error('saveWeightLog', 'insert failed', error); document.getElementById('wl-error') && (document.getElementById('wl-error').textContent = error.message); return }
+  const { error } = await _insertWeightLog(clientId, { date, weight, bf, notes })
+  if (error) { document.getElementById('wl-error') && (document.getElementById('wl-error').textContent = error.message); return }
   log.ok('saveWeightLog', 'weight entry saved', { clientId, date })
   showToast('Weight logged ✓', 'success', 2000)
   renderClientWeight(clientId, document.getElementById('tab-content'))

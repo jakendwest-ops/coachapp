@@ -26,6 +26,18 @@ describe('Personal view nav', () => {
     assert.equal(p(undefined), null)
   })
 
+  test('Today on a rest day: Personal view says Train anyway; a coached client still says Log a workout', () => {
+    const hero = get('_dashHeroHtml')
+    const day = { ds: '2026-10-31', today: true, kind: 'rest', planned: [], done: [] }
+    const ctx = (role) => ({ role, clientId: 'c1', todayStr: '2026-10-31', days: [day], hasProgram: true, program: null, next: { date: '2026-11-02', title: 'Lower A' } })
+    const solo = hero(day, ctx('solo')), client = hero(day, ctx('client'))
+    assert.match(solo, /Rest day/)
+    assert.match(solo, /Next up: Lower A/)
+    assert.match(solo, />Train anyway</)
+    assert.doesNotMatch(solo, /Log a workout/)
+    assert.match(client, />Log a workout</)
+  })
+
   test('the coach and client navs are unchanged', () => {
     const items = json(get('_NAV_ITEMS'))
     assert.deepEqual(items.client.map(i => [i.page, i.label]), [['client-dashboard', 'Dashboard'], ['workouts', 'Workouts'], ['calendar', 'Calendar'], ['progress', 'Progress'], ['settings', 'Settings']])

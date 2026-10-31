@@ -1792,10 +1792,9 @@ async function _templateGoBack() {
     openClientProgramsTab(ctx.clientId)
   } else {
     // `'client'` is a sentinel handled by the branch above, never a page — guard against it reaching
-    // navigate() (→ "Page not found"). Solo's builder lives on `library`, not `workouts` (that's its
-    // read-only accordion); a coach's builder IS `workouts`.
-    const fallback = currentProfile?.role === 'solo' ? 'library' : 'workouts'
-    navigate(ctx.backTo && ctx.backTo !== 'client' ? ctx.backTo : fallback)
+    // navigate() (→ "Page not found"). Everyone's workouts live on `workouts`: a coach's builder, and since 2026-10-31 Personal
+    // view's Train › Workouts (its Library is the Exercise library only, so falling back there lost the person's workouts).
+    navigate(ctx.backTo && ctx.backTo !== 'client' ? ctx.backTo : 'workouts')
   }
 }
 
