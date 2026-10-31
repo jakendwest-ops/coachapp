@@ -25,8 +25,14 @@ function journeyTag(prefix, exSuffix = 'Bench') {
 
 // From the page that lists templates: New template -> Add exercise -> pick it -> TOP SET, 3 reps @ RPE 8 ->
 // back-off set (made by choosing "Top set + back-offs") -> 8 reps at 70% of TODAY'S estimated 1RM -> confirm -> Save. The headline workflow.
-async function buildTopSetTemplate(page, { tplName, exName, shotPrefix }) {
-  await page.getByRole('button', { name: '+ New template' }).click()
+async function buildTopSetTemplate(page, { tplName, exName, shotPrefix, viaCreateWorkout = false }) {
+  // Personal view builds a workout from Train > Workouts > Create a workout > Create new (since 2026-10-31); it opens the same builder.
+  if (viaCreateWorkout) {
+    await page.locator('[data-create-workout]:visible').click()
+    await page.locator('[data-cw-new]').click()
+  } else {
+    await page.getByRole('button', { name: '+ New template' }).click()
+  }
   await page.locator('#ct-name').fill(tplName)
   await page.locator('#create-template-modal button:has-text("Create")').click()
 

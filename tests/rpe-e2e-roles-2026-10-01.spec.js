@@ -110,9 +110,10 @@ test.describe('RPE top set — solo', () => {
     }, exName)
     pending.push({ tag, exId })
 
-    // Templates live under LIBRARY in the solo nav (Workouts there is just recent sessions) — found by looking, not guessing.
-    await soloNav(page, 'library')
-    await S.buildTopSetTemplate(page, { tplName, exName, shotPrefix: 'solo' })
+    // Personal view creates a workout from Train > Workouts > Create a workout > Create new (2026-10-31; it was the Library's
+    // + New template, a tab Personal view no longer has).
+    await soloNav(page, 'workouts')
+    await S.buildTopSetTemplate(page, { tplName, exName, shotPrefix: 'solo', viaCreateWorkout: true })
     S.assertSavedShape(await S.readSavedTemplateExercise(page, exName), { exId })
 
     // The saved template's page offers ▶ Start for the solo record (app-workouts.js, the solo branch).

@@ -123,7 +123,7 @@ the training itself. The target is shown beside the set ("aim 80 x 8, 8, 8"), ne
 4. Sign-up and a three-question setup that picks a starter plan.
 5. Four to six proven plans written by Jake.
 6. Installable to the home screen (PWA).
-7. Navigation from 8 destinations to 4.
+7. Navigation from 8 destinations to 4. BUILT 2026-10-31 (Today, Train, Progress, More; [design](../specs/2026-10-31-personal-view-four-tabs-design.md)).
 8. Plan complete: a review and the next block (partly planned as R3b).
 
 **V2: retention and switching**

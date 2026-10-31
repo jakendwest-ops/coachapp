@@ -44,7 +44,9 @@ function _refresh1RMs(clientId) {
 function _refreshClientPerformance(clientId) {
   const el = document.getElementById('pb-performance-section') || document.getElementById('tab-content')
   if (!el) return Promise.resolve()
-  return renderClientPerformance(clientId, el)
+  // In Personal view's Records the Performance views sit under the records, and this re-render tears down every managed chart on the
+  // page (_destroyManagedCharts) — so they are drawn again after it (2026-10-31).
+  return renderClientPerformance(clientId, el).then(() => { if (document.getElementById('pb-perf-views')) return renderPerformance(_perfHost()) })
 }
 
 // ─── Personal Bests: one clean row per lift, and a page for each lift (Jake, 2026-10-13) ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -67,7 +69,11 @@ function _pbDestroyCharts() {
   }
 }
 // The "Log a PB / performance record" section sits under the 1RM list on the client / solo page. A lift's page is a page of its own: it is hidden while one is open (and so cannot tear down the lift's charts).
-const _pbShowPerformance = show => { const p = document.getElementById('pb-performance-section'); if (p) p.hidden = !show }
+// Personal view's Records (2026-10-31) also has the Performance views under the records: hidden with them, because their switches tear
+// down every managed chart (review, 2026-10-31: the lift page's charts went blank).
+const _pbShowPerformance = show => {
+  for (const id of ['pb-performance-section', 'pb-perf-views']) { const p = document.getElementById(id); if (p) p.hidden = !show }
+}
 // The one error panel for both pages (a failed read must never look like an empty list).
 const _pbError = (title, lead = '') => `${lead}<div class="empty-state"><div class="empty-title">${title}</div><div class="empty-text">Check your connection and try again.</div></div>`
 
@@ -458,7 +464,14 @@ function _bestPerfLog(records) {
   }, records[0])
 }
 
-async function renderClientPerformance(clientId, el) {
+// `opts.categories` (Personal view's Cardio and Records, 2026-10-31) limits the records shown AND the categories the form offers. It is
+// kept on the element, so a save or delete that refreshes through _refreshClientPerformance(clientId, el) keeps the same filter.
+/** @param {string} clientId @param {HTMLElement} el @param {{ categories?: string[] }} [opts] */
+async function renderClientPerformance(clientId, el, opts = {}) {
+  if (opts.categories) el.dataset.perfCategories = opts.categories.join(',')
+  const only = el.dataset.perfCategories ? el.dataset.perfCategories.split(',') : null
+  const picked = only ? PERF_CATEGORIES.filter(c => only.includes(c.id)) : []
+  const cats = picked.length ? picked : PERF_CATEGORIES      // no valid id left: show everything rather than break the form (cats[0])
   log.info('renderClientPerformance', 'fetching performance logs', { clientId })
   el.innerHTML = '<div style="padding:24px;color:var(--text-muted);text-align:center">Loading…</div>'
 
@@ -476,7 +489,7 @@ async function renderClientPerformance(clientId, el) {
 
   // Group by category
   const byCategory = {}
-  PERF_CATEGORIES.forEach(c => { byCategory[c.id] = logs.filter(l => l.category === c.id) })
+  cats.forEach(c => { byCategory[c.id] = logs.filter(l => l.category === c.id) })
 
   el.innerHTML = `
     <div style="padding:20px 0">
@@ -488,7 +501,7 @@ async function renderClientPerformance(clientId, el) {
           <div>
             <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Category</label>
             <select id="pl-category" class="field-input" onchange="updatePerfUnits()">
-              ${PERF_CATEGORIES.map(c => `<option value="${c.id}">${c.label}</option>`).join('')}
+              ${cats.map(c => `<option value="${c.id}">${c.label}</option>`).join('')}
             </select>
           </div>
           <div>
@@ -498,7 +511,7 @@ async function renderClientPerformance(clientId, el) {
         </div>
         <div style="margin-bottom:10px">
           <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Name</label>
-          <input id="pl-name" type="text" class="field-input" placeholder="${PERF_CATEGORIES[0].placeholder}">
+          <input id="pl-name" type="text" class="field-input" placeholder="${cats[0].placeholder}">
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
@@ -508,7 +521,7 @@ async function renderClientPerformance(clientId, el) {
           <div>
             <label style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-weight:600;display:block;margin-bottom:4px">Unit</label>
             <select id="pl-unit" class="field-input">
-              ${PERF_CATEGORIES[0].units.map(u => `<option value="${u}"${u === _preferredPerfUnit(PERF_CATEGORIES[0].units) ? ' selected' : ''}>${u}</option>`).join('')}
+              ${cats[0].units.map(u => `<option value="${u}"${u === _preferredPerfUnit(cats[0].units) ? ' selected' : ''}>${u}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -521,7 +534,7 @@ async function renderClientPerformance(clientId, el) {
       </div>
 
       <!-- Records by category -->
-      ${PERF_CATEGORIES.map(cat => {
+      ${cats.map(cat => {
         const catLogs = byCategory[cat.id]
         if (catLogs.length === 0) return ''
         const colour = PERF_COLOURS[cat.id]
@@ -613,7 +626,7 @@ async function renderClientPerformance(clientId, el) {
         </div>`
       }).join('')}
 
-      ${logs.length === 0 ? `
+      ${cats.every(c => !byCategory[c.id].length) ? `
         <div class="empty-state">
           <div class="empty-icon">🏆</div>
           <div class="empty-title">No performance records yet</div>
@@ -629,7 +642,7 @@ async function renderClientPerformance(clientId, el) {
   // save. Same class as the pw-chart leak fixed on 2026-08-12; this sibling was missed then.
   _destroyManagedCharts()
   window.__perfChartData = {}
-  PERF_CATEGORIES.forEach(cat => {
+  cats.forEach(cat => {
     const catLogs = byCategory[cat.id]
     const colour  = PERF_COLOURS[cat.id]
     const byName  = {}
@@ -1025,8 +1038,26 @@ async function sendClientInvite(clientId, email) {
   setTimeout(() => openClient(clientId), 1200)
 }
 
+// The one weight insert: the Weight page's form and Today's quick log (2026-10-31) both write through it, ownership-checked here.
+// `weight` is in the person's unit (weightFromPref converts). Resolves { error } — never throws.
+/** @param {string} clientId @param {{ date: string, weight: string|number, bf?: string|null, notes?: string|null }} entry */
+async function _insertWeightLog(clientId, { date, weight, bf = null, notes = null }) {
+  // 0 and negatives are not weights (the Weight page's form let them through until 2026-10-31; Today's box refuses them too).
+  if (!(Number(weight) > 0)) return { error: { message: 'Enter a weight above 0.' } }
+  if (!(await _verifyClientAccess('_insertWeightLog', clientId))) return { error: { message: 'Save failed — permission denied.' } }
+  log.info('_insertWeightLog', 'inserting weight entry', { clientId, date })
+  const { error } = await db.from('weight_logs').insert({
+    client_id:    clientId,
+    date,
+    weight_kg:    weightFromPref(weight),
+    body_fat_pct: bf ? parseFloat(bf) : null,
+    notes:        notes || null
+  })
+  if (error) log.error('_insertWeightLog', 'insert failed', error)
+  return { error }
+}
+
 async function saveWeightLog(clientId) {
-  if (!(await _verifyClientAccess('saveWeightLog', clientId))) { const e = document.getElementById('wl-error'); if (e) e.textContent = 'Save failed — permission denied.'; return }
   const date   = document.getElementById('wl-date')?.value
   const weight = document.getElementById('wl-weight')?.value
   const bf     = document.getElementById('wl-bf')?.value
@@ -1038,16 +1069,8 @@ async function saveWeightLog(clientId) {
     return
   }
 
-  log.info('saveWeightLog', 'inserting weight entry', { clientId, date })
-  const { error } = await db.from('weight_logs').insert({
-    client_id:    clientId,
-    date,
-    weight_kg:    weightFromPref(weight),
-    body_fat_pct: bf ? parseFloat(bf) : null,
-    notes:        notes || null
-  })
-
-  if (error) { log.error('saveWeightLog', 'insert failed', error); document.getElementById('wl-error') && (document.getElementById('wl-error').textContent = error.message); return }
+  const { error } = await _insertWeightLog(clientId, { date, weight, bf, notes })
+  if (error) { document.getElementById('wl-error') && (document.getElementById('wl-error').textContent = error.message); return }
   log.ok('saveWeightLog', 'weight entry saved', { clientId, date })
   showToast('Weight logged ✓', 'success', 2000)
   renderClientWeight(clientId, document.getElementById('tab-content'))
@@ -1369,6 +1392,8 @@ async function renderProgress(el) {
   // change); they never ran when the container itself was torn down by switching to a different
   // top-level Progress tab, leaking every chart instance bound to the canvases this innerHTML
   // rebuild is about to detach. Found by the 2026-07-23 full-file review.
+  // Personal view has its own four switches (2026-10-31); this function stays the coached client's Progress.
+  if (_isPersonalView()) return renderPersonalProgress(el)
   _destroyManagedCharts()
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
@@ -1407,6 +1432,10 @@ async function renderProgress(el) {
   // removed tab stays safe if tab state is ever persisted, and because within a single session old
   // code could still hold either name. Do not read it as evidence that tabs are remembered.
   if (window._progressTab === '1RMs' || window._progressTab === 'Benchmarks') window._progressTab = 'Personal Bests'
+  // A master account coming from Personal view's switches (2026-10-31) lands on the client tab that holds the same things.
+  const fromPersonal = { Records: 'Personal Bests', Cardio: 'Personal Bests', Weight: 'Body Weight' }
+  const w = /** @type {any} */ (window)
+  if (fromPersonal[w._progressTab]) w._progressTab = fromPersonal[w._progressTab]
   if (window._progressTab && !tabs.includes(window._progressTab)) window._progressTab = 'Body Weight'
   const activeTab = window._progressTab || 'Body Weight'
 
@@ -1423,9 +1452,6 @@ async function renderProgress(el) {
   // it into view. block:'nearest' keeps this from nudging the page vertically.
   el.querySelector('.chip-row .chip[aria-selected="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' })
 
-  // Shared with Goals below — one literal instead of two, so this doesn't grow the
-  // hand-rolled-empty-state count that scripts/check-count-ratchet.mjs holds at its baseline.
-  const _noClientProfileHtml = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'
   if (activeTab === 'Body Weight')    await renderProgressWeight(document.getElementById('progress-tab-content'))
   if (activeTab === 'Performance')    await renderPerformance(document.getElementById('progress-tab-content'))
   if (activeTab === 'Personal Bests') {
@@ -1449,18 +1475,78 @@ async function renderProgress(el) {
     const clientId = await _getCurrentClientId()
     const host = document.getElementById('progress-tab-content')
     if (!clientId) { host.innerHTML = _noClientProfileHtml; return }
-    // Reuses the same renderClientGoals the `goals` route (js/app-core.js, added 2026-08-30) already
-    // calls — one implementation of goal rendering, two entry points into it. But renderClientGoals'
-    // OWN children (openGoal, deleteGoal, saveNewGoal, backToGoals, milestone/check-in modals) all
-    // hardcode document.getElementById('tab-content') to repaint themselves — the id the `goals` route
-    // and the coach's client-profile Goals tab both already provide. Without this wrapper, every one of
-    // those silently targets a null element from this tab (a goal tap does nothing; found by review,
-    // 2026-09-29). Same reasoning as the Personal Bests branch just above giving 1RM writers their own
-    // #pb-1rms-section rather than leaving them pointed at someone else's container id.
-    host.innerHTML = '<div id="tab-content"></div>'
-    await renderClientGoals(clientId, document.getElementById('tab-content'))
+    await _renderProgressGoals(clientId, host)
   }
 }
+
+// Goals inside Progress, shared by the client's Progress and Personal view's. renderClientGoals' own children repaint into
+// #tab-content (see the long note in renderProgress), so the host gets that id.
+async function _renderProgressGoals(clientId, host) {
+  // Reuses the same renderClientGoals the `goals` route (js/app-core.js, added 2026-08-30) already
+  // calls — one implementation of goal rendering, two entry points into it. But renderClientGoals'
+  // OWN children (openGoal, deleteGoal, saveNewGoal, backToGoals, milestone/check-in modals) all
+  // hardcode document.getElementById('tab-content') to repaint themselves — the id the `goals` route
+  // and the coach's client-profile Goals tab both already provide. Without this wrapper, every one of
+  // those silently targets a null element from this tab (a goal tap does nothing; found by review,
+  // 2026-09-29). Same reasoning as the Personal Bests branch giving 1RM writers their own
+  // #pb-1rms-section rather than leaving them pointed at someone else's container id.
+  host.innerHTML = '<div id="tab-content"></div>'
+  await renderClientGoals(clientId, document.getElementById('tab-content'))
+}
+
+// ─── Personal view's Progress: Goals, Records, Weight, Cardio (Jake, 2026-10-31) ───────────────────────────────────────────────
+// A separate entry point so a coached client's Progress (renderProgress's own four tabs) does not change. Records = the 1RMs, the
+// non-cardio records and the Performance views (Per exercise / Per session / Per training plan, unchanged); Cardio = the cardio
+// records. Docs: docs/superpowers/specs/2026-10-31-personal-view-four-tabs-design.md.
+const _PERSONAL_PROGRESS_TABS = ['Goals', 'Records', 'Weight', 'Cardio']
+
+// Shared by both Progress pages (the client's and Personal view's) — one literal, so it doesn't grow the hand-rolled-empty-state
+// count that scripts/check-count-ratchet.mjs holds at its baseline. Was a local of renderProgress until 2026-10-31.
+const _noClientProfileHtml = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'
+
+// A stored tab name from before (the client's tab names, or ones retired earlier) lands where its content now is; anything else, Goals.
+/** @param {string|undefined} stored */
+function _personalProgressTab(stored) {
+  if (stored && _PERSONAL_PROGRESS_TABS.includes(stored)) return stored
+  if (stored === 'Body Weight') return 'Weight'
+  if (['Personal Bests', 'Performance', '1RMs', 'Benchmarks'].includes(stored || '')) return 'Records'
+  return 'Goals'
+}
+
+async function renderPersonalProgress(el) {
+  _destroyManagedCharts()
+  const win = /** @type {any} */ (window)
+  const active = win._progressTab = _personalProgressTab(win._progressTab)
+  el.innerHTML = `
+    <div class="page-header"><h1 class="page-title">Progress</h1></div>
+    <div class="chip-row" style="margin-bottom:20px">
+      ${_PERSONAL_PROGRESS_TABS.map(t => `
+        <button class="chip" aria-selected="${t === active}"
+          onclick="window._progressTab='${t}';renderProgress(document.getElementById('main-content'))">${t}</button>`).join('')}
+    </div>
+    <div id="progress-tab-content"></div>`
+  const host = document.getElementById('progress-tab-content')
+  if (active === 'Weight') { await renderProgressWeight(host); return }
+  const clientId = await _getCurrentClientId()
+  if (!clientId) { host.innerHTML = _noClientProfileHtml; return }
+  if (active === 'Goals') { await _renderProgressGoals(clientId, host); return }
+  if (active === 'Cardio') {
+    host.innerHTML = '<div id="pb-performance-section"></div>'
+    await renderClientPerformance(clientId, document.getElementById('pb-performance-section'), { categories: ['cardio'] })
+    return
+  }
+  // Records. Each section keeps the id its own writer refreshes through (see the Personal Bests branch of renderProgress).
+  host.innerHTML = '<div id="pb-1rms-section"></div><div id="pb-performance-section" style="margin-top:28px"></div><div id="pb-perf-views" style="margin-top:28px"></div>'
+  await Promise.all([
+    renderClient1RMs(clientId, document.getElementById('pb-1rms-section')),
+    renderClientPerformance(clientId, document.getElementById('pb-performance-section'), { categories: ['strength', 'body_metric', 'benchmark'] }),
+  ])
+  await renderPerformance(document.getElementById('pb-perf-views'))
+}
+
+// Where the Performance views redraw: Personal view's Records gives them their own box under the records (2026-10-31), so a switch
+// between Per exercise / Per session must not repaint the whole Progress area and wipe the 1RMs and records above it.
+function _perfHost() { return document.getElementById('pb-perf-views') || document.getElementById('progress-tab-content') }
 
 async function renderPerformance(el) {
   // Same reasoning as renderProgress's own destroy call: switching between THIS view's own two
@@ -1500,7 +1586,7 @@ async function renderPerformance(el) {
       <div class="chip-row" style="flex:1">
         ${['Per exercise', 'Per session', 'Per training plan'].map(t => `
           <button class="chip" aria-selected="${t === subTab}"
-            onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))">${t}</button>`).join('')}
+            onclick="window._perfTab='${t}';renderPerformance(_perfHost())">${t}</button>`).join('')}
       </div>
       ${rangeSelect}
     </div>

@@ -60,7 +60,9 @@ const FROZEN_UNGUARDED = {
   saveProgram:                        'one row, lands in the programs list, deletable',
   savePhase:                          'one row, appears in the builder immediately, deletable',
   savePerformanceLog:                 'one row, appears in the log list, deletable',
-  saveWeightLog:                      'one row, appears in the weight history, deletable',
+  // The insert moved out of saveWeightLog into the shared _insertWeightLog on 2026-10-31 (the Weight page and Today's quick log
+  // both write through it). Same reason as before; Today's new caller, _dashQuickWeight, is guarded itself (app-dashboard.js).
+  _insertWeightLog:                   'one row, appears in the weight history, deletable',
 
   // ── The runner/session-save category USED to live here, under one shared justification:
   //    "each is reached from a screen that is torn down on success, so the button does not survive the

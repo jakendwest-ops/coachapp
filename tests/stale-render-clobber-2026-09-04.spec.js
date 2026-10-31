@@ -71,14 +71,16 @@ test.describe('A stale render cannot clobber the page you navigated to (2026-09-
 
     // The navigation itself must have worked — otherwise the assertion below passes for the wrong
     // reason and this test proves nothing.
-    expect(r.afterNavigate, 'the navigation must land before the stale render resolves').toContain('Library')
+    // Personal view's library page is titled "Exercise library" since 2026-10-31.
+    expect(r.afterNavigate, 'the navigation must land before the stale render resolves').toContain('Exercise library')
 
     // THE ASSERTION. Before the fix this was "My Training": the stale render overwrote the page.
-    expect(r.afterStaleResolved, 'a render from the page you LEFT must not repaint over the page you are on').toContain('Library')
+    expect(r.afterStaleResolved, 'a render from the page you LEFT must not repaint over the page you are on').toContain('Exercise library')
 
     // And the app's own idea of where it is must agree with what is on screen — the disagreement is
-    // what made this so hard to recognise as a race rather than a broken click.
-    expect(r.navActive).toBe('library')
+    // what made this so hard to recognise as a race rather than a broken click. Since 2026-10-31 the library is reached from More,
+    // so More is the lit tab while the page is still `library`.
+    expect(r.navActive).toBe('__more__')
     expect(r.currentPage).toBe('library')
   })
 })

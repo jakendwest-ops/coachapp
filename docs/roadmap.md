@@ -15,6 +15,7 @@ gate. Left: confirming `delete_current_user()` exists in the database (needs Jak
 
 A product-level review of Solo with a ranked MVP / V2 / V3 roadmap:
 [superpowers/plans/2026-10-29-solo-product-review.md](superpowers/plans/2026-10-29-solo-product-review.md). Recommendations only.
+Built: R4a, installable app, four-destination nav (MVP 7). Next: the 2026-10-31 chart designs in `superpowers/specs/`.
 
 ## Current priorities (corrected 2026-10-05)
 
