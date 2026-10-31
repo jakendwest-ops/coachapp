@@ -90,14 +90,11 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('h1')).toContainText('Calendar', { timeout: 8000 })
   })
 
-  test('solo Progress page loads with tabs (2026-07-08: Cardio folded into Personal Bests, no longer its own top-level tab)', async ({ page }) => {
+  test('solo Progress page loads with its four switches (2026-10-31: Goals, Records, Weight, Cardio; the client keeps the old four)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await clickVisible(page, '[data-page="progress"]')
-    await page.waitForTimeout(1000)
-    await expect(page.locator('h1')).toContainText('My Progress', { timeout: 8000 })
-    await expect(page.locator('button:has-text("Body Weight")')).toBeVisible()
-    await expect(page.locator('button:has-text("Personal Bests")')).toBeVisible()
-    await expect(page.locator('button:has-text("Performance")')).toBeVisible()
+    await expect(page.locator('h1')).toContainText('Progress', { timeout: 8000 })
+    await expect(page.locator('#main-content .chip-row').first().locator('button.chip')).toHaveText(['Goals', 'Records', 'Weight', 'Cardio'])
   })
 
   test('tapping a day shows its workout inline, with no slider (2026-07-17 week-tabs redesign)', async ({ page }) => {

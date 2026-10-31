@@ -63,6 +63,55 @@ test.describe('Personal view: Today', () => {
   })
 })
 
+test.describe('Personal view: Progress', () => {
+  const TAG = '[E2E-PROGTABS]'
+  const chips = (page) => page.locator('#main-content .chip-row').first().locator('button.chip')
+
+  test('Progress opens on Goals; the switches are Goals, Records, Weight, Cardio; an old Body Weight link opens Weight', async ({ page }) => {
+    await soloReady(page)
+    await page.evaluate(() => { window._progressTab = undefined; navigate('progress') })
+    await expect(chips(page)).toHaveText(['Goals', 'Records', 'Weight', 'Cardio'])
+    await expect(page.locator('#main-content .chip-row .chip[aria-selected="true"]').first()).toHaveText('Goals')
+    await page.evaluate(() => { window._progressTab = 'Body Weight'; navigate('progress') })
+    await expect(page.locator('#main-content .chip-row .chip[aria-selected="true"]').first()).toHaveText('Weight')
+  })
+
+  test('a cardio record shows under Cardio and not Records; a strength record the other way round; Records keeps the Performance views', async ({ page }) => {
+    await soloReady(page)
+    const stamp = Date.now()
+    const names = { cardio: `${TAG} row ${stamp}`, strength: `${TAG} lift ${stamp}` }
+    await page.evaluate(async ({ names }) => {
+      const cid = window._soloClientId, d = _ymdLocal(new Date())
+      await db.from('performance_logs').insert([
+        { client_id: cid, logged_by: currentUser.id, date: d, category: 'cardio', name: names.cardio, value: 600, unit: 'sec' },
+        { client_id: cid, logged_by: currentUser.id, date: d, category: 'strength', name: names.strength, value: 100, unit: 'kg' },
+      ])
+    }, { names })
+    try {
+      await page.evaluate(() => { window._progressTab = 'Cardio'; navigate('progress') })
+      await expect(page.locator('#main-content', { hasText: names.cardio })).toBeVisible({ timeout: 15000 })
+      await expect(page.locator(`text=${names.strength}`)).toHaveCount(0)
+      await expect(page.locator('#pl-category option'), 'Cardio logs cardio only').toHaveText(['Cardio'])
+
+      await page.evaluate(() => { window._progressTab = 'Records'; navigate('progress') })
+      await expect(page.locator('#main-content', { hasText: names.strength })).toBeVisible({ timeout: 15000 })
+      await expect(page.locator(`text=${names.cardio}`)).toHaveCount(0)
+      await expect(page.locator('#main-content button.chip', { hasText: 'Per exercise' }), 'the Performance views live in Records').toBeVisible()
+    } finally {
+      await page.evaluate(async (tag) => {
+        await db.from('performance_logs').delete().eq('client_id', window._soloClientId).like('name', tag + '%')
+      }, TAG)
+    }
+  })
+
+  test('CLIENT: Progress still has Body Weight, Personal Bests, Performance, Goals', async ({ page }) => {
+    const { loginAsClient } = require('./helpers')
+    await loginAsClient(page)
+    await page.evaluate(() => { window._progressTab = undefined; navigate('progress') })
+    await expect(chips(page)).toHaveText(['Body Weight', 'Personal Bests', 'Performance', 'Goals'])
+  })
+})
+
 test.describe('Personal view: Train', () => {
   test('Train opens on Workouts with a Workouts | Plans switch; Plans keeps Train lit', async ({ page }) => {
     await soloReady(page)

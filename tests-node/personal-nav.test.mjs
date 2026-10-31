@@ -38,6 +38,16 @@ describe('Personal view nav', () => {
     assert.match(client, />Log a workout</)
   })
 
+  test('Progress in Personal view: a stored tab name maps onto Goals / Records / Weight / Cardio; unknown or empty opens Goals', () => {
+    const t = get('_personalProgressTab')
+    assert.equal(t(undefined), 'Goals')
+    assert.equal(t(''), 'Goals')
+    assert.equal(t('Body Weight'), 'Weight')
+    for (const old of ['Personal Bests', 'Performance', '1RMs', 'Benchmarks']) assert.equal(t(old), 'Records', old)
+    for (const now of ['Goals', 'Records', 'Weight', 'Cardio']) assert.equal(t(now), now)
+    assert.equal(t('Nonsense'), 'Goals')
+  })
+
   test('the coach and client navs are unchanged', () => {
     const items = json(get('_NAV_ITEMS'))
     assert.deepEqual(items.client.map(i => [i.page, i.label]), [['client-dashboard', 'Dashboard'], ['workouts', 'Workouts'], ['calendar', 'Calendar'], ['progress', 'Progress'], ['settings', 'Settings']])
