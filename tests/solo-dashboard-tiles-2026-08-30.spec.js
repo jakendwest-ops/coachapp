@@ -373,8 +373,10 @@ test.describe('solo dashboard cards', () => {
       tabContent: !!document.getElementById('tab-content'),
       addBtn: !!document.querySelector('[onclick^="showAddGoalModal"]')
     }))
-    expect(r.page).toBe('goals')
-    expect(r.h1).toContain('Goals')
+    // Since 2026-10-31 Personal view's goals live in Progress › Goals: navigate('goals') lands there (four destinations).
+    expect(r.page).toBe('progress')
+    expect(r.h1).toContain('Progress')
+    expect(await page.locator('#main-content .chip-row .chip[aria-selected="true"]').first().textContent()).toBe('Goals')
     expect(r.tabContent, '#tab-content must exist or the goals UI cannot re-render itself').toBe(true)
     expect(r.addBtn, 'a solo user must be able to CREATE a goal - they could not before this route').toBe(true)
   })

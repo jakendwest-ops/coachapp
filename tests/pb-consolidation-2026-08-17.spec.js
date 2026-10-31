@@ -154,11 +154,12 @@ test.describe('Personal Bests consolidation', () => {
       // #main-content read back the SOLO DASHBOARD's own markup, not Progress, when this was missing).
       // The original test this one replaces already knew this — same wait, same reason.
       await new Promise(res => setTimeout(res, 2500))
-      window._progressTab = 'Personal Bests'
+      // Personal view keeps cardio records under Progress › Cardio since 2026-10-31 (Records holds the other categories).
+      window._progressTab = 'Cardio'
       await renderProgress(document.getElementById('main-content'))
       await new Promise(res => setTimeout(res, 800))
       const name = '[E2E-PB] 5k ' + Date.now()
-      if (!document.getElementById('pb-performance-section')) return { err: 'Personal Bests tab has no #pb-performance-section' }
+      if (!document.getElementById('pb-performance-section')) return { err: 'Cardio has no #pb-performance-section' }
       if (!document.getElementById('pl-name')) return { err: 'renderClientPerformance did not mount its own add-form' }
 
       document.getElementById('pl-category').value = 'cardio'
@@ -199,7 +200,7 @@ test.describe('Personal Bests consolidation', () => {
       if (!window._soloClientId) return { skip: true }
       await switchView('solo')
       await new Promise(res => setTimeout(res, 2500))
-      window._progressTab = 'Personal Bests'
+      window._progressTab = 'Cardio'      // Personal view's cardio records (2026-10-31)
       await renderProgress(document.getElementById('main-content'))
       await new Promise(res => setTimeout(res, 800))
       const name = '[E2E-PB] null-user ' + Date.now()

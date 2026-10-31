@@ -41,8 +41,10 @@ test.describe('Client-record resolution (2026-09-04)', () => {
 
     expect(r.rowsForThisUser, 'the account must have exactly one clients row').toBe(1)
     expect(r.inserted, 'a second row for the same user_id must be REFUSED').toBeUndefined()
-    expect(r.code, 'the refusal must be a unique-violation (23505)').toBe('23505')
-    expect(r.message, 'and it must name the user_id index, not some other constraint').toContain('user_id')
+    // Since 2026-10-31 (a7b346d, scripts/add-clients-user-id-guard-2026-10-31.sql) the app cannot set clients.user_id at all, so this
+    // insert is refused by that guard (42501) before the unique index (23505) is reached. Either refusal keeps the premise true.
+    expect(['23505', '42501'], 'the refusal must be the unique index or the user_id guard').toContain(r.code)
+    expect(r.message, 'and it must be about user_id, not some other constraint').toContain('user_id')
   })
 
   test('saveClientEvent binds to the calendar it is rendered on, not a fresh user_id lookup', async ({ page }) => {

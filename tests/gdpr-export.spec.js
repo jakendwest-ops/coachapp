@@ -103,7 +103,8 @@ test.describe('GDPR data export', () => {
       return { rejected: !!error, msg: error?.message || null }
     })
     expect(r.rejected, 'a second clients row was ACCEPTED — .single() audits needed').toBe(true)
-    expect(r.msg).toContain('clients_user_id_idx')
+    // Since 2026-10-31 the user_id guard (a7b346d) refuses an app-set user_id before the unique index is reached; either names user_id.
+    expect(r.msg).toMatch(/clients_user_id_idx|clients\.user_id cannot be set from the app/)
   })
 
   // Source-level pin, not a DB round-trip: this is exactly the CRITICAL 2026-07-23 failure shape —
