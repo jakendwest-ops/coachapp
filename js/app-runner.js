@@ -4226,6 +4226,65 @@ async function closeLogSessionModal() {
 }
 guardReentry('closeLogSessionModal')
 
+// Session review (MVP item 6, Jake 2026-10-31): a logged session beside the plan workout it came from (workout_logs.template_id). A session keeps no
+// copy of its prescription, so `plan` is the workout as it is TODAY - changedSince says when it was edited after the session was saved. Pairs by
+// exercise id, then by name; each logged row is used once. A plan exercise with no logged row, or with a logged row that has no sets (the hand-log
+// form writes those), is "not done"; a logged one the plan lacks is "added". Per-set targets only where sets line up one to one: not cardio or
+// interval, and - when the sets are known - only if as many sets were logged as planned (the runner numbers logged sets 1..N, so a skipped set
+// would shift every target after it). `session` is { date, created_at } (or just the date). Pure: tests-node/session-review.test.mjs.
+function _sessionVsPlan(logExercises, plan, session) {
+  const sess = typeof session === 'string' ? { date: session } : (session || {})
+  const planExs = plan ? [...(plan.workout_template_exercises || [])].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)) : []
+  const key = n => (n || '').trim().toLowerCase()
+  const flags = ex => {
+    const mt = _resolveMetricType(ex.metric_type, ex.exercise_type, ex.sets_json?.[0])
+    return { isCardio: mt === 'cardio', isInterval: mt === 'interval', isUnilateral: mt === 'unilateral' }
+  }
+  const prescribed = ex => {
+    const sj = Array.isArray(ex.sets_json) && ex.sets_json.length ? ex.sets_json : null
+    if (sj) return _fmtSetsCollapsed(sj, flags(ex))
+    const n = Number(ex.sets) || 0
+    return n ? `${n} set${n !== 1 ? 's' : ''}` : null
+  }
+  const targets = ex => {
+    const f = flags(ex)
+    if (f.isCardio || f.isInterval || !Array.isArray(ex.sets_json)) return []
+    return ex.sets_json.map(s => { const t = _fmtSetDetail(s, { isUnilateral: f.isUnilateral }); return t === '—' ? null : t })
+  }
+  const logs = logExercises || []
+  const used = new Set(), pairOf = new Map()
+  for (const pass of ['id', 'name']) {
+    for (const p of planExs) {
+      if (pairOf.has(p)) continue
+      const hit = logs.find(l => !used.has(l) && (pass === 'id' ? (p.exercise_id && l.exercise_id === p.exercise_id) : key(l.exercise_name) === key(p.exercise_name)))
+      if (hit) { used.add(hit); pairOf.set(p, hit) }
+    }
+  }
+  const planOf = new Map([...pairOf].map(([p, l]) => [l, p]))
+  const empty = l => Array.isArray(l.workout_log_sets) && l.workout_log_sets.length === 0
+  const rows = logs.map(l => {
+    const p = planOf.get(l)
+    let t = p ? targets(p) : [], targetsHidden = false
+    if (t.length && Array.isArray(l.workout_log_sets) && l.workout_log_sets.length) {
+      const logged = new Set(l.workout_log_sets.filter(s => !s.phase || s.phase === 'work').map(s => Number(s.set_number))).size
+      if (logged !== t.length) { t = []; targetsHidden = true }
+    }
+    return { logId: l.id, status: plan ? (p ? (empty(l) ? 'not-done' : 'done') : 'added') : null, planName: p ? p.exercise_name : null, prescribed: p ? prescribed(p) : null, targets: t, targetsHidden }
+  })
+  // Edited after the session was SAVED (both server times, so no timezone in it); a session with no saved time falls back to its date.
+  const changedSince = !plan?.updated_at ? false
+    : sess.created_at ? Date.parse(plan.updated_at) > Date.parse(sess.created_at)
+    : !!(sess.date && _ymdLocal(new Date(plan.updated_at)) > sess.date)
+  return {
+    hasPlan: !!plan,
+    changedSince,
+    planned: planExs.length,
+    done: [...pairOf.values()].filter(l => !empty(l)).length,
+    rows,
+    notDone: planExs.filter(p => !pairOf.has(p)).map(p => ({ name: p.exercise_name, prescribed: prescribed(p) })),
+  }
+}
+
 async function openWorkoutLog(logId, clientId) {
   // This screen is reachable by a CLIENT from their own session history (app-workouts.js), and it had
   // no role check at all: it rendered the coach's Delete button and an editable "Coach notes" box to
@@ -4273,6 +4332,24 @@ async function openWorkoutLog(logId, clientId) {
 
   const exercises = (session.workout_log_exercises || []).sort((a, b) => a.order_index - b.order_index)
   const dateStr = _dateOnly(session.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+
+  // Session review: the plan workout this session came from, as it is today (_sessionVsPlan). A failed or thrown read never hides what was done.
+  let plan = null, planFailed = false
+  if (session.template_id) {
+    try {
+      const { data, error } = await db.from('workout_templates')
+        .select('id, updated_at, workout_template_exercises(id, exercise_id, exercise_name, exercise_type, metric_type, sets, sets_json, order_index)')
+        .eq('id', session.template_id).maybeSingle()
+      if (error) { planFailed = true; log.error('openWorkoutLog', 'plan read failed', error) } else plan = data
+    } catch (e) { planFailed = true; log.error('openWorkoutLog', 'plan read threw', { logId }) }
+  }
+  const review = _sessionVsPlan(exercises, plan, { date: session.date, created_at: session.created_at })
+  const reviewOf = new Map(review.rows.map(r => [r.logId, r]))
+  // No link: never trained from a plan workout, or that workout was since deleted (the link is ON DELETE SET NULL) - so say only what is known.
+  const reviewNote = !session.template_id ? 'No plan workout is linked to this session.'
+    : planFailed ? 'Could not load the plan for this session. What was done is below.'
+    : !plan ? 'The plan workout for this session is no longer available.'
+    : `${review.done} of ${review.planned} planned exercise${review.planned !== 1 ? 's' : ''} done.${review.changedSince ? ' The plan was changed after this session: the targets shown are today\'s.' : ''}`
 
   // Fetch previous session with same name for comparison
   let prevSession = null
@@ -4340,6 +4417,8 @@ async function openWorkoutLog(logId, clientId) {
       </div>
     </div>
 
+    <div class="sr-note${review.changedSince || planFailed ? ' sr-note-warn' : ''}" data-session-review="${!session.template_id ? 'none' : planFailed ? 'failed' : !plan ? 'gone' : review.changedSince ? 'changed' : 'plan'}">${escapeHtml(reviewNote)}</div>
+
     ${exercises.length === 0 ? `<div class="empty-state"><div class="empty-text">No exercises recorded</div></div>` :
       exercises.map((ex, i) => {
         const sets = (ex.workout_log_sets || []).sort((a, b) => a.set_number - b.set_number)
@@ -4371,11 +4450,18 @@ async function openWorkoutLog(logId, clientId) {
         // the confusion. But `set_number` counts every row, so a 4-round interval with a warm-up and
         // a cool-down rendered "Set 1 … Set 6" directly under a header now reading "4 sets". Name the
         // non-work rounds and number the work rounds 1..N, so the table agrees with its own summary.
+        // A unilateral set is saved as two rows (left, right) sharing one set number: label them "Set 1 L" / "Set 1 R", not "Set 1" / "Set 2"
+        // (review, 2026-10-31 - the Target column put set 1's target beside a row labelled "Set 2").
         let _workN = 0
         const setLabels = sets.map(s =>
           s.phase === 'warmup' ? 'Warm-up'
           : s.phase === 'cooldown' ? 'Cool-down'
+          : s.side === 'left' || s.side === 'right' ? `Set ${Number(s.set_number) || ++_workN} ${s.side === 'left' ? 'L' : 'R'}`
           : 'Set ' + (++_workN))
+        // The plan's target for each row, by its set number (a unilateral set is two rows sharing one number). Cardio and interval have none.
+        const rv = reviewOf.get(ex.id) || { status: null, prescribed: null, targets: [], targetsHidden: false }
+        const hasTarget = !isCardio && rv.targets.length > 0
+        const targetFor = (s, si) => rv.targets[(Number(s.set_number) || si + 1) - 1] ?? null
         return `
           <div class="card" style="margin-bottom:12px">
             <div class="card-body">
@@ -4383,14 +4469,18 @@ async function openWorkoutLog(logId, clientId) {
                 <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm, 11px);font-weight:700;color:var(--accent);flex-shrink:0">${i+1}</div>
                 <span style="font-weight:600;font-size:var(--legacy-text-15, 15px)">${escapeHtml(ex.exercise_name)}</span>
                 ${isCardio ? `<span style="font-size:var(--text-sm, 11px);font-weight:600;padding:1px 7px;border-radius:var(--radius-xs, 4px);background:rgba(6,182,212,.12);color:#06b6d4">Cardio</span>` : ''}
+                ${rv.status === 'added' ? '<span class="sr-tag" data-sr-status="added">Added</span>' : rv.status === 'not-done' ? '<span class="sr-tag" data-sr-status="not-done">Not done</span>' : ''}
               </div>
+              ${rv.prescribed ? `<div class="sr-presc" data-sr-prescribed>Prescribed: ${escapeHtml(rv.prescribed)}</div>` : ''}
+              ${rv.targetsHidden ? '<div class="sr-presc" data-sr-targets-hidden>Sets logged differ from the plan, so targets are not matched set by set.</div>' : ''}
               ${prevSummary ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-left:36px;margin-bottom:10px">Last time: ${prevSummary}</div>` : `<div style="margin-bottom:10px"></div>`}
               ${ex.client_notes ? `<div style="font-size:var(--text-md, 12px);color:var(--text);background:rgba(99,102,241,.06);border-radius:var(--radius-sm, 8px);padding:8px 10px;margin-bottom:10px"><span style="font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:var(--text-xs, 10px)">Client note</span><div style="margin-top:2px;white-space:pre-wrap">${escapeHtml(ex.client_notes)}</div></div>` : ''}
               ${sets.length === 0 ? `<div style="color:var(--text-muted);font-size:var(--text-base, 13px)">No sets recorded</div>` : `
-                <table style="width:100%;border-collapse:collapse">
+                <table${hasTarget ? ' class="sr-table"' : ''} style="width:100%;border-collapse:collapse">
                   <thead>
                     <tr style="border-bottom:1px solid var(--border)">
                       <th style="${thStyle}">Set</th>
+                      ${hasTarget ? '<th class="sr-th">Target</th>' : ''}
                       ${isCardio
                         ? `<th style="${thStyle}">Duration</th><th style="${thStyle}">Distance</th>`
                         : isJumpHeight
@@ -4405,6 +4495,7 @@ async function openWorkoutLog(logId, clientId) {
                     ${sets.map((s, si) => `
                       <tr style="border-bottom:1px solid var(--border)">
                         <td style="padding:8px 12px 8px 0;font-size:var(--text-base, 13px);color:var(--text-muted);font-weight:600">${setLabels[si]}</td>
+                        ${hasTarget ? `<td class="sr-td" data-sr-target>${escapeHtml(targetFor(s, si) || '—')}</td>` : ''}
                         ${isCardio
                           ? `<td style="padding:8px 12px 8px 0;font-size:var(--text-base, 13px)">${s.duration_seconds ? fmtDuration(s.duration_seconds) : '—'}</td><td style="padding:8px 0;font-size:var(--text-base, 13px)">${_hasNumVal(s.distance_m) ? fmtDistanceM(s.distance_m) : '—'}</td>`
                           : isJumpHeight
@@ -4423,6 +4514,10 @@ async function openWorkoutLog(logId, clientId) {
         `
       }).join('')
     }
+    ${review.notDone.length ? `<div class="card sr-notdone" data-sr-notdone><div class="card-body">
+      <div class="sr-notdone-h">Not done</div>
+      ${review.notDone.map(n => `<div class="sr-notdone-row"><span>${escapeHtml(n.name)}</span>${n.prescribed ? `<span class="sr-presc">${escapeHtml(n.prescribed)}</span>` : ''}</div>`).join('')}
+    </div></div>` : ''}
     <div class="card" style="margin-top:8px">
       <div class="card-body">
         <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Coach notes</div>

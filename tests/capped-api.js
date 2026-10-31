@@ -23,7 +23,7 @@
 //   the same + a filter that matches nothing               -> data null, count 0
 //
 // FAILS CLOSED. It implements only the read methods the app's screens use (select with an optional exact count,
-// eq / in / gte / lte / is / not-is-null, order, limit, range, single, maybeSingle; `head: true` returns no rows but the
+// eq / in / gte / lte / lt / is / not-is-null, order, limit, range, single, maybeSingle; `head: true` returns no rows but the
 // count, as a HEAD request does) and THROWS on anything else —
 // an unknown method, an unknown table, a write, limit() combined with range(). A stub that silently ignores a
 // call lets a test pass on nothing. It is read-only on purpose: no fixture rows, no debris, nothing to reap. It fakes
@@ -65,7 +65,7 @@ function _installInPage({ tables, cap, unordered }) {
   if (window.__cappedApi) throw new Error('capped-api: already installed — restoreCappedApi() first')
   const realFrom = db.from
   const calls = []
-  const KNOWN = new Set(['select', 'eq', 'in', 'gte', 'lte', 'is', 'not', 'order', 'limit', 'range', 'single', 'maybeSingle', 'then'])
+  const KNOWN = new Set(['select', 'eq', 'in', 'gte', 'lte', 'lt', 'is', 'not', 'order', 'limit', 'range', 'single', 'maybeSingle', 'then'])
   const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
   // Value of a column, following dotted paths through nested objects (to-one embeds); never through an array.
   const get = (row, col) => {
@@ -154,6 +154,7 @@ function _installInPage({ tables, cap, unordered }) {
       in(col, arr) { desc.push('in(' + col + ')'); q.filters.push(r => !viaInner(col) || arr.includes(get(r, col))); return proxy },
       gte(col, v) { desc.push('gte(' + col + ')'); q.filters.push(r => !viaInner(col) || (get(r, col) != null && get(r, col) >= v)); return proxy },
       lte(col, v) { desc.push('lte(' + col + ')'); q.filters.push(r => !viaInner(col) || (get(r, col) != null && get(r, col) <= v)); return proxy },
+      lt(col, v) { desc.push('lt(' + col + ')'); q.filters.push(r => !viaInner(col) || (get(r, col) != null && get(r, col) < v)); return proxy },
       is(col, v) { if (v !== null) throw new Error('capped-api: is() only supports null'); desc.push('is(' + col + ',null)'); q.filters.push(r => !viaInner(col) || get(r, col) == null); return proxy },
       not(col, op, v) { if (op !== 'is' || v !== null) throw new Error('capped-api: not() only supports (col, "is", null)'); desc.push('not(' + col + ',is,null)'); q.filters.push(r => !viaInner(col) || get(r, col) != null); return proxy },
       order(col, opts) { desc.push('order(' + col + ((opts && opts.ascending === false) ? ' desc' : '') + ')'); q.orders.push({ col, asc: !(opts && opts.ascending === false) }); return proxy },

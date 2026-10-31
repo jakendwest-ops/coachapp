@@ -4282,7 +4282,7 @@ async function renderClientWorkouts(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
 
   const [{ data: logs, error }, { data: clientProgs }, { data: clientData }] = await Promise.all([
-    db.from('workout_logs').select('*, workout_log_exercises(id)').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
+    db.from('workout_logs').select('*, workout_log_exercises(id, exercise_id, exercise_name)').eq('client_id', clientId).order('date', { ascending: false }).limit(20),
     db.from('client_programs').select('id, start_date, created_at, programs(id, name)').eq('client_id', clientId).order('created_at', { ascending: false }),
     db.from('clients').select('full_name').eq('id', clientId).single()
   ])
@@ -4308,7 +4308,7 @@ async function renderClientWorkouts(clientId, el) {
         <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${escapeHtml(programName)}</div>
         <div class="list" style="margin-bottom:20px">
           ${unique.map(r => `
-            <div class="list-row" onclick="openTemplate('${r.workout_templates?.id||r.workout_template_id}',{backTo:'client',backLabel:'${escapeAttr((clientData?.full_name||'Client'))}',clientId:'${clientId}',clientName:'${escapeAttr((clientData?.full_name||'Client'))}',clientProgramId:'${cpIds[0]||''}'})">
+            <div class="list-row" onclick="openTemplate('${escapeAttr(r.workout_templates?.id||r.workout_template_id)}',{backTo:'client',backLabel:'${escapeAttr((clientData?.full_name||'Client'))}',clientId:'${escapeAttr(clientId)}',clientName:'${escapeAttr((clientData?.full_name||'Client'))}',clientProgramId:'${escapeAttr(cpIds[0]||'')}'})">
               <div style="width:40px;height:40px;border-radius:var(--radius, 10px);background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-2xl, 18px);flex-shrink:0">💪</div>
               <div class="row-info">
                 <div class="row-name">${escapeHtml(r.workout_templates?.name||'Workout')}</div>
@@ -4324,10 +4324,29 @@ async function renderClientWorkouts(clientId, el) {
 
   log.ok('renderClientWorkouts', `loaded ${logs?.length} sessions`)
 
+  // Session review (MVP item 6): "N of M exercises" on each recent session that came from a plan workout - one read for all of them. If it fails,
+  // the rows just show no count (never a wrong one).
+  const recent = (logs || []).slice(0, 10)
+  const planById = new Map()
+  const tplIds = [...new Set(recent.map(l => l.template_id).filter(Boolean))]
+  if (tplIds.length) {
+    try {
+      const { data: plans, error: planErr } = await db.from('workout_templates').select('id, updated_at, workout_template_exercises(id, exercise_id, exercise_name, order_index)').in('id', tplIds)
+      if (planErr) log.error('renderClientWorkouts', 'plan read failed', planErr)
+      else for (const p of plans || []) planById.set(p.id, p)
+    } catch (e) { log.error('renderClientWorkouts', 'plan read threw', { clientId }) }
+  }
+  const doneLabel = l => {
+    const p = l.template_id && planById.get(l.template_id)
+    if (!p) return ''
+    const r = _sessionVsPlan(l.workout_log_exercises || [], p, { date: l.date, created_at: l.created_at })
+    return r.planned ? `${r.done} of ${r.planned} exercises` : ''
+  }
+
   el.innerHTML = `
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">
-      <button class="btn-secondary" style="font-size:var(--text-base, 13px)" onclick="showLogSessionModal('${clientId}')">Log past session</button>
-      <button class="btn-primary" onclick="startWorkoutRunner('${clientId}')">▶ Start workout</button>
+      <button class="btn-secondary" style="font-size:var(--text-base, 13px)" onclick="showLogSessionModal('${escapeAttr(clientId)}')">Log past session</button>
+      <button class="btn-primary" onclick="startWorkoutRunner('${escapeAttr(clientId)}')">▶ Start workout</button>
     </div>
     ${programWorkoutsHtml}
     ${!logs?.length ? `
@@ -4336,25 +4355,27 @@ async function renderClientWorkouts(clientId, el) {
           <div class="empty-icon">💪</div>
           <div class="empty-title">No sessions logged yet</div>
           <div class="empty-text">Log a workout to start tracking this client's training</div>
-          <button class="btn-primary" onclick="showLogSessionModal('${clientId}')">+ Log first session</button>
+          <button class="btn-primary" onclick="showLogSessionModal('${escapeAttr(clientId)}')">+ Log first session</button>
         </div>
       </div>
     ` : `
       <button onclick="toggleClientPhase('pt-session-history')" style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;background:none;border:none;padding:0;cursor:pointer;text-align:left">
         <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Recent sessions</div>
         <div style="display:flex;align-items:center;gap:6px">
-          <svg id="pt-session-history-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text-muted);transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
+          <svg id="pt-session-history-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text-muted);transition:transform .2s;transform:rotate(180deg)"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
       </button>
-      <div id="pt-session-history" style="display:none">
+      <div id="pt-session-history" style="display:block">
         <div class="list">
-          ${logs.slice(0, 5).map(l => {
+          ${recent.map(l => {
             const dateStr = new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+            const done = doneLabel(l)
             return `
-              <div class="list-row" onclick="openWorkoutLog('${l.id}','${clientId}')">
+              <div class="list-row" data-recent-session="${escapeHtml(l.id)}" onclick="openWorkoutLog('${escapeAttr(l.id)}','${escapeAttr(clientId)}')">
                 <div style="width:40px;height:40px;border-radius:var(--radius, 10px);background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-2xl, 18px);flex-shrink:0">💪</div>
                 <div class="row-info">
-                  <div class="row-name">${dateStr}</div>
+                  <div class="row-name">${escapeHtml(l.name || 'Workout')}</div>
+                  <div class="row-meta">${dateStr}${done ? ` · <span data-sr-done>${done}</span>` : ''}</div>
                 </div>
               </div>
             `
