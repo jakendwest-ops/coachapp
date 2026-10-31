@@ -15,7 +15,9 @@
 const { test, expect } = require('./fixtures')
 const { loginAsPT, loginAsClient } = require('./helpers')
 
-const ALLOWED = ['role', 'kind', 'tag', 'detail', 'code', 'frame', 'page', 'build']   // user_id is the server's default
+const ALLOWED = ['role', 'kind', 'tag', 'detail', 'code', 'frame', 'page', 'build', 'env']   // user_id is the server's default
+// env (2026-10-31): platform, installed app or browser, online, visible — four words, nothing identifying.
+const ENV_SHAPE = /^(ios|android|desktop|other) (app|browser) (online|offline) (visible|hidden)$/
 
 // Replaces db.from for app_errors with a recorder. `force` bypasses the navigator.webdriver suppression
 // that keeps the E2E suite from flooding the live table; the suppression itself is tested separately.
@@ -52,6 +54,7 @@ test.describe('error capture — what gets reported, and what never does', () =>
     expect(row).toMatchObject({ kind: 'log', tag: '[E2E-ERR] probe', detail: 'insert failed', code: '42501', role: 'client' })
     expect(row.page, 'page').toMatch(/^.{1,40}$/)
     expect(row.build, 'build lists the module versions').toMatch(/core\d+/)
+    expect(row.env, 'env says what kind of device, in four words').toMatch(ENV_SHAPE)
     const blob = JSON.stringify(row)
     for (const secret of ['jake@x.com', '82.5', 'already exists', 'Key (email)']) {
       expect(blob, `"${secret}" must never reach the row`).not.toContain(secret)
@@ -81,9 +84,108 @@ test.describe('error capture — what gets reported, and what never does', () =>
     })
     const [u, r] = await inserts(page)
     expect(u).toMatchObject({ kind: 'uncaught', tag: 'uncaught', detail: null, code: 'TypeError', frame: 'js/app-dashboard.js?v=22:642' })
-    expect(r).toMatchObject({ kind: 'rejection', tag: 'rejection', detail: null, code: 'PGRST116', frame: 'js/app-clients.js?v=17:52' })
+    // A real Error's name is already the code, so detail stays empty; anything else says what KIND of value it was.
+    expect(r).toMatchObject({ kind: 'rejection', tag: 'rejection', detail: 'value: Object', code: 'PGRST116', frame: 'js/app-clients.js?v=17:52' })
     const blob = JSON.stringify([u, r])
     for (const secret of ['boom', 'jake@x.com', 'secret', '82.5']) expect(blob, `"${secret}"`).not.toContain(secret)
+  })
+
+  // 2026-10-31: five reports from Jake's iPhone held no code, no frame and no detail — the promise was rejected with
+  // something that was not an Error, and the capture recorded nothing about it. Now it records the value's TYPE.
+  test('a rejection with a value that is not an Error says what kind of value it was, never the value', async ({ page }) => {
+    await loginAsClient(page)
+    await installSpy(page)
+    const rows = await page.evaluate(() => {
+      const reject = (reason) => {
+        _reportedSigs.clear()                     // every one of these shares the signature rejection|rejection||
+        window.dispatchEvent(new PromiseRejectionEvent('unhandledrejection', { promise: Promise.resolve(), reason }))
+      }
+      reject('jake@x.com weighed 82.5kg')
+      reject(undefined)
+      reject(null)
+      reject(42)
+      reject(new DOMException('play() failed for jake@x.com', 'NotAllowedError'))
+      reject(new (class SupabaseLockTimeout {})())
+      reject(Object.create(null))
+      return window.__ins
+    })
+    expect(rows.map(r => r.detail)).toEqual([
+      'value: string', 'value: undefined', 'value: null', 'value: number',
+      'value: DOMException NotAllowedError', 'value: SupabaseLockTimeout', 'value: object',
+    ])
+    for (const r of rows) expect(r.kind).toBe('rejection')
+    expect(JSON.stringify(rows), 'the value itself never reaches the row').not.toMatch(/jake@x\.com|82\.5|play\(\)/)
+  })
+
+  test('an uncaught error with no error object is labelled — a ResizeObserver loop, or which site the script came from', async ({ page }) => {
+    await loginAsClient(page)
+    await installSpy(page)
+    const rows = await page.evaluate(() => {
+      const fire = (init) => { _reportedSigs.clear(); window.dispatchEvent(new ErrorEvent('error', init)) }
+      fire({ message: 'ResizeObserver loop completed with undelivered notifications.' })
+      fire({ message: 'Script error.', filename: 'https://unpkg.com/@supabase/supabase-js@2.117.2/dist/umd/supabase.js', lineno: 1, colno: 2 })
+      fire({ message: 'jake@x.com 82.5kg' })
+      return window.__ins
+    })
+    expect(rows.map(r => r.detail)).toEqual(['ResizeObserver loop', 'no error object (unpkg.com)', 'no error object'])
+    expect(JSON.stringify(rows), 'browser message text is never stored').not.toMatch(/jake@x\.com|82\.5|Script error|undelivered/)
+  })
+
+  // Review findings, 2026-10-31. (1) The once-per-signature rule must not let one labelled report silence a different
+  // one: no _reportedSigs.clear() here, on purpose. (2) An extension's address is a per-install id, never stored.
+  // (3) A thrown value whose `stack` getter throws must not make the listener itself throw and lose the report.
+  test('different labels are reported separately; an extension is never named; a hostile stack getter is survived', async ({ page }) => {
+    await loginAsClient(page)
+    await installSpy(page)
+    const rows = await page.evaluate(() => {
+      const fire = (init) => window.dispatchEvent(new ErrorEvent('error', init))
+      fire({ message: 'ResizeObserver loop limit exceeded' })
+      fire({ message: 'Script error.', filename: 'https://unpkg.com/x.js' })
+      fire({ message: 'x', filename: 'safari-web-extension://0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0/content.js' })
+      fire({ message: 'x', error: { get stack () { throw new Error('getter') } } })
+      fire({ message: 'ResizeObserver loop limit exceeded' })              // a true repeat IS still stored once only
+      return window.__ins
+    })
+    expect(rows.map(r => r.detail)).toEqual([
+      'ResizeObserver loop', 'no error object (unpkg.com)', 'no error object (extension or other)', 'value: Object',
+    ])
+    expect(JSON.stringify(rows), 'the per-install id never reaches the row').not.toMatch(/0F1E2D3C|safari-web-extension/)
+  })
+
+  test('env names the platform, installed app or browser, online and visible — read from the browser, nothing else', async ({ page }) => {
+    await loginAsClient(page)
+    const r = await page.evaluate(() => {
+      const nav = navigator
+      const set = (k, v) => Object.defineProperty(nav, k, { value: v, configurable: true })
+      const out = { now: _reportEnv() }
+      set('userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1')
+      set('standalone', true)
+      out.iphoneApp = _reportEnv()
+      set('standalone', false)
+      set('onLine', false)
+      out.iphoneOffline = _reportEnv()
+      set('onLine', true)
+      set('userAgent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15')
+      set('maxTouchPoints', 5)
+      out.ipad = _reportEnv()                    // iPadOS reports itself as a Mac; touch points give it away
+      set('maxTouchPoints', 0)
+      out.mac = _reportEnv()
+      set('userAgent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36')
+      out.android = _reportEnv()
+      set('userAgent', 'SomethingElse/1.0')
+      out.other = _reportEnv()
+      for (const k of ['userAgent', 'standalone', 'onLine', 'maxTouchPoints']) delete nav[k]
+      out.restored = _reportEnv()
+      return out
+    })
+    expect(r.now).toMatch(ENV_SHAPE)
+    expect(r.iphoneApp).toBe('ios app online visible')
+    expect(r.iphoneOffline).toBe('ios browser offline visible')
+    expect(r.ipad).toMatch(/^ios /)
+    expect(r.mac).toMatch(/^desktop /)
+    expect(r.android).toMatch(/^android /)
+    expect(r.other).toMatch(/^other /)
+    expect(r.restored, 'control: the stand-ins were removed').toBe(r.now)
   })
 
   test('nothing is reported before consent, after sign-out, under WebDriver, or with no user', async ({ page }) => {
@@ -311,6 +413,37 @@ test.describe('the owner card and the feedback card', () => {
     expect(r.cardId).toBe(true)
   })
 
+  // 2026-10-31: the table already held page and role, but the card never showed them; env is new. One line per group,
+  // from the group's newest report. Every one of these is written by an ordinary signed-in user, so each is escaped.
+  test('the owner card shows where it happened — page, view and device — and escapes all three', async ({ page }) => {
+    await loginAsClient(page)
+    const r = await page.evaluate(async () => {
+      const base = { kind: 'rejection', tag: 'rejection', code: null, frame: null, build: 'core53', detail: 'value: undefined' }
+      const rows = [
+        { ...base, id: 'b1', user_id: 'u1', created_at: '2026-10-31T04:27:00Z', page: 'programs', role: 'coach', env: 'desktop browser online visible' },
+        { ...base, id: 'b2', user_id: 'u1', created_at: '2026-10-31T04:31:00Z', page: 'solo-dashboard', role: 'solo', env: 'ios app online visible' },
+        { ...base, id: 'b3', user_id: 'u2', tag: 'x', created_at: '2026-10-31T05:00:00Z',
+          page: '<svg onload="window.__xss2=1">', role: '<b>r</b>', env: '<img src=x onerror="window.__xss2=2">' },
+      ]
+      const host = document.createElement('div')
+      host.innerHTML = _errorReportsCardHtml(rows, false)
+      document.body.appendChild(host)
+      await new Promise(res => setTimeout(res, 250))
+      const out = {
+        text: host.textContent.replace(/\s+/g, ' '),
+        xss: window.__xss2 ?? null,
+        made: host.querySelectorAll('svg, img, b').length,
+      }
+      host.remove()
+      return out
+    })
+    expect(r.text, 'the newest report of the group names its page, view and device').toContain('solo-dashboard · solo · ios app online visible')
+    expect(r.text, 'not the older one').not.toContain('programs · coach')
+    expect(r.xss, 'stored text must not execute').toBeNull()
+    expect(r.made, 'no element may be created from stored text').toBe(0)
+    expect(r.text, 'shown as text instead').toContain('<img src=x')
+  })
+
   test('the owner card has honest empty and failed states', async ({ page }) => {
     await loginAsClient(page)
     const r = await page.evaluate(() => ({
@@ -334,6 +467,7 @@ test.describe('the owner card and the feedback card', () => {
       expect(info.href.startsWith('mailto:' + info.owner)).toBe(true)
       const decoded = decodeURIComponent(info.href)
       expect(decoded).toContain('App build:')
+      expect(decoded, 'the same device line as an error report').toMatch(/Device: (ios|android|desktop|other) (app|browser)/)
       expect(decoded.toLowerCase(), 'the prefill must not carry the sender\'s email').not.toContain(info.email.toLowerCase())
       if (info.name.length > 2) expect(decoded.toLowerCase(), 'nor their name').not.toContain(info.name.toLowerCase())
       await expect(page.locator('#error-reports-card'), 'owner-only').toHaveCount(0)
@@ -375,7 +509,7 @@ const insertRow = (page, row) => page.evaluate(async (row) => {
 }, row)
 const mineByTag = (page, tag) => page.evaluate(async (tag) => {
   const { data, error } = await db.from('app_errors')
-    .select('id, user_id, kind, tag, detail, code, role, frame, build').like('tag', tag + '%')
+    .select('id, user_id, kind, tag, detail, code, role, frame, build, env').like('tag', tag + '%')
   return { error: error?.code || null, rows: data || [] }
 }, tag)
 async function removeMine (page, tagPrefix) {
@@ -412,6 +546,7 @@ test.describe('app_errors — the real table', () => {
       const { rows } = await mineByTag(page, tag)
       expect(rows[0]).toMatchObject({ user_id: await myUid(page), kind: 'log', detail: 'real insert', code: '42501', role: 'client' })
       expect(rows[0].build, 'the real build string fits its CHECK and names the modules').toMatch(/core\d+/)
+      expect(rows[0].env, 'the real env line is stored (needs scripts/add-app-errors-env-2026-10-31.sql)').toMatch(ENV_SHAPE)
       expect(JSON.stringify(rows[0]), 'no error text reached the table').not.toMatch(/jake@x\.com|82\.5/)
     } finally {
       await page.evaluate(() => { window._errorReportingForce = false })
@@ -564,9 +699,11 @@ test.describe('app_errors — the real table', () => {
     await loginAsClient(page)
     const tag = `${TAG} export ${Date.now()}`
     try {
-      expect(await insertRow(page, { kind: 'log', tag }), 'control').toBeNull()
-      const found = await page.evaluate(async (tag) => (await _buildMyDataBundle()).appErrors.some(r => r.tag === tag), tag)
-      expect(found).toBe(true)
+      expect(await insertRow(page, { kind: 'log', tag, role: 'client', env: 'ios app online visible' }), 'control').toBeNull()
+      const found = await page.evaluate(async (tag) => (await _buildMyDataBundle()).appErrors.find(r => r.tag === tag) || null, tag)
+      // A subject-access export holds everything stored about the person, so it carries role and env too (role was
+      // missing until 2026-10-31).
+      expect(found).toMatchObject({ tag, role: 'client', env: 'ios app online visible' })
     } finally { await removeMine(page, TAG) }
   })
 })

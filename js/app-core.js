@@ -37,7 +37,9 @@ function _isOwnerAccount () { return currentUser?.email === OWNER_EMAIL }
 // logs hold "only internal IDs and timestamps — never your name, email, or health values". Postgres puts row
 // values in an error's message / details / hint, so those are NEVER read here. A report is: the kind, the
 // static tag and message LITERAL the developer wrote (log.* calls are already policed for PII by checks.sh
-// 9a), an error CODE, a code LOCATION (file?v=N:line), and technical context (page, role, module versions).
+// 9a), an error CODE, a code LOCATION (file?v=N:line), and technical context (page, role, module versions, and since
+// 2026-10-31 a four-word device line, _reportEnv). For a thrown or rejected value that is not an Error, detail holds
+// its TYPE only (_reportValueType), never the value.
 // The user id is the table's own default (auth.uid()), so it is not sent. Because nothing outside that list
 // is stored, no policy edit and no consent re-prompt were needed.
 //
@@ -104,7 +106,38 @@ function _reportContext () {
     role: window._sudoClientId ? 'sudo' : (_reportClean(currentProfile?.role, 12) || null),
     page: _reportClean(currentPage, 40) || null,
     build: _reportBuildId() || null,
+    env: _reportEnv(),
   }
+}
+// What kind of device, in four fixed words: "ios app online visible" (2026-10-31). Five reports from Jake's iPhone
+// could not say they came from a phone, from the home-screen app, or from a page the phone had put in the background
+// (iOS cuts off a hidden page's requests). Every word is chosen from a fixed list, so nothing from the browser is
+// copied into the row. iPadOS reports itself as a Mac; a Mac with a touch screen is an iPad.
+function _reportEnv () {
+  const nav = /** @type {any} */ (navigator)
+  const ua = String(nav.userAgent || '')
+  const platform = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && nav.maxTouchPoints > 1) ? 'ios'
+    : /Android/.test(ua) ? 'android'
+    : /Windows|Macintosh|Linux|CrOS/.test(ua) ? 'desktop' : 'other'
+  const installed = nav.standalone === true || !!window.matchMedia?.('(display-mode: standalone)')?.matches
+  return [platform, installed ? 'app' : 'browser', nav.onLine === false ? 'offline' : 'online',
+    document.visibilityState === 'hidden' ? 'hidden' : 'visible'].join(' ')
+}
+// The KIND of a thrown or rejected value that is not an ordinary Error (an Error's name is already the code). The value
+// itself is never read: only its type, a DOMException's name, or a class name — each allow-listed by shape, so a
+// domain object's own fields cannot reach the row. Added 2026-10-31 after five reports carried nothing at all.
+// Never throws: it runs in the global error listeners, outside _reportProblem's try, and a throw there would itself be
+// an uncaught error (a Proxy or a throwing getter is enough).
+function _reportValueType (v) {
+  try {
+    if (v === null) return 'value: null'
+    if (typeof v !== 'object' && typeof v !== 'function') return `value: ${typeof v}`
+    const word = (s) => typeof s === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(s) ? s : null
+    const DomEx = /** @type {any} */ (window).DOMException          // a browser global: read from window, not a bare name
+    if (DomEx && v instanceof DomEx) return `value: DOMException${word(v.name) ? ' ' + v.name : ''}`
+    if (v instanceof Error) return null
+    return `value: ${word(Object.getPrototypeOf(v)?.constructor?.name) || 'object'}`
+  } catch { return 'value: object' }
 }
 function _reportFailed (sig, why) {
   _reportedSigs.delete(sig)                    // free the slot so a later occurrence can retry…
@@ -120,7 +153,10 @@ function _reportProblem (kind, tag, msg, data, stack) {
     // a handler's stack (uncaught / rejection) starts at the failing line.
     const frame = _reportFrame(stack, kind === 'log' ? 1 : 0)
     const code = _reportCode(data)
-    const sig = [kind, tag, code, frame].join('|')
+    // For a handler report the detail is one of a fixed set of labels (_reportValueType, the no-error-object labels), so
+    // it joins the signature: otherwise a harmless ResizeObserver report would silence a later, different one for the
+    // rest of the page's life (review, 2026-10-31). A log's detail is a developer literal and stays out, as before.
+    const sig = [kind, tag, code, frame, kind === 'log' ? '' : (msg || '')].join('|')
     if (_reportedSigs.has(sig)) return
     _reportedSigs.add(sig)
     const row = {
@@ -137,12 +173,31 @@ function _reportProblem (kind, tag, msg, data, stack) {
 }
 window.addEventListener('error', ev => {
   if (ev.target && ev.target !== window) return        // a <script>/<img> that failed to load, not a script error
-  _reportProblem('uncaught', 'uncaught', null, ev.error || null,
-    ev.error?.stack || (ev.filename ? `${ev.filename}:${ev.lineno}:${ev.colno}` : ''))
+  // With no error object the browser gives only a message, which is never stored. Two shapes are worth naming: the
+  // harmless ResizeObserver warning (matched, not copied), and an error inside another site's script — its host only.
+  // Only an http(s) host is named: an extension's "host" (safari-web-extension://<uuid>) is a per-install id.
+  let detail = null
+  if (!ev.error) {
+    let host = ''
+    try {
+      const u = ev.filename ? new URL(ev.filename) : null
+      host = !u ? '' : /^https?:$/.test(u.protocol) ? u.host : 'extension or other'
+    } catch { /* not a URL: leave it out */ }
+    detail = /^ResizeObserver loop/.test(String(ev.message || '')) ? 'ResizeObserver loop'
+      : 'no error object' + (host && host !== location.host ? ` (${host})` : '')
+  } else {
+    detail = _reportValueType(ev.error)
+  }
+  let stack = ''
+  try { stack = ev.error?.stack || '' } catch { /* a getter that throws, or a revoked Proxy: no stack */ }
+  _reportProblem('uncaught', 'uncaught', detail, ev.error || null,
+    stack || (ev.filename ? `${ev.filename}:${ev.lineno}:${ev.colno}` : ''))
 })
 window.addEventListener('unhandledrejection', ev => {
   const r = ev.reason
-  _reportProblem('rejection', 'rejection', null, r && typeof r === 'object' ? r : null, r?.stack || '')
+  let stack = ''
+  try { stack = r?.stack || '' } catch { /* a getter that throws: no stack */ }
+  _reportProblem('rejection', 'rejection', _reportValueType(r), r && typeof r === 'object' ? r : null, stack)
 })
 
 // ─── SAVES THAT SURVIVE A BAD CONNECTION (R4a, 2026-10-29) ─────────────────────────────────────────

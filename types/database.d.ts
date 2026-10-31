@@ -44,6 +44,7 @@ export type Database = {
           code: string | null
           created_at: string
           detail: string | null
+          env: string | null
           frame: string | null
           id: string
           kind: string
@@ -57,6 +58,7 @@ export type Database = {
           code?: string | null
           created_at?: string
           detail?: string | null
+          env?: string | null
           frame?: string | null
           id?: string
           kind: string
@@ -70,6 +72,7 @@ export type Database = {
           code?: string | null
           created_at?: string
           detail?: string | null
+          env?: string | null
           frame?: string | null
           id?: string
           kind?: string

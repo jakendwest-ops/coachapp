@@ -23,3 +23,9 @@ anything go wrong.
 
 **Closes when:** the cause is named (from Jake's account of what he was doing, or from a capture that records the rejected
 value's type) and either fixed with a red-then-green test or shown harmless.
+
+**2026-10-31, capture improved (not a fix):** a rejected or thrown value that is not an Error now records its TYPE in
+`detail` (`value: string`, `value: DOMException NotAllowedError`, …), an uncaught error with no error object is labelled
+(`ResizeObserver loop`, or `no error object (host)` for another site's script), and every report carries `env`
+(`ios app online visible`). The next occurrence will say what it is. Evidence: `tests/error-capture-2026-09-19.spec.js`
+(red first, then green).
