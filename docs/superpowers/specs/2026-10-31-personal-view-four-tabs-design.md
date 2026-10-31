@@ -83,13 +83,13 @@ Four destinations, the same on the phone bottom bar and the desktop sidebar:
 
 ## Jake's answers (2026-10-31, after the builder check)
 
-- **Cardio comes back, as its own Progress switch.** This REVERSES the 2026-09-19 decision ("just delete the benchmarks page"; the
-  comment in `renderProgress`, `js/app-progress.js`, says not to re-add it). Jake chose it knowingly after being told. Cardio lists the
-  logged cardio bests (`performance_logs`, the data the 09-19 deletion left in place: 5K times, the SkiErg PB…). Record it in
-  `docs/decisions.md` and update that comment.
+- **Cardio is its own Progress switch.** CORRECTION (2026-10-31, while planning): Claude told Jake there was no cardio section today; that was
+  wrong. Since 2026-09-30 Personal Bests holds two sections: the 1RMs (`renderClient1RMs`) and every `performance_logs` record
+  (`renderClientPerformance`, all four `PERF_CATEGORIES`: strength, cardio, body metric, benchmark). So nothing is reversed: the Cardio
+  switch shows the `cardio` category of those records, and Records keeps the other three categories.
 - **Performance moves into Records** ("a 5k run is as important to some people as their bench pb"). Records = today's Personal Bests
-  (the 1RM / best-set list) plus Performance's two views (per-exercise progression charts, per-session comparison) reached from it;
-  Performance stops being its own switch. Its charts move intact.
+  (the 1RMs, then the strength / body-metric / benchmark records) followed by Performance's two views (per-exercise progression charts,
+  per-session comparison); Performance stops being its own switch. Its charts move intact.
 - **Not in this work:** Jake also wants "some adjustments to the performance page and charts". That is a separate piece, to be described
   by him; this change moves those views without redesigning them.
 
