@@ -1,9 +1,9 @@
 ---
 id: 2026-10-29-workout-save-is-not-retry-safe
-status: fixed-awaiting-jake
+status: closed
 priority: high
 reported: 2026-10-29
-status_detail: "SHIPPED in v2026.10.9 (live 2026-10-30, verified byte-identical; release gate full suite 1369 passed / 0 failed / 2 flaky). Red→green done: the new spec failed 7 of 9 on the old code; its 16 tests pass; 15 deliberate breakages each fail their test against a clean baseline. Waiting for Jake's airplane-mode check on his phone. Live impact still unmeasured (R4-0(b) counts not run)."
+status_detail: "closed 2026-10-31 — Jake confirmed on his iPhone with v2026.10.11 live: every check in Closes when passed."
 ---
 
 # A workout save on bad signal can be lost, doubled or left empty
@@ -59,3 +59,7 @@ save is in flight is refused on the runner (Save button) and the form (guardReen
 all-or-nothing (a server-side function) and background saving while the app is closed (needs an installable app).
 
 **Closes when:** Jake, on his phone with the live app: airplane mode on, finish a short workout, tap Save (the "kept on this phone" message and the "Workout not saved" bar appear), close the app, reopen it the next day (the bar is still there), turn signal on, tap Retry and Save - and exactly ONE complete session is in the history. Until then the evidence is tests/runner-save-retry-2026-10-29.spec.js (green) and its mutation proofs.
+
+## Closed, 2026-10-31
+
+Jake confirmed on his iPhone, with v2026.10.11 live, that every check under **Closes when** passed. No error report was filed during the test.

@@ -1,9 +1,9 @@
 ---
 id: 2026-10-30-app-cannot-be-installed-to-the-home-screen
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-10-30
-status_detail: "fixed-awaiting-jake — shipped in v2026.10.10 (2026-10-30; deploy run 41140924076 green, verify-live 18 files byte-identical incl. the manifest and all four icons). Closes on Jake's iPhone check below."
+status_detail: "closed 2026-10-31 — Jake confirmed on his iPhone with v2026.10.11 live: every check in Closes when passed."
 ---
 
 # The app cannot be added to a phone's home screen as an app
@@ -28,3 +28,7 @@ password-reset link opens in Safari; sounds and the screen-awake lock should be 
 from the home screen runs full screen with no Safari bars; signing in works; and one short workout, including a rest-timer
 beep and the screen staying awake, behaves as it does in Safari. Until then the evidence is
 `tests/installable-app-2026-10-30.spec.js` (green, red first).
+
+## Closed, 2026-10-31
+
+Jake confirmed on his iPhone, with v2026.10.11 live, that every check under **Closes when** passed. No error report was filed during the test.
