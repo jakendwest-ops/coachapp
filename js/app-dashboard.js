@@ -543,7 +543,7 @@ async function renderDashboard(el) {
     db.from('goals').select('id, title, target_date, client_id, clients!inner(full_name)').eq('clients.coach_id', currentUser.id).eq('status', 'active').not('target_date', 'is', null).gte('target_date', todayStr).lte('target_date', in14Str).order('target_date').limit(5),
     // One row per client, computed in the database (scripts/add-coach-client-summary-2026-09-20.sql). PAGED: the API caps every
     // response at 200 rows and that applies to a view too, so a bare read would silently drop the 201st client.
-    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, created_at, sessions_7d, last_session_date, last_weigh_in_date, last_check_in_at, program_id, program_name, program_start, program_weeks, next_program_start', { count: 'exact' }).order('full_name').order('client_id')),
+    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, created_at, sessions_7d, last_session_date, last_weigh_in_date, last_check_in_at, program_id, program_name, program_start, program_weeks, next_program_start, user_id, invited_at, signed_in', { count: 'exact' }).order('full_name').order('client_id')),
     // "Check-ins to review" (2026-10-29): unreviewed, the last 14 days, the coach's OWN clients - joined like the goals read above, for the same
     // two reasons (the master account's personal record has coach_id NULL and must not appear; no 200-client cap). No back-fill: an old check-in
     // nobody reviewed simply ages out of the window rather than being marked reviewed.

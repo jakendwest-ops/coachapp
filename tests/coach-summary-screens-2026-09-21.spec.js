@@ -81,7 +81,8 @@ test.describe('the coach dashboard and the client list read the per-client summa
       const el = document.createElement('div'); document.body.appendChild(el)
       await renderClients(el)
       const rows = Object.fromEntries([...el.querySelectorAll('.list-row')].map(row => {
-        const label = [...row.querySelectorAll('.row-right span')].find(s => !s.classList.contains('badge'))
+        // The last-session label by its own class (2026-10-31: the row's right side now also holds an invite note, MVP 7).
+        const label = row.querySelector('.row-right .client-last')
         return [row.querySelector('.row-name').textContent.trim(), { text: label?.textContent.trim(), colour: label ? getComputedStyle(label).color : null }]
       }))
       return { text: el.textContent, rows, imgs: el.querySelectorAll('img').length }

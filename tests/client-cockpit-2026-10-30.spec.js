@@ -17,7 +17,8 @@ const tables = (uid, o = {}) => {
     program_id: null, program_name: null, program_start: null, program_weeks: null, next_program_start: null, ...x })
   return {
     clients: [
-      { id: 'c', full_name: 'Cara Missed', status: 'active', coach_id: uid, email: 'cara@example.com', phone: '07700 900123', invited_at: null, created_at: '2026-01-05T09:00:00Z' },
+      // Cara has a login (2026-10-31): an unlinked client with an email is now offered Send invite (MVP 7, tests/invite-state-2026-10-31.spec.js).
+      { id: 'c', full_name: 'Cara Missed', status: 'active', coach_id: uid, email: 'cara@example.com', phone: '07700 900123', user_id: 'uc', invited_at: '2026-01-06T09:00:00Z', created_at: '2026-01-05T09:00:00Z' },
       { id: 'b', full_name: 'Ben Fine', status: 'active', coach_id: uid, email: null, phone: null, invited_at: null, created_at: '2026-01-05T09:00:00Z' },
     ],
     coach_client_summary: [

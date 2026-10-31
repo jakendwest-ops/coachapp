@@ -179,6 +179,10 @@ function _clientRowHtml(c) {
   const last = _lastSessionLabel(c.last_session_date, !!summaryErr, todayStr)
   const top = (c.reasons || [])[0]
   const id = escapeAttr(c.id)
+  // MVP 7: a quiet invite note where Needs attention has nothing to say about it - "Not invited", or "Invited" before the 3-day reason fires.
+  const inv = summaryErr || c.status !== 'active' ? null : _inviteState(c, c.email, todayStr)
+  const invNote = !inv || (c.reasons || []).some(r => r.key === 'invite') ? null
+    : inv.key === 'not-invited' || inv.key === 'no-email' ? 'Not invited' : inv.key === 'pending' ? 'Invited' : null
   // Every value is escaped, constants included, so a future data-driven severity or label cannot become markup (review, 2026-10-30).
   return `
         <div class="list-row" data-client-row="${escapeHtml(c.id)}" onclick="openClient('${id}')">
@@ -189,6 +193,7 @@ function _clientRowHtml(c) {
           </div>
           <div class="row-right client-row-right">
             ${top ? `<em class="dash-attn-chip dash-attn-${escapeHtml(top.severity)}" data-reason="${escapeHtml(top.key)}">${escapeHtml(top.label)}</em>` : ''}
+            ${invNote ? `<span class="client-invite" data-invite-note="${escapeHtml(inv.key)}">${escapeHtml(invNote)}</span>` : ''}
             ${c.status !== 'active' ? `<span class="badge badge-${escapeHtml(c.status)}">${escapeHtml(c.status)}</span>` : ''}
             <span class="client-last" style="color:${escapeHtml(last.colour)}">${escapeHtml(last.text)}</span>
           </div>
@@ -233,13 +238,18 @@ function _contactLinks(c) {
 // The cockpit's markup. Pure. id: the client; s: their coach_client_summary row (null when the read failed - `unavailable`); reasons: their
 // Needs-attention reasons; week: { planned, logged } from _attentionForRoster (planned null = no dated plan); client: the clients row (phone,
 // email); todayStr: the local day. A failed read says so and accuses nobody, but Start session and contact still work.
+/** @param {{ id: string, s: any, reasons?: any[], week?: any, client?: any, todayStr: string, unavailable?: boolean, partial?: boolean }} o */
 function _clientCockpitHtml({ id, s, reasons = [], week = null, client = {}, todayStr, unavailable = false, partial = false }) {
   const cid = escapeAttr(id)
   const contact = _contactLinks(client).map(l => `<a class="cockpit-btn" data-contact="${l.kind}" href="${escapeHtml(l.href)}">${l.label}</a>`).join('')
   const nextBlock = (reasons || []).some(r => r.action === 'next-block')
+  // MVP 7: Send invite only for an ACTIVE client with an email and no login yet - invite-client refuses a linked one
+  // (docs/bugs/2026-10-31-resend-invite-is-always-refused.md). The one place it is offered on the profile (the header's copy went, review 2026-10-31).
+  const canInvite = !client?.user_id && !!String(client?.email || '').trim() && (client?.status ?? 'active') === 'active'
   const actions = `<div class="cockpit-actions">
       <button type="button" class="btn-primary cockpit-btn" data-cockpit-action="start" onclick="startWorkoutRunner('${cid}')">▶ Start session</button>
       ${nextBlock ? `<button type="button" class="btn-secondary cockpit-btn" data-cockpit-action="next-block" onclick="openClientProgramsTab('${cid}')">Assign next block</button>` : ''}
+      ${canInvite ? `<button type="button" class="btn-secondary cockpit-btn" data-cockpit-action="invite" onclick="sendClientInvite('${cid}','${escapeAttr(client.email)}')">✉ Send invite</button>` : ''}
       ${contact}
     </div>`
   if (unavailable || !s) return `<section class="cockpit" data-cockpit-client="${escapeHtml(id)}"><p class="dash-empty">Could not load this client's summary just now.</p>${actions}</section>`
@@ -252,12 +262,15 @@ function _clientCockpitHtml({ id, s, reasons = [], week = null, client = {}, tod
   const flagged = ciDays !== null && _checkInFlagged({ sleep: s.check_in_sleep, energy: s.check_in_energy, stress: s.check_in_stress, soreness: s.check_in_soreness })
   const ci = ciDays === null ? 'None yet' : ciDays <= 0 ? 'Today' : ciDays + 'd ago'
   const chips = (reasons || []).map(r => `<em class="dash-attn-chip dash-attn-${escapeHtml(r.severity)}" data-reason="${escapeHtml(r.key)}" title="${escapeHtml(r.detail || '')}">${escapeHtml(r.label)}</em>`).join('')
+  // The clients row is the authority on the link (the summary is the same row's copy); signed_in only the view has.
+  const inv = _inviteState({ ...s, user_id: client?.user_id ?? s.user_id }, client?.email, todayStr)
   return `<section class="cockpit" data-cockpit-client="${escapeHtml(id)}">
       <div class="cockpit-facts">
         <div class="cockpit-fact"><i>Plan</i><b>${escapeHtml(_planWeekLabel(s, todayStr))}</b></div>
         <div class="cockpit-fact"><i>7 days to yesterday</i><b>${escapeHtml(weekText)}</b></div>
         <div class="cockpit-fact"><i>Last session</i><b style="color:${escapeHtml(last.colour)}">${escapeHtml(last.text)}</b></div>
         <div class="cockpit-fact"><i>Check-in</i><b>${escapeHtml(ci)}${flagged ? ' <em class="dash-ci-flag" data-checkin-flagged>Flagged</em>' : ''}</b></div>
+        <div class="cockpit-fact"><i>App</i><b data-invite-state="${escapeHtml(inv.key)}">${escapeHtml(inv.text || '—')}</b></div>
       </div>
       ${chips ? `<div class="cockpit-reasons">${chips}</div>` : ''}
       ${partial ? '<p class="dash-empty" data-attn-partial>Some reasons could not be checked just now.</p>' : ''}
@@ -275,7 +288,7 @@ async function renderClients(el) {
   // silently lost the rest of the list.
   const [{ data: clients, error }, { data: summaries, error: summaryErr }] = await Promise.all([
     _fetchAllRows(() => db.from('clients').select('*', { count: 'exact' }).eq('coach_id', currentUser.id).order('full_name').order('id')),
-    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, created_at, sessions_7d, last_session_date, last_weigh_in_date, last_check_in_at, program_id, program_name, program_start, program_weeks, next_program_start', { count: 'exact' }).order('full_name').order('client_id'))
+    _fetchAllRows(() => db.from('coach_client_summary').select('client_id, full_name, status, created_at, sessions_7d, last_session_date, last_weigh_in_date, last_check_in_at, program_id, program_name, program_start, program_weeks, next_program_start, user_id, invited_at, signed_in', { count: 'exact' }).order('full_name').order('client_id'))
   ])
 
   if (error) { log.error('renderClients', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${escapeHtml(error.message)}</div>`; return }
@@ -291,7 +304,8 @@ async function renderClients(el) {
   const attn = summaryErr || !clients.length ? { byClient: {}, partial: false }
     : await _attentionForRoster((summaries || []).map(r => ({ ...r, status: statusOf[r.client_id] ?? r.status })), todayStr)
   _clientListCtx = { summaryErr, todayStr }
-  _clientListRows = clients.map(c => ({ ...(summary[c.id] || {}), id: c.id, full_name: c.full_name, status: c.status, reasons: attn.byClient[c.id] || [] }))
+  // The link and the email come from the clients row (the authority); signed_in only the summary has (absent when it failed: unknown).
+  _clientListRows = clients.map(c => ({ ...(summary[c.id] || {}), id: c.id, full_name: c.full_name, status: c.status, email: c.email, user_id: c.user_id, invited_at: c.invited_at, reasons: attn.byClient[c.id] || [] }))
 
   const st = _clientListState
   const chip = (k, label) => `<button type="button" class="client-chip" data-status-chip="${k}" aria-pressed="false" onclick="_clientListSet('status','${k}')">${label} <b>0</b></button>`
@@ -426,6 +440,8 @@ async function openClient(id) {
   if (error) { log.error('openClient', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
   log.ok('openClient', 'loaded')
 
+  // No invite buttons in the header (MVP 7): Send invite lives in the cockpit, once, for an active client with no login. There is no "Resend
+  // invite": invite-client refuses a client already linked to a login, so it could never succeed (docs/bugs/2026-10-31-resend-invite-is-always-refused.md).
   el.innerHTML = `
     <a class="back-btn" href="#" onclick="navigate('clients');return false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
@@ -441,16 +457,8 @@ async function openClient(id) {
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        ${!client.invited_at ? `
-        <button class="btn-secondary" onclick="sendClientInvite('${client.id}','${escapeAttr(client.email || '')}')"
-          style="background:rgba(99,102,241,0.08);color:var(--accent);border-color:var(--accent)">
-          ✉ Send invite
-        </button>` : `
-        <button class="btn-secondary" onclick="sendClientInvite('${client.id}','${escapeAttr(client.email || '')}')">
-          ✉ Resend invite
-        </button>`}
-        <button class="btn-secondary" onclick="showUpdateEmailModal('${client.id}','${escapeAttr(client.email || '')}')">Update email</button>
-        <button class="btn-secondary" onclick="showEditClientModal('${client.id}')">Update details</button>
+        <button class="btn-secondary" onclick="showUpdateEmailModal('${escapeAttr(client.id)}','${escapeAttr(client.email || '')}')">Update email</button>
+        <button class="btn-secondary" onclick="showEditClientModal('${escapeAttr(client.id)}')">Update details</button>
       </div>
     </div>
 

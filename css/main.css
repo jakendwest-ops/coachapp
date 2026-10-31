@@ -1431,6 +1431,7 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .client-sort select { min-height: 44px; width: auto; }
 .client-row-right { flex-direction: column; align-items: flex-end; gap: 4px; }
 .client-last { font-size: var(--text-sm); font-weight: 600; }
+.client-invite { font-size: var(--text-sm); color: var(--text-muted); white-space: nowrap; }
 
 /* Client profile cockpit (MVP item 5, 2026-10-30): facts, reasons, actions under the client's name. Tokens only; every control >= 44px. */
 .cockpit { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }

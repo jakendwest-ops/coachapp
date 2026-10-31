@@ -81,7 +81,10 @@ test.describe('coach_client_summary against the live API', () => {
       expect(r.a.error).toBeNull()
       expect(r.a.rows, 'one row for the client').toHaveLength(1)
       const row = r.a.rows[0]
-      expect(Object.keys(row), 'the columns the two screens read are all there').toEqual(expect.arrayContaining(['client_id', 'full_name', 'status', 'last_session_date', 'sessions_7d', 'sessions_28d', 'last_weigh_in_date']))
+      // The screens name these columns in their selects, so a missing one blanks Home's Needs attention and the client list. user_id, invited_at
+      // and signed_in added 2026-10-31 (MVP 7, scripts/add-client-signed-in-2026-10-31.sql - committed after Jake applied it, so this went red first).
+      expect(Object.keys(row), 'the columns the two screens read are all there').toEqual(expect.arrayContaining(['client_id', 'full_name', 'status', 'last_session_date', 'sessions_7d', 'sessions_28d', 'last_weigh_in_date', 'next_program_start', 'user_id', 'invited_at', 'signed_in']))
+      expect.soft(row.signed_in, 'an E2E client with no login: unknown (null), never false').toBeNull()
       expect.soft(row.full_name).toBe(TAG + ' Active')
       expect.soft(row.last_session_date, 'the newest log').toBe(a.day.d1)
       expect.soft(row.sessions_7d, 'only the log from yesterday is inside the last week').toBe(1)

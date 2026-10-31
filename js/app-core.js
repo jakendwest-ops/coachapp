@@ -639,6 +639,23 @@ const ATTENTION_RULES = {
   checkInOverdueDays: 10,  // only for someone who has checked in before
   weighInOverdueDays: 14,  // only for someone who has weighed in before
   holidayDays: 14,         // a Holiday event dated this far back (to today) mutes "missed" and "gone quiet"
+  inviteDays: 3,           // invited this long ago and still not signed in
+}
+
+// Where a client stands with the app (MVP item 7, Jake 2026-10-31). Inviting creates the login and links it at once (invite-client), so a link
+// means "invited", not "joined"; s.signed_in (coach_client_summary, scripts/add-client-signed-in-2026-10-31.sql) says whether they have signed
+// in - agreed to the privacy policy - true / false, and null or absent (the SQL not run, or no profile row) is unknown: nothing is claimed.
+// email: the clients row's (the view has none). Pure: tests-node/invite-state.test.mjs.
+/** @param {any} s @param {string|null|undefined} email @param {string} todayStr */
+function _inviteState(s, email, todayStr) {
+  if (!s) return { key: 'unknown', text: null, days: null }
+  if (!s.user_id) return String(email || '').trim() ? { key: 'not-invited', text: 'Not invited', days: null } : { key: 'no-email', text: 'Add an email to invite', days: null }
+  if (s.signed_in === true) return { key: 'joined', text: 'Signed in', days: null }
+  if (s.signed_in === false) {
+    const d = s.invited_at ? _ymdLocal(new Date(s.invited_at)) : null
+    return { key: 'pending', text: d ? `Invited ${_dashFormatDate(d)} · not signed in yet` : 'Invited · not signed in yet', days: d ? _daysBetweenYmd(d, todayStr) : null }
+  }
+  return { key: 'unknown', text: null, days: null }
 }
 const _ATTENTION_WEIGHT = { high: 3, medium: 2, low: 1 }
 
@@ -666,10 +683,17 @@ function _attentionFor(s, { todayStr, planned = null, logged = 0, onHoliday = fa
       out.push({ key: 'missed', severity: 'high', label: 'Missed sessions', detail: `Missed ${missed} of ${planned} planned this week` })
     }
   }
+  // Invited and not signed in (MVP 7): not a training reason, so a holiday does not mute it. While an invite is pending, "No sessions yet" is not
+  // raised - they cannot log one - so one problem is one reason. Dated from the invite, or from when they were added if it was not stamped.
+  const inv = _inviteState(s, null, todayStr)
+  if (inv.key === 'pending') {
+    const since = inv.days ?? ago(s.created_at)
+    if (since !== null && since >= R.inviteDays) out.push({ key: 'invite', severity: 'medium', label: 'Invite not accepted', detail: inv.days !== null ? `Invited ${inv.days} day${inv.days === 1 ? '' : 's'} ago, not signed in yet` : 'Not signed in yet' })
+  }
   if (!onHoliday) {
     const quiet = ago(s.last_session_date)
     if (quiet !== null && quiet >= R.quietDays) out.push({ key: 'quiet', severity: 'medium', label: 'Gone quiet', detail: `No session for ${quiet} days` })
-    else if (quiet === null && (ago(s.created_at) ?? 0) >= R.newClientGraceDays) out.push({ key: 'quiet', severity: 'medium', label: 'No sessions yet', detail: 'Has not logged a session' })
+    else if (quiet === null && inv.key !== 'pending' && (ago(s.created_at) ?? 0) >= R.newClientGraceDays) out.push({ key: 'quiet', severity: 'medium', label: 'No sessions yet', detail: 'Has not logged a session' })
   }
   const weeks = Number(s.program_weeks)
   const end = s.program_start && weeks > 0 && !s.next_program_start ? _dashProgramEnd(s.program_start, weeks) : null
