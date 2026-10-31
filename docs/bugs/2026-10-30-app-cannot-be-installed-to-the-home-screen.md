@@ -1,9 +1,9 @@
 ---
 id: 2026-10-30-app-cannot-be-installed-to-the-home-screen
-status: open
+status: fixed-awaiting-jake
 priority: medium
 reported: 2026-10-30
-status_detail: "open — approved by Jake 2026-10-30 (Solo product review MVP: installable app, step 1 only). Building on master: manifest, icons, iPhone tags. No service worker, no offline mode (Jake agreed to leave them out)."
+status_detail: "fixed-awaiting-jake — shipped in v2026.10.10 (2026-10-30; deploy run 41140924076 green, verify-live 18 files byte-identical incl. the manifest and all four icons). Closes on Jake's iPhone check below."
 ---
 
 # The app cannot be added to a phone's home screen as an app

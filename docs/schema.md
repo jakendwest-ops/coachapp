@@ -213,7 +213,8 @@ Script and rollback: `scripts/add-client-empty-session-delete-2026-10-01.sql`; l
   `user_id` (→ `auth.users`, ON DELETE CASCADE), `kind`, `tag`, `detail`, `code`, `frame`, `page`, `build`,
   `role`, each length-CHECKed; never error text (privacy policy). RLS: INSERT own; SELECT and DELETE own or owner;
   no UPDATE grant; nothing for anon. A trigger sets `created_at` to the server's time (a client must not choose it) and
-  refuses a 61st row per user per hour.
+  refuses a 61st row per user per hour. `env` added 2026-10-31 (`scripts/add-app-errors-env-2026-10-31.sql`, CHECK ≤ 40):
+  a four-word device line such as `ios app online visible`; covered by the table-level grants, no policy change.
 
 ## How to keep this in sync
 

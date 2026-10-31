@@ -3336,7 +3336,7 @@ async function renderSettings(el) {
     db.from('profiles').select('full_name, role, created_at').eq('id', currentUser.id).single(),
     isCoach ? db.from('coach_branding').select('business_name, logo_path').eq('coach_id', currentUser.id).maybeSingle() : Promise.resolve({ data: null }),
     isOwner
-      ? db.from('app_errors').select('id, created_at, user_id, kind, tag, detail, code, frame, build').order('created_at', { ascending: false }).limit(200)
+      ? db.from('app_errors').select('id, created_at, user_id, kind, tag, detail, code, frame, build, page, role, env').order('created_at', { ascending: false }).limit(200)
       : Promise.resolve({ data: null, error: null })
   ])
   const errorReportsCard = isOwner ? _errorReportsCardHtml(reports, !!reportsErr) : ''
@@ -3619,13 +3619,13 @@ function _groupErrorReports (rows) {
     let g = groups.get(key)
     if (!g) {
       g = { kind: r.kind, tag: r.tag, code: r.code, frame: r.frame, detail: r.detail, build: r.build,
-            last: r.created_at, count: 0, userSet: new Set(), ids: [] }
+            page: r.page, role: r.role, env: r.env, last: r.created_at, count: 0, userSet: new Set(), ids: [] }
       groups.set(key, g)
     }
     g.count++
     g.userSet.add(r.user_id)
     g.ids.push(r.id)
-    if (r.created_at > g.last) { g.last = r.created_at; g.detail = r.detail; g.build = r.build }
+    if (r.created_at > g.last) { g.last = r.created_at; g.detail = r.detail; g.build = r.build; g.page = r.page; g.role = r.role; g.env = r.env }
   }
   return [...groups.values()]
     .map(({ userSet, ...g }) => ({ ...g, users: userSet.size }))
@@ -3649,6 +3649,7 @@ function _errorReportsCardHtml (rows, loadFailed) {
               <span class="report-chip">${escapeHtml(g.kind)}</span>
             </div>
             <div class="report-meta">${g.count}× · ${g.users} ${g.users === 1 ? 'user' : 'users'} · ${escapeHtml(_reportAgo(g.last))}${g.build ? ` · ${escapeHtml(g.build)}` : ''}</div>
+            ${g.page || g.role || g.env ? `<div class="report-meta">latest: ${[g.page, g.role, g.env].filter(Boolean).map(escapeHtml).join(' · ')}</div>` : ''}
             ${g.detail ? `<div class="report-meta">${escapeHtml(g.detail)}</div>` : ''}
             ${g.frame ? `<div class="report-meta">${escapeHtml(g.frame)}</div>` : ''}
             <button class="btn-secondary report-clear" data-ids="${escapeHtml(g.ids.join(','))}" onclick="clearErrorReports(this)">Clear</button>
@@ -3684,12 +3685,12 @@ async function clearErrorReports (btn) {
 }
 
 // Send feedback is a mailto: link, not a form: nothing a person types is stored by CoachApp, which keeps this
-// inside the privacy policy as written. The prefill is technical context only (page, role, module versions) —
+// inside the privacy policy as written. The prefill is technical context only (page, role, device line, module versions) —
 // no name, no email — so it needs no scrubbing.
 function _feedbackMailto () {
   const c = _reportContext()
   const body = ['', '', '— write your message above this line —',
-    `Page: ${c.page ?? ''}`, `Role: ${c.role ?? ''}`, `App build: ${c.build ?? ''}`].join('\n')
+    `Page: ${c.page ?? ''}`, `Role: ${c.role ?? ''}`, `Device: ${c.env ?? ''}`, `App build: ${c.build ?? ''}`].join('\n')
   return `mailto:${OWNER_EMAIL}?subject=${encodeURIComponent('CoachApp feedback')}&body=${encodeURIComponent(body)}`
 }
 function _feedbackCardHtml () {
@@ -3926,7 +3927,7 @@ async function _buildMyDataBundle() {
     // to be hand-rolled here with fixed 200-row strides; every list in this export now goes through the one helper
     // instead of two implementations that could drift, and a stride is no longer assumed to equal the cap.
     const { data: appErrors, error: aeErr } = await _fetchAllRows(() => db.from('app_errors')
-      .select('created_at, kind, tag, detail, code, frame, page, build', { count: 'exact' }).eq('user_id', currentUser.id)
+      .select('created_at, kind, tag, detail, code, frame, page, build, role, env', { count: 'exact' }).eq('user_id', currentUser.id)
       .order('created_at').order('id'), { maxPages: 500 })
     if (aeErr && !['42P01', 'PGRST205'].includes(aeErr.code)) throw aeErr
     bundle.appErrors = appErrors || []
