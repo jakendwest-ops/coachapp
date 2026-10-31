@@ -73,6 +73,8 @@ then block comparison**; cardio over time and weekly volume later (not in this p
 - **Records lists every logged lift**, not only the ones with a saved best (`client_1rms`) plus the Big 5: every exercise trained in a
   logged session is listed and opens its e1RM trend, saved best or not.
 - **Block comparison is a section at the top of Records** ("This block vs last"); tapping a lift in it shows both blocks' lines.
+  SUPERSEDED the same day by the [performance charts design](2026-10-31-performance-charts-design.md): Records gets three pills (Lifts ·
+  Sessions · Blocks) and the block comparison is the **Blocks** pill. Everything else here stands.
 - **Clients get it too**: the improved trend and the block comparison show on a coached client's own Progress page as well (their tabs
   otherwise unchanged, per the four-tabs design). So it reaches Personal view, coached clients, and a coach on a client's profile.
 
