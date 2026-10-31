@@ -29,3 +29,5 @@ value's type) and either fixed with a red-then-green test or shown harmless.
 (`ResizeObserver loop`, or `no error object (host)` for another site's script), and every report carries `env`
 (`ios app online visible`). The next occurrence will say what it is. Evidence: `tests/error-capture-2026-09-19.spec.js`
 (red first, then green).
+
+**2026-10-31, after v2026.10.11:** Jake ran the full phone check (home-screen app, sign-in and re-consent, a workout, an airplane-mode save, Download my data) on the new version and no report of any kind was filed. Not seen again yet; stays open until it recurs and names itself, or a few weeks pass without it.

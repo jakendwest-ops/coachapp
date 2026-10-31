@@ -3225,12 +3225,12 @@ async function deletePhaseWeek(phaseId, weekNumber) {
   // UPDATE that matched zero rows comes back error:null, so at a site where the caller has already
   // proven rows exist, zero removed means REFUSED — and without this the user is told "Week deleted"
   // while the week is still there, which is precisely the silence this helper was built to end.
-  // Defaults false because the renumber UPDATEs below carry no .select() and would otherwise all
-  // report as failures.
+  // Defaults false, for a write whose rows were not proven to exist first. The renumber UPDATEs below select and expect rows
+  // (since 2026-10-31): each row they touch was just read.
   const step = async (label, query, { expectRows = false } = {}) => {
     const { data, error } = await dbq('deletePhaseWeek:' + label, query, { showUserError: false })
     if (error) { weekFailures.push(label); return false }
-    if (expectRows && !data?.length) { weekFailures.push(label + ' (removed no rows)'); return false }
+    if (expectRows && !data?.length) { weekFailures.push(label + ' (changed no rows)'); return false }
     return true
   }
 
@@ -3256,15 +3256,18 @@ async function deletePhaseWeek(phaseId, weekNumber) {
   // of those same rows. client_program_workouts carries its own week_number column (used by
   // periodization display), kept in sync via program_phase_workout_id rather than re-derived,
   // since a client copy can be created at a different time than the master row it points at.
+  // expectRows on both renumbers (2026-10-31): each row was just read, so an update that changes nothing was REFUSED. Personal view's renumber
+  // of its own copies was refused for weeks with no symptom (no solo UPDATE policy on client_program_workouts; docs/bugs/2026-10-31-personal-
+  // view-delete-of-client-copies-refused-three-times.md), leaving the plan's later weeks on their old numbers.
   const { data: laterMaster } = await db.from('program_phase_workouts').select('id, week_number').eq('phase_id', phaseId).gt('week_number', weekNumber)
   for (const row of laterMaster || []) {
-    await step('renumberMaster', db.from('program_phase_workouts').update({ week_number: row.week_number - 1 }).eq('id', row.id))
+    await step('renumberMaster', db.from('program_phase_workouts').update({ week_number: row.week_number - 1 }).eq('id', row.id).select('id'), { expectRows: true })
   }
   const laterPwIds = (laterMaster || []).map(r => r.id)
   if (laterPwIds.length) {
     const { data: laterCpws } = await db.from('client_program_workouts').select('id, week_number').in('program_phase_workout_id', laterPwIds)
     for (const cpw of laterCpws || []) {
-      await step('renumberClientCopy', db.from('client_program_workouts').update({ week_number: cpw.week_number - 1 }).eq('id', cpw.id))
+      await step('renumberClientCopy', db.from('client_program_workouts').update({ week_number: cpw.week_number - 1 }).eq('id', cpw.id).select('id'), { expectRows: true })
     }
   }
 

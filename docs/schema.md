@@ -215,6 +215,8 @@ Script and rollback: `scripts/add-client-empty-session-delete-2026-10-01.sql`; l
   no UPDATE grant; nothing for anon. A trigger sets `created_at` to the server's time (a client must not choose it) and
   refuses a 61st row per user per hour. `env` added 2026-10-31 (`scripts/add-app-errors-env-2026-10-31.sql`, CHECK ≤ 40):
   a four-word device line such as `ios app online visible`; covered by the table-level grants, no policy change.
+- `client_program_workouts` solo DELETE and UPDATE policies (2026-10-31, `scripts/fix-solo-week-copies-delete-update-2026-10-31.sql`): a solo user
+  (clients.user_id = auth.uid(), coach_id NULL) may delete and renumber the week copies of their own plan; until then solo had INSERT and SELECT only.
 
 ## How to keep this in sync
 
