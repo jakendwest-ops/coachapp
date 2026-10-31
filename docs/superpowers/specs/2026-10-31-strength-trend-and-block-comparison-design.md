@@ -22,7 +22,8 @@ then block comparison**; cardio over time and weekly volume later (not in this p
    - **A block** is a run of a training plan (open runs from `client_programs`, finished ones from `client_program_blocks`). With no
      plan in either period, fixed windows of **6 weeks** (Claude's assumption, Jake did not object): the last 6 weeks against the 6
      before.
-3. **Who sees it:** the person in **Personal view** (Records) **and a coach on a client's profile**, the same charts for that client.
+3. **Who sees it:** the person in **Personal view** (Records), **a coached client** on their own Progress page, **and a coach on a
+   client's profile**, the same charts for that client.
 
 ## Non-goals
 
@@ -67,6 +68,22 @@ then block comparison**; cardio over time and weekly volume later (not in this p
 - Which block is "this" and "last" when two plan runs overlap in time (plans can be assigned at once).
 - How the best point is marked on the line.
 
-## Open questions
+## Jake's answers (2026-10-31, after the builder check)
 
-Raised by the builder check; answered before planning.
+- **Records lists every logged lift**, not only the ones with a saved best (`client_1rms`) plus the Big 5: every exercise trained in a
+  logged session is listed and opens its e1RM trend, saved best or not.
+- **Block comparison is a section at the top of Records** ("This block vs last"); tapping a lift in it shows both blocks' lines.
+- **Clients get it too**: the improved trend and the block comparison show on a coached client's own Progress page as well (their tabs
+  otherwise unchanged, per the four-tabs design). So it reaches Personal view, coached clients, and a coach on a client's profile.
+
+## Settled from the builder check (Claude's calls; Jake can overrule)
+
+- **Goal 1 improves the existing lift page.** Tapping a lift in Personal Bests already opens `renderLiftPage` (`js/app-progress.js`)
+  with an "Estimated 1RM" chart from `_pbE1rmPoints`. That page is kept (best history, best sets by reps, Update best stay) and its chart
+  gets the plain title, the explainer line, the labelled best point and the "one session so far" rule. "Opens right there" = this page.
+- **"Last block" is the previous block of ANY plan**, not only an earlier run of the same plan; the existing `_clampBlockChain` (same-plan
+  chains) is not reused for this rule.
+- **One side with a plan, the other without:** "this block" is the current plan run (or, with no current plan, the last 6 weeks); "last
+  block" is the previous plan run if one ended within the year before, otherwise the window of the same length immediately before.
+- **The existing Per program view** moves into Records with Performance (four-tabs build) and is replaced by the new comparison section
+  when this is built; any control it has that the new section lacks is listed in that plan's affordance table.
