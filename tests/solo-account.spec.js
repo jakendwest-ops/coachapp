@@ -32,38 +32,30 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('[data-page="clients"]')).not.toBeVisible()
   })
 
-  test('solo mobile bottom bar is the 4 primary items + More; Library/Calendar/Settings live in the sheet (D2, 2026-09-07)', async ({ page }) => {
+  test('solo nav is four destinations, Today / Train / Progress / More, the same in the bar and the sidebar (2026-10-31; was D2 2026-09-07)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    // .bottom-nav-item, not the ambiguous bare [data-page] (which also matches the desktop
-    // sidebar copy) -- this suite runs at the real 390px mobile viewport, where only the
-    // bottom nav is ever actually shown, so its item is the single unambiguous match.
-    await expect(page.locator('.bottom-nav-item[data-page="solo-dashboard"]')).toBeVisible()
-    await expect(page.locator('.bottom-nav-item[data-page="workouts"]')).toBeVisible()
-    await expect(page.locator('.bottom-nav-item[data-page="programs"]')).toBeVisible()
-    await expect(page.locator('.bottom-nav-item[data-page="progress"]')).toBeVisible()
-    await expect(page.locator('.bottom-nav-item[data-page="__more__"]')).toBeVisible()
-    // The three overflow destinations are NOT in the bottom bar any more...
-    await expect(page.locator('.bottom-nav-item[data-page="library"]')).toHaveCount(0)
-    await expect(page.locator('.bottom-nav-item[data-page="calendar"]')).toHaveCount(0)
-    await expect(page.locator('.bottom-nav-item[data-page="settings"]')).toHaveCount(0)
-    // ...they're one tap away in the More sheet.
+    // .bottom-nav-item, not the ambiguous bare [data-page] (which also matches the desktop sidebar copy) -- this suite runs at the
+    // real 390px mobile viewport, where only the bottom nav is ever actually shown.
+    await expect(page.locator('.bottom-nav-item')).toHaveText(['Today', 'Train', 'Progress', 'More'])
+    for (const gone of ['programs', 'library', 'calendar', 'settings', 'goals']) {
+      await expect(page.locator(`.bottom-nav-item[data-page="${gone}"]`), `${gone} is no longer a destination`).toHaveCount(0)
+      await expect(page.locator(`.nav-item[data-page="${gone}"]`), `...in the sidebar either`).toHaveCount(0)
+    }
     await page.click('.bottom-nav-item[data-page="__more__"]')
     await page.waitForSelector('#more-sheet-modal', { state: 'visible' })
-    await expect(page.locator('#more-sheet-modal button:has-text("Library")')).toBeVisible()
-    await expect(page.locator('#more-sheet-modal button:has-text("Calendar")')).toBeVisible()
-    await expect(page.locator('#more-sheet-modal button:has-text("Settings")')).toBeVisible()
-    // The desktop sidebar copy still carries all seven (CSS-hidden here, but in the DOM).
-    await expect(page.locator('.nav-item[data-page="library"]')).toHaveCount(1)
+    for (const row of ['Exercise library', 'Settings', 'Download my data', 'Send feedback', 'Privacy policy', 'Sign out']) {
+      await expect(page.locator(`#more-sheet-modal :is(button, a):has-text("${row}")`), `More offers ${row}`).toBeVisible()
+    }
   })
 
-  test('solo can reach the Library nav item and see Templates/Exercise Library tabs (2026-07-11)', async ({ page }) => {
+  test('solo reaches the Exercise library from More; its templates tab is gone, those actions are on Train > Workouts (2026-10-31)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await soloNav(page, 'library')
-    await page.waitForTimeout(1000)
-    await expect(page.locator('h1')).toContainText('Library', { timeout: 8000 })
-    await expect(page.locator('#wt-tab-templates')).toBeVisible()
-    await expect(page.locator('#wt-tab-exercises')).toBeVisible()
-    await expect(page.locator('button:has-text("New template")')).toBeVisible()
+    await expect(page.locator('h1')).toContainText('Exercise library', { timeout: 8000 })
+    await expect(page.locator('#wt-tab-templates')).toHaveCount(0)
+    await expect(page.locator('button:has-text("New template")')).toHaveCount(0)
+    await soloNav(page, 'workouts')
+    await expect(page.locator('[data-create-workout]')).toBeVisible({ timeout: 8000 })
   })
 
   test('solo Workouts page shows program accordion, not template builder', async ({ page }) => {
@@ -85,9 +77,9 @@ test.describe('Solo / Personal account', () => {
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
   })
 
-  test('solo Programs page loads', async ({ page }) => {
+  test('solo Programs page loads (Train > Plans since 2026-10-31)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
-    await clickVisible(page, '[data-page="programs"]')
+    await soloNav(page, 'programs')
     await expect(page.locator('h1')).toContainText('Training plans', { timeout: 8000 })
     await expect(page.locator('button:has-text("New training plan")')).toBeVisible()
   })
@@ -233,7 +225,8 @@ test.describe('Solo / Personal account', () => {
 
       await page.evaluate(() => switchView('solo'))
       await page.waitForTimeout(800)
-      await soloNav(page, 'library')
+      // Personal view lists its own workouts on Train > Workouts ("Your workouts") since 2026-10-31.
+      await soloNav(page, 'workouts')
       await page.waitForTimeout(1000)
       await expect(page.locator('text=[E2E] Personal-Only Template')).toBeVisible({ timeout: 5000 })
       await expect(page.locator('text=[E2E] PT-Only Template')).not.toBeVisible()
@@ -255,7 +248,7 @@ test.describe('Solo / Personal account', () => {
         await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: true, name: '[E2E] Personal Picker Template' })
         await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] PT Picker Template' })
       })
-      await clickVisible(page, '[data-page="programs"]')
+      await soloNav(page, 'programs')
       await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await page.click('button:has-text("New training plan")')
       await page.fill('#pm-name', '[E2E] Personal Picker Program')

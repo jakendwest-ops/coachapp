@@ -621,10 +621,21 @@ async function renderWorkouts(el) {
 }
 
 async function renderWorkoutLibrary(el) {
-  const title = currentProfile?.role === 'solo' ? 'Library' : 'Workouts'
+  // Personal view (2026-10-31): the Library is the Exercise library under More. Its Templates tab is gone for solo because every one
+  // of its actions is on Train › Workouts (Create a workout, Your workouts' search and Edit) — the affordance table in
+  // docs/superpowers/plans/2026-10-31-personal-view-four-tabs-affordances.md. #workout-tab-content stays: the exercise editor's
+  // writers re-render into it.
+  if (_isPersonalView()) {
+    el.innerHTML = `
+      <button type="button" class="wk-linkbtn" data-more-back onclick="_openMoreSheet()">‹ More</button>
+      <div class="page-header"><h1 class="page-title">Exercise library</h1></div>
+      <div id="workout-tab-content"></div>`
+    await renderExerciseLibrary(document.getElementById('workout-tab-content'))
+    return
+  }
   el.innerHTML = `
     <div class="page-header">
-      <h1 class="page-title">${title}</h1>
+      <h1 class="page-title">Workouts</h1>
       <button class="btn-primary" onclick="showCreateTemplateModal()">+ New template</button>
     </div>
     <div class="tabs">
@@ -798,6 +809,7 @@ async function renderClientWorkoutsPage(el) {
   const activeIds = planFinished ? new Set() : new Set(Object.values(cpwMap).map(c => c.templateId).filter(Boolean))
   const yourWorkouts = isOwn ? _yourWorkoutsHtml(await yourWorkoutsRead, { clientId, activeIds, programId: activeAssignment?.programs?.id || null, planName: activeAssignment?.programs?.name || null }) : ''
   el.innerHTML = `
+    ${isOwn ? _trainSwitchHtml('workouts') : ''}
     <div class="page-header">
       <h1 class="page-title">Workouts</h1>
     </div>

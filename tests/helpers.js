@@ -129,15 +129,30 @@ async function waitForVisible(page, selectors, options = {}) {
   return page.waitForSelector(list.map(s => `${s}:visible`).join(', '), options)
 }
 
-// Navigates the SOLO mobile nav (D2, 2026-09-07). The bottom bar is five items —
-// Dashboard / Workouts / Programs / Progress + a "More" sheet. Library / Calendar / Settings only
-// exist in that sheet on mobile (the desktop sidebar still lists all seven), so a plain
-// clickVisible('[data-page="library"]') would only match the CSS-hidden sidebar copy and time out.
+// Navigates Personal view the way a person does (four destinations since 2026-10-31: Today, Train, Progress, More). The bar holds
+// solo-dashboard / workouts / progress and More; the other pages are reached from inside them: library and settings from the More
+// sheet, programs from Train's Plans switch, calendar from Today's Calendar button, goals from Progress' Goals switch.
 async function soloNav(page, dest) {
-  if (['library', 'calendar', 'settings'].includes(dest)) {
+  const more = { library: 'Exercise library', settings: 'Settings' }
+  if (more[dest]) {
     await page.click('.bottom-nav-item[data-page="__more__"]')
     await page.waitForSelector('#more-sheet-modal', { state: 'visible' })
-    await page.click(`#more-sheet-modal button:has-text("${dest[0].toUpperCase()}${dest.slice(1)}")`)
+    await page.click(`#more-sheet-modal button:has-text("${more[dest]}")`)
+    return
+  }
+  if (dest === 'programs') {
+    await clickVisible(page, '[data-page="workouts"]')
+    await page.click('#train-switch button:has-text("Plans")')
+    return
+  }
+  if (dest === 'calendar') {
+    await clickVisible(page, '[data-page="solo-dashboard"]')
+    await page.click('[data-open-calendar]')
+    return
+  }
+  if (dest === 'goals') {
+    await clickVisible(page, '[data-page="progress"]')
+    await page.click('.chip-row button.chip:has-text("Goals")')
     return
   }
   await clickVisible(page, `[data-page="${dest}"]`)

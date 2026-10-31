@@ -1082,6 +1082,7 @@ async function renderPrograms(el) {
   const planStarts = await planStartsRead      // program_id -> start date, only for the Personal view; {} otherwise, so no chip is ever wrong
 
   el.innerHTML = `
+    ${_isPersonalView() ? _trainSwitchHtml('programs') : ''}
     <div class="page-header">
       <h1 class="page-title">Training plans</h1>
       <button class="btn btn-primary" onclick="showCreateProgramModal()">+ New training plan</button>

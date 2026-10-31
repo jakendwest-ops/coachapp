@@ -1578,6 +1578,14 @@ function _soloNavParent(page) { return (page && _SOLO_NAV_PARENT[page]) || null 
 // The active VIEW, not the account: a master account in Personal view is solo here, in coach view it is not.
 function _isPersonalView() { return currentProfile?.role === 'solo' }
 
+// Train's two switches (Personal view): Workouts and Plans are the existing pages, so the switch is drawn at the top of each.
+/** @param {'workouts'|'programs'} active */
+function _trainSwitchHtml(active) {
+  return `<div class="chip-row" id="train-switch" role="group" aria-label="Train" style="margin-bottom:14px">` +
+    `<button type="button" class="chip" aria-pressed="${active === 'workouts'}" aria-selected="${active === 'workouts'}" onclick="navigate('workouts')">Workouts</button>` +
+    `<button type="button" class="chip" aria-pressed="${active === 'programs'}" aria-selected="${active === 'programs'}" onclick="navigate('programs')">Plans</button></div>`
+}
+
 // Which nav item a page lights: in Personal view its parent tab, everywhere else the page itself.
 function _navLit(page) { return (_isPersonalView() && _soloNavParent(page)) || page }
 
