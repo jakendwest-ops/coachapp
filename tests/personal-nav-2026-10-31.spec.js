@@ -45,11 +45,14 @@ test.describe('Personal view: Today', () => {
       }, today), { timeout: 8000 }).toBe(true)
     } finally {
       // Removes only the row this test wrote: today's date, this exact value.
-      await page.evaluate(async (d) => {
+      const cleanup = await page.evaluate(async (d) => {
         const { data } = await db.from('weight_logs').select('id, weight_kg').eq('client_id', window._soloClientId).eq('date', d)
         const mine = (data || []).filter(r => Math.abs(weightToPref(r.weight_kg) - 80.4) < 0.05).map(r => r.id)
-        if (mine.length) await db.from('weight_logs').delete().in('id', mine)
+        if (!mine.length) return { found: 0, removed: 0 }
+        const { data: gone } = await db.from('weight_logs').delete().in('id', mine).select('id')
+        return { found: mine.length, removed: (gone || []).length }
       }, today)
+      expect(cleanup.removed, 'cleanup removed every row this test wrote').toBe(cleanup.found)
     }
   })
 
@@ -98,9 +101,35 @@ test.describe('Personal view: Progress', () => {
       await expect(page.locator(`text=${names.cardio}`)).toHaveCount(0)
       await expect(page.locator('#main-content button.chip', { hasText: 'Per exercise' }), 'the Performance views live in Records').toBeVisible()
     } finally {
-      await page.evaluate(async (tag) => {
-        await db.from('performance_logs').delete().eq('client_id', window._soloClientId).like('name', tag + '%')
+      const removed = await page.evaluate(async (tag) => {
+        const { data } = await db.from('performance_logs').delete().eq('client_id', window._soloClientId).like('name', tag + '%').select('id')
+        return (data || []).length
       }, TAG)
+      expect(removed, 'cleanup removed both tagged records').toBe(2)
+    }
+  })
+
+  // Review, 2026-10-31: a lift's page is a page of its own; the Performance views under the records must hide with them, or their
+  // switches tear down the lift page's charts. Owns its fixture: one tagged saved best, removed at the end.
+  test('in Records, opening a lift\'s page hides the Performance views under the records', async ({ page }) => {
+    await soloReady(page)
+    const lift = `${TAG} best ${Date.now()}`
+    await page.evaluate(async (n) => {
+      const { error } = await db.from('client_1rms').insert({ client_id: window._soloClientId, exercise_name: n, one_rm_kg: 100, recorded_at: _ymdLocal(new Date()) })
+      if (error) throw new Error(error.message)
+    }, lift)
+    try {
+      await page.evaluate(() => { window._progressTab = 'Records'; navigate('progress') })
+      await expect(page.locator('#pb-perf-views')).toBeVisible({ timeout: 15000 })
+      await page.locator('#pb-1rms-section button.pb-row', { hasText: lift }).click()
+      await expect(page.locator('#pb-performance-section')).toBeHidden()
+      await expect(page.locator('#pb-perf-views'), 'the Performance views hide with the records').toBeHidden()
+    } finally {
+      const removed = await page.evaluate(async (tag) => {
+        const { data } = await db.from('client_1rms').delete().eq('client_id', window._soloClientId).like('exercise_name', tag + '%').select('id')
+        return (data || []).length
+      }, TAG)
+      expect(removed, 'cleanup removed the tagged best').toBe(1)
     }
   })
 

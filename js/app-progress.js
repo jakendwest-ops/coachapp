@@ -69,7 +69,11 @@ function _pbDestroyCharts() {
   }
 }
 // The "Log a PB / performance record" section sits under the 1RM list on the client / solo page. A lift's page is a page of its own: it is hidden while one is open (and so cannot tear down the lift's charts).
-const _pbShowPerformance = show => { const p = document.getElementById('pb-performance-section'); if (p) p.hidden = !show }
+// Personal view's Records (2026-10-31) also has the Performance views under the records: hidden with them, because their switches tear
+// down every managed chart (review, 2026-10-31: the lift page's charts went blank).
+const _pbShowPerformance = show => {
+  for (const id of ['pb-performance-section', 'pb-perf-views']) { const p = document.getElementById(id); if (p) p.hidden = !show }
+}
 // The one error panel for both pages (a failed read must never look like an empty list).
 const _pbError = (title, lead = '') => `${lead}<div class="empty-state"><div class="empty-title">${title}</div><div class="empty-text">Check your connection and try again.</div></div>`
 
@@ -466,7 +470,8 @@ function _bestPerfLog(records) {
 async function renderClientPerformance(clientId, el, opts = {}) {
   if (opts.categories) el.dataset.perfCategories = opts.categories.join(',')
   const only = el.dataset.perfCategories ? el.dataset.perfCategories.split(',') : null
-  const cats = only ? PERF_CATEGORIES.filter(c => only.includes(c.id)) : PERF_CATEGORIES
+  const picked = only ? PERF_CATEGORIES.filter(c => only.includes(c.id)) : []
+  const cats = picked.length ? picked : PERF_CATEGORIES      // no valid id left: show everything rather than break the form (cats[0])
   log.info('renderClientPerformance', 'fetching performance logs', { clientId })
   el.innerHTML = '<div style="padding:24px;color:var(--text-muted);text-align:center">Loading…</div>'
 
@@ -1427,6 +1432,10 @@ async function renderProgress(el) {
   // removed tab stays safe if tab state is ever persisted, and because within a single session old
   // code could still hold either name. Do not read it as evidence that tabs are remembered.
   if (window._progressTab === '1RMs' || window._progressTab === 'Benchmarks') window._progressTab = 'Personal Bests'
+  // A master account coming from Personal view's switches (2026-10-31) lands on the client tab that holds the same things.
+  const fromPersonal = { Records: 'Personal Bests', Cardio: 'Personal Bests', Weight: 'Body Weight' }
+  const w = /** @type {any} */ (window)
+  if (fromPersonal[w._progressTab]) w._progressTab = fromPersonal[w._progressTab]
   if (window._progressTab && !tabs.includes(window._progressTab)) window._progressTab = 'Body Weight'
   const activeTab = window._progressTab || 'Body Weight'
 
