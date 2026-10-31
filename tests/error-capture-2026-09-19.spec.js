@@ -4,8 +4,8 @@
 // reached their own browser console, and no global error handler existed. The app now reports its own
 // failures to a small table (app_errors) and the owner reads them, grouped, in Settings.
 //
-// THE CONSTRAINT THAT SHAPES EVERYTHING: privacy-policy.html promises error logs hold "only internal IDs
-// and timestamps — never your name, email, or health values". So a stored report carries a static tag, an
+// THE CONSTRAINT THAT SHAPES EVERYTHING: privacy-policy.html promises error logs hold "internal IDs, timestamps and technical
+// details (page, app version, type of device) — never your name, email, or health values". So a stored report carries a static tag, an
 // error CODE, a code LOCATION and technical context — and never the error message text, `details` or
 // `hint` (Postgres puts row values in those). The tests below feed the reporter a message stuffed with an
 // email and a body weight and assert neither survives anywhere in the row.

@@ -36,7 +36,7 @@ _As of 2026-06-28, not independently re-verified in this migration pass — cros
 | Data export | `downloadMyData()` in Settings |
 | Right to erasure | `delete_current_user()` RPC + Settings UI |
 | Data residency | eu-west-1 (Ireland) |
-| Privacy policy page | `/privacy-policy.html` live (v158, 2026-06-29); consent checkbox links to it |
+| Privacy policy page | `/privacy-policy.html` live (v158, 2026-06-29; reworded 2026-10-31 for the error-report device line, version 2026-10-31, everyone re-consents once); consent checkbox links to it |
 | ICO breach notification | Documented — see Breach Procedure below (2026-07-12) |
 
 **Correction found during this migration:** the bug ledger still lists consent capture as `deferred`
