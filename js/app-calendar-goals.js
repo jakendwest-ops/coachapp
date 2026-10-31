@@ -162,7 +162,7 @@ async function renderCalendar(el) {
   while (cells.length % 7 !== 0) cells.push(null)
 
   el.innerHTML = `
-    ${_isPersonalView() ? `<button type="button" class="wk-linkbtn" data-today-back onclick="navigate('solo-dashboard')">‹ Today</button>` : ''}
+    ${_isPersonalView() ? `<button type="button" class="wk-linkbtn tap-link" data-today-back onclick="navigate('solo-dashboard')">‹ Today</button>` : ''}
     <div class="page-header">
       <h1 class="page-title">Calendar</h1>
       <button class="btn-primary" onclick="${isClient ? 'showClientAddEventModal()' : 'showAddEventModal()'}">+ Add event</button>

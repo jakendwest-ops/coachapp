@@ -1497,6 +1497,10 @@ a.cockpit-btn { padding: 0 14px; border: 1px solid var(--border); border-radius:
 .dash-wv b { font-size: var(--text-display); font-weight: 800; line-height: 1; }
 .dash-wv span { font-size: var(--text-lg); font-weight: 700; color: var(--text-muted); }
 .dash-delta { font-size: var(--text-md); color: var(--text-muted); margin: 4px 0 6px; }
+/* Personal view's four destinations (2026-10-31). A text-sized link that is still a 44px tap (the "‹ More" / "‹ Today" back links,
+   Today's Calendar button), and the More sheet's rows, which mix buttons and links but must read as one centred list. */
+.tap-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; }
+.more-row { display: flex; align-items: center; justify-content: center; min-height: 44px; text-decoration: none; }
 /* Today's quick weight log (Personal view, 2026-10-31): the number box and Log on one row, the message under them. */
 .dash-quickweight { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .dash-quickweight .field-input { flex: 1 1 120px; min-width: 0; margin: 0; }

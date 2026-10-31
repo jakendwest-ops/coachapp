@@ -1620,13 +1620,13 @@ function _openMoreSheet() {
   overlay.onclick = e => { if (e.target === overlay) closeModal('more-sheet-modal') }
   // Literal handlers, one per row: scripts/check-inline-handlers can only verify a name it can read.
   const rows = [
-    `<button class="btn btn-secondary" onclick="navigate('library')">Exercise library</button>`,
-    `<button class="btn btn-secondary" onclick="navigate('settings')">Settings</button>`,
-    `<button class="btn btn-secondary" onclick="closeModal('more-sheet-modal');downloadMyData()">Download my data</button>`,
-    `<a class="btn btn-secondary" href="${escapeHtml(_feedbackMailto())}">Send feedback</a>`,
-    `<a class="btn btn-secondary" href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener">Privacy policy</a>`,
-    /** @type {any} */ (window)._masterAccount ? `<button class="btn btn-secondary" onclick="switchView('coach')">Switch to PT view</button>` : '',
-    `<button class="btn btn-secondary" onclick="closeModal('more-sheet-modal');signOutAndClearDrafts({ ask: true })">Sign out</button>`,
+    `<button class="btn btn-secondary more-row" onclick="navigate('library')">Exercise library</button>`,
+    `<button class="btn btn-secondary more-row" onclick="navigate('settings')">Settings</button>`,
+    `<button class="btn btn-secondary more-row" onclick="closeModal('more-sheet-modal');downloadMyData()">Download my data</button>`,
+    `<a class="btn btn-secondary more-row" href="${escapeHtml(_feedbackMailto())}">Send feedback</a>`,
+    `<a class="btn btn-secondary more-row" href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener">Privacy policy</a>`,
+    /** @type {any} */ (window)._masterAccount ? `<button class="btn btn-secondary more-row" onclick="switchView('coach')">Switch to PT view</button>` : '',
+    `<button class="btn btn-secondary more-row" onclick="closeModal('more-sheet-modal');signOutAndClearDrafts({ ask: true })">Sign out</button>`,
   ].join('')
   overlay.innerHTML = `
     <div class="modal" style="max-width:340px">

@@ -12,6 +12,8 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-10-31** — Personal view has four destinations: **Today, Train, Progress, More** (Jake, after a tappable mock-up; MVP item 7). Calendar opens from Today, Plans sit under Train, Goals and Cardio under Progress, the Exercise library and Settings under More; the Library's Templates tab is gone for solo (Train › Workouts covers it). Supersedes D2 (2026-09-07, a 5-item bar with a More sheet). Coach and client views unchanged ([design](superpowers/specs/2026-10-31-personal-view-four-tabs-design.md), [affordance table](superpowers/plans/2026-10-31-personal-view-four-tabs-affordances.md)).
+
 **2026-10-30** — the runner's next-session target is DROPPED for now (Jake, after a prototype): last time's grey text already shows weight and reps, so a target only repeats it. It came from the product review, not from real use; rebuild only if Jake finds himself unsure what to lift, then as a bare "↑ +2.5 kg" signal ([plan](superpowers/plans/2026-10-29-solo-product-review.md)).
 
 **2026-10-30** — Needs attention is ranked by `ATTENTION_RULES` (js/app-core.js); a client's own Holiday mutes it; missed counts from the day a plan was assigned (Jake).

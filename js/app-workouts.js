@@ -627,7 +627,7 @@ async function renderWorkoutLibrary(el) {
   // writers re-render into it.
   if (_isPersonalView()) {
     el.innerHTML = `
-      <button type="button" class="wk-linkbtn" data-more-back onclick="_openMoreSheet()">‹ More</button>
+      <button type="button" class="wk-linkbtn tap-link" data-more-back onclick="_openMoreSheet()">‹ More</button>
       <div class="page-header"><h1 class="page-title">Exercise library</h1></div>
       <div id="workout-tab-content"></div>`
     await renderExerciseLibrary(document.getElementById('workout-tab-content'))

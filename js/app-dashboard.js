@@ -401,7 +401,7 @@ function _dashWeekHtml(days, counts, sel, calendar = false) {
   const glyph = { done: _DASH_ICONS.check, plan: '▶', later: '', miss: '×', rest: '–' }
   const shown = sel || days.find(d => d.today)?.ds
   const sub = counts.planned ? `<b>${counts.done} of ${counts.planned}</b> ${counts.planned === 1 ? 'session' : 'sessions'} done` : 'Nothing planned this week'
-  const calBtn = calendar ? '<button type="button" class="dash-link" data-open-calendar onclick="navigate(\'calendar\')">Calendar</button>' : ''
+  const calBtn = calendar ? '<button type="button" class="dash-link tap-link" data-open-calendar onclick="navigate(\'calendar\')">Calendar</button>' : ''
   return `<section class="dash-card" id="dash-week"><div class="dash-card-head"><h2 class="dash-card-title">This week</h2><span class="dash-card-sub">${sub}</span>${calBtn}</div>` +
     `<div class="dash-days" role="group" aria-label="This week">${days.map(d =>
       `<button type="button" class="dash-day${d.today ? ' dash-day-today' : ''}" data-day="${d.ds}" aria-pressed="${d.ds === shown}" aria-label="${d.label} ${d.num}: ${words[d.kind]}" onclick="_dashPickDay('${d.ds}')">` +

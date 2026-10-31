@@ -117,9 +117,9 @@ test.describe('Personal view: old links, saved pages and switching view', () => 
   const lands = async (page, hash) => {
     await page.goto('/' + hash)
     await page.reload()
-    await expect.poll(() => page.evaluate(() => !!window._soloClientId), { timeout: 15000 }).toBe(true)
     await expect.poll(() => page.evaluate(() => currentProfile?.role), { timeout: 15000 }).toBe('solo')
-    await page.waitForTimeout(1500)
+    // Settled = the page this link names has drawn its own heading (or the Today page its root).
+    await expect.poll(() => page.evaluate(() => !!document.querySelector('#main-content h1, #dash-root')), { timeout: 15000 }).toBe(true)
     return page.evaluate(() => ({ page: currentPage, lit: document.querySelector('.bottom-nav-item.active')?.dataset.page || null,
       h1: document.querySelector('#main-content h1')?.textContent?.trim() || '', tab: window._progressTab || null }))
   }
@@ -149,6 +149,37 @@ test.describe('Personal view: old links, saved pages and switching view', () => 
     await expect.poll(() => page.evaluate(() => currentProfile?.role)).toBe('solo')
     await expect(page.locator('.bottom-nav-item')).toHaveText(['Today', 'Train', 'Progress', 'More'])
   })
+})
+
+// One check per row of docs/superpowers/plans/2026-10-31-personal-view-four-tabs-affordances.md: every way in that the old nav offered
+// still has a home you can reach by tapping, the way a person would (soloNav uses the bar, the More sheet and the switches).
+test('every affordance in the table has a reachable home', async ({ page }) => {
+  const { soloNav } = require('./helpers')
+  await soloReady(page)
+  // Today: the session card and the week strip are the dashboard itself.
+  await expect(page.locator('#dash-hero')).toBeVisible()
+  // Train > Workouts: Create a workout, Train now, Your workouts' search.
+  await soloNav(page, 'workouts')
+  await expect(page.locator('[data-create-workout]')).toBeVisible({ timeout: 10000 })
+  await expect(page.locator('[data-train-now]')).toBeVisible()
+  // Train > Plans: + New training plan.
+  await soloNav(page, 'programs')
+  await expect(page.locator('button:has-text("New training plan")')).toBeVisible({ timeout: 10000 })
+  // More > Exercise library: adding an exercise.
+  await soloNav(page, 'library')
+  await expect(page.locator('h1')).toHaveText('Exercise library', { timeout: 10000 })
+  await expect(page.locator('#main-content button', { hasText: /add exercise|new exercise/i }).first()).toBeVisible()
+  // Today > Calendar: + Add event.
+  await soloNav(page, 'calendar')
+  await expect(page.locator('button:has-text("Add event")')).toBeVisible({ timeout: 10000 })
+  // Progress > Goals: the goals list.
+  await soloNav(page, 'goals')
+  await expect(page.locator('#tab-content')).toBeVisible({ timeout: 10000 })
+  // More > Settings, and the master account's Switch to PT view.
+  await soloNav(page, 'settings')
+  await expect.poll(() => page.evaluate(() => currentPage)).toBe('settings')
+  await page.click('.bottom-nav-item[data-page="__more__"]')
+  await expect(page.locator('#more-sheet-modal button:has-text("Switch to PT view")'), 'the test PT is a master account').toBeVisible()
 })
 
 test.describe('Personal view: Train', () => {
