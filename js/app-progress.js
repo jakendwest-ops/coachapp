@@ -3030,12 +3030,27 @@ function _xsSetWithUnit(s) { const w = parseFloat(s.weight_kg) || 0, r = parseIn
 
 // The five measures. Keys are the SAME keys _TREND_METRICS and the saved per-exercise choice use. `val` is the number charted;
 // `cap` is the words for the "Best ..." caption and the tooltip — and says WHICH SET a weight came from.
+// `title` and `explain` are the plain-words heading and one-line explainer the Performance Lifts list opts into (opts.plain, 2026-11-01);
+// `unit` says what the change-since line counts. The runner's Stats sheet does not opt in.
 const _XS_MEASURES = {
-  topWeight: { noun: 'top set',   dp: 1, val: m => _xsKg(m.top),       cap: m => `${_xsW(m.top)} ${_xsUnit()} × ${m.topReps}` },
-  e1rm:      { noun: 'est. 1RM',  dp: 1, val: m => _xsKg(m.e1rm),      cap: m => `${_xsInt(_xsKg(m.e1rm))} ${_xsUnit()}` + (m.e1rmSrc ? ` (from ${_xsSetSpaced(m.e1rmSrc)})` : '') },
-  volume:    { noun: 'volume',    dp: 0, val: m => _xsKg(m.volume),    cap: m => `${_xsInt(_xsKg(m.volume))} ${_xsUnit()}` },
-  intensity: { noun: 'intensity', dp: 1, val: m => _xsKg(m.intensity), cap: m => `${_xsNum(_xsKg(m.intensity))} ${_xsUnit()}/rep` },
-  reps:      { noun: 'reps',      dp: 0, val: m => m.reps,             cap: m => `${_xsInt(m.reps)} reps` },
+  topWeight: { noun: 'top set',   dp: 1, val: m => _xsKg(m.top),       cap: m => `${_xsW(m.top)} ${_xsUnit()} × ${m.topReps}`, title: 'Heaviest set', explain: 'The heaviest weight you lifted in any set that session. Higher is better.', unit: () => _xsUnit() },
+  e1rm:      { noun: 'est. 1RM',  dp: 1, val: m => _xsKg(m.e1rm),      cap: m => `${_xsInt(_xsKg(m.e1rm))} ${_xsUnit()}` + (m.e1rmSrc ? ` (from ${_xsSetSpaced(m.e1rmSrc)})` : ''), title: 'Estimated 1-rep max', explain: 'The heaviest single you could lift, worked out from your best set each session (using effort when you logged it). Higher is better.', unit: () => _xsUnit() },
+  volume:    { noun: 'volume',    dp: 0, val: m => _xsKg(m.volume),    cap: m => `${_xsInt(_xsKg(m.volume))} ${_xsUnit()}`, title: 'Total weight lifted', explain: 'Weight times reps, added up over every set that session. Higher means more work done.', unit: () => _xsUnit() },
+  intensity: { noun: 'intensity', dp: 1, val: m => _xsKg(m.intensity), cap: m => `${_xsNum(_xsKg(m.intensity))} ${_xsUnit()}/rep`, title: 'Average weight per rep', explain: 'Total weight lifted divided by total reps: how heavy your average rep was. Higher means heavier reps.', unit: () => `${_xsUnit()}/rep` },
+  reps:      { noun: 'reps',      dp: 0, val: m => m.reps,             cap: m => `${_xsInt(m.reps)} reps`, title: 'Total reps', explain: 'Every rep you did that session. Higher means more reps.', unit: () => 'reps' },
+}
+
+// The plain-words extras for an opted-in card: the change since the first point in the range, and where the best point is.
+// `hist` is the range's sessions oldest first. Both are null when there is nothing to say (fewer than two usable sessions).
+function _xsPlainFacts(hist, M) {
+  const usable = hist.filter(s => M.val(s.m) > 0)
+  if (usable.length < 2) return { since: '', bestIdx: -1 }
+  const f = Math.pow(10, M.dp), first = usable[0], last = usable[usable.length - 1]
+  const diff = Math.round((M.val(last.m) - M.val(first.m)) * f) / f
+  const since = diff === 0 ? `No change since ${_xsDate(first.date)}` : `${diff > 0 ? '+' : '−'}${Math.abs(diff)} ${M.unit()} since ${_xsDate(first.date)}`
+  let bestIdx = 0
+  hist.forEach((s, i) => { if (M.val(s.m) >= M.val(hist[bestIdx].m)) bestIdx = i })
+  return { since, bestIdx }
 }
 
 // Everything the card needs, computed once per mount: the sessions (oldest first, empty ones dropped), the range-limited list,
@@ -3172,16 +3187,24 @@ function _xsRender(host) {
   const { avail, key, M } = pick
   const caption = _xsCaption(model, key)
   const usable = st.plotted.filter(s => M.val(s.m) > 0).length
+  const plain = !!st.opts.plain
   const chartNote = typeof Chart === 'undefined' ? 'The chart could not load. Check your connection and reload the page.'
-    : usable < 2 ? 'Not enough sessions yet to draw a line. It appears after a couple of workouts.' : ''
+    : usable < 2 ? (plain ? 'One session so far. The line appears from the second.' : 'Not enough sessions yet to draw a line. It appears after a couple of workouts.') : ''
+  const facts = plain ? _xsPlainFacts(model.shown, M) : null
+  const bestSes = facts && facts.bestIdx >= 0 ? model.shown[facts.bestIdx] : null
+  const plainHead = plain
+    ? `<div class="xs-title" data-xs-title>${escapeHtml(M.title)}</div><div class="xs-sub" data-xs-explain>${escapeHtml(M.explain)}</div>` +
+      (facts.since ? `<div class="xs-since" data-xs-since>${escapeHtml(facts.since)}</div>` : '')
+    : ''
+  const plainBest = bestSes ? `<div class="xs-hint" data-xs-best>${escapeHtml(`Best ${M.cap(bestSes.m)} · ${_xsDate(bestSes.date, true)}`)}</div>` : ''
   const pills = `<div class="xs-pills" role="group" aria-label="Chart measure">${avail.map(([k, label]) =>
     `<button type="button" class="xs-pill" data-xs-metric="${k}" aria-pressed="${k === key}" onclick="_xsAct(this,'metric','${k}')"${k === key ? ` style="background:${_METRIC_COLORS[k] || 'var(--accent)'}"` : ''}>${escapeHtml(label)}</button>`).join('')}</div>`
   host.innerHTML = '<div class="xs">' +
     (caption ? `<div class="xs-sub" data-xs-caption>${escapeHtml(caption)}</div>` : '') +
-    pills +
+    pills + plainHead +
     (chartNote
       ? `<div class="xs-empty" data-xs-chartnote>${escapeHtml(chartNote)}</div>`
-      : `<div class="xs-chart"><canvas id="${escapeHtml(st.opts.chartId || 'xs-chart')}" data-xs-chart role="img" aria-label="${escapeHtml(M.noun)} for each session"></canvas></div><div class="xs-hint">Tap a point or a session to see its numbers.</div>`) +
+      : `<div class="xs-chart"><canvas id="${escapeHtml(st.opts.chartId || 'xs-chart')}" data-xs-chart role="img" aria-label="${escapeHtml(M.noun)} for each session"></canvas></div>${plainBest}<div class="xs-hint">Tap a point or a session to see its numbers.</div>`) +
     `<div data-xs-strip>${_xsStripHtml(st)}</div>${_xsRecsHtml(model.rec)}<div data-xs-hist>${_xsHistHtml(st)}</div></div>`
   if (!chartNote) {
     try { st.chart = _xsDraw(host, key) }
@@ -3197,6 +3220,9 @@ function _xsDraw(host, key) {
   const hist = st.model.shown, today = st.model.today
   const labels = hist.map(s => _xsDate(s.date)), data = hist.map(val)
   const series = [{ label: M.noun, data: today ? data.concat([null]) : data, colour, fill: true, spanGaps: true }]
+  // Plain-words cards mark the best point with a larger dot of its own (a second, one-point series), so it stays put when another session is tapped.
+  const bestAt = st.opts.plain ? _xsPlainFacts(hist, M).bestIdx : -1
+  if (bestAt >= 0) series.push({ label: 'Best', data: data.map((v, i) => (i === bestAt ? v : null)).concat(today ? [null] : []), colour, pointRadius: 8 })
   if (today) {
     labels.push('Today')
     const last = data.length - 1
@@ -3206,7 +3232,7 @@ function _xsDraw(host, key) {
     labels, series, height: true, legend: false,
     selectedIndex: () => _xsSelIndex(st),
     onPick: i => { const s = st.plotted[i]; if (s) { st.sel = s.key; _xsRefreshSel(host) } },
-    tooltipLabel: c => { const s = st.plotted[c.dataIndex]; return s && c.parsed.y != null ? M.cap(s.m) : null },
+    tooltipLabel: c => { const s = st.plotted[c.dataIndex]; return s && c.parsed.y != null && c.dataset.label !== 'Best' ? M.cap(s.m) : null },
   })
 }
 
@@ -3322,7 +3348,7 @@ function _renderPerfExerciseList(query) {
     const open = openMap.has(ex.name) ? openMap.get(ex.name) : list.length === 1
     if (ex.metricType === 'weight_reps') {
       const opts = {
-        chartId: `ps-chart-${i}`, sinceMs: cutoff,
+        chartId: `ps-chart-${i}`, sinceMs: cutoff, plain: true,
         getMetric: () => window._trendState.metricByEx[ex.name],
         setMetric: m => { window._trendState.metricByEx[ex.name] = m },
       }
