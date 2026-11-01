@@ -10,6 +10,8 @@ const { installCappedApi } = require('./capped-api')
 
 const ME = 'pl-me'
 let rowNo = 0
+// A date relative to today, for the lift whose range test must keep one session inside the range whatever day this runs.
+const ago = n => { const d = new Date(); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 const row = (name, { date, sets }) => ({
   id: 'pl-row-' + String(++rowNo).padStart(6, '0'),
   exercise_name: name, metric_type: 'weight_reps',
@@ -23,6 +25,7 @@ const WORLD = [
   row('Lay C', { date: '2026-09-03', sets: [[40, 10]] }),
   ...['2026-08-18', '2026-08-25', '2026-09-01'].map((d, k) => row('Lay D', { date: d, sets: [[[100, 95, 90][k], 5]] })),   // only goes down
   ...['2026-08-18', '2026-08-25'].map(d => row('Lay E', { date: d, sets: [[70, 5]] })),   // flat
+  row('Lay F', { date: ago(300), sets: [[60, 5]] }), row('Lay F', { date: ago(2), sets: [[65, 5]] }),   // one session in a 3M range, one outside it
 ]
 
 async function showLifts(page) {
@@ -76,6 +79,13 @@ test.describe('Performance > Lifts: the chart says what it shows (2026-11-01)', 
     await expect(card(page, 0).locator('[data-xs-since]')).toHaveCount(0)
   })
 
+  test('a range that holds one of a lift\'s two sessions says so, rather than "one session so far"', async ({ page }) => {
+    await showLifts(page)
+    await page.evaluate(() => { window._trendState.range = '3M'; _renderPerfExerciseList('') })
+    await card(page, 5).locator('.pf-head').click()   // Lay F
+    await expect(card(page, 5).locator('[data-xs-chartnote]')).toContainText('Only one session in this range')
+  })
+
   test('the best point is marked on the chart and named under it, even when it is not the latest session', async ({ page }) => {
     await showLifts(page)
     await open(page, 1)
@@ -87,6 +97,20 @@ test.describe('Performance > Lifts: the chart says what it shows (2026-11-01)', 
     expect(marked, 'exactly one best point, on the second session (100 kg)').toEqual({ has: true, at: 1, value: 100, n: 1 })
     await expect(card(page, 1).locator('[data-xs-best]')).toContainText('Best 100 kg')
     await expect(card(page, 1).locator('[data-xs-best]')).toContainText('25 Aug')
+  })
+
+  test('the best marker keeps its size when the best session is also the selected one, and when touched', async ({ page }) => {
+    await showLifts(page)
+    await open(page, 0)   // Lay A: the newest session is the best AND the selected one
+    const r = await page.evaluate(() => {
+      const c = Object.values(Chart.instances).find(ch => ch.canvas.closest('#pl-host'))
+      const best = c.data.datasets.findIndex(d => d.label === 'Best'), at = c.data.datasets[best].data.findIndex(v => v != null)
+      const el = c.getDatasetMeta(best).data[at]
+      return { radius: el.options.radius, hover: el.options.hoverRadius, line: c.getDatasetMeta(0).data[0].options.radius }
+    })
+    expect(r.radius, 'bigger than the selection ring (6)').toBe(8)
+    expect(r.hover, 'does not shrink on touch').toBeGreaterThanOrEqual(8)
+    expect(r.line, 'an ordinary point is unchanged').toBe(3)
   })
 
   test('a one-session lift says so, and shows no change line', async ({ page }) => {

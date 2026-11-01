@@ -88,12 +88,37 @@ test.describe('Performance > Blocks: this block vs last block (2026-11-01)', () 
   test('tapping a row opens that lift in the overlay below, with its chart', async ({ page }) => {
     await showBlocks(page)
     await row(page, 'Bench').click()
+    await page.locator('#pbk-host #blk-result button', { hasText: 'Volume' }).click()   // a measure chip tapped first...
+    await row(page, 'Bench').click()                                                  // ...must not leave the overlay on it after a row tap
     await expect(page.locator('#pbk-host #blk-ex')).toHaveValue('Bench')
     await expect(page.locator('#pbk-host #blk-chart')).toBeVisible()
     // The table is in estimated 1RM, so the overlay under it opens on the same measure: two views of one lift must not disagree.
     await expect(page.locator('#pbk-host #blk-result button', { hasText: 'Est 1RM' })).toHaveCSS('color', 'rgb(255, 255, 255)')
     await row(page, 'Deadlift').click()
     await expect(page.locator('#pbk-host #blk-ex')).toHaveValue('Deadlift')
+  })
+
+  test('tapping a row after the pickers were changed puts the pickers back on this block vs last, so the lift is in the dropdown', async ({ page }) => {
+    await showBlocks(page)
+    await page.selectOption('#pbk-host #blk-b', '')            // comparison switched off: Deadlift (last block only) is not in the list now
+    await row(page, 'Deadlift').click()
+    await expect(page.locator('#pbk-host #blk-ex')).toHaveValue('Deadlift')
+    await expect(page.locator('#pbk-host #blk-a')).toHaveValue('live:2')
+    await expect(page.locator('#pbk-host #blk-b')).toHaveValue('past:1')
+    await expect(page.locator('#pbk-host #blk-result')).toContainText('Deadlift')
+  })
+
+  test('two plans running at once: the overlay counts only the days the table counts, so no session is in both blocks', async ({ page }) => {
+    const both = [
+      { key: 'live:b', progKey: 'pb', name: 'Block B', start: '2026-10-05', end: '2026-11-01', weeks: 4, open: true },
+      { key: 'live:a', progKey: 'pa', name: 'Block A', start: '2026-08-03', end: '2026-11-01', weeks: 12, open: true },
+    ]
+    await showBlocks(page, { runs: both })
+    await row(page, 'Bench').click()
+    const text = await page.locator('#pbk-host #blk-result').innerText()
+    // Bench: 12 and 26 Aug are in A before B began; 7 and 21 Oct are in B. A's window ends the day before B starts.
+    expect(text, 'last block holds its own two sessions, not B\'s as well').not.toContain('4 sessions')
+    expect((text.match(/2 sessions/g) || []).length, 'two blocks, two sessions each').toBe(2)
   })
 
   test('the two block pickers are still there to choose other blocks', async ({ page }) => {
