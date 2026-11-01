@@ -1542,6 +1542,13 @@ async function renderPersonalProgress(el) {
 }
 
 let _perfRenderToken = 0
+const _PERF_TABS = ['Lifts', 'Sessions', 'Blocks']
+function _perfTabName(stored) {
+  if (_PERF_TABS.includes(stored)) return stored
+  if (stored === 'Per session' || stored === 'Recent sessions') return 'Sessions'
+  if (stored === 'Per training plan') return 'Blocks'
+  return 'Lifts'   // 'Per exercise', '1RMs', 'Progressions', empty, anything unknown
+}
 async function renderPerformance(el) {
   // Same reasoning as renderProgress's own destroy call: switching between THIS view's own two
   // sub-tabs ('Per exercise' <-> 'Per session') re-enters renderPerformance directly, tearing
@@ -1565,15 +1572,15 @@ async function renderPerformance(el) {
   // without touching this line would have redirected the new tab to the old one on every render — a
   // tab that silently refuses to open. The label IS the stored state (window._perfTab), which is what
   // makes a rename a state migration rather than a cosmetic change.
-  let subTab = window._perfTab || 'Per exercise'
-  if (['1RMs', 'Progressions', 'Recent sessions'].includes(subTab)) window._perfTab = subTab = subTab === 'Recent sessions' ? 'Per session' : 'Per exercise'
+  // RENAMED 2026-11-01 to Lifts / Sessions / Blocks (Jake); _perfTabName maps every older stored label onto them.
+  const subTab = window._perfTab = _perfTabName(window._perfTab)
 
   // The trend range (1M–All) applies ONLY to "Per exercise" — Per session / Per program don't read
   // window._trendState.range. It used to be its own pill ROW inside renderProgressStrength; P1
   // (2026-09-07) folds it into this toolbar as a compact <select> so the Performance tab is one
   // control row + a search box, not three stacked pill rows.
   window._trendState = window._trendState || { range: 'All', metricByEx: {} }
-  const rangeSelect = subTab === 'Per exercise'
+  const rangeSelect = subTab === 'Lifts'
     ? `<select class="field-input" id="perf-range" onchange="_setTrendRange(this.value)" style="width:auto;flex-shrink:0;padding:6px 28px 6px 10px">
          ${Object.keys(_TREND_RANGES).map(r => `<option value="${r}" ${r === window._trendState.range ? 'selected' : ''}>${r}</option>`).join('')}
        </select>`
@@ -1582,7 +1589,7 @@ async function renderPerformance(el) {
   el.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px">
       <div class="chip-row chip-row-fit chip-row-3" style="flex:1 1 100%">
-        ${['Per exercise', 'Per session', 'Per training plan'].map(t => `
+        ${_PERF_TABS.map(t => `
           <button class="chip" aria-selected="${t === subTab}"
             onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))">${t}</button>`).join('')}
       </div>
@@ -1593,9 +1600,9 @@ async function renderPerformance(el) {
   el.querySelector('.chip-row .chip[aria-selected="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' })
 
   const subEl = document.getElementById('perf-sub-content')
-  if (subTab === 'Per session') {
+  if (subTab === 'Sessions') {
     await renderProgressPerSession(clientId, subEl)
-  } else if (subTab === 'Per training plan') {
+  } else if (subTab === 'Blocks') {
     await renderProgressPerProgram(clientId, subEl)
   } else {
     await renderProgressStrength(subEl)

@@ -12,12 +12,12 @@ test.describe('Per training plan', () => {
   test('all three sub-tabs are present and Per program is reachable', async ({ page }) => {
     await loginAsClient(page)
     const tabs = await page.evaluate(async () => {
-      window._progressTab = 'Performance'; window._perfTab = 'Per training plan'
+      window._progressTab = 'Performance'; window._perfTab = 'Blocks'
       await renderProgress(document.getElementById('main-content'))
       await new Promise(r => setTimeout(r, 2500))
-      return [...document.querySelectorAll('#progress-tab-content button')].map(b => b.textContent.trim()).filter(t => t.startsWith('Per '))
+      return [...document.querySelectorAll('#progress-tab-content button')].map(b => b.textContent.trim()).filter(t => ['Lifts', 'Sessions', 'Blocks'].includes(t))
     })
-    expect(tabs).toEqual(['Per exercise', 'Per session', 'Per training plan'])
+    expect(tabs).toEqual(['Lifts', 'Sessions', 'Blocks'])
   })
 
   // ─── The window boundary: the whole feature in one test ───────────────────
@@ -179,7 +179,7 @@ test.describe('Per training plan', () => {
     for (const unit of ['kg', 'lb']) {
       const txt = await page.evaluate(async (u) => {
         window._unitPrefs = { ...window._unitPrefs, weight: u }
-        window._progressTab = 'Performance'; window._perfTab = 'Per training plan'
+        window._progressTab = 'Performance'; window._perfTab = 'Blocks'
         await renderProgress(document.getElementById('main-content'))
         await new Promise(r => setTimeout(r, 2500))
         return document.getElementById('progress-tab-content')?.innerText || ''

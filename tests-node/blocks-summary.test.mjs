@@ -10,6 +10,17 @@ const ses = (date, weight, reps = 5) => ({ date, sets: [{ weight_kg: weight, rep
 const e1rm = (s) => get('_pbE1rmPoints')([s])[0].kg
 const block = (key, start, end, name = 'Plan') => ({ key, progKey: key, name, start, end, open: false })
 
+describe('_perfTabName', () => {
+  test('Performance pills are Lifts, Sessions, Blocks; every older stored name maps onto one of them', () => {
+    const t = get('_perfTabName')
+    assert.deepEqual(json(get('_PERF_TABS')), ['Lifts', 'Sessions', 'Blocks'])
+    for (const old of [undefined, '', 'Per exercise', '1RMs', 'Progressions', 'Nonsense']) assert.equal(t(old), 'Lifts', String(old))
+    for (const old of ['Per session', 'Recent sessions']) assert.equal(t(old), 'Sessions', old)
+    assert.equal(t('Per training plan'), 'Blocks')
+    for (const now of ['Lifts', 'Sessions', 'Blocks']) assert.equal(t(now), now)
+  })
+})
+
 describe('_blockWindowsFor', () => {
   const win = get('_blockWindowsFor')
 

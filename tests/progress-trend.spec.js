@@ -271,7 +271,7 @@ test.describe('Sub-project 3 — progress trend helpers', () => {
     // _activeView='solo' persists in localStorage, so we stay in the solo view the data belongs to.
     await page.reload()
     await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })      // the app's start-up navigation has landed: a fixed 1 s sleep let a slow evening's late dashboard paint overwrite the view rendered next (the v2026.10.5 gate failed this test twice; it passes alone)
-    await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Per exercise'; renderProgress(document.getElementById('main-content')) })
+    await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Lifts'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(1200)
 
     // P1 (2026-09-07): the 1M–All range moved from a pill row to a <select> on the Performance toolbar.

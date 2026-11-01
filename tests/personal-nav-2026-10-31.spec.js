@@ -107,7 +107,7 @@ test.describe('Personal view: Progress', () => {
     const range = page.locator('#perf-range')
     await expect(range).toBeVisible({ timeout: 15000 })
     expect((await range.boundingBox()).y, 'the range selector is within the first screen').toBeLessThan(500)
-    await expect(page.locator('#main-content button.chip', { hasText: 'Per exercise' })).toBeVisible()
+    await expect(page.locator('#main-content button.chip', { hasText: 'Lifts' })).toBeVisible()
     await page.evaluate(() => { window._progressTab = 'Records'; navigate('progress') })
     await expect(page.locator('#pb-1rms-section')).toBeVisible({ timeout: 15000 })
     await expect(page.locator('#perf-range'), 'no range selector on Records').toHaveCount(0)
@@ -115,10 +115,10 @@ test.describe('Personal view: Progress', () => {
   })
 
   for (const width of [390, 360, 320]) {
-    test(`Performance's own Per exercise / Per session / Per training plan row never scrolls sideways at ${width} px`, async ({ page }) => {
+    test(`Performance's own Lifts / Sessions / Blocks row never scrolls sideways at ${width} px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 844 })
       await soloReady(page)
-      await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Per exercise'; navigate('progress') })
+      await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Lifts'; navigate('progress') })
       await expect(page.locator('#perf-range')).toBeVisible({ timeout: 15000 })
       const m = await page.evaluate(() => {
         const row = document.querySelectorAll('#main-content .chip-row')[1]
@@ -127,7 +127,7 @@ test.describe('Personal view: Progress', () => {
           page: document.documentElement.scrollWidth - innerWidth,
           rangeInside: document.getElementById('perf-range').getBoundingClientRect().right <= innerWidth }
       })
-      expect(m.names).toEqual(['Per exercise', 'Per session', 'Per training plan'])
+      expect(m.names).toEqual(['Lifts', 'Sessions', 'Blocks'])
       expect(m.overflow, 'the row has nothing to scroll').toBeLessThanOrEqual(0)
       expect(m.clipped, 'no pill clips its name').toEqual([])
       expect(m.page, 'the page does not scroll sideways').toBeLessThanOrEqual(0)
@@ -135,9 +135,18 @@ test.describe('Personal view: Progress', () => {
     })
   }
 
+  test('Performance pills read Lifts, Sessions, Blocks; an old stored name (Per training plan) opens Blocks', async ({ page }) => {
+    await soloReady(page)
+    await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Per training plan'; navigate('progress') })
+    const sub = page.locator('#progress-tab-content .chip-row-3 .chip')
+    await expect(sub).toHaveText(['Lifts', 'Sessions', 'Blocks'], { timeout: 15000 })
+    await expect(page.locator('#progress-tab-content .chip-row-3 .chip[aria-selected="true"]')).toHaveText('Blocks')
+    expect(await page.evaluate(() => window._perfTab), 'the stored label is migrated').toBe('Blocks')
+  })
+
   test('two Performance renders in a row fill the page once, not twice (the second replaces the first)', async ({ page }) => {
     await soloReady(page)
-    await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Per exercise'; navigate('progress') })
+    await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Lifts'; navigate('progress') })
     await expect(page.locator('#perf-range')).toBeVisible({ timeout: 15000 })
     const fills = await page.evaluate(async () => {
       let n = 0
