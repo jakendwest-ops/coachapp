@@ -13,8 +13,9 @@ for Per exercise, Per session, cardio over time and weekly volume to be one piec
 
 ## Goals
 
-### 1. Records has three pills: Lifts · Sessions · Blocks
-Under Progress' four switches (Goals, Records, Weight, Cardio), Records gets one row of three pills (Jake chose pills over one long page;
+### 1. Performance has three pills: Lifts · Sessions · Blocks
+**Amended 2026-11-01:** these pills live on the Performance page (now its own Progress pill, see the four-destinations design), not on Records.
+Under Progress' five pills (Goals, Records, Performance, Bodyweight, Cardio), Performance gets one row of three pills (Jake chose pills over one long page;
 three short pills fit a phone without sideways scrolling, his round 1 note on the four switches). The names are Claude's.
 - **Lifts** replaces Per exercise. **Sessions** replaces Per session. **Blocks** replaces Per training plan and is the block comparison of the
   sibling design.

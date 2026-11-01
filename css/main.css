@@ -954,6 +954,17 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .chip[aria-selected="true"] { background:var(--accent); color:var(--on-accent); }
 .chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
+/* Personal view's five Progress pills (Jake, 2026-11-01): they must never scroll sideways. On a phone 390 px or wider they share one
+   row at 11 px (measured: five names need 342 px of the 358 a 390 px phone leaves); narrower phones get two rows (3 + 2) at 12 px, so
+   nothing clips or scrolls on any width. 44 px tall to tap. */
+.chip-row.chip-row-fit { gap:4px; overflow:visible; }
+.chip-row-fit .chip { flex:1 1 auto; min-width:0; min-height:44px; padding:0 6px; font-size:var(--text-sm); text-align:center; }
+@media (max-width: 389px) {
+  .chip-row.chip-row-fit { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:6px; }
+  .chip-row-fit .chip { grid-column:span 3; padding:0 4px; font-size:var(--text-md); }
+  .chip-row-fit .chip:nth-child(-n+3) { grid-column:span 2; }
+}
+
 /* Builder: days stack vertically on mobile, flow into columns on a wide screen. */
 .pwk-days { display:flex; flex-direction:column; gap:8px; }
 @media (min-width:768px) {

@@ -38,13 +38,16 @@ describe('Personal view nav', () => {
     assert.match(client, />Log a workout</)
   })
 
-  test('Progress in Personal view: a stored tab name maps onto Goals / Records / Weight / Cardio; unknown or empty opens Goals', () => {
+  // Five pills since 2026-11-01 (Jake): Goals, Records, Performance, Bodyweight, Cardio. Performance is its own page again (it was
+  // briefly folded into Records on 2026-10-31, which made that page 9,274 px tall and buried the 1M to All range).
+  test('Progress in Personal view: the five pills; a stored tab name maps onto them; unknown or empty opens Goals', () => {
+    assert.deepEqual(JSON.parse(JSON.stringify(get('_PERSONAL_PROGRESS_TABS'))), ['Goals', 'Records', 'Performance', 'Bodyweight', 'Cardio'])
     const t = get('_personalProgressTab')
     assert.equal(t(undefined), 'Goals')
     assert.equal(t(''), 'Goals')
-    assert.equal(t('Body Weight'), 'Weight')
-    for (const old of ['Personal Bests', 'Performance', '1RMs', 'Benchmarks']) assert.equal(t(old), 'Records', old)
-    for (const now of ['Goals', 'Records', 'Weight', 'Cardio']) assert.equal(t(now), now)
+    for (const old of ['Body Weight', 'Weight']) assert.equal(t(old), 'Bodyweight', old)
+    for (const old of ['Personal Bests', '1RMs', 'Benchmarks']) assert.equal(t(old), 'Records', old)
+    for (const now of ['Goals', 'Records', 'Performance', 'Bodyweight', 'Cardio']) assert.equal(t(now), now)
     assert.equal(t('Nonsense'), 'Goals')
   })
 

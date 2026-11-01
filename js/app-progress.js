@@ -44,9 +44,7 @@ function _refresh1RMs(clientId) {
 function _refreshClientPerformance(clientId) {
   const el = document.getElementById('pb-performance-section') || document.getElementById('tab-content')
   if (!el) return Promise.resolve()
-  // In Personal view's Records the Performance views sit under the records, and this re-render tears down every managed chart on the
-  // page (_destroyManagedCharts) — so they are drawn again after it (2026-10-31).
-  return renderClientPerformance(clientId, el).then(() => { if (document.getElementById('pb-perf-views')) return renderPerformance(_perfHost()) })
+  return renderClientPerformance(clientId, el)
 }
 
 // ─── Personal Bests: one clean row per lift, and a page for each lift (Jake, 2026-10-13) ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -69,11 +67,7 @@ function _pbDestroyCharts() {
   }
 }
 // The "Log a PB / performance record" section sits under the 1RM list on the client / solo page. A lift's page is a page of its own: it is hidden while one is open (and so cannot tear down the lift's charts).
-// Personal view's Records (2026-10-31) also has the Performance views under the records: hidden with them, because their switches tear
-// down every managed chart (review, 2026-10-31: the lift page's charts went blank).
-const _pbShowPerformance = show => {
-  for (const id of ['pb-performance-section', 'pb-perf-views']) { const p = document.getElementById(id); if (p) p.hidden = !show }
-}
+const _pbShowPerformance = show => { const p = document.getElementById('pb-performance-section'); if (p) p.hidden = !show }
 // The one error panel for both pages (a failed read must never look like an empty list).
 const _pbError = (title, lead = '') => `${lead}<div class="empty-state"><div class="empty-title">${title}</div><div class="empty-text">Check your connection and try again.</div></div>`
 
@@ -1432,8 +1426,9 @@ async function renderProgress(el) {
   // removed tab stays safe if tab state is ever persisted, and because within a single session old
   // code could still hold either name. Do not read it as evidence that tabs are remembered.
   if (window._progressTab === '1RMs' || window._progressTab === 'Benchmarks') window._progressTab = 'Personal Bests'
-  // A master account coming from Personal view's switches (2026-10-31) lands on the client tab that holds the same things.
-  const fromPersonal = { Records: 'Personal Bests', Cardio: 'Personal Bests', Weight: 'Body Weight' }
+  // A master account coming from Personal view's pills (2026-10-31) lands on the client tab that holds the same things
+  // ('Performance' and 'Goals' are client tabs too, so they pass through).
+  const fromPersonal = { Records: 'Personal Bests', Cardio: 'Personal Bests', Weight: 'Body Weight', Bodyweight: 'Body Weight' }
   const w = /** @type {any} */ (window)
   if (fromPersonal[w._progressTab]) w._progressTab = fromPersonal[w._progressTab]
   if (window._progressTab && !tabs.includes(window._progressTab)) window._progressTab = 'Body Weight'
@@ -1494,11 +1489,13 @@ async function _renderProgressGoals(clientId, host) {
   await renderClientGoals(clientId, document.getElementById('tab-content'))
 }
 
-// ─── Personal view's Progress: Goals, Records, Weight, Cardio (Jake, 2026-10-31) ───────────────────────────────────────────────
-// A separate entry point so a coached client's Progress (renderProgress's own four tabs) does not change. Records = the 1RMs, the
-// non-cardio records and the Performance views (Per exercise / Per session / Per training plan, unchanged); Cardio = the cardio
-// records. Docs: docs/superpowers/specs/2026-10-31-personal-view-four-tabs-design.md.
-const _PERSONAL_PROGRESS_TABS = ['Goals', 'Records', 'Weight', 'Cardio']
+// ─── Personal view's Progress: Goals, Records, Performance, Bodyweight, Cardio (Jake, 2026-10-31; five pills 2026-11-01) ────────
+// A separate entry point so a coached client's Progress (renderProgress's own four tabs) does not change. Records = the 1RMs and the
+// strength / body-metric / benchmark records; Performance = its own page (Per exercise / Per session / Per training plan, with the
+// 1M to All range at the top); Bodyweight = the weight page; Cardio = the cardio records. On 2026-10-31 Performance was folded into
+// Records, which made that page 9,274 px tall and buried the range selector; Jake asked for it back as a page of its own.
+// Docs: docs/superpowers/specs/2026-10-31-personal-view-four-tabs-design.md.
+const _PERSONAL_PROGRESS_TABS = ['Goals', 'Records', 'Performance', 'Bodyweight', 'Cardio']
 
 // Shared by both Progress pages (the client's and Personal view's) — one literal, so it doesn't grow the hand-rolled-empty-state
 // count that scripts/check-count-ratchet.mjs holds at its baseline. Was a local of renderProgress until 2026-10-31.
@@ -1508,8 +1505,8 @@ const _noClientProfileHtml = '<div class="empty-state"><div class="empty-title">
 /** @param {string|undefined} stored */
 function _personalProgressTab(stored) {
   if (stored && _PERSONAL_PROGRESS_TABS.includes(stored)) return stored
-  if (stored === 'Body Weight') return 'Weight'
-  if (['Personal Bests', 'Performance', '1RMs', 'Benchmarks'].includes(stored || '')) return 'Records'
+  if (stored === 'Body Weight' || stored === 'Weight') return 'Bodyweight'
+  if (['Personal Bests', '1RMs', 'Benchmarks'].includes(stored || '')) return 'Records'
   return 'Goals'
 }
 
@@ -1519,14 +1516,15 @@ async function renderPersonalProgress(el) {
   const active = win._progressTab = _personalProgressTab(win._progressTab)
   el.innerHTML = `
     <div class="page-header"><h1 class="page-title">Progress</h1></div>
-    <div class="chip-row" style="margin-bottom:20px">
+    <div class="chip-row chip-row-fit" style="margin-bottom:20px">
       ${_PERSONAL_PROGRESS_TABS.map(t => `
         <button class="chip" aria-selected="${t === active}"
           onclick="window._progressTab='${t}';renderProgress(document.getElementById('main-content'))">${t}</button>`).join('')}
     </div>
     <div id="progress-tab-content"></div>`
   const host = document.getElementById('progress-tab-content')
-  if (active === 'Weight') { await renderProgressWeight(host); return }
+  if (active === 'Bodyweight') { await renderProgressWeight(host); return }
+  if (active === 'Performance') { await renderPerformance(host); return }
   const clientId = await _getCurrentClientId()
   if (!clientId) { host.innerHTML = _noClientProfileHtml; return }
   if (active === 'Goals') { await _renderProgressGoals(clientId, host); return }
@@ -1536,17 +1534,12 @@ async function renderPersonalProgress(el) {
     return
   }
   // Records. Each section keeps the id its own writer refreshes through (see the Personal Bests branch of renderProgress).
-  host.innerHTML = '<div id="pb-1rms-section"></div><div id="pb-performance-section" style="margin-top:28px"></div><div id="pb-perf-views" style="margin-top:28px"></div>'
+  host.innerHTML = '<div id="pb-1rms-section"></div><div id="pb-performance-section" style="margin-top:28px"></div>'
   await Promise.all([
     renderClient1RMs(clientId, document.getElementById('pb-1rms-section')),
     renderClientPerformance(clientId, document.getElementById('pb-performance-section'), { categories: ['strength', 'body_metric', 'benchmark'] }),
   ])
-  await renderPerformance(document.getElementById('pb-perf-views'))
 }
-
-// Where the Performance views redraw: Personal view's Records gives them their own box under the records (2026-10-31), so a switch
-// between Per exercise / Per session must not repaint the whole Progress area and wipe the 1RMs and records above it.
-function _perfHost() { return document.getElementById('pb-perf-views') || document.getElementById('progress-tab-content') }
 
 async function renderPerformance(el) {
   // Same reasoning as renderProgress's own destroy call: switching between THIS view's own two
@@ -1586,7 +1579,7 @@ async function renderPerformance(el) {
       <div class="chip-row" style="flex:1">
         ${['Per exercise', 'Per session', 'Per training plan'].map(t => `
           <button class="chip" aria-selected="${t === subTab}"
-            onclick="window._perfTab='${t}';renderPerformance(_perfHost())">${t}</button>`).join('')}
+            onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))">${t}</button>`).join('')}
       </div>
       ${rangeSelect}
     </div>
