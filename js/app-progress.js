@@ -1541,13 +1541,18 @@ async function renderPersonalProgress(el) {
   ])
 }
 
+let _perfRenderToken = 0
 async function renderPerformance(el) {
   // Same reasoning as renderProgress's own destroy call: switching between THIS view's own two
   // sub-tabs ('Per exercise' <-> 'Per session') re-enters renderPerformance directly, tearing
   // down #progress-tab-content without ever going through renderProgress -- guard here too so
   // neither direction leaks whichever chart array the sub-tab being left behind was using.
   _destroyManagedCharts()
+  // Newest render wins: a render still waiting on the client id when another starts must not paint
+  // over it (both would otherwise fill the one #perf-sub-content).
+  const myToken = ++_perfRenderToken
   const clientId = await _getCurrentClientId()
+  if (myToken !== _perfRenderToken) return
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
 
   // 2026-07-08 restructure: was ['1RMs', 'Progressions'] — 1RMs moved into Personal Bests
@@ -1575,8 +1580,8 @@ async function renderPerformance(el) {
     : ''
 
   el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-      <div class="chip-row" style="flex:1">
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px">
+      <div class="chip-row chip-row-fit chip-row-3" style="flex:1 1 100%">
         ${['Per exercise', 'Per session', 'Per training plan'].map(t => `
           <button class="chip" aria-selected="${t === subTab}"
             onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))">${t}</button>`).join('')}

@@ -963,6 +963,7 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
   .chip-row.chip-row-fit { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:6px; }
   .chip-row-fit .chip { grid-column:span 3; padding:0 4px; font-size:var(--text-md); }
   .chip-row-fit .chip:nth-child(-n+3) { grid-column:span 2; }
+  .chip-row-fit.chip-row-3 .chip { font-size:var(--text-sm); padding:0 2px; }
 }
 
 /* Builder: days stack vertically on mobile, flow into columns on a wide screen. */

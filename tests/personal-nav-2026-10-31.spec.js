@@ -114,6 +114,43 @@ test.describe('Personal view: Progress', () => {
     expect(await page.evaluate(() => document.getElementById('main-content').scrollHeight), 'Records is a short page, not ten screens').toBeLessThan(3500)
   })
 
+  for (const width of [390, 360, 320]) {
+    test(`Performance's own Per exercise / Per session / Per training plan row never scrolls sideways at ${width} px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await soloReady(page)
+      await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Per exercise'; navigate('progress') })
+      await expect(page.locator('#perf-range')).toBeVisible({ timeout: 15000 })
+      const m = await page.evaluate(() => {
+        const row = document.querySelectorAll('#main-content .chip-row')[1]
+        return { overflow: row.scrollWidth - row.clientWidth, names: [...row.querySelectorAll('.chip')].map(c => c.textContent),
+          clipped: [...row.querySelectorAll('.chip')].filter(c => c.scrollWidth > c.clientWidth + 1).map(c => c.textContent),
+          page: document.documentElement.scrollWidth - innerWidth,
+          rangeInside: document.getElementById('perf-range').getBoundingClientRect().right <= innerWidth }
+      })
+      expect(m.names).toEqual(['Per exercise', 'Per session', 'Per training plan'])
+      expect(m.overflow, 'the row has nothing to scroll').toBeLessThanOrEqual(0)
+      expect(m.clipped, 'no pill clips its name').toEqual([])
+      expect(m.page, 'the page does not scroll sideways').toBeLessThanOrEqual(0)
+      expect(m.rangeInside, 'the range selector is on screen').toBe(true)
+    })
+  }
+
+  test('two Performance renders in a row fill the page once, not twice (the second replaces the first)', async ({ page }) => {
+    await soloReady(page)
+    await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Per exercise'; navigate('progress') })
+    await expect(page.locator('#perf-range')).toBeVisible({ timeout: 15000 })
+    const fills = await page.evaluate(async () => {
+      let n = 0
+      const real = window.renderProgressStrength
+      window.renderProgressStrength = (...a) => { n++; return real(...a) }
+      const el = document.getElementById('progress-tab-content')
+      await Promise.all([renderPerformance(el), renderPerformance(el)])
+      window.renderProgressStrength = real
+      return n
+    })
+    expect(fills, 'only the newest render fills #perf-sub-content').toBe(1)
+  })
+
   test('a cardio record shows under Cardio and not Records; a strength record the other way round', async ({ page }) => {
     await soloReady(page)
     const stamp = Date.now()
