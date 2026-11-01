@@ -101,3 +101,22 @@ see his answers below).
 - **Working sets for weekly volume**: every set not flagged as a warm-up; drop sets count; cardio and interval sets are left out of sets and
   kg; totals follow the person's weight unit.
 - **The weight check applies wherever a set is entered**, including a coach logging a session for a client.
+
+## Jake's merge decisions, 2026-11-01 (his own history, worked through name by name)
+
+Names that differ only by capital letters (Barbell hold / Hold, Depth jump / Jump, Trap bar jump / Jump) merge on their own. Jake chose the kept name for each:
+- Barbell Deadlft + Deadlift → **Barbell Deadlift**
+- Back Squat → **Barbell Back Squat**
+- Dead-Stop Barbell Row → **Deadstop Barbell Row**
+- Close Grip Pulldown + Close Grip Pull Down → **Close Grip Lat Pulldown**
+- Cross-body tricep cable extension → **Cross Body Tricep Cable Extension**
+- Flat dumbbell press → **Flat Bench Dumbbell Press**
+- Military Press → **Barbell Military Press** (Seated Military Press stays its own lift)
+- Bulgarian Split Squat (smith machine) → **Smith Machine Bulgarian Split Squat**
+- Decline dumbbell extension → **Decline Bench Dumbbell Triceps Extension**
+- Single-arm Rope Overhead Cable Extension → **Single Arm Overhead Cable Extension**
+- Medicine Ball Explosive Chest Pass → **Medicine Ball Chest Throw**
+- Leg Curl → **Laying Leg Curl**
+
+Kept separate on purpose: Bench Press and Barbell Bench Press; Barbell Row and Deadstop Barbell Row; Paused Back Squat and Barbell Pause Squat; Dumbbell Lu Raise and Seated Dumbbell Lu Raise.
+These are one person's names: the merge feature takes a choice per person, it does not hard-code this list.
