@@ -2445,51 +2445,96 @@ async function renderProgressPerProgram(clientId, el) {
     el.innerHTML = '<div class="empty-state"><div class="empty-title">Couldn\'t load your training plans</div><div class="empty-text">Check your connection and try again.</div></div>'
     return
   }
-  if (!blocks.length) {
-    el.innerHTML = '<div class="empty-state"><p>No training plan with a start date yet — assign one and set its start date to compare blocks.</p></div>'
+  if (!exercises.length) {
+    el.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>'
     return
   }
+  // 2026-11-01: the page opens on this block against last block. With no plan run (or one) the windows are 6 weeks (see _blockWindowsFor),
+  // so they are added to the picker's blocks as stand-ins: the overlay below can then draw them like any other block.
+  const win = _blockWindowsFor(blocks, _ymdLocal(new Date()))
+  const stand = (w, key, name) => ({ key, progKey: key, name, start: w.start, end: w.end, open: false })
+  const planKey = (w, i) => (w.source === 'plan' ? blocks[i].key : null)
+  const aKey = planKey(win.a, 0) || 'wk:this', bKey = planKey(win.b, 1) || 'wk:last'
+  const pickerBlocks = [
+    ...(win.a.source === 'weeks' ? [stand(win.a, 'wk:this', 'Last 6 weeks')] : []),
+    ...(win.b.source === 'weeks' ? [stand(win.b, 'wk:last', 'The weeks before')] : []),
+    ...blocks,
+  ]
+  const summary = _blockLiftSummary(exercises, win.a, win.b)
   // Deliberately NOT window._trendCache. That global is owned by renderProgressStrength behind a
   // DIFFERENT token (_perfExerciseToken), so neither render can cancel the other: a master account
   // that opens Per program in Client view, switches to Personal, then types in the Per-exercise
   // search box would see the COACHED CLIENT's exercises under "Personal". Same auth.uid(), so RLS
   // never sees it — it is a UI leak between two people. A private cache removes the collision.
   window._blockExCache = exercises
-  // Honest about the day-one state: history only accrues from a restart, so a brand-new setup has one
-  // block and nothing to compare. Saying so beats an empty second dropdown the user has to interpret.
-  const singleBlockNote = blocks.length < 2
-    ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;margin-bottom:12px">Only one block so far. Restarting or changing a training plan files the current one away, and it becomes available here to compare against.</div>`
-    : ''
-
   window._blockState = window._blockState || {}
   const st = window._blockState
-  if (!blocks.some(b => b.key === st.a)) st.a = blocks[0].key
+  if (!pickerBlocks.some(b => b.key === st.a)) st.a = aKey
   // `''` is what the "Compare with…" option sets when the user deliberately turns comparison OFF.
   // No block key equals '', so a bare `.some()` check would undo that choice on every re-render.
-  if (st.b !== '' && !blocks.some(b => b.key === st.b)) st.b = blocks[1]?.key || ''
-  const names = _exerciseNamesInBlocks(exercises, blocks, [st.a, st.b])
+  if (st.b !== '' && !pickerBlocks.some(b => b.key === st.b)) st.b = bKey
+  const names = _exerciseNamesInBlocks(exercises, pickerBlocks, [st.a, st.b])
   if (!names.includes(st.ex)) st.ex = names[0] || ''
 
   const opt = (b, sel) => _blockOptionHtml(b, sel)
   el.innerHTML = `
-    ${singleBlockNote}
+    ${_blockSummaryHtml(summary, win)}
+    <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:16px 0 8px">Compare one lift, or other blocks</div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
       <select class="field-input" id="blk-ex" onchange="_setBlockState('ex', this.value)" style="font-size:var(--text-xl, 16px)">
         ${_exerciseOptionsHtml(names, st.ex)}
       </select>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <select class="field-input" id="blk-a" onchange="_setBlockState('a', this.value)" style="flex:1;min-width:150px;font-size:var(--text-xl, 16px)">
-          ${blocks.map(b => opt(b, st.a)).join('')}
+          ${pickerBlocks.map(b => opt(b, st.a)).join('')}
         </select>
         <select class="field-input" id="blk-b" onchange="_setBlockState('b', this.value)" style="flex:1;min-width:150px;font-size:var(--text-xl, 16px)">
           <option value="">Compare with…</option>
-          ${blocks.map(b => opt(b, st.b)).join('')}
+          ${pickerBlocks.map(b => opt(b, st.b)).join('')}
         </select>
       </div>
     </div>
     <div id="blk-result"></div>`
-  window._blockCache = blocks
+  window._blockCache = pickerBlocks
   _renderBlockComparison()
+}
+
+// The table this page opens on (Jake, 2026-11-01): each lift's best estimated 1RM last block and this block, and the change. A lift
+// in one block only says which; it never gets a change. Tapping a row opens it in the overlay below.
+function _blockSummaryHtml(summary, win) {
+  const range = w => _fmtBlockRange({ start: w.start, end: w.end, open: false })
+  const unit = window._unitPrefs?.weight || 'kg'
+  const kg = v => fmtWeight(Math.round(v), { spaced: true })
+  const tap = name => `onclick="_pickBlockLift('${escapeAttr(name)}')"`
+  const rowHtml = (name, right, extra = '') => `<button type="button" class="blk-row" data-blk-row="${escapeHtml(name)}" ${tap(name)}>` +
+    `<span class="blk-name">${escapeHtml(name)}${extra}</span><span class="blk-right">${right}</span></button>`
+  const both = [...summary.both].sort((x, y) => x.name.localeCompare(y.name)).map(r => {
+    const d = Math.round(weightToPref(Math.abs(r.delta)) * 10) / 10
+    const sign = r.delta > 0 ? '+' : r.delta < 0 ? '−' : ''
+    const cls = r.delta > 0 ? 'xs-up' : r.delta < 0 ? 'xs-dn' : 'xs-eq'
+    return rowHtml(r.name, `${escapeHtml(kg(r.last))} → ${escapeHtml(kg(r.this))} <span class="${cls}">${sign}${d} ${escapeHtml(unit)} (${sign}${Math.abs(r.pct)}%)</span>`)
+  })
+  const onlyLast = [...summary.onlyLast].sort((x, y) => x.name.localeCompare(y.name)).map(r => rowHtml(r.name, `<span class="blk-quiet">${escapeHtml(kg(r.last))} · not trained this block</span>`))
+  const onlyThis = [...summary.onlyThis].sort((x, y) => x.name.localeCompare(y.name)).map(r => rowHtml(r.name, `<span class="blk-quiet">${escapeHtml(kg(r.this))} · new this block</span>`))
+  const rows = [...both, ...onlyLast, ...onlyThis]
+  const why = win.a.source === 'weeks'
+    ? 'No plan is running, so this compares the last 6 weeks with the 6 before.'
+    : win.b.source === 'weeks' ? 'There is no earlier plan run, so last block is the same length of time just before this one.' : ''
+  return `<div data-blk-summary>
+    <div class="xs-title">This block vs last block</div>
+    <div class="xs-sub">Best estimated 1-rep max per lift. Sessions logged between ${escapeHtml(range(win.a))}${win.a.name ? ` (${escapeHtml(win.a.name)})` : ''} and ${escapeHtml(range(win.b))}${win.b.name ? ` (${escapeHtml(win.b.name)})` : ''}. ${escapeHtml(why)}</div>
+    ${rows.length ? `<div class="blk-table">${rows.join('')}</div>` : '<div class="xs-empty">No lift has a weighted session in either block yet.</div>'}
+  </div>`
+}
+
+// A row in the table above was tapped: open that lift in the overlay below it.
+function _pickBlockLift(name) {
+  window._blockState = window._blockState || {}
+  window._blockState.ex = name
+  const sel = document.getElementById('blk-ex')
+  if (sel) sel.value = name
+  _renderBlockComparison()
+  document.getElementById('blk-result')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 
 function _setBlockState(key, value) {
