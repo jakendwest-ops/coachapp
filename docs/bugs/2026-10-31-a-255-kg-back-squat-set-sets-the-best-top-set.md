@@ -3,7 +3,7 @@ id: 2026-10-31-a-255-kg-back-squat-set-sets-the-best-top-set
 status: closed
 priority: medium
 reported: 2026-10-31
-status_detail: "closed 2026-10-31 — Jake ran the one-row UPDATE (returned weight_kg 115.67, reps 2); read back in his signed-in app: the set reads 115.67 and Per exercise now shows Back Squat best top set 140 kg x 4."
+status_detail: "closed 2026-10-31 — Jake ran the one-row UPDATEs (255 -> 115.67 -> 115 kg, the 2.5 kg step he actually loaded); read back in his signed-in app: the set reads 115.67 and Per exercise now shows Back Squat best top set 140 kg x 4."
 ---
 
 # A 255 kg back squat set is wrong, and it sets the "best top set"
@@ -33,3 +33,5 @@ returning id, set_number, weight_kg, reps_achieved;
 ```
 
 It returned one row (115.67, 2 reps). Read back in the app the same day: the set reads 115.67 and Per exercise shows Back Squat's best top set as 140 kg x 4. A guard against implausible entries stays a question for the charts design.
+
+**Follow-up, 2026-10-31:** Jake pointed out weights move in 2.5 kg steps, so 115.67 (the exact 255 lb) was not a real load. He ran the second UPDATE (115.67 -> 115; returned one row); read back in his app: 115 kg x 2.
