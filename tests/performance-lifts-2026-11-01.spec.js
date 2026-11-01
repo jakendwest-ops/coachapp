@@ -21,6 +21,8 @@ const WORLD = [
   ...['2026-08-18', '2026-08-25', '2026-09-01', '2026-09-08', '2026-09-15'].map((d, k) => row('Lay A', { date: d, sets: [[90 + k * 5, 5]] })),
   ...['2026-08-18', '2026-08-25', '2026-09-01', '2026-09-08'].map((d, k) => row('Lay B', { date: d, sets: [[[80, 100, 90, 85][k], 5]] })),
   row('Lay C', { date: '2026-09-03', sets: [[40, 10]] }),
+  ...['2026-08-18', '2026-08-25', '2026-09-01'].map((d, k) => row('Lay D', { date: d, sets: [[[100, 95, 90][k], 5]] })),   // only goes down
+  ...['2026-08-18', '2026-08-25'].map(d => row('Lay E', { date: d, sets: [[70, 5]] })),   // flat
 ]
 
 async function showLifts(page) {
@@ -54,13 +56,24 @@ test.describe('Performance > Lifts: the chart says what it shows (2026-11-01)', 
     }
   })
 
-  test('it shows the change since the first point in the range, and follows the range', async ({ page }) => {
+  test('it shows the change since the first point: up with a plus, down with a minus, flat says so', async ({ page }) => {
     await showLifts(page)
     await open(page, 0)
     await expect(card(page, 0).locator('[data-xs-since]')).toHaveText('+20 kg since 18 Aug')
-    // A drop reads as a drop, not as a plus: Lay B went 80 then 85 now, so up 5; and a flat line says so.
-    await open(page, 1)
+    await open(page, 1)   // Lay B: 80 then 85 now
     await expect(card(page, 1).locator('[data-xs-since]')).toHaveText('+5 kg since 18 Aug')
+    await open(page, 3)   // Lay D: 100 down to 90
+    await expect(card(page, 3).locator('[data-xs-since]')).toHaveText('−10 kg since 18 Aug')
+    await open(page, 4)   // Lay E: 70 and 70
+    await expect(card(page, 4).locator('[data-xs-since]')).toHaveText('No change since 18 Aug')
+  })
+
+  test('the change follows the range: a range with none of the lift\'s sessions quotes no change', async ({ page }) => {
+    await showLifts(page)
+    await page.evaluate(() => { window._trendState.range = '1M'; _renderPerfExerciseList('') })   // every fixture session is older than a month
+    await card(page, 0).locator('.pf-head').click()
+    await expect(card(page, 0)).toContainText('No sessions in this range')
+    await expect(card(page, 0).locator('[data-xs-since]')).toHaveCount(0)
   })
 
   test('the best point is marked on the chart and named under it, even when it is not the latest session', async ({ page }) => {

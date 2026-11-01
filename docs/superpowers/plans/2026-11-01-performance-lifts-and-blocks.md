@@ -74,3 +74,11 @@
 ### Task 5: Gates
 
 - [ ] `bash scripts/checks.sh` (type ratchet for `app-progress.js`, style-literal ratchet, empty-state, Loading copy); the affected specs; mobile check at 390/360/320; `multi-agent-review` (diff mode, before the push); docs: roadmap, `docs/decisions.md` line, the charts design status. Push the branch; Jake decides the merge and release.
+
+## Rulings made while building (2026-11-01)
+
+- Ruling: Lifts keeps the existing fold-up list (search, 1M-All range, Expand all) rather than a one-lift picker, and keeps the measure pills rather than a "Show" select. The fold-up list is Jake's own 2026-10-04 request, and the pills are used by four specs and by the runner's shared Stats card. Cost if wrong: the mock-up showed a picker and a select; a later piece can swap them.
+- Ruling: the plain-words extras (title, explainer, change since the start, marked best point) are opt-in on the shared stats card (opts.plain) so the runner's Stats sheet is untouched.
+- Ruling: Blocks ignores a plan that has not started yet, and cuts the older block off the day before this one starts, so no day counts in both (found by the review). Only weight-and-reps lifts get a table row.
+- Ruling: the block pickers sit under the table, always visible (not folded away), so the existing specs and controls are unchanged.
+- Not built, left on purpose: merging lift names (design and Jake's name list are in the charts design), Sessions "vs last time", weekly volume, cardio over time, the weight check, the coach's client-profile tab.

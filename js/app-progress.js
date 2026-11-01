@@ -2339,17 +2339,22 @@ const _addDaysYmd = (ymd, n) => {
   return _ymdLocal(d)
 }
 // `blocks` is _loadProgramBlocks' list, newest start first (null on a failed read: treated as no plan runs). This is the newest
-// run, last is the run before it of ANY plan; with one run, last is the window of the same length just before it; with none, the
-// last 42 days against the 42 before. Inclusive at both ends, like _ptsInBlock.
+// run that has STARTED (a plan assigned for a later date is not a block yet); last is the next older run of ANY plan, cut off the day
+// before this one starts so no day is in both (plans can run at once, and a run lying wholly inside this one is skipped). With no
+// older run, last is the window of the same length just before this one; with no started run, the last 42 days against the 42
+// before. Inclusive at both ends, like _ptsInBlock. Each window carries its run's `key` (null for a stand-in) for the pickers.
 function _blockWindowsFor(blocks, today) {
-  const runs = blocks || []
-  const win = (start, end, source, name) => ({ start, end, source, name: name || '' })
-  if (runs.length >= 2) return { a: win(runs[0].start, runs[0].end, 'plan', runs[0].name), b: win(runs[1].start, runs[1].end, 'plan', runs[1].name) }
-  if (runs.length === 1) {
-    const r = runs[0]
-    const len = Math.max(1, Math.round((new Date(r.end + 'T12:00:00') - new Date(r.start + 'T12:00:00')) / 86400000) + 1)
-    const bEnd = _addDaysYmd(r.start, -1)
-    return { a: win(r.start, r.end, 'plan', r.name), b: win(_addDaysYmd(bEnd, -(len - 1)), bEnd, 'weeks') }
+  const runs = (blocks || []).filter(r => r.start <= today)
+  const win = (start, end, source, name, key) => ({ start, end, source, name: name || '', key: key || null })
+  if (runs.length) {
+    const r = runs[0], a = win(r.start, r.end, 'plan', r.name, r.key)
+    const cut = _addDaysYmd(r.start, -1)
+    for (const o of runs.slice(1)) {
+      const end = o.end < cut ? o.end : cut
+      if (end >= o.start) return { a, b: win(o.start, end, 'plan', o.name, o.key) }
+    }
+    const len = Math.max(1, Math.round((new Date(r.end + 'T12:00:00').getTime() - new Date(r.start + 'T12:00:00').getTime()) / 86400000) + 1)
+    return { a, b: win(_addDaysYmd(cut, -(len - 1)), cut, 'weeks') }
   }
   const aStart = _addDaysYmd(today, -(_BLOCK_FALLBACK_DAYS - 1))
   const bEnd = _addDaysYmd(aStart, -1)
@@ -2361,6 +2366,9 @@ function _blockLiftSummary(exercises, a, b) {
   const out = { both: [], onlyLast: [], onlyThis: [] }
   const best = (pts, w) => { const inW = _ptsInBlock(pts, w); return inW.length ? Math.max(...inW.map(p => p.kg)) : null }
   for (const ex of (exercises || [])) {
+    // Weight-and-reps lifts only: the overlay below has an estimated-1RM measure for these and for no other kind, so a row for a
+    // unilateral or timed lift would be one the overlay cannot show in the same measure (a series' metricType defaults to this one).
+    if ((ex.metricType || 'weight_reps') !== 'weight_reps') continue
     const pts = _pbE1rmPoints(ex.sessions)
     const last = best(pts, b), now = best(pts, a)
     if (last != null && now != null) out.both.push({ name: ex.name, last, this: now, delta: now - last, pct: Math.round(((now - last) / last) * 1000) / 10 })
@@ -2453,8 +2461,7 @@ async function renderProgressPerProgram(clientId, el) {
   // so they are added to the picker's blocks as stand-ins: the overlay below can then draw them like any other block.
   const win = _blockWindowsFor(blocks, _ymdLocal(new Date()))
   const stand = (w, key, name) => ({ key, progKey: key, name, start: w.start, end: w.end, open: false })
-  const planKey = (w, i) => (w.source === 'plan' ? blocks[i].key : null)
-  const aKey = planKey(win.a, 0) || 'wk:this', bKey = planKey(win.b, 1) || 'wk:last'
+  const aKey = win.a.key || 'wk:this', bKey = win.b.key || 'wk:last'
   const pickerBlocks = [
     ...(win.a.source === 'weeks' ? [stand(win.a, 'wk:this', 'Last 6 weeks')] : []),
     ...(win.b.source === 'weeks' ? [stand(win.b, 'wk:last', 'The weeks before')] : []),
@@ -2475,6 +2482,8 @@ async function renderProgressPerProgram(clientId, el) {
   if (st.b !== '' && !pickerBlocks.some(b => b.key === st.b)) st.b = bKey
   const names = _exerciseNamesInBlocks(exercises, pickerBlocks, [st.a, st.b])
   if (!names.includes(st.ex)) st.ex = names[0] || ''
+  // The table above is in estimated 1RM, so the overlay opens on it too (it falls back by itself for a lift with none).
+  if (!st.metric) st.metric = 'e1rm'
 
   const opt = (b, sel) => _blockOptionHtml(b, sel)
   el.innerHTML = `
@@ -2503,15 +2512,16 @@ async function renderProgressPerProgram(clientId, el) {
 // in one block only says which; it never gets a change. Tapping a row opens it in the overlay below.
 function _blockSummaryHtml(summary, win) {
   const range = w => _fmtBlockRange({ start: w.start, end: w.end, open: false })
-  const unit = window._unitPrefs?.weight || 'kg'
+  const unit = _xsUnit()
   const kg = v => fmtWeight(Math.round(v), { spaced: true })
   const tap = name => `onclick="_pickBlockLift('${escapeAttr(name)}')"`
   const rowHtml = (name, right, extra = '') => `<button type="button" class="blk-row" data-blk-row="${escapeHtml(name)}" ${tap(name)}>` +
     `<span class="blk-name">${escapeHtml(name)}${extra}</span><span class="blk-right">${right}</span></button>`
   const both = [...summary.both].sort((x, y) => x.name.localeCompare(y.name)).map(r => {
-    const d = Math.round(weightToPref(Math.abs(r.delta)) * 10) / 10
-    const sign = r.delta > 0 ? '+' : r.delta < 0 ? '−' : ''
-    const cls = r.delta > 0 ? 'xs-up' : r.delta < 0 ? 'xs-dn' : 'xs-eq'
+    const d = Math.round(Number(weightToPref(Math.abs(r.delta))) * 10) / 10
+    // From the ROUNDED change, so a drift that shows as 0.0 reads as no change, never a green "+0".
+    const sign = d > 0 ? (r.delta > 0 ? '+' : '−') : ''
+    const cls = d > 0 ? (r.delta > 0 ? 'xs-up' : 'xs-dn') : 'xs-eq'
     return rowHtml(r.name, `${escapeHtml(kg(r.last))} → ${escapeHtml(kg(r.this))} <span class="${cls}">${sign}${d} ${escapeHtml(unit)} (${sign}${Math.abs(r.pct)}%)</span>`)
   })
   const onlyLast = [...summary.onlyLast].sort((x, y) => x.name.localeCompare(y.name)).map(r => rowHtml(r.name, `<span class="blk-quiet">${escapeHtml(kg(r.last))} · not trained this block</span>`))
@@ -2522,18 +2532,17 @@ function _blockSummaryHtml(summary, win) {
     : win.b.source === 'weeks' ? 'There is no earlier plan run, so last block is the same length of time just before this one.' : ''
   return `<div data-blk-summary>
     <div class="xs-title">This block vs last block</div>
-    <div class="xs-sub">Best estimated 1-rep max per lift. Sessions logged between ${escapeHtml(range(win.a))}${win.a.name ? ` (${escapeHtml(win.a.name)})` : ''} and ${escapeHtml(range(win.b))}${win.b.name ? ` (${escapeHtml(win.b.name)})` : ''}. ${escapeHtml(why)}</div>
+    <div class="xs-sub">Best estimated 1-rep max per lift. Sessions logged between ${escapeHtml(range(win.a))}${win.a.name ? ` (${escapeHtml(win.a.name)})` : ''}, against sessions logged between ${escapeHtml(range(win.b))}${win.b.name ? ` (${escapeHtml(win.b.name)})` : ''}. ${escapeHtml(why)}</div>
     ${rows.length ? `<div class="blk-table">${rows.join('')}</div>` : '<div class="xs-empty">No lift has a weighted session in either block yet.</div>'}
   </div>`
 }
 
 // A row in the table above was tapped: open that lift in the overlay below it.
 function _pickBlockLift(name) {
-  window._blockState = window._blockState || {}
-  window._blockState.ex = name
-  const sel = document.getElementById('blk-ex')
+  const sel = /** @type {HTMLSelectElement | null} */ (document.getElementById('blk-ex'))
   if (sel) sel.value = name
-  _renderBlockComparison()
+  _setBlockState('metric', 'e1rm')   // the table is in estimated 1RM: a measure chip tapped earlier must not make the overlay disagree
+  _setBlockState('ex', name)   // sets the state and redraws the overlay, exactly as the picker's own change does
   document.getElementById('blk-result')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 
@@ -3234,7 +3243,7 @@ function _xsRender(host) {
   const usable = st.plotted.filter(s => M.val(s.m) > 0).length
   const plain = !!st.opts.plain
   const chartNote = typeof Chart === 'undefined' ? 'The chart could not load. Check your connection and reload the page.'
-    : usable < 2 ? (plain ? 'One session so far. The line appears from the second.' : 'Not enough sessions yet to draw a line. It appears after a couple of workouts.') : ''
+    : usable < 2 ? (plain ? (model.shown.length < 2 ? 'One session so far. The line appears from the second.' : 'Only one session has this measure so far. The line appears from the second.') : 'Not enough sessions yet to draw a line. It appears after a couple of workouts.') : ''
   const facts = plain ? _xsPlainFacts(model.shown, M) : null
   const bestSes = facts && facts.bestIdx >= 0 ? model.shown[facts.bestIdx] : null
   const plainHead = plain
@@ -3264,6 +3273,7 @@ function _xsDraw(host, key) {
   const val = s => { const v = M.val(s.m); return v > 0 ? Math.round(v * f) / f : null }   // a session with none of this measure leaves a gap, not a dip to zero
   const hist = st.model.shown, today = st.model.today
   const labels = hist.map(s => _xsDate(s.date)), data = hist.map(val)
+  /** @type {any[]} */
   const series = [{ label: M.noun, data: today ? data.concat([null]) : data, colour, fill: true, spanGaps: true }]
   // Plain-words cards mark the best point with a larger dot of its own (a second, one-point series), so it stays put when another session is tapped.
   const bestAt = st.opts.plain ? _xsPlainFacts(hist, M).bestIdx : -1

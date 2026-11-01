@@ -46,6 +46,35 @@ describe('_blockWindowsFor', () => {
     assert.equal(w.b.start, '2026-09-07')   // 28 days, the length of the run
   })
 
+  test('a plan that has not started yet is not "this block": the newest STARTED run is', () => {
+    const blocks = [block('b', '2026-11-09', '2026-11-01', 'B'), block('a', '2026-10-05', '2026-11-01', 'A')]
+    const w = json(win(blocks, '2026-11-01'))
+    assert.equal(w.a.name, 'A')
+    assert.equal(w.a.start, '2026-10-05')
+    assert.notEqual(w.b.name, 'B')
+  })
+
+  test('only a future plan: the 6-week windows, not an inverted one-day window', () => {
+    const w = json(win([block('b', '2026-11-09', '2026-11-01', 'B')], '2026-11-01'))
+    assert.equal(w.a.source, 'weeks')
+    assert.deepEqual([w.a.start, w.a.end], ['2026-09-21', '2026-11-01'])
+  })
+
+  test('two plans running at once: last block stops the day before this one starts, so no day is in both', () => {
+    const blocks = [block('b', '2026-10-12', '2026-11-01', 'B'), block('a', '2026-10-05', '2026-11-01', 'A')]
+    const w = json(win(blocks, '2026-11-01'))
+    assert.equal(w.a.start, '2026-10-12')
+    assert.equal(w.b.name, 'A')
+    assert.deepEqual([w.b.start, w.b.end], ['2026-10-05', '2026-10-11'])
+  })
+
+  test('an older run that lies wholly inside this one is skipped for the next older one', () => {
+    const blocks = [block('c', '2026-10-05', '2026-11-01', 'C'), block('b', '2026-10-06', '2026-10-20', 'B'), block('a', '2026-08-10', '2026-10-04', 'A')]
+    const w = json(win(blocks, '2026-11-01'))
+    assert.equal(w.b.name, 'A')
+    assert.deepEqual([w.b.start, w.b.end], ['2026-08-10', '2026-10-04'])
+  })
+
   test('a null block list (failed read) is treated as no plans, never a crash', () => {
     assert.equal(json(win(null, '2026-11-01')).a.source, 'weeks')
   })
@@ -83,6 +112,15 @@ describe('_blockLiftSummary', () => {
     assert.deepEqual(json(sum(ex, a, b)), { both: [], onlyLast: [], onlyThis: [] })
     assert.deepEqual(json(sum([], a, b)), { both: [], onlyLast: [], onlyThis: [] })
     assert.deepEqual(json(sum(null, a, b)), { both: [], onlyLast: [], onlyThis: [] })
+  })
+
+  test('only weight-and-reps lifts get a row: a unilateral or timed lift has no estimated 1RM to compare', () => {
+    const ex = [
+      { name: 'Split squat', metricType: 'unilateral', sessions: [ses('2026-08-24', 100), ses('2026-10-23', 110)] },
+      { name: 'Plank', metricType: 'timed_hold', sessions: [ses('2026-08-24', 100), ses('2026-10-23', 110)] },
+      { name: 'Bench', metricType: 'weight_reps', sessions: [ses('2026-08-24', 100), ses('2026-10-23', 110)] },
+    ]
+    assert.deepEqual(json(sum(ex, a, b)).both.map(x => x.name), ['Bench'])
   })
 
   test('the edges of a window are inclusive on both sides', () => {

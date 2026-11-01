@@ -12,6 +12,8 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-11-01** — Performance pills are **Lifts · Sessions · Blocks**; Lifts say what they show (plain title, explainer, change since the start, marked best); Blocks opens on this block vs last block per lift (6-week windows when no plan runs). Merging lift names is a separate later piece ([plan](superpowers/plans/2026-11-01-performance-lifts-and-blocks.md)).
+
 **2026-11-01** — Personal Progress has five pills, **Goals · Records · Performance · Bodyweight · Cardio**, in one 11 px row (two rows under 390 px wide). Reverses the 10-31 fold of Performance into Records (page was 9,274 px, range buried); Personal view only, no SQL.
 
 **2026-10-31** — Personal view has four destinations: **Today, Train, Progress, More** (Jake, after a tappable mock-up; MVP item 7). Calendar opens from Today, Plans sit under Train, Goals and Cardio under Progress, the Exercise library and Settings under More; the Library's Templates tab is gone for solo (Train › Workouts covers it). Supersedes D2 (2026-09-07, a 5-item bar with a More sheet). Coach and client views unchanged ([design](superpowers/specs/2026-10-31-personal-view-four-tabs-design.md), [affordance table](superpowers/plans/2026-10-31-personal-view-four-tabs-affordances.md)).
