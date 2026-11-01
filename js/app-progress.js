@@ -2323,6 +2323,46 @@ const _blockWeekIndex = (block, dateStr) => {
 // disagree with the line drawn directly above it.
 const _usableMetricValue = v => v != null && !isNaN(v)
 
+// Performance > Blocks (2026-11-01): which two windows are compared, and the per-lift table.
+// Windows are DATE RANGES (see the header note above _perfProgramToken): never "sessions from this plan".
+const _BLOCK_FALLBACK_DAYS = 42   // six weeks: the window used when there is no plan run to anchor on
+const _addDaysYmd = (ymd, n) => {
+  const d = new Date(ymd + 'T12:00:00')   // noon, like _blockWeekIndex: a DST change must not shift the day
+  d.setDate(d.getDate() + n)
+  return _ymdLocal(d)
+}
+// `blocks` is _loadProgramBlocks' list, newest start first (null on a failed read: treated as no plan runs). This is the newest
+// run, last is the run before it of ANY plan; with one run, last is the window of the same length just before it; with none, the
+// last 42 days against the 42 before. Inclusive at both ends, like _ptsInBlock.
+function _blockWindowsFor(blocks, today) {
+  const runs = blocks || []
+  const win = (start, end, source, name) => ({ start, end, source, name: name || '' })
+  if (runs.length >= 2) return { a: win(runs[0].start, runs[0].end, 'plan', runs[0].name), b: win(runs[1].start, runs[1].end, 'plan', runs[1].name) }
+  if (runs.length === 1) {
+    const r = runs[0]
+    const len = Math.max(1, Math.round((new Date(r.end + 'T12:00:00') - new Date(r.start + 'T12:00:00')) / 86400000) + 1)
+    const bEnd = _addDaysYmd(r.start, -1)
+    return { a: win(r.start, r.end, 'plan', r.name), b: win(_addDaysYmd(bEnd, -(len - 1)), bEnd, 'weeks') }
+  }
+  const aStart = _addDaysYmd(today, -(_BLOCK_FALLBACK_DAYS - 1))
+  const bEnd = _addDaysYmd(aStart, -1)
+  return { a: win(aStart, today, 'weeks'), b: win(_addDaysYmd(bEnd, -(_BLOCK_FALLBACK_DAYS - 1)), bEnd, 'weeks') }
+}
+// The best estimated 1RM (the runner's engine, via _pbE1rmPoints) each lift reached inside each window. A lift in both gets the
+// change; a lift in one goes to onlyLast / onlyThis and is never given a change. A lift that estimates nothing is left out.
+function _blockLiftSummary(exercises, a, b) {
+  const out = { both: [], onlyLast: [], onlyThis: [] }
+  const best = (pts, w) => { const inW = _ptsInBlock(pts, w); return inW.length ? Math.max(...inW.map(p => p.kg)) : null }
+  for (const ex of (exercises || [])) {
+    const pts = _pbE1rmPoints(ex.sessions)
+    const last = best(pts, b), now = best(pts, a)
+    if (last != null && now != null) out.both.push({ name: ex.name, last, this: now, delta: now - last, pct: Math.round(((now - last) / last) * 1000) / 10 })
+    else if (last != null) out.onlyLast.push({ name: ex.name, last })
+    else if (now != null) out.onlyThis.push({ name: ex.name, this: now })
+  }
+  return out
+}
+
 // Which metrics are worth offering for these points. ONE definition, used by both the Per exercise
 // cards and the Per program comparison — they had drifted into two hand-copies, and a comment on the
 // second claimed it was reusing the first.
