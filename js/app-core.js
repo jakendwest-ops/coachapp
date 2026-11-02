@@ -1566,17 +1566,33 @@ const _NAV_ITEMS = {
   ],
 }
 
-// The phone bar is the sidebar list for every role now; the solo split of D2 (2026-09-07) is gone with its seven destinations.
-const _NAV_BOTTOM = { solo: _NAV_ITEMS.solo }
+// The phone bar. Personal view: its four. Coach (MVP 8, Jake 2026-11-01): Dashboard, Clients, Training plans, Calendar and More - six did
+// not fit a phone; Workouts and Settings live in the More sheet. The desktop sidebar keeps every item. The client's five are its sidebar list.
+const _NAV_BOTTOM = {
+  solo: _NAV_ITEMS.solo,
+  coach: [
+    { page: 'dashboard', label: 'Dashboard' },
+    { page: 'clients',   label: 'Clients' },
+    { page: 'programs',  label: 'Training plans' },
+    { page: 'calendar',  label: 'Calendar' },
+    { page: '__more__',  label: 'More' },
+  ],
+}
+/** @param {string|undefined} role */
+function _navBottomItems(role) { return _NAV_BOTTOM[role] || _NAV_ITEMS[role] || _NAV_BOTTOM.coach }
 
 // Personal view's own pages are the four; each page that is no longer a destination lights the tab it now lives under.
 const _SOLO_NAV_PARENT = { 'solo-dashboard': 'solo-dashboard', workouts: 'workouts', progress: 'progress',
   calendar: 'solo-dashboard', programs: 'workouts', goals: 'progress', library: '__more__', settings: '__more__' }
 /** @param {string|undefined} page */
 function _soloNavParent(page) { return (page && _SOLO_NAV_PARENT[page]) || null }
+// The coach's pages that left the phone bar light More (on the desktop sidebar they are still items of their own and light themselves there).
+const _COACH_NAV_PARENT = { workouts: '__more__', settings: '__more__' }
 
 // The active VIEW, not the account: a master account in Personal view is solo here, in coach view it is not.
 function _isPersonalView() { return currentProfile?.role === 'solo' }
+// The nav's view, as applyRoleUI names it.
+function _navView() { const r = currentProfile?.role; return r === 'client' ? 'client' : r === 'solo' ? 'solo' : 'coach' }
 
 // Train's two switches (Personal view): Workouts and Plans are the existing pages, so the switch is drawn at the top of each.
 /** @param {'workouts'|'programs'} active */
@@ -1586,7 +1602,15 @@ function _trainSwitchHtml(active) {
     `<button type="button" class="chip" aria-pressed="${active === 'programs'}" aria-selected="${active === 'programs'}" onclick="navigate('programs')">Plans</button></div>`
 }
 
-// Which nav item a page lights: in Personal view its parent tab, everywhere else the page itself.
+// Which phone-bar item a page lights, for a view ('solo' | 'coach' | 'client'): Personal view its parent tab, the coach's Workouts and
+// Settings More, everything else the page itself. Pure: tests-node/coach-nav.test.mjs.
+/** @param {string|undefined} view @param {string} page */
+function _navLitFor(view, page) {
+  if (view === 'solo') return _soloNavParent(page) || page
+  if (view === 'coach') return _COACH_NAV_PARENT[page] || page
+  return page
+}
+// The sidebar lights in Personal view as the bar does (its sidebar IS the four); the coach's sidebar still lists Workouts and Settings.
 function _navLit(page) { return (_isPersonalView() && _soloNavParent(page)) || page }
 
 function renderNav(role) {
@@ -1601,9 +1625,9 @@ function renderNav(role) {
       </a>`).join('')
   }
   if (bottomNav) {
-    const bottomItems = _NAV_BOTTOM[role] || items
-    bottomNav.innerHTML = bottomItems.map(({ page, label }) => `
-      <a href="#" class="bottom-nav-item${lit === page ? ' active' : ''}" data-page="${page}">
+    const barLit = _navLitFor(role, currentPage)
+    bottomNav.innerHTML = _navBottomItems(role).map(({ page, label }) => `
+      <a href="#" class="bottom-nav-item${barLit === page ? ' active' : ''}" data-page="${page}">
         ${_NAV_ICONS[page] || ''}<span>${label}</span>
       </a>`).join('')
   }
@@ -1613,21 +1637,31 @@ function renderNav(role) {
 // above the bottom nav and the floating mobile view-switcher pill, same as every other modal here. navigate() tears down
 // .modal-overlay on its own, so the row handlers just call it. A plain centred .modal (like _openQuickPrefsPopover) rather than
 // modal-fullscreen-mobile: a bottom-flush sheet would tuck its last row under the fixed bottom nav.
+// The More sheet's rows for a view: Personal view's pages (Exercise library, Settings) or the coach's (Workouts, Settings - MVP 8,
+// 2026-11-01), then the rows both share, with the switch to the other view on your own account only. Pure: tests-node/coach-nav.test.mjs.
+// Literal handlers, one per row: scripts/check-inline-handlers can only verify a name it can read.
+/** @param {string|undefined} view @param {boolean} isMaster */
+function _moreSheetRowsHtml(view, isMaster) {
+  const coach = view !== 'solo'
+  return [
+    coach ? `<button class="btn btn-secondary more-row" onclick="navigate('workouts')">Workouts</button>`
+          : `<button class="btn btn-secondary more-row" onclick="navigate('library')">Exercise library</button>`,
+    `<button class="btn btn-secondary more-row" onclick="navigate('settings')">Settings</button>`,
+    `<button class="btn btn-secondary more-row" onclick="closeModal('more-sheet-modal');downloadMyData()">Download my data</button>`,
+    `<a class="btn btn-secondary more-row" href="${escapeHtml(_feedbackMailto())}">Send feedback</a>`,
+    `<a class="btn btn-secondary more-row" href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener">Privacy policy</a>`,
+    !isMaster ? '' : coach ? `<button class="btn btn-secondary more-row" onclick="switchView('solo')">Switch to Personal view</button>`
+                           : `<button class="btn btn-secondary more-row" onclick="switchView('coach')">Switch to PT view</button>`,
+    `<button class="btn btn-secondary more-row" onclick="closeModal('more-sheet-modal');signOutAndClearDrafts({ ask: true })">Sign out</button>`,
+  ].join('')
+}
+
 function _openMoreSheet() {
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'more-sheet-modal'
   overlay.onclick = e => { if (e.target === overlay) closeModal('more-sheet-modal') }
-  // Literal handlers, one per row: scripts/check-inline-handlers can only verify a name it can read.
-  const rows = [
-    `<button class="btn btn-secondary more-row" onclick="navigate('library')">Exercise library</button>`,
-    `<button class="btn btn-secondary more-row" onclick="navigate('settings')">Settings</button>`,
-    `<button class="btn btn-secondary more-row" onclick="closeModal('more-sheet-modal');downloadMyData()">Download my data</button>`,
-    `<a class="btn btn-secondary more-row" href="${escapeHtml(_feedbackMailto())}">Send feedback</a>`,
-    `<a class="btn btn-secondary more-row" href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener">Privacy policy</a>`,
-    /** @type {any} */ (window)._masterAccount ? `<button class="btn btn-secondary more-row" onclick="switchView('coach')">Switch to PT view</button>` : '',
-    `<button class="btn btn-secondary more-row" onclick="closeModal('more-sheet-modal');signOutAndClearDrafts({ ask: true })">Sign out</button>`,
-  ].join('')
+  const rows = _moreSheetRowsHtml(_isPersonalView() ? 'solo' : 'coach', !!(/** @type {any} */ (window)._masterAccount))
   overlay.innerHTML = `
     <div class="modal" style="max-width:340px">
       <div class="modal-header">
@@ -1640,8 +1674,7 @@ function _openMoreSheet() {
 }
 
 function applyRoleUI() {
-  const role = currentProfile?.role
-  renderNav(role === 'client' ? 'client' : role === 'solo' ? 'solo' : 'coach')
+  renderNav(_navView())
 }
 
 function updateViewSwitcherButtons(activeView) {
@@ -1817,11 +1850,12 @@ function _navigateNow(page, _historyOp = 'push') {
   if (_historyOp === 'push')    history.pushState({ page }, '', '#' + page)
   else if (_historyOp === 'replace') history.replaceState({ page }, '', '#' + page)
 
-  // In Personal view a page that is no longer a destination lights the tab it lives under (Calendar → Today, Library → More…).
+  // In Personal view a page that is no longer a destination lights the tab it lives under (Calendar → Today, Library → More…); on the
+  // coach's phone bar Workouts and Settings light More (MVP 8). The sidebar and the bar each light by their own rule.
   const lit = _navLit(page)
-  document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.page === lit)
-  })
+  const barLit = _navLitFor(_navView(), page)
+  document.querySelectorAll('.nav-item').forEach(el => { el.classList.toggle('active', el.getAttribute('data-page') === lit) })
+  document.querySelectorAll('.bottom-nav-item').forEach(el => { el.classList.toggle('active', el.getAttribute('data-page') === barLit) })
   // A workout that failed to save stays on the phone; its "not saved" bar is re-drawn on every page (R4a, app-runner.js).
   _refreshPendingSaveBar()
 

@@ -129,6 +129,18 @@ async function waitForVisible(page, selectors, options = {}) {
   return page.waitForSelector(list.map(s => `${s}:visible`).join(', '), options)
 }
 
+// Reaches a page the way a person on a phone does: its own bar (or sidebar) item when there is one, else through the More sheet. The
+// coach's Workouts and Settings live in More on the phone since MVP 8 (2026-11-01), so `clickVisible('[data-page="workouts"]')` finds
+// nothing there for a coach. Works for any role: the client's bar still holds every page, so it takes the first branch.
+async function navTo(page, dest) {
+  await page.waitForSelector('.bottom-nav-item:visible, .nav-item:visible')      // the nav is drawn: right after sign-in it may not be yet
+  const item = page.locator(`.bottom-nav-item[data-page="${dest}"]:visible, .nav-item[data-page="${dest}"]:visible`)
+  if (await item.count()) { await item.first().click(); return }
+  await page.click('.bottom-nav-item[data-page="__more__"]:visible')
+  await page.waitForSelector('#more-sheet-modal', { state: 'visible' })
+  await page.click(`#more-sheet-modal button[onclick="navigate('${dest}')"]`)
+}
+
 // Navigates Personal view the way a person does (four destinations since 2026-10-31: Today, Train, Progress, More). The bar holds
 // solo-dashboard / workouts / progress and More; the other pages are reached from inside them: library and settings from the More
 // sheet, programs from Train's Plans switch, calendar from Today's Calendar button, goals from Progress' Goals switch.
@@ -254,4 +266,4 @@ async function soloReady(page) {
   await expect(page.locator('#dash-goals')).toBeVisible({ timeout: 20000 })
 }
 
-module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible, soloNav, acceptConfirm, declineConfirm, soloReady }
+module.exports = { loginAsPT, loginAsClient, loginAsPT2, sweepPT2, logTableSet, clickVisible, waitForVisible, soloNav, navTo, acceptConfirm, declineConfirm, soloReady }

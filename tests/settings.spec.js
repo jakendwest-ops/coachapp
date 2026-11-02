@@ -1,10 +1,10 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, clickVisible, navTo } = require('./helpers')
 
 test.describe('Settings page', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
-    await clickVisible(page, '[data-page="settings"]')
+    await navTo(page, 'settings')
     // Wait for async profile/branding data — page re-renders after Supabase fetch
     await page.waitForSelector('text=Profile', { timeout: 10000 })
   })

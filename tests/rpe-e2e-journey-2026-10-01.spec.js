@@ -19,7 +19,7 @@
 // Set E2E_SHOTS=<dir> to also save phone-size screenshots at each stop, to be LOOKED AT: a passing assertion
 // is not a mobile check.
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, clickVisible, navTo } = require('./helpers')
 const S = require('./rpe-journey-steps')
 
 let F = null   // the live fixture, read by cleanup even when the test threw
@@ -52,7 +52,7 @@ test.describe('RPE top set — real-click journey (coach)', () => {
     F = { tag, exName, tplName, clientName: tag + ' Client', ...ids }
 
     // ── 1. BUILD the template with real clicks ────────────────────────────────────────────────
-    await clickVisible(page, '[data-page="workouts"]')
+    await navTo(page, 'workouts')
     await S.buildTopSetTemplate(page, { tplName, exName, shotPrefix: 'coach' })
     S.assertSavedShape(await S.readSavedTemplateExercise(page, exName), { exId: F.exId })
 

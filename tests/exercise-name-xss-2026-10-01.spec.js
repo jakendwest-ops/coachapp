@@ -12,7 +12,7 @@
 // "Nothing executes" is checked two ways, because an absence needs more than a wait: no element the payload
 // would create exists (<img src=x>, <svg onload>), and the canary window.__xss was never set.
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient, clickVisible } = require('./helpers')
+const { loginAsPT, loginAsClient, clickVisible, navTo } = require('./helpers')
 const S = require('./rpe-journey-steps')
 
 // Every payload class that matters: markup injection, an attribute breakout, and a JS-string breakout (the one
@@ -109,7 +109,7 @@ test.describe('hostile exercise names', () => {
     }, tag)
     pending.push({ tag, exId, fixtureClientId: clientId })
 
-    await clickVisible(page, '[data-page="workouts"]')
+    await navTo(page, 'workouts')
     await S.buildTopSetTemplate(page, { tplName, exName })
     S.assertSavedShape(await S.readSavedTemplateExercise(page, exName), { exId })
     await assertInert(page, 'the builder and the saved template')

@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, clickVisible, navTo } = require('./helpers')
 
 // 5 fixes from Jake's 2026-07-29 live-use report. Each test is red-first verified against the
 // pre-fix code before landing (reverted the file to HEAD, confirmed the assertion failed, restored).
@@ -234,7 +234,7 @@ test.describe('A2 — jump exercise last-session data', () => {
 test.describe('A4 — "Bodyweight" removed as an exercise Category', () => {
   test('add-exercise modal category dropdown has no Bodyweight option', async ({ page }) => {
     await loginAsPT(page)
-    await clickVisible(page, '[data-page="workouts"]')
+    await navTo(page, 'workouts')
     await page.waitForSelector('.list-row', { timeout: 15000 })
     await page.evaluate(() => showAddExerciseModal())
     const options = await page.locator('#ae-category option').allTextContents()

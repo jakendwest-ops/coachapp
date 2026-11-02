@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient, logTableSet, clickVisible, acceptConfirm, declineConfirm } = require('./helpers')
+const { loginAsPT, loginAsClient, logTableSet, clickVisible, acceptConfirm, declineConfirm, navTo } = require('./helpers')
 
 // Every exercise these tests create through the picker's real "Create new exercise" is a genuine library
 // row, and nothing used to remove them: ~600 runs left ~10 each, 6,275 on the E2E account by 2026-10-01
@@ -55,7 +55,7 @@ test.describe('PT Workouts page', () => {
   })
 
   test('workouts page is not blank — shows templates or meaningful empty state', async ({ page }) => {
-    await clickVisible(page, '[data-page="workouts"]')
+    await navTo(page, 'workouts')
     // Wait for Supabase to resolve — any of these three states means the page rendered correctly
     await page.waitForFunction(() => {
       const body = document.body.textContent || ''
@@ -96,7 +96,7 @@ test.describe('PT Workouts page', () => {
     expect(made.error, 'fixture template must be created before this asserts anything').toBeUndefined()
 
     try {
-      await clickVisible(page, '[data-page="workouts"]')
+      await navTo(page, 'workouts')
       // Wait for OUR row specifically, not for "a list", so a slow render cannot be mistaken for
       // "no templates" — the failure mode the old settle-wait was added for.
       const row = page.locator('.list-row', { hasText: name })

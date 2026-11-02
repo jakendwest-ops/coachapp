@@ -9,7 +9,7 @@
 //
 // Runs at the project's 390x844 viewport (playwright.config.js).
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, clickVisible, navTo } = require('./helpers')
 
 let clientId = null
 
@@ -72,7 +72,7 @@ test.describe('tab strips scroll themselves (390px)', () => {
   })
 
   test('the Workouts page tab strip behaves the same way', async ({ page }) => {
-    await clickVisible(page, '[data-page="workouts"]')
+    await navTo(page, 'workouts')
     await page.waitForSelector('.tabs .tab-btn')
     const p = await probe(page)
     expect(p.mainOverflows).toBeLessThanOrEqual(1)

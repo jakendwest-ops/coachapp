@@ -6,7 +6,7 @@
 // mostly worked by accident before the fix — it is here so it cannot stop working, and so the min="1" on those inputs
 // (which made 0 look like an invalid entry) stays gone.
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, clickVisible, navTo } = require('./helpers')
 const S = require('./rpe-journey-steps')
 
 let F = null   // the live fixture, read by cleanup even when the test threw
@@ -36,7 +36,7 @@ test('RIR 0 typed in the builder is saved, shown in the builder, and shown in th
   F = { tag, exName, tplName, clientName: tag + ' Client', ...ids }
 
   // BUILD: one strength exercise, 5 reps, RIR 0.
-  await clickVisible(page, '[data-page="workouts"]')
+  await navTo(page, 'workouts')
   await page.getByRole('button', { name: '+ New template' }).click()
   await page.locator('#ct-name').fill(tplName)
   await page.locator('#create-template-modal button:has-text("Create")').click()

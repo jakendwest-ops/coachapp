@@ -1,7 +1,7 @@
 // The four quick fixes from the 2026-09-27 app-code audit. Each test was run RED against the code
 // before its fix. No test here writes a database row.
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient } = require('./helpers')
+const { loginAsPT, loginAsClient, navTo } = require('./helpers')
 
 test.describe('App-code audit quick fixes (2026-09-27)', () => {
   // docs/bugs/2026-09-27-login-password-placeholder-shows-garbled-characters.md
@@ -39,7 +39,7 @@ test.describe('App-code audit quick fixes (2026-09-27)', () => {
     await loginAsPT(page)
     await expect(page.locator('#sign-out-btn')).toBeHidden()
     await page.evaluate(() => localStorage.setItem('_runnerDraft_e2e-audit', '{"e2e":true}'))
-    await page.locator('[data-page="settings"]:visible').first().click()
+    await navTo(page, 'settings')
     // The Settings route reloads after signing out, and #auth-screen is already visible BEFORE that
     // reload, so wait for the reload itself or the evaluate below can hit a destroyed context.
     const reloaded = page.waitForEvent('load')

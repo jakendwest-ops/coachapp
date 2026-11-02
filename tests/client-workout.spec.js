@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsClient, loginAsPT, clickVisible, acceptConfirm } = require('./helpers')
+const { loginAsClient, loginAsPT, clickVisible, acceptConfirm, navTo } = require('./helpers')
 
 test.describe('Client workout flow', () => {
   test.beforeEach(async ({ page }) => {
@@ -194,7 +194,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
       })
 
       try {
-        await clickVisible(page, '[data-page="workouts"]')
+        await navTo(page, 'workouts')
         await page.waitForTimeout(1000)
         await expect(page.locator('text=Up next')).toBeVisible({ timeout: 8000 })
         await expect(page.locator('button', { hasText: /Start/ }).first()).toBeVisible()
@@ -264,7 +264,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
         // empty-phase render crash (the bug this guards) would fire on load, before any click.
         const consoleErrors = []
         page.on('pageerror', err => consoleErrors.push(err.message))
-        await clickVisible(page, '[data-page="workouts"]')
+        await navTo(page, 'workouts')
         await page.waitForTimeout(1000)
         // Deload is phase 1 (order_index 0) → expanded by default, so its empty-phase message shows
         // on load. If a phase ever defaults collapsed again, open it (scope to the accordion toggle
@@ -393,7 +393,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
   })
 
   test('"Recent sessions" replaces "Session history", capped to 5, date-only rows', async ({ page }) => {
-    await clickVisible(page, '[data-page="workouts"]')
+    await navTo(page, 'workouts')
     await page.waitForTimeout(1000)
     const toggle = page.locator('button[onclick="toggleClientPhase(\'client-session-history\')"]')
     if (await toggle.count() === 0) return // no sessions yet

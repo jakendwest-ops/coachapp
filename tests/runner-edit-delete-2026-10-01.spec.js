@@ -7,7 +7,7 @@
 // tests-node/ticked-row-edit.test.mjs; this is the same two actions against the real page — real delete button, real
 // typing into the real input, real End / Save — and what the database actually holds afterwards.
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible, acceptConfirm } = require('./helpers')
+const { loginAsPT, clickVisible, acceptConfirm, navTo } = require('./helpers')
 const S = require('./rpe-journey-steps')
 
 let F = null   // the live fixture, read by cleanup even when the test threw
@@ -37,7 +37,7 @@ async function openRunner(page, prefix) {
   expect(ids.error, 'fixture setup must succeed before any assertion runs').toBeUndefined()
   F = { tag, exName, tplName, clientName: tag + ' Client', ...ids }
 
-  await clickVisible(page, '[data-page="workouts"]')
+  await navTo(page, 'workouts')
   await S.buildTopSetTemplate(page, { tplName, exName })
   await S.readSavedTemplateExercise(page, exName)
   await clickVisible(page, '[data-page="clients"]')

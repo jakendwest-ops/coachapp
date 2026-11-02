@@ -15,7 +15,7 @@
 // Cleanup removes ONLY rows carrying this run's unique [E2E] tag, as the coach/owner. It never deletes a client
 // record: the client journey uses the shared E2E client, and the solo journey the real solo record.
 const { test, expect } = require('./fixtures')
-const { loginAsPT, loginAsClient, clickVisible, soloNav } = require('./helpers')
+const { loginAsPT, loginAsClient, clickVisible, soloNav, navTo } = require('./helpers')
 const S = require('./rpe-journey-steps')
 
 const pending = []   // { tag, exId } to clean up as the owner, even when the test threw
@@ -56,7 +56,7 @@ test.describe('RPE top set — client', () => {
         return data.id
       }, exName)
       pending.push({ tag, exId })
-      await clickVisible(pt, '[data-page="workouts"]')
+      await navTo(pt, 'workouts')
       await S.buildTopSetTemplate(pt, { tplName, exName })
       S.assertSavedShape(await S.readSavedTemplateExercise(pt, exName), { exId })
 

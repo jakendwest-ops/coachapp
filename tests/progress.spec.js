@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsClient, loginAsPT, clickVisible } = require('./helpers')
+const { loginAsClient, loginAsPT, clickVisible, navTo } = require('./helpers')
 
 test.describe('Progress page regressions (2026-07-05)', () => {
   test.beforeEach(async ({ page }) => {
@@ -297,7 +297,7 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
   })
 
   test('Workouts page no longer shows a standalone "Your 1RMs" section (moved into Personal Bests)', async ({ page }) => {
-    await clickVisible(page, '[data-page="workouts"]')
+    await navTo(page, 'workouts')
     await page.waitForTimeout(1500)
     await expect(page.locator('text=Your 1RMs')).toHaveCount(0)
   })

@@ -15,7 +15,7 @@
 // test that only proves native validation would be testing the browser, not this app.
 
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible } = require('./helpers')
+const { loginAsPT, clickVisible, navTo } = require('./helpers')
 
 test.describe('GDPR consent gate', () => {
   test('the privacy policy is served and is the real UK GDPR text', async ({ page }) => {
@@ -188,7 +188,7 @@ test.describe('GDPR consent gate', () => {
 
   test('Settings exposes the policy to an already-active user', async ({ page }) => {
     await loginAsPT(page)
-    await clickVisible(page, '[data-page="settings"]')
+    await navTo(page, 'settings')
     const link = page.locator('#settings-privacy-link')
     await expect(link).toBeVisible()
     await expect(link).toHaveAttribute('href', 'privacy-policy.html')

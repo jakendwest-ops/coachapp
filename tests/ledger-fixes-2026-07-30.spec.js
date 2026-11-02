@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test')
-const { loginAsPT, loginAsPT2, clickVisible } = require('./helpers')
+const { loginAsPT, loginAsPT2, clickVisible, navTo } = require('./helpers')
 
 // 3 more bugs Jake found still live after the 2026-07-29 fixes shipped — same reports, deeper root
 // causes. Each test is red-first verified against the pre-fix code before landing.
@@ -21,7 +21,7 @@ test.describe('A3-cont — add-exercise still silently required a manual refresh
     // proves the staged add really shows up without a manual refresh, and (via saveTemplateDraft)
     // still really persists.
     await loginAsPT(page)
-    await clickVisible(page, '[data-page="workouts"]')
+    await navTo(page, 'workouts')
     await page.waitForSelector('.list-row', { timeout: 15000 })
 
     const res = await page.evaluate(async () => {
