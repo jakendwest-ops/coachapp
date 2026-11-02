@@ -112,21 +112,22 @@ test.describe('"Per session" rename', () => {
       await renderProgress(document.getElementById('main-content'))
       await new Promise(r2 => setTimeout(r2, 1200))
       const afterMigration = window._perfTab
-      window._perfTab = 'Per session'
+      window._perfTab = 'Sessions'
       await renderPerformance(document.getElementById('progress-tab-content'))
       await new Promise(r2 => setTimeout(r2, 1200))
       return {
         afterMigration,
         afterSelect: window._perfTab,
-        buttons: [...document.querySelectorAll('#progress-tab-content button')].map(b => b.textContent.trim()).filter(t => t.startsWith('Per ')),
+        buttons: [...document.querySelectorAll('#progress-tab-content button')].map(b => b.textContent.trim()).filter(t => ['Lifts', 'Sessions', 'Blocks'].includes(t)),
       }
     })
-    expect(r.afterMigration, 'a stored pre-rename value must migrate forward').toBe('Per session')
-    expect(r.afterSelect, 'selecting the tab must STICK — the old migration bounced it back').toBe('Per session')
-    // 'Per training plan' joined the inventory on 2026-08-16. Kept as an exact-equality assertion rather
-    // than a `toContain`: this is the guard that would catch the rename accidentally re-adding a
-    // fourth tab or resurrecting 'Recent sessions' alongside its replacement.
-    expect(r.buttons).toEqual(['Per exercise', 'Per session', 'Per training plan'])
+    // Renamed again 2026-11-01 (Per exercise / Per session / Per training plan became Lifts / Sessions / Blocks): the stored
+    // label is the state, so every older value has to land on one of the three.
+    expect(r.afterMigration, 'a stored pre-rename value must migrate forward').toBe('Sessions')
+    expect(r.afterSelect, 'selecting the tab must STICK — the old migration bounced it back').toBe('Sessions')
+    // Kept as an exact-equality assertion rather than a `toContain`: this is the guard that would catch the rename
+    // accidentally re-adding a fourth tab or resurrecting 'Recent sessions' alongside its replacement.
+    expect(r.buttons).toEqual(['Lifts', 'Sessions', 'Blocks'])
   })
 })
 

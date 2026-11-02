@@ -197,11 +197,12 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
     await expect(page.locator('#client-pb-form')).toHaveCount(0)   // the records form went with the tab
   })
 
-  test('Performance tab shows "Per exercise" / "Per session" sub-tabs (Per exercise default), not the old "1RMs" / "Progressions"', async ({ page }) => {
+  test('Performance tab shows "Lifts" / "Sessions" / "Blocks" sub-tabs (Lifts default), not the old "1RMs" / "Progressions"', async ({ page }) => {
     await page.evaluate(() => { window._perfTab = undefined; window._progressTab = 'Performance'; renderProgress(document.getElementById('main-content')) })
     await page.waitForTimeout(800)
-    await expect(page.locator('button:has-text("Per exercise")')).toBeVisible()
-    await expect(page.locator('button:has-text("Per session")')).toBeVisible()
+    await expect(page.locator('#progress-tab-content .chip[aria-selected="true"]')).toHaveText('Lifts')
+    await expect(page.locator('#progress-tab-content .chip:has-text("Sessions")')).toBeVisible()
+    await expect(page.locator('#progress-tab-content .chip:has-text("Blocks")')).toBeVisible()
     // Scoped to #progress-tab-content, where renderPerformance draws its SUB-tabs. It was a page-wide
     // match until 2026-08-14, when 1RMs became a top-level Progress tab carrying the same label —
     // which made this fail on a button the test was never about. The claim is "the Performance
@@ -217,13 +218,13 @@ test.describe('Performance / Personal Bests restructure (2026-07-08)', () => {
 
     // P1 — the trend range is a <select> on the Performance toolbar, shown only for "Per exercise",
     //      and it drives window._trendState.range.
-    await page.evaluate(() => { window._perfTab = 'Per exercise'; window._progressTab = 'Performance' })
+    await page.evaluate(() => { window._perfTab = 'Lifts'; window._progressTab = 'Performance' })
     await render()
     await expect(page.locator('#perf-range')).toBeVisible()
     await expect(page.locator('#trend-range-row')).toHaveCount(0)     // the old pill row is gone
     await page.selectOption('#perf-range', '3M')
     expect(await page.evaluate(() => window._trendState.range)).toBe('3M')
-    await page.evaluate(() => { window._perfTab = 'Per session' })
+    await page.evaluate(() => { window._perfTab = 'Sessions' })
     await page.evaluate(() => renderPerformance(document.getElementById('progress-tab-content')))
     await expect(page.locator('#perf-range')).toHaveCount(0)          // not meaningful on Per session
 

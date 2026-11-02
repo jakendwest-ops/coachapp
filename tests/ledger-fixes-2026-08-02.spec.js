@@ -27,7 +27,7 @@ test.describe('diary shows a "No sets logged" note instead of 0/0/0 tiles', () =
       await page.waitForTimeout(1500)
       await page.click('button:has-text("Performance")')
       await page.waitForTimeout(1500)
-      await page.click('button:has-text("Per session")')
+      await page.click('#progress-tab-content .chip:has-text("Sessions")')
       await page.waitForTimeout(1000)
 
       const html = await page.evaluate(() => document.getElementById('progress-tab-content')?.innerHTML || '')

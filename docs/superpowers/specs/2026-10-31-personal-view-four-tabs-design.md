@@ -87,6 +87,9 @@ Four destinations, the same on the phone bottom bar and the desktop sidebar:
   wrong. Since 2026-09-30 Personal Bests holds two sections: the 1RMs (`renderClient1RMs`) and every `performance_logs` record
   (`renderClientPerformance`, all four `PERF_CATEGORIES`: strength, cardio, body metric, benchmark). So nothing is reversed: the Cardio
   switch shows the `cardio` category of those records, and Records keeps the other three categories.
+- **REVERSED 2026-11-01:** Performance is its own page again, because folding it into Records made Progress 9,274 px long and buried the
+  1M to All range. Progress now has five pills, Goals · Records · Performance · Bodyweight · Cardio, in one 11 px row (two rows under 390 px wide).
+  The paragraph below is the superseded original.
 - **Performance moves into Records** ("a 5k run is as important to some people as their bench pb"). Records = today's Personal Bests
   (the 1RMs, then the strength / body-metric / benchmark records) followed by Performance's two views (per-exercise progression charts,
   per-session comparison); Performance stops being its own switch. Its charts move intact.

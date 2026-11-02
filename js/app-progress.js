@@ -44,9 +44,7 @@ function _refresh1RMs(clientId) {
 function _refreshClientPerformance(clientId) {
   const el = document.getElementById('pb-performance-section') || document.getElementById('tab-content')
   if (!el) return Promise.resolve()
-  // In Personal view's Records the Performance views sit under the records, and this re-render tears down every managed chart on the
-  // page (_destroyManagedCharts) — so they are drawn again after it (2026-10-31).
-  return renderClientPerformance(clientId, el).then(() => { if (document.getElementById('pb-perf-views')) return renderPerformance(_perfHost()) })
+  return renderClientPerformance(clientId, el)
 }
 
 // ─── Personal Bests: one clean row per lift, and a page for each lift (Jake, 2026-10-13) ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -69,11 +67,7 @@ function _pbDestroyCharts() {
   }
 }
 // The "Log a PB / performance record" section sits under the 1RM list on the client / solo page. A lift's page is a page of its own: it is hidden while one is open (and so cannot tear down the lift's charts).
-// Personal view's Records (2026-10-31) also has the Performance views under the records: hidden with them, because their switches tear
-// down every managed chart (review, 2026-10-31: the lift page's charts went blank).
-const _pbShowPerformance = show => {
-  for (const id of ['pb-performance-section', 'pb-perf-views']) { const p = document.getElementById(id); if (p) p.hidden = !show }
-}
+const _pbShowPerformance = show => { const p = document.getElementById('pb-performance-section'); if (p) p.hidden = !show }
 // The one error panel for both pages (a failed read must never look like an empty list).
 const _pbError = (title, lead = '') => `${lead}<div class="empty-state"><div class="empty-title">${title}</div><div class="empty-text">Check your connection and try again.</div></div>`
 
@@ -166,7 +160,7 @@ function _bestSetsByReps(sessions, targets) {
   })
 }
 
-// One estimated 1RM per logged session, oldest first, from the SAME engine as the runner's Stats sheet and the Per exercise cards (_xsSessionMetrics). Sessions that estimate nothing are left out.
+// One estimated 1RM per logged session, oldest first, from the SAME engine as the runner's Stats sheet and the Lifts cards (_xsSessionMetrics). Sessions that estimate nothing are left out.
 function _pbE1rmPoints(sessions) {
   return [...(sessions || [])]
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
@@ -1432,8 +1426,9 @@ async function renderProgress(el) {
   // removed tab stays safe if tab state is ever persisted, and because within a single session old
   // code could still hold either name. Do not read it as evidence that tabs are remembered.
   if (window._progressTab === '1RMs' || window._progressTab === 'Benchmarks') window._progressTab = 'Personal Bests'
-  // A master account coming from Personal view's switches (2026-10-31) lands on the client tab that holds the same things.
-  const fromPersonal = { Records: 'Personal Bests', Cardio: 'Personal Bests', Weight: 'Body Weight' }
+  // A master account coming from Personal view's pills (2026-10-31) lands on the client tab that holds the same things
+  // ('Performance' and 'Goals' are client tabs too, so they pass through).
+  const fromPersonal = { Records: 'Personal Bests', Cardio: 'Personal Bests', Weight: 'Body Weight', Bodyweight: 'Body Weight' }
   const w = /** @type {any} */ (window)
   if (fromPersonal[w._progressTab]) w._progressTab = fromPersonal[w._progressTab]
   if (window._progressTab && !tabs.includes(window._progressTab)) window._progressTab = 'Body Weight'
@@ -1494,11 +1489,13 @@ async function _renderProgressGoals(clientId, host) {
   await renderClientGoals(clientId, document.getElementById('tab-content'))
 }
 
-// ─── Personal view's Progress: Goals, Records, Weight, Cardio (Jake, 2026-10-31) ───────────────────────────────────────────────
-// A separate entry point so a coached client's Progress (renderProgress's own four tabs) does not change. Records = the 1RMs, the
-// non-cardio records and the Performance views (Per exercise / Per session / Per training plan, unchanged); Cardio = the cardio
-// records. Docs: docs/superpowers/specs/2026-10-31-personal-view-four-tabs-design.md.
-const _PERSONAL_PROGRESS_TABS = ['Goals', 'Records', 'Weight', 'Cardio']
+// ─── Personal view's Progress: Goals, Records, Performance, Bodyweight, Cardio (Jake, 2026-10-31; five pills 2026-11-01) ────────
+// A separate entry point so a coached client's Progress (renderProgress's own four tabs) does not change. Records = the 1RMs and the
+// strength / body-metric / benchmark records; Performance = its own page (Lifts / Sessions / Blocks, with the
+// 1M to All range at the top); Bodyweight = the weight page; Cardio = the cardio records. On 2026-10-31 Performance was folded into
+// Records, which made that page 9,274 px tall and buried the range selector; Jake asked for it back as a page of its own.
+// Docs: docs/superpowers/specs/2026-10-31-personal-view-four-tabs-design.md.
+const _PERSONAL_PROGRESS_TABS = ['Goals', 'Records', 'Performance', 'Bodyweight', 'Cardio']
 
 // Shared by both Progress pages (the client's and Personal view's) — one literal, so it doesn't grow the hand-rolled-empty-state
 // count that scripts/check-count-ratchet.mjs holds at its baseline. Was a local of renderProgress until 2026-10-31.
@@ -1508,8 +1505,8 @@ const _noClientProfileHtml = '<div class="empty-state"><div class="empty-title">
 /** @param {string|undefined} stored */
 function _personalProgressTab(stored) {
   if (stored && _PERSONAL_PROGRESS_TABS.includes(stored)) return stored
-  if (stored === 'Body Weight') return 'Weight'
-  if (['Personal Bests', 'Performance', '1RMs', 'Benchmarks'].includes(stored || '')) return 'Records'
+  if (stored === 'Body Weight' || stored === 'Weight') return 'Bodyweight'
+  if (['Personal Bests', '1RMs', 'Benchmarks'].includes(stored || '')) return 'Records'
   return 'Goals'
 }
 
@@ -1519,14 +1516,15 @@ async function renderPersonalProgress(el) {
   const active = win._progressTab = _personalProgressTab(win._progressTab)
   el.innerHTML = `
     <div class="page-header"><h1 class="page-title">Progress</h1></div>
-    <div class="chip-row" style="margin-bottom:20px">
+    <div class="chip-row chip-row-fit" style="margin-bottom:20px">
       ${_PERSONAL_PROGRESS_TABS.map(t => `
         <button class="chip" aria-selected="${t === active}"
           onclick="window._progressTab='${t}';renderProgress(document.getElementById('main-content'))">${t}</button>`).join('')}
     </div>
     <div id="progress-tab-content"></div>`
   const host = document.getElementById('progress-tab-content')
-  if (active === 'Weight') { await renderProgressWeight(host); return }
+  if (active === 'Bodyweight') { await renderProgressWeight(host); return }
+  if (active === 'Performance') { await renderPerformance(host); return }
   const clientId = await _getCurrentClientId()
   if (!clientId) { host.innerHTML = _noClientProfileHtml; return }
   if (active === 'Goals') { await _renderProgressGoals(clientId, host); return }
@@ -1536,57 +1534,64 @@ async function renderPersonalProgress(el) {
     return
   }
   // Records. Each section keeps the id its own writer refreshes through (see the Personal Bests branch of renderProgress).
-  host.innerHTML = '<div id="pb-1rms-section"></div><div id="pb-performance-section" style="margin-top:28px"></div><div id="pb-perf-views" style="margin-top:28px"></div>'
+  host.innerHTML = '<div id="pb-1rms-section"></div><div id="pb-performance-section" style="margin-top:28px"></div>'
   await Promise.all([
     renderClient1RMs(clientId, document.getElementById('pb-1rms-section')),
     renderClientPerformance(clientId, document.getElementById('pb-performance-section'), { categories: ['strength', 'body_metric', 'benchmark'] }),
   ])
-  await renderPerformance(document.getElementById('pb-perf-views'))
 }
 
-// Where the Performance views redraw: Personal view's Records gives them their own box under the records (2026-10-31), so a switch
-// between Per exercise / Per session must not repaint the whole Progress area and wipe the 1RMs and records above it.
-function _perfHost() { return document.getElementById('pb-perf-views') || document.getElementById('progress-tab-content') }
-
+let _perfRenderToken = 0
+const _PERF_TABS = ['Lifts', 'Sessions', 'Blocks']
+function _perfTabName(stored) {
+  if (_PERF_TABS.includes(stored)) return stored
+  if (stored === 'Per session' || stored === 'Recent sessions') return 'Sessions'
+  if (stored === 'Per training plan') return 'Blocks'
+  return 'Lifts'   // 'Per exercise', '1RMs', 'Progressions', empty, anything unknown
+}
 async function renderPerformance(el) {
   // Same reasoning as renderProgress's own destroy call: switching between THIS view's own two
-  // sub-tabs ('Per exercise' <-> 'Per session') re-enters renderPerformance directly, tearing
+  // sub-tabs ('Lifts' <-> 'Sessions') re-enters renderPerformance directly, tearing
   // down #progress-tab-content without ever going through renderProgress -- guard here too so
   // neither direction leaks whichever chart array the sub-tab being left behind was using.
   _destroyManagedCharts()
+  // Newest render wins: a render still waiting on the client id when another starts must not paint
+  // over it (both would otherwise fill the one #perf-sub-content).
+  const myToken = ++_perfRenderToken
   const clientId = await _getCurrentClientId()
+  if (myToken !== _perfRenderToken) return
   if (!clientId) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return }
 
   // 2026-07-08 restructure: was ['1RMs', 'Progressions'] — 1RMs moved into Personal Bests
   // (renderProgressPBs, since deleted), and "Progressions" (endless flat list) split into a searchable
   // per-exercise view and a new per-session comparison view.
-  // Per exercise is the progression tool and now the default; "Per session" is the diary.
+  // Lifts is the progression tool and the default; Sessions is the diary.
   //
   // RENAMED BACK to "Per session" on 2026-08-15 (Jake). The migration below had to be REVERSED, not
   // extended: it previously mapped a stored 'Per session' ONTO 'Recent sessions', so renaming the tab
   // without touching this line would have redirected the new tab to the old one on every render — a
   // tab that silently refuses to open. The label IS the stored state (window._perfTab), which is what
   // makes a rename a state migration rather than a cosmetic change.
-  let subTab = window._perfTab || 'Per exercise'
-  if (['1RMs', 'Progressions', 'Recent sessions'].includes(subTab)) window._perfTab = subTab = subTab === 'Recent sessions' ? 'Per session' : 'Per exercise'
+  // RENAMED 2026-11-01 to Lifts / Sessions / Blocks (Jake); _perfTabName maps every older stored label onto them.
+  const subTab = window._perfTab = _perfTabName(window._perfTab)
 
-  // The trend range (1M–All) applies ONLY to "Per exercise" — Per session / Per program don't read
+  // The trend range (1M–All) applies ONLY to Lifts — Sessions and Blocks don't read
   // window._trendState.range. It used to be its own pill ROW inside renderProgressStrength; P1
   // (2026-09-07) folds it into this toolbar as a compact <select> so the Performance tab is one
   // control row + a search box, not three stacked pill rows.
   window._trendState = window._trendState || { range: 'All', metricByEx: {} }
-  const rangeSelect = subTab === 'Per exercise'
+  const rangeSelect = subTab === 'Lifts'
     ? `<select class="field-input" id="perf-range" onchange="_setTrendRange(this.value)" style="width:auto;flex-shrink:0;padding:6px 28px 6px 10px">
          ${Object.keys(_TREND_RANGES).map(r => `<option value="${r}" ${r === window._trendState.range ? 'selected' : ''}>${r}</option>`).join('')}
        </select>`
     : ''
 
   el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-      <div class="chip-row" style="flex:1">
-        ${['Per exercise', 'Per session', 'Per training plan'].map(t => `
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px">
+      <div class="chip-row chip-row-fit chip-row-3" style="flex:1 1 100%">
+        ${_PERF_TABS.map(t => `
           <button class="chip" aria-selected="${t === subTab}"
-            onclick="window._perfTab='${t}';renderPerformance(_perfHost())">${t}</button>`).join('')}
+            onclick="window._perfTab='${t}';renderPerformance(document.getElementById('progress-tab-content'))">${t}</button>`).join('')}
       </div>
       ${rangeSelect}
     </div>
@@ -1595,9 +1600,9 @@ async function renderPerformance(el) {
   el.querySelector('.chip-row .chip[aria-selected="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' })
 
   const subEl = document.getElementById('perf-sub-content')
-  if (subTab === 'Per session') {
+  if (subTab === 'Sessions') {
     await renderProgressPerSession(clientId, subEl)
-  } else if (subTab === 'Per training plan') {
+  } else if (subTab === 'Blocks') {
     await renderProgressPerProgram(clientId, subEl)
   } else {
     await renderProgressStrength(subEl)
@@ -1608,7 +1613,7 @@ async function renderPerformance(el) {
 // "Progressions" view for this half). Lists completed sessions most-recent-first; expanding a
 // session compares each of its exercises against that exercise's own previous occurrence (not
 // just "the previous session", which may not have included it at all); expanding an exercise
-// further shows the same progression-over-time chart the "Per exercise" tab already builds.
+// further shows the same progression-over-time chart the Lifts tab already builds.
 // Token-guarded (same pattern as _oneRMRefreshToken, app-programs.js): if the master account
 // switches Client/Personal view while this fetch is still in flight, the slower request's
 // now-stale result is discarded instead of overwriting the newer view's cache with the wrong
@@ -2205,7 +2210,7 @@ function _aggregateSeries(points, metricKey, mode) {
   })
 }
 
-// "Per exercise" tab (Performance) — metric_type-aware trend cards (③). Fetches once into
+// Lifts tab (Performance, formerly "Per exercise") — metric_type-aware trend cards (③). Fetches once into
 // window._trendCache so the search box, range selector and metric chips all re-render locally
 // without re-hitting the DB (same fetch-once/filter-locally reasoning as the exercise picker).
 // Token-guarded (like _oneRMRefreshToken): a mid-fetch Client/Personal switch can't paint the
@@ -2213,7 +2218,7 @@ function _aggregateSeries(points, metricKey, mode) {
 let _perfExerciseToken = 0
 // ─── Per program (2026-08-15) ────────────────────────────────────────────────
 // Jake: "there will be scenarios where I want to see my exercise progress over the duration of a
-// program length." All-time stays in Per exercise; this scopes the same data to one block's window.
+// program length." All-time stays in Lifts; this scopes the same data to one block's window.
 //
 // 🔴 A WINDOW, NOT A JOIN — and the UI must never imply otherwise. workout_logs carries no programme
 // reference (saveRunnerSession writes coach_id, client_id, name, date, notes and nothing else), so a
@@ -2325,8 +2330,58 @@ const _blockWeekIndex = (block, dateStr) => {
 // disagree with the line drawn directly above it.
 const _usableMetricValue = v => v != null && !isNaN(v)
 
-// Which metrics are worth offering for these points. ONE definition, used by both the Per exercise
-// cards and the Per program comparison — they had drifted into two hand-copies, and a comment on the
+// Performance > Blocks (2026-11-01): which two windows are compared, and the per-lift table.
+// Windows are DATE RANGES (see the header note above _perfProgramToken): never "sessions from this plan".
+/** @type {{ a: string, b: string } | null} */
+let _blockDefaults = null   // the two block keys the Blocks table compares, for _pickBlockLift
+const _BLOCK_FALLBACK_DAYS = 42   // six weeks: the window used when there is no plan run to anchor on
+const _addDaysYmd = (ymd, n) => {
+  const d = new Date(ymd + 'T12:00:00')   // noon, like _blockWeekIndex: a DST change must not shift the day
+  d.setDate(d.getDate() + n)
+  return _ymdLocal(d)
+}
+// `blocks` is _loadProgramBlocks' list, newest start first (null on a failed read: treated as no plan runs). This is the newest
+// run that has STARTED (a plan assigned for a later date is not a block yet); last is the next older run of ANY plan, cut off the day
+// before this one starts so no day is in both (plans can run at once, and a run lying wholly inside this one is skipped). With no
+// older run, last is the window of the same length just before this one; with no started run, the last 42 days against the 42
+// before. Inclusive at both ends, like _ptsInBlock. Each window carries its run's `key` (null for a stand-in) for the pickers.
+function _blockWindowsFor(blocks, today) {
+  const runs = (blocks || []).filter(r => r.start <= today)
+  const win = (start, end, source, name, key) => ({ start, end, source, name: name || '', key: key || null })
+  if (runs.length) {
+    const r = runs[0], a = win(r.start, r.end, 'plan', r.name, r.key)
+    const cut = _addDaysYmd(r.start, -1)
+    for (const o of runs.slice(1)) {
+      const end = o.end < cut ? o.end : cut
+      if (end >= o.start) return { a, b: win(o.start, end, 'plan', o.name, o.key) }
+    }
+    const len = Math.max(1, Math.round((new Date(r.end + 'T12:00:00').getTime() - new Date(r.start + 'T12:00:00').getTime()) / 86400000) + 1)
+    return { a, b: win(_addDaysYmd(cut, -(len - 1)), cut, 'weeks') }
+  }
+  const aStart = _addDaysYmd(today, -(_BLOCK_FALLBACK_DAYS - 1))
+  const bEnd = _addDaysYmd(aStart, -1)
+  return { a: win(aStart, today, 'weeks'), b: win(_addDaysYmd(bEnd, -(_BLOCK_FALLBACK_DAYS - 1)), bEnd, 'weeks') }
+}
+// The best estimated 1RM (the runner's engine, via _pbE1rmPoints) each lift reached inside each window. A lift in both gets the
+// change; a lift in one goes to onlyLast / onlyThis and is never given a change. A lift that estimates nothing is left out.
+function _blockLiftSummary(exercises, a, b) {
+  const out = { both: [], onlyLast: [], onlyThis: [] }
+  const best = (pts, w) => { const inW = _ptsInBlock(pts, w); return inW.length ? Math.max(...inW.map(p => p.kg)) : null }
+  for (const ex of (exercises || [])) {
+    // Weight-and-reps lifts only: the overlay below has an estimated-1RM measure for these and for no other kind, so a row for a
+    // unilateral or timed lift would be one the overlay cannot show in the same measure (a series' metricType defaults to this one).
+    if ((ex.metricType || 'weight_reps') !== 'weight_reps') continue
+    const pts = _pbE1rmPoints(ex.sessions)
+    const last = best(pts, b), now = best(pts, a)
+    if (last != null && now != null) out.both.push({ name: ex.name, last, this: now, delta: now - last, pct: Math.round(((now - last) / last) * 1000) / 10 })
+    else if (last != null) out.onlyLast.push({ name: ex.name, last })
+    else if (now != null) out.onlyThis.push({ name: ex.name, this: now })
+  }
+  return out
+}
+
+// Which metrics are worth offering for these points. ONE definition, used by both the Lifts
+// cards and the Blocks comparison — they had drifted into two hand-copies, and a comment on the
 // second claimed it was reusing the first.
 //
 // `> 0` rather than _usableMetricValue on purpose: here a 0 means "this metric cannot describe this
@@ -2373,7 +2428,7 @@ const _fmtBlockRange = b => {
   return `${d(b.start)} – ${b.open ? 'now' : d(b.end)}`
 }
 
-// Which exercise NAMES belong in the "Per program" picker for the block(s) currently selected.
+// Which exercise NAMES belong in the Blocks picker for the block(s) currently selected.
 // Jake, 2026-09-13: the dropdown offered every exercise ever logged, so "16 weeks STR" (no Box Jump
 // in it) still let you "compare" an exercise that program never touched — the comparison below
 // already handles that gracefully ("no sessions logged in this window"), but the list itself
@@ -2400,51 +2455,109 @@ async function renderProgressPerProgram(clientId, el) {
     el.innerHTML = '<div class="empty-state"><div class="empty-title">Couldn\'t load your training plans</div><div class="empty-text">Check your connection and try again.</div></div>'
     return
   }
-  if (!blocks.length) {
-    el.innerHTML = '<div class="empty-state"><p>No training plan with a start date yet — assign one and set its start date to compare blocks.</p></div>'
+  if (!exercises.length) {
+    el.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>'
     return
   }
+  // 2026-11-01: the page opens on this block against last block. With no plan run (or one) the windows are 6 weeks (see _blockWindowsFor),
+  // so they are added to the picker's blocks as stand-ins: the overlay below can then draw them like any other block.
+  const win = _blockWindowsFor(blocks, _ymdLocal(new Date()))
+  const stand = (w, key, name) => ({ key, progKey: key, name, start: w.start, end: w.end, open: false })
+  const aKey = win.a.key || 'wk:this', bKey = win.b.key || 'wk:last'
+  _blockDefaults = { a: aKey, b: bKey }   // what the table compares: _pickBlockLift puts the pickers back here
+  const pickerBlocks = [
+    ...(win.a.source === 'weeks' ? [stand(win.a, 'wk:this', 'Last 6 weeks')] : []),
+    ...(win.b.source === 'weeks' ? [stand(win.b, 'wk:last', 'The weeks before')] : []),
+    // Last block is the TRIMMED window (it stops the day before this one starts): the overlay and the dropdown use that same range, not the full run.
+    ...blocks.map(b => (b.key === win.b.key ? { ...b, start: win.b.start, end: win.b.end } : b)),
+  ]
+  const summary = _blockLiftSummary(exercises, win.a, win.b)
   // Deliberately NOT window._trendCache. That global is owned by renderProgressStrength behind a
   // DIFFERENT token (_perfExerciseToken), so neither render can cancel the other: a master account
   // that opens Per program in Client view, switches to Personal, then types in the Per-exercise
   // search box would see the COACHED CLIENT's exercises under "Personal". Same auth.uid(), so RLS
   // never sees it — it is a UI leak between two people. A private cache removes the collision.
   window._blockExCache = exercises
-  // Honest about the day-one state: history only accrues from a restart, so a brand-new setup has one
-  // block and nothing to compare. Saying so beats an empty second dropdown the user has to interpret.
-  const singleBlockNote = blocks.length < 2
-    ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);font-style:italic;margin-bottom:12px">Only one block so far. Restarting or changing a training plan files the current one away, and it becomes available here to compare against.</div>`
-    : ''
-
   window._blockState = window._blockState || {}
   const st = window._blockState
-  if (!blocks.some(b => b.key === st.a)) st.a = blocks[0].key
+  if (!pickerBlocks.some(b => b.key === st.a)) st.a = aKey
   // `''` is what the "Compare with…" option sets when the user deliberately turns comparison OFF.
   // No block key equals '', so a bare `.some()` check would undo that choice on every re-render.
-  if (st.b !== '' && !blocks.some(b => b.key === st.b)) st.b = blocks[1]?.key || ''
-  const names = _exerciseNamesInBlocks(exercises, blocks, [st.a, st.b])
+  if (st.b !== '' && !pickerBlocks.some(b => b.key === st.b)) st.b = bKey
+  const names = _exerciseNamesInBlocks(exercises, pickerBlocks, [st.a, st.b])
   if (!names.includes(st.ex)) st.ex = names[0] || ''
+  // The table above is in estimated 1RM, so the overlay opens on it too (it falls back by itself for a lift with none).
+  if (!st.metric) st.metric = 'e1rm'
 
   const opt = (b, sel) => _blockOptionHtml(b, sel)
   el.innerHTML = `
-    ${singleBlockNote}
+    ${_blockSummaryHtml(summary, win)}
+    <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:16px 0 8px">Compare one lift, or other blocks</div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
       <select class="field-input" id="blk-ex" onchange="_setBlockState('ex', this.value)" style="font-size:var(--text-xl, 16px)">
         ${_exerciseOptionsHtml(names, st.ex)}
       </select>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <select class="field-input" id="blk-a" onchange="_setBlockState('a', this.value)" style="flex:1;min-width:150px;font-size:var(--text-xl, 16px)">
-          ${blocks.map(b => opt(b, st.a)).join('')}
+          ${pickerBlocks.map(b => opt(b, st.a)).join('')}
         </select>
         <select class="field-input" id="blk-b" onchange="_setBlockState('b', this.value)" style="flex:1;min-width:150px;font-size:var(--text-xl, 16px)">
           <option value="">Compare with…</option>
-          ${blocks.map(b => opt(b, st.b)).join('')}
+          ${pickerBlocks.map(b => opt(b, st.b)).join('')}
         </select>
       </div>
     </div>
     <div id="blk-result"></div>`
-  window._blockCache = blocks
+  window._blockCache = pickerBlocks
   _renderBlockComparison()
+}
+
+// The table this page opens on (Jake, 2026-11-01): each lift's best estimated 1RM last block and this block, and the change. A lift
+// in one block only says which; it never gets a change. Tapping a row opens it in the overlay below.
+function _blockSummaryHtml(summary, win) {
+  const range = w => _fmtBlockRange({ start: w.start, end: w.end, open: false })
+  const unit = _xsUnit()
+  const kg = v => fmtWeight(Math.round(v), { spaced: true })
+  const tap = name => `onclick="_pickBlockLift('${escapeAttr(name)}')"`
+  const rowHtml = (name, right, extra = '') => `<button type="button" class="blk-row" data-blk-row="${escapeHtml(name)}" ${tap(name)}>` +
+    `<span class="blk-name">${escapeHtml(name)}${extra}</span><span class="blk-right">${right}</span></button>`
+  const both = [...summary.both].sort((x, y) => x.name.localeCompare(y.name)).map(r => {
+    const d = Math.round(Number(weightToPref(Math.abs(r.delta))) * 10) / 10
+    // From the ROUNDED change, so a drift that shows as 0.0 reads as no change, never a green "+0".
+    const sign = d > 0 ? (r.delta > 0 ? '+' : '−') : ''
+    const cls = d > 0 ? (r.delta > 0 ? 'xs-up' : 'xs-dn') : 'xs-eq'
+    return rowHtml(r.name, `${escapeHtml(kg(r.last))} → ${escapeHtml(kg(r.this))} <span class="${cls}">${sign}${d} ${escapeHtml(unit)} (${sign}${Math.abs(r.pct)}%)</span>`)
+  })
+  const onlyLast = [...summary.onlyLast].sort((x, y) => x.name.localeCompare(y.name)).map(r => rowHtml(r.name, `<span class="blk-quiet">${escapeHtml(kg(r.last))} · not trained this block</span>`))
+  const onlyThis = [...summary.onlyThis].sort((x, y) => x.name.localeCompare(y.name)).map(r => rowHtml(r.name, `<span class="blk-quiet">${escapeHtml(kg(r.this))} · new this block</span>`))
+  const rows = [...both, ...onlyLast, ...onlyThis]
+  const why = win.a.source === 'weeks'
+    ? 'No plan is running, so this compares the last 6 weeks with the 6 before.'
+    : win.b.source === 'weeks' ? 'There is no earlier plan run, so last block is the same length of time just before this one.' : ''
+  return `<div data-blk-summary>
+    <div class="xs-title">This block vs last block</div>
+    <div class="xs-sub">Best estimated 1-rep max per lift. Sessions logged between ${escapeHtml(range(win.a))}${win.a.name ? ` (${escapeHtml(win.a.name)})` : ''}, against sessions logged between ${escapeHtml(range(win.b))}${win.b.name ? ` (${escapeHtml(win.b.name)})` : ''}. ${escapeHtml(why)}</div>
+    ${rows.length ? `<div class="blk-table">${rows.join('')}</div>` : '<div class="xs-empty">No lift has a weighted session in either block yet.</div>'}
+  </div>`
+}
+
+// A row in the table above was tapped: open that lift in the overlay below it.
+function _pickBlockLift(name) {
+  // The table is this block vs last block, so the pickers go back to exactly that first: with other blocks (or none) chosen, the tapped
+  // lift may not be in the dropdown at all, and the overlay would show a lift the dropdown does not list.
+  const d = _blockDefaults
+  const pick = id => /** @type {HTMLSelectElement | null} */ (document.getElementById(id))
+  if (d) {
+    _setBlockState('a', d.a); _setBlockState('b', d.b)
+    const a = pick('blk-a'), b = pick('blk-b')
+    if (a) a.value = d.a
+    if (b) b.value = d.b
+  }
+  _setBlockState('metric', 'e1rm')   // the table is in estimated 1RM: a measure chip tapped earlier must not make the overlay disagree
+  _setBlockState('ex', name)   // this is what redraws the overlay for the lift (setting a select's value does not fire its change)
+  const sel = pick('blk-ex')
+  if (sel) sel.value = name   // sets the state and redraws the overlay, exactly as the picker's own change does
+  document.getElementById('blk-result')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 
 function _setBlockState(key, value) {
@@ -2521,7 +2634,7 @@ function _renderBlockComparison() {
     </div>${effLine}`
   }
 
-  // Metric chips, matching the Per exercise cards. Without them this tab was locked to whichever
+  // Metric chips, matching the Lifts cards. Without them this tab was locked to whichever
   // metric it picked, so the two blocks could never be compared on Volume or Est 1RM at all.
   const chips = usableMetrics.length < 2 ? '' : `
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px">
@@ -2781,8 +2894,9 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
           borderDash: s.dashed ? [4, 3] : undefined,
           fill: !!s.fill,
           tension: 0.3,
-          pointRadius: pickIdx ? (c => (c.dataIndex === pickIdx() ? 6 : baseR)) : baseR,
-          pointHoverRadius: 5,
+          // A selected point is at least 6, but a series whose own points are bigger (the Lifts chart's Best marker, 8) keeps its size.
+          pointRadius: pickIdx ? (c => (c.dataIndex === pickIdx() ? Math.max(6, baseR) : baseR)) : baseR,
+          pointHoverRadius: Math.max(5, baseR),
           pointBackgroundColor: pickIdx ? (c => (c.dataIndex === pickIdx() ? t.surface : colour)) : colour,
           pointBorderColor: colour,
           pointBorderWidth: pickIdx ? (c => (c.dataIndex === pickIdx() ? 3 : 1)) : 1,
@@ -2985,12 +3099,27 @@ function _xsSetWithUnit(s) { const w = parseFloat(s.weight_kg) || 0, r = parseIn
 
 // The five measures. Keys are the SAME keys _TREND_METRICS and the saved per-exercise choice use. `val` is the number charted;
 // `cap` is the words for the "Best ..." caption and the tooltip — and says WHICH SET a weight came from.
+// `title` and `explain` are the plain-words heading and one-line explainer the Performance Lifts list opts into (opts.plain, 2026-11-01);
+// `unit` says what the change-since line counts. The runner's Stats sheet does not opt in.
 const _XS_MEASURES = {
-  topWeight: { noun: 'top set',   dp: 1, val: m => _xsKg(m.top),       cap: m => `${_xsW(m.top)} ${_xsUnit()} × ${m.topReps}` },
-  e1rm:      { noun: 'est. 1RM',  dp: 1, val: m => _xsKg(m.e1rm),      cap: m => `${_xsInt(_xsKg(m.e1rm))} ${_xsUnit()}` + (m.e1rmSrc ? ` (from ${_xsSetSpaced(m.e1rmSrc)})` : '') },
-  volume:    { noun: 'volume',    dp: 0, val: m => _xsKg(m.volume),    cap: m => `${_xsInt(_xsKg(m.volume))} ${_xsUnit()}` },
-  intensity: { noun: 'intensity', dp: 1, val: m => _xsKg(m.intensity), cap: m => `${_xsNum(_xsKg(m.intensity))} ${_xsUnit()}/rep` },
-  reps:      { noun: 'reps',      dp: 0, val: m => m.reps,             cap: m => `${_xsInt(m.reps)} reps` },
+  topWeight: { noun: 'top set',   dp: 1, val: m => _xsKg(m.top),       cap: m => `${_xsW(m.top)} ${_xsUnit()} × ${m.topReps}`, title: 'Heaviest set', explain: 'The heaviest weight you lifted in any set that session. Higher is better.', unit: () => _xsUnit() },
+  e1rm:      { noun: 'est. 1RM',  dp: 1, val: m => _xsKg(m.e1rm),      cap: m => `${_xsInt(_xsKg(m.e1rm))} ${_xsUnit()}` + (m.e1rmSrc ? ` (from ${_xsSetSpaced(m.e1rmSrc)})` : ''), title: 'Estimated 1-rep max', explain: 'The heaviest single you could lift, worked out from your best set each session (using effort when you logged it). Higher is better.', unit: () => _xsUnit() },
+  volume:    { noun: 'volume',    dp: 0, val: m => _xsKg(m.volume),    cap: m => `${_xsInt(_xsKg(m.volume))} ${_xsUnit()}`, title: 'Total weight lifted', explain: 'Weight times reps, added up over every set that session. Higher means more work done.', unit: () => _xsUnit() },
+  intensity: { noun: 'intensity', dp: 1, val: m => _xsKg(m.intensity), cap: m => `${_xsNum(_xsKg(m.intensity))} ${_xsUnit()}/rep`, title: 'Average weight per rep', explain: 'Total weight lifted divided by total reps: how heavy your average rep was. Higher means heavier reps.', unit: () => `${_xsUnit()}/rep` },
+  reps:      { noun: 'reps',      dp: 0, val: m => m.reps,             cap: m => `${_xsInt(m.reps)} reps`, title: 'Total reps', explain: 'Every rep you did that session. Higher means more reps.', unit: () => 'reps' },
+}
+
+// The plain-words extras for an opted-in card: the change since the first point in the range, and where the best point is.
+// `hist` is the range's sessions oldest first. Both are null when there is nothing to say (fewer than two usable sessions).
+function _xsPlainFacts(hist, M) {
+  const usable = hist.filter(s => M.val(s.m) > 0)
+  if (usable.length < 2) return { since: '', bestIdx: -1 }
+  const f = Math.pow(10, M.dp), first = usable[0], last = usable[usable.length - 1]
+  const diff = Math.round((M.val(last.m) - M.val(first.m)) * f) / f
+  const since = diff === 0 ? `No change since ${_xsDate(first.date)}` : `${diff > 0 ? '+' : '−'}${Math.abs(diff)} ${M.unit()} since ${_xsDate(first.date)}`
+  let bestIdx = 0
+  hist.forEach((s, i) => { if (M.val(s.m) >= M.val(hist[bestIdx].m)) bestIdx = i })
+  return { since, bestIdx }
 }
 
 // Everything the card needs, computed once per mount: the sessions (oldest first, empty ones dropped), the range-limited list,
@@ -3127,16 +3256,24 @@ function _xsRender(host) {
   const { avail, key, M } = pick
   const caption = _xsCaption(model, key)
   const usable = st.plotted.filter(s => M.val(s.m) > 0).length
+  const plain = !!st.opts.plain
   const chartNote = typeof Chart === 'undefined' ? 'The chart could not load. Check your connection and reload the page.'
-    : usable < 2 ? 'Not enough sessions yet to draw a line. It appears after a couple of workouts.' : ''
+    : usable < 2 ? (plain ? (model.shown.length < 2 ? (st.opts.sinceMs ? 'Only one session in this range. The line appears from the second.' : 'One session so far. The line appears from the second.') : 'Only one session has this measure so far. The line appears from the second.') : 'Not enough sessions yet to draw a line. It appears after a couple of workouts.') : ''
+  const facts = plain ? _xsPlainFacts(model.shown, M) : null
+  const bestSes = facts && facts.bestIdx >= 0 ? model.shown[facts.bestIdx] : null
+  const plainHead = plain
+    ? `<div class="xs-title" data-xs-title>${escapeHtml(M.title)}</div><div class="xs-sub" data-xs-explain>${escapeHtml(M.explain)}</div>` +
+      (facts.since ? `<div class="xs-since" data-xs-since>${escapeHtml(facts.since)}</div>` : '')
+    : ''
+  const plainBest = bestSes ? `<div class="xs-hint" data-xs-best>${escapeHtml(`Best ${M.cap(bestSes.m)} · ${_xsDate(bestSes.date, true)}`)}</div>` : ''
   const pills = `<div class="xs-pills" role="group" aria-label="Chart measure">${avail.map(([k, label]) =>
     `<button type="button" class="xs-pill" data-xs-metric="${k}" aria-pressed="${k === key}" onclick="_xsAct(this,'metric','${k}')"${k === key ? ` style="background:${_METRIC_COLORS[k] || 'var(--accent)'}"` : ''}>${escapeHtml(label)}</button>`).join('')}</div>`
   host.innerHTML = '<div class="xs">' +
     (caption ? `<div class="xs-sub" data-xs-caption>${escapeHtml(caption)}</div>` : '') +
-    pills +
+    pills + plainHead +
     (chartNote
       ? `<div class="xs-empty" data-xs-chartnote>${escapeHtml(chartNote)}</div>`
-      : `<div class="xs-chart"><canvas id="${escapeHtml(st.opts.chartId || 'xs-chart')}" data-xs-chart role="img" aria-label="${escapeHtml(M.noun)} for each session"></canvas></div><div class="xs-hint">Tap a point or a session to see its numbers.</div>`) +
+      : `<div class="xs-chart"><canvas id="${escapeHtml(st.opts.chartId || 'xs-chart')}" data-xs-chart role="img" aria-label="${escapeHtml(M.noun)} for each session"></canvas></div>${plainBest}<div class="xs-hint">Tap a point or a session to see its numbers.</div>`) +
     `<div data-xs-strip>${_xsStripHtml(st)}</div>${_xsRecsHtml(model.rec)}<div data-xs-hist>${_xsHistHtml(st)}</div></div>`
   if (!chartNote) {
     try { st.chart = _xsDraw(host, key) }
@@ -3151,7 +3288,11 @@ function _xsDraw(host, key) {
   const val = s => { const v = M.val(s.m); return v > 0 ? Math.round(v * f) / f : null }   // a session with none of this measure leaves a gap, not a dip to zero
   const hist = st.model.shown, today = st.model.today
   const labels = hist.map(s => _xsDate(s.date)), data = hist.map(val)
+  /** @type {any[]} */
   const series = [{ label: M.noun, data: today ? data.concat([null]) : data, colour, fill: true, spanGaps: true }]
+  // Plain-words cards mark the best point with a larger dot of its own (a second, one-point series), so it stays put when another session is tapped.
+  const bestAt = st.opts.plain ? _xsPlainFacts(hist, M).bestIdx : -1
+  if (bestAt >= 0) series.push({ label: 'Best', data: data.map((v, i) => (i === bestAt ? v : null)).concat(today ? [null] : []), colour, pointRadius: 8 })
   if (today) {
     labels.push('Today')
     const last = data.length - 1
@@ -3161,7 +3302,7 @@ function _xsDraw(host, key) {
     labels, series, height: true, legend: false,
     selectedIndex: () => _xsSelIndex(st),
     onPick: i => { const s = st.plotted[i]; if (s) { st.sel = s.key; _xsRefreshSel(host) } },
-    tooltipLabel: c => { const s = st.plotted[c.dataIndex]; return s && c.parsed.y != null ? M.cap(s.m) : null },
+    tooltipLabel: c => { const s = st.plotted[c.dataIndex]; return s && c.parsed.y != null && c.dataset.label !== 'Best' ? M.cap(s.m) : null },
   })
 }
 
@@ -3277,7 +3418,7 @@ function _renderPerfExerciseList(query) {
     const open = openMap.has(ex.name) ? openMap.get(ex.name) : list.length === 1
     if (ex.metricType === 'weight_reps') {
       const opts = {
-        chartId: `ps-chart-${i}`, sinceMs: cutoff,
+        chartId: `ps-chart-${i}`, sinceMs: cutoff, plain: true,
         getMetric: () => window._trendState.metricByEx[ex.name],
         setMetric: m => { window._trendState.metricByEx[ex.name] = m },
       }

@@ -70,16 +70,97 @@ test.describe('Personal view: Progress', () => {
   const TAG = '[E2E-PROGTABS]'
   const chips = (page) => page.locator('#main-content .chip-row').first().locator('button.chip')
 
-  test('Progress opens on Goals; the switches are Goals, Records, Weight, Cardio; an old Body Weight link opens Weight', async ({ page }) => {
+  // Five pills since 2026-11-01 (Jake chose one row; narrower phones fall back to two rows). The row must never scroll sideways.
+  test('Progress opens on Goals; the pills are Goals, Records, Performance, Bodyweight, Cardio; an old Body Weight link opens Bodyweight', async ({ page }) => {
     await soloReady(page)
     await page.evaluate(() => { window._progressTab = undefined; navigate('progress') })
-    await expect(chips(page)).toHaveText(['Goals', 'Records', 'Weight', 'Cardio'])
+    await expect(chips(page)).toHaveText(['Goals', 'Records', 'Performance', 'Bodyweight', 'Cardio'])
     await expect(page.locator('#main-content .chip-row .chip[aria-selected="true"]').first()).toHaveText('Goals')
     await page.evaluate(() => { window._progressTab = 'Body Weight'; navigate('progress') })
-    await expect(page.locator('#main-content .chip-row .chip[aria-selected="true"]').first()).toHaveText('Weight')
+    await expect(page.locator('#main-content .chip-row .chip[aria-selected="true"]').first()).toHaveText('Bodyweight')
   })
 
-  test('a cardio record shows under Cardio and not Records; a strength record the other way round; Records keeps the Performance views', async ({ page }) => {
+  for (const width of [390, 360, 320]) {
+    test(`the pill row never scrolls sideways or clips a name at ${width} px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await soloReady(page)
+      await page.evaluate(() => { window._progressTab = undefined; navigate('progress') })
+      await expect(chips(page)).toHaveCount(5)
+      const m = await page.evaluate(() => {
+        const row = document.querySelector('#main-content .chip-row')
+        return { overflow: row.scrollWidth - row.clientWidth, rows: new Set([...row.querySelectorAll('.chip')].map(c => Math.round(c.getBoundingClientRect().top))).size,
+          clipped: [...row.querySelectorAll('.chip')].filter(c => c.scrollWidth > c.clientWidth + 1).map(c => c.textContent),
+          heights: [...row.querySelectorAll('.chip')].map(c => Math.round(c.getBoundingClientRect().height)), page: document.documentElement.scrollWidth - innerWidth }
+      })
+      expect(m.overflow, 'the row has nothing to scroll').toBeLessThanOrEqual(0)
+      expect(m.clipped, 'no pill clips its name').toEqual([])
+      expect(m.page, 'the page itself does not scroll sideways').toBeLessThanOrEqual(0)
+      expect(Math.min(...m.heights), 'pills are at least 44 px tall to tap').toBeGreaterThanOrEqual(44)
+      // One row on a wide-enough phone, two on a narrow one - never more.
+      expect(m.rows, width >= 390 ? 'one row' : 'two rows').toBe(width >= 390 ? 1 : 2)
+    })
+  }
+
+  test('Performance is its own page again: the 1M to All range is in the first screen, and Records no longer carries the Performance views', async ({ page }) => {
+    await soloReady(page)
+    await page.evaluate(() => { window._progressTab = 'Performance'; navigate('progress') })
+    const range = page.locator('#perf-range')
+    await expect(range).toBeVisible({ timeout: 15000 })
+    expect((await range.boundingBox()).y, 'the range selector is within the first screen').toBeLessThan(500)
+    await expect(page.locator('#main-content button.chip', { hasText: 'Lifts' })).toBeVisible()
+    await page.evaluate(() => { window._progressTab = 'Records'; navigate('progress') })
+    await expect(page.locator('#pb-1rms-section')).toBeVisible({ timeout: 15000 })
+    await expect(page.locator('#perf-range'), 'no range selector on Records').toHaveCount(0)
+    expect(await page.evaluate(() => document.getElementById('main-content').scrollHeight), 'Records is a short page, not ten screens').toBeLessThan(3500)
+  })
+
+  for (const width of [390, 360, 320]) {
+    test(`Performance's own Lifts / Sessions / Blocks row never scrolls sideways at ${width} px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await soloReady(page)
+      await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Lifts'; navigate('progress') })
+      await expect(page.locator('#perf-range')).toBeVisible({ timeout: 15000 })
+      const m = await page.evaluate(() => {
+        const row = document.querySelectorAll('#main-content .chip-row')[1]
+        return { overflow: row.scrollWidth - row.clientWidth, names: [...row.querySelectorAll('.chip')].map(c => c.textContent),
+          clipped: [...row.querySelectorAll('.chip')].filter(c => c.scrollWidth > c.clientWidth + 1).map(c => c.textContent),
+          page: document.documentElement.scrollWidth - innerWidth,
+          rangeInside: document.getElementById('perf-range').getBoundingClientRect().right <= innerWidth }
+      })
+      expect(m.names).toEqual(['Lifts', 'Sessions', 'Blocks'])
+      expect(m.overflow, 'the row has nothing to scroll').toBeLessThanOrEqual(0)
+      expect(m.clipped, 'no pill clips its name').toEqual([])
+      expect(m.page, 'the page does not scroll sideways').toBeLessThanOrEqual(0)
+      expect(m.rangeInside, 'the range selector is on screen').toBe(true)
+    })
+  }
+
+  test('Performance pills read Lifts, Sessions, Blocks; an old stored name (Per training plan) opens Blocks', async ({ page }) => {
+    await soloReady(page)
+    await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Per training plan'; navigate('progress') })
+    const sub = page.locator('#progress-tab-content .chip-row-3 .chip')
+    await expect(sub).toHaveText(['Lifts', 'Sessions', 'Blocks'], { timeout: 15000 })
+    await expect(page.locator('#progress-tab-content .chip-row-3 .chip[aria-selected="true"]')).toHaveText('Blocks')
+    expect(await page.evaluate(() => window._perfTab), 'the stored label is migrated').toBe('Blocks')
+  })
+
+  test('two Performance renders in a row fill the page once, not twice (the second replaces the first)', async ({ page }) => {
+    await soloReady(page)
+    await page.evaluate(() => { window._progressTab = 'Performance'; window._perfTab = 'Lifts'; navigate('progress') })
+    await expect(page.locator('#perf-range')).toBeVisible({ timeout: 15000 })
+    const fills = await page.evaluate(async () => {
+      let n = 0
+      const real = window.renderProgressStrength
+      window.renderProgressStrength = (...a) => { n++; return real(...a) }
+      const el = document.getElementById('progress-tab-content')
+      await Promise.all([renderPerformance(el), renderPerformance(el)])
+      window.renderProgressStrength = real
+      return n
+    })
+    expect(fills, 'only the newest render fills #perf-sub-content').toBe(1)
+  })
+
+  test('a cardio record shows under Cardio and not Records; a strength record the other way round', async ({ page }) => {
     await soloReady(page)
     const stamp = Date.now()
     const names = { cardio: `${TAG} row ${stamp}`, strength: `${TAG} lift ${stamp}` }
@@ -99,7 +180,6 @@ test.describe('Personal view: Progress', () => {
       await page.evaluate(() => { window._progressTab = 'Records'; navigate('progress') })
       await expect(page.locator('#main-content', { hasText: names.strength })).toBeVisible({ timeout: 15000 })
       await expect(page.locator(`text=${names.cardio}`)).toHaveCount(0)
-      await expect(page.locator('#main-content button.chip', { hasText: 'Per exercise' }), 'the Performance views live in Records').toBeVisible()
     } finally {
       const removed = await page.evaluate(async (tag) => {
         const { data } = await db.from('performance_logs').delete().eq('client_id', window._soloClientId).like('name', tag + '%').select('id')
@@ -109,9 +189,8 @@ test.describe('Personal view: Progress', () => {
     }
   })
 
-  // Review, 2026-10-31: a lift's page is a page of its own; the Performance views under the records must hide with them, or their
-  // switches tear down the lift page's charts. Owns its fixture: one tagged saved best, removed at the end.
-  test('in Records, opening a lift\'s page hides the Performance views under the records', async ({ page }) => {
+  // A lift's page is a page of its own: opening one hides the records form and list. Owns its fixture: one tagged saved best, removed at the end.
+  test('in Records, opening a lift\'s page hides the record form and list', async ({ page }) => {
     await soloReady(page)
     const lift = `${TAG} best ${Date.now()}`
     await page.evaluate(async (n) => {
@@ -120,10 +199,9 @@ test.describe('Personal view: Progress', () => {
     }, lift)
     try {
       await page.evaluate(() => { window._progressTab = 'Records'; navigate('progress') })
-      await expect(page.locator('#pb-perf-views')).toBeVisible({ timeout: 15000 })
+      await expect(page.locator('#pb-performance-section')).toBeVisible({ timeout: 15000 })
       await page.locator('#pb-1rms-section button.pb-row', { hasText: lift }).click()
       await expect(page.locator('#pb-performance-section')).toBeHidden()
-      await expect(page.locator('#pb-perf-views'), 'the Performance views hide with the records').toBeHidden()
     } finally {
       const removed = await page.evaluate(async (tag) => {
         const { data } = await db.from('client_1rms').delete().eq('client_id', window._soloClientId).like('exercise_name', tag + '%').select('id')
