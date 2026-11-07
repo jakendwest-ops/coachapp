@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures')
-const { loginAsPT, clickVisible, soloNav } = require('./helpers')
+const { loginAsPT, clickVisible, soloNav, navTo } = require('./helpers')
 
 // Solo/Personal account tests require Jake's master account (_soloClientId must be set).
 // The E2E PT test account (coachapp.e2e.pt@gmail.com) has no solo client record,
@@ -176,7 +176,7 @@ test.describe('Solo / Personal account', () => {
     try {
       await page.evaluate(() => switchView('coach'))
       await page.waitForTimeout(800)
-      await clickVisible(page, '[data-page="workouts"]')
+      await navTo(page, 'workouts')
       await page.waitForTimeout(1000)
       await page.click('button:has-text("Exercise Library")')
       await page.waitForTimeout(500)
@@ -215,7 +215,7 @@ test.describe('Solo / Personal account', () => {
       })
       await page.evaluate(() => switchView('coach'))
       await page.waitForTimeout(800)
-      await clickVisible(page, '[data-page="workouts"]')
+      await navTo(page, 'workouts')
       await page.waitForTimeout(1000)
       await expect(page.locator('text=[E2E] PT-Only Template')).toBeVisible({ timeout: 5000 })
       await expect(page.locator('text=[E2E] Personal-Only Template')).not.toBeVisible()

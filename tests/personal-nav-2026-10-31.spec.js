@@ -251,7 +251,7 @@ test.describe('Personal view: old links, saved pages and switching view', () => 
     await expect.poll(() => page.evaluate(() => currentPage)).toBe('calendar')
     await page.evaluate(() => switchView('coach'))
     await expect.poll(() => page.evaluate(() => currentProfile?.role)).toBe('coach')
-    await expect(page.locator('.bottom-nav-item')).toHaveText(['Dashboard', 'Clients', 'Workouts', 'Calendar', 'Training plans', 'Settings'])
+    await expect(page.locator('.bottom-nav-item')).toHaveText(['Dashboard', 'Clients', 'Training plans', 'Calendar', 'More'])      // the coach's bar since MVP 8 (2026-11-01)
     await page.evaluate(() => switchView('solo'))
     await expect.poll(() => page.evaluate(() => currentProfile?.role)).toBe('solo')
     await expect(page.locator('.bottom-nav-item')).toHaveText(['Today', 'Train', 'Progress', 'More'])

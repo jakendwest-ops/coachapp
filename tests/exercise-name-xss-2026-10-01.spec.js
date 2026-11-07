@@ -71,7 +71,7 @@ test.describe('hostile exercise names', () => {
       await assertInert(cl, "the client's own screen")
 
       // 1. the coach's Library page
-      await clickVisible(pt, '[data-page="workouts"]')
+      await navTo(pt, 'workouts')
       const libText = await pt.evaluate(async (tag) => {
         const el = document.createElement('div'); document.body.appendChild(el)
         await renderExerciseLibrary(el)
