@@ -294,7 +294,7 @@ function showAssignProgramModal(clientId, opts = {}) {
   overlay.id = 'assign-program-modal'
   const todayStr = _ymdLocal(new Date())
   const startValue = /^\d{4}-\d{2}-\d{2}$/.test(opts.startDate || '') ? opts.startDate : todayStr
-  const isSolo = currentProfile?.role === 'solo'
+  const isSolo = _isPersonalView()
   const reviewNote = opts.programId
     ? 'This starts the same plan again. Your finished block and your logged sessions are kept. Nothing is saved until you confirm.'
     : 'Your finished block comes off your plan and stays in your history. Nothing is saved until you confirm.'
@@ -330,7 +330,7 @@ function showAssignProgramModal(clientId, opts = {}) {
   // Personal programs must never appear in a dropdown that assigns a program TO a client — that is
   // exactly how real clients ended up on a personal program. Filtered by the current view, matching
   // every other is_personal read site.
-  db.from('programs').select('id, name').eq('coach_id', currentUser.id).eq('is_personal', currentProfile?.role === 'solo').order('name').then(({ data, error }) => {
+  db.from('programs').select('id, name').eq('coach_id', currentUser.id).eq('is_personal', isSolo).order('name').then(({ data, error }) => {
     const sel = document.getElementById('ap-program')
     if (!sel) return
     // Surface the error. This query was discarding it, so a failure rendered an EMPTY dropdown and
@@ -507,7 +507,7 @@ async function saveAssignProgram(clientId) {
   const btn       = document.getElementById('ap-save-btn')
 
   const opts = _assignModalOpts, fromReview = !!opts.blockReview
-  const isSolo = currentProfile?.role === 'solo'
+  const isSolo = _isPersonalView()
 
   if (!programId) { errorEl.textContent = 'Please select a training plan'; return }
   // From the end-of-block card the plan has ended, so a blank or past date would book a plan that starts behind the person.

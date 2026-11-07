@@ -394,10 +394,8 @@ function _dashBlockSetup(d, program, clientId, todayStr) {
   }
 }
 
-const _dashBlockDate = ymd => new Date(ymd + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
-
-function _dashBlockHintHtml(b) {
-  return `<div class="dash-blockhint" data-block-hint><span><b>Last week of your block.</b> Ends ${escapeHtml(new Date(b.endSunday + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long' }))}.</span>` +
+function _dashBlockHintHtml() {
+  return `<div class="dash-blockhint" data-block-hint><span><b>Last week of your block.</b> Ends Sunday.</span>` +
     `<button type="button" class="dash-block-link" data-block-action="plan-next" onclick="_dashBlockAction('plan-next')">Plan next block ›</button></div>`
 }
 
@@ -413,7 +411,7 @@ function _dashBlockCardHtml(b, v = { phase: 'loading' }) {
     : !m.improved.length ? 'No lift went up this block. Open the review to see each lift.' : ''
   return `<section class="dash-hero dash-block" data-block-card aria-label="Block complete">` +
     `<div class="dash-hero-eyebrow">Block complete</div>` +
-    `<h2 class="dash-block-title">Your ${b.weeks}-week block finished on ${escapeHtml(_dashBlockDate(b.endSunday))}</h2>` +
+    `<h2 class="dash-block-title">Your ${b.weeks}-week block finished on ${escapeHtml(_dashFormatDate(b.endSunday))}</h2>` +
     `<div class="dash-block-stats"><div><b>${m.doneOf.done} of ${m.doneOf.due}</b>planned sessions done</div><div><b>${m.doneOf.pct}%</b>done</div></div>` +
     lifts + (note ? `<div class="dash-block-note" data-block-note>${escapeHtml(note)}</div>` : '') +
     (v.weightLine ? `<div class="dash-block-note" data-block-weight>${escapeHtml(v.weightLine)}</div>` : '') +
@@ -1204,7 +1202,7 @@ async function _dashRenderOwn(el, role) {
   const next = d.upcoming.find(u => u.kind === 'session' && u.date > todayStr) || null
   const ctx = { role, clientId, todayStr, days, hasProgram: !!d.cp0, program, next }
   // The end of a block (Personal view only; docs/superpowers/specs/2026-11-07-end-of-block-review-design.md): a hint in the last week, a card once it has ended.
-  const block = role === 'solo' ? _dashBlockSetup(d, program, clientId, todayStr) : null
+  const block = isClient ? null : _dashBlockSetup(d, program, clientId, todayStr)
   const byDs = Object.fromEntries(days.map(x => [x.ds, x]))
   const heroFor = sel => _dashHeroHtml(byDs[sel || todayStr], ctx)
   const weekFor = sel => _dashWeekHtml(days, counts, sel, !isClient)
@@ -1233,7 +1231,7 @@ async function _dashRenderOwn(el, role) {
         ${logo}
       </header>
       ${checkInDue ? _dashCheckInBanner() : ''}
-      ${block && block.state === 'last-week' ? _dashBlockHintHtml(block) : ''}
+      ${block && block.state === 'last-week' ? _dashBlockHintHtml() : ''}
       ${block && block.state === 'ended' ? _dashBlockCardHtml(block, { phase: 'loading' }) : ''}
       ${heroFor(null)}
       ${weekFor(null)}

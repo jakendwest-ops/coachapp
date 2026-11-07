@@ -14,7 +14,7 @@ test.use({ timezoneId: 'Europe/London' })
 
 const CID = 'br-c1'
 const START = '2026-08-10', END = '2026-11-01'
-const addDays = (s, n) => new Date(Date.parse(s + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10)
+const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 let seq = 0
 const mkLog = (date) => ({ id: 'brl-' + (++seq), client_id: CID, name: 'Session', date, created_at: date + 'T07:40:00Z', workout_log_exercises: [{ id: 'x1' }] })
 
@@ -80,7 +80,7 @@ test.describe('End of a block on Today (2026-11-07)', () => {
   test('the card: the plan has ended, nothing is booked: headline, sessions done, the three most improved lifts, body weight, the two actions', async ({ page }) => {
     await show(page, tables())
     await expect(card(page)).toBeVisible()
-    await expect(card(page)).toContainText('Your 12-week block finished on Sunday 1 Nov')
+    await expect(card(page)).toContainText('Your 12-week block finished on Sun 1 Nov')
     await expect(card(page)).toContainText('34 of 36')
     await expect(card(page)).toContainText('94%')
     await expect(card(page).locator('[data-block-lift]')).toHaveCount(3)
