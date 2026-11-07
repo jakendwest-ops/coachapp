@@ -3122,6 +3122,76 @@ function _xsPlainFacts(hist, M) {
   return { since, bestIdx }
 }
 
+// ── Merging lift names (docs/superpowers/plans/2026-11-01-merge-lift-names.md) ────────────────────────────────────────────────────────────────
+// A lift is tracked by its typed NAME, so spellings split it. These two are the pure parts; the database does the rewrite (merge_lift_names).
+
+// Names that look like one lift, for the "Tidy up lift names" card. `names` is [{ name, count }] (count = sessions). Two kinds, never mixed:
+//   'same'  - names that differ only by capitals, spaces, hyphens or punctuation (one group per lift); safe to offer as one tap.
+//   'maybe' - two different lifts that might be one: a typo one edit apart, or one name inside the other ("Back Squat" in "Barbell Back Squat").
+//             Never preselected: "Barbell Row" and "Deadstop Barbell Row" are look-alikes that Jake keeps apart.
+// Each suggestion is { kind, names: [{ name, count }] (most used first), keep } and `keep` is the most used spelling. Blank names are ignored.
+const _liftKey = name => String(name).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+function _liftNameSuggestions(names) {
+  const byName = new Map()
+  for (const n of (names || [])) {
+    const name = String(n && n.name != null ? n.name : '').trim()
+    if (!name) continue
+    byName.set(name, (byName.get(name) || 0) + (Number(n.count) || 0))
+  }
+  const clusters = new Map()   // normalised key -> [{ name, count }]
+  for (const [name, count] of byName) {
+    const key = _liftKey(name)
+    if (!key) continue
+    ;(clusters.get(key) || clusters.set(key, []).get(key)).push({ name, count })
+  }
+  const byUse = (a, b) => b.count - a.count || b.name.length - a.name.length || (a.name < b.name ? -1 : 1)
+  const total = list => list.reduce((s, x) => s + x.count, 0)
+  const same = [], keys = []
+  for (const [key, list] of clusters) {
+    list.sort(byUse)
+    keys.push({ key, top: list[0], n: total(list) })
+    if (list.length > 1) same.push({ kind: 'same', names: list, keep: list[0].name })
+  }
+  const withinOneEdit = (a, b) => {
+    if (Math.abs(a.length - b.length) > 1 || a === b) return false
+    let i = 0, j = 0, edits = 0
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { i++; j++; continue }
+      if (++edits > 1) return false
+      if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++ }
+    }
+    return edits + (a.length - i) + (b.length - j) <= 1
+  }
+  const maybe = []
+  for (let x = 0; x < keys.length; x++) {
+    for (let y = x + 1; y < keys.length; y++) {
+      const a = keys[x], b = keys[y], short = a.key.length <= b.key.length ? a : b, long = short === a ? b : a
+      const inside = short.key.length >= 8 && long.key.includes(short.key)
+      if (!(inside || (short.key.length >= 6 && withinOneEdit(a.key, b.key)))) continue
+      const pair = [a.top, b.top].sort(byUse)
+      maybe.push({ kind: 'maybe', names: pair, keep: pair[0].name, weight: a.n + b.n })
+    }
+  }
+  same.sort((p, q) => total(q.names) - total(p.names))
+  maybe.sort((p, q) => q.weight - p.weight)
+  return [...same, ...maybe.map(({ weight, ...s }) => s)]
+}
+
+// The name NEW logging should use: the person's recorded merges ([{ from_name, to_name }]) followed from `name`, ignoring capitals and edge spaces, so a merged-away
+// name (or a typed variation of it) lands on the kept one. Follows a chain, stops on a loop, returns `name` unchanged when nothing applies. Mirrors merge_lift_names in SQL.
+function _canonLiftName(name, merges) {
+  if (name == null || String(name).trim() === '' || !merges || !merges.length) return name
+  const key = s => String(s).trim().toLowerCase()
+  const to = new Map(merges.map(m => [key(m.from_name), String(m.to_name).trim()]))
+  let cur = String(name).trim(), hops = 0
+  while (to.has(key(cur)) && hops++ < 20) {
+    const next = to.get(key(cur))
+    if (key(next) === key(cur)) return next   // a record pointing at its own spelling (a case-only merge): that spelling is the kept one
+    cur = next
+  }
+  return cur
+}
+
 // Everything the card needs, computed once per mount: the sessions (oldest first, empty ones dropped), the range-limited list,
 // today's pseudo-session, and the all-time records.
 function _xsPrepare(ex, opts) {
