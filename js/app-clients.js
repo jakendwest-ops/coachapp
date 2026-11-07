@@ -531,7 +531,12 @@ function switchTab(btn, tab, clientId) {
     case 'tab-goals':    content.innerHTML = ''; renderClientGoals(clientId, content);    break
     case 'tab-workouts': content.innerHTML = ''; renderClientWorkouts(clientId, content); break
     case 'tab-weight':       content.innerHTML = ''; renderClientWeight(clientId, content);       break
-    case 'tab-performance':  content.innerHTML = ''; renderClientPerformance(clientId, content);  break
+    // Sessions first: it clears managed charts as it starts, and that must not catch the records' charts. The records keep the section id their own writes refresh through.
+    case 'tab-performance':
+      content.innerHTML = '<div id="pb-performance-section"></div><div class="xs-title" style="margin-top:28px">Sessions</div><div id="client-sessions-section"></div>'
+      renderProgressPerSession(clientId, document.getElementById('client-sessions-section'))
+      renderClientPerformance(clientId, document.getElementById('pb-performance-section'))
+      break
     case 'tab-programs':     content.innerHTML = ''; renderClientPrograms(clientId, content);     break
     case 'tab-1rms':         content.innerHTML = ''; renderClient1RMs(clientId, content);         break
   }
