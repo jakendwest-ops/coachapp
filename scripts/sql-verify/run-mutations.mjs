@@ -22,6 +22,7 @@ import { MUTATIONS as CHECKIN_REVIEW } from './checkin-review.mutations.mjs'
 import { MUTATIONS as CLIENT_SIGNED_IN } from './client-signed-in.mutations.mjs'
 import { MUTATIONS as SOLO_WEEK_COPIES } from './solo-week-copies.mutations.mjs'
 import { MUTATIONS as USER_ID_GUARD } from './clients-user-id-guard.mutations.mjs'
+import { MUTATIONS as MERGE_LIFT_NAMES } from './merge-lift-names.mutations.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const SUITES = [
@@ -40,6 +41,7 @@ const SUITES = [
   { name: 'coach_client_summary.signed_in: a coach learns only whether THEIR client has signed in', verifier: 'client-signed-in.verify.mjs', mutations: CLIENT_SIGNED_IN },
   { name: 'solo user deletes and renumbers the week copies of their own plan', verifier: 'solo-week-copies.verify.mjs', mutations: SOLO_WEEK_COPIES },
   { name: 'clients.user_id guard: nobody links another person\'s login to a client row from the API', verifier: 'clients-user-id-guard.verify.mjs', mutations: USER_ID_GUARD },
+  { name: 'merge_lift_names(): a person or their coach merges only that client\'s lift names, reversibly', verifier: 'merge-lift-names.verify.mjs', mutations: MERGE_LIFT_NAMES },
 ]
 
 const run = (verifier, key) => new Promise((resolve) => {

@@ -87,3 +87,10 @@
 ## Open question for Jake
 
 Capital-letter-only pairs (Depth jump / Depth Jump, Barbell hold / Hold, Trap bar jump / Jump): you said they should merge on their own. Options: (1) one tap on the Tidy up card merges all of them, (2) they merge by themselves the first time Lifts opens. Recommended: (1): a page view that writes to your history is a surprise, and one tap costs a second.
+
+## Status, 2026-11-07 (parked by Jake; resume here)
+
+- Task 0, 1 done. The SQL (columns, `lift_name_merges`, `merge_lift_names`, `unmerge_lift_names`) is APPLIED LIVE and its read-back matched (7 rows). Nothing in the app calls it yet, so nothing visible changed. Pushed: `24050c1`, `40a9788`.
+- Task 2 done: `_liftNameSuggestions`, `_canonLiftName` in `js/app-progress.js` with `tests-node/lift-names.test.mjs` (11 tests, mutation-checked). Committed `aa743c7`, not yet released.
+- Before Task 3: Jake reviews the screens on the clickable page https://claude.ai/artifact/8iLs9JKnpYjBRYX7aVG7sb (three questions: where Tidy up lives, the Tidy up screen, the merge sheet and Undo). His notes are in that page's `feedback` collection (read with ArtifactData list). Nothing on those screens is built.
+- Still to do: Task 3 (merge screens), Task 4 (runner lands new logging under the kept name: the five `exercise_name` writes in `js/app-runner.js`), Task 5 (gates, review, release). The SQL is already live, so the JS can ship as soon as it is built and reviewed.
