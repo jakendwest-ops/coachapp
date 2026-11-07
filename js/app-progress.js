@@ -1369,6 +1369,8 @@ db.auth.onAuthStateChange((event, session) => {
     window._masterAccount = false
     window._masterClientId = null
     window._soloClientId = null
+    // "View as" too: More's Sign out does not reload, and the next account would load the viewed client's id (review, 2026-11-07).
+    for (const k of ['_sudoClientId', '_sudoClientName', '_sudoFromRole']) delete /** @type {any} */ (window)[k]
     const switcher = document.getElementById('view-switcher')
     if (switcher) switcher.style.display = 'none'
     document.getElementById('mobile-view-switcher')?.classList.remove('mvs-on')

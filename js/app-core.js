@@ -1633,15 +1633,15 @@ function renderNav(role) {
   }
 }
 
-// Personal view's "More" (D2, 2026-09-07; rows rewritten 2026-10-31 for the four destinations). Body-level via mountModal so it sits
+// The "More" sheet, Personal view's and the coach's (D2, 2026-09-07; rows rewritten 2026-10-31 for the four destinations). Body-level via mountModal so it sits
 // above the bottom nav and the floating mobile view-switcher pill, same as every other modal here. navigate() tears down
 // .modal-overlay on its own, so the row handlers just call it. A plain centred .modal (like _openQuickPrefsPopover) rather than
 // modal-fullscreen-mobile: a bottom-flush sheet would tuck its last row under the fixed bottom nav.
 // The More sheet's rows for a view: Personal view's pages (Exercise library, Settings) or the coach's (Workouts, Settings - MVP 8,
 // 2026-11-01), then the rows both share, with the switch to the other view on your own account only. Pure: tests-node/coach-nav.test.mjs.
 // Literal handlers, one per row: scripts/check-inline-handlers can only verify a name it can read.
-/** @param {string|undefined} view @param {boolean} isMaster */
-function _moreSheetRowsHtml(view, isMaster) {
+/** @param {string|undefined} view @param {boolean} canSwitch */
+function _moreSheetRowsHtml(view, canSwitch) {
   const coach = view !== 'solo'
   return [
     coach ? `<button class="btn btn-secondary more-row" onclick="navigate('workouts')">Workouts</button>`
@@ -1650,7 +1650,7 @@ function _moreSheetRowsHtml(view, isMaster) {
     `<button class="btn btn-secondary more-row" onclick="closeModal('more-sheet-modal');downloadMyData()">Download my data</button>`,
     `<a class="btn btn-secondary more-row" href="${escapeHtml(_feedbackMailto())}">Send feedback</a>`,
     `<a class="btn btn-secondary more-row" href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener">Privacy policy</a>`,
-    !isMaster ? '' : coach ? `<button class="btn btn-secondary more-row" onclick="switchView('solo')">Switch to Personal view</button>`
+    !canSwitch ? '' : coach ? `<button class="btn btn-secondary more-row" onclick="switchView('solo')">Switch to Personal view</button>`
                            : `<button class="btn btn-secondary more-row" onclick="switchView('coach')">Switch to PT view</button>`,
     `<button class="btn btn-secondary more-row" onclick="closeModal('more-sheet-modal');signOutAndClearDrafts({ ask: true })">Sign out</button>`,
   ].join('')
@@ -1661,7 +1661,9 @@ function _openMoreSheet() {
   overlay.className = 'modal-overlay'
   overlay.id = 'more-sheet-modal'
   overlay.onclick = e => { if (e.target === overlay) closeModal('more-sheet-modal') }
-  const rows = _moreSheetRowsHtml(_isPersonalView() ? 'solo' : 'coach', !!(/** @type {any} */ (window)._masterAccount))
+  // Coach view offers the switch only with a Personal record to switch to: a coach who is someone's client is master too, with none (review, 2026-11-07).
+  const w = /** @type {any} */ (window), personal = _isPersonalView()
+  const rows = _moreSheetRowsHtml(personal ? 'solo' : 'coach', !!w._masterAccount && (personal || !!w._soloClientId))
   overlay.innerHTML = `
     <div class="modal" style="max-width:340px">
       <div class="modal-header">

@@ -28,8 +28,9 @@ test.describe('the coach\'s phone bar', () => {
     expect(rows.slice(0, 2)).toEqual(['Workouts', 'Settings'])
     expect(rows).not.toContain('Exercise library')
     for (const t of ['Download my data', 'Send feedback', 'Privacy policy', 'Sign out']) expect(rows).toContain(t)
-    const master = await page.evaluate(() => !!window._masterAccount)
-    expect(rows.includes('Switch to Personal view'), 'the switch row only on an account that has a Personal view').toBe(master)
+    // Not just a master account: a coach who is someone's client is master too, with no Personal record to switch to (review, 2026-11-07).
+    const hasPersonal = await page.evaluate(() => !!window._masterAccount && !!window._soloClientId)
+    expect(rows.includes('Switch to Personal view'), 'the switch row only on an account that has a Personal view').toBe(hasPersonal)
 
     await page.click('#more-sheet-modal button:has-text("Workouts")')
     await expect(page.locator('#more-sheet-modal')).toHaveCount(0)
@@ -44,6 +45,26 @@ test.describe('the coach\'s phone bar', () => {
     await page.click('.bottom-nav-item[data-page="clients"]:visible')
     await page.waitForFunction(() => currentPage === 'clients')
     expect((await bar(page)).filter(i => i.lit).map(i => i.page), 'a bar page lights itself').toEqual(['clients'])
+  })
+
+  test('a master account with no Personal record is not offered the switch (review, 2026-11-07)', async ({ page }) => {
+    await loginAsPT(page)
+    await page.waitForSelector('.bottom-nav-item:visible')
+    await page.evaluate(() => { window.__solo = window._soloClientId; window.__master = window._masterAccount; window._masterAccount = true; window._soloClientId = null })
+    await page.click('.bottom-nav-item[data-page="__more__"]:visible')
+    await page.waitForSelector('#more-sheet-modal', { state: 'visible' })
+    const rows = await page.evaluate(() => [...document.querySelectorAll('#more-sheet-modal .more-row')].map(r => r.textContent.trim()))
+    await page.evaluate(() => { window._soloClientId = window.__solo; window._masterAccount = window.__master })
+    expect(rows).not.toContain('Switch to Personal view')
+  })
+
+  test('signing out clears "View as": the next person on this tab inherits nothing (review, 2026-11-07)', async ({ page }) => {
+    await loginAsPT(page)
+    await page.evaluate(() => { window._sudoClientId = 'c'; window._sudoClientName = 'Someone'; window._sudoFromRole = 'coach' })
+    await page.evaluate(() => db.auth.signOut({ scope: 'local' }))
+    await page.waitForFunction(() => window._masterAccount === false)
+    const left = await page.evaluate(() => [window._sudoClientId, window._sudoClientName, window._sudoFromRole].filter(v => v !== undefined))
+    expect(left).toEqual([])
   })
 
   test('on a desktop the sidebar still lists all six, and Workouts lights itself there', async ({ page }) => {
