@@ -1,8 +1,8 @@
 // The lift-name tables the merge touches, for the PGlite verifiers: client_1rms and performance_logs (workout_log_exercises is in live-schema.mjs).
 // Policies and triggers are VERBATIM from Jake's pg_policies / pg_trigger reads of 2026-11-02 (the queries are in docs/superpowers/plans/2026-11-01-merge-lift-names.md,
-// Task 0). Only the columns the merge and its policies meet are reproduced: the rest of each table is NOT, and neither is the audit trigger
-// (`audit_*` -> log_audit_event(), AFTER INSERT/UPDATE/DELETE on workout_log_exercises and performance_logs), whose body was not read. Role lists are as read;
-// all policies are modelled permissive. Call AFTER installLiveSchema(db).
+// Task 0). Only the columns the merge and its policies meet are reproduced: the rest of each table is NOT. Role lists are as read; all policies are modelled permissive.
+// The audit trigger (`audit_*` -> log_audit_event(), AFTER INSERT/UPDATE/DELETE on workout_log_exercises and performance_logs) is modelled with its body as read on 2026-11-07;
+// the audit_log table is reduced to the columns that function writes. Call AFTER installLiveSchema(db).
 export const LIFTS_SCHEMA_READ_ON = '2026-11-02'
 
 export async function installLiftTables(db) {
@@ -18,6 +18,19 @@ export async function installLiftTables(db) {
     create table public.performance_logs (id uuid primary key default gen_random_uuid(), client_id uuid not null, name text not null, category text,
       logged_by uuid, created_at timestamptz default now());
     alter table public.client_1rms enable row level security; alter table public.performance_logs enable row level security;
+    -- The audit trigger, body VERBATIM from Jake's read of 2026-11-07: SECURITY DEFINER, search_path '', one audit_log row per changed row, changed_by = auth.uid() (which a definer function
+    -- called by a signed-in user still sees: auth.uid() reads the request's JWT setting, not the current role). On live it sits on workout_log_exercises and performance_logs.
+    create table public.audit_log (id bigint generated always as identity primary key, table_name text, operation text, record_id uuid, old_data jsonb, new_data jsonb, changed_by uuid, created_at timestamptz default now());
+    alter table public.audit_log enable row level security;
+    create function public.log_audit_event() returns trigger language plpgsql security definer set search_path to '' as $$
+    begin
+      insert into public.audit_log (table_name, operation, record_id, old_data, new_data, changed_by)
+      values (TG_TABLE_NAME, TG_OP, case TG_OP when 'DELETE' then OLD.id else NEW.id end, case TG_OP when 'INSERT' then null else to_jsonb(OLD) end, case TG_OP when 'DELETE' then null else to_jsonb(NEW) end, auth.uid());
+      return coalesce(NEW, OLD);
+    end;
+    $$;
+    create trigger audit_performance_logs after insert or delete or update on public.performance_logs for each row execute function public.log_audit_event();
+    create trigger audit_workout_log_exercises after insert or delete or update on public.workout_log_exercises for each row execute function public.log_audit_event();
     create trigger lock_created_at before update on public.client_1rms for each row execute function public.lock_created_at();
     create trigger lock_created_at before update on public.performance_logs for each row execute function public.lock_created_at();
 

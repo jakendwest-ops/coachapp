@@ -92,6 +92,11 @@ ok(await fromOf('workout_log_exercises', E_BBS) === null && await fromOf('client
 ok(await exName(E_C2) === 'Back Squat' && await nameOf('client_1rms', 'exercise_name', R_C2) === 'Back Squat' && await nameOf('performance_logs', 'name', P_C2) === 'Back Squat', 'ANOTHER client of the same coach: their Back Squat did not move')
 ok(await exName(E_B) === 'Back Squat' && await nameOf('client_1rms', 'exercise_name', R_B) === 'Back Squat', "a client of ANOTHER coach: did not move")
 ok(await exName(E_S1) === 'Back Squat' && await nameOf('performance_logs', 'name', P_S) === 'Back Squat', 'the solo user: did not move')
+// the live audit trigger (SECURITY DEFINER, changed_by = auth.uid()) fires inside the merge, one row per rewritten row, attributed to the CALLER, with the old and new name
+const audit = await rowsOf(`select table_name, record_id, changed_by, old_data->>'exercise_name' as o, new_data->>'exercise_name' as n from public.audit_log where operation = 'UPDATE' and record_id in ('${E_BS1}', '${E_BS2}') and new_data->>'exercise_name' = 'Barbell Back Squat' order by record_id`)
+ok(audit.length === 2 && audit.every(a => a.table_name === 'workout_log_exercises' && a.changed_by === UC1 && a.n === 'Barbell Back Squat') && audit.map(a => a.o).sort().join('|') === 'Back Squat|Back Squat ', 'the live audit trigger fires inside the merge: one audit row per rewritten exercise, attributed to the CALLER (not the function owner), with the old and the new name', audit)
+const auditRec = await rowsOf(`select changed_by, old_data->>'name' as o, new_data->>'name' as n from public.audit_log where operation = 'UPDATE' and table_name = 'performance_logs' and record_id = '${P_BS}'`)
+ok(auditRec.length === 1 && auditRec[0].changed_by === UC1 && auditRec[0].o === 'Back Squat' && auditRec[0].n === 'Barbell Back Squat', '...and the same for the performance record', auditRec)
 let m = await merges(CL1)
 ok(m.length === 1 && m[0].from_name === 'Back Squat' && m[0].to_name === 'Barbell Back Squat', 'the merge is recorded for future logging', m)
 r = await merge('authenticated', UC1, CL1, 'Back Squat', 'Barbell Back Squat')
