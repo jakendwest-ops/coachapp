@@ -155,6 +155,71 @@ const _dashWeeksBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new 
 // How many weeks back the streak looks. Also how much history the dashboard reads: a year of sessions is a couple of hundred rows.
 const _DASH_STREAK_WEEKS = 52
 
+// The Monday of a plan's last week: the later of its length (`totalWeeks` from the Monday of its start week) and its last week with a session in it. Only sessions
+// dated on or after `planStart` count. null when the plan has no start date or no session. ONE definition, used by _dashPlanAdherence (so a plan "runs" to the
+// same week there) and by the end-of-block review (docs/superpowers/plans/2026-11-07-end-of-block-review.md), which therefore cannot disagree about when a plan ends.
+function _dashPlanEndWeek(progByDate, planStart, totalWeeks = 0) {
+  const from = planStart ? String(planStart).slice(0, 10) : null
+  const startWk = from ? _dashMonday(from) : null
+  if (!startWk) return null
+  let lastWk = null
+  for (const ds of Object.keys(progByDate || {})) {
+    if (ds < from || !(progByDate[ds] || []).length) continue
+    const wk = _dashMonday(ds)
+    if (wk && (lastWk === null || wk > lastWk)) lastWk = wk
+  }
+  if (lastWk === null) return null
+  const byLength = Number(totalWeeks) > 0 ? _dashAddDays(startWk, 7 * (Number(totalWeeks) - 1)) : null
+  return byLength && byLength > lastWk ? byLength : lastWk
+}
+// The Sunday of that last week: the day the plan ends, as the calendar places it. null as above.
+function _dashPlanEndSunday(progByDate, planStart, totalWeeks = 0) {
+  const wk = _dashPlanEndWeek(progByDate, planStart, totalWeeks)
+  return wk ? _dashAddDays(wk, 6) : null
+}
+
+// ── End of a block (Personal view; docs/superpowers/specs/2026-11-07-end-of-block-review-design.md) ─────────────────────────────────────────
+const _BLOCK_CARD_DAYS = 28    // the card stays this long after the plan's last Sunday
+const _BLOCK_MIN_WEEKS = 2       // a plan must have run at least this many calendar weeks to earn a review
+const _BLOCK_MIN_SESSIONS = 3  // ...and the person must have logged at least this many sessions inside it
+const _dashDaysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000)
+const _dashNextMondayOnOrAfter = ymd => { const m = _dashMonday(ymd); return m === ymd ? ymd : _dashAddDays(m, 7) }
+
+// Where the CURRENT plan stands: 'last-week' (the hint), 'ended' (the card, up to 28 days after its last Sunday) or 'none'. `hasNext` is true when a plan is booked
+// after this one; `logDates` are the person's logged sessions. A plan with no start date or end, under 2 weeks long, or with fewer than 3 sessions logged inside it
+// (from its start to its last Sunday) gets nothing. Dismissal ("Not now") is the caller's, not this function's.
+function _blockEndState({ planStart, endSunday, hasNext, logDates, todayStr }) {
+  const from = planStart ? String(planStart).slice(0, 10) : null
+  const none = { state: 'none', endSunday: endSunday || null, daysSinceEnd: null, loggedInBlock: 0 }
+  if (!from || !endSunday || hasNext) return none
+  const endMonday = _dashMonday(endSunday)
+  const weeks = _dashWeeksBetween(_dashMonday(from), endMonday) + 1
+  const loggedInBlock = (logDates || []).filter(d => d >= from && d <= endSunday).length
+  if (weeks < _BLOCK_MIN_WEEKS || loggedInBlock < _BLOCK_MIN_SESSIONS) return { ...none, loggedInBlock }
+  if (todayStr >= endMonday && todayStr <= endSunday) return { state: 'last-week', endSunday, daysSinceEnd: null, loggedInBlock }
+  if (todayStr > endSunday) {
+    const daysSinceEnd = _dashDaysBetween(endSunday, todayStr)
+    if (daysSinceEnd <= _BLOCK_CARD_DAYS) return { state: 'ended', endSunday, daysSinceEnd, loggedInBlock }
+  }
+  return { ...none, loggedInBlock }
+}
+
+// What the card shows. `summary` is _blockLiftSummary's result for the finished block against the one before it (null while it loads or when it could not be read:
+// then there are no lift rows, never an invented change). `hasPrevious` says that previous block exists. Sessions done against planned is _dashPlanAdherence
+// asked about the plan's last day, so it is the figure the adherence tile showed. repeatStart: the Monday after the end if that is today or later, else the next
+// Monday on or after today - never a date in the past.
+function _blockReviewModel({ endSunday, planStart, totalWeeks, currentByDate, logDates, summary, hasPrevious, canRepeat, todayStr }) {
+  const a = _dashPlanAdherence(currentByDate, logDates || [], endSunday, planStart, totalWeeks)
+  const improved = ((summary && summary.both) || []).filter(r => r.delta > 0)
+    .sort((x, y) => y.pct - x.pct || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0)).slice(0, 3)
+  const after = _dashAddDays(endSunday, 1)
+  return {
+    doneOf: a ? { done: a.done, due: a.due, pct: a.pct } : { done: 0, due: 0, pct: 0 },
+    improved, firstBlock: !hasPrevious, canRepeat: !!canRepeat,
+    repeatStart: after >= todayStr ? after : _dashNextMondayOnOrAfter(todayStr),
+  }
+}
+
 // Plan adherence, or null when no plan governs THIS week (none assigned, it has not started, it has ended, or it has no sessions in it - nothing to be done).
 //   progByDate  _programWorkoutsByDate's map ({ 'YYYY-MM-DD': [session, ...] }); planStart  the assignment's start_date; totalWeeks  the program's length.
 // A plan runs from the Monday of its start week to the Monday of its last week (the later of totalWeeks and the last week with a session in it).
@@ -167,18 +232,15 @@ function _dashPlanAdherence(progByDate, logDates, todayStr, planStart, totalWeek
   const thisWeek = _dashMonday(todayStr), startWk = from ? _dashMonday(from) : null
   if (!thisWeek || !startWk) return null
   const planned = {}, due = {}
-  let lastWk = null
   for (const ds of Object.keys(progByDate || {})) {
     if (ds < from) continue
     const n = (progByDate[ds] || []).length, wk = n ? _dashMonday(ds) : null
     if (!wk) continue
     planned[wk] = (planned[wk] || 0) + n
     if (ds <= todayStr) due[wk] = (due[wk] || 0) + n
-    if (lastWk === null || wk > lastWk) lastWk = wk
   }
-  if (lastWk === null) return null
-  const byLength = Number(totalWeeks) > 0 ? _dashAddDays(startWk, 7 * (Number(totalWeeks) - 1)) : null
-  const endWk = byLength && byLength > lastWk ? byLength : lastWk
+  const endWk = _dashPlanEndWeek(progByDate, from, totalWeeks)   // null when the plan has no session
+  if (endWk === null) return null
   if (thisWeek < startWk || thisWeek > endWk) return null
   const logged = _dashLoggedByWeek(logDates, from)
   const floor = _dashAddDays(thisWeek, -7 * _DASH_STREAK_WEEKS)
