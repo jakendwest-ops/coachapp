@@ -189,6 +189,8 @@ no `workout_log_sets` exist under it and the session is under 15 minutes old: ex
 The test is in a function because writing it into the policy makes Postgres refuse it with "infinite recursion detected in policy" (the policies on these tables read each other).
 Script and rollback: `scripts/add-client-empty-session-delete-2026-10-01.sql`; local verifier: `scripts/sql-verify/client-empty-session-delete.verify.mjs`.
 
+**Merging lift names (2026-11-07, applied by Jake; `scripts/add-merge-lift-names-2026-11-02.sql`).** A lift is tracked by its typed name, so spellings split it. New: nullable `merged_from text` on `workout_log_exercises`, `client_1rms` and `performance_logs` (the row's original name, kept so a merge can be undone); table `lift_name_merges (client_id, from_name, to_name)` (RLS on, SELECT-only for the person and their coach, written only by the functions); SECURITY DEFINER `merge_lift_names(p_client_id, p_from, p_to)` and `unmerge_lift_names(p_client_id, p_from)`, executable by `authenticated` only. They exist because a coached client has no UPDATE on their logged exercises or records; each checks `clients.user_id = auth.uid() or clients.coach_id = auth.uid()` itself and touches one client's rows. The kept name must already be one of that client's own lifts and takes its stored spelling. Not yet called by the app (screens parked 2026-11-07). Plan: `superpowers/plans/2026-11-01-merge-lift-names.md`.
+
 **`metric_type`** — added 2026-07-18 to `workout_template_exercises` (text, not null, default
 `weight_reps`), with matching CHECK constraints on `exercises`, `workout_template_exercises` and
 `workout_log_exercises` (2026-07-25). Cardio was merged into interval 2026-08-09.
