@@ -1353,6 +1353,17 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .dash-hero-title { font-size: var(--text-4xl); font-weight: 800; line-height: 1.15; margin: 6px 0 4px; overflow-wrap: anywhere; }
 .dash-hero-meta { font-size: var(--text-base); opacity: .9; margin-bottom: 16px; overflow-wrap: anywhere; }
 .dash-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.dash-block { display: flex; flex-direction: column; gap: 10px; }
+.dash-block .dash-hero-eyebrow, .dash-block .dash-block-title { margin: 0; }
+.dash-block-title { font-size: var(--text-3xl); font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+.dash-block-stats { display: flex; gap: 8px; }
+.dash-block-stats > div { flex: 1; min-width: 0; padding: 8px; border-radius: var(--radius); background: color-mix(in srgb, var(--on-accent) 16%, transparent); font-size: var(--text-sm); text-align: center; }
+.dash-block-stats b { display: block; font-size: var(--text-3xl); }
+.dash-block-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid color-mix(in srgb, var(--on-accent) 30%, transparent); font-size: var(--text-base); overflow-wrap: anywhere; }
+.dash-block-note { font-size: var(--text-md); opacity: .9; }
+.dash-block-links { display: flex; justify-content: space-between; gap: 8px; }
+.dash-block-link { min-height: 44px; padding: 0 4px; background: none; border: 0; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.dash-blockhint { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; padding: 6px 12px; border-radius: var(--radius); border: 1px solid var(--accent); background: var(--accent-light); font-size: var(--text-base); }
 .dash-btn { min-height: 46px; padding: 0 16px; border-radius: var(--radius); border: 0; font-family: inherit; font-size: var(--text-xl); font-weight: 800; cursor: pointer; }
 .dash-btn-primary { background: var(--on-accent); color: var(--accent); }
 .dash-hero-calm .dash-btn-primary { background: var(--accent); color: var(--on-accent); }

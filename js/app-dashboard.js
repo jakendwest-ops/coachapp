@@ -155,6 +155,72 @@ const _dashWeeksBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new 
 // How many weeks back the streak looks. Also how much history the dashboard reads: a year of sessions is a couple of hundred rows.
 const _DASH_STREAK_WEEKS = 52
 
+// The Monday of a plan's last week: the later of its length (`totalWeeks` from the Monday of its start week) and its last week with a session in it. Only sessions
+// dated on or after `planStart` count. null when the plan has no start date or no session. ONE definition, used by _dashPlanAdherence (so a plan "runs" to the
+// same week there) and by the end-of-block review (docs/superpowers/plans/2026-11-07-end-of-block-review.md), which therefore cannot disagree about when a plan ends.
+function _dashPlanEndWeek(progByDate, planStart, totalWeeks = 0) {
+  const from = planStart ? String(planStart).slice(0, 10) : null
+  const startWk = from ? _dashMonday(from) : null
+  if (!startWk) return null
+  let lastWk = null
+  for (const ds of Object.keys(progByDate || {})) {
+    if (ds < from || !(progByDate[ds] || []).length) continue
+    const wk = _dashMonday(ds)
+    if (wk && (lastWk === null || wk > lastWk)) lastWk = wk
+  }
+  if (lastWk === null) return null
+  const byLength = Number(totalWeeks) > 0 ? _dashAddDays(startWk, 7 * (Number(totalWeeks) - 1)) : null
+  return byLength && byLength > lastWk ? byLength : lastWk
+}
+// The Sunday of that last week: the day the plan ends, as the calendar places it. null as above.
+function _dashPlanEndSunday(progByDate, planStart, totalWeeks = 0) {
+  const wk = _dashPlanEndWeek(progByDate, planStart, totalWeeks)
+  return wk ? _dashAddDays(wk, 6) : null
+}
+
+// ── End of a block (Personal view; docs/superpowers/specs/2026-11-07-end-of-block-review-design.md) ─────────────────────────────────────────
+const _BLOCK_CARD_DAYS = 28    // the card stays this long after the plan's last Sunday
+const _BLOCK_MIN_WEEKS = 2       // a plan must have run at least this many calendar weeks to earn a review
+const _BLOCK_MIN_SESSIONS = 3  // ...and the person must have logged at least this many sessions inside it
+const _dashDaysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00').getTime() - new Date(a + 'T12:00:00').getTime()) / 86400000)
+const _dashNextMondayOnOrAfter = ymd => { const m = _dashMonday(ymd); return m === ymd ? ymd : _dashAddDays(m, 7) }
+
+// Where the CURRENT plan stands: 'last-week' (the hint), 'ended' (the card, up to 28 days after its last Sunday) or 'none'. `hasNext` is true when a plan is booked
+// after this one; `logDates` are the person's logged sessions. A plan with no start date or end, under 2 weeks long, or with fewer than 3 sessions logged inside it
+// (from its start to its last Sunday) gets nothing. Dismissal ("Not now") is the caller's, not this function's.
+function _blockEndState({ planStart, endSunday, hasNext, logDates, todayStr }) {
+  const from = planStart ? String(planStart).slice(0, 10) : null
+  const none = { state: 'none', endSunday: endSunday || null, daysSinceEnd: null, loggedInBlock: 0 }
+  if (!from || !endSunday || hasNext) return none
+  const endMonday = _dashMonday(endSunday)
+  const weeks = _dashWeeksBetween(_dashMonday(from), endMonday) + 1
+  const loggedInBlock = (logDates || []).filter(d => d >= from && d <= endSunday).length
+  if (weeks < _BLOCK_MIN_WEEKS || loggedInBlock < _BLOCK_MIN_SESSIONS) return { ...none, loggedInBlock }
+  if (todayStr >= endMonday && todayStr <= endSunday) return { state: 'last-week', endSunday, daysSinceEnd: null, loggedInBlock }
+  if (todayStr > endSunday) {
+    const daysSinceEnd = _dashDaysBetween(endSunday, todayStr)
+    if (daysSinceEnd <= _BLOCK_CARD_DAYS) return { state: 'ended', endSunday, daysSinceEnd, loggedInBlock }
+  }
+  return { ...none, loggedInBlock }
+}
+
+// What the card shows. `summary` is _blockLiftSummary's result for the finished block against the one before it (null while it loads or when it could not be read:
+// then there are no lift rows, never an invented change). `hasPrevious` says that previous block exists. Sessions done against planned is _dashPlanAdherence
+// asked about the plan's last day, so it is the figure the adherence tile showed. repeatStart: the Monday after the end if that is today or later, else the next
+// Monday on or after today - never a date in the past.
+function _blockReviewModel({ endSunday, planStart, totalWeeks, currentByDate, logDates, summary, hasPrevious, canRepeat, todayStr }) {
+  const a = _dashPlanAdherence(currentByDate, logDates || [], endSunday, planStart, totalWeeks)
+  // Math.round(delta * 10): a drift that would print as +0.0 is no change (the Blocks table's rule), never a row in "most improved".
+  const improved = ((summary && summary.both) || []).filter(r => Math.round(r.delta * 10) > 0)
+    .sort((x, y) => y.pct - x.pct || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0)).slice(0, 3)
+  const after = _dashAddDays(endSunday, 1)
+  return {
+    doneOf: a ? { done: a.done, due: a.due, pct: a.pct } : { done: 0, due: 0, pct: 0 },
+    improved, firstBlock: !hasPrevious, canRepeat: !!canRepeat,
+    repeatStart: after >= todayStr ? after : _dashNextMondayOnOrAfter(todayStr),
+  }
+}
+
 // Plan adherence, or null when no plan governs THIS week (none assigned, it has not started, it has ended, or it has no sessions in it - nothing to be done).
 //   progByDate  _programWorkoutsByDate's map ({ 'YYYY-MM-DD': [session, ...] }); planStart  the assignment's start_date; totalWeeks  the program's length.
 // A plan runs from the Monday of its start week to the Monday of its last week (the later of totalWeeks and the last week with a session in it).
@@ -167,18 +233,15 @@ function _dashPlanAdherence(progByDate, logDates, todayStr, planStart, totalWeek
   const thisWeek = _dashMonday(todayStr), startWk = from ? _dashMonday(from) : null
   if (!thisWeek || !startWk) return null
   const planned = {}, due = {}
-  let lastWk = null
   for (const ds of Object.keys(progByDate || {})) {
     if (ds < from) continue
     const n = (progByDate[ds] || []).length, wk = n ? _dashMonday(ds) : null
     if (!wk) continue
     planned[wk] = (planned[wk] || 0) + n
     if (ds <= todayStr) due[wk] = (due[wk] || 0) + n
-    if (lastWk === null || wk > lastWk) lastWk = wk
   }
-  if (lastWk === null) return null
-  const byLength = Number(totalWeeks) > 0 ? _dashAddDays(startWk, 7 * (Number(totalWeeks) - 1)) : null
-  const endWk = byLength && byLength > lastWk ? byLength : lastWk
+  const endWk = _dashPlanEndWeek(progByDate, from, totalWeeks)   // null when the plan has no session
+  if (endWk === null) return null
   if (thisWeek < startWk || thisWeek > endWk) return null
   const logged = _dashLoggedByWeek(logDates, from)
   const floor = _dashAddDays(thisWeek, -7 * _DASH_STREAK_WEEKS)
@@ -301,6 +364,114 @@ function _dashProgramInfo(cp0, todayStr) {
 function _dashProgramEnd(startYmd, weeks) {
   const monday = startYmd ? _dashMonday(startYmd) : null
   return monday && Number(weeks) > 0 ? _dashAddDays(monday, Number(weeks) * 7 - 1) : null
+}
+
+// ─── The end of a block on Today (Personal view): the hint, the card, and the lazy fill of its lifts ──────────────────────────────────────
+// docs/superpowers/specs/2026-11-07-end-of-block-review-design.md. The pure rules are _blockEndState and _blockReviewModel above (tests-node/block-review.test.mjs).
+let _dashBlockToken = 0
+const _blockDismissKey = (clientId, planStart) => `coachapp.blockReview.${clientId}.${planStart}`
+// "Not now" is remembered on THIS device only (nothing server-side exists for it): the Monday it may come back, or '' when unset or unreadable.
+function _blockDismissedUntil(clientId, planStart) { try { return localStorage.getItem(_blockDismissKey(clientId, planStart)) || '' } catch { return '' } }
+
+// The card or hint for the CURRENT plan, or null. A failed read of the plan or the sessions shows nothing (never a card built on missing data).
+function _dashBlockSetup(d, program, clientId, todayStr) {
+  const cp = d.cp0
+  if (!cp || d.failed['your training plan'] || d.failed['recent sessions']) return null
+  const planStart = cp.start_date ? String(cp.start_date).slice(0, 10) : null
+  const totalWeeks = program?.totalWeeks || 0
+  const endSunday = _dashPlanEndSunday(d.currentByDate, planStart, totalWeeks)
+  const logDates = d.logs.map(l => l.date)
+  const st = _blockEndState({ planStart, endSunday, hasNext: !!d.cpNext, logDates, todayStr })
+  if (st.state === 'none') return null
+  if (st.state === 'ended' && todayStr < _blockDismissedUntil(clientId, planStart)) return null
+  // Repeat only when the plan can still be booked: it exists and has at least one session in it.
+  const canRepeat = !!cp.programs && (cp.programs.program_phases || []).some(ph => (ph.program_phase_workouts || []).length > 0)
+  const input = { endSunday, planStart, totalWeeks, currentByDate: d.currentByDate, logDates, canRepeat, todayStr }
+  const model = _blockReviewModel({ ...input, summary: null, hasPrevious: true })
+  return {
+    ...st, clientId, planStart, cpId: cp.id, programId: cp.program_id || null, planName: program?.name || cp.programs?.name || 'Your plan',
+    weeks: _dashWeeksBetween(_dashMonday(planStart), _dashMonday(endSunday)) + 1, input, repeatStart: model.repeatStart,
+  }
+}
+
+function _dashBlockHintHtml() {
+  return `<div class="dash-blockhint" data-block-hint><span><b>Last week of your block.</b> Ends Sunday.</span>` +
+    `<button type="button" class="dash-block-link" data-block-action="plan-next" onclick="_dashBlockAction('plan-next')">Plan next block ›</button></div>`
+}
+
+// v: { phase: 'loading' | 'ready' | 'failed', model?, weightLine? }. Every string from the data goes through escapeHtml.
+function _dashBlockCardHtml(b, v = { phase: 'loading' }) {
+  const m = v.model || _blockReviewModel({ ...b.input, summary: null, hasPrevious: true })
+  const kg = x => fmtWeight(Math.round(x), { spaced: true })
+  const lifts = v.phase !== 'ready' ? '' : m.improved.map(r =>
+    `<div class="dash-block-row" data-block-lift><span data-block-lift-name>${escapeHtml(r.name)}</span><span>${escapeHtml(kg(r.last))} → ${escapeHtml(kg(r.this))} <b>+${(Math.round(Number(weightToPref(r.delta)) * 10) / 10).toFixed(1)}</b></span></div>`).join('')
+  const note = v.phase === 'loading' ? 'Comparing with your last block…'
+    : v.phase === 'failed' ? "Couldn't compare with your last block."
+    : m.firstBlock ? 'First block: nothing to compare yet. Next time you will see how each lift moved.'
+    : !m.improved.length ? 'No lift went up this block. Open the review to see each lift.' : ''
+  return `<section class="dash-hero dash-block" data-block-card aria-label="Block complete">` +
+    `<div class="dash-hero-eyebrow">Block complete</div>` +
+    `<h2 class="dash-block-title">Your ${b.weeks}-week block finished on ${escapeHtml(_dashFormatDate(b.endSunday))}</h2>` +
+    `<div class="dash-block-stats"><div><b>${m.doneOf.done} of ${m.doneOf.due}</b>planned sessions done</div><div><b>${m.doneOf.pct}%</b>done</div></div>` +
+    lifts + (note ? `<div class="dash-block-note" data-block-note>${escapeHtml(note)}</div>` : '') +
+    (v.weightLine ? `<div class="dash-block-note" data-block-weight>${escapeHtml(v.weightLine)}</div>` : '') +
+    `<div class="dash-hero-actions">` +
+      (m.canRepeat ? `<button type="button" class="dash-btn dash-btn-primary" data-block-action="repeat" onclick="_dashBlockAction('repeat')">Repeat this plan</button>` : '') +
+      `<button type="button" class="dash-btn ${m.canRepeat ? 'dash-btn-ghost' : 'dash-btn-primary'}" data-block-action="choose" onclick="_dashBlockAction('choose')">Choose another plan</button>` +
+    `</div>` +
+    `<div class="dash-block-links"><button type="button" class="dash-block-link" data-block-action="review" onclick="_dashBlockAction('review')">See everything</button>` +
+    `<button type="button" class="dash-block-link" data-block-action="notnow" onclick="_dashBlockAction('notnow')">Not now</button></div>` +
+    `</section>`
+}
+
+// The first weigh-in near the start of the block and the last near its end, as one line, or '' when either is missing, they are the same day, or a read failed.
+async function _dashBlockWeights(b) {
+  const from = _dashMonday(b.planStart)
+  const [first, last] = await Promise.all([
+    db.from('weight_logs').select('date, weight_kg').eq('client_id', b.clientId).gte('date', from).lte('date', _dashAddDays(from, 13)).order('date', { ascending: true }).limit(1),
+    db.from('weight_logs').select('date, weight_kg').eq('client_id', b.clientId).gte('date', _dashAddDays(b.endSunday, -13)).lte('date', b.endSunday).order('date', { ascending: false }).limit(1),
+  ])
+  if (first.error || last.error) return ''
+  const a = first.data && first.data[0], z = last.data && last.data[0]
+  if (!a || !z || a.date === z.date) return ''
+  return `Body weight ${fmtWeight(a.weight_kg, { spaced: true })} → ${fmtWeight(z.weight_kg, { spaced: true })}`
+}
+
+// Fills the card's lifts and body weight AFTER the page has drawn: they need the whole exercise history, which Today does not load. _blockReviewWindows freezes the block to
+// the plan's last Sunday, and the review page reads the same two windows through the same function, so the card and the table cannot disagree. Token-guarded: Today repaints
+// on every write, and a stale answer must not touch a newer card.
+async function _dashFillBlockCard(root, b) {
+  const tok = ++_dashBlockToken
+  let summary = null, hasPrevious = true, weightLine = '', failed = false
+  try {
+    const [blocks, exercises, wl] = await Promise.all([_loadProgramBlocks(b.clientId), _buildExerciseSeries(b.clientId), _dashBlockWeights(b)])
+    weightLine = wl
+    const w = blocks && exercises ? _blockReviewWindows(blocks, 'live:' + b.cpId, b.endSunday) : null
+    if (!w) failed = true
+    else {
+      hasPrevious = w.b.source === 'plan'
+      summary = hasPrevious ? _blockLiftSummary(exercises, w.a, w.b) : null
+    }
+  } catch (e) { log.error('_dashFillBlockCard', 'could not compare with the last block', e); failed = true }
+  const el = root.isConnected && tok === _dashBlockToken ? root.querySelector('[data-block-card]') : null
+  if (!el) return
+  const model = _blockReviewModel({ ...b.input, summary, hasPrevious: failed ? true : hasPrevious })
+  el.outerHTML = _dashBlockCardHtml(b, { phase: failed ? 'failed' : 'ready', model, weightLine })
+}
+
+function _dashBlockAction(kind) {
+  const root = /** @type {any} */ (document.getElementById('dash-root')), b = root && root._dash && root._dash.block
+  if (!b) return
+  if (kind === 'repeat') showAssignProgramModal(b.clientId, { startDate: b.repeatStart, programId: b.programId, blockReview: true })
+  else if (kind === 'choose') showAssignProgramModal(b.clientId, { startDate: b.repeatStart, blockReview: true })
+  else if (kind === 'plan-next') showAssignProgramModal(b.clientId, { startDate: _dashAddDays(b.endSunday, 1), nextBlock: true, excludeProgramId: b.programId || '' })
+  else if (kind === 'review') _openBlockReview({ clientId: b.clientId, key: 'live:' + b.cpId, end: b.endSunday, name: b.planName, doneOf: _blockReviewModel({ ...b.input, summary: null, hasPrevious: true }).doneOf })
+  else if (kind === 'notnow') {
+    _dashBlockToken++   // a fill still in flight must not bring the card back
+    const back = _dashAddDays(_dashMonday(root._dash.todayStr), 7)
+    try { localStorage.setItem(_blockDismissKey(b.clientId, b.planStart), back) } catch { /* not remembered: the card is gone for this view, and back on the next repaint */ }
+    const el = root.querySelector('[data-block-card]'); if (el) el.remove()
+  }
 }
 
 // ─── Dashboard views: markup builders (pure strings) ───────────────────────────────────────────────────────────────────────
@@ -873,7 +1044,7 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     // `id` and `week_number` are load-bearing. Without week_number every week of a periodised phase collapses onto week 1's
     // sessions; without id the clone lookup below cannot run. ALL of the client's assignments, not the newest one: _currentAssignment
     // picks the current plan by date, and a block booked to follow it is drawn too (2026-10-29).
-    db.from('client_programs').select('id, start_date, created_at, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }),
+    db.from('client_programs').select('id, program_id, start_date, created_at, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }),
     // A year of sessions, paged (_fetchAllRows, app-core.js): the API caps a response at 200 rows and says nothing when it
     // truncates. The week strip, the streak and "done" all read from this one list.
     _fetchAllRows(() => db.from('workout_logs').select('id, name, date, workout_log_exercises(id)', { count: 'exact' }).eq('client_id', clientId).gte('date', lookbackStart).order('date', { ascending: false }).order('id', { ascending: false })),
@@ -901,7 +1072,7 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
   const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
 
   return {
-    goals: goalsR.data, events: eventsR.data, weights: weightsR.data, cp0, progByDate, currentByDate, logs,
+    goals: goalsR.data, events: eventsR.data, weights: weightsR.data, cp0, cpNext, progByDate, currentByDate, logs,
     upcoming: _soloUpcoming(eventsR.data, progByDate, todayStr),
     lastCheckIn: checkInR.data?.[0] || null,
     prevCheckIn: checkInR.data?.[1] || null,
@@ -1030,6 +1201,8 @@ async function _dashRenderOwn(el, role) {
   const streak = _dashStreakModel(d.currentByDate, d.logs.map(l => l.date), todayStr, { planStart: d.cp0?.start_date || null, totalWeeks: program?.totalWeeks || 0, target: isSudo ? null : window._weeklyTarget })
   const next = d.upcoming.find(u => u.kind === 'session' && u.date > todayStr) || null
   const ctx = { role, clientId, todayStr, days, hasProgram: !!d.cp0, program, next }
+  // The end of a block (Personal view only; docs/superpowers/specs/2026-11-07-end-of-block-review-design.md): a hint in the last week, a card once it has ended.
+  const block = isClient ? null : _dashBlockSetup(d, program, clientId, todayStr)
   const byDs = Object.fromEntries(days.map(x => [x.ds, x]))
   const heroFor = sel => _dashHeroHtml(byDs[sel || todayStr], ctx)
   const weekFor = sel => _dashWeekHtml(days, counts, sel, !isClient)
@@ -1058,6 +1231,8 @@ async function _dashRenderOwn(el, role) {
         ${logo}
       </header>
       ${checkInDue ? _dashCheckInBanner() : ''}
+      ${block && block.state === 'last-week' ? _dashBlockHintHtml() : ''}
+      ${block && block.state === 'ended' ? _dashBlockCardHtml(block, { phase: 'loading' }) : ''}
       ${heroFor(null)}
       ${weekFor(null)}
       ${_dashTilesHtml(streak, program, !isClient, !isSudo)}
@@ -1067,7 +1242,8 @@ async function _dashRenderOwn(el, role) {
       ${isClient ? _dashCheckInHtml(lastCheckIn, clientId, d.prevCheckIn, { readFailed: !!d.failed['check-ins'], sudo: isSudo }) : ''}
     </div>`
   const root = el.querySelector('#dash-root')
-  if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor }
+  if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor, block }
+  if (root && block && block.state === 'ended') _dashFillBlockCard(root, block)
 
   // After innerHTML, so the canvas exists. Oldest-first for a left-to-right time axis, and the 7-day rolling average via the
   // existing helper rather than a second implementation.

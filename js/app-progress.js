@@ -1543,6 +1543,18 @@ async function renderPersonalProgress(el) {
   ])
 }
 
+// The full review, from the end-of-block card on Today ("See everything"): Performance > Blocks for one visit, frozen on the finished block against the one before it.
+// review: { clientId, key, end, name, doneOf: { done, due, pct } }. renderProgressPerProgram uses it once and clears it, so a normal visit to Blocks shows no header.
+/** @type {{ clientId: string, key: string, end: string, name: string, doneOf: { done: number, due: number, pct: number } } | null} */
+let _blockReviewPending = null
+function _openBlockReview(review) {
+  const win = /** @type {any} */ (window)
+  _blockReviewPending = review
+  win._progressTab = 'Performance'
+  win._perfTab = 'Blocks'
+  navigate('progress')
+}
+
 let _perfRenderToken = 0
 const _PERF_TABS = ['Lifts', 'Sessions', 'Blocks']
 function _perfTabName(stored) {
@@ -2364,6 +2376,16 @@ function _blockWindowsFor(blocks, today) {
   const bEnd = _addDaysYmd(aStart, -1)
   return { a: win(aStart, today, 'weeks'), b: win(_addDaysYmd(bEnd, -(_BLOCK_FALLBACK_DAYS - 1)), bEnd, 'weeks') }
 }
+// A finished block against the one before it, frozen at its last day `end`: the end-of-block card and the review page both read their windows here. A live run's end is
+// today (_loadProgramBlocks), which would let sessions after the block leak in. Only runs that started no later than this one can be "the one before", so a plan added
+// part-way through it cannot take its place. An older run stops at its planned length: an archived end is the day it was replaced or restarted, up to 4 weeks later, and free
+// training after the plan is not part of that block. null when the run is not in `blocks`.
+function _blockReviewWindows(blocks, key, end) {
+  const run = (blocks || []).find(r => r.key === key)
+  if (!run) return null
+  const planned = r => { const last = r.weeks ? _addDaysYmd(r.start, r.weeks * 7 - 1) : r.end; return { ...r, end: last < r.end ? last : r.end } }
+  return _blockWindowsFor([{ ...run, end }, ...blocks.filter(r => r !== run && r.start <= run.start).map(planned)], end)
+}
 // The best estimated 1RM (the runner's engine, via _pbE1rmPoints) each lift reached inside each window. A lift in both gets the
 // change; a lift in one goes to onlyLast / onlyThis and is never given a change. A lift that estimates nothing is left out.
 function _blockLiftSummary(exercises, a, b) {
@@ -2452,6 +2474,9 @@ async function renderProgressPerProgram(clientId, el) {
   const myToken = ++_perfProgramToken
   const [blocks, exercises] = await Promise.all([_loadProgramBlocks(clientId), _buildExerciseSeries(clientId)])
   if (myToken !== _perfProgramToken) return
+  // Cleared only here, past the token: a render that lost the race above must not use up the visit the newer render is drawing.
+  const pending = _blockReviewPending && _blockReviewPending.clientId === clientId ? _blockReviewPending : null
+  _blockReviewPending = null
 
   if (blocks === null || exercises === null) {   // a failed exercise read must not draw the comparison with no exercises in it
     el.innerHTML = '<div class="empty-state"><div class="empty-title">Couldn\'t load your training plans</div><div class="empty-text">Check your connection and try again.</div></div>'
@@ -2463,7 +2488,9 @@ async function renderProgressPerProgram(clientId, el) {
   }
   // 2026-11-01: the page opens on this block against last block. With no plan run (or one) the windows are 6 weeks (see _blockWindowsFor),
   // so they are added to the picker's blocks as stand-ins: the overlay below can then draw them like any other block.
-  const win = _blockWindowsFor(blocks, _ymdLocal(new Date()))
+  // Opened from the end-of-block card, the page is frozen on that block (the run may already have gone: then this is a normal visit).
+  const frozen = pending ? _blockReviewWindows(blocks, pending.key, pending.end) : null
+  const win = frozen || _blockWindowsFor(blocks, _ymdLocal(new Date()))
   const stand = (w, key, name) => ({ key, progKey: key, name, start: w.start, end: w.end, open: false })
   const aKey = win.a.key || 'wk:this', bKey = win.b.key || 'wk:last'
   _blockDefaults = { a: aKey, b: bKey }   // what the table compares: _pickBlockLift puts the pickers back here
@@ -2471,7 +2498,7 @@ async function renderProgressPerProgram(clientId, el) {
     ...(win.a.source === 'weeks' ? [stand(win.a, 'wk:this', 'Last 6 weeks')] : []),
     ...(win.b.source === 'weeks' ? [stand(win.b, 'wk:last', 'The weeks before')] : []),
     // Last block is the TRIMMED window (it stops the day before this one starts): the overlay and the dropdown use that same range, not the full run.
-    ...blocks.map(b => (b.key === win.b.key ? { ...b, start: win.b.start, end: win.b.end } : b)),
+    ...blocks.map(b => (b.key === win.b.key ? { ...b, start: win.b.start, end: win.b.end } : frozen && b.key === win.a.key ? { ...b, end: win.a.end, open: false } : b)),
   ]
   const summary = _blockLiftSummary(exercises, win.a, win.b)
   // Deliberately NOT window._trendCache. That global is owned by renderProgressStrength behind a
@@ -2482,6 +2509,7 @@ async function renderProgressPerProgram(clientId, el) {
   window._blockExCache = exercises
   window._blockState = window._blockState || {}
   const st = window._blockState
+  if (frozen) { st.a = aKey; st.b = bKey }   // the review compares these two, whatever was picked on an earlier visit
   if (!pickerBlocks.some(b => b.key === st.a)) st.a = aKey
   // `''` is what the "Compare with…" option sets when the user deliberately turns comparison OFF.
   // No block key equals '', so a bare `.some()` check would undo that choice on every re-render.
@@ -2493,6 +2521,7 @@ async function renderProgressPerProgram(clientId, el) {
 
   const opt = (b, sel) => _blockOptionHtml(b, sel)
   el.innerHTML = `
+    ${frozen && pending ? _blockReviewHeaderHtml(pending, win.a) : ''}
     ${_blockSummaryHtml(summary, win)}
     <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:16px 0 8px">Compare one lift, or other blocks</div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
@@ -2512,6 +2541,15 @@ async function renderProgressPerProgram(clientId, el) {
     <div id="blk-result"></div>`
   window._blockCache = pickerBlocks
   _renderBlockComparison()
+}
+
+// The one-line summary on top of the review: the same figures as the card it was opened from.
+function _blockReviewHeaderHtml(review, w) {
+  const { done, due, pct } = review.doneOf
+  return `<div data-block-review-header style="margin-bottom:16px">
+    <div class="xs-title">${escapeHtml(review.name)}</div>
+    <div class="xs-sub">${escapeHtml(_fmtBlockRange({ start: w.start, end: w.end, open: false }))}. ${done} of ${due} planned sessions done (${pct}%).</div>
+  </div>`
 }
 
 // The table this page opens on (Jake, 2026-11-01): each lift's best estimated 1RM last block and this block, and the change. A lift

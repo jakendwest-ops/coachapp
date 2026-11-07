@@ -277,9 +277,14 @@ function _assignmentEnd(cp) {
 
 // opts (2026-10-29, "Assign next block"): startDate prefills the start; excludeProgramId leaves the client's current plan out of the list (the same
 // plan cannot be assigned to one client twice - choosing it would RESTART it); nextBlock retitles the modal.
+// 2026-11-07, the end-of-block card on Today: blockReview says the sheet came from there (a one-line note, "Confirm", a start date that cannot be in the past, and on saving
+// the finished plan comes off, as "one plan at a time" asks); programId preselects a plan, for "Repeat this plan". saveAssignProgram reads these through _assignModalOpts.
+/** @type {{ startDate?: string, excludeProgramId?: string, nextBlock?: boolean, blockReview?: boolean, programId?: string | null }} */
+let _assignModalOpts = {}
 function showAssignProgramModal(clientId, opts = {}) {
   const existing = document.getElementById('assign-program-modal')
   if (existing) existing.remove()
+  _assignModalOpts = opts
 
   // Solo view: auto-assign to personal account — no client picker needed
   const targetClientId = (currentProfile?.role === 'solo' && window._soloClientId) ? window._soloClientId : clientId
@@ -289,14 +294,19 @@ function showAssignProgramModal(clientId, opts = {}) {
   overlay.id = 'assign-program-modal'
   const todayStr = _ymdLocal(new Date())
   const startValue = /^\d{4}-\d{2}-\d{2}$/.test(opts.startDate || '') ? opts.startDate : todayStr
+  const isSolo = _isPersonalView()
+  const reviewNote = opts.programId
+    ? 'This starts the same plan again. Your finished block and your logged sessions are kept. Nothing is saved until you confirm.'
+    : 'Your finished block comes off your plan and stays in your history. Nothing is saved until you confirm.'
 
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">${opts.nextBlock ? 'Assign next block' : currentProfile?.role === 'solo' ? 'Add to my plan' : 'Assign training plan'}</h2>
+        <h2 class="modal-title">${opts.nextBlock ? (isSolo ? 'Plan next block' : 'Assign next block') : isSolo ? 'Add to my plan' : 'Assign training plan'}</h2>
         <button class="modal-close" onclick="closeModal('assign-program-modal')">✕</button>
       </div>
       ${opts.nextBlock ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 12px">Starts after the current plan ends. To repeat the same plan, duplicate it in Training plans first.</p>` : ''}
+      ${opts.blockReview ? `<p data-block-review-note style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 12px">${reviewNote}</p>` : ''}
       <div class="field">
         <label class="field-label">Training plan <span style="color:var(--danger-text)">*</span></label>
         <select class="field-input" id="ap-program" onchange="_refreshMissingOneRMs(this.value,'${targetClientId}','ap-missing-1rm')">
@@ -306,12 +316,12 @@ function showAssignProgramModal(clientId, opts = {}) {
       <div id="ap-missing-1rm"></div>
       <div class="field">
         <label class="field-label">Start date</label>
-        <input class="field-input" id="ap-start" type="date" value="${startValue}">
+        <input class="field-input" id="ap-start" type="date" value="${startValue}"${opts.blockReview ? ` min="${todayStr}"` : ''}>
       </div>
       <p class="modal-error" id="ap-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="closeModal('assign-program-modal')">Cancel</button>
-        <button class="btn-primary" id="ap-save-btn" onclick="saveAssignProgram('${targetClientId}')">Assign</button>
+        <button class="btn-primary" id="ap-save-btn" onclick="saveAssignProgram('${targetClientId}')">${opts.blockReview ? 'Confirm' : 'Assign'}</button>
       </div>
     </div>
   `
@@ -320,7 +330,7 @@ function showAssignProgramModal(clientId, opts = {}) {
   // Personal programs must never appear in a dropdown that assigns a program TO a client — that is
   // exactly how real clients ended up on a personal program. Filtered by the current view, matching
   // every other is_personal read site.
-  db.from('programs').select('id, name').eq('coach_id', currentUser.id).eq('is_personal', currentProfile?.role === 'solo').order('name').then(({ data, error }) => {
+  db.from('programs').select('id, name').eq('coach_id', currentUser.id).eq('is_personal', isSolo).order('name').then(({ data, error }) => {
     const sel = document.getElementById('ap-program')
     if (!sel) return
     // Surface the error. This query was discarding it, so a failure rendered an EMPTY dropdown and
@@ -338,6 +348,14 @@ function showAssignProgramModal(clientId, opts = {}) {
       opt.textContent = p.name
       sel.appendChild(opt)
     })
+    if (!opts.programId) return
+    if ((data || []).some(p => p.id === opts.programId)) {
+      /** @type {HTMLSelectElement} */ (sel).value = opts.programId   // setting a select's value does not fire its change, so the 1RM check runs here
+      _refreshMissingOneRMs(opts.programId, targetClientId, 'ap-missing-1rm')
+    } else {
+      const errEl = document.getElementById('ap-error')
+      if (errEl) errEl.textContent = 'That plan is no longer in your training plans. Choose another.'
+    }
   })
 }
 
@@ -488,7 +506,12 @@ async function saveAssignProgram(clientId) {
   const errorEl   = document.getElementById('ap-error')
   const btn       = document.getElementById('ap-save-btn')
 
+  const opts = _assignModalOpts, fromReview = !!opts.blockReview
+  const isSolo = _isPersonalView()
+
   if (!programId) { errorEl.textContent = 'Please select a training plan'; return }
+  // From the end-of-block card the plan has ended, so a blank or past date would book a plan that starts behind the person.
+  if (fromReview && (!startDate || startDate < _ymdLocal(new Date()))) { errorEl.textContent = 'Choose today or a later start date'; return }
   if (!(await _verifyClientAccess('saveAssignProgram', clientId)) || !(await _verifyProgramOwnership('saveAssignProgram', programId))) {
     errorEl.textContent = 'Could not assign — permission denied.'; return
   }
@@ -499,14 +522,27 @@ async function saveAssignProgram(clientId) {
   // (client_id, program_id) is the real backstop; this stops the user ever provoking it.
   if (btn?.disabled) return
   if (btn) { btn.disabled = true; btn.textContent = 'Assigning…' }
-  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = 'Assign' } }
+  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = fromReview ? 'Confirm' : 'Assign' } }
 
   const existing = await _existingAssignment(clientId, programId)
   if (existing?.error) { errorEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
-  if (existing) {
+  // "One plan at a time" from the end-of-block card: the same rule as saveAssignProgramToClient, read before the assign. NOT from the last-week hint: that plan is still
+  // running and the new one is booked to follow it, which is why this sheet is used there rather than the plan page's.
+  const others = fromReview && clientId === /** @type {any} */ (window)._soloClientId ? await _otherPlansOf(clientId, programId) : []
+  if (others === null) { errorEl.textContent = 'Could not check your current plan. Try again.'; _release(); return }
+  // Only plans that have started: a card left open on one device must not take off a plan booked since on another.
+  const today = _ymdLocal(new Date()), replaced = others.filter(o => !o.start || o.start <= today)
+  // The same plan cannot be held twice (unique on client and plan), so "Repeat this plan" IS a restart: archive the finished run as a block, then rebuild. The sheet has said
+  // so and Confirm is the one approval, so the prompt is only for a plan picked from the list.
+  const repeating = fromReview && programId === opts.programId
+  if (existing && !repeating) {
     const started = existing.start_date ? ` (started ${existing.start_date})` : ''
-    if (!(await confirmDialog(`That client already has this training plan${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`, { title: 'Restart training plan?', confirmLabel: 'Restart', danger: true }))) { _release(); return }
-  } else {
+    const ok = await confirmDialog(isSolo
+      ? `This training plan is already in your plan${started}.\n\nRestart it from the new start date? Your logged sessions are kept — only the plan itself is rebuilt.`
+      : `That client already has this training plan${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`,
+      { title: 'Restart training plan?', confirmLabel: 'Restart', danger: true })
+    if (!ok) { _release(); return }
+  } else if (!existing) {
     const overlap = await _confirmStartBeforeCurrentEnds('saveAssignProgram', clientId, startDate)
     if (overlap === 'error') { errorEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
     if (overlap === 'cancel') { _release(); return }
@@ -516,9 +552,26 @@ async function saveAssignProgram(clientId) {
   // land or none do (_assignProgramTx). The JS chain this replaced could delete a client's plan and then fail.
   const res = await _assignProgramTx('saveAssignProgram', clientId, programId, startDate, !!existing)
   if (!res.ok) { errorEl.textContent = res.message; _release(); return }
-  await _saveMissingOneRMEntries(clientId)
+  const notTakenOff = await _takeOtherPlansOff('saveAssignProgram', replaced)
+  const oneRMsSaved = await _saveMissingOneRMEntries(clientId)
   closeModal('assign-program-modal')
-  renderClientPrograms(clientId, document.getElementById('tab-content'))
+  if (isSolo && /** @type {any} */ (res.result)?.phases !== 0 && oneRMsSaved !== false && !notTakenOff.length) showToast('Added to your plan', 'success')
+  // Today has no Programs tab to repaint: the sheet was opened from the end-of-block card or the last-week hint, and the page itself must change.
+  const tab = document.getElementById('tab-content')
+  if (tab) renderClientPrograms(clientId, tab)
+  else if (typeof currentPage === 'string') navigate(currentPage, 'replace')
+}
+
+// "One plan at a time", after a new plan has gone on: each of the others comes off (and is archived as a block). Assign FIRST, take the others off second: a failed removal then
+// leaves two assignments (the most recently STARTED is current - _currentAssignment) and a warning, never a person whose new plan did not go on. Returns the names it could not remove.
+async function _takeOtherPlansOff(fnName, others) {
+  const notTakenOff = []
+  for (const other of others) {
+    const gone = (await _verifyAssignmentAccess(fnName, other.id)) && (await _removeAssignmentAndClones(other.id, 'replaced'))
+    if (!gone) notTakenOff.push(other.name)
+  }
+  if (notTakenOff.length) showToast(`Added, but ${notTakenOff.join(' and ')} could not be taken off your plan. Remove it from its own page.`, 'warn', 8000)
+  return notTakenOff
 }
 
 // Assigns (or, with restart, restarts) a programme through the assign_program() database function
@@ -859,11 +912,11 @@ async function _myPlanStarts(personalView) {
   return out
 }
 
-// The plans the account is on OTHER than programId, for "one plan at a time": [{ id, name }], or null when the lookup failed (callers stop and say so).
+// The plans the account is on OTHER than programId, for "one plan at a time": [{ id, name, start }], or null when the lookup failed (callers stop and say so).
 async function _otherPlansOf(clientId, programId) {
-  const { data, error } = await db.from('client_programs').select('id, programs(name)').eq('client_id', clientId).neq('program_id', programId)
+  const { data, error } = await db.from('client_programs').select('id, start_date, programs(name)').eq('client_id', clientId).neq('program_id', programId)
   if (error) { log.error('_otherPlansOf', 'lookup failed', error); return null }
-  return (data || []).map(r => ({ id: r.id, name: r.programs?.name || 'Another plan' }))
+  return (data || []).map(r => ({ id: r.id, name: r.programs?.name || 'Another plan', start: r.start_date }))
 }
 
 async function removeFromMyPlan(programId) {
@@ -1041,13 +1094,7 @@ async function saveAssignProgramToClient(programId, soloClientId) {
   // One transaction for the restart and the copy, same as saveAssignProgram (see _assignProgramTx).
   const res = await _assignProgramTx('saveAssignProgramToClient', clientId, programId, startDate, !!existing)
   if (!res.ok) { errEl.textContent = res.message; _release(); return }
-  // Assign FIRST, take the others off second: a failed removal then leaves two assignments (the most recently STARTED is current - _currentAssignment) and a warning, never a person whose new plan did not go on.
-  const notTakenOff = []
-  for (const other of replaced) {
-    const gone = (await _verifyAssignmentAccess('saveAssignProgramToClient', other.id)) && (await _removeAssignmentAndClones(other.id, 'replaced'))
-    if (!gone) notTakenOff.push(other.name)
-  }
-  if (notTakenOff.length) showToast(`Added, but ${notTakenOff.join(' and ')} could not be taken off your plan. Remove it from its own page.`, 'warn', 8000)
+  const notTakenOff = await _takeOtherPlansOff('saveAssignProgramToClient', replaced)
   const oneRMsSaved = await _saveMissingOneRMEntries(clientId)   // false only when it has just toasted its own error
   document.getElementById('apc-modal')?.remove()
   // Only toast "done" when nothing else was said: showToast keeps one node and no queue, so this would
