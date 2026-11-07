@@ -16,7 +16,7 @@ trusting this file for anything time-sensitive. The previous version is archived
 
 On master, not yet released (merge `fee3dd8`): a client's current training plan is chosen by date, and the client's Training plans tab gains "Assign next block" ([row](bugs/2026-10-29-current-plan-is-picked-by-assignment-order-not-by-date.md)). The view's `next_program_start` column is live (Jake confirmed it 2026-11-07). After that, the PT's Workouts page. Waiting on Jake: his phone check of the `fixed-awaiting-jake` rows in [bugs/](bugs/) (dark mode among them); the round-2 sound test on avoiding a tap after returning to Safari ([row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)); whether **Sign out should end only this device's session** ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)); the "Up next" slot-matching rule (leave it, my view); the names "Biggest set" and "View training plan".
 
-Built 2026-11-07, not released: the end-of-block review in Personal view ([plan](superpowers/plans/2026-11-07-end-of-block-review.md)).
+Built 2026-11-07, not released: the end-of-block review in Personal view ([plan](superpowers/plans/2026-11-07-end-of-block-review.md)), and Sessions "vs last time" with weekly volume ([design](superpowers/specs/2026-10-31-performance-charts-design.md), goal 3).
 
 ## Requires Validation
 

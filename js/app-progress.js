@@ -1500,6 +1500,8 @@ const _PERSONAL_PROGRESS_TABS = ['Goals', 'Records', 'Performance', 'Bodyweight'
 // Shared by both Progress pages (the client's and Personal view's) — one literal, so it doesn't grow the hand-rolled-empty-state
 // count that scripts/check-count-ratchet.mjs holds at its baseline. Was a local of renderProgress until 2026-10-31.
 const _noClientProfileHtml = '<div class="empty-state"><div class="empty-title">No client profile found</div></div>'
+// A failed read, which must never pass for an empty list. `what` is fixed text from the caller.
+const _couldntLoadHtml = what => `<div class="empty-state"><div class="empty-title">Couldn't load ${what}</div><div class="empty-text">Check your connection and try again.</div></div>`
 
 // A stored tab name from before (the client's tab names, or ones retired earlier) lands where its content now is; anything else, Goals.
 /** @param {string|undefined} stored */
@@ -1725,29 +1727,210 @@ function _diaryDelta(cur, prev, fmtNum) {
   return `<span style="color:${up ? '#16a34a' : '#ef4444'};font-weight:700">${up ? '▲' : '▼'} ${up ? '+' : '−'}${fmtNum(Math.abs(d))}${pct != null ? ` (${up ? '+' : '−'}${pct}%)` : ''}</span>`
 }
 
+// ── Sessions: vs last time, and weekly volume (docs/superpowers/specs/2026-10-31-performance-charts-design.md, goal 3; tests-node/session-compare.test.mjs) ──────────
+// "Workout" is what the runner saves an untitled session as (app-runner.js), so it says nothing about what was done: it reads as no name.
+const _sessionName = s => { const n = String(s.name || '').trim().toLowerCase(); return n === 'workout' ? '' : n }
+const _sessionHasSets = s => (s.workout_log_exercises || []).some(ex => _countableSets(ex.workout_log_sets).length > 0)
+
+// "Last time": the next older session of the same workout in `sessions` (newest first, as read), or null. The same workout is the same template family, which ties a plan's
+// weekly copies together whatever they are called. The name decides only when one of the two has no family (a freestyle session, or a template since deleted). A session with
+// no sets is not a session (an abandoned start).
+function _previousSessionOf(sessions, i) {
+  const s = sessions[i], family = s.workout_templates?.family_id || null, name = _sessionName(s)
+  if (!family && !name) return null
+  for (let j = i + 1; j < sessions.length; j++) {
+    const o = sessions[j], other = o.workout_templates?.family_id || null
+    if (!_sessionHasSets(o)) continue
+    if (family && other ? family === other : !!name && _sessionName(o) === name) return o
+  }
+  return null
+}
+
+// One set against the same set last time: 'up', 'down', 'same', or null when neither is true (more weight for fewer reps) or there are no reps to compare (a hold, a
+// distance). null claims nothing. No weight reads as 0, so a bodyweight set compares on its reps.
+function _setMark(now, then) {
+  const text = _setDetailOf(now)
+  if (text && text === _setDetailOf(then)) return 'same'
+  if (now.reps_achieved == null || then.reps_achieved == null) return null
+  const nw = parseFloat(now.weight_kg) || 0, tw = parseFloat(then.weight_kg) || 0, nr = parseInt(now.reps_achieved) || 0, tr = parseInt(then.reps_achieved) || 0
+  if (nw === tw && nr === tr) return 'same'
+  if (nw >= tw && nr >= tr) return 'up'
+  if (nw <= tw && nr <= tr) return 'down'
+  return null
+}
+
+// A session's exercises by name, in the order they first appear: an exercise done twice is one row. Working sets only, in set order (an embed comes back in no order).
+function _sessionGroups(s) {
+  const groups = new Map()
+  ;(s.workout_log_exercises || []).forEach((ex, ei) => {
+    if (!ex.exercise_name) return
+    if (!groups.has(ex.exercise_name)) groups.set(ex.exercise_name, { ...ex, ei, workout_log_sets: [] })
+    groups.get(ex.exercise_name).workout_log_sets.push(...(ex.workout_log_sets || []))
+  })
+  return [...groups.values()].map(g => {
+    const sets = _countableSets(g.workout_log_sets).map((x, n) => [x, n]).sort((a, b) => ((a[0].set_number || 0) - (b[0].set_number || 0)) || (a[1] - b[1])).map(x => x[0])
+    return { ...g, workout_log_sets: sets, m: _diaryExMetrics({ ...g, workout_log_sets: sets }) }
+  })
+}
+
+// The sets of one exercise, this time against last time, in order. Each side of a unilateral lift pairs with its own side, so a side missing today shifts nothing after it.
+function _pairSets(nowSets, thenSets) {
+  const side = x => x.side || ''
+  const sides = [...new Set([...nowSets, ...thenSets].map(side))].sort().map(k => [nowSets.filter(x => side(x) === k), thenSets.filter(x => side(x) === k)])
+  const pairs = [], most = Math.max(0, ...sides.map(([a, b]) => Math.max(a.length, b.length)))
+  for (let n = 0; n < most; n++) sides.forEach(([a, b]) => { if (a[n] || b[n]) pairs.push([a[n] || null, b[n] || null]) })
+  return pairs
+}
+
+// `cur` against `prev`. An exercise "went up" only on the verdict 'improved', and only exercises that can be called are counted (in both, not cardio, not 'changed'), so
+// "3 of 5 exercises up" never counts a new one, or a hold that cannot be called either way. verdict: 'improved', 'down', 'mixed', 'same', 'changed' (different, but neither
+// better nor worse: a longer hold, more weight for fewer reps), 'more-sets', 'fewer-sets', 'new', 'not-done', or null (cardio).
+function _sessionCompare(cur, prev) {
+  const now = _sessionGroups(cur), then = _sessionGroups(prev)
+  const thenByName = new Map(then.map(g => [g.exercise_name, g]))
+  const exercises = now.map(g => {
+    const p = thenByName.get(g.exercise_name), nowSets = g.workout_log_sets
+    const row = { name: g.exercise_name, ei: g.ei, isCardio: g.m.isCardio, nowKg: g.m.volume, thenKg: p ? p.m.volume : null }
+    if (!p) return { ...row, verdict: 'new', sets: nowSets.map(x => ({ now: x, then: null, mark: null })) }
+    const thenSets = p.workout_log_sets
+    const sets = _pairSets(nowSets, thenSets).map(([a, b]) => ({ now: a, then: b, mark: !a ? 'missing' : !b ? 'extra' : g.m.isCardio ? null : _setMark(a, b) }))
+    if (g.m.isCardio) return { ...row, verdict: null, sets }
+    const ups = sets.filter(x => x.mark === 'up').length, downs = sets.filter(x => x.mark === 'down').length, uncalled = sets.some(x => x.mark === null)
+    const verdict = nowSets.length < thenSets.length ? 'fewer-sets' : ups && downs ? 'mixed' : ups ? 'improved' : downs ? 'down' : uncalled ? 'changed' : nowSets.length > thenSets.length ? 'more-sets' : 'same'
+    return { ...row, verdict, sets }
+  })
+  const seen = new Set(now.map(g => g.exercise_name))
+  then.filter(g => !seen.has(g.exercise_name)).forEach(g => exercises.push({
+    name: g.exercise_name, ei: null, isCardio: g.m.isCardio, nowKg: null, thenKg: g.m.volume, verdict: 'not-done', sets: g.workout_log_sets.map(x => ({ now: null, then: x, mark: null })),
+  }))
+  const both = exercises.filter(e => e.verdict && !['new', 'not-done', 'changed'].includes(e.verdict))
+  const total = groups => groups.reduce((t, g) => t + g.m.volume, 0)
+  return { nowTotalKg: total(now), thenTotalKg: total(then), hasKg: total(now) > 0 || total(then) > 0, upCount: both.filter(e => e.verdict === 'improved').length, bothCount: both.length, exercises }
+}
+
+// The line on a session's card. The change is the difference of the two totals as the tiles round them, in the person's unit, so it can be checked by subtracting them.
+function _sessionVsLine(cmp, prevDate) {
+  const inUnit = kg => Math.round(Number(weightToPref(kg)))
+  const change = inUnit(cmp.nowTotalKg) - inUnit(cmp.thenTotalKg)
+  const kg = !cmp.hasKg ? '' : change === 0 ? `same total ${_xsUnit()}` : `${change > 0 ? '+' : '−'}${Math.abs(change).toLocaleString()} ${_xsUnit()}`
+  const ups = cmp.bothCount ? `${cmp.upCount} of ${cmp.bothCount} exercise${cmp.bothCount === 1 ? '' : 's'} up` : ''
+  const parts = [kg, ups].filter(Boolean).join(' · ')
+  return `vs ${_dashFormatDate(prevDate)}${parts ? ': ' + parts : ''}`
+}
+
+// The bars: `weeks` calendar weeks, oldest first, ending with this one. Working sets only (_diaryExMetrics, the tiles' own count), and no cardio or interval.
+function _weeklyVolume(sessions, todayStr, weeks = 8) {
+  const thisWeek = _dashMonday(todayStr)
+  const out = Array.from({ length: weeks }, (_, n) => {
+    const monday = _dashAddDays(thisWeek, -7 * (weeks - 1 - n))
+    return { monday, sets: 0, kg: 0, current: monday === thisWeek }
+  })
+  const byMonday = new Map(out.map(w => [w.monday, w]))
+  ;(sessions || []).forEach(s => {
+    const w = byMonday.get(_dashMonday(String(s.date).slice(0, 10)))
+    if (!w) return
+    ;(s.workout_log_exercises || []).forEach(ex => {
+      const m = _diaryExMetrics(ex)
+      if (!m.isCardio) { w.sets += m.sets; w.kg += m.volume }
+    })
+  })
+  return out
+}
+
+let _sessionVolumeMode = 'sets'   // 'sets' or 'kg': which measure the bars show, for this visit
+function _sessionVolumeHtml(weeks, mode) {
+  const value = w => (mode === 'kg' ? Math.round(Number(weightToPref(w.kg))) : w.sets)
+  const peak = Math.max(...weeks.map(value))
+  const label = n => (mode === 'kg' && n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+  const pill = (m, text) => `<button type="button" class="sv-pill" data-sv-mode="${m}" aria-pressed="${m === mode}" onclick="_setSessionVolumeMode('${m}')">${text}</button>`
+  return `<div class="sv" data-session-volume>
+    <div class="sv-head"><div class="xs-title">${mode === 'kg' ? `Total ${escapeHtml(_xsUnit())} per week` : 'Sets per week'}</div><div class="sv-switch">${pill('sets', 'Sets')}${pill('kg', escapeHtml(_xsUnit()))}</div></div>
+    <div class="sv-bars">${weeks.map(w => {
+      const v = value(w), [, month, day] = w.monday.split('-').map(Number)
+      return `<div class="sv-col${w.current ? ' sv-now' : ''}" data-sv-week="${w.monday}"><span class="sv-val">${v ? label(v) : ''}</span><div class="sv-track"><div class="sv-bar" style="height:${peak ? Math.round(v / peak * 100) : 0}%"></div></div><span class="sv-day">${day}/${month}</span></div>`
+    }).join('')}</div>
+    <div class="xs-sub">Working sets, week starting Monday. Cardio and intervals are left out.</div>
+  </div>`
+}
+function _setSessionVolumeMode(mode) {
+  _sessionVolumeMode = mode
+  const host = document.getElementById('perf-sess-volume'), data = /** @type {any} */ (window)._perfSessionData
+  if (host && data) host.innerHTML = _sessionVolumeHtml(data.weeks, mode)
+}
+
+const _SESSION_VERDICTS = {
+  improved: ['Improved', 'xs-up'], down: ['Down', 'xs-dn'], mixed: ['Mixed', 'xs-eq'], same: ['Same as last time', 'xs-eq'], changed: ['Changed', 'xs-eq'], 'more-sets': ['More sets', 'xs-up'],
+  'fewer-sets': ['Fewer sets', 'xs-dn'], new: ['New this time', 'xs-eq'], 'not-done': ['Not done this time', 'xs-eq'],
+}
+const _SESSION_MARKS = { up: ['↑', 'xs-up'], down: ['↓', 'xs-dn'], same: ['=', 'xs-eq'], missing: ['not done', 'xs-dn'], extra: ['extra', 'xs-up'] }
+
+// Set by set against last time. Every set's text is the diary's own (_setDetailsLine), and a mark only appears where _setMark can stand behind it.
+function _sessionCompareHtml(i, cmp, prevDate) {
+  const total = v => Math.round(Number(weightToPref(v))).toLocaleString() + ' ' + _xsUnit()
+  const rows = cmp.exercises.map(e => {
+    const verdict = e.verdict ? _SESSION_VERDICTS[e.verdict] : null
+    const sets = e.sets.map(x => {
+      const mark = x.mark ? _SESSION_MARKS[x.mark] : null
+      return `<div class="sc-set" data-sc-set><span>${escapeHtml(x.then ? _setDetailsLine([x.then]) : '–')}</span><span>${escapeHtml(x.now ? _setDetailsLine([x.now]) : '–')}</span><span class="sc-mark ${mark ? mark[1] : ''}" data-sc-mark="${x.mark || ''}">${mark ? mark[0] : ''}</span></div>`
+    }).join('')
+    const totals = !e.isCardio && e.thenKg != null && e.nowKg != null ? `<div class="xs-sub" data-sc-total>Total ${escapeHtml(total(e.thenKg))} → ${escapeHtml(total(e.nowKg))}</div>` : ''
+    const open = e.ei != null ? ` onclick="_expandPerfSessionExercise(${i},${e.ei})"` : ''
+    return `<div class="sc-ex" data-sc-ex="${escapeHtml(e.name)}"${open}>
+      <div class="sc-head"><span>${escapeHtml(e.name)}</span>${verdict ? `<span class="${verdict[1]}" data-sc-verdict="${e.verdict}">${verdict[0]}</span>` : ''}</div>
+      ${sets}${totals}
+      ${e.ei != null ? `<div id="perf-sess-${i}-ex-${e.ei}-chart" style="display:none;position:relative;height:80px;margin-top:8px"></div>` : ''}
+    </div>`
+  }).join('')
+  return `<div class="sc-set sc-cols"><span>${escapeHtml(_dashFormatDate(prevDate))}</span><span>This time</span><span></span></div>${rows}`
+}
+
 let _perfSessionToken = 0
+const _PERF_SESSIONS_SHOWN = 10
 async function renderProgressPerSession(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading sessions…</div>'
   const myToken = ++_perfSessionToken
   // Any chart expanded on the previous render is about to be detached — destroy it first so it doesn't leak.
   _destroyManagedCharts()
-  const { data: sessions } = await db.from('workout_logs')
-    .select('id, name, date, workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr, avg_watts, phase, effort_type, effort_value))')
-    .eq('client_id', clientId).order('date', { ascending: false }).limit(10)
+  // The whole history, paged (_fetchAllRows, app-core.js), though only ten cards show: "last time" can be months back, and eight weeks of bars can outrun ten sessions.
+  // workout_templates(family_id) is what ties a plan's weekly copies of one workout together; a template the reader cannot see, or a deleted one, comes back null, which falls back to the name.
+  // unbounded-ok: both uses below bound it, _fetchAllRows by paging and the fallback with .limit()
+  const read = () => db.from('workout_logs')
+    .select('id, name, date, created_at, workout_templates(family_id), workout_log_exercises(exercise_name, exercise_type, metric_type, workout_log_sets(set_number, weight_kg, reps_achieved, distance_m, duration_seconds, height_cm, side, avg_hr, avg_watts, phase, effort_type, effort_value))', { count: 'exact' })
+    .eq('client_id', clientId).order('date', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: false })
+  const paged = await _fetchAllRows(read)
+  let all = paged.data
+  // One failed page of a long history must not cost the cards: they go on without the comparisons, and say so.
+  const whole = !paged.error && !!all
+  if (!whole) {
+    log.error('renderProgressPerSession', 'history read failed, showing the latest sessions only', paged.error)
+    const latest = await read().limit(_PERF_SESSIONS_SHOWN)
+    all = latest.error ? null : latest.data
+  }
   if (myToken !== _perfSessionToken) return
-  if (!sessions?.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet. Your recent workouts will show here.</p></div>'; return }
+  // A failed read must not pass for an empty history.
+  if (!all) { el.innerHTML = _couldntLoadHtml('the sessions'); return }
+  if (!all.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet. Recent workouts will show here.</p></div>'; return }
+  const sessions = all.slice(0, _PERF_SESSIONS_SHOWN)
 
   // Chronological per-exercise history so any occurrence can find its own immediately-prior one.
   const history = {}
-  ;[...sessions].reverse().forEach(s => {
+  ;[...all].reverse().forEach(s => {
     ;(s.workout_log_exercises || []).forEach(ex => {
       if (!ex.exercise_name) return
       ;(history[ex.exercise_name] ||= []).push({ date: s.date, m: _diaryExMetrics(ex) })
     })
   })
-  window._perfSessionData = { sessions, history }
+  const weeks = whole ? _weeklyVolume(all, _ymdLocal(new Date())) : null
+  const lastTime = sessions.map((s, i) => {
+    const prev = whole && _sessionHasSets(s) ? _previousSessionOf(all, i) : null
+    return prev ? { prev, cmp: _sessionCompare(s, prev) } : null
+  })
+  window._perfSessionData = { sessions, history, weeks, lastTime }
 
-  el.innerHTML = sessions.map((s, i) => {
+  const top = whole
+    ? `<div id="perf-sess-volume">${_sessionVolumeHtml(weeks, _sessionVolumeMode)}</div>`
+    : '<div class="xs-sub" data-sessions-partial>Showing the latest sessions. Comparisons and weekly totals could not load.</div>'
+  el.innerHTML = top + sessions.map((s, i) => {
     const exs = (s.workout_log_exercises || []).filter(e => e.exercise_name)
     const totals = exs.reduce((t, ex) => { const m = _diaryExMetrics(ex); t.sets += m.sets; t.reps += m.reps; t.vol += m.volume; return t }, { sets: 0, reps: 0, vol: 0 })
     const tiles = [['Sets', totals.sets, 'sets'], ['Reps', totals.reps, 'reps'], ['Volume', Math.round(weightToPref(totals.vol)).toLocaleString() + window._unitPrefs.weight, 'vol'], ['Exercises', exs.length, 'exercises']]
@@ -1755,6 +1938,10 @@ async function renderProgressPerSession(clientId, el) {
     // ended early) -- the 4 tiles above would then read "0 · 0 · 0kg · N", which reads as broken data
     // rather than an accurate empty state. Show a plain note instead of the tile row in that case.
     const noSetsLogged = totals.sets === 0
+    const vs = lastTime[i]
+    const named = s.workout_templates?.family_id || _sessionName(s)
+    // "First time" is a claim about the whole history, so it needs the whole history.
+    const vsLine = noSetsLogged ? '' : vs ? _sessionVsLine(vs.cmp, vs.prev.date) : whole && named ? 'First time doing this workout' : ''
     return `
     <div style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);margin-bottom:10px;overflow:hidden">
       <button onclick="_togglePerfSession(${i})" style="width:100%;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
@@ -1769,6 +1956,7 @@ async function renderProgressPerSession(clientId, el) {
             <div style="font-size:13px;font-weight:800;color:${_METRIC_COLORS[key] || 'var(--accent)'}">${v}</div>
             <div style="font-size:var(--text-2xs, 9px);font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${l}</div></div>`).join('')}
         </div>`}
+        ${vsLine ? `<div class="sess-vs" data-vs-last>${escapeHtml(vsLine)}</div>` : ''}
       </button>
       <div id="perf-sess-${i}" style="display:none;padding:6px 14px 12px"></div>
     </div>`
@@ -1787,10 +1975,14 @@ function _togglePerfSession(i) {
 }
 
 function _renderPerfSessionDetail(i) {
-  const { sessions, history } = window._perfSessionData || {}
+  const { sessions, history, lastTime } = window._perfSessionData || {}
   const s = sessions?.[i]
   const panel = document.getElementById(`perf-sess-${i}`)
   if (!s || !panel) return
+  // With a last time, the comparison IS this panel. Its per-exercise deltas below answer a different question (the last time you did that exercise, in any workout), and
+  // the two side by side would disagree.
+  const vs = lastTime?.[i]
+  if (vs) { panel.innerHTML = _sessionCompareHtml(i, vs.cmp, vs.prev.date); return }
   panel.innerHTML = (s.workout_log_exercises || []).filter(ex => ex.exercise_name).map((ex, ei) => {
     const m = _diaryExMetrics(ex)
     const hist = history[ex.exercise_name] || []
@@ -2477,7 +2669,7 @@ async function renderProgressPerProgram(clientId, el) {
   _blockReviewPending = null
 
   if (blocks === null || exercises === null) {   // a failed exercise read must not draw the comparison with no exercises in it
-    el.innerHTML = '<div class="empty-state"><div class="empty-title">Couldn\'t load your training plans</div><div class="empty-text">Check your connection and try again.</div></div>'
+    el.innerHTML = _couldntLoadHtml('your training plans')
     return
   }
   if (!exercises.length) {

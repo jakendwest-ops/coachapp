@@ -75,6 +75,11 @@ test.describe('Recorded effort in the Performance tables (2026-10-12)', () => {
     expect(r.cWords, 'and the block itself is still shown').toBe(true)
   })
 
+  // The Per session read is paged (_fetchAllRows): it asks again until a page comes back empty. Routed last, so this runs first and lets page one through to the fixture.
+  const onePageOnly = (page) => page.route('**/rest/v1/workout_logs*', route => (Number(new URL(route.request().url()).searchParams.get('offset')) > 0
+    ? route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    : route.fallback()))
+
   test('Per session: a stored value that looks like markup is shown as text, never run', async ({ page }) => {
     await loginAsPT(page)
     await page.route('**/rest/v1/workout_logs*', route => route.fulfill({
@@ -83,6 +88,7 @@ test.describe('Recorded effort in the Performance tables (2026-10-12)', () => {
         { exercise_name: 'Probe lift', exercise_type: 'strength', metric_type: 'weight_reps', workout_log_sets: [{ weight_kg: 50, reps_achieved: '<img src=x onerror="window.__pwned=1">', effort_type: 'rpe', effort_value: 7 }] }
       ] }])
     }))
+    await onePageOnly(page)
     const r = await page.evaluate(async () => {
       window.__pwned = 0
       const el = document.createElement('div'); el.id = 'perf-xss-host'; document.body.appendChild(el)
@@ -132,6 +138,7 @@ test.describe('Recorded effort in the Performance tables (2026-10-12)', () => {
         ] }])
       })
     })
+    await onePageOnly(page)
     await page.evaluate(() => {
       const el = document.createElement('div'); el.id = 'perf-fixture-host'; document.body.appendChild(el)
       return renderProgressPerSession('fixture-client', el)
