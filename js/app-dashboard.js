@@ -182,7 +182,7 @@ function _dashPlanEndSunday(progByDate, planStart, totalWeeks = 0) {
 const _BLOCK_CARD_DAYS = 28    // the card stays this long after the plan's last Sunday
 const _BLOCK_MIN_WEEKS = 2       // a plan must have run at least this many calendar weeks to earn a review
 const _BLOCK_MIN_SESSIONS = 3  // ...and the person must have logged at least this many sessions inside it
-const _dashDaysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000)
+const _dashDaysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00').getTime() - new Date(a + 'T12:00:00').getTime()) / 86400000)
 const _dashNextMondayOnOrAfter = ymd => { const m = _dashMonday(ymd); return m === ymd ? ymd : _dashAddDays(m, 7) }
 
 // Where the CURRENT plan stands: 'last-week' (the hint), 'ended' (the card, up to 28 days after its last Sunday) or 'none'. `hasNext` is true when a plan is booked
@@ -210,7 +210,8 @@ function _blockEndState({ planStart, endSunday, hasNext, logDates, todayStr }) {
 // Monday on or after today - never a date in the past.
 function _blockReviewModel({ endSunday, planStart, totalWeeks, currentByDate, logDates, summary, hasPrevious, canRepeat, todayStr }) {
   const a = _dashPlanAdherence(currentByDate, logDates || [], endSunday, planStart, totalWeeks)
-  const improved = ((summary && summary.both) || []).filter(r => r.delta > 0)
+  // Math.round(delta * 10): a drift that would print as +0.0 is no change (the Blocks table's rule), never a row in "most improved".
+  const improved = ((summary && summary.both) || []).filter(r => Math.round(r.delta * 10) > 0)
     .sort((x, y) => y.pct - x.pct || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0)).slice(0, 3)
   const after = _dashAddDays(endSunday, 1)
   return {
@@ -438,20 +439,18 @@ async function _dashBlockWeights(b) {
   return `Body weight ${fmtWeight(a.weight_kg, { spaced: true })} → ${fmtWeight(z.weight_kg, { spaced: true })}`
 }
 
-// Fills the card's lifts and body weight AFTER the page has drawn: they need the whole exercise history, which Today does not load. The block is clipped to the plan's
-// last Sunday (_loadProgramBlocks gives a live plan end = today, which would let later sessions leak in), then the SAME two-window engine as the Blocks table runs, so the
-// card and the table cannot disagree. Token-guarded: Today repaints on every write, and a stale answer must not touch a newer card.
+// Fills the card's lifts and body weight AFTER the page has drawn: they need the whole exercise history, which Today does not load. _blockReviewWindows freezes the block to
+// the plan's last Sunday, and the review page reads the same two windows through the same function, so the card and the table cannot disagree. Token-guarded: Today repaints
+// on every write, and a stale answer must not touch a newer card.
 async function _dashFillBlockCard(root, b) {
   const tok = ++_dashBlockToken
   let summary = null, hasPrevious = true, weightLine = '', failed = false
   try {
     const [blocks, exercises, wl] = await Promise.all([_loadProgramBlocks(b.clientId), _buildExerciseSeries(b.clientId), _dashBlockWeights(b)])
     weightLine = wl
-    const liveKey = 'live:' + b.cpId
-    if (blocks === null || exercises === null || !blocks.some(x => x.key === liveKey)) failed = true
+    const w = blocks && exercises ? _blockReviewWindows(blocks, 'live:' + b.cpId, b.endSunday) : null
+    if (!w) failed = true
     else {
-      const runs = blocks.map(x => (x.key === liveKey ? { ...x, end: b.endSunday } : x)).sort((x, y) => (y.start || '').localeCompare(x.start || ''))
-      const w = _blockWindowsFor(runs, b.endSunday)
       hasPrevious = w.b.source === 'plan'
       summary = hasPrevious ? _blockLiftSummary(exercises, w.a, w.b) : null
     }
@@ -463,12 +462,12 @@ async function _dashFillBlockCard(root, b) {
 }
 
 function _dashBlockAction(kind) {
-  const root = document.getElementById('dash-root'), b = root && root._dash && root._dash.block
+  const root = /** @type {any} */ (document.getElementById('dash-root')), b = root && root._dash && root._dash.block
   if (!b) return
   if (kind === 'repeat') showAssignProgramModal(b.clientId, { startDate: b.repeatStart, programId: b.programId, blockReview: true })
   else if (kind === 'choose') showAssignProgramModal(b.clientId, { startDate: b.repeatStart, blockReview: true })
   else if (kind === 'plan-next') showAssignProgramModal(b.clientId, { startDate: _dashAddDays(b.endSunday, 1), nextBlock: true, excludeProgramId: b.programId || '' })
-  else if (kind === 'review') _openBlockReview()
+  else if (kind === 'review') _openBlockReview({ clientId: b.clientId, key: 'live:' + b.cpId, end: b.endSunday, name: b.planName, doneOf: _blockReviewModel({ ...b.input, summary: null, hasPrevious: true }).doneOf })
   else if (kind === 'notnow') {
     _dashBlockToken++   // a fill still in flight must not bring the card back
     const back = _dashAddDays(_dashMonday(root._dash.todayStr), 7)

@@ -96,6 +96,7 @@ describe('_blockReviewModel', () => {
     assert.deepEqual(model({ summary: { both: [row('E', 100, 100), row('F', 100, 90)], onlyLast: [], onlyThis: [] } }).improved, [])
   })
   test('no summary yet (still loading, or the read failed): no lifts, never an invented change', () => {
+    assert.deepEqual(model({ summary: { both: [{ name: 'G', last: 100, this: 100.04, delta: 0.04, pct: 0 }], onlyLast: [], onlyThis: [] } }).improved, [], 'a drift that would print as +0.0 is no change')
     assert.deepEqual(model({ summary: null }).improved, [])
     assert.deepEqual(model({ summary: undefined }).improved, [])
   })
@@ -113,5 +114,37 @@ describe('_blockReviewModel', () => {
   test('canRepeat passes through', () => {
     assert.equal(model({ canRepeat: false }).canRepeat, false)
     assert.equal(model({ canRepeat: true }).canRepeat, true)
+  })
+})
+
+describe('_blockReviewWindows: the windows the card and the review page share', () => {
+  const windows = get('_blockReviewWindows')
+  const run = (key, start, end, extra = {}) => ({ key, start, end, name: key, ...extra })
+  const FINISHED = run('live:a', START, '2026-11-07', { open: true })
+
+  test('freezes the finished run at its last Sunday, against the run before it, trimmed so no day is in both', () => {
+    const w = windows([FINISHED, run('past:b', '2026-05-11', '2026-08-12')], 'live:a', END)
+    assert.equal(w.a.end, END)
+    assert.equal(w.a.key, 'live:a')
+    assert.equal(w.b.key, 'past:b')
+    assert.equal(w.b.end, '2026-08-09')
+  })
+  test('a run added part-way through the block cannot take the place of the block, or of the one before it', () => {
+    const w = windows([run('past:mid', '2026-09-07', '2026-09-20'), FINISHED, run('past:b', '2026-05-11', '2026-08-02')], 'live:a', END)
+    assert.equal(w.a.key, 'live:a')
+    assert.equal(w.b.key, 'past:b')
+  })
+  test('the run before stops at its planned length: its archived end is the day it was replaced, and free training after the plan is not that block', () => {
+    const older = run('past:b', '2026-05-11', '2026-08-05', { weeks: 8 })   // 8 weeks ends Sun 5 Jul; replaced a month later
+    assert.equal(windows([FINISHED, older], 'live:a', END).b.end, '2026-07-05')
+    const stoppedEarly = run('past:c', '2026-05-11', '2026-06-03', { weeks: 8 })
+    assert.equal(windows([FINISHED, stoppedEarly], 'live:a', END).b.end, '2026-06-03', 'a block stopped early keeps its own end')
+  })
+  test('no earlier run: the same length just before it, which the card reads as a first block', () => {
+    assert.equal(windows([FINISHED], 'live:a', END).b.source, 'weeks')
+  })
+  test('the run is gone: null, never another block\'s windows', () => {
+    assert.equal(windows([run('past:b', '2026-05-11', '2026-08-02')], 'live:a', END), null)
+    assert.equal(windows(null, 'live:a', END), null)
   })
 })
