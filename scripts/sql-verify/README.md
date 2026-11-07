@@ -13,6 +13,7 @@ node scripts/sql-verify/client-empty-session-delete.verify.mjs # a client deleti
 node scripts/sql-verify/solo-goal-milestones.verify.mjs       # a SOLO user adding a step to their own goal (live goals policies, live-schema-goals.mjs); exit 0 = all passed
 node scripts/sql-verify/coach-client-summary-utc-cap.verify.mjs # the 2026-10-17 follow-up to the view: its UTC date cap allows one day ahead (reproduces the bug on the original first); exit 0 = all passed
 node scripts/sql-verify/assign-program-today.verify.mjs   # the 2026-10-17 follow-up to assign_program(): a fifth argument p_today sets a restarted plan's archive end date (runs every original check against the new function too); exit 0 = all passed
+node scripts/sql-verify/merge-lift-names.verify.mjs       # merge_lift_names()/unmerge_lift_names(): who may merge whose lift names, reversibly (live-schema-lifts.mjs: client_1rms, performance_logs); exit 0 = all passed
 node scripts/sql-verify/run-mutations.mjs                 # deliberate breakages, every suite; exit 0 = every one was caught
 ```
 

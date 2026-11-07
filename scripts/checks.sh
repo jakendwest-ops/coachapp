@@ -670,6 +670,10 @@ if ! node scripts/sql-verify/clients-user-id-guard.verify.mjs > /dev/null 2>&1; 
   node scripts/sql-verify/clients-user-id-guard.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
   fail "scripts/add-clients-user-id-guard-2026-10-31.sql no longer passes its local verification -- see the lines above."
 fi
+if ! node scripts/sql-verify/merge-lift-names.verify.mjs > /dev/null 2>&1; then
+  node scripts/sql-verify/merge-lift-names.verify.mjs 2>&1 | grep -E "FAIL|checks passed|Error" | sed "s/^/    /"
+  fail "scripts/add-merge-lift-names-2026-11-02.sql no longer passes its local verification -- see the lines above."
+fi
 # -- 9n. A read of a table that grows with use must be bounded, or say why it need not be --
 # The API returns at most 200 rows per response and says NOTHING when it cuts a list short (measured 2026-09-20: 200 rows
 # even for .limit(1000)). A read of a per-session / per-weigh-in table is right for a new account and silently wrong for a
