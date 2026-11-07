@@ -365,6 +365,118 @@ function _dashProgramEnd(startYmd, weeks) {
   return monday && Number(weeks) > 0 ? _dashAddDays(monday, Number(weeks) * 7 - 1) : null
 }
 
+// ─── The end of a block on Today (Personal view): the hint, the card, and the lazy fill of its lifts ──────────────────────────────────────
+// docs/superpowers/specs/2026-11-07-end-of-block-review-design.md. The pure rules are _blockEndState and _blockReviewModel above (tests-node/block-review.test.mjs).
+let _dashBlockToken = 0
+const _blockDismissKey = (clientId, planStart) => `coachapp.blockReview.${clientId}.${planStart}`
+// "Not now" is remembered on THIS device only (nothing server-side exists for it): the Monday it may come back, or '' when unset or unreadable.
+function _blockDismissedUntil(clientId, planStart) { try { return localStorage.getItem(_blockDismissKey(clientId, planStart)) || '' } catch { return '' } }
+
+// The card or hint for the CURRENT plan, or null. A failed read of the plan or the sessions shows nothing (never a card built on missing data).
+function _dashBlockSetup(d, program, clientId, todayStr) {
+  const cp = d.cp0
+  if (!cp || d.failed['your training plan'] || d.failed['recent sessions']) return null
+  const planStart = cp.start_date ? String(cp.start_date).slice(0, 10) : null
+  const totalWeeks = program?.totalWeeks || 0
+  const endSunday = _dashPlanEndSunday(d.currentByDate, planStart, totalWeeks)
+  const logDates = d.logs.map(l => l.date)
+  const st = _blockEndState({ planStart, endSunday, hasNext: !!d.cpNext, logDates, todayStr })
+  if (st.state === 'none') return null
+  if (st.state === 'ended' && todayStr < _blockDismissedUntil(clientId, planStart)) return null
+  // Repeat only when the plan can still be booked: it exists and has at least one session in it.
+  const canRepeat = !!cp.programs && (cp.programs.program_phases || []).some(ph => (ph.program_phase_workouts || []).length > 0)
+  const input = { endSunday, planStart, totalWeeks, currentByDate: d.currentByDate, logDates, canRepeat, todayStr }
+  const model = _blockReviewModel({ ...input, summary: null, hasPrevious: true })
+  return {
+    ...st, clientId, planStart, cpId: cp.id, programId: cp.program_id || null, planName: program?.name || cp.programs?.name || 'Your plan',
+    weeks: _dashWeeksBetween(_dashMonday(planStart), _dashMonday(endSunday)) + 1, input, repeatStart: model.repeatStart,
+  }
+}
+
+const _dashBlockDate = ymd => new Date(ymd + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
+
+function _dashBlockHintHtml(b) {
+  return `<div class="dash-blockhint" data-block-hint><span><b>Last week of your block.</b> Ends ${escapeHtml(new Date(b.endSunday + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long' }))}.</span>` +
+    `<button type="button" class="dash-block-link" data-block-action="plan-next" onclick="_dashBlockAction('plan-next')">Plan next block ›</button></div>`
+}
+
+// v: { phase: 'loading' | 'ready' | 'failed', model?, weightLine? }. Every string from the data goes through escapeHtml.
+function _dashBlockCardHtml(b, v = { phase: 'loading' }) {
+  const m = v.model || _blockReviewModel({ ...b.input, summary: null, hasPrevious: true })
+  const kg = x => fmtWeight(Math.round(x), { spaced: true })
+  const lifts = v.phase !== 'ready' ? '' : m.improved.map(r =>
+    `<div class="dash-block-row" data-block-lift><span data-block-lift-name>${escapeHtml(r.name)}</span><span>${escapeHtml(kg(r.last))} → ${escapeHtml(kg(r.this))} <b>+${(Math.round(Number(weightToPref(r.delta)) * 10) / 10).toFixed(1)}</b></span></div>`).join('')
+  const note = v.phase === 'loading' ? 'Comparing with your last block…'
+    : v.phase === 'failed' ? "Couldn't compare with your last block."
+    : m.firstBlock ? 'First block: nothing to compare yet. Next time you will see how each lift moved.'
+    : !m.improved.length ? 'No lift went up this block. Open the review to see each lift.' : ''
+  return `<section class="dash-hero dash-block" data-block-card aria-label="Block complete">` +
+    `<div class="dash-hero-eyebrow">Block complete</div>` +
+    `<h2 class="dash-block-title">Your ${b.weeks}-week block finished on ${escapeHtml(_dashBlockDate(b.endSunday))}</h2>` +
+    `<div class="dash-block-stats"><div><b>${m.doneOf.done} of ${m.doneOf.due}</b>planned sessions done</div><div><b>${m.doneOf.pct}%</b>done</div></div>` +
+    lifts + (note ? `<div class="dash-block-note" data-block-note>${escapeHtml(note)}</div>` : '') +
+    (v.weightLine ? `<div class="dash-block-note" data-block-weight>${escapeHtml(v.weightLine)}</div>` : '') +
+    `<div class="dash-hero-actions">` +
+      (m.canRepeat ? `<button type="button" class="dash-btn dash-btn-primary" data-block-action="repeat" onclick="_dashBlockAction('repeat')">Repeat this plan</button>` : '') +
+      `<button type="button" class="dash-btn ${m.canRepeat ? 'dash-btn-ghost' : 'dash-btn-primary'}" data-block-action="choose" onclick="_dashBlockAction('choose')">Choose another plan</button>` +
+    `</div>` +
+    `<div class="dash-block-links"><button type="button" class="dash-block-link" data-block-action="review" onclick="_dashBlockAction('review')">See everything</button>` +
+    `<button type="button" class="dash-block-link" data-block-action="notnow" onclick="_dashBlockAction('notnow')">Not now</button></div>` +
+    `</section>`
+}
+
+// The first weigh-in near the start of the block and the last near its end, as one line, or '' when either is missing, they are the same day, or a read failed.
+async function _dashBlockWeights(b) {
+  const from = _dashMonday(b.planStart)
+  const [first, last] = await Promise.all([
+    db.from('weight_logs').select('date, weight_kg').eq('client_id', b.clientId).gte('date', from).lte('date', _dashAddDays(from, 13)).order('date', { ascending: true }).limit(1),
+    db.from('weight_logs').select('date, weight_kg').eq('client_id', b.clientId).gte('date', _dashAddDays(b.endSunday, -13)).lte('date', b.endSunday).order('date', { ascending: false }).limit(1),
+  ])
+  if (first.error || last.error) return ''
+  const a = first.data && first.data[0], z = last.data && last.data[0]
+  if (!a || !z || a.date === z.date) return ''
+  return `Body weight ${fmtWeight(a.weight_kg, { spaced: true })} → ${fmtWeight(z.weight_kg, { spaced: true })}`
+}
+
+// Fills the card's lifts and body weight AFTER the page has drawn: they need the whole exercise history, which Today does not load. The block is clipped to the plan's
+// last Sunday (_loadProgramBlocks gives a live plan end = today, which would let later sessions leak in), then the SAME two-window engine as the Blocks table runs, so the
+// card and the table cannot disagree. Token-guarded: Today repaints on every write, and a stale answer must not touch a newer card.
+async function _dashFillBlockCard(root, b) {
+  const tok = ++_dashBlockToken
+  let summary = null, hasPrevious = true, weightLine = '', failed = false
+  try {
+    const [blocks, exercises, wl] = await Promise.all([_loadProgramBlocks(b.clientId), _buildExerciseSeries(b.clientId), _dashBlockWeights(b)])
+    weightLine = wl
+    const liveKey = 'live:' + b.cpId
+    if (blocks === null || exercises === null || !blocks.some(x => x.key === liveKey)) failed = true
+    else {
+      const runs = blocks.map(x => (x.key === liveKey ? { ...x, end: b.endSunday } : x)).sort((x, y) => (y.start || '').localeCompare(x.start || ''))
+      const w = _blockWindowsFor(runs, b.endSunday)
+      hasPrevious = w.b.source === 'plan'
+      summary = hasPrevious ? _blockLiftSummary(exercises, w.a, w.b) : null
+    }
+  } catch (e) { log.error('_dashFillBlockCard', 'could not compare with the last block', e); failed = true }
+  const el = root.isConnected && tok === _dashBlockToken ? root.querySelector('[data-block-card]') : null
+  if (!el) return
+  const model = _blockReviewModel({ ...b.input, summary, hasPrevious: failed ? true : hasPrevious })
+  el.outerHTML = _dashBlockCardHtml(b, { phase: failed ? 'failed' : 'ready', model, weightLine })
+}
+
+function _dashBlockAction(kind) {
+  const root = document.getElementById('dash-root'), b = root && root._dash && root._dash.block
+  if (!b) return
+  if (kind === 'repeat') showAssignProgramModal(b.clientId, { startDate: b.repeatStart, programId: b.programId, blockReview: true })
+  else if (kind === 'choose') showAssignProgramModal(b.clientId, { startDate: b.repeatStart, blockReview: true })
+  else if (kind === 'plan-next') showAssignProgramModal(b.clientId, { startDate: _dashAddDays(b.endSunday, 1), nextBlock: true, excludeProgramId: b.programId || '' })
+  else if (kind === 'review') _openBlockReview()
+  else if (kind === 'notnow') {
+    _dashBlockToken++   // a fill still in flight must not bring the card back
+    const back = _dashAddDays(_dashMonday(root._dash.todayStr), 7)
+    try { localStorage.setItem(_blockDismissKey(b.clientId, b.planStart), back) } catch { /* not remembered: the card is gone for this view, and back on the next repaint */ }
+    const el = root.querySelector('[data-block-card]'); if (el) el.remove()
+  }
+}
+
 // ─── Dashboard views: markup builders (pure strings) ───────────────────────────────────────────────────────────────────────
 // Solo, client and coach share the skeleton - greeting, a Today card, the week, two number tiles, then cards - so the builders
 // below are shared. Every piece of user text goes through escapeHtml; ids inside inline handlers through escapeAttr.
@@ -935,7 +1047,7 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     // `id` and `week_number` are load-bearing. Without week_number every week of a periodised phase collapses onto week 1's
     // sessions; without id the clone lookup below cannot run. ALL of the client's assignments, not the newest one: _currentAssignment
     // picks the current plan by date, and a block booked to follow it is drawn too (2026-10-29).
-    db.from('client_programs').select('id, start_date, created_at, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }),
+    db.from('client_programs').select('id, program_id, start_date, created_at, programs(name, description, program_phases(id, name, duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, notes, workout_templates(id, name))))').eq('client_id', clientId).order('created_at', { ascending: false }),
     // A year of sessions, paged (_fetchAllRows, app-core.js): the API caps a response at 200 rows and says nothing when it
     // truncates. The week strip, the streak and "done" all read from this one list.
     _fetchAllRows(() => db.from('workout_logs').select('id, name, date, workout_log_exercises(id)', { count: 'exact' }).eq('client_id', clientId).gte('date', lookbackStart).order('date', { ascending: false }).order('id', { ascending: false })),
@@ -963,7 +1075,7 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
   const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
 
   return {
-    goals: goalsR.data, events: eventsR.data, weights: weightsR.data, cp0, progByDate, currentByDate, logs,
+    goals: goalsR.data, events: eventsR.data, weights: weightsR.data, cp0, cpNext, progByDate, currentByDate, logs,
     upcoming: _soloUpcoming(eventsR.data, progByDate, todayStr),
     lastCheckIn: checkInR.data?.[0] || null,
     prevCheckIn: checkInR.data?.[1] || null,
@@ -1092,6 +1204,8 @@ async function _dashRenderOwn(el, role) {
   const streak = _dashStreakModel(d.currentByDate, d.logs.map(l => l.date), todayStr, { planStart: d.cp0?.start_date || null, totalWeeks: program?.totalWeeks || 0, target: isSudo ? null : window._weeklyTarget })
   const next = d.upcoming.find(u => u.kind === 'session' && u.date > todayStr) || null
   const ctx = { role, clientId, todayStr, days, hasProgram: !!d.cp0, program, next }
+  // The end of a block (Personal view only; docs/superpowers/specs/2026-11-07-end-of-block-review-design.md): a hint in the last week, a card once it has ended.
+  const block = role === 'solo' ? _dashBlockSetup(d, program, clientId, todayStr) : null
   const byDs = Object.fromEntries(days.map(x => [x.ds, x]))
   const heroFor = sel => _dashHeroHtml(byDs[sel || todayStr], ctx)
   const weekFor = sel => _dashWeekHtml(days, counts, sel, !isClient)
@@ -1120,6 +1234,8 @@ async function _dashRenderOwn(el, role) {
         ${logo}
       </header>
       ${checkInDue ? _dashCheckInBanner() : ''}
+      ${block && block.state === 'last-week' ? _dashBlockHintHtml(block) : ''}
+      ${block && block.state === 'ended' ? _dashBlockCardHtml(block, { phase: 'loading' }) : ''}
       ${heroFor(null)}
       ${weekFor(null)}
       ${_dashTilesHtml(streak, program, !isClient, !isSudo)}
@@ -1129,7 +1245,8 @@ async function _dashRenderOwn(el, role) {
       ${isClient ? _dashCheckInHtml(lastCheckIn, clientId, d.prevCheckIn, { readFailed: !!d.failed['check-ins'], sudo: isSudo }) : ''}
     </div>`
   const root = el.querySelector('#dash-root')
-  if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor }
+  if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor, block }
+  if (root && block && block.state === 'ended') _dashFillBlockCard(root, block)
 
   // After innerHTML, so the canvas exists. Oldest-first for a left-to-right time axis, and the 7-day rolling average via the
   // existing helper rather than a second implementation.

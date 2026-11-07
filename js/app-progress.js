@@ -1541,6 +1541,13 @@ async function renderPersonalProgress(el) {
   ])
 }
 
+// From the end-of-block card on Today ("See everything"): Performance > Blocks, which opens on this block against the last (the Blocks page's default windows).
+function _openBlockReview() {
+  window._progressTab = 'Performance'
+  window._perfTab = 'Blocks'
+  navigate('progress')
+}
+
 let _perfRenderToken = 0
 const _PERF_TABS = ['Lifts', 'Sessions', 'Blocks']
 function _perfTabName(stored) {
