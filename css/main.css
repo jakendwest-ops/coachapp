@@ -66,8 +66,8 @@
      635 of 721 uses. --font is the single swap point when the real brand
      typeface arrives; Inter is a placeholder. */
   --font:          'Inter', system-ui, -apple-system, sans-serif;
-  --text-2xs:      9px;
-  --text-xs:      10px;
+  --text-2xs:      11px;
+  --text-xs:      11px;
   --text-sm:      11px;
   --text-md:      12px;
   --text-base:    13px;
@@ -748,7 +748,9 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 
 .modal-title { font-size: 17px; font-weight: 700; }
 
+.dash-resume { display:block; width:100%; min-height:44px; text-align:left; font-weight:700; color:var(--accent); cursor:pointer; }
 .modal-close {
+  min-width: 44px; min-height: 44px;
   color: var(--text-muted);
   font-size: 18px;
   line-height: 1;
@@ -936,7 +938,7 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
   background:var(--surface); color:var(--text-muted); cursor:pointer;
   transition:background .15s, color .15s, border-color .15s;
 }
-.week-tab .wt-n { display:block; font-size:9px; font-weight:700; letter-spacing:.08em; opacity:.7; }
+.week-tab .wt-n { display:block; font-size:11px; font-weight:700; letter-spacing:.08em; opacity:.7; }
 .week-tab[aria-selected="true"] { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
 .week-tab:hover:not([aria-selected="true"]) { border-color:var(--accent); color:var(--text); }
 .week-tab:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
@@ -981,7 +983,7 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
    7-day week of mostly rest days isn't a long scroll of empty boxes. */
 .pwk-day.is-empty { border-color:transparent; background:transparent; padding:4px 8px; }
 .pwk-day.is-empty .pwk-add { min-height:34px; border-style:dashed; }
-.pwk-dow { font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--text-muted); margin-bottom:6px; }
+.pwk-dow { font-size:11px; font-weight:700; letter-spacing:.05em; color:var(--text-muted); margin-bottom:6px; }
 .pwk-slot { border:1px solid var(--border); border-radius:8px; background:var(--bg); margin-bottom:6px; overflow:hidden; }
 .pwk-slot-head { display:flex; align-items:center; gap:6px; padding:7px 8px; cursor:pointer; }
 .pwk-slot-head:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
@@ -1070,7 +1072,7 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .wk-row { display:flex; align-items:center; gap:10px; width:100%; padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); color:inherit; text-align:left; }
 .wk-pastrow { cursor:pointer; }
 .wk-grow { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; cursor:pointer; }
-.wk-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-base); font-weight:700; }
+.wk-name { overflow-wrap:anywhere; font-size:var(--text-base); font-weight:700; }
 .wk-meta { font-size:var(--text-sm); color:var(--text-muted); }
 .wk-go { flex-shrink:0; min-height:40px; padding:0 14px; }
 /* Your workouts: a row is a card that expands in place (2026-10-13) */
@@ -1265,6 +1267,7 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .ts-cell-inputs { display: flex; align-items: center; gap: 4px; }
 .ts-cell-inputs input { width: 100%; min-width: 0; }
 .ts-cell.effort .ts-toggle2 { display: flex; margin-bottom: 4px; width: fit-content; }
+.ts-toggle2 button { min-height: 44px; }
 
 /* ─── Exercise stats card (2026-10-03) ──────────────────────────────────────────────
    ONE card, two homes: the runner's Stats sheet and the My progress exercise cards both render it

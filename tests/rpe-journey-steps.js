@@ -43,6 +43,7 @@ async function buildTopSetTemplate(page, { tplName, exName, shotPrefix, viaCreat
   await expect(page.locator('#add-to-template-modal')).toBeVisible()
 
   await page.locator('#ts-topset-0').click()
+  await page.locator('#ts-step-dec').click()   // a new lift opens at 3 sets; this journey is one top set and one back-off
   await page.locator('#ts-rmin-0').fill('3')
   await page.locator('#ts-emin-0').fill('8')
   await expect(page.locator('#ts-topset-effort-warning'), 'an RPE is prescribed, so no warning').toBeHidden()

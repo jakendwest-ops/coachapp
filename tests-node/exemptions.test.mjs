@@ -213,7 +213,7 @@ describe('FROZEN_UNGUARDED — every exemption states a reason that is actually 
     // it wrote workout_logs, workout_log_exercises AND workout_log_sets — so a double tap duplicated
     // an entire session, not one deletable line.
     const oneRow = [...frozen].filter(([, r]) => /one row/.test(r))
-    assert.ok(oneRow.length >= 10, `expected the bulk of the list to be "one row", found ${oneRow.length}`)
+    assert.ok(oneRow.length >= 9, `expected the bulk of the list to be "one row", found ${oneRow.length}`)
     for (const [name, reason] of oneRow) {
       const fn = fns.get(name)
       const inserts = insertCalls(fn.node)

@@ -6,7 +6,7 @@
 > **Jake's answers (2026-11-08):** Phase 1, all ten items, approved, with no PR on a first log. Logging: prototype the Fill button only.
 > Progression: "+kg per week" in plans. Goals: link them. Phase 2a and 2b still need a file-by-file approval before building.
 
-> **Status (2026-11-08):** Phase 1 is committed locally on top of `a5868ea`, not pushed. Phase 2a is built with one amount per phase and committed locally. Phase 2b is built, SQL applied live, uncommitted: a lift goal counts the heaviest set since the goal began, and a finished goal saves its number. Phase 3 is next and needs approval. `block-review-2026-11-07.spec.js` "Repeat this plan" fails on `a5868ea` without this work, and will stop the release gate until fixed.
+> **Status (2026-11-08):** Phase 1 is committed locally on top of `a5868ea`, not pushed. Phase 2a is built with one amount per phase and committed locally. Phase 2b is built, SQL applied live, uncommitted: a lift goal counts the heaviest set since the goal began, and a finished goal saves its number. Phase 4b (wording) is pushed. Phase 4a and most of 4c are done; Finish and Save stay separate (Jake asked for the Finish question on 2026-10-11) and the rest-timer jump needs his look. Phase 3 is next. `block-review-2026-11-07.spec.js` "Repeat this plan" fails on `a5868ea` without this work, and will stop the release gate until fixed.
 
 # Solo audit response
 

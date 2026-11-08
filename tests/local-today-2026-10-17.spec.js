@@ -55,7 +55,8 @@ for (const c of CASES) {
         await showLogSessionModal(window._soloClientId); out.logSession = val('ls-date'); document.getElementById('log-session-modal')?.remove()
         return out
       })
-      for (const [form, day] of Object.entries(got)) expect.soft(day, form).toBe(c.local)
+      // A plan you start for yourself defaults to the coming Monday (Phase 4a), the rest to today.
+      for (const [form, day] of Object.entries(got)) expect.soft(day, form).toBe(form === 'addToMyPlan' ? '2026-07-20' : c.local)
       expect(Object.keys(got)).toHaveLength(7)
     })
 

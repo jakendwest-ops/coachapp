@@ -597,7 +597,7 @@ async function _assignProgramTx(fnName, clientId, programId, startDate, restart)
     return { ok: false, message: 'Could not assign the plan — nothing was changed. Try again.' }
   }
   log.ok(fnName, 'assigned', { programId, clientId, sessions: data?.sessions, restarted: data?.restarted })
-  if (data && data.phases === 0) {
+  if (data && (data.phases === 0 || /** @type {any} */ (data).sessions === 0)) {   // a new solo plan already has its first block, so an empty one has to be spotted by its sessions
     showToast('Assigned — but this plan has no blocks or workouts yet, so there’s nothing to do until you add some', 'warn', 8000)
   }
   return { ok: true, result: data }
@@ -1011,7 +1011,7 @@ async function showAssignProgramToClientModal(programId) {
       ${isSolo ? '<p class="pgm-replaces" id="apc-replaces" hidden></p>' : ''}
       <div class="field">
         <label class="field-label">Start date</label>
-        <input class="field-input" type="date" id="apc-start" value="${todayStr}">
+        <input class="field-input" type="date" id="apc-start" value="${isSolo ? _nextMondayYmd(todayStr) : todayStr}">
       </div>
       <p class="modal-error" id="apc-error"></p>
       <div class="modal-footer">
@@ -1038,6 +1038,8 @@ async function _showReplacedPlans(programId) {
   const others = await _otherPlansOf(window._soloClientId, programId)
   const el = document.getElementById('apc-replaces')
   if (!el || !others?.length) return
+  // A plan already running comes off the moment this one starts, so starting next Monday would leave a gap with nothing on.
+  if (_pzEl('apc-start')) _pzEl('apc-start').value = _ymdLocal(new Date())
   el.textContent = `${others.map(o => o.name).join(' and ')} ${others.length === 1 ? 'comes' : 'come'} off your plan and stay${others.length === 1 ? 's' : ''} in Plans.`
   el.hidden = false
 }
@@ -1155,7 +1157,7 @@ async function renderPrograms(el) {
             </div>
             <div class="row-right">
               ${p.id in planStarts ? '<span class="badge badge-active" data-onplan>On my plan</span>' : ''}
-              <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${p.program_phases?.length || 0} block${p.program_phases?.length !== 1 ? 's' : ''}</span>
+              ${p.description ? `<span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${p.program_phases?.length || 0} block${p.program_phases?.length !== 1 ? 's' : ''}</span>` : ''}
               <svg style="width:15px;height:15px;color:var(--border-strong)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
           </div>`).join('')}
@@ -1172,6 +1174,10 @@ async function renderPrograms(el) {
         <div style="margin-bottom:14px">
           <label class="form-label">Plan name <span style="color:var(--danger-text)">*</span></label>
           <input type="text" id="pm-name" class="form-input" placeholder="e.g. 12-Week Strength Block">
+        </div>
+        <div style="margin-bottom:14px" id="pm-weeks-wrap" hidden>
+          <label class="form-label" for="pm-weeks">How many weeks?</label>
+          <input type="number" inputmode="numeric" min="1" max="52" id="pm-weeks" class="form-input" value="4">
         </div>
         <div style="margin-bottom:14px">
           <label class="form-label">Description <span style="color:var(--text-muted)">(optional)</span></label>
@@ -1397,8 +1403,8 @@ async function openProgram(programId) {
     <button type="button" class="pgm-addph" onclick="showAddPhaseForm('${program.id}')">+ Add block</button>
 
     <!-- Add/edit phase form -->
-    <div id="phase-form" style="display:none;background:var(--surface-2);border-radius:var(--radius, 10px);padding:16px;margin-top:12px">
-      <h3 style="font-size:var(--text-lg, 14px);font-weight:600;margin-bottom:12px" id="phase-form-title">Add block</h3>
+    <div id="phase-form" class="modal-overlay" style="display:none"><div class="modal">
+      <h3 class="modal-title" style="margin-bottom:12px" id="phase-form-title">Add block</h3>
       <input type="hidden" id="pf-phase-id">
       <input type="hidden" id="pf-order-index">
       <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:10px">
@@ -1416,7 +1422,7 @@ async function openProgram(programId) {
         <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" id="pf-save-btn" onclick="savePhase('${program.id}')">Add block</button>
         <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('phase-form').style.display='none'">Cancel</button>
       </div>
-    </div>
+    </div></div>
 
 
     </div><!-- /.pgm -->
@@ -1494,6 +1500,14 @@ function _pgmSessionsLabel(counts) {
 // periodization was removed does not colour it.
 function _pgmPhaseMethod(ph) {
   return ph && ph.periodization_type ? _pzBasis(ph.periodization_config) : 'none'
+}
+
+// Today if it is a Monday, otherwise the coming Monday: where a plan someone starts for themselves most often begins.
+function _nextMondayYmd(todayStr) {
+  const [y, m, d] = todayStr.split('-').map(Number)
+  const day = new Date(y, m - 1, d)
+  day.setDate(day.getDate() + (8 - day.getDay()) % 7)
+  return _ymdLocal(day)
 }
 
 // How many sessions Week 1 of a phase has: undefined until the sessions have been read, 0 for a phase that has none (it has no
@@ -1771,6 +1785,8 @@ function showCreateProgramModal() {
   document.getElementById('pm-desc').value = ''
   document.getElementById('pm-error').textContent = ''
   document.getElementById('pm-save-btn').textContent = 'Create plan'
+  // Solo builds its own plans: asking the length here makes the first block for them, so "block" is not a concept they must learn before adding a session. A coach still lays out blocks.
+  if (_pzEl('pm-weeks-wrap')) { _pzEl('pm-weeks-wrap').hidden = !_isPersonalView(); _pzEl('pm-weeks').value = '4' }   // only the plans list has it
   document.getElementById('program-modal').style.display = 'flex'
 }
 
@@ -1781,6 +1797,7 @@ function showEditProgramModal(id, name, description) {
   document.getElementById('pm-desc').value = description
   document.getElementById('pm-error').textContent = ''
   document.getElementById('pm-save-btn').textContent = 'Save changes'
+  if (_pzEl('pm-weeks-wrap')) _pzEl('pm-weeks-wrap').hidden = true   // the plan page's own edit sheet has no length box
   document.getElementById('program-modal').style.display = 'flex'
 }
 
@@ -1793,6 +1810,9 @@ async function saveProgram(programId) {
   const desc = document.getElementById('pm-desc').value.trim()
   const errorEl = document.getElementById('pm-error')
   if (!name) { errorEl.textContent = 'Plan name is required.'; return }
+  const weeksField = _pzEl('pm-weeks-wrap')?.hidden ? null : _pzEl('pm-weeks')
+  const weeks = weeksField ? parseInt(weeksField.value, 10) : null
+  if (weeksField && !(weeks >= 1 && weeks <= 52)) { errorEl.textContent = 'Enter between 1 and 52 weeks.'; return }
   errorEl.textContent = ''
 
   const id = programId || _editingProgramId
@@ -1812,10 +1832,16 @@ async function saveProgram(programId) {
     const { data, error } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: currentProfile?.role === 'solo', name, description: desc || null }).select().single()
     if (error) { log.error('saveProgram', 'create failed', error); errorEl.textContent = error.message; return }
     log.ok('saveProgram', 'created', { id: data.id })
+    if (weeks) {
+      const { error: blockErr } = await db.from('program_phases').insert({ program_id: data.id, name: 'Block 1', duration_weeks: weeks, order_index: 0 })
+      if (blockErr) { log.error('saveProgram', 'first block failed', blockErr); showToast('Plan created. Add a block to get started.', 'warn') }
+    }
     closeProgramModal()
     openProgram(data.id)
   }
 }
+
+guardReentry('saveProgram')   // it writes the plan and, for solo, its first block; a double tap would make two plans
 
 // Which button the program header shows for "give this program to someone".
 // A PERSONAL program is never assignable to a client — that is the whole point of the boundary, and
@@ -2117,7 +2143,7 @@ function showAddPhaseForm(programId) {
   document.getElementById('pf-weeks').value = ''
   document.getElementById('pf-error').textContent = ''
   document.getElementById('pf-save-btn').textContent = 'Add block'
-  document.getElementById('phase-form').style.display = 'block'
+  document.getElementById('phase-form').style.display = 'flex'
   document.getElementById('pf-name').focus()
 }
 
@@ -2129,7 +2155,7 @@ function showEditPhaseForm(programId, phaseId, name, weeks, orderIndex) {
   document.getElementById('pf-weeks').value = weeks
   document.getElementById('pf-error').textContent = ''
   document.getElementById('pf-save-btn').textContent = 'Save block'
-  document.getElementById('phase-form').style.display = 'block'
+  document.getElementById('phase-form').style.display = 'flex'
   document.getElementById('pf-name').focus()
 }
 

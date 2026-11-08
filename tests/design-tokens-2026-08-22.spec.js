@@ -6,7 +6,7 @@ const { loginAsPT } = require('./helpers')
 // DEFINED. A typo'd var(--text-bse, 13px) round-trips perfectly and silently uses
 // its fallback forever, so this is the layer that catches that.
 const EXPECTED = {
-  '--text-2xs': '9px', '--text-xs': '10px', '--text-sm': '11px', '--text-md': '12px',
+  '--text-2xs': '11px', '--text-xs': '11px', '--text-sm': '11px', '--text-md': '12px',
   '--text-base': '13px', '--text-lg': '14px', '--text-xl': '16px', '--text-2xl': '18px',
   '--text-3xl': '20px', '--text-4xl': '24px', '--text-display': '32px',
   '--legacy-text-7': '7px', '--legacy-text-8': '8px', '--legacy-text-10-5': '10.5px',

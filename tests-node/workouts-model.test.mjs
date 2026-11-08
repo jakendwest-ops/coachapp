@@ -28,6 +28,21 @@ describe('_wkWeekless - a periodised plan keeps one copy of a session per week, 
 })
 
 describe('_wkRows - one row per workout, most recently done first', () => {
+  test('a plan workout with the same name but different lifts stays its own row', () => {
+    const ex = (...n) => n.map(exercise_name => ({ exercise_name }))
+    const r = rows([{ id: 'a', name: 'Upper', workout_template_exercises: ex('Bench') }], [{ id: 'b', name: 'Upper', workout_template_exercises: ex('Row') }], { b: { last: '2026-11-02', n: 4 } }, new Set())
+    assert.equal(r.length, 2)
+  })
+  test('two copies of your own workout do not both take the plan runs', () => {
+    const r = rows([{ id: 'a', name: 'Upper' }, { id: 'c', name: 'Upper' }], [{ id: 'b', name: 'Upper' }], { b: { last: '2026-11-02', n: 4 } }, new Set())
+    assert.equal(r.map(x => x.u?.n || 0).sort().join(','), '0,4')
+  })
+  test('a plan copy of your own workout is one row with its runs counted together', () => {
+    const r = rows([{ id: 'a', name: 'Full Body A' }], [{ id: 'b', name: 'full body a' }, { id: 'c', name: 'Legs' }], { a: { last: '2026-10-10', n: 1 }, b: { last: '2026-11-02', n: 4 }, c: { last: '2026-11-01', n: 2 } }, new Set())
+    assert.equal(r.length, 2)
+    assert.deepEqual([r[0].src, r[0].t.id, r[0].u.last, r[0].u.n], ['you', 'a', '2026-11-02', 5])
+    assert.equal(r[1].t.name, 'Legs')
+  })
   test('a workout the account made is "you", a plan session it trained from is "plan"; done ones first, newest done on top, never done last in made order', () => {
     const r = rows([wk('a', 'Arms'), wk('b', 'Back'), wk('c', 'Chest')], [wk('p', 'Plan Day')], { p: { last: '2026-10-12', n: 1 }, a: { last: '2026-10-05', n: 2 } }, new Set())
     assert.deepEqual(plain(r.map(x => x.t.name)), ['Plan Day', 'Arms', 'Back', 'Chest'])

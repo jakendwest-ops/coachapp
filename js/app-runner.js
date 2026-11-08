@@ -467,9 +467,29 @@ function _stopRunnerDraftSafetyNet() {
   _runnerDraftSafetyNetInterval = clearTimer(_runnerDraftSafetyNetInterval)
 }
 
-function _showRunnerResumeModal(clientId, draft) {
-  const loggedCount = (draft.exercises || []).reduce((n, ex) =>
-    n + (ex.loggedSets?.length || 0) + (ex.tableRows?.filter(r => r.done).length || 0), 0)
+// Offered where someone lands after the page reloaded mid-session, so an unfinished workout is not hidden until they happen to press Start.
+function _runnerResumeBannerHtml(clientId) {
+  const draft = clientId ? _loadRunnerDraft(clientId) : null
+  // Not another person's workout on a shared browser, and not a failed save, which has its own Retry bar.
+  if (!draft || _isPendingDraft(draft) || (draft.userId && draft.userId !== currentUser?.id)) return ''
+  return `<button type="button" class="dash-card dash-resume" id="runner-resume-banner" onclick="_resumeFromBanner('${escapeAttr(clientId)}')">You have a workout in progress. Tap to resume.</button>`
+}
+function _resumeFromBanner(clientId) {
+  const draft = _loadRunnerDraft(clientId)
+  if (draft) _showRunnerResumeModal(clientId, draft, { fromBanner: true })
+  else document.getElementById('runner-resume-banner')?.remove()
+}
+
+// From the banner, Discard only throws the workout away: there is no workout being started to start fresh.
+function _discardRunnerDraftFromBanner(clientId) {
+  document.getElementById('runner-resume-modal')?.remove()
+  _clearRunnerDraft(clientId)
+  document.getElementById('runner-resume-banner')?.remove()
+}
+
+function _showRunnerResumeModal(clientId, draft, { fromBanner = false } = {}) {
+  // tableRows is where a ticked set lives, and loggedSets is derived from it: adding both counted one tick as two sets.
+  const loggedCount = (draft.exercises || []).reduce((n, ex) => n + (ex.tableRows ? ex.tableRows.filter(r => r.done).length : (ex.loggedSets?.length || 0)), 0)
   const overlay = document.createElement('div')
   overlay.id = 'runner-resume-modal'
   overlay.className = 'modal-overlay'
@@ -483,7 +503,7 @@ function _showRunnerResumeModal(clientId, draft) {
         ? `Your workout (${escapeHtml(draft.name || 'Workout')}${loggedCount ? `, ${loggedCount} set${loggedCount === 1 ? '' : 's'} logged` : ''}) has not been saved yet. Open it to save it, or discard it and start fresh?`
         : `You have an unsaved workout from earlier today (${escapeHtml(draft.name || 'Workout')}${loggedCount ? `, ${loggedCount} set${loggedCount === 1 ? '' : 's'} logged` : ''}). Resume where you left off, or discard it and start fresh?`}</p>
       <div class="modal-footer">
-        <button class="btn-secondary" onclick="_discardRunnerDraftAndStartFresh('${clientId}')">Discard &amp; start fresh</button>
+        ${fromBanner ? `<button class="btn-secondary" onclick="_discardRunnerDraftFromBanner('${clientId}')">Discard</button>` : `<button class="btn-secondary" onclick="_discardRunnerDraftAndStartFresh('${clientId}')">Discard &amp; start fresh</button>`}
         <button class="btn-primary" onclick="_resumeRunnerFromDraft('${clientId}')">Resume</button>
       </div>
     </div>

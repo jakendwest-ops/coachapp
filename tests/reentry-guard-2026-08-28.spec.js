@@ -57,7 +57,6 @@ const FROZEN_UNGUARDED = {
   saveClientCheckIn:                  'one row, appears in the check-in list, deletable',
   saveClientWeight:                   'one row, appears in the weight history, deletable',
   saveNewClient:                      'one row, lands in the client list, deletable',
-  saveProgram:                        'one row, lands in the programs list, deletable',
   savePhase:                          'one row, appears in the builder immediately, deletable',
   savePerformanceLog:                 'one row, appears in the log list, deletable',
   // The insert moved out of saveWeightLog into the shared _insertWeightLog on 2026-10-31 (the Weight page and Today's quick log

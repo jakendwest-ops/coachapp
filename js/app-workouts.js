@@ -908,7 +908,7 @@ async function renderClientWorkoutsPage(el) {
       `
     })())}
 
-    ${isOwn ? _wkCreateHtml(clientId) + yourWorkouts : ''}
+    ${isOwn ? _runnerResumeBannerHtml(clientId) + _wkCreateHtml(clientId) + yourWorkouts : ''}
 
     ${!loggedLogs.length ? `
       <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Recent sessions</div>
@@ -1627,9 +1627,9 @@ async function openTemplate(id, ctx = {}) {
         ${_quickPrefsIconHtml()}
         <button class="btn-secondary" id="tpl-reorder-btn" style="display:none" onclick="_toggleTemplateReorder()">Reorder</button>
         ${currentProfile?.role === 'solo' && window._soloClientId
-          ? `<button class="btn-primary" onclick="startWorkoutRunner('${window._soloClientId}','${id}')">▶ Start</button>`
+          ? `<button class="btn-primary" id="tpl-start-btn" onclick="startWorkoutRunner('${window._soloClientId}','${id}')">▶ Start</button>`
           : _ctx.clientId
-            ? `<button class="btn-primary" onclick="startWorkoutRunner('${_ctx.clientId}','${id}')">▶ Start</button>`
+            ? `<button class="btn-primary" id="tpl-start-btn" onclick="startWorkoutRunner('${_ctx.clientId}','${id}')">▶ Start</button>`
             : ''}
       </div>
       <div id="save-template-draft-host"></div>
@@ -2772,13 +2772,16 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
       <div class="modal-footer">
         ${editingTexId ? `<button class="btn-danger" onclick="_stageRemoveExercise('${editingTexId}');closeModal('edit-tex-modal')">Remove</button><div style="flex:1"></div>` : ''}
         <button class="btn-secondary" onclick="closeModal('${modalId}')">Cancel</button>
+        ${!editingTexId && !isRunner ? `<button class="btn-secondary" id="att-add-another" onclick="_stageAddExercise(true)">Add another</button>` : ''}
         <button class="btn-primary" id="att-confirm-btn" data-busy-text="Saving…" onclick="${confirmAction}">${confirmLabel}</button>
       </div>
     </div>
   `
   mountModal(overlay)
   window._tsView = { custom: false }   // every editor opens on the grouped view; "Customise each set" switches it for this edit only
-  window._templateSets = existingSets && existingSets.length ? existingSets.map(s => ({...s})) : [{ effortType: 'rpe' }]
+  // A new lift in the builder opens at 3 sets, the common case, so most exercises need no stepper taps. Intervals, jumps and a mid-session add keep their own single starting row.
+  const startSets = !isRunner && !editingTexId && ['weight_reps', 'unilateral'].includes(existingType) ? 3 : 1
+  window._templateSets = existingSets && existingSets.length ? existingSets.map(s => ({...s})) : Array.from({ length: startSets }, () => ({ effortType: 'rpe' }))
   // Same normalization as the Type <select>'s own 'interval' option above (:1697) — a legacy
   // metric_type='cardio' row must render the interval block editor it's now labeled as, not the old
   // per-set cardio editor the dropdown no longer offers.
@@ -3151,7 +3154,7 @@ function _diffTemplateDraft(draft) {
 
 // Stages a new exercise into window._templateDraft — no database write. The real insert happens once,
 // for every queued change at once, when "Save workout" (Task 6) replays the draft against baseline.
-function _stageAddExercise() {
+function _stageAddExercise(addAnother = false) {
   const picked = window._exerciseDetailPicked
   const errorEl = document.getElementById('att-error')
   if (!picked?.name) { errorEl.textContent = 'Exercise name is required'; return }
@@ -3175,9 +3178,11 @@ function _stageAddExercise() {
     superset_group: supersetGroup,
   })
   _rememberExerciseMetricType(picked.id || null, metricType)
+  const again = addAnother === true ? /** @type {any} */ (window)._exerciseDetailReopenCtx?.targetId : null
   closeModal('add-to-template-modal')
   _renderTemplateExerciseList()
   _renderSaveWorkoutButton()
+  if (again) showAddExerciseToTemplateModal(again)   // straight back to the exercise search for the next one
 }
 
 async function showEditTemplateExerciseModal(draftKey, templateId) {
@@ -3250,6 +3255,9 @@ function _renderSaveWorkoutButton() {
   host.innerHTML = _templateDraftIsDirty()
     ? `<button id="save-template-draft-btn" class="btn-primary" style="margin-top:8px" onclick="saveTemplateDraft()">Save workout</button>`
     : ''
+  // One primary action at a time: unsaved changes make Save the main button, and Start steps back until they are saved.
+  const start = document.getElementById('tpl-start-btn')
+  if (start) start.className = _templateDraftIsDirty() ? 'btn-secondary' : 'btn-primary'
 }
 
 async function saveTemplateDraft() {
@@ -4505,7 +4513,21 @@ function _wkRows(mine, others, used, activeIds) {
     if ((u?.last || '') > (g.best.u?.last || '')) g.best = { t, u }
   }
   const planRows = Object.entries(planGroups).map(([name, g]) => ({ t: { ...g.best.t, name }, src: 'plan', u: g.best.u ? { last: g.best.u.last, n: g.n } : null, locked: g.locked }))
-  return [...(mine || []).map(t => ({ t, src: 'you', u: used[t.id] || null, locked: act.has(t.id) })), ...planRows]
+  // A plan's copy of a workout you also made yourself is the same workout, if it has the same name AND the same lifts: one row, its runs counted together, opening your own copy.
+  // A different "Upper" in a plan stays its own row, and only one of your own copies takes the plan's runs.
+  const sameKey = t => (t.name || '').trim().toLowerCase() + '|' + (t.workout_template_exercises || []).map(e => (e.exercise_name || '').trim().toLowerCase()).sort().join(',')
+  const ownKeys = new Set((mine || []).map(sameKey))
+  const merged = planRows.filter(r => ownKeys.has(sameKey(r.t)))
+  const claimed = new Set()
+  const together = t => {
+    const own = used[t.id] || null, key = sameKey(t)
+    if (claimed.has(key)) return own
+    const same = merged.filter(r => sameKey(r.t) === key).map(r => r.u).filter(Boolean)
+    claimed.add(key)
+    if (!same.length) return own
+    return { last: [own?.last || '', ...same.map(u => u.last || '')].sort().pop(), n: (own?.n || 0) + same.reduce((n, u) => n + (u.n || 0), 0) }
+  }
+  return [...(mine || []).map(t => ({ t, src: 'you', u: together(t), locked: act.has(t.id) })), ...planRows.filter(r => !merged.includes(r))]
     .sort((a, b) => (b.u?.last || '').localeCompare(a.u?.last || ''))      // most recently done first; never done after (a stable sort keeps newest-made first)
 }
 

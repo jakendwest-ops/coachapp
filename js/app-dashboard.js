@@ -1293,6 +1293,7 @@ async function _dashRenderOwn(el, role) {
         </div>
         ${logo}
       </header>
+      ${isSudo ? '' : _runnerResumeBannerHtml(clientId)}
       ${checkInDue ? _dashCheckInBanner() : ''}
       ${block && block.state === 'last-week' ? _dashBlockHintHtml() : ''}
       ${block && block.state === 'ended' ? _dashBlockCardHtml(block, { phase: 'loading' }) : ''}
