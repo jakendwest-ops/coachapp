@@ -6,6 +6,8 @@
 > **Jake's answers (2026-11-08):** Phase 1, all ten items, approved, with no PR on a first log. Logging: prototype the Fill button only.
 > Progression: "+kg per week" in plans. Goals: link them. Phase 2a and 2b still need a file-by-file approval before building.
 
+> **Status (2026-11-08):** Phase 1 is committed locally on top of `a5868ea`, not pushed. Phase 2a is built with one amount per phase, uncommitted. Phase 2b is next and needs approval.
+
 # Solo audit response
 
 ## How to weigh the report

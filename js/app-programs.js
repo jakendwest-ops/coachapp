@@ -1320,6 +1320,7 @@ function _periodizationLabel(ph) {
   const esc = v => escapeHtml(String(v))
   const rpe = _pzBasis(c) === 'rpe'
   if (ph.periodization_type === 'linear') {
+    if (_pzBasis(c) === 'kg') return `Linear${_pzNum(c?.stepKg) !== null ? ` +${esc(fmtWeight(_pzNum(c.stepKg), { spaced: true }))} a week` : ''}`
     if (rpe) return `Linear RPE${c?.startRpe != null && c?.endRpe != null ? ` ${esc(c.startRpe)}→${esc(c.endRpe)}` : ''}`
     return `Linear${c?.startPct != null && c?.endPct != null ? ` ${esc(c.startPct)}→${esc(c.endPct)}%` : ''}`
   }
@@ -1385,7 +1386,7 @@ async function openProgram(programId) {
     ${program.description ? `<p class="pgm-desc is-clamped" id="pgm-desc">${escapeHtml(program.description)}</p><button type="button" class="pgm-more" id="pgm-more" hidden onclick="togglePgmDesc()">Show more</button>` : ''}
     ${cta ? `<div class="pgm-cta">${cta}</div>` : ''}
     ${phases.length ? `<div class="pgm-tl" id="pgm-tl" role="group" aria-label="The phases of this training plan, as wide as their weeks">${phases.map((ph, i) => _pgmSegHtml(ph, i, openState[ph.id])).join('')}</div>
-    ${anyMethod ? `<div class="pgm-legend"><span><i class="pct"></i>% of 1RM</span><span><i class="rpe"></i>RPE</span><span><i class="none"></i>none</span></div>` : ''}` : ''}
+    ${anyMethod ? `<div class="pgm-legend"><span><i class="pct"></i>% of 1RM</span><span><i class="rpe"></i>RPE</span><span><i class="kg"></i>added weight</span><span><i class="none"></i>none</span></div>` : ''}` : ''}
 
     <!-- Phases -->
     <div class="pgm-sec"><h2>Phases</h2><span id="pgm-open-count">${phases.length ? `${phases.filter(ph => openState[ph.id]).length} open` : ''}</span></div>
@@ -2225,6 +2226,7 @@ function showPeriodizationModal(phaseId, programId) {
   // property of the same name replaces it (tests-node/window-shadow.test.mjs).
   window._pzMethod = _pzBasis(window._pzConfig)
   window._pzDaySlots = []
+  _pzW._pzKgPrevType = null
 
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
@@ -2256,7 +2258,11 @@ function setPeriodizationType(type, durationWeeks) {
 // (_pzSnapshot), so flipping to RPE and back loses nothing; only the active method's numbers are saved.
 function setPeriodizationBasis(basis, durationWeeks) {
   _pzSnapshot()
-  window._pzMethod = basis === 'rpe' ? 'rpe' : 'pct'
+  window._pzMethod = basis === 'rpe' || basis === 'kg' ? basis : 'pct'
+  // Adding weight has one shape, so its Type row is hidden and it runs as Linear. The Type chosen before is remembered: going to Add kg and back must not turn a None or Undulating phase into Linear.
+  if (basis === 'kg' && !_pzW._pzKgPrevType) _pzW._pzKgPrevType = { type: _pzW._pzType }
+  if (basis === 'kg') _pzW._pzType = 'linear'
+  else if (_pzW._pzKgPrevType) { _pzW._pzType = _pzW._pzKgPrevType.type; _pzW._pzKgPrevType = null }
   renderPeriodizationBody(durationWeeks)
   document.getElementById('pz-basis-' + window._pzMethod)?.focus()   // the render replaced the button that was tapped
 }
@@ -2268,7 +2274,7 @@ function _pzSnapshot() {
   const cfg = window._pzConfig = Object.assign({}, window._pzConfig)
   const field = id => document.getElementById(id)
   const take = (key, id) => { const el = field(id); if (el) cfg[key] = el.value }
-  take('startPct', 'pz-start'); take('endPct', 'pz-end'); take('startRpe', 'pz-start-rpe'); take('endRpe', 'pz-end-rpe')
+  take('startPct', 'pz-start'); take('endPct', 'pz-end'); take('startRpe', 'pz-start-rpe'); take('endRpe', 'pz-end-rpe'); take('stepShown', 'pz-step-kg')
   const deload = field('pz-deload-on')
   if (deload) {
     if (deload.checked) { take('deloadWeek', 'pz-deload-week'); take('deloadPct', 'pz-deload-pct'); take('deloadRpe', 'pz-deload-rpe') }
@@ -2292,6 +2298,7 @@ function _pzRefreshPreview(durationWeeks) {
   const prev = document.getElementById('pz-preview'), check = document.getElementById('pz-check')
   if (!prev || !check) return
   _pzSnapshot()
+  if (_pzW._pzMethod === 'kg') { _pzRefreshPreviewKg(durationWeeks, prev, check); return }
   const type = window._pzType, rpe = window._pzMethod === 'rpe', c = window._pzConfig
   const cached = window._builderWeekData?.[window._pzPhaseId]
   const rep = type && cached ? _pzWeek1Report(rpe ? 'rpe' : 'pct', cached.byWeek[1] || []) : null
@@ -2331,6 +2338,31 @@ function _pzRefreshPreview(durationWeeks) {
   check.innerHTML = note ? `<div class="pz-note${warn ? ' warn' : ''}">${note}</div>` : ''
 }
 
+// The Add kg method's preview: what each week adds, in the unit the person typed. Same maths as Generate (_computePeriodizedKg); a week's offset is a number, so nothing here needs escaping.
+function _pzRefreshPreviewKg(durationWeeks, prev, check) {
+  const unit = _pzUnit()
+  const deloadWeek = _pzW._pzConfig.deloadWeek ? parseInt(_pzW._pzConfig.deloadWeek, 10) : null
+  const plan = { stepKg: _pzNum(_pzW._pzConfig.stepShown), deloadWeek }
+  const deloadNote = deloadWeek ? ' A deload week goes back to Week 1\'s weights.' : ''
+  let cells = ''
+  for (let w = 1; w <= durationWeeks; w++) {
+    const add = _computePeriodizedKg(plan, w)
+    const txt = w === 1 ? 'as typed' : add == null ? '–' : w === deloadWeek ? 'deload' : '+' + Number(add.toFixed(2))
+    cells += '<div><small>WEEK ' + w + '</small><b>' + txt + '</b></div>'
+  }
+  prev.innerHTML = `<div class="field-label" style="margin-top:12px">What each week adds (${unit})</div><div class="pz-prev">${cells}</div><p class="pz-help">Week 1 stays exactly as you typed it; the other weeks are generated from it.${deloadNote}</p>`
+  const cached = _pzW._builderWeekData?.[_pzW._pzPhaseId]
+  const rep = cached ? _pzWeek1Report('kg', cached.byWeek[1] || []) : null
+  let note = '', warn = false
+  if (rep) {
+    const n = rep.stepped
+    if (!rep.sessions) { note = 'Week 1 has no sessions yet. Add them first, then generate the other weeks.'; warn = true }
+    else if (!n) { note = 'No set in Week 1 has a typed weight yet, so Generate weeks would copy Week 1 unchanged. Add weights in the workout editor first.'; warn = true }
+    else note = `Week 1 has <b>${n} set${n === 1 ? '' : 's'} with a typed weight</b>: ${n === 1 ? 'it goes' : 'they go'} up week by week. Bodyweight sets and sets with no weight stay as they are.`
+  }
+  check.innerHTML = note ? `<div class="pz-note${warn ? ' warn' : ''}">${note}</div>` : ''
+}
+
 // The dialog opens synchronously from the phase card while the sessions are still being read behind it; when they land, redraw the
 // Week-1 heads-up (it says nothing until then) instead of leaving the dialog to describe a Week 1 it never saw.
 function _pzRefreshOpenDialog() {
@@ -2343,7 +2375,7 @@ function renderPeriodizationBody(durationWeeks) {
   const body = document.getElementById('pz-body')
   if (!body) return
   const type = window._pzType
-  const rpe = window._pzMethod === 'rpe'
+  const rpe = window._pzMethod === 'rpe', kg = _pzW._pzMethod === 'kg', pct = !rpe && !kg
   // cfg is the phase's periodization_config — an UNTYPED jsonb column, so every value read from it is
   // text until proven otherwise (bugs/2026-09-06-periodization-reps-is-an-unescaped-stored-attribute...:
   // a stored `foo" onmouseover="…` broke out of value="" and landed a live handler on the input, and even a
@@ -2361,7 +2393,24 @@ function renderPeriodizationBody(durationWeeks) {
   // one side is ever on screen. Neither method has a Reps box any more (removed 2026-10-04, Jake: "remove"): it was saved but never applied
   // to a generated week - only a tier's %1RM / RPE is read (_computePeriodizedPct / _computePeriodizedRpe).
   const rpeDefault = { heavy: 9, moderate: 8, light: 7 }
-  const how = (label, val) => `<button type="button" id="pz-basis-${val}" aria-pressed="${(val === 'rpe') === rpe}" onclick="setPeriodizationBasis('${val}',${durationWeeks})">${label}</button>`
+  const how = (label, val) => `<button type="button" id="pz-basis-${val}" aria-pressed="${val === _pzW._pzMethod}" onclick="setPeriodizationBasis('${val}',${durationWeeks})">${label}</button>`
+  const kgUnit = _pzUnit()
+  // A saved step goes through the weight helpers, so an unchanged Save returns the stored kg exactly (2.5 kg shown as 5.5 lb must not come back as 2.4948). What was typed in this dialog wins over it.
+  const savedStep = _pzNum(cfg.stepKg), shownStep = cfg.stepShown
+  const stepUntouched = savedStep !== null && (shownStep == null || Number(shownStep) === Number(weightToPref(savedStep)))
+  const kgStepAttrs = stepUntouched ? weightInputAttrs(savedStep) : `value="${escapeHtml(String(shownStep ?? (kgUnit === 'lb' ? 5 : 2.5)))}"`
+  const kgLinear = `
+      <p class="pz-help">Every set in Week 1 with a typed weight goes up by this much each week. Reps, rest and effort stay exactly as you set them.</p>
+      <div class="field"><label class="field-label" for="pz-step-kg">Add each week (${kgUnit})</label><input class="field-input" id="pz-step-kg" type="number" inputmode="decimal" min="0" step="0.5" ${kgStepAttrs}></div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-base, 13px);font-weight:600;cursor:pointer">
+          <input type="checkbox" id="pz-deload-on" ${deloadOn ? 'checked' : ''} onchange="document.getElementById('pz-deload-fields').style.display=this.checked?'grid':'none'">
+          Add a deload week
+        </label>
+      </div>
+      <div id="pz-deload-fields" style="display:${deloadOn ? 'grid' : 'none'};grid-template-columns:minmax(0,1fr);gap:10px">
+        <div class="field"><label class="field-label" for="pz-deload-week">Deload week #</label><input class="field-input" id="pz-deload-week" type="number" min="2" max="${durationWeeks}" value="${escapeHtml(String(cfg.deloadWeek || Math.min(durationWeeks, 4)))}"></div>
+      </div>`
   const rpeLinear = `
       <p class="pz-help">The RPE target steps evenly from the start to the end across ${durationWeeks} weeks, in half points. Every set in Week 1 that has an RPE or a RIR is regenerated per week (a RIR converts: RIR = 10 − RPE) — weight, reps, rest and tempo stay exactly as you set them.</p>
       <div class="pz-grid2">
@@ -2392,13 +2441,13 @@ function renderPeriodizationBody(durationWeeks) {
   body.innerHTML = `
     <div class="field">
       <label class="field-label">Method</label>
-      <div class="pz-how" role="group" aria-label="How to periodise">${how('% of 1RM', 'pct')}${how('RPE', 'rpe')}</div>
+      <div class="pz-how" role="group" aria-label="How to periodise">${how('% of 1RM', 'pct')}${how('RPE', 'rpe')}${how('Add ' + kgUnit, 'kg')}</div>
     </div>
-    <div class="field">
+    ${kg ? kgLinear : `<div class="field">
       <label class="field-label">Type</label>
       <div style="display:flex;gap:6px">${tog('None', '')}${tog('Linear', 'linear')}${tog('Undulating', 'undulating')}</div>
-    </div>
-    ${type === 'linear' && !rpe ? `
+    </div>`}
+    ${type === 'linear' && pct ? `
       <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">Intensity steps evenly from the start % to the end % across ${durationWeeks} weeks. Every %1RM set in Week 1 is regenerated per week — reps, rest and tempo stay exactly as you set them.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="field"><label class="field-label">Start %1RM</label><input class="field-input" id="pz-start" type="number" min="1" max="100" value="${escapeHtml(String(cfg.startPct ?? 65))}"></div>
@@ -2415,7 +2464,7 @@ function renderPeriodizationBody(durationWeeks) {
         <div class="field"><label class="field-label">Deload %1RM</label><input class="field-input" id="pz-deload-pct" type="number" min="1" max="100" value="${escapeHtml(String(cfg.deloadPct ?? 50))}"></div>
       </div>
     ` : ''}
-    ${type === 'undulating' && !rpe ? `
+    ${type === 'undulating' && pct ? `
       <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:4px 0 10px">The same Heavy/Moderate/Light pattern repeats every week — it doesn't progress week to week. Assign a tier to each Week 1 session below, and set what each tier means.</p>
       <div style="margin-bottom:12px">
         ${['heavy', 'moderate', 'light'].map(t => `
@@ -2477,7 +2526,17 @@ async function savePeriodizationConfig() {
 
   const rpe = window._pzMethod === 'rpe'
   const RPE_MSG = 'Enter an RPE from 1 to 10 in half points (for example 7.5).'
-  if (type === 'linear' && rpe) {
+  if (_pzW._pzMethod === 'kg') {
+    const stepKg = weightFromInput(_pzEl('pz-step-kg'))
+    if (stepKg === null || stepKg <= 0 || stepKg > 50) { errEl.textContent = 'Enter how much to add each week, more than 0.'; return }
+    config = { basis: 'kg', stepKg }
+    if (_pzEl('pz-deload-on')?.checked) {
+      const deloadWeek = parseInt(_pzEl('pz-deload-week')?.value)
+      const weeks = (_pzW._openProgramPhases || []).find(p => p.id === phaseId)?.duration_weeks
+      if (isNaN(deloadWeek) || deloadWeek < 2 || (weeks && deloadWeek > weeks)) { errEl.textContent = `For the deload week, enter a week number from 2${weeks ? ` to ${weeks}` : ''}.`; return }
+      config.deloadWeek = deloadWeek
+    }
+  } else if (type === 'linear' && rpe) {
     const startRpe = _pzParseRpe(document.getElementById('pz-start-rpe')?.value)
     const endRpe = _pzParseRpe(document.getElementById('pz-end-rpe')?.value)
     if (startRpe === null || endRpe === null) { errEl.textContent = RPE_MSG; return }
@@ -2566,7 +2625,7 @@ async function generatePhasePeriodization(phaseId, programId) {
   if (!(await _cleanupPhaseWeeksBeyond(phaseId, 1, programId))) return
 
   const config = phase.periodization_config || {}
-  const rpeWave = _pzBasis(config) === 'rpe'
+  const wave = _pzBasis(config), rpeWave = wave === 'rpe'
   let waveSets = 0
   const newInserts = []
   let genFailures = 0
@@ -2605,10 +2664,13 @@ async function generatePhasePeriodization(phaseId, programId) {
         // %1RM exactly as before. waveSets counts what the wave actually rewrote, so a phase whose Week 1 holds nothing to step
         // can say so instead of reporting a green success for weeks that are plain copies.
         const sets = (ex.sets_json || []).map(s => {
-          const out = rpeWave
+          const out = wave === 'kg'
+            ? _applyWaveKg(s, _computePeriodizedKg(config, week), ex.metric_type)
+            : rpeWave
             ? _applyWaveRpe(s, () => _computePeriodizedRpe(phase.periodization_type, config, week, phase.duration_weeks, bw.tier))
             : _applyWavePct(s, () => _computePeriodizedPct(phase.periodization_type, config, week, phase.duration_weeks, bw.tier))
-          if (out !== s) waveSets++
+          // A kg set counts even in a week that adds nothing (a deload), so a short phase isn't told it has no weights.
+          if (out !== s || (wave === 'kg' && _applyWaveKg(s, 1, ex.metric_type) !== s)) waveSets++
           return out
         })
         return {
@@ -2705,12 +2767,13 @@ async function generatePhasePeriodization(phaseId, programId) {
   // An RPE phase whose Week 1 has no RPE (or RIR) anywhere generates weeks that are plain copies of Week 1 - say so instead of a
   // green success. Only for RPE: a % phase has always been allowed to generate copies (an Undulating phase can be used just for
   // its tier labels), so its toast is unchanged.
-  const genNote = rpeWave && newInserts.length && !waveSets ? 'no set in Week 1 has an RPE, so every week is a copy of Week 1' : ''
+  const genNote = rpeWave && newInserts.length && !waveSets ? 'no set in Week 1 has an RPE, so every week is a copy of Week 1'
+    : wave === 'kg' && newInserts.length && !waveSets ? 'no set in Week 1 has a typed weight, so every week is a copy of Week 1' : ''
   const genProblems = []
   if (genFailures) genProblems.push(`${genFailures} session${genFailures === 1 ? '' : 's'} skipped`)
   if (propFailures) genProblems.push(`${propFailures} client plan${propFailures === 1 ? '' : 's'} not updated`)
   if (genProblems.length) showToast(`${genSummary} — but ${genProblems.join(', and ')}${genNote ? `, and ${genNote}` : ''}. Reassign the training plan.`, 'error', 8000)
-  else if (genNote) showToast(`${genSummary} — but ${genNote}. Set an RPE in the workout editor, then generate again.`, 'warn', 8000)
+  else if (genNote) showToast(`${genSummary} — but ${genNote}. ${wave === 'kg' ? 'Add weights' : 'Set an RPE'} in the workout editor, then generate again.`, 'warn', 8000)
   else showToast(genSummary, 'success')
   openProgram(programId)
 }
@@ -2912,8 +2975,34 @@ function _computePeriodizedPct(type, config, week, totalWeeks, tier) {
 // Only a set that ALREADY carries an effort target (effortMin/effortMax, on either scale) is rewritten. Weights, reps, rest and
 // every % field are copied exactly, so a "% of today's top set" back-off keeps the % the coach typed. Tests:
 // tests-node/periodization-rpe.test.mjs.
+// The open dialog's shared state and fields, read loosely: the dialog stores its state on window, which the type check cannot see.
+const _pzW = /** @type {any} */ (window)
+const _pzEl = id => /** @type {any} */ (document.getElementById(id))
+const _pzUnit = () => (_pzW._unitPrefs.weight === 'lb' ? 'lb' : 'kg')   // only ever one of these two reaches markup
+
+//   Add kg      { basis:'kg', stepKg, deloadWeek? }   (Jake, 2026-11-08) stepKg is canonical kg; a set's typed weight rises by it each week.
 function _pzBasis(cfg) {
-  return cfg && typeof cfg === 'object' && cfg.basis === 'rpe' ? 'rpe' : 'pct'
+  return cfg && typeof cfg === 'object' && (cfg.basis === 'rpe' || cfg.basis === 'kg') ? cfg.basis : 'pct'
+}
+
+// How much a given week adds to Week 1's weight: nothing in Week 1 or a deload week, null when no valid step is set. Pure, in whatever unit stepKg is in.
+function _computePeriodizedKg(config, week) {
+  const cfg = config && typeof config === 'object' ? config : {}
+  const step = _pzNum(cfg.stepKg)
+  if (step === null || step <= 0) return null
+  if (week <= 1 || (cfg.deloadWeek && week === Number(cfg.deloadWeek))) return 0
+  return step * (week - 1)
+}
+
+// Adds the week's weight to one set. Only a set with a typed weight above zero: bodyweight, blank, 0 kg and %-only sets come back untouched, so waveSets counts real rewrites. Keeps the
+// stored type (the builder can hold a string or a number). Rounded so repeated halves don't store 102.50000000000001.
+function _applyWaveKg(s, add, metricType) {
+  if (!s || typeof s !== 'object' || s.bodyweight || add == null || add === 0) return s
+  if (metricType && !['weight_reps', 'unilateral', 'timed_hold'].includes(metricType)) return s   // a jump or interval can hold a stale weight from a type change
+  const w = _pzNum(s.weight)
+  if (w === null || w <= 0) return s
+  const next = Math.round((w + add) * 1000) / 1000
+  return { ...s, weight: typeof s.weight === 'string' ? String(next) : next }
 }
 
 // A stored or typed value as a finite number, or null. Text that is blank or not a number, booleans, arrays and objects are all
@@ -2964,7 +3053,7 @@ function _applyWaveRpe(s, rpeOf) {
 // and whether the sets to be rewritten currently sit at different values (every generated week uses ONE value for all of
 // them). `pws` is the cached Week-1 slots, each with workout_templates(workout_template_exercises(sets_json)).
 function _pzWeek1Report(basis, pws) {
-  const rpe = basis === 'rpe'
+  const rpe = basis === 'rpe', kg = basis === 'kg'
   let sessions = 0, stepped = 0, held = 0, rir = 0
   const seen = new Set()
   for (const pw of (Array.isArray(pws) ? pws : [])) {
@@ -2974,6 +3063,7 @@ function _pzWeek1Report(basis, pws) {
     for (const ex of (Array.isArray(tmpl.workout_template_exercises) ? tmpl.workout_template_exercises : [])) {
       for (const s of (ex && Array.isArray(ex.sets_json) ? ex.sets_json : [])) {
         if (!s || typeof s !== 'object') continue
+        if (kg) { if (_applyWaveKg(s, 1, ex.metric_type) !== s) stepped++; continue }
         if ((rpe ? _applyWaveRpe(s, () => 8) : _applyWavePct(s, () => 80)) !== s) {
           stepped++
           if (rpe && s.effortType === 'rir') rir++
