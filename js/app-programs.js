@@ -929,7 +929,7 @@ async function removeFromMyPlan(programId) {
   if (!(await _verifyAssignmentAccess('removeFromMyPlan', asg.id))) { showToast('Could not remove it from your plan.', 'error'); return }
   if (!(await _removeAssignmentAndClones(asg.id, 'removed'))) { showToast('Could not remove it from your plan.', 'error'); return }
   showToast('Removed from your plan', 'success')
-  if (window._openProgramId === programId && document.querySelector('[data-remove-from-plan]')) openProgram(programId)      // not over a page the person has since moved on to
+  if (window._openProgramId === programId && document.querySelector('[data-remove-from-plan]')) openProgram(programId)      // not over a page the person has since moved on to (the button sits in the page's own hidden Manage list since 2026-11-08, so this still means "the plan page is mounted"; if that list ever moves to body level, anchor on something else)
 }
 guardReentry('removeFromMyPlan')
 
@@ -1368,7 +1368,9 @@ async function openProgram(programId) {
 
   window._pgmNowId = _pgmCurrentPhaseId(phases, mine, _ymdLocal(new Date()))
   const openState = _pgmOpenState(programId, phases, window._pgmNowId)
-  const cta = _assignBtnHtml(program, mine)   // '' for a personal program: nothing to reserve room for
+  const cta = _assignBtnHtml(program, mine)   // '' for a personal program, and once it is on your plan: nothing to reserve room for
+  const onPlan = _pgmOnMyPlan(mine)
+  const anyMethod = phases.some(ph => _pgmPhaseMethod(ph) !== 'none')
   el.innerHTML = `
     <div class="pgm">
     <a href="#" class="pgm-back" onclick="navigate('programs');return false">
@@ -1377,13 +1379,13 @@ async function openProgram(programId) {
     </a>
     <div class="pgm-titlerow">
       <h1 class="page-title pgm-title">${escapeHtml(program.name)}</h1>
-      <button type="button" class="pgm-manage" onclick="document.getElementById('program-manage-modal').style.display='flex'">⋯ Manage</button>
+      <button type="button" class="pgm-manage" aria-label="Training plan actions" onclick="document.getElementById('program-manage-modal').style.display='flex'">⋯</button>
     </div>
-    <p class="pgm-facts"><b>${phases.length} phase${phases.length !== 1 ? 's' : ''}</b> · <b>${totalWeeks} week${totalWeeks !== 1 ? 's' : ''}</b><span id="pgm-facts-sess"></span></p>
+    <p class="pgm-facts"><b>${phases.length} phase${phases.length !== 1 ? 's' : ''}</b> · <b>${totalWeeks} week${totalWeeks !== 1 ? 's' : ''}</b><span id="pgm-facts-sess"></span>${onPlan ? ' · <span class="badge badge-active" data-onplan>On my plan</span>' : ''}</p>
     ${program.description ? `<p class="pgm-desc is-clamped" id="pgm-desc">${escapeHtml(program.description)}</p><button type="button" class="pgm-more" id="pgm-more" hidden onclick="togglePgmDesc()">Show more</button>` : ''}
     ${cta ? `<div class="pgm-cta">${cta}</div>` : ''}
     ${phases.length ? `<div class="pgm-tl" id="pgm-tl" role="group" aria-label="The phases of this training plan, as wide as their weeks">${phases.map((ph, i) => _pgmSegHtml(ph, i, openState[ph.id])).join('')}</div>
-    <div class="pgm-legend"><span><i class="pct"></i>% of 1RM</span><span><i class="rpe"></i>RPE</span><span><i class="none"></i>none</span><span>· tap a block to jump</span></div>` : ''}
+    ${anyMethod ? `<div class="pgm-legend"><span><i class="pct"></i>% of 1RM</span><span><i class="rpe"></i>RPE</span><span><i class="none"></i>none</span></div>` : ''}` : ''}
 
     <!-- Phases -->
     <div class="pgm-sec"><h2>Phases</h2><span id="pgm-open-count">${phases.length ? `${phases.filter(ph => openState[ph.id]).length} open` : ''}</span></div>
@@ -1423,7 +1425,7 @@ async function openProgram(programId) {
       <div class="modal">
         <div class="modal-header">
           <h2 class="modal-title" id="program-modal-title">Edit training plan</h2>
-          <button class="btn-icon" onclick="closeProgramModal()">✕</button>
+          <button type="button" class="pgm-close" onclick="closeProgramModal()">Close</button>
         </div>
         <div style="margin-bottom:14px">
           <label class="form-label">Training plan name <span style="color:var(--danger-text)">*</span></label>
@@ -1449,7 +1451,7 @@ async function openProgram(programId) {
       <div class="modal modal-fullscreen-mobile" style="overflow-y:auto">
         <div class="modal-header">
           <h2 class="modal-title">Manage training plan</h2>
-          <button class="btn-icon" onclick="document.getElementById('program-manage-modal').style.display='none'">✕</button>
+          <button type="button" class="pgm-close" onclick="document.getElementById('program-manage-modal').style.display='none'">Close</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px">
           <button class="btn btn-secondary" onclick="document.getElementById('program-manage-modal').style.display='none';showEditProgramModal('${program.id}','${escapeAttr(program.name)}','${escapeAttr((program.description||''))}')">Edit name and description</button>
@@ -1460,7 +1462,8 @@ async function openProgram(programId) {
                 ? `<button class="btn btn-secondary" onclick="copyProgramToCoaching('${program.id}')" title="Make a coaching copy you can assign to clients">Copy to coaching plans</button>`
                 : '')
             : (window._soloClientId && currentProfile?.role !== 'solo' ? `<button class="btn btn-secondary" onclick="moveProgramToPersonal('${program.id}')" title="Move into your Personal view — no longer assignable to clients">Move to Personal</button>` : '')}
-          <button class="btn btn-danger" onclick="deleteProgram('${program.id}')">Delete training plan</button>
+          ${onPlan ? `<button class="btn btn-secondary" data-remove-from-plan onclick="document.getElementById('program-manage-modal').style.display='none';removeFromMyPlan('${program.id}')">Remove from my plan</button>` : ''}
+          <button class="btn btn-secondary pgm-danger-text" onclick="deleteProgram('${program.id}')">Delete training plan</button>
         </div>
       </div>
     </div>`
@@ -1530,12 +1533,12 @@ function _pgmOpenState(programId, phases, currentId) {
   return st.open
 }
 
-// One block of the overview bar: as wide as the phase has weeks, coloured by method, numbered like its card. The phase name is
-// free text and goes into an attribute, so it is escaped here.
+// One block of the overview bar: as wide as the phase has weeks, coloured by method, labelled with the phase's name and weeks
+// (a number until 2026-11-08). The phase name is free text, so it is escaped for both the label and the attribute.
 function _pgmSegHtml(ph, i, open) {
   const weeks = Math.max(1, Number(ph.duration_weeks) || 1)
   const name = escapeHtml(`Phase ${i + 1}, ${ph.name}, ${weeks} week${weeks !== 1 ? 's' : ''}`)
-  return `<button type="button" class="pgm-seg ${_pgmPhaseMethod(ph)}" style="flex:${weeks}" aria-pressed="${!!open}" aria-label="${name}" onclick="jumpToPhase('${ph.id}')">${i + 1}</button>`
+  return `<button type="button" class="pgm-seg ${_pgmPhaseMethod(ph)}" style="flex:${weeks}" aria-pressed="${!!open}" aria-label="${name}" onclick="jumpToPhase('${ph.id}')"><span>${escapeHtml(ph.name)} · ${weeks} wk</span></button>`
 }
 
 // A phase card. Closed it is one line - number, name, weeks, sessions a week, method chip - and nothing else is in the DOM; open
@@ -1548,18 +1551,18 @@ function _pgmCardHtml(ph, i, programId, open) {
   const chip = label ? `<span class="pgm-chip ${method}">${label}</span>` : ''
   const now = ph.id === window._pgmNowId ? '<span class="pgm-now" title="The phase your plan is in this week">Now</span>' : ''
   const sess = _pgmSessionsText(_pgmWeek1Count(ph.id))
-  const per = weeks > 1 ? `
+  // Add / Edit periodisation lives in the phase's ⋯ since 2026-11-08 (it changes the whole phase); Generate weeks stays on the screen, as the step
+  // that follows a change to Week 1.
+  const per = weeks > 1 && ph.periodization_type ? `
       <div class="pgm-per">
-        <span class="pgm-per-l">Periodization</span>
-        <span class="pgm-sp"></span>
-        <button type="button" class="btn-secondary pgm-sbtn" onclick="showPeriodizationModal('${ph.id}','${programId}')">${ph.periodization_type ? 'Edit periodization' : 'Add periodization'}</button>
-        ${ph.periodization_type ? `<button type="button" class="btn-primary pgm-sbtn" onclick="generatePhasePeriodization('${ph.id}','${programId}')">Generate weeks</button>` : ''}
-      </div>
-      ${ph.periodization_type ? `<p class="pgm-gen">Weeks 2–${weeks} follow Week 1. After you change Week 1, press Generate weeks to rebuild them.</p>` : ''}` : ''
+        <p class="pgm-gen">Weeks 2–${weeks} follow Week 1. After you change Week 1, press Generate weeks to rebuild them.</p>
+        <button type="button" class="btn-primary pgm-sbtn" onclick="generatePhasePeriodization('${ph.id}','${programId}')">Generate weeks</button>
+      </div>` : ''
+  const noPer = weeks > 1 && !ph.periodization_type ? '<span>· no periodisation</span>' : ''
   return `<section class="pgm-ph${open ? ' is-open' : ''}" id="ph-${ph.id}">
     <button type="button" class="pgm-ph-h" aria-expanded="${!!open}" aria-controls="pgm-body-${ph.id}" onclick="togglePhaseCard('${ph.id}')">
       <span class="pgm-num ${method}">${i + 1}</span>
-      <span class="pgm-ph-t"><b>${escapeHtml(ph.name)}</b><small>${now}<span>${weeks} week${weeks !== 1 ? 's' : ''}</span><span id="pgm-sess-${ph.id}">${sess}</span>${chip}</small></span>
+      <span class="pgm-ph-t"><b>${escapeHtml(ph.name)}</b><small>${now}<span>${weeks} week${weeks !== 1 ? 's' : ''}</span><span id="pgm-sess-${ph.id}">${sess}</span>${noPer}${chip}</small></span>
       <svg class="pgm-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
     </button>
     <button type="button" class="pgm-ph-menu" aria-label="Actions for ${escapeHtml(ph.name)}" onclick="openPhaseMenu('${programId}','${ph.id}')">⋯</button>
@@ -1619,7 +1622,7 @@ function _pgmRefreshSummaries() {
   if (all) { const t = _pgmSessionsLabel(counts); all.textContent = t ? ' · ' + t : '' }
 }
 
-// The week row (the tabs, then the active week's Duplicate / Delete buttons) and the active week's grid, from the cached sessions. Only an OPEN card has the container, so
+// The week row ("Week" and the active week's ⋯, then the tabs) and the active week's grid, from the cached sessions. Only an OPEN card has the container, so
 // a folded phase costs nothing; unfolding it paints it from the cache with no refetch.
 function _renderPhaseBody(phaseId) {
   const el = document.getElementById(`phase-workouts-${phaseId}`)
@@ -1632,12 +1635,13 @@ function _renderPhaseBody(phaseId) {
     // Label is the tab's sequential position (1..N), not the raw week_number -- a phase whose rows
     // carry non-contiguous week_number values (e.g. 2 and 3, skipping 1) previously showed "WEEK 2 /
     // WEEK 3" instead of "WEEK 1 / WEEK 2". data-week/onclick still carry the real value, which is
-    // what _selectBuilderWeek needs to look up the right entry in byWeek.
-    ? `<div class="week-tabs">${weekNums.map(w => `<button class="week-tab" data-phase="${phaseId}" data-week="${w}" aria-selected="${w === active}" onclick="_selectBuilderWeek('${phaseId}',${w})"><span class="wt-n">WEEK</span>${weekNums.indexOf(w) + 1}</button>`).join('')}</div>`
+    // what _selectBuilderWeek needs to look up the right entry in byWeek. Numbers only since 2026-11-08 (the row is headed "Week"),
+    // in a grid that wraps, so a long phase never runs off the edge.
+    ? `<div class="week-tabs">${weekNums.map(w => `<button class="week-tab" data-phase="${phaseId}" data-week="${w}" aria-selected="${w === active}" aria-label="Week ${weekNums.indexOf(w) + 1}" onclick="_selectBuilderWeek('${phaseId}',${w})">${weekNums.indexOf(w) + 1}</button>`).join('')}</div>`
     : ''
   // Only the active week's grid is in the DOM at once — keeps the day/add/remove controls unambiguous
   // (one set on screen) and avoids duplicating a whole phase's grid per week.
-  el.innerHTML = `${tabsHtml ? `<div class="pgm-wk">${tabsHtml}</div>` : ''}<div class="pgm-wk-actions" id="pgm-wk-actions-${phaseId}">${_pgmWeekActionsHtml(phaseId, d, active)}</div><div class="bw-week" id="phase-week-${phaseId}" data-phase="${phaseId}">${renderPhaseWeekGrid(d.phase, active, d.byWeek[active] || [])}</div>`
+  el.innerHTML = `<div class="pgm-wk-head"><span class="pgm-wk-l">${tabsHtml ? 'Week' : 'Week 1'}</span><span class="pgm-wk-actions" id="pgm-wk-actions-${phaseId}">${_pgmWeekActionsHtml(phaseId, d, active)}</span></div>${tabsHtml ? `<div class="pgm-wk">${tabsHtml}</div>` : ''}<div class="bw-week" id="phase-week-${phaseId}" data-phase="${phaseId}">${renderPhaseWeekGrid(d.phase, active, d.byWeek[active] || [])}</div>`
 }
 
 // The description is clamped to two lines; "Show more" appears only when it really is cut off (checked after the paint).
@@ -1652,12 +1656,14 @@ function togglePgmDesc() {
   b.textContent = d.classList.toggle('is-clamped') ? 'Show more' : 'Show less'
 }
 
-// ── The phase's ⋯ sheet (Edit / Remove); the week's Duplicate / Delete are buttons on the page (pgmWeekAction) ───────────────────────────────────────────
-// Same shape as the runner's ⋯ menu. The rows carry only a literal `kind`; which program / phase / week it is about is kept in
-// window._pgmMenu, so no id and no free text ever sits in a sheet row's handler string. (The week's two buttons on the page, below, are the exception:
-// their handler carries the phase's id, a database uuid, and the week that was painted, a number; never free text.)
+// ── The ⋯ sheets: the phase's (Edit / periodisation / Remove), the week's (Duplicate / Delete) and an open workout's (Library / second workout / Remove) ─────
+// Same shape as the runner's ⋯ menu. The rows carry only a literal `kind`; which program / phase / week / workout it is about is kept in
+// window._pgmMenu, so no id and no free text ever sits in a sheet row's handler string. (The ⋯ buttons that open the week and workout sheets carry
+// database uuids and painted numbers in theirs; never free text.)
 function _pgmSheet(title, rows) {
   document.getElementById('pgm-sheet')?.remove()
+  // Whatever opened the sheet (its ⋯) gets the keyboard back when the sheet goes, unless a repaint has replaced it.
+  _pgmSheetOpener = /** @type {HTMLElement|null} */ (document.activeElement)
   const overlay = document.createElement('div')
   overlay.id = 'pgm-sheet'
   overlay.className = 'modal-overlay'
@@ -1665,7 +1671,7 @@ function _pgmSheet(title, rows) {
   overlay.onclick = e => { if (e.target === overlay) closePgmSheet() }
   overlay.innerHTML = `
     <div class="modal" role="dialog" aria-label="${escapeHtml(title)}">
-      <div class="modal-header"><h2 class="modal-title">${escapeHtml(title)}</h2><button class="modal-close" onclick="closePgmSheet()" aria-label="Close">✕</button></div>
+      <div class="modal-header"><h2 class="modal-title">${escapeHtml(title)}</h2><button type="button" class="pgm-close" onclick="closePgmSheet()">Close</button></div>
       <div class="pgm-sheet-rows">
         ${rows.map(r => `<button type="button" id="${r.id}" class="pgm-sheet-row${r.danger ? ' is-danger' : ''}" onclick="pgmMenuDo('${r.kind}')">${escapeHtml(r.label)}</button>`).join('')}
       </div>
@@ -1673,51 +1679,86 @@ function _pgmSheet(title, rows) {
   mountModal(overlay)
 }
 
-function closePgmSheet() { document.getElementById('pgm-sheet')?.remove() }
+let _pgmSheetOpener = null
+function closePgmSheet() {
+  const sheet = document.getElementById('pgm-sheet')
+  if (!sheet) return
+  sheet.remove()
+  const opener = _pgmSheetOpener
+  _pgmSheetOpener = null
+  if (opener && opener.isConnected && opener !== document.body) opener.focus()
+}
 
 function openPhaseMenu(programId, phaseId) {
   const ph = (window._openProgramPhases || []).find(p => p.id === phaseId)
   if (!ph) return
   window._pgmMenu = { programId, phaseId }
-  _pgmSheet(ph.name, [
-    { id: 'pgm-edit-phase', kind: 'edit-phase', label: 'Edit phase' },
-    { id: 'pgm-remove-phase', kind: 'remove-phase', label: 'Remove phase', danger: true }
-  ])
+  const rows = [{ id: 'pgm-edit-phase', kind: 'edit-phase', label: 'Edit phase' }]
+  // A one-week phase has nothing to periodise (the same rule the on-screen button had).
+  if ((Number(ph.duration_weeks) || 1) > 1) rows.push({ id: 'pgm-periodise', kind: 'periodise', label: ph.periodization_type ? 'Edit periodisation' : 'Add periodisation' })
+  rows.push({ id: 'pgm-remove-phase', kind: 'remove-phase', label: 'Remove phase', danger: true })
+  _pgmSheet(ph.name, rows)
 }
 
-// The week on screen's two actions, as buttons on the page (they sat behind the week's ⋯ sheet until 2026-10-16: Jake, "buttons need to be moved from the ... and put
-// directly on this screen"). A week with no workouts has nothing to duplicate or delete, so it shows none; "+ Add workout…" is right there.
+// The week on screen's ⋯, which opens Duplicate / Delete. Those were buttons on the page from 2026-10-16 (Jake then: "buttons need to be moved from the ... and
+// put directly on this screen") and went back behind ⋯ on 2026-11-08 (Jake chose it in the plan-page mock-up; docs/decisions.md). A week with no workouts has
+// nothing to duplicate or delete, so it shows none; "+ Add" is right there.
 function _pgmWeekActionsHtml(phaseId, d, week) {
   if (!d || week == null || !(d.byWeek[week] || []).length) return ''
   const w = Number(week)
-  return `<button type="button" class="btn btn-secondary" onclick="pgmWeekAction('${phaseId}','dup',${w})">Duplicate week</button><button type="button" class="btn btn-danger" onclick="pgmWeekAction('${phaseId}','del',${w})">Delete week</button>`
+  return `<button type="button" class="pgm-dots" aria-label="Actions for this week" onclick="openWeekMenu('${phaseId}',${w})">⋯</button>`
 }
 
-// Switching week tabs repaints only the grid, so the buttons are redone with it: the week switched to may have nothing in it.
+// Switching week tabs repaints only the grid, so the ⋯ is redone with it: the week switched to may have nothing in it.
 function _pgmRefreshWeekActions(phaseId, week) {
   const el = document.getElementById('pgm-wk-actions-' + phaseId)
   if (el) el.innerHTML = _pgmWeekActionsHtml(phaseId, window._builderWeekData?.[phaseId], week)
 }
 
-// The week is the one the button was PAINTED for, not whatever _builderActiveWeek says by now: while "Duplicate x N" is mid-run it already names the new week, which
-// is not on screen yet. It must still be in the cache (a week deleted or emptied since the paint does nothing), and an unknown kind does nothing. pgmMenuDo then
-// re-checks that the phase is still on the page.
-function pgmWeekAction(phaseId, kind, week) {
+// The week is the one the ⋯ was PAINTED for, not whatever _builderActiveWeek says by now: while "Duplicate x N" is mid-run it already names the new week, which
+// is not on screen yet. It must still be in the cache (a week deleted or emptied since the paint opens nothing). pgmMenuDo then re-checks that the phase is
+// still on the page.
+function openWeekMenu(phaseId, week) {
   const d = window._builderWeekData?.[phaseId]
   if (!d || !(d.byWeek[week] || []).length) return
   window._pgmMenu = { programId: window._openProgramId, phaseId, week }
-  if (kind === 'dup') pgmMenuDo('dup-week')
-  else if (kind === 'del') pgmMenuDo('del-week')
+  const n = Object.keys(d.byWeek).map(Number).sort((a, b) => a - b).indexOf(Number(week)) + 1
+  _pgmSheet(`Week ${n || 1}`, [
+    { id: 'pgm-dup-week', kind: 'dup-week', label: 'Duplicate week' },
+    { id: 'pgm-del-week', kind: 'del-week', label: 'Delete week…', danger: true }
+  ])
 }
 
-function pgmMenuDo(kind) {
+// An open workout's ⋯. The slot must still be in the cached week it was painted in (removed since the paint: nothing opens).
+function openSlotMenu(pwId, phaseId, week) {
+  const w = /** @type {any} */ (window)
+  const d = w._builderWeekData?.[phaseId]
+  const pw = (d?.byWeek[week] || []).find(p => p.id === pwId)
+  if (!pw) return
+  const sameDay = (d.byWeek[week] || []).filter(p => p.day_of_week === pw.day_of_week).length
+  w._pgmMenu = { programId: w._openProgramId, phaseId, week, pwId, templateId: pw.template_id, day: pw.day_of_week, count: sameDay }
+  const rows = [{ id: 'pgm-save-lib', kind: 'save-lib', label: 'Save to Library' }]
+  if (sameDay < 2) rows.push({ id: 'pgm-add-second', kind: 'add-second', label: 'Add a second workout this day' })
+  rows.push({ id: 'pgm-remove-pw', kind: 'remove-pw', label: 'Remove from this week', danger: true })
+  _pgmSheet(pw.workout_templates?.name || 'Workout', rows)
+}
+
+async function pgmMenuDo(kind) {
   const ctx = window._pgmMenu || {}
   closePgmSheet()
   const ph = (window._openProgramPhases || []).find(p => p.id === ctx.phaseId)
   if (kind === 'edit-phase' && ph) showEditPhaseForm(ctx.programId, ph.id, ph.name, ph.duration_weeks, ph.order_index)
+  else if (kind === 'periodise' && ph) showPeriodizationModal(ph.id, ctx.programId)
   else if (kind === 'remove-phase' && ph) deletePhase(ctx.programId, ph.id)
   else if (kind === 'dup-week' && ph) showDuplicateWeekModal(ph.id, ctx.week)
   else if (kind === 'del-week' && ph) deletePhaseWeek(ph.id, ctx.week)
+  else if (kind === 'save-lib' && ph && ctx.templateId) saveTemplateToLibrary(ctx.templateId, null)
+  else if (kind === 'add-second' && ph && ctx.count < 2) _openWorkoutPicker(ph.id, ctx.day, ctx.count + 1, ctx.week)
+  else if (kind === 'remove-pw' && ph && ctx.pwId) {
+    // A removal asks first, like every other one behind a ⋯ (it was a one-tap button until 2026-11-08).
+    if (!(await confirmDialog('The workout comes off this day of this week of the plan.',{ title: 'Remove from this week?', confirmLabel: 'Remove', cancelLabel: 'Keep it', danger: true }))) return
+    removePhaseWorkout(ctx.pwId, ph.id)
+  }
 }
 
 let _editingProgramId = null
@@ -1778,15 +1819,21 @@ async function saveProgram(programId) {
 // Which button the program header shows for "give this program to someone".
 // A PERSONAL program is never assignable to a client — that is the whole point of the boundary, and
 // the reason 2 real clients ended up on a personal program in the first place. Solo sees
-// "Add to my plan" (assigning to yourself is what a personal program is for), or, once it is on their plan, "On my plan" and "Remove from my plan".
+// "Add to my plan" (assigning to yourself is what a personal program is for), or, once it is on their plan, nothing: "On my plan" sits on the facts line and
+// "Remove from my plan" in the plan's ⋯ list since 2026-11-08 (Jake: removing is occasional, so it goes behind ⋯).
 function _assignBtnHtml(program, mine) {
   if (currentProfile?.role === 'solo') {
-    // `mine` is the viewer's own assignment of THIS program (null when none; { error } when the lookup failed, which keeps the Add button it always had).
-    if (mine && !mine.error) return `<div class="pgm-onplan"><span class="badge badge-active" data-onplan>On my plan</span><button type="button" class="btn btn-secondary" data-remove-from-plan onclick="removeFromMyPlan('${program.id}')">Remove from my plan</button></div>`
+    if (_pgmOnMyPlan(mine)) return ''
     return `<button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">Add to my plan</button>`
   }
   if (program.is_personal) return ''
   return `<button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">Assign to client</button>`
+}
+
+// Is this program on the solo viewer's own plan? `mine` is their assignment of it (null when none; { error } when the lookup failed, which keeps the
+// Add button it always had). Solo only: a coach's own record never shows "On my plan".
+function _pgmOnMyPlan(mine) {
+  return currentProfile?.role === 'solo' && !!mine && !mine.error
 }
 
 // Who is actually assigned to this program, split into the user's OWN solo self-assignment vs. real
@@ -2185,7 +2232,7 @@ function showPeriodizationModal(phaseId, programId) {
   overlay.innerHTML = `
     <div class="modal" style="max-width:480px">
       <div class="modal-header">
-        <h2 class="modal-title">Periodization — ${escapeHtml(phase.name)}</h2>
+        <h2 class="modal-title">Periodisation — ${escapeHtml(phase.name)}</h2>
         <button class="modal-close" onclick="closeModal('periodization-modal')">✕</button>
       </div>
       <div id="pz-body"></div>
@@ -2345,7 +2392,7 @@ function renderPeriodizationBody(durationWeeks) {
   body.innerHTML = `
     <div class="field">
       <label class="field-label">Method</label>
-      <div class="pz-how" role="group" aria-label="How to periodize">${how('% of 1RM', 'pct')}${how('RPE', 'rpe')}</div>
+      <div class="pz-how" role="group" aria-label="How to periodise">${how('% of 1RM', 'pct')}${how('RPE', 'rpe')}</div>
     </div>
     <div class="field">
       <label class="field-label">Type</label>
@@ -2481,7 +2528,7 @@ async function savePeriodizationConfig() {
       if (tierErr || !tierRows?.length) {
         log.error('savePeriodizationConfig', 'tier write failed', tierErr || { refused: true, slotId: slot.id })
         // "Close and reopen" because a session deleted from another tab or device stays in this dialog's list until it is rebuilt.
-        errEl.textContent = 'Could not save the session tiers, so the periodization was not applied. Try again, or close and reopen this dialog.'
+        errEl.textContent = 'Could not save the session tiers, so the periodisation was not applied. Try again, or close and reopen this dialog.'
         return
       }
     }
@@ -2491,7 +2538,7 @@ async function savePeriodizationConfig() {
   // returns no error, the next line logged success and the dialog closed on a phase that had not changed.
   const { data: phaseRows, error } = await db.from('program_phases').update({ periodization_type: type, periodization_config: config }).eq('id', phaseId).select('id')
   if (error) { log.error('savePeriodizationConfig', 'update failed', error); errEl.textContent = error.message; return }
-  if (!phaseRows?.length) { log.error('savePeriodizationConfig', 'phase update refused', { phaseId }); errEl.textContent = 'Could not save the periodization: permission denied.'; return }
+  if (!phaseRows?.length) { log.error('savePeriodizationConfig', 'phase update refused', { phaseId }); errEl.textContent = 'Could not save the periodisation: permission denied.'; return }
   log.ok('savePeriodizationConfig', 'saved', { phaseId, type })
   closeModal('periodization-modal')
   openProgram(programId)
@@ -2501,7 +2548,7 @@ async function generatePhasePeriodization(phaseId, programId) {
   if (!(await _verifyPhaseOwnership('generatePhasePeriodization', phaseId, programId))) { showToast('Could not generate — permission denied', 'error'); return }
   const { data: phase, error: phErr } = await db.from('program_phases').select('*').eq('id', phaseId).single()
   if (phErr || !phase) { showToast('Could not load phase', 'error'); return }
-  if (!phase.periodization_type) { showToast('Set a periodization type first', 'error'); return }
+  if (!phase.periodization_type) { showToast('Set a periodisation type first', 'error'); return }
   if (phase.duration_weeks < 2) { showToast('Phase must be at least 2 weeks to generate', 'error'); return }
 
   const { data: baseWorkouts, error: bwErr } = await db.from('program_phase_workouts')
@@ -2509,7 +2556,7 @@ async function generatePhasePeriodization(phaseId, programId) {
     .eq('phase_id', phaseId).eq('week_number', 1)
   if (bwErr || !baseWorkouts?.length) { showToast('Add Week 1 sessions before generating', 'error'); return }
 
-  if (!(await confirmDialog(`Generate weeks 2–${phase.duration_weeks} from Week 1? This deletes any existing Week 2+ content for this phase — periodization-generated OR manually added/duplicated — and rebuilds it from Week 1.`, { title: 'Generate weeks?', confirmLabel: 'Generate', danger: true }))) return
+  if (!(await confirmDialog(`Generate weeks 2–${phase.duration_weeks} from Week 1? This deletes any existing Week 2+ content for this phase — periodisation-generated OR manually added/duplicated — and rebuilds it from Week 1.`, { title: 'Generate weeks?', confirmLabel: 'Generate', danger: true }))) return
 
   // Idempotent regeneration — clear any weeks generated by a previous run (or manually built via
   // "Duplicate week"/the add-workout grid) first: master rows + any already-propagated client copies.
@@ -3012,19 +3059,20 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
   // action buttons into a ~130px day column, with the other six columns sitting empty beside it.
   const slotHtml = (pw, multi) => {
     const name = pw.workout_templates?.name || 'Unknown'
+    const n = (pw.workout_templates?.workout_template_exercises || []).length
     return `<div class="pwk-slot${pw.id === openId ? ' is-open' : ''}">
-      <div class="pwk-slot-head" data-pw="${pw.id}" role="button" tabindex="0" onclick="_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})}">
+      <div class="pwk-slot-head" data-pw="${pw.id}" role="button" tabindex="0" aria-expanded="${pw.id === openId}" onclick="_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})}">
         ${pw.tier ? `<span class="pwk-tier" style="color:${tierColor[pw.tier]}">${pw.tier[0].toUpperCase()}</span>` : ''}
         ${multi ? `<span class="pwk-ampm">${pw.session_order === 2 ? 'PM' : 'AM'}</span>` : ''}
-        <span class="pwk-slot-name">${escapeHtml(name)}</span>
+        <span class="pwk-slot-name">${escapeHtml(name)}<small class="pwk-slot-n">${n} exercise${n === 1 ? '' : 's'}</small></span>
         <svg class="pwk-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
     </div>`
   }
 
-  // The open slot's exercise preview + Edit / Remove / Save to Library, full-width under the grid.
-  const detailHtml = (pw, dayNum, count) => {
-    const name = pw.workout_templates?.name || 'Unknown'
+  // The open slot's exercise preview, then Open workout / Close / ⋯ (Save to Library, a second workout, Remove), full-width under the grid. No title or ✕
+  // of its own since 2026-11-08: the day row above it already names the workout.
+  const detailHtml = (pw) => {
     const exs = [...(pw.workout_templates?.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
     const exHtml = exs.length
       // Same prescription line as the client/solo Workouts page, via the one shared formatter in
@@ -3037,14 +3085,12 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
         }).join('')
       : '<div class="pwk-ex" style="color:var(--text-muted)">No exercises yet</div>'
     return `<div class="pwk-detail">
-      <div class="pwk-detail-head"><span>${escapeHtml(name)}</span><button class="pwk-detail-x" onclick="_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})" aria-label="Close">✕</button></div>
       ${exHtml}
       <div class="pwk-slot-actions">
-        <button class="pwk-act edit" onclick="_editPhaseWorkout('${pw.template_id}','${pw.id}')">✎ Edit workout</button>
-        <button class="pwk-act remove" onclick="removePhaseWorkout('${pw.id}','${phase.id}')">✕ Remove</button>
+        <button type="button" class="btn btn-secondary pwk-open" onclick="_editPhaseWorkout('${pw.template_id}','${pw.id}')">Open workout</button>
+        <button type="button" class="btn btn-secondary pwk-close" onclick="_toggleBuilderSlot('${pw.id}','${phase.id}',${weekNum})">Close</button>
+        <button type="button" class="pgm-dots" aria-label="More for this workout" onclick="openSlotMenu('${pw.id}','${phase.id}',${weekNum})">⋯</button>
       </div>
-      <button class="pwk-act" style="width:100%;margin-top:6px;color:var(--text-muted)" onclick="saveTemplateToLibrary('${pw.template_id}',this)" title="Make this workout reusable in any training plan">Save to Library</button>
-      ${count < 2 ? `<button class="pwk-add pwg-add" style="margin-top:6px" data-phase="${phase.id}" data-day="${dayNum}" data-session="${count + 1}" data-week="${weekNum}" onclick="_openWorkoutPicker('${phase.id}',${dayNum},${count + 1},${weekNum})">+ Add a second workout on this day</button>` : ''}
     </div>`
   }
 
@@ -3066,8 +3112,8 @@ function renderPhaseWeekGrid(phase, weekNum, sessions) {
         const openHere = daySessions.find(pw => pw.id === openId)
         return `<div class="pwk-day${daySessions.length ? '' : ' is-empty'}">
           <div class="pwk-dow">${label}</div>
-          ${daySessions.length ? daySessions.map(pw => slotHtml(pw, multi)).join('') : `<span class="pwk-rest">Rest</span><button class="pwk-add pwg-add" data-phase="${phase.id}" data-day="${dayNum}" data-session="1" data-week="${weekNum}" onclick="_openWorkoutPicker('${phase.id}',${dayNum},1,${weekNum})">+ Add workout…</button>`}
-        </div>${openHere ? detailHtml(openHere, dayNum, daySessions.length) : ''}`
+          ${daySessions.length ? daySessions.map(pw => slotHtml(pw, multi)).join('') : `<span class="pwk-rest">Rest</span><button type="button" class="pwk-add pwg-add" data-phase="${phase.id}" data-day="${dayNum}" data-session="1" data-week="${weekNum}" aria-label="Add a workout on ${label[0] + label.slice(1).toLowerCase()}" onclick="_openWorkoutPicker('${phase.id}',${dayNum},1,${weekNum})">+ Add</button>`}
+        </div>${openHere ? detailHtml(openHere) : ''}`
       }).join('')}
     </div>`
 }
@@ -3336,7 +3382,7 @@ async function deletePhaseWeek(phaseId, weekNumber) {
   if (phase && durationOk && programId) openProgram(programId)
   else loadAllPhaseWorkouts([{ id: phaseId }])
 }
-guardReentry('deletePhaseWeek')  // the button is on the page now: a second tap during the delete would ask about whichever week has taken the first one's number
+guardReentry('deletePhaseWeek')  // a second tap during the delete (the week ⋯ can be reopened) would ask about whichever week has taken the first one's number
 
 // ─── Workout picker (program phase day-slot) ─────────────────────────────────
 // Replaces the old native <select> + sibling filter input. A <select>'s <option> can only hold

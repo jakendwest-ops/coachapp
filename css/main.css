@@ -1003,18 +1003,16 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 @media (min-width:768px) {
   .pwk-detail { order:999; grid-column:1 / -1; }
 }
-.pwk-detail-head { display:flex; align-items:center; justify-content:space-between; font-size:var(--text-base, 13px); font-weight:700; margin-bottom:2px; }
-.pwk-detail-x { color:var(--text-muted); font-size:var(--text-lg, 14px); line-height:1; padding:2px 6px; flex-shrink:0; }
 .pwk-ex { display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-top:1px solid var(--border); font-size:12px; }
 .pwk-ex .s { color:var(--text-muted); font-size:11px; flex-shrink:0; font-variant-numeric:tabular-nums; }
 /* The prescription line under an exercise name in a builder slot (2026-07-22) — the actual
    reps/weight/rest, not just a set count. Muted so the exercise name still leads the row. */
 .pwk-presc { color:var(--text-muted); font-size:11px; margin-top:2px; line-height:1.35; }
+/* Open workout / Close / ⋯ under an open slot's exercises (2026-11-08: one button style, the rest behind ⋯). */
 .pwk-slot-actions { display:flex; gap:6px; margin-top:8px; }
-.pwk-act { flex:1; font-size:11.5px; font-weight:700; padding:7px 6px; border-radius:7px; border:1px solid var(--border); background:var(--surface); cursor:pointer; }
-.pwk-act.edit { color:var(--accent); }
-.pwk-act.remove { color:var(--danger-text); }
-.pwk-act:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.pwk-slot-actions .btn { flex:1; min-width:0; min-height:44px; display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }
+.pwk-slot-actions .pwk-close { flex:0 0 auto; padding:0 16px; }
+.pwk-slot-n { display:block; font-size:var(--text-sm); font-weight:400; color:var(--text-muted); }
 .pwk-add { width:100%; min-height:40px; font-size:11.5px; font-weight:600; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer; text-align:center; }
 .pwk-add:hover { border-color:var(--accent); color:var(--accent); }
 .pwk-add:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
@@ -1040,7 +1038,13 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .pgm-back { display:inline-flex; align-items:center; gap:4px; margin-bottom:8px; font-size:var(--text-base); font-weight:600; color:var(--accent); }
 .pgm-titlerow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .pgm-title { margin-bottom:4px; overflow-wrap:anywhere; }
-.pgm-manage { flex-shrink:0; height:36px; padding:0 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-size:var(--text-base); font-weight:700; color:var(--text); white-space:nowrap; }
+/* The page's ⋯ buttons (the plan's, a week's, an open workout's) share one look: 44px square, the same border as a secondary button. */
+.pgm-manage, .pgm-dots { flex-shrink:0; width:44px; height:44px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-size:var(--text-xl); font-weight:800; line-height:1; color:var(--text); }
+.pgm-dots:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* "Close" in a sheet or the Manage list's header, in words rather than a ✕ (Jake, 2026-11-08). */
+.pgm-close { min-height:44px; padding:0 8px; border:0; background:none; color:var(--accent); font-size:var(--text-base); font-weight:700; }
+.pgm-close:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.pgm-danger-text { color:var(--danger-text); }
 .pgm-facts { font-size:var(--text-base); color:var(--text-muted); }
 .pgm-facts b { color:var(--text); font-weight:700; }
 .pgm-desc { margin-top:10px; font-size:var(--text-lg); color:var(--text-muted); overflow-wrap:anywhere; }
@@ -1048,7 +1052,6 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .pgm-more { padding:4px 0; font-size:var(--text-md); font-weight:700; color:var(--accent); }
 .pgm-cta { margin-top:12px; }
 .pgm-cta .btn { min-height:46px; }
-.pgm-onplan { display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
 .pgm-replaces { font-size:var(--text-md); color:var(--text-muted); margin:0 0 12px; }
 
 /* The solo Workouts page (Jake, 2026-10-12): start buttons, a folded plan, "Your workouts". */
@@ -1148,11 +1151,12 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .pb-card .pw-list { border:0; border-radius:0; }
 .pb-chart { position:relative; height:160px; margin-bottom:8px; }
 .pgm-tl { display:flex; gap:3px; margin:14px 0 6px; }
-.pgm-seg { min-width:0; height:34px; border-radius:var(--radius-sm); background:var(--surface-2); color:var(--text-muted); font-size:var(--text-md); font-weight:800; display:flex; align-items:center; justify-content:center; }
+.pgm-seg { min-width:0; height:34px; padding:0 6px; border-radius:var(--radius-sm); background:var(--surface-2); color:var(--text); font-size:var(--text-md); font-weight:700; display:flex; align-items:center; justify-content:center; }
+.pgm-seg span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .pgm-seg.pct { background:var(--accent); color:var(--surface); }
 .pgm-seg.rpe { background:var(--success); color:var(--surface); }
 .pgm-seg[aria-pressed="true"] { box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
-.pgm-seg:focus-visible, .pgm-ph-h:focus-visible, .pgm-ph-menu:focus-visible, .pgm-wk-actions .btn:focus-visible, .pgm-manage:focus-visible, .pgm-addph:focus-visible, .pgm-more:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.pgm-seg:focus-visible, .pgm-ph-h:focus-visible, .pgm-ph-menu:focus-visible, .pgm-manage:focus-visible, .pgm-addph:focus-visible, .pgm-more:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .pgm-legend { display:flex; flex-wrap:wrap; gap:4px 12px; margin-bottom:4px; font-size:var(--text-sm); color:var(--text-muted); }
 .pgm-legend i { display:inline-block; width:10px; height:10px; margin-right:5px; border-radius:var(--radius-xs); vertical-align:-1px; background:var(--surface-2); }
 .pgm-legend i.pct { background:var(--accent); }
@@ -1175,20 +1179,17 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .pgm-ph.is-open .pgm-chev { transform:rotate(180deg); }
 .pgm-ph-menu { position:absolute; top:6px; right:34px; width:36px; height:36px; border-radius:50%; font-size:var(--text-2xl); line-height:1; color:var(--text); }
 .pgm-ph-body { padding:0 12px 12px; border-top:1px solid var(--border); }
-.pgm-per { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 0; }
-.pgm-per-l { font-size:var(--text-sm); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
-.pgm-sp { flex:1; }
-.pgm-sbtn { min-height:34px; padding:0 12px; font-size:var(--text-md); font-weight:700; }
-.pgm-gen { margin:0 0 8px; font-size:var(--text-md); color:var(--text-muted); }
+.pgm-per { display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:10px 0 4px; }
+.pgm-sbtn { min-height:44px; padding:0 14px; font-size:var(--text-base); font-weight:700; }
+.pgm-gen { margin:0; font-size:var(--text-md); color:var(--text-muted); }
 .pgm-loading { color:var(--text-muted); font-size:var(--text-md); padding:8px 0; }
-.pgm-wk { display:flex; align-items:center; gap:6px; margin:6px 0 8px; }
-.pgm-wk .week-tabs { flex:1; min-width:0; margin-bottom:0; overflow-x:auto; scrollbar-width:none; }
-.pgm-wk .week-tabs::-webkit-scrollbar { display:none; }
-.pgm-wk .week-tab { flex:1 0 auto; min-width:52px; }
-.pgm-wk-actions { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 10px; }
-.pgm-wk-actions:empty { display:block; height:0; margin:10px 0 0; }
-.pgm-wk + .pgm-wk-actions { margin-top:0; }
-.pgm-wk-actions .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; font-size:var(--text-lg); }
+/* "Week" and the week's ⋯, then the tabs: numbers only, centred, in a grid that wraps, so every week is on screen (week 6 used to run off the
+   edge of a phone; Jake chose this 2026-11-08). The Workouts page's own week tabs are not under .pgm and are unchanged. */
+.pgm-wk-head { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:44px; margin-top:8px; }
+.pgm-wk-l { font-size:var(--text-sm); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
+.pgm-wk { margin:4px 0 8px; }
+.pgm-wk .week-tabs { display:grid; grid-template-columns:repeat(auto-fit, minmax(44px, 1fr)); gap:4px; margin-bottom:0; }
+.pgm-wk .week-tab { min-width:0; min-height:44px; padding:0; display:flex; align-items:center; justify-content:center; font-size:var(--text-lg); }
 .pgm-addph { width:100%; min-height:46px; margin-top:4px; border:1.5px dashed var(--border); border-radius:var(--radius-md); background:transparent; color:var(--accent); font-size:var(--text-lg); font-weight:700; }
 .pgm-sheet-rows { display:flex; flex-direction:column; gap:8px; }
 .pgm-sheet-row { display:flex; align-items:center; width:100%; min-height:52px; padding:0 16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); font-size:var(--text-xl); font-weight:700; color:var(--text); text-align:left; }
@@ -1197,7 +1198,6 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 @media (max-width:767px) {
   .pgm .pwk-days { gap:0; }
   .pgm-cta .btn { width:100%; }
-  .pgm-wk-actions .btn { flex:1; min-width:0; }
   .pgm .pwk-day { display:flex; flex-wrap:wrap; align-items:center; gap:0 10px; min-height:44px; padding:4px 0; border:0; border-bottom:1px solid var(--border); border-radius:0; background:transparent; }
   .pgm .pwk-day.is-empty { min-height:34px; padding:2px 0; }
   .pgm .pwk-dow { flex-shrink:0; width:34px; margin:0; font-size:var(--text-sm); font-weight:800; color:var(--accent); }
@@ -1207,7 +1207,7 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
   .pgm .pwk-slot + .pwk-slot { margin-left:44px; }
   .pgm .pwk-slot-head { padding:8px 0; }
   .pgm .pwk-slot-name { font-size:var(--text-lg); }
-  .pgm .pwk-day .pwk-add { width:auto; min-height:34px; padding:0 8px; border:0; background:none; color:var(--accent); font-size:var(--text-md); font-weight:700; }
+  .pgm .pwk-day .pwk-add { width:auto; min-height:44px; padding:0 14px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:var(--text-base); font-weight:600; }
   .pgm .pwk-detail { margin:0 0 8px; background:var(--bg); border-color:var(--border); }
 }
 

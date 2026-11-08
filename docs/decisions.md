@@ -12,6 +12,8 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-11-08** — on the training plan page, Duplicate week and Delete week go back behind the week's ⋯ (Jake chose it in a tappable mock-up), reversing his 2026-10-16 "put them directly on this screen". The page's rule, proposed by Claude and approved with the build: on screen go the main action and what you do on most visits (Add to my plan, Open workout, + Add, Generate weeks, + Add phase); behind ⋯ go occasional actions, settings, copies and moves, and anything that removes or deletes (always asking first, in red text, never a solid red button). Plan page only; the app-wide sweep is [its own row](bugs/2026-11-08-no-app-wide-rule-for-menu-vs-on-screen-buttons.md).
+
 **2026-11-01** — Performance pills are **Lifts · Sessions · Blocks**; Lifts say what they show (plain title, explainer, change since the start, marked best); Blocks opens on this block vs last block per lift (6-week windows when no plan runs). Merging lift names is a separate later piece ([plan](superpowers/plans/2026-11-01-performance-lifts-and-blocks.md)).
 
 **2026-11-01** — Personal Progress has five pills, **Goals · Records · Performance · Bodyweight · Cardio**, in one 11 px row (two rows under 390 px wide). Reverses the 10-31 fold of Performance into Records (page was 9,274 px, range buried); Personal view only, no SQL.

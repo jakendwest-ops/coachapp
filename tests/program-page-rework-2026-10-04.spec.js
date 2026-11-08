@@ -108,9 +108,19 @@ test.describe('Program page - the overview and the fold-up phases', () => {
     await expect(segs.nth(1)).toHaveClass(/\brpe\b/)
     await expect(segs.nth(2)).toHaveClass(/\bnone\b/)
     expect(await segs.evaluateAll(els => els.map(e => getComputedStyle(e).flexGrow)), 'each block is as wide as its weeks').toEqual(['4', '3', '2', '1'])
-    expect(await segs.allInnerTexts(), 'numbered like the cards').toEqual(['1', '2', '3', '4'])
+    expect(await segs.allInnerTexts(), 'named, not numbered (2026-11-08)').toEqual(['Accumulation · 4 wk', 'Intensification · 3 wk', 'Peak · 2 wk', 'Test maxes · 1 wk'])
+    // a long name is cut short inside its block, never pushing the bar wider than the page
+    expect(await segs.evaluateAll(els => els.every(e => e.scrollWidth <= e.clientWidth + 1 || getComputedStyle(e.firstElementChild).textOverflow === 'ellipsis')), 'each label fits or ends in …').toBe(true)
     await expect(page.locator('.pgm-legend')).toContainText('RPE')
+    await expect(page.locator('.pgm-legend'), 'no "tap a block" hint any more').not.toContainText('tap a block')
     expect(await page.evaluate(() => document.body.scrollWidth), 'nothing forces a sideways scroll on a phone').toBeLessThanOrEqual(390)
+  })
+
+  test('the colour key only shows when a phase uses % of 1RM or RPE (Jake, 2026-11-08)', async ({ page }) => {
+    const s = await seed(page, { phases: [{ name: 'Base Building', weeks: 6, rowsForWeeks: 1, week1: [MON] }] })
+    await open(page, s)
+    await expect(page.locator('.pgm-seg'), 'the bar is still there for a one-phase plan').toHaveText('Base Building · 6 wk')
+    await expect(page.locator('.pgm-legend'), 'but nothing in it uses % or RPE, so no key').toHaveCount(0)
   })
 
   test('phases fold up: only the first is open, a folded phase has nothing in the DOM, and unfolding paints it from the cache', async ({ page }) => {
@@ -173,18 +183,31 @@ test.describe('Program page - the overview and the fold-up phases', () => {
     await expect(page.locator(header(s, 0))).toHaveAttribute('aria-expanded', 'true')
   })
 
-  test('the periodization row sits inside an open phase: Edit and Generate when set, Add when not, nothing for a one-week phase', async ({ page }) => {
+  test('periodisation is in the phase ⋯ (Edit when set, Add when not, nothing for a one-week phase); Generate weeks stays on the page', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
     const first = page.locator(card(s, 0))
-    await expect(first.getByRole('button', { name: 'Edit periodization' })).toBeVisible()
     await expect(first.getByRole('button', { name: 'Generate weeks' })).toBeVisible()
+    await expect(first.getByRole('button', { name: /periodi[sz]ation/i }), 'no periodisation button on the page').toHaveCount(0)
     await expect(first.locator('.pgm-chip'), 'the method is named once, in the header').toHaveCount(1)
+    await expect(first.locator('.pgm-ph-t'), 'a periodised phase does not say "no periodisation"').not.toContainText('no periodisation')
+    const rowFor = async (i) => {
+      await page.locator(`${card(s, i)} .pgm-ph-menu`).click()
+      const label = await page.locator('#pgm-periodise').count() ? await page.locator('#pgm-periodise').textContent() : null
+      await page.click('#pgm-sheet .pgm-close')
+      return label
+    }
+    expect(await rowFor(0)).toBe('Edit periodisation')
     await page.click(header(s, 2))
-    await expect(page.locator(card(s, 2)).getByRole('button', { name: 'Add periodization' })).toBeVisible()
     await expect(page.locator(card(s, 2)).getByRole('button', { name: 'Generate weeks' })).toHaveCount(0)
-    await page.click(header(s, 3))
-    await expect(page.locator(card(s, 3)).getByRole('button', { name: /periodization/ }), 'one week has nothing to periodize').toHaveCount(0)
+    await expect(page.locator(`${card(s, 2)} .pgm-ph-t`), 'the phase line says so instead').toContainText('no periodisation')
+    expect(await rowFor(2)).toBe('Add periodisation')
+    expect(await rowFor(3), 'one week has nothing to periodise').toBeNull()
+    await expect(page.locator(`${card(s, 3)} .pgm-ph-t`)).not.toContainText('periodisation')
+    // the row opens the dialog for its own phase, titled in UK spelling
+    await page.locator(`${card(s, 2)} .pgm-ph-menu`).click()
+    await page.click('#pgm-periodise')
+    await expect(page.locator('#periodization-modal .modal-title')).toHaveText('Periodisation — Peak')
   })
 
   test('the description is clamped to two lines with "Show more" only when it is really cut off', async ({ page }) => {
@@ -229,7 +252,8 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     const heights = await days.evaluateAll(els => els.map(e => Math.round(e.getBoundingClientRect().height)))
     for (const [i, h] of heights.entries()) {
       const rest = [1, 3, 5, 6].includes(i)
-      expect(h, `day ${i + 1} (${rest ? 'rest' : 'workout'}) is a slim row`).toBeLessThanOrEqual(rest ? 44 : 60)
+      // a rest row holds a 44 px + Add since 2026-11-08, a workout row its name and exercise count
+      expect(h, `day ${i + 1} (${rest ? 'rest' : 'workout'}) is a slim row`).toBeLessThanOrEqual(rest ? 50 : 62)
     }
     // a rest day says so and offers + Add with the data the picker needs
     const restRow = days.nth(1)
@@ -242,23 +266,53 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     // a day with a workout has no always-visible add button
     await expect(days.nth(0).locator('button.pwg-add')).toHaveCount(0)
 
-    // tapping the workout opens its panel: exercises, Edit / Remove, Save to Library, and a way to add a second workout that day
+    // the day row says how many exercises the workout has
+    await expect(days.nth(0).locator('.pwk-slot-n')).toHaveText(/^\d+ exercises?$/)
+    await expect(restRow.locator('button.pwg-add'), 'a rest day offers a plain + Add').toHaveText('+ Add')
+    await expect(restRow.locator('button.pwg-add')).toHaveAttribute('aria-label', 'Add a workout on Tue')
+    expect((await restRow.locator('button.pwg-add').boundingBox()).height, 'a thumb-sized target').toBeGreaterThanOrEqual(44)
+
+    // tapping the workout opens its panel: exercises, then Open workout, Close and a ⋯ - no title or ✕ of its own (the day row names it)
     await days.nth(0).locator('.pwk-slot-head').click()
     const detail = page.locator(`${card(s, 0)} .pwk-detail`)
     await expect(detail).toBeVisible()
     await expect(detail.locator('.pwk-ex').first()).toBeVisible()
-    await expect(detail.locator('.pwk-act.edit')).toBeVisible()
-    await expect(detail.locator('.pwk-act.remove')).toBeVisible()
-    await expect(detail.getByRole('button', { name: 'Save to Library' })).toBeVisible()
-    const second = detail.locator('button.pwg-add')
-    await expect(second).toHaveText('+ Add a second workout on this day')
-    await expect(second).toHaveAttribute('data-day', '1')
-    await expect(second).toHaveAttribute('data-session', '2')
-    // and it really opens the picker for the second slot
-    await second.click()
+    expect(await detail.locator('.pwk-slot-actions button').allInnerTexts()).toEqual(['Open workout', 'Close', '⋯'])
+    await expect(detail, 'no ✕ in the panel').not.toContainText('✕')
+    await expect(days.nth(0).locator('.pwk-slot-head')).toHaveAttribute('aria-expanded', 'true')
+    for (const b of await detail.locator('.pwk-slot-actions button').all()) expect((await b.boundingBox()).height, 'every action is thumb-sized').toBeGreaterThanOrEqual(44)
+    // the ⋯ holds the rest: Save to Library, a second workout that day, and Remove, in red
+    await detail.locator('.pgm-dots').click()
+    const sheet = page.locator('#pgm-sheet')
+    expect(await sheet.locator('.pgm-sheet-row').allInnerTexts()).toEqual(['Save to Library', 'Add a second workout this day', 'Remove from this week'])
+    await expect(sheet.locator('#pgm-remove-pw')).toHaveClass(/is-danger/)
+    await expect(sheet.locator('.pgm-close')).toHaveText('Close')
+    // and Add a second workout really opens the picker for the second slot of that day
+    await page.evaluate(() => { window.__pick = null; const real = window._openWorkoutPicker; window._openWorkoutPicker = (...a) => { window.__pick = a; return real(...a) } })
+    await sheet.locator('#pgm-add-second').click()
     await expect(page.locator('#workout-picker-modal')).toBeVisible({ timeout: 5000 })
+    expect(await page.evaluate(() => window.__pick)).toEqual([s.phases[0].id, 1, 2, 1])
     await page.click('#workout-picker-modal .modal-close')
+    // Close folds the panel and gives the keyboard back to the day
+    await detail.locator('.pwk-close').click()
+    await expect(page.locator(`${card(s, 0)} .pwk-detail`)).toHaveCount(0)
+    await expect(days.nth(0).locator('.pwk-slot-head')).toBeFocused()
     expect(await page.evaluate(() => document.body.scrollWidth)).toBeLessThanOrEqual(390)
+  })
+
+  test('Remove from this week asks first; Keep it leaves the workout, Remove takes it off', async ({ page }) => {
+    const s = await seed(page, { phases: [{ name: 'Block', weeks: 2, rowsForWeeks: 1, week1: [MON, WED] }] })
+    await open(page, s)
+    await page.locator(`${card(s, 0)} .pwk-slot-head`).first().click()
+    await page.locator(`${card(s, 0)} .pwk-detail .pgm-dots`).click()
+    await page.click('#pgm-remove-pw')
+    await expect(page.locator('#confirm-dialog')).toContainText('Remove from this week?')
+    await declineConfirm(page)
+    await expect(page.locator(`${card(s, 0)} .pwk-slot`)).toHaveCount(2)
+    await page.locator(`${card(s, 0)} .pwk-detail .pgm-dots`).click()
+    await page.click('#pgm-remove-pw')
+    await acceptConfirm(page)
+    await expect(page.locator(`${card(s, 0)} .pwk-slot`)).toHaveCount(1, { timeout: 10000 })
   })
 
   test('a day that already has two workouts offers no third', async ({ page }) => {
@@ -270,7 +324,9 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     expect(Math.min(a.w, b.w), 'and both have room for a name on a phone').toBeGreaterThan(150)
     await page.locator(`${card(s, 0)} .pwk-slot-head`).first().click()
     await expect(page.locator(`${card(s, 0)} .pwk-detail`)).toBeVisible()
-    await expect(page.locator(`${card(s, 0)} .pwk-detail button.pwg-add`)).toHaveCount(0)
+    await page.locator(`${card(s, 0)} .pwk-detail .pgm-dots`).click()
+    await expect(page.locator('#pgm-save-lib')).toBeVisible()
+    await expect(page.locator('#pgm-add-second'), 'no third').toHaveCount(0)
   })
 
   test('on a desktop the week keeps its seven columns', async ({ page }) => {
@@ -326,26 +382,55 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await expect(page.locator('.pgm-facts')).toContainText('3 phases · 8 weeks')
   })
 
-  test('Duplicate week and Delete week are buttons on the page, for the week on screen; Delete asks first', async ({ page }) => {
+  test('Duplicate week and Delete week are behind the week ⋯ (2026-11-08), for the week on screen; Delete asks first', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
-    // on the first paint, before any tab is touched (a tab switch repaints the buttons, which would hide a broken first paint)
-    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Delete week' })).toBeVisible()
-    await expect(page.locator(`${card(s, 0)} button[aria-label="Week actions"]`), 'the week ⋯ menu is gone (asked after the paint, so it cannot pass before the page has loaded)').toHaveCount(0)
-    // the buttons are about the week the tab row has selected
+    const dots = page.locator(`${card(s, 0)} .pgm-wk-actions .pgm-dots`)
+    // on the first paint, before any tab is touched (a tab switch repaints the ⋯, which would hide a broken first paint)
+    await expect(dots).toHaveAttribute('aria-label', 'Actions for this week')
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-head .pgm-wk-l`)).toHaveText('Week')
+    await expect(page.locator(`${card(s, 0)}`).getByRole('button', { name: /^(Duplicate|Delete) week/ }), 'no week buttons on the page (asked after the paint)').toHaveCount(0)
+    // the ⋯ is about the week the tab row has selected
     await page.locator(`${card(s, 0)} .week-tab[data-week="3"]`).click()
-    const row = page.locator(`${card(s, 0)} .pgm-wk-actions`)
-    await expect(row.getByRole('button', { name: 'Duplicate week' })).toBeVisible()
-    await expect(row.getByRole('button', { name: 'Delete week' })).toBeVisible()
+    await dots.click()
+    await expect(page.locator('#pgm-sheet .modal-title')).toHaveText('Week 3')
+    expect(await page.locator('#pgm-sheet .pgm-sheet-row').allInnerTexts()).toEqual(['Duplicate week', 'Delete week…'])
+    await expect(page.locator('#pgm-del-week')).toHaveClass(/is-danger/)
 
-    await row.getByRole('button', { name: 'Duplicate week' }).click()
+    // Close gives the keyboard back to the ⋯ that opened the sheet (review, 2026-11-08)
+    await page.locator('#pgm-sheet .pgm-close').click()
+    await expect(page.locator('#pgm-sheet')).toHaveCount(0)
+    await expect(dots, 'focus is back on the week ⋯').toBeFocused()
+    await dots.click()
+    await page.click('#pgm-dup-week')
+    await expect(page.locator('#pgm-sheet')).toHaveCount(0)
     await expect(page.locator('#dup-week-modal .modal-title')).toHaveText('Duplicate Week 3')
     await page.click('#dup-week-modal .modal-close')
 
-    await row.getByRole('button', { name: 'Delete week' }).click()
+    await dots.click()
+    await page.click('#pgm-del-week')
     await expect(page.locator('#confirm-dialog')).toContainText('Delete Week 3?')
     await declineConfirm(page)
     await expect(page.locator(`${card(s, 0)} .week-tab`)).toHaveCount(4)
+  })
+
+  test('the week tabs are numbers only, centred, and every week fits on a phone - a long phase wraps instead of running off the edge', async ({ page }) => {
+    const s = await seed(page, { phases: [{ name: 'Long block', weeks: 12, rowsForWeeks: 12, week1: [MON] }] })
+    await open(page, s)
+    const tabs = page.locator(`${card(s, 0)} .week-tab`)
+    await expect(tabs).toHaveCount(12)
+    expect(await tabs.allInnerTexts()).toEqual(Array.from({ length: 12 }, (_, i) => String(i + 1)))
+    await expect(tabs.nth(0)).toHaveAttribute('aria-label', 'Week 1')
+    const row = await page.locator(`${card(s, 0)} .pgm-wk`).boundingBox()
+    const boxes = await tabs.evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: r.left, r: r.right, y: r.top, h: r.height } }))
+    for (const [i, b] of boxes.entries()) {
+      expect(b.r, `tab ${i + 1} is inside the row`).toBeLessThanOrEqual(row.x + row.width + 1)
+      expect(b.h, `tab ${i + 1} is thumb-sized`).toBeGreaterThanOrEqual(44)
+    }
+    expect(new Set(boxes.map(b => Math.round(b.y))).size, 'twelve weeks take more than one row').toBeGreaterThan(1)
+    expect(await tabs.nth(0).evaluate(e => [getComputedStyle(e).justifyContent, getComputedStyle(e).alignItems]), 'the number is centred').toEqual(['center', 'center'])
+    expect(await page.locator(`${card(s, 0)} .week-tabs`).evaluate(e => e.scrollWidth <= e.clientWidth), 'no sideways scroll in the tab row').toBe(true)
+    expect(await page.evaluate(() => document.body.scrollWidth)).toBeLessThanOrEqual(390)
   })
 
   test('deleting a week updates the week count everywhere on the page, not just the grid', async ({ page }) => {
@@ -355,7 +440,8 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await expect(page.locator(card(s, 0))).toContainText('3 weeks')
     expect(await page.locator('.pgm-seg').evaluate(e => getComputedStyle(e).flexGrow), 'its block is three weeks wide').toBe('3')
     await page.locator(`${card(s, 0)} .week-tab[data-week="2"]`).click()
-    await page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Delete week' }).click()
+    await page.locator(`${card(s, 0)} .pgm-wk-actions .pgm-dots`).click()
+    await page.click('#pgm-del-week')
     await acceptConfirm(page)
     await expect(page.locator(`${card(s, 0)} .week-tab`)).toHaveCount(2, { timeout: 15000 })
     await expect(page.locator('.pgm-facts'), 'the overview line').toContainText('1 phase · 2 weeks')
@@ -373,20 +459,27 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
       window.deletePhaseWeek = (...a) => log.push(['del', ...a])
       window.deletePhase = (...a) => log.push(['remove', ...a])
       window.showEditPhaseForm = (...a) => log.push(['edit', ...a])
+      window.showPeriodizationModal = (...a) => log.push(['periodise', ...a])
+      window.saveTemplateToLibrary = (...a) => log.push(['library', ...a])
+      window._openWorkoutPicker = (...a) => log.push(['second', ...a])
       const unknown = crypto.randomUUID()
-      for (const kind of ['dup-week', 'del-week', 'remove-phase', 'edit-phase']) {
-        window._pgmMenu = { programId: window._openProgramId, phaseId: unknown, week: 1 }
+      const KINDS = ['dup-week', 'del-week', 'remove-phase', 'edit-phase', 'periodise', 'save-lib', 'add-second', 'zzz']
+      for (const kind of KINDS) {
+        window._pgmMenu = { programId: window._openProgramId, phaseId: unknown, week: 1, templateId: 't', day: 1, count: 1 }
         pgmMenuDo(kind)
       }
       const none = log.length
-      for (const kind of ['dup-week', 'del-week', 'remove-phase', 'edit-phase']) {
-        window._pgmMenu = { programId: window._openProgramId, phaseId: realPhaseId, week: 1 }
+      for (const kind of KINDS) {
+        window._pgmMenu = { programId: window._openProgramId, phaseId: realPhaseId, week: 1, templateId: 't', day: 1, count: 1 }
         pgmMenuDo(kind)
       }
+      // a day that already has two workouts is never offered a third, even by a stale row
+      window._pgmMenu = { programId: window._openProgramId, phaseId: realPhaseId, week: 1, day: 1, count: 2 }
+      pgmMenuDo('add-second')
       return { none, all: log.map(c => c[0]) }
     }, s.phases[0].id)
     expect(calls.none, 'a phase that is not on the page: nothing is called').toBe(0)
-    expect(calls.all, 'and for the phase that is, each row calls its own handler').toEqual(['dup', 'del', 'remove', 'edit'])
+    expect(calls.all, 'and for the phase that is, each row calls its own handler (an unknown kind calls none)').toEqual(['dup', 'del', 'remove', 'edit', 'periodise', 'library', 'second'])
   })
 
   test('Duplicate week from the page adds the copy and the new tab', async ({ page }) => {
@@ -394,93 +487,98 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await open(page, s)
     await expect(page.locator(`${card(s, 0)} .pwk-slot`).first(), 'the sessions have loaded').toBeVisible()
     await expect(page.locator(`${card(s, 0)} .week-tab`), 'one week of sessions, so no tab row yet').toHaveCount(0)
-    await page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Duplicate week' }).click()
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-l`), 'the row names the only week').toHaveText('Week 1')
+    await page.locator(`${card(s, 0)} .pgm-wk-actions .pgm-dots`).click()
+    await page.click('#pgm-dup-week')
     await page.locator('#dup-week-modal button:text-is("1×")').click()
     await expect(page.locator(`${card(s, 0)} .week-tab[data-week="2"]`)).toBeVisible({ timeout: 15000 })
   })
 
-  test('on a phone the two buttons sit side by side under the week tabs, each at least 44 px tall and inside the card', async ({ page }) => {
+  test('on a phone the week ⋯ sits at the right of the "Week" row, above the tabs, 44 px square and inside the card', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
-    const row = page.locator(`${card(s, 0)} .pgm-wk-actions`)
+    const dots = await page.locator(`${card(s, 0)} .pgm-wk-actions .pgm-dots`).boundingBox()
+    const label = await page.locator(`${card(s, 0)} .pgm-wk-l`).boundingBox()
     const tabs = await page.locator(`${card(s, 0)} .pgm-wk`).boundingBox()
-    const dup = await row.getByRole('button', { name: 'Duplicate week' }).boundingBox()
-    const del = await row.getByRole('button', { name: 'Delete week' }).boundingBox()
     const body = await page.locator(`${card(s, 0)} .pgm-ph-body`).boundingBox()
-    expect(dup.y, 'under the tabs').toBeGreaterThanOrEqual(tabs.y + tabs.height)
-    expect(Math.abs(dup.y - del.y), 'side by side').toBeLessThan(2)
-    expect(del.x, 'Duplicate on the left, Delete on the right').toBeGreaterThan(dup.x + dup.width - 1)
-    expect(Math.min(dup.height, del.height), 'a thumb-sized target').toBeGreaterThanOrEqual(44)
-    expect(dup.x, 'inside the card').toBeGreaterThanOrEqual(body.x)
-    expect(del.x + del.width, 'inside the card').toBeLessThanOrEqual(body.x + body.width + 1)
+    expect(dots.y + dots.height, 'above the tabs').toBeLessThanOrEqual(tabs.y + 1)
+    expect(dots.x, 'to the right of the label').toBeGreaterThan(label.x + label.width)
+    expect([Math.round(dots.width), Math.round(dots.height)], 'a thumb-sized square').toEqual([44, 44])
+    expect(dots.x + dots.width, 'inside the card').toBeLessThanOrEqual(body.x + body.width + 1)
     expect(await page.evaluate(() => document.body.scrollWidth), 'nothing forces a sideways scroll').toBeLessThanOrEqual(390)
   })
 
-  test('a week with no workouts shows no Duplicate / Delete buttons (nothing to act on), and gets them once it has a workout', async ({ page }) => {
+  test('a week with no workouts shows no week ⋯ (nothing to act on), and gets it once it has a workout', async ({ page }) => {
     const s = await seed(page, { phases: [{ name: 'Empty block', weeks: 2 }] })
     await open(page, s)
     // the sessions have been read and the week painted: only then does "nothing is there" mean something (an element that does not exist yet is also "hidden")
     await expect(page.locator(`#phase-week-${s.phases[0].id}`)).toBeVisible()
-    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions`), 'the strip is there but empty').toBeAttached()
-    expect(await page.locator(`${card(s, 0)} .pgm-wk-actions`).evaluate(e => e.getBoundingClientRect().height), 'an empty strip has no height').toBe(0)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions`), 'the holder is there but empty').toBeAttached()
     await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(0)
-    await expect(page.locator(`${card(s, 0)} button[aria-label="Week actions"]`)).toHaveCount(0)
     // a workout lands the way the add path leaves it: a row, then the phase is reloaded
     await page.evaluate(async ({ phaseId, programId }) => {
       const { data: t } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: programId, client_id: null, name: '[E2E] PgmPage Late' }).select('id').single()
       await db.from('program_phase_workouts').insert({ phase_id: phaseId, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t.id, week_number: 1 })
       await loadAllPhaseWorkouts([{ id: phaseId }])
     }, { phaseId: s.phases[0].id, programId: s.programId })
-    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(2)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(1)
   })
 
-  test('switching to a week that turns out empty takes the buttons away, and switching back brings them', async ({ page }) => {
+  test('switching to a week that turns out empty takes the ⋯ away, and switching back brings it', async ({ page }) => {
     const s = await seed(page, { phases: [{ name: 'Block', weeks: 3, rowsForWeeks: 3, week1: [MON] }] })
     await open(page, s)
-    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(2)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(1)
     // what a week emptied elsewhere looks like in the cache before the reload
     await page.evaluate(id => { window._builderWeekData[id].byWeek[2] = []; _selectBuilderWeek(id, 2) }, s.phases[0].id)
     await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(0)
     await page.evaluate(id => _selectBuilderWeek(id, 1), s.phases[0].id)
-    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(2)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`)).toHaveCount(1)
   })
 
-  test('a double tap on Delete week asks once: the button is on the page now, and a second question would be about whichever week took the first one\'s number', async ({ page }) => {
+  test('opening the week ⋯ twice leaves one sheet, and a double tap on Delete week… asks once', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
     await page.evaluate(() => { window.__asks = 0; window.confirmDialog = () => { window.__asks++; return new Promise(() => {}) } })
-    await page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Delete week' }).dblclick()
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions .pgm-dots`), 'the sessions have loaded (no cache, no sheet)').toBeVisible()
+    await page.evaluate(id => { openWeekMenu(id, 1); openWeekMenu(id, 1) }, s.phases[0].id)
+    await expect(page.locator('#pgm-sheet'), 'one sheet, never two stacked').toHaveCount(1)
+    await page.locator('#pgm-del-week').dblclick()
     expect(await page.evaluate(() => window.__asks), 'one question, not two').toBe(1)
   })
 
-  test('the buttons act on the week they were painted for, even when the active week has moved on (Duplicate x N does this mid-run)', async ({ page }) => {
+  test('the week ⋯ acts on the week it was painted for, even when the active week has moved on (Duplicate x N does this mid-run)', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
     await page.locator(`${card(s, 0)} .week-tab[data-week="3"]`).click()
     // what duplicatePhaseWeek leaves behind while a x N run is still going: the active week already names the NEW week, the page still shows week 3
     await page.evaluate(id => { window._builderActiveWeek[id] = 4 }, s.phases[0].id)
-    await page.locator(`${card(s, 0)} .pgm-wk-actions`).getByRole('button', { name: 'Delete week' }).click()
+    await page.locator(`${card(s, 0)} .pgm-wk-actions .pgm-dots`).click()
+    await expect(page.locator('#pgm-sheet .modal-title')).toHaveText('Week 3')
+    await page.click('#pgm-del-week')
     await expect(page.locator('#confirm-dialog')).toContainText('Delete Week 3?')
     await declineConfirm(page)
   })
 
-  test('the week buttons do nothing for a phase that is not on the page, a week that is not in the cache, or an unknown kind', async ({ page }) => {
+  test('the week ⋯ opens nothing for a phase that is not on the page or a week that is not in the cache, and the workout ⋯ nothing for a slot that has gone', async ({ page }) => {
     const s = await seed(page, { phases: [{ name: 'One', weeks: 2, rowsForWeeks: 2, week1: [MON] }] })
     await open(page, s)
-    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`), 'the sessions have loaded (until then there is no cache, and every call would do nothing)').toHaveCount(2)
+    await expect(page.locator(`${card(s, 0)} .pgm-wk-actions button`), 'the sessions have loaded (until then there is no cache, and every call would do nothing)').toHaveCount(1)
     const r = await page.evaluate((realPhaseId) => {
       const log = []
       window.showDuplicateWeekModal = (...a) => log.push(['dup', ...a])
       window.deletePhaseWeek = (...a) => log.push(['del', ...a])
-      pgmWeekAction(crypto.randomUUID(), 'dup', 1); pgmWeekAction(crypto.randomUUID(), 'del', 1)
-      pgmWeekAction(realPhaseId, 'dup', 9); pgmWeekAction(realPhaseId, 'del', 9)
-      pgmWeekAction(realPhaseId, 'zzz', 1)
-      const none = log.length
-      pgmWeekAction(realPhaseId, 'dup', 1); pgmWeekAction(realPhaseId, 'del', 2)
-      return { none, all: log.map(c => c.join(':')) }
+      const sheets = () => document.querySelectorAll('#pgm-sheet').length
+      openWeekMenu(crypto.randomUUID(), 1); openWeekMenu(realPhaseId, 9)
+      openSlotMenu(crypto.randomUUID(), realPhaseId, 1); openSlotMenu(window._builderWeekData[realPhaseId].byWeek[1][0].id, realPhaseId, 9)
+      const none = sheets()
+      openWeekMenu(realPhaseId, 2)
+      const title = document.querySelector('#pgm-sheet .modal-title').textContent
+      document.getElementById('pgm-del-week').click()
+      return { none, title, all: log.map(c => c.join(':')) }
     }, s.phases[0].id)
-    expect(r.none, 'nothing is called').toBe(0)
-    expect(r.all, 'and a real phase, a real week and a real kind call their own handler with that week').toEqual(['dup:' + s.phases[0].id + ':1', 'del:' + s.phases[0].id + ':2'])
+    expect(r.none, 'no sheet opened').toBe(0)
+    expect(r.title).toBe('Week 2')
+    expect(r.all, 'a real phase and a real week call the handler with that week').toEqual(['del:' + s.phases[0].id + ':2'])
   })
 
   test('a one-week phase with nothing in it: the first day row does not hug the top border of the card', async ({ page }) => {
@@ -491,15 +589,12 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     expect(gap, 'room above the first day (the empty strip keeps its margin)').toBeGreaterThanOrEqual(8)
   })
 
-  test('on a desktop the two buttons keep their own width instead of stretching across the card', async ({ page }) => {
+  test('on a desktop the week ⋯ stays a 44 px square instead of stretching across the card', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
     const s = await seed(page, MAIN)
     await open(page, s)
-    const row = page.locator(`${card(s, 0)} .pgm-wk-actions`)
-    const dup = await row.getByRole('button', { name: 'Duplicate week' }).boundingBox()
-    const del = await row.getByRole('button', { name: 'Delete week' }).boundingBox()
-    expect(dup.width, 'its own width, not half the card').toBeLessThan(260)
-    expect(Math.abs(dup.y - del.y), 'still on one row').toBeLessThan(2)
+    const dots = await page.locator(`${card(s, 0)} .pgm-wk-actions .pgm-dots`).boundingBox()
+    expect([Math.round(dots.width), Math.round(dots.height)]).toEqual([44, 44])
   })
 
   test('a personal program has no Assign button, and no empty strip where it would be', async ({ page }) => {
@@ -533,7 +628,8 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     // (2) hold the sessions back, open the dialog from the card that has already painted, and watch the heads-up arrive by itself
     await page.route(/\/rest\/v1\/program_phase_workouts\?/, async route => { await new Promise(r => setTimeout(r, 2500)); await route.continue() })
     await page.evaluate(id => { openProgram(id) }, s.programId)
-    await page.click(`${card(s, 0)} button:has-text("Edit periodization")`)
+    await page.locator(`${card(s, 0)} .pgm-ph-menu`).click()
+    await page.click('#pgm-periodise')
     await expect(page.locator('#periodization-modal')).toBeVisible()
     await expect(page.locator('#pz-check .pz-note'), 'nothing is claimed about a Week 1 that has not been read').toHaveCount(0)
     await expect(page.locator('#pz-check .pz-note'), 'and the heads-up appears by itself when the sessions land').toBeVisible({ timeout: 15000 })
@@ -575,18 +671,37 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await expect(page.locator('.pgm-ph-h').first()).toHaveAttribute('aria-expanded', 'true')
   })
 
-  test('Manage keeps its actions and gains Units and preferences', async ({ page }) => {
+  test('the plan ⋯ (Manage) keeps its actions and gains Units and preferences; it closes with "Close" and has no solid red button', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
-    await page.click('button:has-text("Manage")')
+    await expect(page.locator('.pgm-manage')).toHaveText('⋯')
+    await expect(page.locator('.pgm-manage')).toHaveAttribute('aria-label', 'Training plan actions')
+    expect([...Object.values(await page.locator('.pgm-manage').boundingBox())].slice(2).map(Math.round), '44 px square').toEqual([44, 44])
+    await page.click('.pgm-manage')
     const manage = page.locator('#program-manage-modal')
     await expect(manage).toBeVisible()
     for (const label of ['Edit name and description', 'Copy workouts to Library', 'Delete training plan']) {
       await expect(manage.locator(`button:text-is("${label}")`)).toBeVisible()
     }
+    await expect(manage.locator('[data-remove-from-plan]'), 'a coach is not offered Remove from my plan').toHaveCount(0)
+    await expect(manage.locator('.btn-danger'), 'Delete is red text, not a solid red button').toHaveCount(0)
+    await expect(manage.locator('button:text-is("Delete training plan")')).toHaveClass(/pgm-danger-text/)
+    await manage.locator('.pgm-close').click()
+    await expect(manage).toBeHidden()
+    await page.click('.pgm-manage')
     await manage.getByRole('button', { name: /Units and preferences/ }).click()
     await expect(manage).toBeHidden()
     await expect(page.locator('#quick-prefs-modal')).toBeVisible({ timeout: 4000 })
+  })
+
+  test('in the coach view, a plan the coach follows themselves still shows no "On my plan" and no Remove from my plan (both are Personal view only)', async ({ page }) => {
+    const s = await seed(page, { assignWeeksAgo: 0, phases: [{ name: 'One', weeks: 2, week1: [MON] }] })
+    expect(await page.evaluate(() => !!window._soloClientId), 'this account has a solo record, so the lookup really runs').toBe(true)
+    await open(page, s)
+    await expect(page.locator('.pgm-now'), 'the assignment was found (the phase is Now)').toHaveCount(1)
+    await expect(page.locator('.pgm-facts [data-onplan]')).toHaveCount(0)
+    await expect(page.locator('#program-manage-modal [data-remove-from-plan]')).toHaveCount(0)
+    await expect(page.locator('.pgm-cta .btn'), 'the coach keeps Assign to client').toHaveText('Assign to client')
   })
 })
 
@@ -675,10 +790,10 @@ test.describe('Program page - what a coach types is data, not markup', () => {
     await page.click(header(s, 1))
     await page.locator(`${card(s, 1)} .pgm-ph-menu`).click()
     await expect(page.locator('#pgm-sheet .modal-title')).toHaveText(`x" onmouseover="window.__xss=2`)
-    await page.click('#pgm-sheet .modal-close')
+    await page.click('#pgm-sheet .pgm-close')
     await page.locator(`${card(s, 0)} .pgm-ph-menu`).click()
     await expect(page.locator('#pgm-sheet .modal-title')).toHaveText(evil)
-    await page.click('#pgm-sheet .modal-close')
+    await page.click('#pgm-sheet .pgm-close')
 
     const r = await page.evaluate(() => {
       for (const el of document.querySelectorAll('.pgm *')) { el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); el.dispatchEvent(new MouseEvent('mouseenter')) }

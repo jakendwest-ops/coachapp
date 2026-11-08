@@ -36,19 +36,26 @@ async function assignWorkoutToDay(page, day, templateId) {
 }
 
 // B1 (2026-09-07): Edit / Copy to Library / Copy to coaching / Move to Personal / Delete moved off
-// the program header into a "⋯ Manage" popover. Opens it and clicks one action by its exact label
+// the program header into a "⋯ Manage" popover (a plain ⋯ button, .pgm-manage, since 2026-11-08). Opens it and clicks one action by its exact label
 // ("Edit name and description" | "Copy workouts to Library" | "Copy to coaching programs" |
 // "Move to Personal" | "Delete program").
 async function programManage(page, label) {
-  await page.click('button:has-text("Manage")')
+  await page.click('.pgm-manage')
   await page.waitForSelector('#program-manage-modal', { state: 'visible', timeout: 4000 })
   await page.click(`#program-manage-modal button:text-is("${label}")`)
 }
 
-// Duplicate week / Delete week are buttons under the week tabs (the week's ⋯ sheet held them from 2026-10-04 to 2026-10-16). Taps the one
-// for the week on screen ("Duplicate week" | "Delete week"); Delete asks first, so a stray tap cannot delete a week.
+// Duplicate week / Delete week sit behind the week's ⋯ (2026-10-04 to 2026-10-16, and again since 2026-11-08; buttons under the tabs in between).
+// Opens the ⋯ of the week on screen and taps one ("Duplicate week" | "Delete week"); Delete asks first, so a stray tap cannot delete a week.
 async function weekAction(page, label) {
-  await page.click(`.pgm-wk-actions button:text-is("${label}")`)
+  await page.click('.pgm-wk-actions .pgm-dots')
+  await page.click(label === 'Delete week' ? '#pgm-del-week' : '#pgm-dup-week')
+}
+
+// Add / Edit periodisation is in the phase's ⋯ since 2026-11-08. Opens the first phase's ⋯ and taps it.
+async function periodiseFirstPhase(page) {
+  await page.locator('.pgm-ph-menu').first().click()
+  await page.click('#pgm-periodise')
 }
 
 // ONE shared sweep for every UI-created program fixture in this file (2026-08-20).
@@ -69,6 +76,12 @@ const E2E_PROGRAM_FIXTURES = [
   '[E2E] Inline Grid Test',
   '[E2E] Grid Race Test',
   '[E2E] Duplicate Week Test',
+  // Added 2026-11-08: these four are also made through the UI in this file and leaked when their test failed; a leaked
+  // '[E2E] Picker Scope Test' then broke that test's own `.single()` lookup on the next run.
+  '[E2E] Periodization Cancel Test',
+  '[E2E] Grid Create Test',
+  '[E2E] Picker Scope Test',
+  '[E2E] Picker Scope Other',
 ]
 
 const sweepProgramFixtures = page => page.evaluate(async (names) => {
@@ -98,7 +111,7 @@ test.describe('Program periodization', () => {
     await page.fill('#pf-name', 'Block 1')
     await page.fill('#pf-weeks', '3')
     await page.click('#pf-save-btn')
-    await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('.pgm-ph-t b', { hasText: 'Block 1' })).toBeVisible({ timeout: 8000 })   // the card's name (the phase bar names it too since 2026-11-08)
 
     // Assign a workout to Monday, Week 1 via the tap-row picker.
     await expect(page.locator(daySlotBtn(1))).toBeVisible({ timeout: 8000 })
@@ -108,7 +121,7 @@ test.describe('Program periodization', () => {
     await expect(page.locator('[id^="phase-workouts-"] .pwk-slot-name').first()).toBeVisible({ timeout: 8000 })
 
     // Configure periodization on the phase
-    await page.click('button:has-text("Add periodization")')
+    await periodiseFirstPhase(page)
     await expect(page.locator('#periodization-modal')).toBeVisible({ timeout: 4000 })
     await page.click('#periodization-modal button:has-text("Linear")')
     await expect(page.locator('#pz-start')).toBeVisible({ timeout: 4000 })
@@ -141,9 +154,9 @@ test.describe('Program periodization', () => {
     await page.fill('#pf-name', 'Block 1')
     await page.fill('#pf-weeks', '4')
     await page.click('#pf-save-btn')
-    await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('.pgm-ph-t b', { hasText: 'Block 1' })).toBeVisible({ timeout: 8000 })   // the card's name (the phase bar names it too since 2026-11-08)
 
-    await page.click('button:has-text("Add periodization")')
+    await periodiseFirstPhase(page)
     await expect(page.locator('#periodization-modal')).toBeVisible({ timeout: 4000 })
     await page.click('#periodization-modal button:has-text("Undulating")')
     await expect(page.locator('#pz-tier-heavy-pct')).toBeVisible({ timeout: 4000 })
@@ -152,10 +165,12 @@ test.describe('Program periodization', () => {
 
     await page.click('#periodization-modal .modal-footer button:has-text("Cancel")')
     await page.waitForSelector('#periodization-modal', { state: 'detached', timeout: 4000 })
-    // Not saved — the phase still has no periodization (button still invites you to ADD it, and no
+    // Not saved — the phase still has no periodisation (its line says so, its ⋯ still invites you to ADD it, and no
     // "Generate weeks" appears).
-    await expect(page.locator('button:has-text("Add periodization")')).toBeVisible({ timeout: 4000 })
-    await expect(page.locator('button:has-text("Edit periodization")')).toHaveCount(0)
+    await expect(page.locator('.pgm-ph-t').first()).toContainText('no periodisation', { timeout: 4000 })
+    await page.locator('.pgm-ph-menu').first().click()
+    await expect(page.locator('#pgm-periodise')).toHaveText('Add periodisation')
+    await page.click('#pgm-sheet .pgm-close')
     await expect(page.locator('button:has-text("Generate weeks")')).toHaveCount(0)
 
     await programManage(page, 'Delete training plan')
@@ -167,17 +182,17 @@ test.describe('Program periodization', () => {
     await page.click('button:has-text("New training plan")')
     await page.fill('#pm-name', '[E2E] Periodization Test') // in the afterEach sweep list
     await page.click('#pm-save-btn')
-    await page.waitForSelector('button:has-text("Manage")', { timeout: 8000 })
+    await page.waitForSelector('.pgm-manage', { timeout: 8000 })
 
-    // The header row is now just the primary action + Manage — no ragged 5-button block.
+    // The header row is now just the primary action + the ⋯ — no ragged 5-button block.
     await expect(page.locator('button:has-text("Assign to client")')).toBeVisible()
 
-    await page.click('button:has-text("Manage")')
+    await page.click('.pgm-manage')
     await expect(page.locator('#program-manage-modal')).toBeVisible({ timeout: 4000 })
     for (const label of ['Edit name and description', 'Copy workouts to Library', 'Delete training plan']) {
       await expect(page.locator(`#program-manage-modal button:text-is("${label}")`)).toBeVisible()
     }
-    await page.click('#program-manage-modal .btn-icon')
+    await page.click('#program-manage-modal .pgm-close')
     await expect(page.locator('#program-manage-modal')).toBeHidden({ timeout: 4000 })
 
     await programManage(page, 'Delete training plan')
@@ -189,6 +204,7 @@ test.describe('Program periodization', () => {
 test.describe('Inline assign grid', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsPT(page)
+    await sweepProgramFixtures(page)   // a run that died before its afterEach must not leave the next one a duplicate name
     await clickVisible(page, '[data-page="programs"]')
     await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
   })
@@ -204,7 +220,7 @@ test.describe('Inline assign grid', () => {
     await page.fill('#pf-name', 'Block 1')
     await page.fill('#pf-weeks', '1')
     await page.click('#pf-save-btn')
-    await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('.pgm-ph-t b', { hasText: 'Block 1' })).toBeVisible({ timeout: 8000 })   // the card's name (the phase bar names it too since 2026-11-08)
 
     // The old day→session→template "+ Assign workout" modal stays gone (replaced 2026-07-01 by the
     // inline grid). The picker introduced 2026-07-11 is a different thing: a per-slot tap-row list.
@@ -246,7 +262,7 @@ test.describe('Inline assign grid', () => {
     await page.fill('#pf-name', 'Block 1')
     await page.fill('#pf-weeks', '1')
     await page.click('#pf-save-btn')
-    await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('.pgm-ph-t b', { hasText: 'Block 1' })).toBeVisible({ timeout: 8000 })   // the card's name (the phase bar names it too since 2026-11-08)
 
     await expect(page.locator(daySlotBtn(1))).toBeVisible({ timeout: 8000 })
     const templateIds = await availableTemplateIds(page)
@@ -283,7 +299,7 @@ test.describe('Inline assign grid', () => {
     await page.fill('#pf-name', 'Block 1')
     await page.fill('#pf-weeks', '1')
     await page.click('#pf-save-btn')
-    await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('.pgm-ph-t b', { hasText: 'Block 1' })).toBeVisible({ timeout: 8000 })   // the card's name (the phase bar names it too since 2026-11-08)
 
     await expect(page.locator(daySlotBtn(1))).toBeVisible({ timeout: 8000 })
     await openDayPicker(page, 1)
@@ -336,7 +352,7 @@ test.describe('Inline assign grid', () => {
     await page.fill('#pf-name', 'Block 1')
     await page.fill('#pf-weeks', '1')
     await page.click('#pf-save-btn')
-    await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('.pgm-ph-t b', { hasText: 'Block 1' })).toBeVisible({ timeout: 8000 })   // the card's name (the phase bar names it too since 2026-11-08)
 
     await openDayPicker(page, 1)
     await expect(page.locator(CREATE_ROW)).toHaveText('＋ Create new workout (this day only)')
@@ -565,7 +581,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     await page.fill('#pf-name', 'Block 1')
     await page.fill('#pf-weeks', '2')
     await page.click('#pf-save-btn')
-    await expect(page.locator('text=Block 1')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('.pgm-ph-t b', { hasText: 'Block 1' })).toBeVisible({ timeout: 8000 })   // the card's name (the phase bar names it too since 2026-11-08)
 
     await expect(page.locator(daySlotBtn(1))).toBeVisible({ timeout: 8000 })
     const templateIds = await availableTemplateIds(page)
@@ -611,7 +627,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
 
     // Open Monday's session inline (first slot in day order), then Edit → the full template editor.
     await page.locator('.pwk-slot-head').first().click()
-    await page.locator('.pwk-act.edit').first().click()
+    await page.locator('.pwk-open').first().click()
     await expect(page.locator('h1:has-text("[E2E] Shared Workout")')).toBeVisible({ timeout: 8000 })
     await page.click('button:has-text("Edit")')
     await expect(page.locator('#edit-template-modal')).toBeVisible({ timeout: 4000 })
@@ -806,7 +822,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       await page.reload()
       await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await page.click('text=[E2E] Delete Block Test')
-      await page.waitForSelector('button:has-text("Manage")', { timeout: 8000 })
+      await page.waitForSelector('.pgm-manage', { timeout: 8000 })
       await programManage(page, 'Delete training plan')
       await expect(page.locator('#app-toast')).toContainText(client.name, { timeout: 4000 })
     } finally {
@@ -836,7 +852,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
       await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
       await page.evaluate((programId) => openProgram(programId), setup.programId)
       await page.waitForSelector('.week-tab[data-week="3"]', { timeout: 8000 })
-      await expect(page.locator('.pgm-wk-actions button:text-is("Delete week")')).toBeVisible({ timeout: 4000 })
+      await expect(page.locator('.pgm-wk-actions .pgm-dots')).toBeVisible({ timeout: 4000 })
 
       const _delWk = page.evaluate(({ phaseId }) => deletePhaseWeek(phaseId, 2), setup)
       await acceptConfirm(page)
@@ -967,8 +983,8 @@ test.describe('Copy program workouts to Library + duplicate-week auto-extend (20
       await page.waitForSelector('h1:has-text("[E2E] AutoExtend Program")', { timeout: 8000 })
 
       // The row must now be offered even though the phase is already "full" (1 of 1 weeks).
-      await expect(page.locator('.pgm-wk-actions button:text-is("Duplicate week")')).toBeVisible({ timeout: 8000 })
-      await page.click('.pgm-wk-actions button:text-is("Duplicate week")')
+      await expect(page.locator('.pgm-wk-actions .pgm-dots')).toBeVisible({ timeout: 8000 })
+      await weekAction(page, 'Duplicate week')
       await page.click('#dup-week-modal button:has-text("1×")')
       await expect(page.locator('text=phase extended to 2 weeks')).toBeVisible({ timeout: 8000 })
 

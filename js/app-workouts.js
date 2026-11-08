@@ -4050,15 +4050,15 @@ async function _copyTemplateToLibrary(templateId) {
   return cloned ? 'copied' : 'failed'
 }
 
-// Per-workout entry point — the button lives in the session-detail drawer (openSessionDetail),
-// which already has the template in context and room for it; the phase-grid row is just name + ✕.
+// Per-workout entry point. Since 2026-11-08 its one caller is the plan page's open-workout ⋯ sheet (pgmMenuDo 'save-lib'), which closes
+// before the copy starts, so there is no button to disable: btnEl is null there, the toast below says it is working, and guardReentry
+// (after this function) refuses a second call while the first is still copying - two at once could both pass the name check.
 async function saveTemplateToLibrary(templateId, btnEl) {
   // The `sd-save-library` fallback was removed 2026-08-29: that id exists nowhere in the codebase, and
-  // openSessionDetail:486 says explicitly that the button no longer renders. The sole caller
-  // (app-programs.js) always passes `this`, so it was harmless — but a fallback naming a dead element
-  // documents an affordance that is gone. Found by the weekly full-file review.
+  // openSessionDetail:486 says explicitly that the button no longer renders.
   const btn = btnEl
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…' }
+  else showToast('Saving to your Library…')
   const result = await _copyTemplateToLibrary(templateId)
   if (btn) { btn.disabled = false; btn.textContent = 'Save to Library' }
   if (result === 'copied') {
@@ -4068,6 +4068,7 @@ async function saveTemplateToLibrary(templateId, btnEl) {
   else if (result === 'exists') showToast('A workout with this name is already in your Library', 'warn')
   else showToast('Could not save to Library — try again.', 'error')
 }
+guardReentry('saveTemplateToLibrary')  // a second tap while the first copy runs; see the note above
 
 // Bulk entry point — solves the real case that prompted this: a program built entirely with
 // "+ Create new workout (this day only)", whose workouts are all trapped in that program.

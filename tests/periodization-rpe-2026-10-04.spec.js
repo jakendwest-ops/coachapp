@@ -197,7 +197,10 @@ test.describe('Periodization by RPE - the dialog', () => {
   const openDialog = async (page, s) => {
     await page.evaluate(id => openProgram(id), s.programId)
     await page.waitForSelector(`#phase-workouts-${s.phaseId} .pwk-slot-name`, { timeout: 10000 })
-    await page.getByRole('button', { name: /^(Add|Edit) periodization$/ }).click()
+    // Add / Edit periodisation is in the phase ⋯ since 2026-11-08
+    await page.locator(`#ph-${s.phaseId} .pgm-ph-menu`).click()
+    await expect(page.locator('#pgm-periodise')).toHaveText(/^(Add|Edit) periodisation$/)
+    await page.click('#pgm-periodise')
     await expect(page.locator('#periodization-modal')).toBeVisible({ timeout: 4000 })
   }
   const savedPhase = (page, id) => page.evaluate(async (id) => (await db.from('program_phases').select('periodization_type, periodization_config').eq('id', id).single()).data, id)
@@ -250,7 +253,9 @@ test.describe('Periodization by RPE - the dialog', () => {
 
     // the phase header chip names the method, and Edit reopens on it
     await expect(page.getByText('Linear RPE 7→10')).toBeVisible({ timeout: 6000 })
-    await page.click('button:has-text("Edit periodization")')
+    await page.locator('.pgm-ph-menu').first().click()
+    await expect(page.locator('#pgm-periodise')).toHaveText('Edit periodisation')
+    await page.click('#pgm-periodise')
     await expect(page.locator('#pz-basis-rpe')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('#pz-end-rpe')).toHaveValue('10')
     await expect(page.locator('#pz-deload-rpe')).toHaveValue('6')

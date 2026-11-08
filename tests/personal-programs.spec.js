@@ -308,9 +308,9 @@ test.describe('Personal / PT program boundary', () => {
       test.skip(!!real.skip, real.skip)
 
       await page.evaluate(id => openProgram(id), fx.programId)
-      // B1 (2026-09-07): Move to Personal lives in the "⋯ Manage" popover now.
-      await page.waitForSelector('button:has-text("Manage")', { timeout: 8000 })
-      await page.click('button:has-text("Manage")')
+      // B1 (2026-09-07): Move to Personal lives in the "⋯ Manage" popover now (a plain ⋯, .pgm-manage, since 2026-11-08).
+      await page.waitForSelector('.pgm-manage', { timeout: 8000 })
+      await page.click('.pgm-manage')
       await page.waitForSelector('#program-manage-modal', { state: 'visible', timeout: 4000 })
       await page.click('#program-manage-modal button:text-is("Move to Personal")')
       await page.waitForTimeout(600)

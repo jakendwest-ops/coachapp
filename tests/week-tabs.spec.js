@@ -56,15 +56,19 @@ test.describe('Week-tabs redesign', () => {
       await page.locator('.pwk-slot-head').first().click()
       await expect(page.locator('.pwk-detail')).toBeVisible({ timeout: 4000 })
       await expect(page.locator('.pwk-detail .pwk-ex').first()).toBeVisible({ timeout: 4000 })
-      await expect(page.locator('.pwk-act.edit').first()).toBeVisible()
-      await expect(page.locator('.pwk-act.remove').first()).toBeVisible()
+      await expect(page.locator('.pwk-detail .pwk-open').first()).toHaveText('Open workout')
+      await expect(page.locator('.pwk-detail .pwk-close').first()).toHaveText('Close')
       await expect(page.locator('#session-detail-panel')).toHaveCount(0)
 
-      // Restored per-workout "Save to Library" — copies just this workout into the standalone Library
-      const saveBtn = page.locator('.pwk-detail button', { hasText: 'Save to Library' }).first()
-      await expect(saveBtn).toBeVisible()
+      // Restored per-workout "Save to Library" — copies just this workout into the standalone Library. Behind the open workout's ⋯ since 2026-11-08,
+      // with Remove from this week.
+      await page.locator('.pwk-detail .pgm-dots').first().click()
+      await expect(page.locator('#pgm-remove-pw')).toHaveText('Remove from this week')
+      const saveBtn = page.locator('#pgm-save-lib')
+      await expect(saveBtn).toHaveText('Save to Library')
       await saveBtn.click()
-      await expect(page.locator('#app-toast')).toContainText(/Library/i, { timeout: 6000 })
+      // the finished toast, not the "Saving to your Library…" one that shows while it copies (since 2026-11-08)
+      await expect(page.locator('#app-toast')).toContainText('Saved to your Library', { timeout: 6000 })
       const libCopies = await page.evaluate(async () => {
         const { data } = await db.from('workout_templates').select('id')
           .eq('coach_id', currentUser.id).eq('name', '[E2E] WT Upper').is('program_id', null).is('client_id', null)

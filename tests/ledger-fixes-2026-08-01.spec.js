@@ -25,7 +25,7 @@ test.describe('viewport allows pinch-to-zoom (2026-07-17 accessibility finding)'
 
 // ─── #15 — week-tab labels show a sequential 1..N, not the raw (possibly non-contiguous) week_number ──
 test.describe('week-tab labels are sequential, not raw week_number (2026-07-19 finding)', () => {
-  test('Programs builder: a phase with week_number 2,3 (skipping 1) shows WEEK 1 / WEEK 2', async ({ page }) => {
+  test('Programs builder: a phase with week_number 2,3 (skipping 1) shows tabs 1 / 2', async ({ page }) => {
     await loginAsPT(page)
     // Fixture setup lives INSIDE try/finally, not before it -- if any insert here throws (schema
     // drift, a transient hiccup), cleanup below still runs instead of leaving orphaned [E2E] rows.
@@ -51,8 +51,9 @@ test.describe('week-tab labels are sequential, not raw week_number (2026-07-19 f
 
       const firstTabText = await page.locator(`.week-tab[data-phase="${setup.phaseId}"][data-week="2"]`).innerText()
       const secondTabText = await page.locator(`.week-tab[data-phase="${setup.phaseId}"][data-week="3"]`).innerText()
-      expect(firstTabText.replace(/\s+/g, '')).toBe('WEEK1')
-      expect(secondTabText.replace(/\s+/g, '')).toBe('WEEK2')
+      // Numbers only on the plan page since 2026-11-08 (the row is headed "Week"); the Workouts read page below keeps WEEK.
+      expect(firstTabText.replace(/\s+/g, '')).toBe('1')
+      expect(secondTabText.replace(/\s+/g, '')).toBe('2')
     } finally {
       // FK-safe order (program_phase_workouts -> program_phases -> workout_templates -> programs),
       // matching tests/helpers.js's sweepPT2 convention -- relying on a cascade-via-parent-delete is
