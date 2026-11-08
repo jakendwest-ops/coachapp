@@ -124,7 +124,7 @@ the training itself. The target is shown beside the set ("aim 80 x 8, 8, 8"), ne
 5. Four to six proven plans written by Jake.
 6. Installable to the home screen (PWA).
 7. Navigation from 8 destinations to 4. BUILT 2026-10-31 (Today, Train, Progress, More; [design](../specs/2026-10-31-personal-view-four-tabs-design.md)).
-8. Plan complete: a review and the next block. BUILT 2026-11-07, not yet released ([plan](2026-11-07-end-of-block-review.md)).
+8. Plan complete: a review and the next block. SHIPPED in v2026.11.2 ([plan](2026-11-07-end-of-block-review.md)).
 
 **V2: retention and switching**
 1. Import history from a Strong / Hevy CSV.
