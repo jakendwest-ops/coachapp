@@ -1711,8 +1711,8 @@ function _diaryExMetrics(ex) {
   const reps   = sets.reduce((s, x) => s + (parseInt(x.reps_achieved) || 0), 0)
   const volume = sets.reduce((s, x) => s + num(x.weight_kg) * (parseInt(x.reps_achieved) || 0), 0)
   const top    = Math.max(0, ...sets.map(x => num(x.weight_kg)))
-  // `raw` stays canonical kg (consumers like _diaryDelta compute a diff against a PREVIOUS raw kg
-  // value, then format the result — the same "convert only at display time" pattern used throughout).
+  // `raw` stays canonical kg (the per-exercise chart compares it across sessions, then formats the
+  // result — the same "convert only at display time" pattern used throughout).
   return { mt, isCardio: false, setLine, sets: sets.length, reps, volume,
     main: { raw: top, fmt: fmtWeight(top, { spaced: true }), fmtNum: v => fmtWeight(v) },
     sec:  { label: 'Volume', raw: volume,
@@ -1720,14 +1720,6 @@ function _diaryExMetrics(ex) {
             fmtNum: v => Math.round(weightToPref(v)).toLocaleString() + window._unitPrefs.weight } }
 }
 
-// "▲ +X (+Y%)" / "▼ −X (−Y%)" delta vs previous occurrence — green up / red down, our wording.
-function _diaryDelta(cur, prev, fmtNum) {
-  if (prev == null) return ''
-  const d = cur - prev
-  if (Math.abs(d) < 0.005) return `<span style="color:var(--text-muted)">—</span>`
-  const up = d > 0, pct = prev !== 0 ? Math.round(Math.abs(d) / prev * 100) : null
-  return `<span style="color:${up ? '#16a34a' : '#ef4444'};font-weight:700">${up ? '▲' : '▼'} ${up ? '+' : '−'}${fmtNum(Math.abs(d))}${pct != null ? ` (${up ? '+' : '−'}${pct}%)` : ''}</span>`
-}
 
 // ── Sessions: vs last time, and weekly volume (docs/superpowers/specs/2026-10-31-performance-charts-design.md, goal 3; tests-node/session-compare.test.mjs) ──────────
 // "Workout" is what the runner saves an untitled session as (app-runner.js), so it says nothing about what was done: it reads as no name.
@@ -1761,6 +1753,39 @@ function _setMark(now, then) {
   return null
 }
 
+// What changed in one set since the same set last time, for the Change column (Jake, 2026-11-08: "+/- reps/sets/weight/RPE"): a list of [text, 'up' | 'down' | 'even'].
+// Only what changed is listed; a set where nothing moved, effort included, is [['same', 'even']]. Weight is in the person's unit, as the difference of the two values as
+// shown, so it can be checked by subtracting them. No weight reads as 0, as in _setMark. The effort is listed only when both sets carry one on the same scale (RPE and RIR
+// run in opposite directions), and is never coloured: a higher RPE is not better or worse on its own. Not the set's text: a cardio set's text shows its time only, so two
+// equal texts can still differ in distance. "same" is said only when something could be compared: a time on one side and a distance on the other claims nothing.
+function _setChange(now, then) {
+  const out = []
+  let compared = false
+  const add = (d, text) => { compared = true; if (d) out.push([`${d > 0 ? '+' : '−'}${text(Math.abs(d))}`, d > 0 ? 'up' : 'down']) }
+  // Two decimals, rounded away from zero alike in both directions: a kg weight is shown at full precision (101.25), so 0.1 would print "+1.3" beside 101.25 and 100.
+  const round = v => Math.sign(v) * Math.round(Math.abs(v) * 100) / 100
+  const n = v => (v == null || v === '' ? null : parseFloat(v))
+  const both = k => n(now[k]) != null && n(then[k]) != null
+  if (now.height_cm != null || then.height_cm != null) {
+    if (both('height_cm')) add(round(Number(jumpHeightToPref(now.height_cm)) - Number(jumpHeightToPref(then.height_cm))), v => `${v} ${/** @type {any} */ (window)._unitPrefs.jumpHeight}`)
+  } else if (now.reps_achieved != null || then.reps_achieved != null || now.weight_kg != null || then.weight_kg != null) {
+    add(round(_xsKg(now.weight_kg) - _xsKg(then.weight_kg)), v => `${v} ${_xsUnit()}`)
+    if (both('reps_achieved')) add((parseInt(now.reps_achieved) || 0) - (parseInt(then.reps_achieved) || 0), v => `${v} rep${v === 1 ? '' : 's'}`)
+  }
+  if (both('distance_m')) add(Math.round(n(now.distance_m) - n(then.distance_m)), v => fmtDistanceM(v))
+  // A hold's time counts with or without a load (the runner saves a loaded hold as weight + duration, no reps); a strength set's rest-like duration does not.
+  if (both('duration_seconds') && now.reps_achieved == null && then.reps_achieved == null) {
+    add((parseInt(now.duration_seconds) || 0) - (parseInt(then.duration_seconds) || 0), v => (v < 60 ? `${v} s` : fmtRestCountdown(v)))
+  }
+  const a = _setEffort(now), b = _setEffort(then)
+  if (!out.length && compared && (a && b ? a.type === b.type && a.v === b.v : !a && !b)) return [['same', 'even']]
+  if (a && b && a.type === b.type) {
+    const d = round(a.v - b.v), scale = a.type === 'rir' ? 'RIR' : 'RPE'
+    out.push([d ? `${scale} ${d > 0 ? '+' : '−'}${Math.abs(d)}` : `${scale} same`, 'even'])
+  }
+  return out
+}
+
 // A session's exercises by name, in the order they first appear: an exercise done twice is one row. Working sets only, in set order (an embed comes back in no order).
 function _sessionGroups(s) {
   const groups = new Map()
@@ -1792,10 +1817,12 @@ function _sessionCompare(cur, prev) {
   const thenByName = new Map(then.map(g => [g.exercise_name, g]))
   const exercises = now.map(g => {
     const p = thenByName.get(g.exercise_name), nowSets = g.workout_log_sets
-    const row = { name: g.exercise_name, ei: g.ei, isCardio: g.m.isCardio, nowKg: g.m.volume, thenKg: p ? p.m.volume : null }
+    // A unilateral lift's sets are counted per side: one more set each side is "+1 set", not "+2".
+    const setCount = sets => Math.max(0, ...Object.values(sets.reduce((c, x) => { c[x.side || ''] = (c[x.side || ''] || 0) + 1; return c }, {})))
+    const row = { name: g.exercise_name, ei: g.ei, isCardio: g.m.isCardio, nowKg: g.m.volume, thenKg: p ? p.m.volume : null, setDelta: p ? setCount(nowSets) - setCount(p.workout_log_sets) : 0 }
     if (!p) return { ...row, verdict: 'new', sets: nowSets.map(x => ({ now: x, then: null, mark: null })) }
     const thenSets = p.workout_log_sets
-    const sets = _pairSets(nowSets, thenSets).map(([a, b]) => ({ now: a, then: b, mark: !a ? 'missing' : !b ? 'extra' : g.m.isCardio ? null : _setMark(a, b) }))
+    const sets = _pairSets(nowSets, thenSets).map(([a, b]) => ({ now: a, then: b, mark: !a ? 'missing' : !b ? 'extra' : g.m.isCardio ? null : _setMark(a, b), change: a && b ? _setChange(a, b) : null }))
     if (g.m.isCardio) return { ...row, verdict: null, sets }
     const ups = sets.filter(x => x.mark === 'up').length, downs = sets.filter(x => x.mark === 'down').length, uncalled = sets.some(x => x.mark === null)
     const verdict = nowSets.length < thenSets.length ? 'fewer-sets' : ups && downs ? 'mixed' : ups ? 'improved' : downs ? 'down' : uncalled ? 'changed' : nowSets.length > thenSets.length ? 'more-sets' : 'same'
@@ -1803,7 +1830,7 @@ function _sessionCompare(cur, prev) {
   })
   const seen = new Set(now.map(g => g.exercise_name))
   then.filter(g => !seen.has(g.exercise_name)).forEach(g => exercises.push({
-    name: g.exercise_name, ei: null, isCardio: g.m.isCardio, nowKg: null, thenKg: g.m.volume, verdict: 'not-done', sets: g.workout_log_sets.map(x => ({ now: null, then: x, mark: null })),
+    name: g.exercise_name, ei: null, isCardio: g.m.isCardio, nowKg: null, thenKg: g.m.volume, setDelta: 0, verdict: 'not-done', sets: g.workout_log_sets.map(x => ({ now: null, then: x, mark: null })),
   }))
   const both = exercises.filter(e => e.verdict && !['new', 'not-done', 'changed'].includes(e.verdict))
   const total = groups => groups.reduce((t, g) => t + g.m.volume, 0)
@@ -1864,26 +1891,53 @@ const _SESSION_VERDICTS = {
   improved: ['Improved', 'xs-up'], down: ['Down', 'xs-dn'], mixed: ['Mixed', 'xs-eq'], same: ['Same as last time', 'xs-eq'], changed: ['Changed', 'xs-eq'], 'more-sets': ['More sets', 'xs-up'],
   'fewer-sets': ['Fewer sets', 'xs-dn'], new: ['New this time', 'xs-eq'], 'not-done': ['Not done this time', 'xs-eq'],
 }
-const _SESSION_MARKS = { up: ['↑', 'xs-up'], down: ['↓', 'xs-dn'], same: ['=', 'xs-eq'], missing: ['not done', 'xs-dn'], extra: ['extra', 'xs-up'] }
-
-// Set by set against last time. Every set's text is the diary's own (_setDetailsLine), and a mark only appears where _setMark can stand behind it.
-function _sessionCompareHtml(i, cmp, prevDate) {
-  const total = v => Math.round(Number(weightToPref(v))).toLocaleString() + ' ' + _xsUnit()
-  const rows = cmp.exercises.map(e => {
-    const verdict = e.verdict ? _SESSION_VERDICTS[e.verdict] : null
-    const sets = e.sets.map(x => {
-      const mark = x.mark ? _SESSION_MARKS[x.mark] : null
-      return `<div class="sc-set" data-sc-set><span>${escapeHtml(x.then ? _setDetailsLine([x.then]) : '–')}</span><span>${escapeHtml(x.now ? _setDetailsLine([x.now]) : '–')}</span><span class="sc-mark ${mark ? mark[1] : ''}" data-sc-mark="${x.mark || ''}">${mark ? mark[0] : ''}</span></div>`
-    }).join('')
-    const totals = !e.isCardio && e.thenKg != null && e.nowKg != null ? `<div class="xs-sub" data-sc-total>Total ${escapeHtml(total(e.thenKg))} → ${escapeHtml(total(e.nowKg))}</div>` : ''
-    const open = e.ei != null ? ` onclick="_expandPerfSessionExercise(${i},${e.ei})"` : ''
-    return `<div class="sc-ex" data-sc-ex="${escapeHtml(e.name)}"${open}>
-      <div class="sc-head"><span>${escapeHtml(e.name)}</span>${verdict ? `<span class="${verdict[1]}" data-sc-verdict="${e.verdict}">${verdict[0]}</span>` : ''}</div>
+// A set only one side has: there is nothing to subtract, so the column names it.
+const _SESSION_MARKS = { missing: ['not done', 'xs-dn'], extra: ['extra', 'xs-up'] }
+const _SESSION_CHANGE_CLASS = { up: 'xs-up', down: 'xs-dn', even: 'xs-eq' }
+const _sessionTotal = v => Math.round(Number(weightToPref(v))).toLocaleString() + ' ' + _xsUnit()
+// One exercise's block, shared by the comparison and the first-time list so the two read as one design (Jake, 2026-11-08: "Why is the UI different on these 2?").
+// No total when there is nothing to weigh (bodyweight, holds, cardio), never "Total 0 kg → 0 kg".
+function _sessionExHtml(i, e, verdictHtml, sets, totals) {
+  const open = e.ei != null ? ` onclick="_expandPerfSessionExercise(${i},${e.ei})"` : ''
+  return `<div class="sc-ex" data-sc-ex="${escapeHtml(e.name)}"${open}>
+      <div class="sc-head"><span>${escapeHtml(e.name)}</span>${verdictHtml}</div>
       ${sets}${totals}
       ${e.ei != null ? `<div id="perf-sess-${i}-ex-${e.ei}-chart" style="display:none;position:relative;height:80px;margin-top:8px"></div>` : ''}
     </div>`
+}
+
+// Set by set against last time. Every set's text is the diary's own (_setDetailsLine); the Change column says what moved (_setChange), and the heading adds how many sets
+// were added or dropped.
+function _sessionCompareHtml(i, cmp, prevDate) {
+  const rows = cmp.exercises.map(e => {
+    const verdict = e.verdict ? _SESSION_VERDICTS[e.verdict] : null
+    const d = e.setDelta || 0, count = d ? `${d > 0 ? '+' : '−'}${Math.abs(d)} set${Math.abs(d) === 1 ? '' : 's'}` : ''
+    // Cardio has no verdict, but a set added or dropped is still news.
+    const verdictHtml = verdict ? `<span class="${verdict[1]}" data-sc-verdict="${e.verdict}">${verdict[0]}${count ? ' · ' + count : ''}</span>` : count ? `<span class="xs-eq" data-sc-count>${count}</span>` : ''
+    const sets = e.sets.map(x => {
+      const only = x.mark && _SESSION_MARKS[x.mark]
+      const change = only ? `<span class="${only[1]}">${only[0]}</span>` : (x.change || []).map(([text, kind]) => `<span class="${_SESSION_CHANGE_CLASS[kind]}">${escapeHtml(text)}</span>`).join('')
+      return `<div class="sc-set" data-sc-set><span>${escapeHtml(x.then ? _setDetailsLine([x.then]) : '–')}</span><span>${escapeHtml(x.now ? _setDetailsLine([x.now]) : '–')}</span><span class="sc-mark" data-sc-mark="${x.mark || ''}">${change}</span></div>`
+    }).join('')
+    const totals = !e.isCardio && e.thenKg != null && e.nowKg != null && (e.thenKg || e.nowKg) ? `<div class="xs-sub" data-sc-total>Total ${escapeHtml(_sessionTotal(e.thenKg))} → ${escapeHtml(_sessionTotal(e.nowKg))}</div>` : ''
+    return _sessionExHtml(i, e, verdictHtml, sets, totals)
   }).join('')
-  return `<div class="sc-set sc-cols"><span>${escapeHtml(_dashFormatDate(prevDate))}</span><span>This time</span><span></span></div>${rows}`
+  return `<div class="sc-set sc-cols"><span>${escapeHtml(_dashFormatDate(prevDate))}</span><span>This time</span><span>Change</span></div>${rows}`
+}
+
+// A session with no last time: the same blocks, one column. "First time" is per exercise, the first time it was ever logged in any workout (`history`, oldest first,
+// keyed by session id), and only from the whole history (`whole`): a Squat done often in "Lower A" is not new in a first "Lower B".
+function _sessionSoloHtml(i, s, history, whole) {
+  const rows = _sessionGroups(s).map(g => {
+    const e = { name: g.exercise_name, ei: g.ei }
+    const sets = g.workout_log_sets.map(x => `<div class="sc-set" data-sc-set><span>${escapeHtml(_setDetailsLine([x]))}</span></div>`).join('')
+    // Cardio's set text shows time only, so its total carries the distance too.
+    const totals = g.m.isCardio ? (g.workout_log_sets.length ? `<div class="xs-sub" data-sc-total>Total ${escapeHtml(g.m.main.fmt)}${g.m.sec ? ' · ' + escapeHtml(g.m.sec.fmt) : ''}</div>` : '')
+      : g.m.volume ? `<div class="xs-sub" data-sc-total>Total ${escapeHtml(_sessionTotal(g.m.volume))}</div>` : ''
+    const first = whole && g.workout_log_sets.length && (history[g.exercise_name] || []).findIndex(h => h.id === s.id) === 0
+    return _sessionExHtml(i, e, first ? '<span class="xs-eq" data-sc-verdict="first">First time</span>' : '', sets, totals)
+  }).join('')
+  return `<div class="sc-solo"><div class="sc-set sc-cols"><span>This time</span></div>${rows}</div>`
 }
 
 let _perfSessionToken = 0
@@ -1919,7 +1973,9 @@ async function renderProgressPerSession(clientId, el) {
   ;[...all].reverse().forEach(s => {
     ;(s.workout_log_exercises || []).forEach(ex => {
       if (!ex.exercise_name) return
-      ;(history[ex.exercise_name] ||= []).push({ date: s.date, m: _diaryExMetrics(ex) })
+      // A session with no working sets of this exercise is not a time it was done (_sessionSoloHtml's "First time").
+      if (!_countableSets(ex.workout_log_sets).length) return
+      ;(history[ex.exercise_name] ||= []).push({ id: s.id, date: s.date, m: _diaryExMetrics(ex) })
     })
   })
   const weeks = whole ? _weeklyVolume(all, _ymdLocal(new Date())) : null
@@ -1927,7 +1983,7 @@ async function renderProgressPerSession(clientId, el) {
     const prev = whole && _sessionHasSets(s) ? _previousSessionOf(all, i) : null
     return prev ? { prev, cmp: _sessionCompare(s, prev) } : null
   })
-  window._perfSessionData = { sessions, history, weeks, lastTime }
+  window._perfSessionData = { sessions, history, weeks, lastTime, whole }
 
   const top = whole
     ? `<div id="perf-sess-volume">${_sessionVolumeHtml(weeks, _sessionVolumeMode)}</div>`
@@ -1977,32 +2033,13 @@ function _togglePerfSession(i) {
 }
 
 function _renderPerfSessionDetail(i) {
-  const { sessions, history, lastTime } = window._perfSessionData || {}
+  const { sessions, history, lastTime, whole } = window._perfSessionData || {}
   const s = sessions?.[i]
   const panel = document.getElementById(`perf-sess-${i}`)
   if (!s || !panel) return
-  // With a last time, the comparison IS this panel. Its per-exercise deltas below answer a different question (the last time you did that exercise, in any workout), and
-  // the two side by side would disagree.
+  // With a last time, the comparison IS this panel; without one, the same layout in one column (Jake, 2026-11-08).
   const vs = lastTime?.[i]
-  if (vs) { panel.innerHTML = _sessionCompareHtml(i, vs.cmp, vs.prev.date); return }
-  panel.innerHTML = (s.workout_log_exercises || []).filter(ex => ex.exercise_name).map((ex, ei) => {
-    const m = _diaryExMetrics(ex)
-    const hist = history[ex.exercise_name] || []
-    const idx = hist.findIndex(h => h.date === s.date)
-    const prev = idx > 0 ? hist[idx - 1].m : null
-    const mainDelta = prev ? _diaryDelta(m.main.raw, prev.main.raw, m.main.fmtNum) : (idx <= 0 ? '<span style="font-size:10px;color:var(--text-muted)">first time</span>' : '')
-    const secDelta  = (m.sec && prev && prev.sec) ? _diaryDelta(m.sec.raw, prev.sec.raw, m.sec.fmtNum) : ''
-    return `
-      <div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="_expandPerfSessionExercise(${i},${ei})">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-          <span style="font-size:var(--text-base, 13px);font-weight:600">${escapeHtml(ex.exercise_name)}</span>
-          <span style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap">${m.main.fmt} ${mainDelta}</span>
-        </div>
-        ${m.setLine ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${escapeHtml(m.setLine)}</div>` : ''}
-        ${m.sec ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:2px">${m.sec.label} ${m.sec.fmt} ${secDelta}</div>` : ''}
-        <div id="perf-sess-${i}-ex-${ei}-chart" style="display:none;position:relative;height:80px;margin-top:8px"></div>
-      </div>`
-  }).join('')
+  panel.innerHTML = vs ? _sessionCompareHtml(i, vs.cmp, vs.prev.date) : _sessionSoloHtml(i, s, history || {}, !!whole)
 }
 
 function _expandPerfSessionExercise(i, ei) {
@@ -3293,16 +3330,21 @@ function _xsDate(iso, long) {
 // "@9 RPE" or "@2 RIR": the scale travels with the number, because the two run in opposite directions. Both carry it: an RPE used to be a bare
 // "@9" while an RIR said "RIR", so an RPE did not read as one (Jake, 2026-10-12: "the RPE is not shown whereas the RIR is").
 function _xsEffortText(s) {
-  if (!_hasNumVal(s.effort_value)) return ''
+  const e = _setEffort(s)
+  return e ? ' @' + e.v + (e.type === 'rir' ? ' RIR' : ' RPE') : ''
+}
+// A set's recorded effort as { type: 'rpe' | 'rir', v }, or null when it has none that can be read. Shared by the text above and the Sessions Change column.
+function _setEffort(s) {
+  if (!_hasNumVal(s.effort_value)) return null
   // A set logged before the scale was recorded has an effort and NO type; those were all RPE (the runner's last-session table has always read them that way).
   // Jake, 2026-10-12, asked to show them as RPE. Only a NULL type is read as RPE: any other unknown type still says nothing (RPE and RIR run in opposite directions).
   // === null, not == null: undefined means the query did not SELECT effort_type, and reading that as RPE would invert an RIR (review, 2026-10-12).
   const type = s.effort_type === null ? 'rpe' : s.effort_type
-  if (!(type === 'rpe' || type === 'rir')) return ''
+  if (!(type === 'rpe' || type === 'rir')) return null
   // parseFloat + isFinite: a stored value that is not a number (a hand-written row) says nothing, never "@NaN RPE" (found by the 2026-10-12 review).
   const v = parseFloat(s.effort_value)
-  if (!Number.isFinite(v) || v < 0 || v > 10) return ''     // the scale is 0-10 (_effortOrNull's range): a hand-written 88 says nothing
-  return ' @' + v + (type === 'rir' ? ' RIR' : ' RPE')
+  if (!Number.isFinite(v) || v < 0 || v > 10) return null     // the scale is 0-10 (_effortOrNull's range): a hand-written 88 says nothing
+  return { type, v }
 }
 // The average effort of a set of sets, as an RPE (Jake, 2026-10-12: "include per block" on the Per program tab). An RIR is converted (RPE = 10 - RIR) so the two scales
 // can be averaged; a set with no scale is read as RPE, as _xsEffortText does; a set with no usable effort is left out. null when none has one.

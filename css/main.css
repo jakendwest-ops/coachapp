@@ -1311,9 +1311,12 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .sc-ex { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .sc-ex[onclick] { cursor: pointer; }
 .sc-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; margin-bottom: 4px; font-size: var(--text-base); font-weight: 600; overflow-wrap: anywhere; }
-.sc-set { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 56px; gap: 8px; padding: 2px 0; font-size: var(--text-md); overflow-wrap: anywhere; }
+.sc-set { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 80px; gap: 8px; padding: 2px 0; font-size: var(--text-md); overflow-wrap: anywhere; }
+.sc-solo .sc-set { grid-template-columns: minmax(0, 1fr); }
 .sc-cols { color: var(--text-muted); font-size: var(--text-sm); font-weight: 700; }
-.sc-mark { text-align: right; font-weight: 700; }
+.sc-cols span:nth-child(3), .sc-mark { text-align: right; }
+.sc-mark { font-weight: 700; line-height: 1.35; }
+.sc-mark span { display: block; }
 .xs-up { color:var(--success-fg); }
 .xs-dn { color:var(--danger-text); }
 .xs-eq { color: var(--text-muted); }

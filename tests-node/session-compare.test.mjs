@@ -70,10 +70,65 @@ describe('_setMark: one set against the same set last time', () => {
   })
 })
 
+describe('_setChange: what moved in one set (the Change column)', () => {
+  const change = (now, then) => json(get('_setChange')(now, then))
+  const rpe = v => ({ effort_type: 'rpe', effort_value: v })
+  test('weight, reps and RPE, each only when it changed (Jake\'s screenshot: 55x7 @7 then 70x3 @7)', () => {
+    assert.deepEqual(change(set(1, 70, 3, rpe(7)), set(1, 55, 7, rpe(7))), [['+15 kg', 'up'], ['−4 reps', 'down'], ['RPE same', 'even']])
+    assert.deepEqual(change(set(1, 57.5, 4), set(1, 57.5, 7, rpe(8))), [['−3 reps', 'down']])
+    assert.deepEqual(change(set(1, 100, 6), set(1, 100, 5)), [['+1 rep', 'up']])
+  })
+  test('an identical set is "same"; an RPE that moved is never coloured', () => {
+    assert.deepEqual(change(set(1, 100, 5, rpe(8)), set(1, 100, 5, rpe(8))), [['same', 'even']])
+    assert.deepEqual(change(set(1, 100, 5, rpe(9)), set(1, 100, 5, rpe(8))), [['RPE +1', 'even']])
+  })
+  test('RPE against RIR says nothing about effort: they run in opposite directions', () => {
+    assert.deepEqual(change(set(1, 100, 5, { effort_type: 'rir', effort_value: 2 }), set(1, 100, 5, rpe(8))), [])
+  })
+  test('bodyweight compares reps; zero is a real weight; going from bodyweight to a load shows the load', () => {
+    assert.deepEqual(change(set(1, null, 10), set(1, null, 8)), [['+2 reps', 'up']])
+    assert.deepEqual(change(set(1, 0, 10), set(1, null, 10)), [['same', 'even']])
+    assert.deepEqual(change(set(1, 10, 8), set(1, null, 8)), [['+10 kg', 'up']])
+  })
+  test('pounds: the difference of the two weights as shown', () => {
+    const prefs = get('window')._unitPrefs, before = prefs.weight
+    try { prefs.weight = 'lb'; assert.deepEqual(change(set(1, 102.5, 5), set(1, 100, 5)), [['+5.5 lb', 'up']]) } finally { prefs.weight = before }
+  })
+  test('a hold, a jump and a distance', () => {
+    assert.deepEqual(change(set(1, null, null, { duration_seconds: 60 }), set(1, null, null, { duration_seconds: 45 })), [['+15 s', 'up']])
+    assert.deepEqual(change(set(1, null, null, { duration_seconds: 90 }), set(1, null, null, { duration_seconds: 180 })), [['−1:30', 'down']])
+    assert.deepEqual(change(set(1, null, null, { height_cm: 52 }), set(1, null, null, { height_cm: 50 })), [['+2 cm', 'up']])
+    assert.deepEqual(change(set(1, null, null, { distance_m: 1200, duration_seconds: 300 }), set(1, null, null, { distance_m: 1000, duration_seconds: 300 })), [['+200 m', 'up']])
+  })
+  test('unilateral: the side is not a change', () => {
+    assert.deepEqual(change(set(1, 20, 10, { side: 'left' }), set(1, 17.5, 10, { side: 'left' })), [['+2.5 kg', 'up']])
+  })
+  test('a loaded hold that got longer says so, never "same" (review, 2026-11-08)', () => {
+    assert.deepEqual(change(set(1, 20, null, { duration_seconds: 45 }), set(1, 20, null, { duration_seconds: 30 })), [['+15 s', 'up']])
+  })
+  test('the weight difference matches the weights as shown, both ways', () => {
+    assert.deepEqual(change(set(1, 101.25, 5), set(1, 100, 5)), [['+1.25 kg', 'up']])
+    assert.deepEqual(change(set(1, 100, 5), set(1, 100.25, 5)), [['−0.25 kg', 'down']])
+  })
+  test('nothing to compare is not "same": a time on one side and a distance on the other', () => {
+    assert.deepEqual(change(set(1, null, null, { duration_seconds: 300 }), set(1, null, null, { distance_m: 1000 })), [])
+  })
+})
+
 describe('_sessionCompare: two sessions', () => {
   const cmp = (a, b) => json(get('_sessionCompare')(sess('a', '2026-11-05', 'Upper', 'F', a), sess('b', '2026-10-29', 'Upper', 'F', b)))
   const row = (r, name) => r.exercises.find(e => e.name === name)
 
+  test('each exercise in both says how many sets were added or dropped, and each paired set what changed', () => {
+    const r = cmp([ex('Bench', [set(1, 105, 5), set(2, 100, 5)])], [ex('Bench', [set(1, 100, 5), set(2, 100, 5), set(3, 100, 5)])])
+    assert.equal(row(r, 'Bench').setDelta, -1)
+    assert.deepEqual(row(r, 'Bench').sets.map(x => x.change), [[['+5 kg', 'up']], [['same', 'even']], null])
+    assert.equal(row(cmp([ex('Curl', [set(1, 20, 10)])], [bench()]), 'Curl').setDelta, 0, 'a new exercise has no count to compare')
+  })
+  test('a unilateral lift counts sets per side: one more each side is one more set', () => {
+    const lr = n => Array.from({ length: n }, (_, k) => [set(k + 1, 20, 10, { side: 'left' }), set(k + 1, 20, 10, { side: 'right' })]).flat()
+    assert.equal(row(cmp([ex('Lunge', lr(4))], [ex('Lunge', lr(3))]), 'Lunge').setDelta, 1)
+  })
   test('the total kg change, and how many of the exercises in both went up', () => {
     const r = cmp([ex('Bench', [set(1, 105, 5)]), ex('Row', [set(1, 80, 5)]), ex('Curl', [set(1, 20, 5)])], [ex('Bench', [set(1, 100, 5)]), ex('Row', [set(1, 80, 5)]), ex('Press', [set(1, 50, 5)])])
     assert.equal(r.nowTotalKg, 525 + 400 + 100)

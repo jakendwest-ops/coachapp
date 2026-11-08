@@ -46,7 +46,9 @@ test.describe('Sessions: vs last time', () => {
     const bench = exRow(page, 'Bench')
     await expect(bench.locator('[data-sc-mark]')).toHaveCount(3)
     expect(await bench.locator('[data-sc-mark]').evaluateAll(els => els.map(e => e.dataset.scMark))).toEqual(['up', 'same', 'missing'])
-    await expect(bench.locator('[data-sc-verdict]')).toHaveText('Fewer sets')
+    await expect(bench.locator('[data-sc-verdict]')).toHaveText('Fewer sets · −1 set')
+    expect(await bench.locator('[data-sc-mark]').allInnerTexts(), 'the Change column says what moved, not just which way').toEqual(['+5 kg', 'same', 'not done'])
+    await expect(page.locator('#perf-sess-0 .sc-cols')).toContainText('Change')
     await expect(bench.locator('[data-sc-total]')).toHaveText('Total 1,500 kg → 1,025 kg')
     await expect(bench.locator('[data-sc-set]').first()).toContainText('100×5')
     await expect(bench.locator('[data-sc-set]').first()).toContainText('105×5')
@@ -64,17 +66,41 @@ test.describe('Sessions: vs last time', () => {
     await expect(page.locator('#sc-host [data-sc-verdict="improved"]')).toHaveCount(1)
   })
 
-  test('with no last time, the panel stays the diary it was', async ({ page }) => {
+  test('with no last time, the panel uses the same layout in one column, each exercise marked "First time" (Jake, 2026-11-08)', async ({ page }) => {
     await show(page, [OTHER])
     await open(page, 0)
-    await expect(page.locator('#perf-sess-0')).toContainText('120×5')
-    await expect(page.locator('#perf-sess-0 [data-sc-ex]')).toHaveCount(0)
+    const squat = exRow(page, 'Squat')
+    await expect(squat.locator('[data-sc-verdict]')).toHaveText('First time')
+    await expect(squat.locator('[data-sc-set]')).toHaveText('120×5')
+    await expect(squat.locator('[data-sc-total]')).toHaveText('Total 600 kg')
+    await expect(page.locator('#perf-sess-0 .sc-cols')).toHaveText('This time')
+    await expect(squat.locator('[data-sc-mark]'), 'nothing to compare with, so no Change column').toHaveCount(0)
   })
 
   test('a session with no sets says so, and claims no comparison', async ({ page }) => {
     await show(page, [log('l5', '2026-11-05', 'Upper wk6', 'F', [ex('Bench', [])]), LAST_TIME])
     await expect(page.locator('#sc-host').getByText('No sets logged')).toBeVisible()
     await expect(page.locator('#sc-host button').first().locator('[data-vs-last]')).toHaveCount(0)
+    await open(page, 0)
+    await expect(page.locator('#perf-sess-0 [data-sc-verdict]'), 'nor "First time" in its panel: Bench was done last time (review, 2026-11-08)').toHaveCount(0)
+  })
+
+  test('"First time" is per exercise: a lift done before in another workout is not new in this one', async ({ page }) => {
+    const fresh = log('n1', '2026-11-05', 'Push B', 'H', [ex('Bench', [set(1, 100, 5)]), ex('Dips', [set(1, null, 10)])])
+    await show(page, [fresh, LAST_TIME])
+    await expect(vsLines(page).first()).toHaveText('First time doing this workout')
+    await open(page, 0)
+    await expect(exRow(page, 'Bench').locator('[data-sc-verdict]'), 'Bench was in Upper wk5').toHaveCount(0)
+    await expect(exRow(page, 'Dips').locator('[data-sc-verdict]')).toHaveText('First time')
+    await expect(exRow(page, 'Dips').locator('[data-sc-total]'), 'bodyweight: nothing to weigh').toHaveCount(0)
+  })
+
+  test('a first-time run shows its distance as well as its time', async ({ page }) => {
+    const run = ex('Run', [set(1, null, null, { distance_m: 5000, duration_seconds: 1500 })], { exercise_type: 'cardio', metric_type: 'cardio' })
+    await show(page, [log('r1', '2026-11-05', 'Easy run', 'R', [run])])
+    await open(page, 0)
+    await expect(exRow(page, 'Run').locator('[data-sc-total]')).toContainText('5')
+    await expect(exRow(page, 'Run').locator('[data-sc-total]')).toContainText('25:00')
   })
 
   test('last time is found past the ten cards and past the 200-row cap, and the bars see every session', async ({ page }) => {
@@ -105,6 +131,9 @@ test.describe('Sessions: vs last time', () => {
     await expect(page.locator('#sc-host').getByText('Upper wk6')).toBeVisible()
     await expect(vsLines(page), 'no comparison, and no "First time", from a partial history').toHaveCount(0)
     await expect(page.locator('[data-session-volume]')).toHaveCount(0)
+    await open(page, 1)
+    await expect(page.locator('#perf-sess-1 [data-sc-ex="Squat"]')).toBeVisible()
+    await expect(page.locator('#perf-sess-1 [data-sc-verdict]'), 'the panel claims "First time" no more than the card does').toHaveCount(0)
   })
 
   test('a hold that got longer reads "Changed", never "Same as last time"', async ({ page }) => {
@@ -112,6 +141,8 @@ test.describe('Sessions: vs last time', () => {
     await show(page, [log('a', '2026-11-05', 'Core', 'F', [plank(60)]), log('b', '2026-10-29', 'Core', 'F', [plank(45)])])
     await open(page, 0)
     await expect(exRow(page, 'Plank').locator('[data-sc-verdict]')).toHaveText('Changed')
+    await expect(exRow(page, 'Plank').locator('[data-sc-mark]')).toHaveText('+15 s')
+    await expect(exRow(page, 'Plank').locator('[data-sc-total]'), 'nothing to weigh: never "Total 0 kg → 0 kg"').toHaveCount(0)
     await expect(vsLines(page).first()).toHaveText('vs Thu 29 Oct')
   })
 

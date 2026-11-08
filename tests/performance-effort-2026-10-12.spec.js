@@ -146,7 +146,8 @@ test.describe('Recorded effort in the Performance tables (2026-10-12)', () => {
     await page.evaluate(() => _togglePerfSession(0))
     const text = await page.locator('#perf-sess-0').innerText()
     expect(asked.some(s => /effort_type/.test(s) && /effort_value/.test(s)), 'the read selects effort_type and effort_value').toBe(true)
-    expect(text, 'the RPE exercise shows each set\'s RPE').toContain('62.5×4 @7 RPE, 65×4 @8 RPE, 62.4×4 @7 RPE')
+    // One set per row since 2026-11-08 (the first-time panel uses the comparison's layout).
+    for (const s of ['62.5×4 @7 RPE', '65×4 @8 RPE', '62.4×4 @7 RPE']) expect(text, 'the RPE exercise shows each set\'s RPE').toContain(s)
     expect(text, 'the RIR exercise shows its RIR').toContain('82.5×6 @0 RIR')
     await page.evaluate(() => document.getElementById('perf-fixture-host')?.remove())
   })
