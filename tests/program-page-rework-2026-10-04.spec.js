@@ -100,7 +100,7 @@ test.describe('Program page - the overview and the fold-up phases', () => {
     await open(page, s)
     await expect(page.locator('h1')).toHaveText(TAG + ' Program')
     // sessions a week is read after the page paints: Accumulation has 3, Intensification 2, Peak 1, Test maxes none
-    await expect(page.locator('.pgm-facts')).toHaveText('4 phases · 10 weeks · 1–3 sessions a week', { timeout: 8000 })
+    await expect(page.locator('.pgm-facts')).toHaveText('4 blocks · 10 weeks · 1–3 sessions a week', { timeout: 8000 })
 
     const segs = page.locator('.pgm-seg')
     await expect(segs).toHaveCount(4)
@@ -347,19 +347,19 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     const sheet = page.locator('#pgm-sheet')
     await expect(sheet).toBeVisible()
     await expect(sheet.locator('.modal-title')).toHaveText('Accumulation')
-    await expect(sheet.getByRole('button', { name: 'Edit phase' })).toBeVisible()
-    await expect(sheet.getByRole('button', { name: 'Remove phase' })).toBeVisible()
+    await expect(sheet.getByRole('button', { name: 'Edit block' })).toBeVisible()
+    await expect(sheet.getByRole('button', { name: 'Remove block' })).toBeVisible()
 
-    await sheet.getByRole('button', { name: 'Edit phase' }).click()
+    await sheet.getByRole('button', { name: 'Edit block' }).click()
     await expect(sheet).toHaveCount(0)
     await expect(page.locator('#phase-form')).toBeVisible()
-    await expect(page.locator('#phase-form-title')).toHaveText('Edit phase')
+    await expect(page.locator('#phase-form-title')).toHaveText('Edit block')
     await expect(page.locator('#pf-name')).toHaveValue('Accumulation')
     await expect(page.locator('#pf-weeks')).toHaveValue('4')
     await page.click('#phase-form button:has-text("Cancel")')
 
     await page.locator(`${card(s, 0)} .pgm-ph-menu`).click()
-    await page.locator('#pgm-sheet').getByRole('button', { name: 'Remove phase' }).click()
+    await page.locator('#pgm-sheet').getByRole('button', { name: 'Remove block' }).click()
     await expect(page.locator('#confirm-dialog')).toBeVisible()
     await declineConfirm(page)
     await expect(page.locator('.pgm-ph')).toHaveCount(4)
@@ -372,14 +372,14 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await expect(page.locator('.pgm-ph')).toHaveCount(4)
   })
 
-  test('Remove phase, once confirmed, removes it', async ({ page }) => {
+  test('Remove block, once confirmed, removes it', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
     await page.locator(`${card(s, 2)} .pgm-ph-menu`).click()
-    await page.locator('#pgm-sheet').getByRole('button', { name: 'Remove phase' }).click()
+    await page.locator('#pgm-sheet').getByRole('button', { name: 'Remove block' }).click()
     await acceptConfirm(page)
     await expect(page.locator('.pgm-ph')).toHaveCount(3, { timeout: 8000 })
-    await expect(page.locator('.pgm-facts')).toContainText('3 phases · 8 weeks')
+    await expect(page.locator('.pgm-facts')).toContainText('3 blocks · 8 weeks')
   })
 
   test('Duplicate week and Delete week are behind the week ⋯ (2026-11-08), for the week on screen; Delete asks first', async ({ page }) => {
@@ -436,7 +436,7 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
   test('deleting a week updates the week count everywhere on the page, not just the grid', async ({ page }) => {
     const s = await seed(page, { phases: [{ name: 'Block', weeks: 3, rowsForWeeks: 3, week1: [MON, WED] }] })
     await open(page, s)
-    await expect(page.locator('.pgm-facts')).toContainText('1 phase · 3 weeks')
+    await expect(page.locator('.pgm-facts')).toContainText('1 block · 3 weeks')
     await expect(page.locator(card(s, 0))).toContainText('3 weeks')
     expect(await page.locator('.pgm-seg').evaluate(e => getComputedStyle(e).flexGrow), 'its block is three weeks wide').toBe('3')
     await page.locator(`${card(s, 0)} .week-tab[data-week="2"]`).click()
@@ -444,7 +444,7 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await page.click('#pgm-del-week')
     await acceptConfirm(page)
     await expect(page.locator(`${card(s, 0)} .week-tab`)).toHaveCount(2, { timeout: 15000 })
-    await expect(page.locator('.pgm-facts'), 'the overview line').toContainText('1 phase · 2 weeks')
+    await expect(page.locator('.pgm-facts'), 'the overview line').toContainText('1 block · 2 weeks')
     await expect(page.locator(card(s, 0)), 'the card header').toContainText('2 weeks')
     expect(await page.locator('.pgm-seg').evaluate(e => getComputedStyle(e).flexGrow), 'and the bar').toBe('2')
   })
@@ -601,7 +601,7 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     const personal = await seed(page, { name: TAG + ' Personal', isPersonal: true, phases: [{ name: 'One', weeks: 2, week1: [MON] }] })
     await open(page, personal)
     await expect(page.locator('.pgm-cta'), 'nothing to reserve room for').toHaveCount(0)
-    await expect(page.getByRole('button', { name: /Assign to client|Add to my plan/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Assign to client|Start this plan/ })).toHaveCount(0)
     await sweep(page)
     const coaching = await seed(page, { name: TAG + ' Coaching', phases: [{ name: 'One', weeks: 2, week1: [MON] }] })
     await open(page, coaching)
@@ -635,14 +635,14 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await expect(page.locator('#pz-check .pz-note'), 'and the heads-up appears by itself when the sessions land').toBeVisible({ timeout: 15000 })
   })
 
-  test('a program with no phases says so, has no bar and no count, and + Add phase still works', async ({ page }) => {
+  test('a program with no phases says so, has no bar and no count, and + Add block still works', async ({ page }) => {
     const s = await seed(page, { phases: [] })
     await page.evaluate(id => openProgram(id), s.programId)
     await page.waitForSelector('.pgm-addph', { timeout: 10000 })
-    await expect(page.locator('#phases-list')).toContainText('No phases yet')
+    await expect(page.locator('#phases-list')).toContainText('No blocks yet')
     await expect(page.locator('.pgm-seg')).toHaveCount(0)
     await expect(page.locator('#pgm-open-count'), 'no "0 open"').toHaveText('')
-    await expect(page.locator('.pgm-facts')).toHaveText('0 phases · 0 weeks')
+    await expect(page.locator('.pgm-facts')).toHaveText('0 blocks · 0 weeks')
     await page.click('.pgm-addph')
     await page.fill('#pf-name', TAG + ' First')
     await page.fill('#pf-weeks', '2')
@@ -651,21 +651,21 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     await expect(page.locator('.pgm-ph-h'), 'the first phase of an empty program opens').toHaveAttribute('aria-expanded', 'true')
   })
 
-  test('+ Add phase is the last thing in the list and opens the form under it', async ({ page }) => {
+  test('+ Add block is the last thing in the list and opens the form under it', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
     const addBtn = page.locator('.pgm-addph')
-    await expect(addBtn).toHaveText('+ Add phase')
+    await expect(addBtn).toHaveText('+ Add block')
     const [listBox, btnBox] = [await page.locator('#phases-list').boundingBox(), await addBtn.boundingBox()]
     expect(btnBox.y, 'below the last phase card').toBeGreaterThan(listBox.y + listBox.height - 1)
     await addBtn.click()
     await expect(page.locator('#phase-form')).toBeVisible()
-    await expect(page.locator('#phase-form-title')).toHaveText('Add phase')
+    await expect(page.locator('#phase-form-title')).toHaveText('Add block')
     await page.fill('#pf-name', TAG + ' Added')
     await page.fill('#pf-weeks', '2')
     await page.click('#pf-save-btn')
     await expect(page.locator('.pgm-ph')).toHaveCount(5, { timeout: 8000 })
-    await expect(page.locator('.pgm-facts')).toContainText('5 phases · 12 weeks')
+    await expect(page.locator('.pgm-facts')).toContainText('5 blocks · 12 weeks')
     // the new phase is folded; the one you had open stays open
     await expect(page.locator('.pgm-ph-h').last()).toHaveAttribute('aria-expanded', 'false')
     await expect(page.locator('.pgm-ph-h').first()).toHaveAttribute('aria-expanded', 'true')
@@ -675,17 +675,17 @@ test.describe('Program page - the days, the weeks and the ⋯ sheets', () => {
     const s = await seed(page, MAIN)
     await open(page, s)
     await expect(page.locator('.pgm-manage')).toHaveText('⋯')
-    await expect(page.locator('.pgm-manage')).toHaveAttribute('aria-label', 'Training plan actions')
+    await expect(page.locator('.pgm-manage')).toHaveAttribute('aria-label', 'Plan actions')
     expect([...Object.values(await page.locator('.pgm-manage').boundingBox())].slice(2).map(Math.round), '44 px square').toEqual([44, 44])
     await page.click('.pgm-manage')
     const manage = page.locator('#program-manage-modal')
     await expect(manage).toBeVisible()
-    for (const label of ['Edit name and description', 'Copy workouts to Library', 'Delete training plan']) {
+    for (const label of ['Edit name and description', 'Copy workouts to Library', 'Delete plan']) {
       await expect(manage.locator(`button:text-is("${label}")`)).toBeVisible()
     }
     await expect(manage.locator('[data-remove-from-plan]'), 'a coach is not offered Remove from my plan').toHaveCount(0)
     await expect(manage.locator('.btn-danger'), 'Delete is red text, not a solid red button').toHaveCount(0)
-    await expect(manage.locator('button:text-is("Delete training plan")')).toHaveClass(/pgm-danger-text/)
+    await expect(manage.locator('button:text-is("Delete plan")')).toHaveClass(/pgm-danger-text/)
     await manage.locator('.pgm-close').click()
     await expect(manage).toBeHidden()
     await page.click('.pgm-manage')
@@ -811,7 +811,7 @@ test.describe('Program page - what a coach types is data, not markup', () => {
     expect(r.title).toBe(TAG + ' ' + evil)
     expect(r.desc).toBe(evil)
     expect(r.cardName).toBe(evil)
-    expect(r.segLabel).toBe(`Phase 1, ${evil}, 2 weeks`)
+    expect(r.segLabel).toBe(`Block 1, ${evil}, 2 weeks`)
     expect(r.menuLabel).toBe(`Actions for ${evil}`)
   })
 })

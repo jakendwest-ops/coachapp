@@ -12,7 +12,7 @@ const lit = (view, page) => get('_navLitFor')(view, page)
 const rows = (view, master) => get('_moreSheetRowsHtml')(view, master)
 
 describe('the phone bar for each role', () => {
-  test('coach: Dashboard, Clients, Training plans, Calendar, More - five, not six', () => {
+  test('coach: Dashboard, Clients, Plans, Calendar, More - five, not six', () => {
     assert.deepEqual(pages('coach'), ['dashboard', 'clients', 'programs', 'calendar', '__more__'])
   })
   test('the coach sidebar is unchanged: all six', () => {

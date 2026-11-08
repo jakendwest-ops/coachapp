@@ -206,3 +206,13 @@ test.describe('Month calendar', () => {
     expect(r).toEqual([true, ''])
   })
 })
+
+test('Blocks lists every finished run, past the API\'s 200-row cap', async ({ page }) => {
+  await loginAsClient(page)
+  const rows = Array.from({ length: 250 }, (_, i) => ({ id: 'b' + String(i).padStart(3, '0'), client_id: 'cid', program_id: 'p' + i, program_name: 'Run ' + i, start_date: '2025-01-01', assigned_at: '2025-01-01T00:00:00Z', ended_at: '2025-02-01T00:00:00Z', planned_weeks: 4 }))
+  await installCappedApi(page, { client_programs: [], client_program_blocks: rows })
+  try {
+    const n = await page.evaluate(async () => (await _loadProgramBlocks('cid')).length)
+    expect(n).toBe(250)
+  } finally { await restoreCappedApi(page) }
+})

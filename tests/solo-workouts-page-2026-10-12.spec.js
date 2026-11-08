@@ -96,10 +96,10 @@ test.describe('Solo: the Workouts page (2026-10-12)', () => {
     await renderInto(page, { noPlan: true })
     await expect(page.locator('#wk-host [data-create-workout]')).toHaveText('Create a workout')
     await expect(page.locator('#wk-host [data-train-now]')).toContainText('Train now')
-    await expect(page.locator('#wk-host [data-no-plan]')).toContainText('No training plan is running')
+    await expect(page.locator('#wk-host [data-no-plan]')).toContainText('No plan is running')
     await expect(page.locator('#wk-host #wk-hero'), 'no Up next while no plan is on').toHaveCount(0)
     await expect(page.locator('#wk-host [data-plan-fold]')).toHaveCount(0)
-    const ps = await positions(page, ['No training plan is running', 'Create a workout', 'Your workouts', 'Recent sessions'])
+    const ps = await positions(page, ['No plan is running', 'Create a workout', 'Your workouts', 'Recent sessions'])
     expect(increasing(ps), `the order on the page: ${ps}`).toBe(true)
   })
 
@@ -209,7 +209,7 @@ test.describe('Solo: the Workouts page (2026-10-12)', () => {
     await soloView(page)
     await renderInto(page, { noPlan: true, assignment: { id: '00000000-0000-4000-8000-000000000001', start_date: '2026-10-12', programs: { id: '00000000-0000-4000-8000-000000000002', name: 'Empty plan', program_phases: [] } } })
     await expect(page.locator('#wk-host [data-no-plan]')).toContainText('has no sessions set up yet')
-    await expect(page.locator('#wk-host [data-no-plan]')).not.toContainText('No training plan is running')
+    await expect(page.locator('#wk-host [data-no-plan]')).not.toContainText('No plan is running')
   })
 
   // Jake, 2026-10-13: "clicking a workout shouldnt open the slider, it should open the workout as collapsible" (docs/bugs/2026-10-13-your-workouts-row-opens-the-slide-in-drawer-instead-of-expanding-in-place.md)

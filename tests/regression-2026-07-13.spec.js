@@ -115,7 +115,7 @@ test.describe('Zero-session phase must not crash the client Programs tab', () =>
       // Pre-fix: renderDays(undefined) throws WHILE building the template literal, so the whole
       // el.innerHTML assignment never lands — the phase (and every other phase) simply never appears.
       await expect(page.locator('#main-content')).toContainText('Empty Phase', { timeout: 8000 })
-      await expect(page.locator('#main-content')).toContainText('No sessions added to this phase yet')
+      await expect(page.locator('#main-content')).toContainText('No sessions added to this block yet')
       expect(errors.filter(e => /forEach|undefined|not iterable/i.test(e))).toEqual([])
     } finally {
       if (ids) {

@@ -96,7 +96,7 @@ test.describe('Solo: the reworked Workouts page (2026-10-16)', () => {
     await expect(page.locator('#wk-host [data-create-workout]')).toHaveText('Create a workout')
     await expect(page.locator('#wk-host [data-train-now]')).toContainText('Train now')
     await expect(page.locator('#wk-host').getByText(/Start an empty workout|Start from a past session/)).toHaveCount(0)
-    const ps = await positions(page, '#wk-host', ['No training plan is running', 'Create a workout', 'Your workouts', 'Recent sessions'])
+    const ps = await positions(page, '#wk-host', ['No plan is running', 'Create a workout', 'Your workouts', 'Recent sessions'])
     expect(increasing(ps), `the order on the page: ${ps}`).toBe(true)
   })
 
@@ -122,7 +122,7 @@ test.describe('Solo: the reworked Workouts page (2026-10-16)', () => {
     await page.locator('#wk-host [data-create-workout]').click()
     const sheet = page.locator('#cw-modal')
     await expect(sheet.locator('.wk-choice')).toHaveCount(2)
-    await expect(sheet.locator('[data-cw-template]')).toContainText('Choose a template')
+    await expect(sheet.locator('[data-cw-template]')).toContainText('Choose a workout')
     await expect(sheet.locator('[data-cw-new]')).toContainText('Create new')
     await sheet.locator('.modal-close').click()
     await expect(sheet).toHaveCount(0)
@@ -155,7 +155,7 @@ test.describe('Solo: the reworked Workouts page (2026-10-16)', () => {
     expect(gone.templates).toBe(1)
   })
 
-  test('Choose a template > My workouts: a saved COPY called "Copy of ..." with the same exercises, opened in the editor; the original is untouched', async ({ page }) => {
+  test('Choose a workout > My workouts: a saved COPY called "Copy of ..." with the same exercises, opened in the editor; the original is untouched', async ({ page }) => {
     test.setTimeout(120_000)
     await soloView(page)
     const name = `${TAG} source ${Date.now()}`
@@ -165,7 +165,7 @@ test.describe('Solo: the reworked Workouts page (2026-10-16)', () => {
       await openWorkouts(page)
       await page.locator('#main-content [data-create-workout]').click()
       await page.locator('#cw-modal [data-cw-template]').click()
-      await expect(page.locator('#cw-modal .modal-title')).toHaveText('Choose a template')
+      await expect(page.locator('#cw-modal .modal-title')).toHaveText('Choose a workout')
       await page.fill('#cw-q', name)
       await page.locator('#cw-modal [data-cw-mine]', { hasText: name }).click()
       await expect(page.locator('#main-content h1'), 'the copy is open in the editor').toHaveText(`Copy of ${name}`, { timeout: 15000 })
@@ -200,7 +200,7 @@ test.describe('Solo: the reworked Workouts page (2026-10-16)', () => {
     expect(gone.templates).toBe(2)
   })
 
-  test('Choose a template > Past sessions: the logged sessions are listed, picking one SAVES a workout of its exercises and opens it in the editor', async ({ page }) => {
+  test('Choose a workout > Past sessions: the logged sessions are listed, picking one SAVES a workout of its exercises and opens it in the editor', async ({ page }) => {
     test.setTimeout(120_000)
     await soloView(page)
     const name = `${TAG} past ${Date.now()}`
@@ -413,7 +413,7 @@ test.describe('Solo: the reworked Workouts page (2026-10-16)', () => {
     expect(gone.templates).toBe(1)
   })
 
-  test('a workout in the plan you are on is locked (no Edit, the plan named, Open in Training plans, Make a copy still works); with the plan off the same workout can be edited', async ({ page }) => {
+  test('a workout in the plan you are on is locked (no Edit, the plan named, Open in Plans, Make a copy still works); with the plan off the same workout can be edited', async ({ page }) => {
     test.setTimeout(180_000)
     await soloView(page)
     const name = `${TAG} locked ${Date.now()}`
@@ -427,9 +427,9 @@ test.describe('Solo: the reworked Workouts page (2026-10-16)', () => {
       const item = yourRow(page, '#wk-host', name)
       await expect(item).toHaveCount(1)
       await item.locator('[data-yw-toggle]').click()
-      await expect(item.locator('[data-yw-lock]')).toContainText(`Part of your active plan, ${name}, so it can only be changed in Training plans.`)
+      await expect(item.locator('[data-yw-lock]')).toContainText(`Part of your active plan, ${name}, so it can only be changed in Plans.`)
       await expect(item.locator('[data-yw-edit]'), 'no Edit on a workout in the active plan').toHaveCount(0)
-      await expect(item.locator('[data-yw-plan]')).toHaveText('Open in Training plans')
+      await expect(item.locator('[data-yw-plan]')).toHaveText('Open in Plans')
       await expect(item.locator('[data-yw-copy]')).toHaveText('Make a copy')
 
       // Open in Training plans lands on THAT plan
@@ -458,7 +458,7 @@ test.describe('Solo: the reworked Workouts page (2026-10-16)', () => {
       expect(clone, 'the assignment made the account its own copy of the session').toBeTruthy()
       await makeLog(page, fx, { templateId: clone, exercise: 'Bench' })
       await renderInto(page)
-      await expect(page.locator('#wk-host [data-hero-eyebrow]'), 'the page itself says the plan is done').toHaveText('Training plan complete')
+      await expect(page.locator('#wk-host [data-hero-eyebrow]'), 'the page itself says the plan is done').toHaveText('Plan complete')
       const item = yourRow(page, '#wk-host', name)
       await item.locator('[data-yw-toggle]').click()
       await expect(item.locator('[data-yw-lock]'), 'a finished plan locks nothing').toHaveCount(0)

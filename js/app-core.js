@@ -699,7 +699,7 @@ function _attentionFor(s, { todayStr, planned = null, logged = 0, onHoliday = fa
   const end = s.program_start && weeks > 0 && !s.next_program_start ? _dashProgramEnd(s.program_start, weeks) : null
   if (end) {
     const until = _daysBetweenYmd(todayStr, end)
-    const name = s.program_name || 'Their training plan'
+    const name = s.program_name || 'Their plan'
     if (until < 0) out.push({ key: 'plan_ended', severity: 'medium', label: 'Plan ended', detail: `${name} ended ${-until} day${until === -1 ? '' : 's'} ago`, action: 'next-block' })
     else if (until <= R.planEndsWithinDays) out.push({ key: 'plan_ending', severity: 'medium', label: 'Plan ending', detail: `${name} ends ${until === 0 ? 'today' : `in ${until} day${until === 1 ? '' : 's'}`}`, action: 'next-block' })
   }
@@ -716,7 +716,7 @@ function _attentionFor(s, { todayStr, planned = null, logged = 0, onHoliday = fa
 // as the calendar and the dashboard's plan tile count them (_programWeeksElapsed, _dashProgramEnd). Pure.
 function _planWeekLabel(s, todayStr) {
   if (!s?.program_name && !s?.program_start) return 'No plan'
-  const name = s.program_name || 'Training plan'
+  const name = s.program_name || 'Plan'
   const weeks = Number(s.program_weeks)
   const start = s.program_start ? String(s.program_start).slice(0, 10) : null
   if (start && start > todayStr) return `${name} · Starts ${_dashFormatDate(start)}`
@@ -1009,7 +1009,7 @@ async function _saveQuickPrefs() {
 // 'forEach')`. Testing the wrong path and concluding from it is a mistake worth naming here, because
 // it is the same one that nearly got a live test reported as decorative the same day.
 const NO_SESSIONS_EMPTY_STATE =
-  '<div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">No sessions added to this phase yet</div>'
+  '<div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">No sessions added to this block yet</div>'
 
 /** Anything in, safe HTML text out; falsy (null/undefined/''/0) gives ''.  @param {unknown} str  @returns {string} */
 function escapeHtml(str) {
@@ -1545,7 +1545,7 @@ const _NAV_ITEMS = {
     { page: 'clients',    label: 'Clients'   },
     { page: 'workouts',   label: 'Workouts'  },
     { page: 'calendar',   label: 'Calendar'  },
-    { page: 'programs',   label: 'Training plans'  },
+    { page: 'programs',   label: 'Plans'  },
     { page: 'settings',   label: 'Settings'  },
   ],
   client: [
@@ -1573,7 +1573,7 @@ const _NAV_BOTTOM = {
   coach: [
     { page: 'dashboard', label: 'Dashboard' },
     { page: 'clients',   label: 'Clients' },
-    { page: 'programs',  label: 'Training plans' },
+    { page: 'programs',  label: 'Plans' },
     { page: 'calendar',  label: 'Calendar' },
     { page: '__more__',  label: 'More' },
   ],

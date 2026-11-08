@@ -62,7 +62,7 @@ test.describe('Solo: add a plan to my plan and take it off again (2026-10-12)', 
     let gone
     try {
       await openPage(page, fx)
-      await expect(page.getByRole('button', { name: 'Add to my plan' }), 'not on the plan yet: Add').toBeVisible()
+      await expect(page.getByRole('button', { name: 'Start this plan' }), 'not on the plan yet: Add').toBeVisible()
       await expect(page.locator('[data-onplan]')).toHaveCount(0)
       await page.evaluate(() => navigate('programs'))
       await expect(page.locator('.list-row', { hasText: fx.name })).toBeVisible({ timeout: 15000 })
@@ -76,7 +76,7 @@ test.describe('Solo: add a plan to my plan and take it off again (2026-10-12)', 
       await page.click('.pgm-manage')
       await expect(page.locator('#program-manage-modal [data-remove-from-plan]'), 'Remove from my plan is in the plan ⋯ list (since 2026-11-08)').toHaveText('Remove from my plan')
       await page.click('#program-manage-modal .pgm-close')
-      await expect(page.getByRole('button', { name: 'Add to my plan' }), 'and no Add').toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Start this plan' }), 'and no Add').toHaveCount(0)
     } finally { await page.evaluate(() => document.getElementById('apc-modal')?.remove()); gone = await cleanup(page, fx) }
     expect(gone.prog).toBe(1)
     expect(gone.master).toBe(1)
@@ -95,9 +95,9 @@ test.describe('Solo: add a plan to my plan and take it off again (2026-10-12)', 
       await page.click('.pgm-manage')
       await page.locator('[data-remove-from-plan]').click()
       await expect(page.locator('#confirm-dialog'), 'asks first, in the agreed words').toContainText('Sessions you have logged stay in your history')
-      await expect(page.locator('#confirm-dialog')).toContainText('The plan stays in Training plans')
+      await expect(page.locator('#confirm-dialog')).toContainText('The plan stays in Plans')
       await acceptConfirm(page)
-      await expect(page.getByRole('button', { name: 'Add to my plan' }), 'the page now offers Add again').toBeVisible({ timeout: 15000 })
+      await expect(page.getByRole('button', { name: 'Start this plan' }), 'the page now offers Add again').toBeVisible({ timeout: 15000 })
       await expect(page.locator('[data-onplan]')).toHaveCount(0)
 
       expect(await assignments(page, fx), 'the assignment is gone').toEqual([])

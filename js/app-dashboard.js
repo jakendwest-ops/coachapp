@@ -377,7 +377,7 @@ function _dashProgramInfo(cp0, todayStr) {
   const sinceStart = _programWeeksElapsed(cp0.start_date, todayStr)
   const current = _programPhaseAt(phases, cp0.start_date, todayStr)
   const week = total ? Math.min(sinceStart + 1, total) : sinceStart + 1
-  return { name: prog.name || 'Your training plan', phase: current ? current.name : '', week, totalWeeks: total, pct: total ? Math.round(week / total * 100) : 0 }
+  return { name: prog.name || 'Your plan', phase: current ? current.name : '', week, totalWeeks: total, pct: total ? Math.round(week / total * 100) : 0 }
 }
 
 // The last day of a program that has run `weeks` weeks from `startYmd`, counted the way the calendar places its sessions: week 1 is the
@@ -399,7 +399,7 @@ function _blockDismissedUntil(clientId, planStart) { try { return localStorage.g
 // The card or hint for the CURRENT plan, or null. A failed read of the plan or the sessions shows nothing (never a card built on missing data).
 function _dashBlockSetup(d, program, clientId, todayStr) {
   const cp = d.cp0
-  if (!cp || d.failed['your training plan'] || d.failed['recent sessions']) return null
+  if (!cp || d.failed['your plan'] || d.failed['recent sessions']) return null
   const planStart = cp.start_date ? String(cp.start_date).slice(0, 10) : null
   const totalWeeks = program?.totalWeeks || 0
   const endSunday = _dashPlanEndSunday(d.currentByDate, planStart, totalWeeks)
@@ -555,7 +555,7 @@ function _dashHeroHtml(day, ctx) {
     // Start needs the CLIENT'S CLONE template id (client_program_workouts.workout_template_id), never the master phase-slot id -
     // every other caller resolves it the same way. Without one, Workouts is where this session can be started.
     const tid = day.planned[0]._clientTemplateId
-    actions = (tid ? _dashStart(cid, escapeAttr(tid)) : _dashToProgram('dash-btn-primary', 'Open Workouts')) + _dashToProgram('dash-btn-ghost', 'View training plan')
+    actions = (tid ? _dashStart(cid, escapeAttr(tid)) : _dashToProgram('dash-btn-primary', 'Open Workouts')) + _dashToProgram('dash-btn-ghost', 'View plan')
   } else if (day.kind === 'miss') {
     eyebrow = `${when} · Missed`
     title = escapeHtml(_dashPlanNames(day))
@@ -565,13 +565,13 @@ function _dashHeroHtml(day, ctx) {
     eyebrow = when
     title = escapeHtml(_dashPlanNames(day))
     meta = _dashDaysUntil(day.ds, ctx.todayStr)
-    actions = _dashToProgram('dash-btn-primary', 'View training plan') + back
+    actions = _dashToProgram('dash-btn-primary', 'View plan') + back
   } else {   // rest: nothing planned, nothing logged. The wording differs so the same phrase is never said twice.
     eyebrow = day.today ? 'Today' : when
     if (day.today) {
       title = ctx.hasProgram ? 'Rest day' : 'Nothing planned'
       meta = ctx.next ? `Next up: ${escapeHtml(ctx.next.title)}, ${_dashFormatDate(ctx.next.date)}` : 'Start a freeform session whenever you like.'
-      actions = _dashLogWorkout(cid, ctx.role === 'client' ? 'Log a workout' : 'Train anyway') + (ctx.next ? _dashToProgram('dash-btn-ghost', 'View training plan') : '')
+      actions = _dashLogWorkout(cid, ctx.role === 'client' ? 'Log a workout' : 'Train anyway') + (ctx.next ? _dashToProgram('dash-btn-ghost', 'View plan') : '')
     } else if (day.ds < ctx.todayStr) {
       // A day before the current plan began: the page does not read earlier plans, so it cannot say nothing was planned (review, 2026-11-08, once ‹ reached back a year).
       const planned = ctx.hasProgram && !(ctx.planStart && day.ds < String(ctx.planStart).slice(0, 10))
@@ -641,12 +641,12 @@ function _dashStreakTileHtml(m, link = true) {
 function _dashTilesHtml(streak, program, isSolo, streakLink = true) {
   const streakTile = _dashStreakTileHtml(streak, streakLink)
   const programTile = program
-    ? `<section class="dash-card dash-tap" id="dash-program" onclick="navigate('workouts')"><div class="dash-ico">Training plan</div>` +
+    ? `<section class="dash-card dash-tap" id="dash-program" onclick="navigate('workouts')"><div class="dash-ico">Plan</div>` +
       `<div class="dash-big">Wk ${program.week}${program.totalWeeks ? ` <small>of ${program.totalWeeks}</small>` : ''}</div>` +
       `<div class="dash-sub">${escapeHtml(program.phase ? program.phase + ' · ' : '')}${escapeHtml(program.name)}</div>` +
       `<div class="dash-meter"><i style="width:${program.pct}%"></i></div></section>`
-    : `<section class="dash-card dash-tap" id="dash-program" onclick="navigate('${isSolo ? 'programs' : 'workouts'}')"><div class="dash-ico">Training plan</div>` +
-      `<div class="dash-big">None</div><div class="dash-sub">${isSolo ? 'Build one in Training plans' : 'Ask your PT to assign one'}</div></section>`
+    : `<section class="dash-card dash-tap" id="dash-program" onclick="navigate('${isSolo ? 'programs' : 'workouts'}')"><div class="dash-ico">Plan</div>` +
+      `<div class="dash-big">None</div><div class="dash-sub">${isSolo ? 'Build one in Plans' : 'Ask your PT to assign one'}</div></section>`
   return `<div class="dash-two">${streakTile}${programTile}</div>`
 }
 
@@ -896,7 +896,7 @@ async function renderDashboard(el) {
 
   const tiles = `<div class="dash-two">` +
     `<section class="dash-card dash-tap" id="dash-trained" onclick="navigate('clients')"><div class="dash-ico">Trained this week</div><div class="dash-big">${trained ?? '—'} <small>of ${active.length}</small></div><div class="dash-sub">clients logged a session in the last 7 days</div></section>` +
-    `<section class="dash-card" id="dash-ending"><div class="dash-ico">Training plans ending</div><div class="dash-big">${summariesUnavailable ? '—' : ending.length} <small>soon</small></div><div class="dash-sub">in the next 14 days</div></section></div>`
+    `<section class="dash-card" id="dash-ending"><div class="dash-ico">Plans ending</div><div class="dash-big">${summariesUnavailable ? '—' : ending.length} <small>soon</small></div><div class="dash-sub">in the next 14 days</div></section></div>`
 
   const weighIns = `<section class="dash-card" id="dash-weighins"><div class="dash-card-head"><h2 class="dash-card-title">Weigh-ins</h2>` +
     `<span class="dash-card-sub">${weighedThisWeek === null ? '' : `<b>${weighedThisWeek} of ${active.length}</b> this week`}</span></div>` +
@@ -906,8 +906,8 @@ async function renderDashboard(el) {
 
   const coming = `<section class="dash-card" id="dash-coming"><div class="dash-card-head"><h2 class="dash-card-title">Coming up</h2><span class="dash-card-sub">Next 14 days</span></div>` +
     (ending.length
-      ? ending.slice(0, 4).map(e => `<button type="button" class="dash-row dash-row-btn" onclick="openClient('${escapeAttr(e.id)}')"><span class="dash-pip"></span><span class="dash-row-main"><b>${escapeHtml(e.name)} · training plan ends</b><i>${escapeHtml(e.program || 'Training plan')}</i></span><em class="dash-pill">${_dashDaysUntil(e.endDs, todayStr)}</em></button>`).join('')
-      : '<p class="dash-empty">No training plans ending in the next 14 days.</p>') +
+      ? ending.slice(0, 4).map(e => `<button type="button" class="dash-row dash-row-btn" onclick="openClient('${escapeAttr(e.id)}')"><span class="dash-pip"></span><span class="dash-row-main"><b>${escapeHtml(e.name)} · plan ends</b><i>${escapeHtml(e.program || 'Plan')}</i></span><em class="dash-pill">${_dashDaysUntil(e.endDs, todayStr)}</em></button>`).join('')
+      : '<p class="dash-empty">No plans ending in the next 14 days.</p>') +
     `<button type="button" class="dash-link" onclick="navigate('calendar')">See calendar</button></section>`
 
   const goalsDue = `<section class="dash-card" id="dash-goals"><div class="dash-card-head"><h2 class="dash-card-title">Goals due soon</h2><span class="dash-card-sub">Next 14 days</span></div>` +
@@ -989,7 +989,7 @@ async function _attentionForRoster(summaryRows, todayStr) {
     week[s.client_id] = { planned, logged: sessionsRead.has(s.client_id) ? logged : null }
     return [s.client_id, _attentionFor(s, { todayStr, planned, logged, onHoliday: onHoliday.has(s.client_id) })]
   }))
-  const failed = { 'holidays': holidaysR.error, 'training plans': phasesR.error || assignedR.error, 'recent sessions': logsR.error }
+  const failed = { 'holidays': holidaysR.error, 'plans': phasesR.error || assignedR.error, 'recent sessions': logsR.error }
   return { byClient, week, failed, partial: Object.values(failed).some(Boolean) }
 }
 
@@ -1135,7 +1135,7 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     prevCheckIn: checkInR.data?.[1] || null,
     failed: {
       'your goals': goalsR.error, 'upcoming events': eventsR.error, 'weight history': weightsR.error,
-      'your training plan': programsR.error || cpwErr, 'recent sessions': logsR.error, 'check-ins': checkInR.error,
+      'your plan': programsR.error || cpwErr, 'recent sessions': logsR.error, 'check-ins': checkInR.error,
     },
   }
 }

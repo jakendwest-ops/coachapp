@@ -636,10 +636,10 @@ async function renderWorkoutLibrary(el) {
   el.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Workouts</h1>
-      <button class="btn-primary" onclick="showCreateTemplateModal()">+ New template</button>
+      <button class="btn-primary" onclick="showCreateTemplateModal()">+ New workout</button>
     </div>
     <div class="tabs">
-      <button class="tab-btn active" id="wt-tab-templates" onclick="switchWorkoutTab('templates')">Templates</button>
+      <button class="tab-btn active" id="wt-tab-templates" onclick="switchWorkoutTab('templates')">Saved workouts</button>
       <button class="tab-btn" id="wt-tab-exercises" onclick="switchWorkoutTab('exercises')">Exercise Library</button>
     </div>
     <input id="wt-search" class="field-input" type="search" placeholder="Search sessions…"
@@ -669,7 +669,7 @@ function _builtWeekCount(sessions) {
 function _buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr, logs } = {}) {
   const freeform = `startWorkoutRunner('${clientId}')`
   if (!activeAssignment?.programs) {
-    return { eyebrow: 'Up next', title: 'No training plan assigned', meta: 'Start a freeform session, or ask your PT to assign a training plan.', action: freeform, btnLabel: 'Start a session' }
+    return { eyebrow: 'Up next', title: 'No plan assigned', meta: 'Start a freeform session, or ask your PT to assign a plan.', action: freeform, btnLabel: 'Start a session' }
   }
   const prog = activeAssignment.programs
   const today = todayStr || _ymdLocal(new Date())
@@ -681,7 +681,7 @@ function _buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr, logs
     const where = [phaseName, week ? 'Week ' + week : ''].filter(Boolean).join(' · ') || (prog.description || '')
     return {
       eyebrow: 'Up next' + (when ? ' · ' + when : ''),
-      title: name || prog.name || 'Your training plan',
+      title: name || prog.name || 'Your plan',
       meta: (name ? [prog.name, where].filter(Boolean).join(' · ') : where) + (more ? ` · +${more} more ${when === 'Today' ? 'today' : 'that day'}` : ''),
       action: cpw?.templateId ? `startWorkoutRunner('${clientId}','${cpw.templateId}')` : freeform,
       btnLabel: '▶ Start'
@@ -696,9 +696,9 @@ function _buildWorkoutsHero(clientId, activeAssignment, cpwMap, { todayStr, logs
     if (!next) {
       const info = _dashProgramInfo(activeAssignment, today)
       if (info && info.totalWeeks && info.week < info.totalWeeks) {
-        return { eyebrow: 'Up next', title: prog.name || 'Your training plan', meta: 'No more sessions are set up yet. Start a freeform session.', action: freeform, btnLabel: 'Start a session' }
+        return { eyebrow: 'Up next', title: prog.name || 'Your plan', meta: 'No more sessions are set up yet. Start a freeform session.', action: freeform, btnLabel: 'Start a session' }
       }
-      return { eyebrow: 'Training plan complete', title: prog.name || 'Your training plan', meta: 'Start a freeform session, or move on to your next training plan.', action: freeform, btnLabel: 'Start a session' }
+      return { eyebrow: 'Plan complete', title: prog.name || 'Your plan', meta: 'Start a freeform session, or move on to your next plan.', action: freeform, btnLabel: 'Start a session' }
     }
     const first = next.sessions[0]
     return card(first, next.ds === today ? 'Today' : _dashFormatDate(next.ds), first._phaseName, first._weekInPhase, next.sessions.length - 1)
@@ -819,7 +819,7 @@ async function renderClientWorkoutsPage(el) {
     ${hasProgram ? _wkPlanBlock(isOwn, activeAssignment.programs?.name, (() => {
       const prog = activeAssignment.programs
       const phases = [...(prog?.program_phases || [])].sort((a, b) => a.order_index - b.order_index)
-      return `<div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-bottom:10px">${escapeHtml(prog?.name || 'My training plan')}</div>
+      return `<div style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--text);margin-bottom:10px">${escapeHtml(prog?.name || 'My plan')}</div>
         <div style="margin-bottom:28px">
           ${phases.map((phase, pi) => {
             const allSessions = [...(phase.program_phase_workouts || [])].sort((a, b) => a.week_number - b.week_number || a.day_of_week - b.day_of_week || a.session_order - b.session_order)
@@ -887,12 +887,12 @@ async function renderClientWorkoutsPage(el) {
         </div>`
     })()) : (isOwn ? '' : (() => {
       const allTemplates = templates || []
-      return `<div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Templates</div>
+      return `<div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">Saved workouts</div>
       ${!allTemplates.length ? `
         <div class="empty-state">
           <div class="empty-icon">💪</div>
           <div class="empty-title">No workouts yet</div>
-          <div class="empty-text">Your coach hasn't added any workout templates yet.</div>
+          <div class="empty-text">Your coach hasn't added any workouts yet.</div>
         </div>` : `<div style="margin-bottom:28px">${allTemplates.map(t => {
           const exs = (t.workout_template_exercises || []).sort((a,b) => a.order_index - b.order_index)
           return `<div style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);margin-bottom:8px;overflow:hidden;background:var(--surface)">
@@ -1021,7 +1021,7 @@ async function renderWorkoutTemplates(el) {
   log.ok('renderWorkoutTemplates', `loaded ${templates.length} templates`)
 
   if (!templates.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No standalone templates</div><div class="empty-text">Create one below, or if it's part of a phased plan, add it via Training plans → phase view.</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create template</button></div>`
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No saved workouts</div><div class="empty-text">Create one below, or if it's part of a plan, add it from that plan.</div><button class="btn-primary" onclick="showCreateTemplateModal()">+ Create workout</button></div>`
     return
   }
 
@@ -1146,7 +1146,7 @@ async function renderExerciseLibrary(el) {
       <div class="empty-state">
         <div class="empty-icon">🏋️</div>
         <div class="empty-title">No exercises yet</div>
-        <div class="empty-text">Build your exercise library to use in workout templates</div>
+        <div class="empty-text">Build your exercise library to use in workouts</div>
         <button class="btn-primary" onclick="showAddExerciseModal()">+ Add exercise</button>
       </div>
     ` : groupRows(active)}
@@ -1358,7 +1358,7 @@ async function saveEditExercise(id) {
 }
 
 async function deleteExercise(id) {
-  if (!(await confirmDialog('Delete this exercise? This only works if it has never been used in a template, log, or 1RM entry — use Archive instead for exercises with history.', { title: 'Delete exercise?', confirmLabel: 'Delete', danger: true }))) return
+  if (!(await confirmDialog('Delete this exercise? This only works if it has never been used in a workout, log, or 1RM entry — use Archive instead for exercises with history.', { title: 'Delete exercise?', confirmLabel: 'Delete', danger: true }))) return
   log.info('deleteExercise', 'deleting exercise', { id })
   // Rowcount check, matching delete1RM / deletePerfLog / deleteWeightLog (app-progress.js). The FK
   // violation below is caught because it returns an error; a POLICY-refused delete does not — it
@@ -1393,7 +1393,7 @@ async function deleteExercise(id) {
 function showCreateTemplateModal(phaseCtx = null, back = null) {
   window._phaseWorkoutContext = phaseCtx
   window._newTemplateBack = back      // set by "Create new" on the Workouts page: where the editor's Back goes, and the word "workout" for "template"
-  const noun = back ? 'workout' : 'template'
+  const noun = 'workout'
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'create-template-modal'
@@ -1404,7 +1404,7 @@ function showCreateTemplateModal(phaseCtx = null, back = null) {
         <button class="modal-close" onclick="closeModal('create-template-modal')">✕</button>
       </div>
       <div class="field">
-        <label class="field-label">${back ? 'Workout' : 'Template'} name <span style="color:var(--danger-text)">*</span></label>
+        <label class="field-label">Workout name <span style="color:var(--danger-text)">*</span></label>
         <input class="field-input" id="ct-name" placeholder="${back ? 'e.g. Back and biceps' : 'e.g. Upper Body A, Full Body Strength'}">
       </div>
       <div class="field">
@@ -1478,10 +1478,10 @@ async function saveNewTemplate() {
       const { data: newPw, error: pwErr } = await db.from('program_phase_workouts').insert({
         phase_id: ctx.phaseId, day_of_week: ctx.dayOfWeek, day_label: dayLabels[ctx.dayOfWeek], template_id: data.id, session_order: (existingSlots?.length || 0) + 1, week_number: weekNumber
       }).select('id').single()
-      if (pwErr) { log.error('saveNewTemplate', 'auto-assign to slot failed', pwErr); showToast('Workout created, but could not auto-assign to the slot — add it from the phase page', 'error') }
+      if (pwErr) { log.error('saveNewTemplate', 'auto-assign to slot failed', pwErr); showToast('Workout created, but could not auto-assign to the slot — add it from the plan page', 'error') }
       else newPwId = newPw.id
     }
-    openTemplate(data.id, { backLabel: 'Back to training plan', backFn: () => openProgram(ctx.programId), programId: ctx.programId, phaseWorkoutId: newPwId })
+    openTemplate(data.id, { backLabel: 'Back to plan', backFn: () => openProgram(ctx.programId), programId: ctx.programId, phaseWorkoutId: newPwId })
     return
   }
 
@@ -1554,7 +1554,7 @@ async function openTemplate(id, ctx = {}) {
   window._openTemplateId = id
   window._templateCtx = {
     backTo: ctx.backTo || null,
-    backLabel: ctx.backLabel || 'Templates',
+    backLabel: ctx.backLabel || 'Saved workouts',
     backFn: ctx.backFn || null,
     clientId: ctx.clientId || null,
     clientName: ctx.clientName || null,
@@ -1669,7 +1669,7 @@ function _renderTemplateExerciseList() {
     <div class="empty-state">
       <div class="empty-icon">➕</div>
       <div class="empty-title">No exercises yet</div>
-      <div class="empty-text">Add exercises to build this template</div>
+      <div class="empty-text">Add exercises to build this workout</div>
       <button class="btn-primary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
     </div>
   ` : `<div class="list" id="tpl-ex-list">${exercises.map((ex, i) => _tplCardHtml(ex, i, exercises.length, id, reorder)).join('')}</div>
@@ -3272,7 +3272,7 @@ async function saveTemplateDraft() {
   const remapId = (id) => (exerciseIdMap ? (exerciseIdMap[id] || id) : id)
   const coachId = await _resolveTemplateOwnerCoachId()
   if (!(await _verifyTemplateOwnership(targetId, coachId))) {
-    showToast('Save failed — template not found or permission denied.', 'warn')
+    showToast('Save failed — workout not found or permission denied.', 'warn')
     return 'refused'
   }
 
@@ -3822,7 +3822,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
     }
     window._propagateTargets = targets
     window._propagateChanges = changes
-    _showPropagateModal(tmpl.name, targets.length, 'this training plan', unlinked)
+    _showPropagateModal(tmpl.name, targets.length, 'this plan', unlinked)
     return
   }
 
@@ -4084,7 +4084,7 @@ async function saveTemplateToLibrary(templateId, btnEl) {
   const result = await _copyTemplateToLibrary(templateId)
   if (btn) { btn.disabled = false; btn.textContent = 'Save to Library' }
   if (result === 'copied') {
-    showToast('Saved to your Library — you can now reuse it in any training plan', 'success')
+    showToast('Saved to your Library — you can now reuse it in any plan', 'success')
     await _refreshProgramTemplates() // or the picker behind this drawer wouldn't list it until reload
   }
   else if (result === 'exists') showToast('A workout with this name is already in your Library', 'warn')
@@ -4097,7 +4097,7 @@ guardReentry('saveTemplateToLibrary')  // a second tap while the first copy runs
 async function copyProgramWorkoutsToLibrary(programId) {
   const { data: phases } = await db.from('program_phases').select('id').eq('program_id', programId)
   const phaseIds = (phases || []).map(p => p.id)
-  if (!phaseIds.length) { showToast('This training plan has no workouts yet', 'warn'); return }
+  if (!phaseIds.length) { showToast('This plan has no workouts yet', 'warn'); return }
 
   // Exclude periodization week-clones (generated_from_phase_id set) — they're derivatives of Week 1,
   // not source workouts, and copying them would litter the library with "Bench Press — W2" entries.
@@ -4118,7 +4118,7 @@ async function copyProgramWorkoutsToLibrary(programId) {
     seenIds.add(t.id)
     sources.push(t.id)
   }
-  if (!sources.length) { showToast('This training plan has no workouts to copy', 'warn'); return }
+  if (!sources.length) { showToast('This plan has no workouts to copy', 'warn'); return }
 
   // Sequential, not Promise.all: each copy's name guard must see the rows written by the ones before
   // it, or two same-named workouts in the same program would both pass the check and both be created.
@@ -4230,7 +4230,7 @@ async function showEditTemplateModal(id) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">Edit template</h2>
+        <h2 class="modal-title">Edit workout</h2>
         <button class="modal-close" onclick="closeModal('edit-template-modal')">✕</button>
       </div>
       <div class="field">
@@ -4243,7 +4243,7 @@ async function showEditTemplateModal(id) {
       </div>
       <p class="modal-error" id="et-error"></p>
       <div class="modal-footer">
-        <button class="btn-danger" onclick="deleteTemplate('${id}')">Delete template</button>
+        <button class="btn-danger" onclick="deleteTemplate('${id}')">Delete workout</button>
         <div style="flex:1"></div>
         <button class="btn-secondary" onclick="closeModal('edit-template-modal')">Cancel</button>
         <button class="btn-primary" onclick="_stageRenameTemplate()">Save</button>
@@ -4287,7 +4287,7 @@ function _stageRenameTemplate() {
 }
 
 async function deleteTemplate(id) {
-  if (!(await confirmDialog('Delete this template? This cannot be undone.', { title: 'Delete template?', confirmLabel: 'Delete', danger: true }))) return
+  if (!(await confirmDialog('Delete this workout? This cannot be undone.', { title: 'Delete workout?', confirmLabel: 'Delete', danger: true }))) return
   const coachId = await _resolveTemplateOwnerCoachId()
   log.info('deleteTemplate', 'deleting template', { id })
   const { data, error } = await db.from('workout_templates').delete().eq('id', id).eq('coach_id', coachId).select()
@@ -4337,7 +4337,7 @@ async function renderClientWorkouts(clientId, el) {
     if (cpwRows?.length) {
       const seen = new Set()
       const unique = cpwRows.filter(r => { const id = r.workout_template_id; if (seen.has(id)) return false; seen.add(id); return true })
-      const programName = currentProg.programs?.name || 'Training plan'
+      const programName = currentProg.programs?.name || 'Plan'
       programWorkoutsHtml = `
         <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px">${escapeHtml(programName)}</div>
         <div class="list" style="margin-bottom:20px">
@@ -4457,8 +4457,8 @@ function toggleYourWorkout(id) {
 const _wkCreateHtml = clientId => `<div class="wk-create"><button type="button" class="btn-primary" data-create-workout onclick="showCreateWorkoutSheet('${clientId}')">Create a workout</button><button type="button" class="wk-trainnow" data-train-now onclick="startEmptyWorkout('${clientId}')">Train now (a blank live session)</button></div>`
 
 const _wkNoPlanHtml = hasPlan => hasPlan
-  ? '<div class="wk-noplan" data-no-plan>Your training plan has no sessions set up yet. You can train any time, or <a href="#" onclick="navigate(\'programs\');return false">open your training plans</a>.</div>'
-  : '<div class="wk-noplan" data-no-plan>No training plan is running. You can train any time, or <a href="#" onclick="navigate(\'programs\');return false">pick a training plan</a>.</div>'
+  ? '<div class="wk-noplan" data-no-plan>Your plan has no sessions set up yet. You can train any time, or <a href="#" onclick="navigate(\'programs\');return false">open your plans</a>.</div>'
+  : '<div class="wk-noplan" data-no-plan>No plan is running. You can train any time, or <a href="#" onclick="navigate(\'programs\');return false">pick a plan</a>.</div>'
 
 // The plan's own day list stays (it is how a planned session other than "Up next" is started) but is folded away on the solo page.
 function _wkPlanBlock(isOwn, planName, html) {
@@ -4569,7 +4569,7 @@ function _ywItemHtml({ t, src, u, locked }) {
   const exs = [...(t.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
   const copyBtn = `<button type="button" class="btn-secondary" data-yw-copy onclick="copyWorkout('${t.id}')">Make a copy</button>`
   const acts = locked
-    ? `<div class="wk-lock" data-yw-lock>${_WK_LOCK_SVG}<span>Part of your active plan${planName ? `, ${escapeHtml(planName)},` : ''} so it can only be changed in Training plans.</span></div><div class="wk-acts">${programId ? `<button type="button" class="btn-secondary" data-yw-plan onclick="openWorkoutPlan('${programId}')">Open in Training plans</button>` : ''}${copyBtn}</div>`
+    ? `<div class="wk-lock" data-yw-lock>${_WK_LOCK_SVG}<span>Part of your active plan${planName ? `, ${escapeHtml(planName)},` : ''} so it can only be changed in Plans.</span></div><div class="wk-acts">${programId ? `<button type="button" class="btn-secondary" data-yw-plan onclick="openWorkoutPlan('${programId}')">Open in Plans</button>` : ''}${copyBtn}</div>`
     : `<div class="wk-acts"><button type="button" class="btn-secondary" data-yw-edit onclick="editWorkout('${t.id}')">Edit</button>${copyBtn}</div>`
   return `<div class="wk-item">
       <div class="wk-row" data-your-workout>
@@ -4671,7 +4671,7 @@ function showCreateWorkoutSheet(clientId) {
         <button class="modal-close" onclick="closeModal('cw-modal')" aria-label="Close">✕</button>
       </div>
       <p class="wk-sub">How do you want to start?</p>
-      <button type="button" class="wk-choice" data-cw-template onclick="showChooseTemplateSheet('${clientId}')"><b>Choose a template</b><span>Copy one of your workouts or a past session, then change it.</span></button>
+      <button type="button" class="wk-choice" data-cw-template onclick="showChooseTemplateSheet('${clientId}')"><b>Choose a workout</b><span>Copy one of your workouts or a past session, then change it.</span></button>
       <button type="button" class="wk-choice" data-cw-new onclick="startCreateWorkout()"><b>Create new</b><span>Name it, add exercises, and it is saved to your workouts.</span></button>
     </div>`
   overlay.addEventListener('click', e => { if (e.target === overlay) closeModal('cw-modal') })
@@ -4693,7 +4693,7 @@ function showChooseTemplateSheet(clientId) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">Choose a template</h2>
+        <h2 class="modal-title">Choose a workout</h2>
         <button class="modal-close" onclick="closeModal('cw-modal')" aria-label="Close">✕</button>
       </div>
       <p class="wk-sub">It opens as a copy. The original stays as it is.</p>
@@ -4790,7 +4790,7 @@ async function startWorkoutRunner(clientId, templateId) {
         <input class="field-input" id="rs-name" placeholder="e.g. Push A" value="${new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})} workout">
       </div>
       <div class="field">
-        <label class="field-label">Load from template</label>
+        <label class="field-label">Load from a workout</label>
         <select class="field-input" id="rs-template">
           <option value="">— Custom / blank —</option>
           ${(templates||[]).map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}

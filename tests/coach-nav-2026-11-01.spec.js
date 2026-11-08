@@ -8,12 +8,12 @@ const { loginAsPT, loginAsClient } = require('./helpers')
 const bar = (page) => page.evaluate(() => [...document.querySelectorAll('.bottom-nav-item')].map(a => ({ page: a.dataset.page, label: a.textContent.trim(), lit: a.classList.contains('active') })))
 
 test.describe('the coach\'s phone bar', () => {
-  test('five items: Dashboard, Clients, Training plans, Calendar, More - and every one is a 44px target', async ({ page }) => {
+  test('five items: Dashboard, Clients, Plans, Calendar, More - and every one is a 44px target', async ({ page }) => {
     await loginAsPT(page)
     await page.waitForSelector('.bottom-nav-item:visible')
     const b = await bar(page)
     expect(b.map(i => i.page)).toEqual(['dashboard', 'clients', 'programs', 'calendar', '__more__'])
-    expect(b.map(i => i.label)).toEqual(['Dashboard', 'Clients', 'Training plans', 'Calendar', 'More'])
+    expect(b.map(i => i.label)).toEqual(['Dashboard', 'Clients', 'Plans', 'Calendar', 'More'])
     const sizes = await page.evaluate(() => [...document.querySelectorAll('.bottom-nav-item')].map(a => { const r = a.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)] }))
     for (const [w, h] of sizes) { expect(w).toBeGreaterThanOrEqual(44); expect(h).toBeGreaterThanOrEqual(44) }
     const over = await page.evaluate(() => document.querySelector('.bottom-nav').scrollWidth > document.querySelector('.bottom-nav').clientWidth)

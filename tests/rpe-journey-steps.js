@@ -31,7 +31,7 @@ async function buildTopSetTemplate(page, { tplName, exName, shotPrefix, viaCreat
     await page.locator('[data-create-workout]:visible').click()
     await page.locator('[data-cw-new]').click()
   } else {
-    await page.getByRole('button', { name: '+ New template' }).click()
+    await page.getByRole('button', { name: '+ New workout' }).click()
   }
   await page.locator('#ct-name').fill(tplName)
   await page.locator('#create-template-modal button:has-text("Create")').click()

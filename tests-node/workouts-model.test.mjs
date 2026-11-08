@@ -71,7 +71,7 @@ describe('_wkRows - one row per workout, most recently done first', () => {
   })
 })
 
-describe('_wkPlanFinished - a plan that has run its course is not "active" (the same reading as the Training plan complete card)', () => {
+describe('_wkPlanFinished - a plan that has run its course is not "active" (the same reading as the Plan complete card)', () => {
   const finished = get('_wkPlanFinished')
   // a two-week phase whose only session is Monday of week 1; the sessions' own ids index the cpw map the way the page's read does
   const plan = start => ({ id: 'cp1', start_date: start, programs: { id: 'prog-1', name: 'Plan', program_phases: [{ id: 'ph1', name: 'P1', order_index: 0, duration_weeks: 2, program_phase_workouts: [{ id: 'pw1', day_of_week: 1, session_order: 1, week_number: 1 }] }] } })
@@ -91,7 +91,7 @@ describe('_wkPlanFinished - a plan that has run its course is not "active" (the 
     assert.equal(finished(p, map, [], '2026-10-19'), false, 'Monday of week 2: that Wednesday is still to come')
     assert.equal(finished(p, map, [], '2026-10-23'), true, 'the Friday after it: nothing is left')
   })
-  test('a plan with no weeks counted is finished once nothing is left, as the Training plan complete card reads it', () => {
+  test('a plan with no weeks counted is finished once nothing is left, as the Plan complete card reads it', () => {
     const p = plan('2026-10-12'); p.programs.program_phases[0].duration_weeks = 0
     assert.equal(finished(p, cpw, [], '2026-10-16'), true)
   })
@@ -198,10 +198,10 @@ describe('_yourWorkoutsHtml - the page part', () => {
     assert.match(h, /data-yw-copy onclick="copyWorkout\('a'\)"/)
     assert.doesNotMatch(h, /data-yw-lock|data-yw-plan/)
   })
-  test("a workout in the active plan says so, names the plan, offers Open in Training plans and Make a copy, and has NO Edit (Jake: 'only amended within the Training Plan')", () => {
+  test("a workout in the active plan says so, names the plan, offers Open in Plans and Make a copy, and has NO Edit (Jake: 'only amended within the Training Plan')", () => {
     const h = render(data([], [wk('p', 'Plan Day')], {}), ctx({ activeIds: new Set(['p']) }))
     assert.match(h, /data-yw-lock/)
-    assert.match(h, /Part of your active plan, Operation 240, so it can only be changed in Training plans\./)
+    assert.match(h, /Part of your active plan, Operation 240, so it can only be changed in Plans\./)
     assert.match(h, /data-yw-plan onclick="openWorkoutPlan\('prog-1'\)"/)
     assert.match(h, /data-yw-copy onclick="copyWorkout\('p'\)"/)
     assert.doesNotMatch(h, /data-yw-edit|editWorkout\(/)

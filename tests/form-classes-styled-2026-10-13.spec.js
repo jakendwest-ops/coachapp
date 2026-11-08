@@ -66,7 +66,7 @@ test.describe('The form-input and form-label classes are styled (2026-10-13)', (
   test('the plan and personal-best forms are styled too', async ({ page }) => {
     await soloView(page)
     await page.evaluate(() => navigate('programs'))
-    await expect(page.locator('h1:has-text("Training plans")')).toBeVisible({ timeout: 15000 })
+    await expect(page.locator('h1:has-text("Plans")')).toBeVisible({ timeout: 15000 })
     await page.evaluate(() => showCreateProgramModal())
     const plan = await page.evaluate(() => { const i = document.getElementById('pm-name'), t = document.getElementById('pm-desc'); return { name: getComputedStyle(i).borderTopLeftRadius, namePad: getComputedStyle(i).paddingLeft, desc: getComputedStyle(t).borderTopLeftRadius } })
     expect(plan).toEqual({ name: '8px', namePad: '12px', desc: '8px' })

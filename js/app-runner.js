@@ -3013,6 +3013,7 @@ let _finishPrBaselines = null
 // `since` (a YYYY-MM-DD day, optional) counts only sessions from that day on: a linked goal's progress starts when the goal does.
 async function _prBaseline(clientId, { name, exerciseId, since = null }) {
   const heaviest = async (column, value) => {
+    // unbounded-ok: one row, .limit(1) is added two lines below once the optional date filter is on
     let rows = db.from('workout_log_sets')
       .select('weight_kg, workout_log_exercises!inner(workout_logs!inner(client_id, date))')
       .eq('workout_log_exercises.workout_logs.client_id', clientId)
@@ -4023,9 +4024,9 @@ async function showLogSessionModal(clientId) {
         </div>
       </div>
       <div class="field">
-        <label class="field-label">Load from template</label>
+        <label class="field-label">Load from a workout</label>
         <select class="field-input" id="ls-template" onchange="loadTemplateIntoLog(this.value)">
-          <option value="">— No template / custom —</option>
+          <option value="">— No workout / custom —</option>
           ${(templates || []).map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
         </select>
       </div>

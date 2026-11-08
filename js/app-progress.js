@@ -2507,9 +2507,11 @@ async function _loadProgramBlocks(clientId) {
     db.from('client_programs')
       .select('id, program_id, start_date, created_at, programs(name, program_phases(duration_weeks))')
       .eq('client_id', clientId),
-    db.from('client_program_blocks')
-      .select('id, program_id, program_name, start_date, assigned_at, ended_at, planned_weeks')
-      .eq('client_id', clientId),
+    // Paged: this table only ever grows (one row per finished run) and the API silently stops at 200 rows, oldest first, so the newest blocks vanished from the page past that.
+    _fetchAllRows(() => db.from('client_program_blocks')
+      .select('id, program_id, program_name, start_date, assigned_at, ended_at, planned_weeks', { count: 'exact' })
+      .eq('client_id', clientId)
+      .order('start_date').order('id')),
   ])
   if (live.error || archived.error) {
     log.error('_loadProgramBlocks', 'block fetch failed', live.error || archived.error)
@@ -2521,8 +2523,8 @@ async function _loadProgramBlocks(clientId) {
       const phases = cp.programs?.program_phases || []
       return {
         key: `live:${cp.id}`,
-        progKey: cp.program_id || cp.programs?.name || 'Training plan',
-        name: cp.programs?.name || 'Training plan',
+        progKey: cp.program_id || cp.programs?.name || 'Plan',
+        name: cp.programs?.name || 'Plan',
         startRaw: cp.start_date || (cp.created_at || '').split('T')[0],
         end: today,
         weeks: phases.length ? phases.reduce((s, p) => s + (p.duration_weeks || 1), 0) : null,
@@ -2531,8 +2533,8 @@ async function _loadProgramBlocks(clientId) {
     }),
     ...(archived.data || []).map(b => ({
       key: `past:${b.id}`,
-      progKey: b.program_id || b.program_name || 'Training plan',
-      name: b.program_name || 'Training plan',
+      progKey: b.program_id || b.program_name || 'Plan',
+      name: b.program_name || 'Plan',
       startRaw: b.start_date || (b.assigned_at || '').split('T')[0],
       end: b.ended_at,
       weeks: b.planned_weeks,
@@ -2726,7 +2728,7 @@ const _exerciseNamesInBlocks = (exercises, blocks, keys) => {
 }
 
 async function renderProgressPerProgram(clientId, el) {
-  el.innerHTML = '<div class="loading-state">Loading training plans…</div>'
+  el.innerHTML = '<div class="loading-state">Loading plans…</div>'
   // Own token, mirroring _perfExerciseToken — a master account switching Client/Personal mid-fetch
   // must not paint the wrong person's blocks.
   const myToken = ++_perfProgramToken
@@ -2737,7 +2739,7 @@ async function renderProgressPerProgram(clientId, el) {
   _blockReviewPending = null
 
   if (blocks === null || exercises === null) {   // a failed exercise read must not draw the comparison with no exercises in it
-    el.innerHTML = _couldntLoadHtml('your training plans')
+    el.innerHTML = _couldntLoadHtml('your plans')
     return
   }
   if (!exercises.length) {
@@ -4027,7 +4029,7 @@ async function renderSettings(el) {
           <h2 class="section-title">Weekly target</h2>
         </div>
         <div class="card-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
-          <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0">How many sessions a week you aim for. When you are not on a training plan, your Streak counts the weeks in a row you hit it. On a plan, the Streak follows the plan instead.</p>
+          <p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0">How many sessions a week you aim for. When you are not on a plan, your Streak counts the weeks in a row you hit it. On a plan, the Streak follows the plan instead.</p>
           <div class="field">
             <label class="field-label" for="settings-weekly-target">Sessions per week</label>
             <select class="field-input" id="settings-weekly-target">

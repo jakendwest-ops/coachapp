@@ -37,7 +37,7 @@ test('RIR 0 typed in the builder is saved, shown in the builder, and shown in th
 
   // BUILD: one strength exercise, 5 reps, RIR 0.
   await navTo(page, 'workouts')
-  await page.getByRole('button', { name: '+ New template' }).click()
+  await page.getByRole('button', { name: '+ New workout' }).click()
   await page.locator('#ct-name').fill(tplName)
   await page.locator('#create-template-modal button:has-text("Create")').click()
   await page.locator('button:has-text("+ Add exercise"):visible').first().click()

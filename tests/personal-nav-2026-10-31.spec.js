@@ -235,7 +235,7 @@ test.describe('Personal view: old links, saved pages and switching view', () => 
     await soloReady(page)
     expect(await lands(page, '#library')).toMatchObject({ page: 'library', lit: '__more__', h1: 'Exercise library' })
     expect(await lands(page, '#calendar')).toMatchObject({ page: 'calendar', lit: 'solo-dashboard', h1: 'Calendar' })
-    expect(await lands(page, '#programs')).toMatchObject({ page: 'programs', lit: 'workouts', h1: 'Training plans' })
+    expect(await lands(page, '#programs')).toMatchObject({ page: 'programs', lit: 'workouts', h1: 'Plans' })
     expect(await lands(page, '#goals'), 'Goals live in Progress').toMatchObject({ page: 'progress', lit: 'progress', tab: 'Goals' })
   })
 
@@ -251,7 +251,7 @@ test.describe('Personal view: old links, saved pages and switching view', () => 
     await expect.poll(() => page.evaluate(() => currentPage)).toBe('calendar')
     await page.evaluate(() => switchView('coach'))
     await expect.poll(() => page.evaluate(() => currentProfile?.role)).toBe('coach')
-    await expect(page.locator('.bottom-nav-item')).toHaveText(['Dashboard', 'Clients', 'Training plans', 'Calendar', 'More'])      // the coach's bar since MVP 8 (2026-11-01)
+    await expect(page.locator('.bottom-nav-item')).toHaveText(['Dashboard', 'Clients', 'Plans', 'Calendar', 'More'])      // the coach's bar since MVP 8 (2026-11-01)
     await page.evaluate(() => switchView('solo'))
     await expect.poll(() => page.evaluate(() => currentProfile?.role)).toBe('solo')
     await expect(page.locator('.bottom-nav-item')).toHaveText(['Today', 'Train', 'Progress', 'More'])
@@ -271,7 +271,7 @@ test('every affordance in the table has a reachable home', async ({ page }) => {
   await expect(page.locator('[data-train-now]')).toBeVisible()
   // Train > Plans: + New training plan.
   await soloNav(page, 'programs')
-  await expect(page.locator('button:has-text("New training plan")')).toBeVisible({ timeout: 10000 })
+  await expect(page.locator('button:has-text("New plan")')).toBeVisible({ timeout: 10000 })
   // More > Exercise library: adding an exercise.
   await soloNav(page, 'library')
   await expect(page.locator('h1')).toHaveText('Exercise library', { timeout: 10000 })
@@ -309,13 +309,13 @@ test.describe('Personal view: Train', () => {
     await page.evaluate(() => navigate('library'))
     await expect(page.locator('h1.page-title')).toHaveText('Exercise library')
     await expect(page.locator('#wt-tab-templates')).toHaveCount(0)
-    await expect(page.locator('button', { hasText: '+ New template' })).toHaveCount(0)
+    await expect(page.locator('button', { hasText: '+ New workout' })).toHaveCount(0)
     expect(await activeTab(page)).toBe('__more__')
     await page.locator('[data-more-back]').click()
     await expect(page.locator('#more-sheet-modal')).toBeVisible()
   })
 
-  test('COACH: Workouts, Training plans and the Library are unchanged (no Train switch, templates tab kept)', async ({ page }) => {
+  test('COACH: Workouts, Plans and the Library are unchanged (no Train switch, templates tab kept)', async ({ page }) => {
     await loginAsPT(page)
     await page.evaluate(() => { if (currentProfile?.role === 'solo') switchView('coach') })
     await expect.poll(() => page.evaluate(() => currentProfile?.role)).toBe('coach')

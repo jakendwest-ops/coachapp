@@ -329,7 +329,7 @@ describe('_dashTilesHtml - the streak tile', () => {
     assert.match(html(targetModel({ weekDone: 3 })), /<i style="width:100%"/)
   })
   test('the program tile is still beside it', () => {
-    assert.match(words(planModel()), /Training plan/)
+    assert.match(words(planModel()), /Plan/)
   })
 })
 

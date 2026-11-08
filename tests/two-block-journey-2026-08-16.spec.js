@@ -377,10 +377,10 @@ test.describe('Two-block journey — 4 weeks, restart, 4 weeks again', () => {
           { id: 'cp2', program_id: 'PROG-B', start_date: '2026-06-01', created_at: '2026-06-01T00:00:00Z',
             programs: { name: 'Beta', program_phases: [{ duration_weeks: 12 }] } },
         ], error: null }) }) }
-        if (tbl === 'client_program_blocks') return { select: () => ({ eq: async () => ({ data: [
+        if (tbl === 'client_program_blocks') return { select: () => ({ eq: () => ({ order: () => ({ order: () => ({ range: async () => ({ count: 1, data: [
           { id: 'b1', program_id: 'PROG-A', program_name: 'Alpha', start_date: '2026-06-01',
             assigned_at: '2026-06-01T00:00:00Z', ended_at: '2026-06-29', planned_weeks: 4 },
-        ], error: null }) }) }
+        ], error: null }) }) }) }) }) }
         return orig.from(tbl)
       }
       try {

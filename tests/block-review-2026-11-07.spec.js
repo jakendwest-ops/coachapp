@@ -374,7 +374,7 @@ test.describe('Booking the next block from Today, on the real database', () => {
       await page.locator('#ap-program').selectOption(fx.programId)
       await page.locator('#ap-save-btn').click()
       await expect.poll(() => page.evaluate(() => window.__prompts.length)).toBe(1)
-      expect((await page.evaluate(() => window.__prompts))[0]).toContain('already in your plan')
+      expect((await page.evaluate(() => window.__prompts))[0]).toContain('already on this plan')
       await expect(page.locator('#ap-save-btn'), 'declined: the sheet is back to how it was').toHaveText('Confirm')
       expect((await plansOf(page, fx))[0].id).toBe(before.id)
 

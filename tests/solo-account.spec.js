@@ -53,7 +53,7 @@ test.describe('Solo / Personal account', () => {
     await soloNav(page, 'library')
     await expect(page.locator('h1')).toContainText('Exercise library', { timeout: 8000 })
     await expect(page.locator('#wt-tab-templates')).toHaveCount(0)
-    await expect(page.locator('button:has-text("New template")')).toHaveCount(0)
+    await expect(page.locator('button:has-text("New workout")')).toHaveCount(0)
     await soloNav(page, 'workouts')
     await expect(page.locator('[data-create-workout]')).toBeVisible({ timeout: 8000 })
   })
@@ -64,7 +64,7 @@ test.describe('Solo / Personal account', () => {
     await page.waitForTimeout(1500)
     await expect(page.locator('h1')).toContainText('Workouts', { timeout: 8000 })
     // Template builder "New template" button must NOT be visible in solo view
-    await expect(page.locator('button:has-text("New template")')).not.toBeVisible()
+    await expect(page.locator('button:has-text("New workout")')).not.toBeVisible()
   })
 
   test('finishing a runner session as solo lands on Workouts, not a broken client-profile fetch (regression, 2026-07-08)', async ({ page }) => {
@@ -80,8 +80,8 @@ test.describe('Solo / Personal account', () => {
   test('solo Programs page loads (Train > Plans since 2026-10-31)', async ({ page }) => {
     test.skip(!soloAvailable, 'No solo client record for this PT account')
     await soloNav(page, 'programs')
-    await expect(page.locator('h1')).toContainText('Training plans', { timeout: 8000 })
-    await expect(page.locator('button:has-text("New training plan")')).toBeVisible()
+    await expect(page.locator('h1')).toContainText('Plans', { timeout: 8000 })
+    await expect(page.locator('button:has-text("New plan")')).toBeVisible()
   })
 
   test('solo Calendar page loads', async ({ page }) => {
@@ -246,8 +246,8 @@ test.describe('Solo / Personal account', () => {
         await db.from('workout_templates').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] PT Picker Template' })
       })
       await soloNav(page, 'programs')
-      await page.waitForSelector('h1:has-text("Training plans")', { timeout: 8000 })
-      await page.click('button:has-text("New training plan")')
+      await page.waitForSelector('h1:has-text("Plans")', { timeout: 8000 })
+      await page.click('button:has-text("New plan")')
       await page.fill('#pm-name', '[E2E] Personal Picker Program')
       await page.click('#pm-save-btn')
       await page.waitForSelector('h1:has-text("[E2E] Personal Picker Program")', { timeout: 8000 })

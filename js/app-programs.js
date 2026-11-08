@@ -100,14 +100,14 @@ async function renderClientPrograms(clientId, el) {
   if (!assignments?.length) {
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h2 class="section-title">Assigned training plans</h2>
-        <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign training plan</button>
+        <h2 class="section-title">Assigned plans</h2>
+        <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign plan</button>
       </div>
       <div class="empty-state">
         <div class="empty-icon">📋</div>
-        <div class="empty-title">No training plans assigned</div>
-        <div class="empty-text">Assign a training plan from your library to give this client a structured routine.</div>
-        <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign training plan</button>
+        <div class="empty-title">No plans assigned</div>
+        <div class="empty-text">Assign a plan from your library to give this client a structured routine.</div>
+        <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign plan</button>
       </div>`
     return
   }
@@ -139,8 +139,8 @@ async function renderClientPrograms(clientId, el) {
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h2 class="section-title">Assigned training plans</h2>
-      <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign training plan</button>
+      <h2 class="section-title">Assigned plans</h2>
+      <button class="btn-primary" onclick="showAssignProgramModal('${clientId}')">+ Assign plan</button>
     </div>
     ${ordered.map(a => {
       const p = a.programs
@@ -161,7 +161,7 @@ async function renderClientPrograms(clientId, el) {
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:16px">
               <div>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                  <span style="font-size:var(--text-xl, 16px);font-weight:700">${escapeHtml(p?.name || 'Unknown training plan')}</span>${state}
+                  <span style="font-size:var(--text-xl, 16px);font-weight:700">${escapeHtml(p?.name || 'Unknown plan')}</span>${state}
                 </div>
                 <div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${when}${end ? ` · ends ${fmtDay(end)}` : ''}</div>
               </div>
@@ -302,15 +302,15 @@ function showAssignProgramModal(clientId, opts = {}) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">${opts.nextBlock ? (isSolo ? 'Plan next block' : 'Assign next block') : isSolo ? 'Add to my plan' : 'Assign training plan'}</h2>
+        <h2 class="modal-title">${opts.nextBlock ? (isSolo ? 'Plan next block' : 'Assign next block') : isSolo ? 'Start this plan' : 'Assign plan'}</h2>
         <button class="modal-close" onclick="closeModal('assign-program-modal')">✕</button>
       </div>
-      ${opts.nextBlock ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 12px">Starts after the current plan ends. To repeat the same plan, duplicate it in Training plans first.</p>` : ''}
+      ${opts.nextBlock ? `<p style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 12px">Starts after the current plan ends. To repeat the same plan, duplicate it in Plans first.</p>` : ''}
       ${opts.blockReview ? `<p data-block-review-note style="font-size:var(--text-base, 13px);color:var(--text-muted);margin:0 0 12px">${reviewNote}</p>` : ''}
       <div class="field">
-        <label class="field-label">Training plan <span style="color:var(--danger-text)">*</span></label>
+        <label class="field-label">Plan <span style="color:var(--danger-text)">*</span></label>
         <select class="field-input" id="ap-program" onchange="_refreshMissingOneRMs(this.value,'${targetClientId}','ap-missing-1rm')">
-          <option value="">Select a training plan…</option>
+          <option value="">Select a plan…</option>
         </select>
       </div>
       <div id="ap-missing-1rm"></div>
@@ -321,7 +321,7 @@ function showAssignProgramModal(clientId, opts = {}) {
       <p class="modal-error" id="ap-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="closeModal('assign-program-modal')">Cancel</button>
-        <button class="btn-primary" id="ap-save-btn" onclick="saveAssignProgram('${targetClientId}')">${opts.blockReview ? 'Confirm' : 'Assign'}</button>
+        <button class="btn-primary" id="ap-save-btn" onclick="saveAssignProgram('${targetClientId}')">${opts.blockReview ? 'Confirm' : isSolo ? 'Start this plan' : 'Assign'}</button>
       </div>
     </div>
   `
@@ -339,7 +339,7 @@ function showAssignProgramModal(clientId, opts = {}) {
     if (error) {
       log.error('showAssignProgramModal', 'program fetch failed', error)
       const errEl = document.getElementById('ap-error')
-      if (errEl) errEl.textContent = 'Could not load your training plans. Please reload.'
+      if (errEl) errEl.textContent = 'Could not load your plans. Please reload.'
       return
     }
     ;(data || []).filter(p => p.id !== opts.excludeProgramId).forEach(p => {
@@ -354,7 +354,7 @@ function showAssignProgramModal(clientId, opts = {}) {
       _refreshMissingOneRMs(opts.programId, targetClientId, 'ap-missing-1rm')
     } else {
       const errEl = document.getElementById('ap-error')
-      if (errEl) errEl.textContent = 'That plan is no longer in your training plans. Choose another.'
+      if (errEl) errEl.textContent = 'That plan is no longer in your plans. Choose another.'
     }
   })
 }
@@ -421,7 +421,7 @@ async function _archiveAssignmentBlock(clientProgramId, reason) {
   const { error: insErr } = await db.from('client_program_blocks').insert({
     client_id: cp.client_id,
     program_id: cp.program_id || null,
-    program_name: cp.programs?.name || 'Training plan',
+    program_name: cp.programs?.name || 'Plan',
     start_date: cp.start_date || null,
     assigned_at: cp.created_at,
     ended_at: _ymdLocal(new Date()),
@@ -509,7 +509,7 @@ async function saveAssignProgram(clientId) {
   const opts = _assignModalOpts, fromReview = !!opts.blockReview
   const isSolo = _isPersonalView()
 
-  if (!programId) { errorEl.textContent = 'Please select a training plan'; return }
+  if (!programId) { errorEl.textContent = 'Please select a plan'; return }
   // From the end-of-block card the plan has ended, so a blank or past date would book a plan that starts behind the person.
   if (fromReview && (!startDate || startDate < _ymdLocal(new Date()))) { errorEl.textContent = 'Choose today or a later start date'; return }
   if (!(await _verifyClientAccess('saveAssignProgram', clientId)) || !(await _verifyProgramOwnership('saveAssignProgram', programId))) {
@@ -521,8 +521,8 @@ async function saveAssignProgram(clientId) {
   // insert — re-cloning every template in the program twice. The unique index on
   // (client_id, program_id) is the real backstop; this stops the user ever provoking it.
   if (btn?.disabled) return
-  if (btn) { btn.disabled = true; btn.textContent = 'Assigning…' }
-  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = fromReview ? 'Confirm' : 'Assign' } }
+  if (btn) { btn.disabled = true; btn.textContent = currentProfile?.role === 'solo' ? 'Starting…' : 'Assigning…' }
+  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = fromReview ? 'Confirm' : currentProfile?.role === 'solo' ? 'Start this plan' : 'Assign' } }
 
   const existing = await _existingAssignment(clientId, programId)
   if (existing?.error) { errorEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
@@ -538,9 +538,9 @@ async function saveAssignProgram(clientId) {
   if (existing && !repeating) {
     const started = existing.start_date ? ` (started ${existing.start_date})` : ''
     const ok = await confirmDialog(isSolo
-      ? `This training plan is already in your plan${started}.\n\nRestart it from the new start date? Your logged sessions are kept — only the plan itself is rebuilt.`
-      : `That client already has this training plan${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`,
-      { title: 'Restart training plan?', confirmLabel: 'Restart', danger: true })
+      ? `You are already on this plan${started}.\n\nRestart it from the new start date? Your logged sessions are kept — only the plan itself is rebuilt.`
+      : `That client already has this plan${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`,
+      { title: 'Restart plan?', confirmLabel: 'Restart', danger: true })
     if (!ok) { _release(); return }
   } else if (!existing) {
     const overlap = await _confirmStartBeforeCurrentEnds('saveAssignProgram', clientId, startDate)
@@ -590,15 +590,15 @@ async function _assignProgramTx(fnName, clientId, programId, startDate, restart)
   })
   if (error) {
     log.error(fnName, 'assign_program refused — nothing was changed', { code: error.code, programId, clientId })
-    if (error.code === '23505') return { ok: false, message: 'That training plan is already assigned.' }
+    if (error.code === '23505') return { ok: false, message: 'That plan is already assigned.' }
     if (error.code === '42501') return { ok: false, message: 'Could not assign — permission denied. Nothing was changed.' }
     // 40001: the old assignment was removed by something else mid-restart (usually a second tab doing the same).
     if (error.code === '40001') return { ok: false, message: 'This plan was just changed elsewhere — nothing was changed here. Close and try again.' }
-    return { ok: false, message: 'Could not assign the training plan — nothing was changed. Try again.' }
+    return { ok: false, message: 'Could not assign the plan — nothing was changed. Try again.' }
   }
   log.ok(fnName, 'assigned', { programId, clientId, sessions: data?.sessions, restarted: data?.restarted })
   if (data && data.phases === 0) {
-    showToast('Assigned — but this training plan has no phases/workouts yet, so there’s nothing to do until you add some', 'warn', 8000)
+    showToast('Assigned — but this plan has no blocks or workouts yet, so there’s nothing to do until you add some', 'warn', 8000)
   }
   return { ok: true, result: data }
 }
@@ -676,10 +676,10 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
   // keeps a single DOM node with no queue, so an unconditional caller-side success toast would
   // instantly clobber whatever this function just told the user. Bit solo's self-assign flow exactly
   // this way until fixed 2026-07-29 (multi-agent review, Agent B).
-  if (phErr) { log.error('_cloneProgramForClient', 'phase fetch failed', phErr); showToast('Could not copy this training plan’s sessions — try assigning it again', 'error', 8000); return false }
+  if (phErr) { log.error('_cloneProgramForClient', 'phase fetch failed', phErr); showToast('Could not copy this plan’s sessions — try assigning it again', 'error', 8000); return false }
   if (!phases?.length) {
     log.error('_cloneProgramForClient', 'program has no phases yet — nothing to assign', { clientId, programId })
-    showToast('Assigned — but this training plan has no phases/workouts yet, so there’s nothing to do until you add some', 'warn', 8000)
+    showToast('Assigned — but this plan has no blocks or workouts yet, so there’s nothing to do until you add some', 'warn', 8000)
     return false
   }
 
@@ -706,7 +706,7 @@ async function _cloneProgramForClient(clientProgramId, programId, clientId) {
     if (error) {
       insertError = true
       log.error('_cloneProgramForClient', 'cpw insert failed', error)
-      showToast('Could not save this training plan’s sessions — try assigning it again', 'error', 8000)
+      showToast('Could not save this plan’s sessions — try assigning it again', 'error', 8000)
     }
   }
 
@@ -854,7 +854,7 @@ function _renderProgramOneRMChecklist(status) {
   const missingHtml = status.missing.map((m, i) => _renderOneRMQuickEntry(`mor-${i}`, m.name)).join('')
   return `
     <div style="background:rgba(245,158,11,.08);border:1px solid #f59e0b;border-radius:var(--radius, 10px);padding:12px;margin-bottom:14px">
-      <div style="font-size:var(--text-md, 12px);font-weight:700;color:var(--warning-text);margin-bottom:8px">This training plan uses %1RM for ${total} lift${total!==1?'s':''}${status.missing.length ? ` — missing ${status.missing.length}` : ' — all on file'}</div>
+      <div style="font-size:var(--text-md, 12px);font-weight:700;color:var(--warning-text);margin-bottom:8px">This plan uses %1RM for ${total} lift${total!==1?'s':''}${status.missing.length ? ` — missing ${status.missing.length}` : ' — all on file'}</div>
       ${haveHtml}
       ${missingHtml}
     </div>`
@@ -925,7 +925,7 @@ async function removeFromMyPlan(programId) {
   const asg = await _existingAssignment(clientId, programId)
   if (asg?.error) { showToast('Could not check your plan. Try again.', 'error'); return }
   if (!asg) { showToast('That plan is not on your plan.', 'error'); if (window._openProgramId === programId) openProgram(programId); return }      // the page said it was: repaint it so it stops saying so
-  if (!(await confirmDialog('Sessions you have logged stay in your history. Its upcoming sessions leave your calendar. The plan stays in Training plans, and you can add it again.', { title: 'Remove from my plan?', confirmLabel: 'Remove from my plan', cancelLabel: 'Keep it', danger: true }))) return
+  if (!(await confirmDialog('Sessions you have logged stay in your history. Its upcoming sessions leave your calendar. The plan stays in Plans, and you can add it again.', { title: 'Remove from my plan?', confirmLabel: 'Remove from my plan', cancelLabel: 'Keep it', danger: true }))) return
   if (!(await _verifyAssignmentAccess('removeFromMyPlan', asg.id))) { showToast('Could not remove it from your plan.', 'error'); return }
   if (!(await _removeAssignmentAndClones(asg.id, 'removed'))) { showToast('Could not remove it from your plan.', 'error'); return }
   showToast('Removed from your plan', 'success')
@@ -935,12 +935,12 @@ guardReentry('removeFromMyPlan')
 
 async function unassignProgram(clientId, assignmentId) {
   if (!(await confirmDialog('Their logged sessions stay in their history. Upcoming sessions leave their calendar. The plan stays in your library, and you can assign it again.', { title: "Remove from this client's plan?", confirmLabel: 'Remove from plan', cancelLabel: 'Keep it', danger: true }))) return
-  if (!(await _verifyAssignmentAccess('unassignProgram', assignmentId))) { showToast('Could not remove the training plan', 'error'); return }
+  if (!(await _verifyAssignmentAccess('unassignProgram', assignmentId))) { showToast('Could not remove the plan', 'error'); return }
   // Was a bare delete of the client_programs row. Its client_program_workouts cascade away, but the
   // client-owned template clones they pointed at do NOT (the FK runs the other way), so every
   // removal stranded ~30 orphan templates forever — for real clients as well as the owner. Now goes
   // through the shared helper, which removes the assignment AND its dead clones. 2026-07-13.
-  if (!await _removeAssignmentAndClones(assignmentId, 'removed')) { showToast('Could not remove the training plan', 'error'); return }
+  if (!await _removeAssignmentAndClones(assignmentId, 'removed')) { showToast('Could not remove the plan', 'error'); return }
   renderClientPrograms(clientId, document.getElementById('tab-content'))
 }
 
@@ -959,7 +959,7 @@ function showEditStartDateModal(clientId, assignmentId, currentDate) {
       </div>
       <div class="modal-body">
         <div class="field">
-          <label class="field-label">Training plan start date</label>
+          <label class="field-label">Plan start date</label>
           <input class="field-input" type="date" id="esd-date" value="${currentDate}">
         </div>
         <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:8px">Changing the start date shifts all scheduled workouts on the client's calendar.</p>
@@ -999,7 +999,7 @@ async function showAssignProgramToClientModal(programId) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-header">
-        <h2 class="modal-title">${isSolo ? 'Add to my plan' : 'Assign to client'}</h2>
+        <h2 class="modal-title">${isSolo ? 'Start this plan' : 'Assign to client'}</h2>
         <button class="modal-close" onclick="document.getElementById('apc-modal').remove()">✕</button>
       </div>
       ${isSolo ? '' : `
@@ -1016,7 +1016,7 @@ async function showAssignProgramToClientModal(programId) {
       <p class="modal-error" id="apc-error"></p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="document.getElementById('apc-modal').remove()">Cancel</button>
-        <button class="btn-primary" id="apc-save-btn" onclick="saveAssignProgramToClient('${programId}','${isSolo ? (window._soloClientId || '') : ''}')">Assign</button>
+        <button class="btn-primary" id="apc-save-btn" onclick="saveAssignProgramToClient('${programId}','${isSolo ? (window._soloClientId || '') : ''}')">${isSolo ? 'Start this plan' : 'Assign'}</button>
       </div>
     </div>`
 
@@ -1038,7 +1038,7 @@ async function _showReplacedPlans(programId) {
   const others = await _otherPlansOf(window._soloClientId, programId)
   const el = document.getElementById('apc-replaces')
   if (!el || !others?.length) return
-  el.textContent = `${others.map(o => o.name).join(' and ')} ${others.length === 1 ? 'comes' : 'come'} off your plan and stay${others.length === 1 ? 's' : ''} in Training plans.`
+  el.textContent = `${others.map(o => o.name).join(' and ')} ${others.length === 1 ? 'comes' : 'come'} off your plan and stay${others.length === 1 ? 's' : ''} in Plans.`
   el.hidden = false
 }
 
@@ -1057,8 +1057,8 @@ async function saveAssignProgramToClient(programId, soloClientId) {
 
   const btn = document.getElementById('apc-save-btn')
   if (btn?.disabled) return
-  if (btn) { btn.disabled = true; btn.textContent = 'Assigning…' }
-  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = 'Assign' } }
+  if (btn) { btn.disabled = true; btn.textContent = currentProfile?.role === 'solo' ? 'Starting…' : 'Assigning…' }
+  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = currentProfile?.role === 'solo' ? 'Start this plan' : 'Assign' } }
 
   // Already assigned? Do NOT just refuse. Every "which program am I on?" read took the NEWEST
   // assignment until 2026-10-29 (now the most recently started - _currentAssignment), and solo view had no Remove/Edit-date control
@@ -1079,9 +1079,9 @@ async function saveAssignProgramToClient(programId, soloClientId) {
   if (existing) {
     const started = existing.start_date ? ` (started ${existing.start_date})` : ''
     const ok = await confirmDialog(soloClientId
-      ? `This training plan is already in your plan${started}.\n\nRestart it from the new start date? Your logged sessions are kept — only the plan itself is rebuilt.`
-      : `That client already has this training plan${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`,
-      { title: 'Restart training plan?', confirmLabel: 'Restart', danger: true })
+      ? `You are already on this plan${started}.\n\nRestart it from the new start date? Your logged sessions are kept — only the plan itself is rebuilt.`
+      : `That client already has this plan${started}.\n\nRestart it from the new start date? Their logged sessions are kept — only the plan itself is rebuilt.`,
+      { title: 'Restart plan?', confirmLabel: 'Restart', danger: true })
     if (!ok) { _release(); return }
   } else if (!ownPlan) {
     // A coach assigning to a client from the plan's page gets the same overlap question as the client's Training plans tab. Not the solo
@@ -1131,18 +1131,18 @@ async function renderPrograms(el) {
   el.innerHTML = `
     ${_isPersonalView() ? _trainSwitchHtml('programs') : ''}
     <div class="page-header">
-      <h1 class="page-title">Training plans</h1>
-      <button class="btn btn-primary" onclick="showCreateProgramModal()">+ New training plan</button>
+      <h1 class="page-title">Plans</h1>
+      <button class="btn btn-primary" onclick="showCreateProgramModal()">+ New plan</button>
     </div>
 
     ${!programs?.length ? `
       <div class="empty-state">
         <div class="empty-icon">📋</div>
-        <div class="empty-title">No training plans yet</div>
+        <div class="empty-title">No plans yet</div>
         <div class="empty-text">${currentProfile?.role === 'solo'
-          ? `Create a training plan for your own training.${window._soloClientId ? ' <br><br>Built a personal training plan before today? It’s still in your <strong>PT</strong> view — open it there and use “Move to Personal” to bring it across.' : ''}`
-          : 'Create a training plan to organise training phases for your clients.'}</div>
-        <button class="btn-primary" onclick="showCreateProgramModal()">+ Create training plan</button>
+          ? `Create a plan for your own training.${window._soloClientId ? ' <br><br>Built a personal plan before today? It’s still in your <strong>PT</strong> view — open it there and use “Move to Personal” to bring it across.' : ''}`
+          : 'Create a plan to organise training blocks for your clients.'}</div>
+        <button class="btn-primary" onclick="showCreateProgramModal()">+ Create plan</button>
       </div>
     ` : `
       <div class="list">
@@ -1151,11 +1151,11 @@ async function renderPrograms(el) {
             <div style="width:40px;height:40px;border-radius:var(--radius, 10px);background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;font-size:var(--text-2xl, 18px);flex-shrink:0">📋</div>
             <div class="row-info">
               <div class="row-name">${escapeHtml(p.name)}</div>
-              <div class="row-meta">${p.description ? escapeHtml(p.description) : `${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}`}</div>
+              <div class="row-meta">${p.description ? escapeHtml(p.description) : `${p.program_phases?.length || 0} block${p.program_phases?.length !== 1 ? 's' : ''}`}</div>
             </div>
             <div class="row-right">
               ${p.id in planStarts ? '<span class="badge badge-active" data-onplan>On my plan</span>' : ''}
-              <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${p.program_phases?.length || 0} phase${p.program_phases?.length !== 1 ? 's' : ''}</span>
+              <span style="font-size:var(--text-md, 12px);color:var(--text-muted)">${p.program_phases?.length || 0} block${p.program_phases?.length !== 1 ? 's' : ''}</span>
               <svg style="width:15px;height:15px;color:var(--border-strong)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
           </div>`).join('')}
@@ -1166,21 +1166,21 @@ async function renderPrograms(el) {
     <div id="program-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeProgramModal()">
       <div class="modal">
         <div class="modal-header">
-          <h2 class="modal-title" id="program-modal-title">New training plan</h2>
+          <h2 class="modal-title" id="program-modal-title">New plan</h2>
           <button class="btn-icon" onclick="closeProgramModal()">✕</button>
         </div>
         <div style="margin-bottom:14px">
-          <label class="form-label">Training plan name <span style="color:var(--danger-text)">*</span></label>
+          <label class="form-label">Plan name <span style="color:var(--danger-text)">*</span></label>
           <input type="text" id="pm-name" class="form-input" placeholder="e.g. 12-Week Strength Block">
         </div>
         <div style="margin-bottom:14px">
           <label class="form-label">Description <span style="color:var(--text-muted)">(optional)</span></label>
-          <textarea id="pm-desc" class="form-input" rows="3" placeholder="What is this training plan for?" style="resize:vertical"></textarea>
+          <textarea id="pm-desc" class="form-input" rows="3" placeholder="What is this plan for?" style="resize:vertical"></textarea>
         </div>
         <p id="pm-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:0 0 10px"></p>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-secondary" onclick="closeProgramModal()">Cancel</button>
-          <button class="btn btn-primary" id="pm-save-btn" onclick="saveProgram()">Create training plan</button>
+          <button class="btn btn-primary" id="pm-save-btn" onclick="saveProgram()">Create plan</button>
         </div>
       </div>
     </div>`
@@ -1376,34 +1376,34 @@ async function openProgram(programId) {
     <div class="pgm">
     <a href="#" class="pgm-back" onclick="navigate('programs');return false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="15 18 9 12 15 6"/></svg>
-      All training plans
+      All plans
     </a>
     <div class="pgm-titlerow">
       <h1 class="page-title pgm-title">${escapeHtml(program.name)}</h1>
-      <button type="button" class="pgm-manage" aria-label="Training plan actions" onclick="document.getElementById('program-manage-modal').style.display='flex'">⋯</button>
+      <button type="button" class="pgm-manage" aria-label="Plan actions" onclick="document.getElementById('program-manage-modal').style.display='flex'">⋯</button>
     </div>
-    <p class="pgm-facts"><b>${phases.length} phase${phases.length !== 1 ? 's' : ''}</b> · <b>${totalWeeks} week${totalWeeks !== 1 ? 's' : ''}</b><span id="pgm-facts-sess"></span>${onPlan ? ' · <span class="badge badge-active" data-onplan>On my plan</span>' : ''}</p>
+    <p class="pgm-facts"><b>${phases.length} block${phases.length !== 1 ? 's' : ''}</b> · <b>${totalWeeks} week${totalWeeks !== 1 ? 's' : ''}</b><span id="pgm-facts-sess"></span>${onPlan ? ' · <span class="badge badge-active" data-onplan>On my plan</span>' : ''}</p>
     ${program.description ? `<p class="pgm-desc is-clamped" id="pgm-desc">${escapeHtml(program.description)}</p><button type="button" class="pgm-more" id="pgm-more" hidden onclick="togglePgmDesc()">Show more</button>` : ''}
     ${cta ? `<div class="pgm-cta">${cta}</div>` : ''}
-    ${phases.length ? `<div class="pgm-tl" id="pgm-tl" role="group" aria-label="The phases of this training plan, as wide as their weeks">${phases.map((ph, i) => _pgmSegHtml(ph, i, openState[ph.id])).join('')}</div>
+    ${phases.length ? `<div class="pgm-tl" id="pgm-tl" role="group" aria-label="The blocks of this plan, as wide as their weeks">${phases.map((ph, i) => _pgmSegHtml(ph, i, openState[ph.id])).join('')}</div>
     ${anyMethod ? `<div class="pgm-legend"><span><i class="pct"></i>% of 1RM</span><span><i class="rpe"></i>RPE</span><span><i class="kg"></i>added weight</span><span><i class="none"></i>none</span></div>` : ''}` : ''}
 
     <!-- Phases -->
-    <div class="pgm-sec"><h2>Phases</h2><span id="pgm-open-count">${phases.length ? `${phases.filter(ph => openState[ph.id]).length} open` : ''}</span></div>
+    <div class="pgm-sec"><h2>Blocks</h2><span id="pgm-open-count">${phases.length ? `${phases.filter(ph => openState[ph.id]).length} open` : ''}</span></div>
     <div id="phases-list">
-      ${!phases.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No phases yet. Add the first phase to get started.</p>` :
+      ${!phases.length ? `<p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No blocks yet. Add the first block to get started.</p>` :
         phases.map((ph, i) => _pgmCardHtml(ph, i, program.id, openState[ph.id])).join('')}
     </div>
-    <button type="button" class="pgm-addph" onclick="showAddPhaseForm('${program.id}')">+ Add phase</button>
+    <button type="button" class="pgm-addph" onclick="showAddPhaseForm('${program.id}')">+ Add block</button>
 
     <!-- Add/edit phase form -->
     <div id="phase-form" style="display:none;background:var(--surface-2);border-radius:var(--radius, 10px);padding:16px;margin-top:12px">
-      <h3 style="font-size:var(--text-lg, 14px);font-weight:600;margin-bottom:12px" id="phase-form-title">Add phase</h3>
+      <h3 style="font-size:var(--text-lg, 14px);font-weight:600;margin-bottom:12px" id="phase-form-title">Add block</h3>
       <input type="hidden" id="pf-phase-id">
       <input type="hidden" id="pf-order-index">
       <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:10px">
         <div>
-          <label class="form-label">Phase name <span style="color:var(--danger-text)">*</span></label>
+          <label class="form-label">Block name <span style="color:var(--danger-text)">*</span></label>
           <input type="text" id="pf-name" class="form-input" placeholder="e.g. Base Building">
         </div>
         <div>
@@ -1413,7 +1413,7 @@ async function openProgram(programId) {
       </div>
       <p id="pf-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:0 0 8px"></p>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" id="pf-save-btn" onclick="savePhase('${program.id}')">Add phase</button>
+        <button class="btn btn-primary" style="font-size:var(--text-base, 13px);padding:6px 14px" id="pf-save-btn" onclick="savePhase('${program.id}')">Add block</button>
         <button class="btn-secondary" style="font-size:var(--text-base, 13px);padding:6px 14px" onclick="document.getElementById('phase-form').style.display='none'">Cancel</button>
       </div>
     </div>
@@ -1425,11 +1425,11 @@ async function openProgram(programId) {
     <div id="program-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeProgramModal()">
       <div class="modal">
         <div class="modal-header">
-          <h2 class="modal-title" id="program-modal-title">Edit training plan</h2>
+          <h2 class="modal-title" id="program-modal-title">Edit plan</h2>
           <button type="button" class="pgm-close" onclick="closeProgramModal()">Close</button>
         </div>
         <div style="margin-bottom:14px">
-          <label class="form-label">Training plan name <span style="color:var(--danger-text)">*</span></label>
+          <label class="form-label">Plan name <span style="color:var(--danger-text)">*</span></label>
           <input type="text" id="pm-name" class="form-input">
         </div>
         <div style="margin-bottom:14px">
@@ -1445,18 +1445,18 @@ async function openProgram(programId) {
     </div>
 
     <!-- Manage program menu (B1, 2026-09-07) — the secondary actions that used to be a ragged
-         5-button row above "Phases". The one primary (Assign / Add to my plan) stays out here.
+         5-button row above "Blocks". The one primary (Assign / Start this plan) stays out here.
          modal-fullscreen-mobile so the action list sits at the top, clear of the floating
          mobile view-switcher pill. -->
     <div id="program-manage-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
       <div class="modal modal-fullscreen-mobile" style="overflow-y:auto">
         <div class="modal-header">
-          <h2 class="modal-title">Manage training plan</h2>
+          <h2 class="modal-title">Manage plan</h2>
           <button type="button" class="pgm-close" onclick="document.getElementById('program-manage-modal').style.display='none'">Close</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px">
           <button class="btn btn-secondary" onclick="document.getElementById('program-manage-modal').style.display='none';showEditProgramModal('${program.id}','${escapeAttr(program.name)}','${escapeAttr((program.description||''))}')">Edit name and description</button>
-          <button class="btn btn-secondary" onclick="copyProgramWorkoutsToLibrary('${program.id}')" title="Copy every workout in this training plan into your reusable Library">Copy workouts to Library</button>
+          <button class="btn btn-secondary" onclick="copyProgramWorkoutsToLibrary('${program.id}')" title="Copy every workout in this plan into your reusable Library">Copy workouts to Library</button>
           <button class="btn btn-secondary" onclick="document.getElementById('program-manage-modal').style.display='none';_openQuickPrefsPopover()">⚙ Units and preferences</button>
           ${program.is_personal
             ? (window._masterAccount /* the copy lands in the COACHING pool: a native solo has no coaching view to list, open or delete it — bugs/2026-09-06-copy-to-coaching-creates-an-undeletable-orphan-for-a-solo-user */
@@ -1464,7 +1464,7 @@ async function openProgram(programId) {
                 : '')
             : (window._soloClientId && currentProfile?.role !== 'solo' ? `<button class="btn btn-secondary" onclick="moveProgramToPersonal('${program.id}')" title="Move into your Personal view — no longer assignable to clients">Move to Personal</button>` : '')}
           ${onPlan ? `<button class="btn btn-secondary" data-remove-from-plan onclick="document.getElementById('program-manage-modal').style.display='none';removeFromMyPlan('${program.id}')">Remove from my plan</button>` : ''}
-          <button class="btn btn-secondary pgm-danger-text" onclick="deleteProgram('${program.id}')">Delete training plan</button>
+          <button class="btn btn-secondary pgm-danger-text" onclick="deleteProgram('${program.id}')">Delete plan</button>
         </div>
       </div>
     </div>`
@@ -1538,7 +1538,7 @@ function _pgmOpenState(programId, phases, currentId) {
 // (a number until 2026-11-08). The phase name is free text, so it is escaped for both the label and the attribute.
 function _pgmSegHtml(ph, i, open) {
   const weeks = Math.max(1, Number(ph.duration_weeks) || 1)
-  const name = escapeHtml(`Phase ${i + 1}, ${ph.name}, ${weeks} week${weeks !== 1 ? 's' : ''}`)
+  const name = escapeHtml(`Block ${i + 1}, ${ph.name}, ${weeks} week${weeks !== 1 ? 's' : ''}`)
   return `<button type="button" class="pgm-seg ${_pgmPhaseMethod(ph)}" style="flex:${weeks}" aria-pressed="${!!open}" aria-label="${name}" onclick="jumpToPhase('${ph.id}')"><span>${escapeHtml(ph.name)} · ${weeks} wk</span></button>`
 }
 
@@ -1550,7 +1550,7 @@ function _pgmCardHtml(ph, i, programId, open) {
   const method = _pgmPhaseMethod(ph)
   const label = _periodizationLabel(ph)
   const chip = label ? `<span class="pgm-chip ${method}">${label}</span>` : ''
-  const now = ph.id === window._pgmNowId ? '<span class="pgm-now" title="The phase your plan is in this week">Now</span>' : ''
+  const now = ph.id === window._pgmNowId ? '<span class="pgm-now" title="The block your plan is in this week">Now</span>' : ''
   const sess = _pgmSessionsText(_pgmWeek1Count(ph.id))
   // Add / Edit periodisation lives in the phase's ⋯ since 2026-11-08 (it changes the whole phase); Generate weeks stays on the screen, as the step
   // that follows a change to Week 1.
@@ -1694,10 +1694,10 @@ function openPhaseMenu(programId, phaseId) {
   const ph = (window._openProgramPhases || []).find(p => p.id === phaseId)
   if (!ph) return
   window._pgmMenu = { programId, phaseId }
-  const rows = [{ id: 'pgm-edit-phase', kind: 'edit-phase', label: 'Edit phase' }]
+  const rows = [{ id: 'pgm-edit-phase', kind: 'edit-phase', label: 'Edit block' }]
   // A one-week phase has nothing to periodise (the same rule the on-screen button had).
   if ((Number(ph.duration_weeks) || 1) > 1) rows.push({ id: 'pgm-periodise', kind: 'periodise', label: ph.periodization_type ? 'Edit periodisation' : 'Add periodisation' })
-  rows.push({ id: 'pgm-remove-phase', kind: 'remove-phase', label: 'Remove phase', danger: true })
+  rows.push({ id: 'pgm-remove-phase', kind: 'remove-phase', label: 'Remove block', danger: true })
   _pgmSheet(ph.name, rows)
 }
 
@@ -1766,17 +1766,17 @@ let _editingProgramId = null
 
 function showCreateProgramModal() {
   _editingProgramId = null
-  document.getElementById('program-modal-title').textContent = 'New training plan'
+  document.getElementById('program-modal-title').textContent = 'New plan'
   document.getElementById('pm-name').value = ''
   document.getElementById('pm-desc').value = ''
   document.getElementById('pm-error').textContent = ''
-  document.getElementById('pm-save-btn').textContent = 'Create training plan'
+  document.getElementById('pm-save-btn').textContent = 'Create plan'
   document.getElementById('program-modal').style.display = 'flex'
 }
 
 function showEditProgramModal(id, name, description) {
   _editingProgramId = id
-  document.getElementById('program-modal-title').textContent = 'Edit training plan'
+  document.getElementById('program-modal-title').textContent = 'Edit plan'
   document.getElementById('pm-name').value = name
   document.getElementById('pm-desc').value = description
   document.getElementById('pm-error').textContent = ''
@@ -1792,7 +1792,7 @@ async function saveProgram(programId) {
   const name = document.getElementById('pm-name').value.trim()
   const desc = document.getElementById('pm-desc').value.trim()
   const errorEl = document.getElementById('pm-error')
-  if (!name) { errorEl.textContent = 'Training plan name is required.'; return }
+  if (!name) { errorEl.textContent = 'Plan name is required.'; return }
   errorEl.textContent = ''
 
   const id = programId || _editingProgramId
@@ -1803,7 +1803,7 @@ async function saveProgram(programId) {
     // Anchor AND rowcount, matching moveProgramToPersonal below, which documents why both are
     // required. This function was the sibling that did not follow its own family's rule.
     const { data: upd, error } = await db.from('programs').update({ name, description: desc || null }).eq('id', id).eq('coach_id', currentUser.id).select('id')
-    if (error || upd?.length !== 1) { log.error('saveProgram', 'update failed', error || { rows: upd?.length }); errorEl.textContent = error?.message || 'Save failed — training plan not found or permission denied.'; return }
+    if (error || upd?.length !== 1) { log.error('saveProgram', 'update failed', error || { rows: upd?.length }); errorEl.textContent = error?.message || 'Save failed — plan not found or permission denied.'; return }
     log.ok('saveProgram', 'updated', { id })
     closeProgramModal()
     openProgram(id)
@@ -1825,7 +1825,7 @@ async function saveProgram(programId) {
 function _assignBtnHtml(program, mine) {
   if (currentProfile?.role === 'solo') {
     if (_pgmOnMyPlan(mine)) return ''
-    return `<button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">Add to my plan</button>`
+    return `<button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">Start this plan</button>`
   }
   if (program.is_personal) return ''
   return `<button class="btn btn-primary" onclick="showAssignProgramToClientModal('${program.id}')">Assign to client</button>`
@@ -1892,10 +1892,10 @@ async function moveProgramToPersonal(programId) {
   const { realClients } = await _programAssignments(programId)
   if (realClients.length) {
     const names = await _blockingClientNames(realClients)
-    showToast(`Assigned to ${names || `${realClients.length} client${realClients.length === 1 ? '' : 's'}`} — a training plan a client is training on can't be personal. Remove them first.`, 'warn', 6000)
+    showToast(`Assigned to ${names || `${realClients.length} client${realClients.length === 1 ? '' : 's'}`} — a plan a client is training on can't be personal. Remove them first.`, 'warn', 6000)
     return
   }
-  if (!(await confirmDialog('Move this training plan to your Personal view? It will no longer appear in your PT training plans and can no longer be assigned to clients.', { title: 'Move to Personal?', confirmLabel: 'Move' }))) return
+  if (!(await confirmDialog('Move this plan to your Personal view? It will no longer appear in your PT plans and can no longer be assigned to clients.', { title: 'Move to Personal?', confirmLabel: 'Move' }))) return
 
   log.info('moveProgramToPersonal', 'moving', { programId })
   // .select() is not optional here: PostgREST returns error:null for an UPDATE that matches ZERO
@@ -1905,7 +1905,7 @@ async function moveProgramToPersonal(programId) {
     .eq('id', programId).eq('coach_id', currentUser.id).select('id')
   if (error || data?.length !== 1) {
     log.error('moveProgramToPersonal', 'update failed', error || { rows: data?.length })
-    showToast('Could not move training plan', 'error'); return
+    showToast('Could not move plan', 'error'); return
   }
   log.ok('moveProgramToPersonal', 'moved', { programId })
   showToast('Moved to Personal. Switch to the Personal view to see it.', 'success', 5000)
@@ -1933,7 +1933,7 @@ async function copyProgramToCoaching(programId) {
   const { data: src, error: srcErr } = await db.from('programs')
     .select('id, name, description, is_personal, program_phases(id, name, duration_weeks, order_index, periodization_type, periodization_config)')
     .eq('id', programId).eq('coach_id', currentUser.id).single()
-  if (srcErr || !src) { log.error('copyProgramToCoaching', 'source fetch failed', srcErr); showToast('Could not load that training plan', 'error'); return }
+  if (srcErr || !src) { log.error('copyProgramToCoaching', 'source fetch failed', srcErr); showToast('Could not load that plan', 'error'); return }
 
   // Name-collision guard against the DESTINATION pool. Plain fetch + JS compare — .ilike() would
   // treat the name as a LIKE pattern (_ and % are wildcards) and .maybeSingle() ERRORS on >1 match,
@@ -1941,20 +1941,20 @@ async function copyProgramToCoaching(programId) {
   const newName = `${src.name} (coaching copy)`
   const { data: existing, error: exErr } = await db.from('programs').select('id')
     .eq('coach_id', currentUser.id).eq('is_personal', false).eq('name', newName)
-  if (exErr) { log.error('copyProgramToCoaching', 'collision check failed', exErr); showToast('Could not copy training plan', 'error'); return }
+  if (exErr) { log.error('copyProgramToCoaching', 'collision check failed', exErr); showToast('Could not copy plan', 'error'); return }
   if (existing?.length) {
-    showToast('A coaching copy of this training plan already exists.', 'warn', 5000)
+    showToast('A coaching copy of this plan already exists.', 'warn', 5000)
     return
   }
 
-  if (!(await confirmDialog(`Create a coaching copy of "${src.name}"? The copy can be assigned to clients; this personal training plan stays untouched.`, { title: 'Copy to coaching?', confirmLabel: 'Create copy' }))) return
+  if (!(await confirmDialog(`Create a coaching copy of "${src.name}"? The copy can be assigned to clients; this personal plan stays untouched.`, { title: 'Copy to coaching?', confirmLabel: 'Create copy' }))) return
   log.info('copyProgramToCoaching', 'copying', { programId })
   showToast('Copying…', 'info', 2000)
 
   const { data: newProg, error: pErr } = await db.from('programs')
     .insert({ coach_id: currentUser.id, is_personal: false, name: newName, description: src.description || null })
     .select('id').single()
-  if (pErr || !newProg) { log.error('copyProgramToCoaching', 'program insert failed', pErr); showToast('Could not copy training plan', 'error'); return }
+  if (pErr || !newProg) { log.error('copyProgramToCoaching', 'program insert failed', pErr); showToast('Could not copy plan', 'error'); return }
 
   // Any failure after the program row exists must roll it back. Otherwise a half-copied program is
   // left in the COACHING pool — is_personal:false, so it is listed and assignable to a real client
@@ -1989,7 +1989,7 @@ async function copyProgramToCoaching(programId) {
       program_id: newProg.id, name: ph.name, duration_weeks: ph.duration_weeks, order_index: ph.order_index,
       periodization_type: ph.periodization_type || null, periodization_config: ph.periodization_config || null
     }).select('id').single()
-    if (phErr || !newPhase) { await _rollback('Could not copy a phase — nothing was changed.'); return }
+    if (phErr || !newPhase) { await _rollback('Could not copy a block — nothing was changed.'); return }
 
     const { data: slots } = await db.from('program_phase_workouts')
       .select('*, workout_templates(*, workout_template_exercises(*))').eq('phase_id', ph.id)
@@ -2002,7 +2002,7 @@ async function copyProgramToCoaching(programId) {
       // would silently drop a workout — this codebase has been bitten by silently-nulled embeds
       // three times. Fail loudly instead.
       if (slot.template_id && !slot.workout_templates) {
-        await _rollback('Could not read one of the workouts in this training plan — nothing was copied.')
+        await _rollback('Could not read one of the workouts in this plan — nothing was copied.')
         return
       }
       if (slot.template_id && slot.workout_templates) {
@@ -2047,16 +2047,16 @@ async function deleteProgram(programId) {
   // All three review agents caught it. Same class as
   // 2026-08-22-resolveeditabletemplateid-writes-before-the-ownership-check: a guard that is present,
   // visible, and simply not first reads as protection while protecting nothing.
-  if (!(await _verifyProgramOwnership('deleteProgram', programId))) { showToast('Could not delete this training plan', 'error'); return }
+  if (!(await _verifyProgramOwnership('deleteProgram', programId))) { showToast('Could not delete this plan', 'error'); return }
   const { realClients: blocking, soloOwnIds } = await _programAssignments(programId)
 
   if (blocking.length) {
     const names = await _blockingClientNames(blocking)
-    showToast(`Assigned to ${names || `${blocking.length} client${blocking.length === 1 ? '' : 's'}`} — remove them from this training plan first.`, 'warn', 5000)
+    showToast(`Assigned to ${names || `${blocking.length} client${blocking.length === 1 ? '' : 's'}`} — remove them from this plan first.`, 'warn', 5000)
     return
   }
 
-  if (!(await confirmDialog('Delete this training plan, its phases, and its workout templates? This cannot be undone.', { title: 'Delete training plan?', confirmLabel: 'Delete', danger: true }))) return
+  if (!(await confirmDialog('Delete this plan, its blocks and its workouts? This cannot be undone.', { title: 'Delete plan?', confirmLabel: 'Delete', danger: true }))) return
   log.info('deleteProgram', 'deleting', { programId })
 
   // The only remaining assignment at this point (if any) is the user's own solo self-assignment.
@@ -2072,7 +2072,7 @@ async function deleteProgram(programId) {
   // remove, with the program row gone so nothing can ever find them again. Fail closed.
   for (const cpId of soloOwnIds) {
     if (!await _removeAssignmentAndClones(cpId, 'program_deleted')) {
-      showToast('Could not clean up this training plan’s workout copies — nothing was deleted. Try again.', 'error')
+      showToast('Could not clean up this plan’s workout copies — nothing was deleted. Try again.', 'error')
       return
     }
   }
@@ -2102,7 +2102,7 @@ async function deleteProgram(programId) {
   if (error) { log.error('deleteProgram', 'failed', error); return }
   if (!goneProg?.length) {
     log.error('deleteProgram', 'delete removed no rows — refused, or already gone', { programId })
-    showToast('Could not delete that training plan — try again.', 'error')
+    showToast('Could not delete that plan — try again.', 'error')
     return
   }
   log.ok('deleteProgram', 'deleted', { programId })
@@ -2110,25 +2110,25 @@ async function deleteProgram(programId) {
 }
 
 function showAddPhaseForm(programId) {
-  document.getElementById('phase-form-title').textContent = 'Add phase'
+  document.getElementById('phase-form-title').textContent = 'Add block'
   document.getElementById('pf-phase-id').value = ''
   document.getElementById('pf-order-index').value = ''
   document.getElementById('pf-name').value = ''
   document.getElementById('pf-weeks').value = ''
   document.getElementById('pf-error').textContent = ''
-  document.getElementById('pf-save-btn').textContent = 'Add phase'
+  document.getElementById('pf-save-btn').textContent = 'Add block'
   document.getElementById('phase-form').style.display = 'block'
   document.getElementById('pf-name').focus()
 }
 
 function showEditPhaseForm(programId, phaseId, name, weeks, orderIndex) {
-  document.getElementById('phase-form-title').textContent = 'Edit phase'
+  document.getElementById('phase-form-title').textContent = 'Edit block'
   document.getElementById('pf-phase-id').value = phaseId
   document.getElementById('pf-order-index').value = orderIndex
   document.getElementById('pf-name').value = name
   document.getElementById('pf-weeks').value = weeks
   document.getElementById('pf-error').textContent = ''
-  document.getElementById('pf-save-btn').textContent = 'Save phase'
+  document.getElementById('pf-save-btn').textContent = 'Save block'
   document.getElementById('phase-form').style.display = 'block'
   document.getElementById('pf-name').focus()
 }
@@ -2148,7 +2148,7 @@ async function savePhase(programId) {
     // is asserted to match, not ignored. phaseId comes from a hidden DOM input.
     if (!(await _verifyPhaseOwnership('savePhase', phaseId, programId))) { errorEl.textContent = 'Could not save — permission denied.'; return }
     const { data: upd, error } = await db.from('program_phases').update({ name, duration_weeks: weeks }).eq('id', phaseId).select('id')
-    if (error || upd?.length !== 1) { log.error('savePhase', 'update failed', error || { rows: upd?.length }); errorEl.textContent = error?.message || 'Save failed — phase not found or permission denied.'; return }
+    if (error || upd?.length !== 1) { log.error('savePhase', 'update failed', error || { rows: upd?.length }); errorEl.textContent = error?.message || 'Save failed — block not found or permission denied.'; return }
     // If duration shrank below any already-generated weeks, prune the now out-of-range rows (master + propagated client copies).
     // Deliberately NOT aborted on a refused prune, unlike generatePhasePeriodization. The phase's own
     // duration UPDATE has already committed and is the thing the user actually asked for, so bailing
@@ -2173,11 +2173,11 @@ async function savePhase(programId) {
 }
 
 async function deletePhase(programId, phaseId) {
-  if (!(await confirmDialog('Remove this phase?', { title: 'Remove phase?', confirmLabel: 'Remove', danger: true }))) return
+  if (!(await confirmDialog('Remove this block?', { title: 'Remove block?', confirmLabel: 'Remove', danger: true }))) return
   log.info('deletePhase', 'deleting', { phaseId })
   // Ahead of everything: this function deletes client copies and sweeps templates before it ever
   // touches the phase row, so a check placed at the phase delete would refuse only the last write.
-  if (!(await _verifyPhaseOwnership('deletePhase', phaseId, programId))) { showToast('Could not remove this phase', 'error'); return }
+  if (!(await _verifyPhaseOwnership('deletePhase', phaseId, programId))) { showToast('Could not remove this block', 'error'); return }
 
   // Deleting the phase row cascades its program_phase_workouts (and, through them, the client copies)
   // — but it does NOT touch the workout_templates those slots pointed at. So this used to orphan, on
@@ -2204,7 +2204,7 @@ async function deletePhase(programId, phaseId) {
   if (error) { log.error('deletePhase', 'failed', error); return }
   if (!goneP?.length) {
     log.error('deletePhase', 'delete removed no rows — refused, or already gone', { phaseId })
-    showToast('Could not delete that phase — try again.', 'error')
+    showToast('Could not delete that block — try again.', 'error')
     return
   }
   log.ok('deletePhase', 'deleted', { phaseId })
@@ -2606,16 +2606,16 @@ async function savePeriodizationConfig() {
 async function generatePhasePeriodization(phaseId, programId) {
   if (!(await _verifyPhaseOwnership('generatePhasePeriodization', phaseId, programId))) { showToast('Could not generate — permission denied', 'error'); return }
   const { data: phase, error: phErr } = await db.from('program_phases').select('*').eq('id', phaseId).single()
-  if (phErr || !phase) { showToast('Could not load phase', 'error'); return }
+  if (phErr || !phase) { showToast('Could not load block', 'error'); return }
   if (!phase.periodization_type) { showToast('Set a periodisation type first', 'error'); return }
-  if (phase.duration_weeks < 2) { showToast('Phase must be at least 2 weeks to generate', 'error'); return }
+  if (phase.duration_weeks < 2) { showToast('Block must be at least 2 weeks to generate', 'error'); return }
 
   const { data: baseWorkouts, error: bwErr } = await db.from('program_phase_workouts')
     .select('*, workout_templates(id, name, description, is_personal, family_id, workout_template_exercises(*))')
     .eq('phase_id', phaseId).eq('week_number', 1)
   if (bwErr || !baseWorkouts?.length) { showToast('Add Week 1 sessions before generating', 'error'); return }
 
-  if (!(await confirmDialog(`Generate weeks 2–${phase.duration_weeks} from Week 1? This deletes any existing Week 2+ content for this phase — periodisation-generated OR manually added/duplicated — and rebuilds it from Week 1.`, { title: 'Generate weeks?', confirmLabel: 'Generate', danger: true }))) return
+  if (!(await confirmDialog(`Generate weeks 2–${phase.duration_weeks} from Week 1? This deletes any existing Week 2+ content for this block — periodisation-generated OR manually added/duplicated — and rebuilds it from Week 1.`, { title: 'Generate weeks?', confirmLabel: 'Generate', danger: true }))) return
 
   // Idempotent regeneration — clear any weeks generated by a previous run (or manually built via
   // "Duplicate week"/the add-workout grid) first: master rows + any already-propagated client copies.
@@ -2772,7 +2772,7 @@ async function generatePhasePeriodization(phaseId, programId) {
   const genProblems = []
   if (genFailures) genProblems.push(`${genFailures} session${genFailures === 1 ? '' : 's'} skipped`)
   if (propFailures) genProblems.push(`${propFailures} client plan${propFailures === 1 ? '' : 's'} not updated`)
-  if (genProblems.length) showToast(`${genSummary} — but ${genProblems.join(', and ')}${genNote ? `, and ${genNote}` : ''}. Reassign the training plan.`, 'error', 8000)
+  if (genProblems.length) showToast(`${genSummary} — but ${genProblems.join(', and ')}${genNote ? `, and ${genNote}` : ''}. Reassign the plan.`, 'error', 8000)
   else if (genNote) showToast(`${genSummary} — but ${genNote}. ${wave === 'kg' ? 'Add weights' : 'Set an RPE'} in the workout editor, then generate again.`, 'warn', 8000)
   else showToast(genSummary, 'success')
   openProgram(programId)
@@ -3227,7 +3227,7 @@ function _toggleBuilderSlot(pwId, phaseId, weekNum) {
 // the same ctx the session-detail slider used to pass, so the propagate-to-clients prompt still fires on save.
 function _editPhaseWorkout(templateId, phaseWorkoutId) {
   const programId = window._openProgramId
-  openTemplate(templateId, { backLabel: 'Back to training plan', backFn: () => openProgram(programId), programId, phaseWorkoutId })
+  openTemplate(templateId, { backLabel: 'Back to plan', backFn: () => openProgram(programId), programId, phaseWorkoutId })
 }
 
 // Copies a week's day→workout assignments into the next empty week slot (up to the phase's
@@ -3326,10 +3326,10 @@ async function duplicatePhaseWeek(phaseId, sourceWeek, { quiet = false } = {}) {
 
   if (!quiet) {
     if (clientCopyFailures) {
-      showToast(`Week ${sourceWeek} duplicated, but ${clientCopyFailures} client plan${clientCopyFailures === 1 ? '' : 's'} did not update — reassign the training plan`, 'error')
+      showToast(`Week ${sourceWeek} duplicated, but ${clientCopyFailures} client plan${clientCopyFailures === 1 ? '' : 's'} did not update — reassign the plan`, 'error')
     } else {
       showToast(extendedTo
-        ? `Week ${sourceWeek} duplicated to Week ${targetWeek} — phase extended to ${extendedTo} week${extendedTo === 1 ? '' : 's'}`
+        ? `Week ${sourceWeek} duplicated to Week ${targetWeek} — block extended to ${extendedTo} week${extendedTo === 1 ? '' : 's'}`
         : `Week ${sourceWeek} duplicated to Week ${targetWeek}`, 'success')
     }
     // Full re-render (not just loadAllPhaseWorkouts) — when the phase was extended, its duration and
@@ -3359,8 +3359,8 @@ async function duplicatePhaseWeekTimes(phaseId, sourceWeek, n) {
   else loadAllPhaseWorkouts([{ id: phaseId }])
   if (!made) { showToast('Could not duplicate that week', 'error'); return }
   const range = made === 1 ? `Week ${lastWeek}` : `Weeks ${lastWeek - made + 1}–${lastWeek}`
-  const ext = extendedTo ? ` — phase extended to ${extendedTo} weeks` : ''
-  if (clientFails) showToast(`${range} added, but ${clientFails} client plan${clientFails === 1 ? '' : 's'} did not fully update — reassign the training plan`, 'error')
+  const ext = extendedTo ? ` — block extended to ${extendedTo} weeks` : ''
+  if (clientFails) showToast(`${range} added, but ${clientFails} client plan${clientFails === 1 ? '' : 's'} did not fully update — reassign the plan`, 'error')
   else if (made < n) showToast(`Added ${made} of ${n} copies (${range}) — stopped early`, 'warn')
   else showToast(`Week ${sourceWeek} duplicated ${made === 1 ? '' : made + '× '}→ ${range}${ext}`, 'success')
 }
@@ -3379,7 +3379,7 @@ function showDuplicateWeekModal(phaseId, sourceWeek) {
         <h2 class="modal-title">Duplicate Week ${sourceWeek}</h2>
         <button class="modal-close" onclick="closeModal('dup-week-modal')">✕</button>
       </div>
-      <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:0 0 14px">Adds copies of Week ${sourceWeek} to the end of the phase, extending it as needed.</p>
+      <p style="font-size:var(--text-md, 12px);color:var(--text-muted);margin:0 0 14px">Adds copies of Week ${sourceWeek} to the end of the block, extending it as needed.</p>
       <div style="display:flex;gap:8px">${[1, 2, 3, 4].map(chip).join('')}</div>
     </div>`
   mountModal(overlay)
@@ -3463,7 +3463,7 @@ async function deletePhaseWeek(phaseId, weekNumber) {
   if (phase && durationOk) phase.duration_weeks = newDuration
 
   if (weekFailures.length) {
-    showToast(`Week ${weekNumber} was only partly deleted — reload and check the phase's week numbers`, 'error')
+    showToast(`Week ${weekNumber} was only partly deleted — reload and check the block's week numbers`, 'error')
   } else {
     showToast(`Week ${weekNumber} deleted`, 'success')
   }
@@ -3623,7 +3623,7 @@ function _renderWorkoutPickerResults(query) {
       <div style="font-size:var(--text-lg, 14px);font-weight:600">${escapeHtml(t.name)}</div>
       ${t.description ? `<div style="font-size:var(--text-md, 12px);color:var(--text-muted);margin-top:2px">${escapeHtml(t.description)}</div>` : ''}
       ${t._exPreview ? `<div style="font-size:var(--text-sm, 11px);color:var(--text-muted);margin-top:3px">${escapeHtml(t._exPreview)}</div>` : '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">No exercises yet</div>'}
-      ${t._inThisProgram ? `<div style="font-size:var(--text-xs, 10px);font-weight:700;letter-spacing:.04em;color:var(--accent);margin-top:3px">BUILT IN THIS TRAINING PLAN</div>` : ''}
+      ${t._inThisProgram ? `<div style="font-size:var(--text-xs, 10px);font-weight:700;letter-spacing:.04em;color:var(--accent);margin-top:3px">BUILT IN THIS PLAN</div>` : ''}
       <div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px;font-size:var(--text-sm, 11px)">
         <!-- Three states, not two. "Not used yet" is a CLAIM, and asserting it when the lookup failed
              is how every row silently read "unused" on a single query error (Jake, 2026-08-14). -->
@@ -3638,7 +3638,7 @@ function _renderWorkoutPickerResults(query) {
     ${createRow}
     ${matches.length
       ? matches.map(rowHtml).join('')
-      : `<div class="empty-state" style="padding:20px 0"><div class="empty-text">${q ? 'No workouts match that search.' : 'No reusable workouts yet — build one in Workouts → Templates, or create one for this day above.'}</div></div>`}
+      : `<div class="empty-state" style="padding:20px 0"><div class="empty-text">${q ? 'No workouts match that search.' : 'No reusable workouts yet — build one under Workouts, or create one for this day above.'}</div></div>`}
   `
 }
 

@@ -269,7 +269,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
         // Deload is phase 1 (order_index 0) → expanded by default, so its empty-phase message shows
         // on load. If a phase ever defaults collapsed again, open it (scope to the accordion toggle
         // button, since the hero meta line also contains the phase name "Deload").
-        const msg = page.locator('text=No sessions added to this phase yet')
+        const msg = page.locator('text=No sessions added to this block yet')
         if (!(await msg.isVisible().catch(() => false))) await page.click('button:has-text("Deload")')
         await expect(msg).toBeVisible({ timeout: 5000 })
         expect(consoleErrors).toEqual([])
@@ -373,7 +373,7 @@ test.describe('Workouts page hero card + Recent sessions rename (2026-07-08)', (
 
   test('_buildWorkoutsHero falls back to a freeform start action when no program is assigned', async ({ page }) => {
     const hero = await page.evaluate(() => _buildWorkoutsHero('fake-client-id', null, {}))
-    expect(hero.title).toBe('No training plan assigned')
+    expect(hero.title).toBe('No plan assigned')
     expect(hero.action).toContain("startWorkoutRunner('fake-client-id')")
   })
 

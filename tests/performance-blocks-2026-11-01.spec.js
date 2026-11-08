@@ -81,7 +81,7 @@ test.describe('Performance > Blocks: this block vs last block (2026-11-01)', () 
     const recent = [{ name: 'Bench', metricType: 'weight_reps', sessions: [ses(ago(60), 100), ses(ago(10), 110)] }]
     await showBlocks(page, { runs: [], exercises: recent })
     await expect(page.locator('#pbk-host [data-blk-summary]')).toContainText('6 weeks')
-    await expect(page.locator('#pbk-host')).not.toContainText('No training plan with a start date')
+    await expect(page.locator('#pbk-host')).not.toContainText('No plan with a start date')
     await expect(page.locator('#pbk-host [data-blk-row]').first()).toBeVisible()
   })
 
@@ -139,7 +139,7 @@ test.describe('Performance > Blocks: this block vs last block (2026-11-01)', () 
 
   test('a failed block read still says it could not load', async ({ page }) => {
     await drawBare(page, null, [])
-    await expect(page.locator('#pbk-host')).toContainText("Couldn't load your training plans")
+    await expect(page.locator('#pbk-host')).toContainText("Couldn't load your plans")
   })
 
   test('an account with no sessions says so, rather than an empty table', async ({ page }) => {

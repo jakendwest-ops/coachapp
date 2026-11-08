@@ -63,15 +63,53 @@ text; `mobile-check` and `feature-audit`; `multi-agent-review` before push.
   `alter table public.goals add column if not exists linked_exercise_id uuid references public.exercises(id) on delete set null, add column if not exists linked_metric text check (linked_metric in ('bodyweight','e1rm','top_set'));`
 - **2c. "Fill from last time" prototype,** only if Jake asks for it. A private tappable page, no app code.
 
-## Phase 3: tell the story (read-only, no SQL)
+## Phase 3: tell the story
 
-In `js/app-progress.js`: a progress headline, lifts ranked by change, stalled lift markers, Week 1 against the latest week.
-On Today, `js/app-dashboard.js`: after a missed session, offer Do it today or Skip. One history list in place of the two.
+Mostly reads, no SQL unless noted. Answers "is it working?".
 
-## Phase 4: wait for real lifters
+- A progress headline, lifts ranked by change, and stalled lift markers (`js/app-progress.js`).
+- Week 1 against the latest week, per lift.
+- After a missed session, offer Do it today or Skip on Today (`js/app-dashboard.js`).
+- One history list in place of the two; Train's Recent sessions and Performance > Sessions agree.
+- Records worked out from logged sets, so Records and Performance can't show different numbers for one lift.
+- Bodyweight: kg per week and a projected date.
+- One target bodyweight: Goals and the Bodyweight tab stop holding separate targets.
+- Today says when a linked goal's number could not be read.
 
-Editing saved sessions (ownership work), a vocabulary pass, hiding phases, Jake's 4-6 ready-made plans (MVP 5), sign-up and setup (MVP 4),
-reminders, per-muscle volume, warm-up sets, health integrations. Two real lifters for two blocks should rank these (MVP 1).
+## Phase 4: faster building, one language, one look
+
+Each part needs its own file-by-file approval. Interaction counts are from the audit.
+
+**4a. Fewer taps to build and finish**
+- Workout build, about 35 interactions down to about 15: Add exercise opens at 3 sets, one reps box (a range behind a link), expert fields folded away, and "Add another" keeps the sheet open.
+- Plan build, about 18 down to about 10: the first phase is made for you, name and weeks go on one form, and the start date defaults to next Monday.
+- Merge the Finish question and Save into one step with a way back.
+- Reserve the rest timer's space so the set rows don't jump after a tick.
+- Show a workout once in Your workouts, with its plan and own runs counted together.
+
+**4b. One language (Jake chooses the words first)**
+- Proposed: workout (what you build), session (what you did), plan (the weeks), block or phase (one word, not both).
+- Remove "template" from screens: `+ New template`, "Add exercises to build this template" and "Delete template?" are still in `js/app-workouts.js`.
+- For solo, replace "Add to my plan" and "Assign" (`js/app-programs.js:1002`, `:1019`) with "Start this plan".
+- Give the three "Save workout" meanings three different labels.
+
+**4c. One look**
+- One screen-by-screen pass at 390px against the existing patterns, with screenshots.
+- Every form is a bottom sheet; Add phase is still inline.
+- One primary button per screen; Start and Save compete today.
+- A minimum text size, keeping the 11px Progress pills Jake chose on 2026-11-01; 9px and 10px text goes.
+- 44px close buttons and toggles on sheets.
+- Workout names no longer cut off in Your workouts and the calendar.
+- "1 phase" shown once in the plans list (`js/app-programs.js:1154`, `:1158`).
+- The Resume offer appears on Today and Train after a reload.
+- Depends on Jake's open design-system answers (brand typeface, runner density).
+
+## Phase 5: wait for real lifters
+
+Editing saved sessions (ownership work), Jake's 4-6 ready-made plans (MVP 5), sign-up and setup (MVP 4), reminders, muscle groups on new exercises and per-muscle volume,
+warm-up sets, health integrations, and coaching-style advice. Two real lifters for two blocks should rank these (MVP 1).
+
+**Left as accepted:** the 32×32 delete button (Jake, 2026-09-27).
 
 **Not planned:** social feed, leaderboards, marketplace, AI programming. These are competitor features with no user behind them.
 

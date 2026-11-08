@@ -160,7 +160,7 @@ test.describe('Per training plan', () => {
     const r = await page.evaluate(async () => {
       const orig = db.from.bind(db)
       db.from = (tbl) => tbl === 'client_program_blocks'
-        ? { select: () => ({ eq: async () => ({ data: null, error: { message: 'boom' } }) }) }
+        ? { select: () => ({ eq: () => ({ order: () => ({ order: () => ({ range: async () => ({ data: null, error: { message: 'boom' } }) }) }) }) }) }
         : orig(tbl)
       const el = document.createElement('div')
       try { await renderProgressPerProgram(await _getCurrentClientId(), el) } finally { db.from = orig }
@@ -169,7 +169,7 @@ test.describe('Per training plan', () => {
     // A null return must not be mistaken for an empty list — that would tell Jake he has no
     // programmes when in fact the read failed.
     expect(r).toContain("Couldn't load")
-    expect(r).not.toContain('No training plan with a start date')
+    expect(r).not.toContain('No plan with a start date')
   })
 
   test('kg and lb both render the tab without throwing', async ({ page }) => {

@@ -52,7 +52,7 @@ test.describe('current plan by date, and "Assign next block"', () => {
     try {
       // ── the client's Training plans tab: A is Current, and offers "Assign next block" for the Monday after it ends ──
       await page.evaluate((cid) => openClient(cid), fx.clientId)
-      await page.locator('.tab-btn', { hasText: 'Training plans' }).click()
+      await page.locator('.tab-btn', { hasText: 'Plans' }).click()
       const cardA = page.locator('.card', { hasText: fx.A.name })
       await expect(cardA.locator('[data-plan-chip="current"]')).toBeVisible()
       const nextBtn = cardA.locator('[data-assign-next-block]')

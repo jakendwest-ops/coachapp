@@ -62,7 +62,7 @@ test.describe('PT Workouts page', () => {
       return (
         document.querySelectorAll('.list-row').length > 0 ||
         body.includes('No templates yet') ||
-        body.includes('No standalone templates')
+        body.includes('No saved workouts')
       )
     }, { timeout: 55000 })
     // If we get here without throwing, the page rendered something meaningful
@@ -141,7 +141,7 @@ test.describe('PT Workouts page', () => {
     expect(leakedCount).toBe(0)
   })
 
-  test('startWorkoutRunner\'s freeform "Load from template" list excludes client clones, phase-slot templates, and week clones (2026-07-10)', async ({ page }) => {
+  test('startWorkoutRunner\'s freeform "Load from a workout" list excludes client clones, phase-slot templates, and week clones (2026-07-10)', async ({ page }) => {
     // Regression: startWorkoutRunner's freeform-picker query (shown when no specific templateId
     // is passed) had no client_id/program_id/generated_from_phase_id filtering at all -- same
     // leak class already fixed on the flat Templates list and the client Workouts-page fallback.
