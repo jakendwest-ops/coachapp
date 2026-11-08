@@ -1300,6 +1300,11 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .sv-switch { display: flex; gap: 4px; flex-shrink: 0; }
 .sv-pill { min-width: 44px; min-height: 44px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius); background: transparent; color: var(--text-muted); font: inherit; font-size: var(--text-md); font-weight: 700; cursor: pointer; }
 .sv-pill[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-light); color: var(--text); }
+/* Previous / Next week under the bars (2026-11-08). */
+.sv-nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.sv-step { min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius); background: transparent; color: var(--text); font: inherit; font-size: var(--text-md); font-weight: 700; cursor: pointer; }
+.sv-step:disabled { opacity: .35; cursor: default; }
+.sv-home { display: block; margin: 4px auto 0; min-height: 44px; padding: 0 12px; border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--text-md); font-weight: 700; cursor: pointer; }
 .sv-bars { display: flex; gap: 4px; margin: 8px 0; }
 .sv-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .sv-track { display: flex; align-items: flex-end; width: 100%; height: 88px; }
@@ -1525,6 +1530,15 @@ a.cockpit-btn { padding: 0 14px; border: 1px solid var(--border); border-radius:
 .dash-day-today .dash-dc { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .dash-day-today .dash-dd { color: var(--accent); font-weight: 800; }
 .dash-legend { font-size: var(--text-sm); color: var(--text-muted); margin-top: 10px; }
+/* The week strip's ‹ title › and "Back to this week" (2026-11-08). Not .dash-link: the "View as" page hides those, and the owner may step through weeks there too. */
+#dash-week .dash-card-head:has(.dash-wk-title) { flex-wrap: wrap; align-items: center; row-gap: 2px; }
+#dash-week .dash-card-head:has(.dash-wk-title) .dash-link { padding-top: 0; min-height: 44px; }
+/* The arrows and title take the first line beside Calendar; the session count goes under them, so nothing wraps on its own at 390 px. */
+#dash-week .dash-wk-title + .dash-card-sub { order: 3; flex-basis: 100%; }
+.dash-wk-title { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.dash-wk-arrow { min-width: 44px; min-height: 44px; border-radius: var(--radius-sm, 8px); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 18px; font-weight: 700; line-height: 1; cursor: pointer; }
+.dash-wk-arrow:disabled { opacity: .35; cursor: default; }
+.dash-wk-home { display: block; margin: 8px auto 0; min-height: 44px; padding: 0 12px; border: 0; background: none; color: var(--accent); font-family: inherit; font-size: var(--text-md); font-weight: 700; cursor: pointer; }
 .dash-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; align-items: end; }
 .dash-bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; border: 0; background: none; padding: 4px 0; border-radius: var(--radius); cursor: pointer; color: inherit; font-family: inherit; }
 .dash-bar-col[aria-pressed="true"] { background: var(--accent-light); }

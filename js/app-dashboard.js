@@ -282,14 +282,15 @@ function _dashStreakModel(progByDate, logDates, todayStr, { planStart = null, to
 
 const _DASH_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-// The seven days of the week containing todayStr, Monday first. `logs` are logged sessions ({ date, ... }); progByDate as above.
+// The seven days of a week, Monday first: the week containing todayStr, or the one starting `weekStart` (a Monday; the strip's ‹ › arrows, 2026-11-08). `logs` are
+// logged sessions ({ date, ... }); progByDate as above. Every kind is judged against today, whichever week is shown.
 //   kind  done   something was logged that day
 //         plan   today, a session is planned and nothing is logged yet
 //         later  a planned session still to come
 //         miss   a planned session on a day that has gone, with nothing logged
 //         rest   nothing planned, nothing logged
-function _dashWeekDays(todayStr, progByDate, logs) {
-  const monday = _dashMonday(todayStr)
+function _dashWeekDays(todayStr, progByDate, logs, weekStart = null) {
+  const monday = weekStart || _dashMonday(todayStr)
   const byDate = {}
   for (const l of logs || []) (byDate[l.date] ||= []).push(l)
   return _DASH_DAY_LABELS.map((label, i) => {
@@ -299,6 +300,23 @@ function _dashWeekDays(todayStr, progByDate, logs) {
     const kind = done.length ? 'done' : planned.length ? (today ? 'plan' : ds < todayStr ? 'miss' : 'later') : 'rest'
     return { ds, label, num: +ds.slice(8), today, kind, planned, done }
   })
+}
+
+// How far the week strip's arrows go, in weeks from this one (Jake, 2026-11-08, from a mock-up): back as far as the page reads sessions (_DASH_STREAK_WEEKS), forward to
+// the week of the last planned session of the plans it draws (the current one and any booked after it). With nothing planned ahead, forward stops at this week.
+function _dashWeekRange(todayStr, progByDate) {
+  const thisWeek = _dashMonday(todayStr)
+  const last = Object.keys(progByDate || {}).filter(ds => (progByDate[ds] || []).length).sort().pop()
+  return { min: -_DASH_STREAK_WEEKS, max: last && last > todayStr ? Math.max(0, _dashWeeksBetween(thisWeek, _dashMonday(last))) : 0 }
+}
+
+// The strip's title for the week `off` weeks from this one: "This week", "Last week", "Next week", or its dates ("16 Nov – 22 Nov").
+function _dashWeekTitle(off, days) {
+  if (off === 0) return 'This week'
+  if (off === -1) return 'Last week'
+  if (off === 1) return 'Next week'
+  const short = ds => _xsDate(ds)
+  return `${short(days[0].ds)} – ${short(days[6].ds)}`
 }
 
 // "2 of 3 sessions done". planned never reads lower than done: "4 of 3" would look like a mistake, and extra sessions are fine.
@@ -550,8 +568,10 @@ function _dashHeroHtml(day, ctx) {
       meta = ctx.next ? `Next up: ${escapeHtml(ctx.next.title)}, ${_dashFormatDate(ctx.next.date)}` : 'Start a freeform session whenever you like.'
       actions = _dashLogWorkout(cid, ctx.role === 'client' ? 'Log a workout' : 'Train anyway') + (ctx.next ? _dashToProgram('dash-btn-ghost', 'View training plan') : '')
     } else if (day.ds < ctx.todayStr) {
-      title = ctx.hasProgram ? 'Rest day' : 'No session'
-      meta = ctx.hasProgram ? 'Nothing was planned.' : 'Nothing logged.'
+      // A day before the current plan began: the page does not read earlier plans, so it cannot say nothing was planned (review, 2026-11-08, once ‹ reached back a year).
+      const planned = ctx.hasProgram && !(ctx.planStart && day.ds < String(ctx.planStart).slice(0, 10))
+      title = planned ? 'Rest day' : 'No session'
+      meta = planned ? 'Nothing was planned.' : 'Nothing logged.'
       actions = back
     } else {
       title = ctx.hasProgram ? 'Rest day' : 'Nothing planned'
@@ -567,17 +587,29 @@ function _dashHeroHtml(day, ctx) {
 // The week as seven tappable days. `sel` is the date the person tapped (null = today); the pressed day is the one the Today card is
 // showing, so the strip and the card never disagree.
 // `calendar` true (Personal view, 2026-10-31): the card carries the Calendar button, the calendar's way in now that it is not a destination.
-function _dashWeekHtml(days, counts, sel, calendar = false) {
+// `nav` { off, min, max } (2026-11-08): ‹ › either side of the title step a week at a time between min and max weeks from this one, and "Back to this week" returns.
+// Without it the card is this week alone, as before.
+function _dashWeekHtml(days, counts, sel, calendar = false, nav = null) {
   const words = { done: 'done', plan: 'planned for today', later: 'planned', miss: 'missed', rest: 'rest day' }
   const glyph = { done: _DASH_ICONS.check, plan: '▶', later: '', miss: '×', rest: '–' }
+  const off = nav ? nav.off : 0
   const shown = sel || days.find(d => d.today)?.ds
-  const sub = counts.planned ? `<b>${counts.done} of ${counts.planned}</b> ${counts.planned === 1 ? 'session' : 'sessions'} done` : 'Nothing planned this week'
+  const plural = n => (n === 1 ? 'session' : 'sessions')
+  // A week still to come has nothing done yet, so it says what is planned rather than "0 of 5 done".
+  const sub = !counts.planned ? (off === 0 ? 'Nothing planned this week' : 'Nothing planned')
+    : off > 0 ? `<b>${counts.planned}</b> ${plural(counts.planned)} planned` : `<b>${counts.done} of ${counts.planned}</b> ${plural(counts.planned)} done`
   const calBtn = calendar ? '<button type="button" class="dash-link tap-link" data-open-calendar onclick="navigate(\'calendar\')">Calendar</button>' : ''
-  return `<section class="dash-card" id="dash-week"><div class="dash-card-head"><h2 class="dash-card-title">This week</h2><span class="dash-card-sub">${sub}</span>${calBtn}</div>` +
-    `<div class="dash-days" role="group" aria-label="This week">${days.map(d =>
+  const title = _dashWeekTitle(off, days)
+  const arrow = (step, label, glyphText, edge) => `<button type="button" class="dash-wk-arrow" data-week-step="${step}" aria-label="${label}"${edge ? ' disabled' : ''} onclick="_dashStepWeek(${step})">${glyphText}</button>`
+  const head = nav
+    ? `<div class="dash-wk-title">${arrow(-1, 'Previous week', '‹', off <= nav.min)}<h2 class="dash-card-title" data-week-title>${title}</h2>${arrow(1, 'Next week', '›', off >= nav.max)}</div>`
+    : `<h2 class="dash-card-title">${title}</h2>`
+  const home = nav && off !== 0 ? '<button type="button" class="dash-wk-home" data-week-home onclick="_dashStepWeek(0)">Back to this week</button>' : ''
+  return `<section class="dash-card" id="dash-week"><div class="dash-card-head">${head}<span class="dash-card-sub">${sub}</span>${calBtn}</div>` +
+    `<div class="dash-days" role="group" aria-label="${title}">${days.map(d =>
       `<button type="button" class="dash-day${d.today ? ' dash-day-today' : ''}" data-day="${d.ds}" aria-pressed="${d.ds === shown}" aria-label="${d.label} ${d.num}: ${words[d.kind]}" onclick="_dashPickDay('${d.ds}')">` +
       `<span class="dash-dn">${d.label}</span><span class="dash-dc dash-dc-${d.kind}">${glyph[d.kind]}</span><span class="dash-dd">${d.num}</span></button>`).join('')}</div>` +
-    '<div class="dash-legend">Green done · purple planned · red missed · grey rest. Tap a day to see it.</div></section>'
+    `<div class="dash-legend">Green done · purple planned · red missed · grey rest. Tap a day to see it.</div>${home}</section>`
 }
 
 // The streak tile (reworked 2026-10-13; the model is _dashStreakModel). While a plan governs this week it reads as plan adherence - "9 of 10 planned so far", a bar,
@@ -687,11 +719,30 @@ function _dashPickDay(ds) {
   const root = document.getElementById('dash-root'), st = root && root._dash
   if (!st) return
   st.sel = !ds || ds === st.todayStr || ds === st.sel ? null : ds
+  // "Back to today" (no date) brings the strip home too: today is in this week.
+  if (!ds && st.view) st.view.off = 0
   const swap = (id, html) => { const el = document.getElementById(id); if (el) el.outerHTML = html }
   swap('dash-hero', st.hero(st.sel))
   swap('dash-week', st.week(st.sel))
   // The strip was rebuilt, so put the keyboard focus back on the day the card is now showing.
-  document.querySelector(`#dash-week [data-day="${st.sel || st.todayStr}"]`)?.focus()   // a day button (own pages) or a bar (coach)
+  // A day un-picked in another week keeps the focus on itself: today is not in that strip (review, 2026-11-08).
+  document.querySelector(`#dash-week [data-day="${st.sel || ds || st.todayStr}"]`)?.focus()   // a day button (own pages) or a bar (coach)
+}
+
+// The strip's ‹ › and "Back to this week": step `step` weeks (0 = back to this week), within the page's range. The Today card goes back to today, as a new week has
+// no day picked. Focus stays on the arrow pressed, or on the title once at an end or back home, so a keyboard user is never dropped to the top of the page.
+function _dashStepWeek(step) {
+  const root = /** @type {any} */ (document.getElementById('dash-root')), st = root && root._dash
+  if (!st || !st.view) return
+  st.view.off = step === 0 ? 0 : Math.max(st.range.min, Math.min(st.range.max, st.view.off + step))
+  st.sel = null
+  const swap = (id, html) => { const el = document.getElementById(id); if (el) el.outerHTML = html }
+  swap('dash-hero', st.hero(null))
+  swap('dash-week', st.week(null))
+  const again = /** @type {HTMLElement|null} */ (step ? document.querySelector(`#dash-week [data-week-step="${step}"]:not([disabled])`) : null)
+  if (again) { again.focus(); return }
+  const title = /** @type {HTMLElement|null} */ (document.querySelector('#dash-week [data-week-title]'))
+  if (title) { title.setAttribute('tabindex', '-1'); title.focus() }
 }
 
 // ─── COACH DASHBOARD ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1200,12 +1251,18 @@ async function _dashRenderOwn(el, role) {
   // The sudo view (an owner looking at a client's page) has no way to read that client's own weekly target, so it shows the default rather than the owner's.
   const streak = _dashStreakModel(d.currentByDate, d.logs.map(l => l.date), todayStr, { planStart: d.cp0?.start_date || null, totalWeeks: program?.totalWeeks || 0, target: isSudo ? null : window._weeklyTarget })
   const next = d.upcoming.find(u => u.kind === 'session' && u.date > todayStr) || null
-  const ctx = { role, clientId, todayStr, days, hasProgram: !!d.cp0, program, next }
+  const ctx = { role, clientId, todayStr, days, hasProgram: !!d.cp0, program, next, planStart: d.cp0?.start_date || null }
   // The end of a block (Personal view only; docs/superpowers/specs/2026-11-07-end-of-block-review-design.md): a hint in the last week, a card once it has ended.
   const block = isClient ? null : _dashBlockSetup(d, program, clientId, todayStr)
   const byDs = Object.fromEntries(days.map(x => [x.ds, x]))
-  const heroFor = sel => _dashHeroHtml(byDs[sel || todayStr], ctx)
-  const weekFor = sel => _dashWeekHtml(days, counts, sel, !isClient)
+  // The strip can show any week in range (‹ ›, 2026-11-08); `view.off` is weeks from this one. Everything is read from what this page already loaded.
+  const range = _dashWeekRange(todayStr, d.progByDate), view = { off: 0 }
+  const weekAt = off => (off ? _dashWeekDays(todayStr, d.progByDate, d.logs, _dashAddDays(_dashMonday(todayStr), 7 * off)) : days)
+  const heroFor = sel => {
+    const ds = sel || todayStr
+    return _dashHeroHtml(byDs[ds] || weekAt(_dashWeeksBetween(_dashMonday(todayStr), _dashMonday(ds))).find(x => x.ds === ds), ctx)
+  }
+  const weekFor = sel => { const wd = weekAt(view.off); return _dashWeekHtml(wd, view.off ? _dashWeekCounts(wd) : counts, sel, !isClient, { off: view.off, ...range }) }
 
   const biz = window._branding?.businessName
   const eyebrow = isClient ? (biz ? 'Coached by ' + escapeHtml(biz) : 'Coached by your PT') : 'My training'
@@ -1242,7 +1299,7 @@ async function _dashRenderOwn(el, role) {
       ${isClient ? _dashCheckInHtml(lastCheckIn, clientId, d.prevCheckIn, { readFailed: !!d.failed['check-ins'], sudo: isSudo }) : ''}
     </div>`
   const root = el.querySelector('#dash-root')
-  if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor, block }
+  if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor, block, view, range }
   if (root && block && block.state === 'ended') _dashFillBlockCard(root, block)
 
   // After innerHTML, so the canvas exists. Oldest-first for a left-to-right time axis, and the 7-day rolling average via the

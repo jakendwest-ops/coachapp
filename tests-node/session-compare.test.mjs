@@ -206,6 +206,28 @@ describe('_sessionVsLine: the line on the card', () => {
   })
 })
 
+describe('the bars a week at a time (Jake, 2026-11-08)', () => {
+  test('stepped back, the eight weeks end that many weeks before this one', () => {
+    const w = json(get('_weeklyVolume')([sess('a', '2026-09-07', 'Upper', 'F', [bench()])], '2026-11-05', 8, 3))
+    assert.equal(w[7].monday, '2026-10-12')
+    assert.equal(w[0].monday, '2026-08-24')
+    assert.equal(w.find(x => x.monday === '2026-09-07').sets, 1)
+    assert.equal(w.some(x => x.current), false, 'this week is not among them')
+  })
+  test('how far back: until the oldest logged week is the first bar; 0 when it all fits', () => {
+    const back = (dates) => get('_weeklyVolumeMaxBack')(dates.map((d, n) => sess('s' + n, d, 'x', null, [bench()])), '2026-11-05')
+    assert.equal(back(['2026-11-03', '2026-09-14']), 0, 'eight weeks from 14 Sep reach this week')
+    assert.equal(back(['2026-11-03', '2026-09-07']), 1)
+    assert.equal(back(['2026-06-01']), 15)
+    assert.equal(back([]), 0)
+  })
+  test('a cardio-only or abandoned session is not a week to step back to: the bars leave it out', () => {
+    const run = ex('Run', [set(1, null, null, { distance_m: 5000, duration_seconds: 1500 })], { exercise_type: 'cardio', metric_type: 'cardio' })
+    const list = [sess('a', '2026-11-03', 'x', null, [bench()]), sess('b', '2026-06-01', 'Run', null, [run]), sess('c', '2026-05-04', 'x', null, [ex('Bench', [])])]
+    assert.equal(get('_weeklyVolumeMaxBack')(list, '2026-11-05'), 0)
+  })
+})
+
 describe('_weeklyVolume: the bars', () => {
   const weeks = (list, today = '2026-11-05') => json(get('_weeklyVolume')(list, today))
   test('eight weeks, oldest first, ending with this week, empty weeks included', () => {

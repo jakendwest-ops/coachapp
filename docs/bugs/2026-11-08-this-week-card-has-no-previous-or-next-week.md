@@ -1,9 +1,9 @@
 ---
 id: 2026-11-08-this-week-card-has-no-previous-or-next-week
-status: open
+status: fixed-awaiting-jake
 priority: medium
 reported: 2026-11-08
-status_detail: "open - REPORTED by Jake 2026-11-08 on the live v2026.11.2, with a screenshot of Today's 'This week' card (Mon 2 - Sun 8, '2 of 2 sessions done'): 'there should be a Next week > button and a Previous week < button'. He confirmed the same day that both this card and Progress > Sessions' 'Sets per week' bars should get them (sibling row 2026-11-08-sets-per-week-chart-has-no-previous-or-next-week). Open question for the scope: what the Today card above the strip shows when a day in another week is tapped, and whether '2 of 2 sessions done' and the streak follow the shown week."
+status_detail: "BUILT 2026-11-08 (Jake chose from a tappable mock-up: arrows either side of the title, back a year and forward to the end of the booked plans), on master, not yet released: ‹ › step the strip a week at a time with no new read, titled This/Last/Next week or the dates, 'Back to this week'; a day in any week opens in the Today card; a week to come says 'N sessions planned'; days before the current plan began say 'No session' (the page does not read older plans). tests/dashboard-rework-2026-10-03.spec.js and tests-node/dashboard-model.test.mjs, each safeguard red when broken. Waiting for Jake on his phone after the next release. EARLIER: REPORTED by Jake 2026-11-08 on the live v2026.11.2, with a screenshot of Today's 'This week' card (Mon 2 - Sun 8, '2 of 2 sessions done'): 'there should be a Next week > button and a Previous week < button'. He confirmed the same day that both this card and Progress > Sessions' 'Sets per week' bars should get them (sibling row 2026-11-08-sets-per-week-chart-has-no-previous-or-next-week). Open question for the scope: what the Today card above the strip shows when a day in another week is tapped, and whether '2 of 2 sessions done' and the streak follow the shown week."
 closing_conditions: "The This week card steps back and forward a week at a time, and Jake confirms it on his phone."
 ---
 

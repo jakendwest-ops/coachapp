@@ -181,6 +181,32 @@ test.describe('Sessions: weekly volume', () => {
     await expect(exRow(page, 'Bench').locator('[data-sc-total]')).toContainText('lb')
   })
 
+  test('Previous / Next week step the bars a week at a time, back to the oldest logged week (Jake, 2026-11-08)', async ({ page }) => {
+    const old = log('l0', '2026-08-31', 'Upper wk1', 'F', [ex('Bench', [set(1, 90, 5), set(2, 90, 5)])])
+    await show(page, [THIS_TIME, OTHER, LAST_TIME, old])
+    const weeks = page.locator('[data-sv-week]')
+    await expect(weeks.last()).toHaveAttribute('data-sv-week', '2026-11-02')
+    await expect(page.locator('[data-sv-step="-1"]'), 'already at the latest').toBeDisabled()
+    await page.locator('[data-sv-step="1"]').click()
+    await expect(weeks.last()).toHaveAttribute('data-sv-week', '2026-10-26')
+    await expect(page.locator('.sv-now'), 'this week is no longer among the bars').toHaveCount(0)
+    await expect(page.locator('[data-sv-step="1"]')).toBeFocused()
+    await page.locator('[data-sv-step="1"]').click()
+    await expect(weeks.first()).toHaveAttribute('data-sv-week', '2026-08-31')
+    await expect(weeks.first().locator('.sv-val')).toHaveText('2')
+    await expect(page.locator('[data-sv-step="1"]'), 'the oldest week is the first bar: no further back').toBeDisabled()
+    await page.locator('[data-sv-mode="kg"]').click()
+    await expect(weeks.first(), 'switching to kg keeps the weeks shown').toHaveAttribute('data-sv-week', '2026-08-31')
+    await page.locator('[data-sv-home]').click()
+    await expect(weeks.last()).toHaveAttribute('data-sv-week', '2026-11-02')
+    await expect(page.locator('[data-sv-home]')).toHaveCount(0)
+  })
+
+  test('everything inside eight weeks: no week buttons at all', async ({ page }) => {
+    await show(page, [THIS_TIME, OTHER, LAST_TIME])
+    await expect(page.locator('[data-sv-step]')).toHaveCount(0)
+  })
+
   test('no training in eight weeks: empty bars and no division by zero', async ({ page }) => {
     await show(page, [log('old', '2026-01-05', 'Upper', 'F', [ex('Bench', [set(1, 100, 5)])])])
     await expect(page.locator('[data-sv-week]')).toHaveCount(8)

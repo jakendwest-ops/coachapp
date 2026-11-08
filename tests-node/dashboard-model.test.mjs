@@ -398,6 +398,41 @@ describe('_dashWeekDays — the week strip', () => {
   })
 })
 
+describe('the week strip on another week (‹ ›, Jake 2026-11-08)', () => {
+  const prog = program('2026-09-28', '2026-10-12')           // three weeks of Mon/Wed/Fri
+  const logs = [{ id: 'l1', name: 'Upper', date: '2026-09-21', workout_log_exercises: [{ id: 'e' }] }]
+  test('any week by its Monday, each day still judged against today', () => {
+    const next = get('_dashWeekDays')('2026-10-03', prog, logs, '2026-10-05')
+    assert.equal(next[0].ds, '2026-10-05')
+    assert.deepEqual(Array.from(next, d => d.kind), ['later', 'rest', 'later', 'rest', 'later', 'rest', 'rest'])
+    assert.equal(next.some(d => d.today), false, 'today is not in next week')
+    const last = get('_dashWeekDays')('2026-10-03', prog, logs, '2026-09-21')
+    assert.equal(last[0].kind, 'done', 'a past week shows what was logged')
+  })
+  test('the range: a year back, forward to the week of the last planned session; nothing ahead stops at this week', () => {
+    const r = get('_dashWeekRange')('2026-10-03', prog)
+    assert.deepEqual({ ...r }, { min: -52, max: 2 }, 'the last planned session is Fri 16 Oct, two weeks on')
+    assert.deepEqual({ ...get('_dashWeekRange')('2026-10-03', {}) }, { min: -52, max: 0 })
+    assert.equal(get('_dashWeekRange')('2026-10-17', prog).max, 0, 'a plan already over plans nothing ahead')
+  })
+  test('the title: this, last and next week by name, any other by its dates', () => {
+    const title = (off, monday) => get('_dashWeekTitle')(off, get('_dashWeekDays')('2026-10-03', prog, logs, monday))
+    assert.equal(title(0, '2026-09-28'), 'This week')
+    assert.equal(title(-1, '2026-09-21'), 'Last week')
+    assert.equal(title(1, '2026-10-05'), 'Next week')
+    assert.equal(title(2, '2026-10-12'), '12 Oct – 18 Oct')
+  })
+  test('a week to come says what is planned, never "0 of 3 done"; this week keeps "x of y done"', () => {
+    const html = (off, monday) => { const d = get('_dashWeekDays')('2026-10-03', prog, logs, monday); return get('_dashWeekHtml')(d, get('_dashWeekCounts')(d), null, false, { off, min: -52, max: 2 }) }
+    assert.match(html(1, '2026-10-05'), /<b>3<\/b> sessions planned/)
+    assert.match(html(0, '2026-09-28'), /<b>0 of 3<\/b> sessions done/)
+    assert.match(html(2, '2026-10-12'), /data-week-step="1" aria-label="Next week" disabled/, 'the last week of the plan: › stops')
+    assert.match(html(-52, '2025-09-29'), /data-week-step="-1" aria-label="Previous week" disabled/, 'a year back: ‹ stops')
+    assert.doesNotMatch(html(0, '2026-09-28'), /data-week-home/, 'no "Back to this week" on this week')
+    assert.match(html(1, '2026-10-05'), /data-week-home/)
+  })
+})
+
 describe('_dashProgramInfo — the program tile', () => {
   const phases = [
     { id: 'p1', name: 'Accumulation 1', duration_weeks: 4, order_index: 1 },

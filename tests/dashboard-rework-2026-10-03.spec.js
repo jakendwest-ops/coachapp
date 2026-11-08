@@ -260,6 +260,60 @@ test.describe('the client and solo dashboard', () => {
     expect((await cappedApiCalls(page)).length, 'swapping the card never reads anything').toBe(readsBefore)
   })
 
+  test('‹ › step the strip a week at a time, without a new read, to the end of the plan; a day in another week opens in the Today card (Jake, 2026-11-08)', async ({ page }) => {
+    await withData(page)
+    const readsBefore = (await cappedApiCalls(page)).length
+    const title = page.locator('#dash-week [data-week-title]')
+    await expect(title).toHaveText('This week')
+    await page.locator('#dash-week [data-week-step="1"]').click()
+    await expect(title).toHaveText('Next week')
+    let r = await read(page)
+    expect(r.days.map(d => d.num)).toEqual(['5', '6', '7', '8', '9', '10', '11'])
+    expect(kinds(r)).toEqual(['later', 'rest', 'later', 'rest', 'later', 'later', 'rest'])
+    expect(r.weekSub, 'a week to come says what is planned').toBe('4 sessions planned')
+    expect(r.hero.kind, 'the Today card goes back to today').toBe('plan')
+    await expect(page.locator('#dash-week [data-week-step="1"]'), 'phase 1 is the last with sessions in it: › stops at its last week').toBeDisabled()
+
+    await page.locator('#dash-week .dash-day[data-day="2026-10-07"]').click()
+    r = await read(page)
+    expect(r.hero).toMatchObject({ kind: 'later', title: 'Deadlift + Threshold' })
+    await expect(title, 'tapping a day keeps the week').toHaveText('Next week')
+
+    await page.locator('#dash-week [data-week-step="-1"]').click()
+    await page.locator('#dash-week [data-week-step="-1"]').click()
+    await expect(title).toHaveText('Last week')
+    r = await read(page)
+    expect(r.weekSub).toBe('4 of 4 sessions done')
+    expect(kinds(r)).toEqual(['done', 'rest', 'done', 'rest', 'done', 'done', 'rest'])
+    await page.locator('#dash-week [data-week-step="-1"]').click()
+    await expect(title).toHaveText('14 Sept – 20 Sept')
+    await expect(page.locator('#dash-week [data-week-step="-1"]'), 'focus stays on the arrow, for the next tap').toBeFocused()
+
+    await page.locator('#dash-week .dash-day[data-day="2026-09-16"]').click()
+    await page.locator('#dash-week .dash-day[data-day="2026-09-16"]').click()
+    await expect(page.locator('#dash-week .dash-day[data-day="2026-09-16"]'), 'un-picking a day in another week keeps the focus on it (review)').toBeFocused()
+    await page.locator('#dash-week [data-week-step="-1"]').click()
+    await page.locator('#dash-week .dash-day[data-day="2026-09-08"]').click()      // Tue 8 Sep: nothing logged, before the plan's 14 Sep start
+    expect((await read(page)).hero, 'before the plan began, the page cannot say nothing was planned (review)').toMatchObject({ title: 'No session', meta: 'Nothing logged.' })
+    await page.locator('#dash-week [data-week-step="1"]').click()
+    await page.locator('#dash-week .dash-day[data-day="2026-09-16"]').click()
+    await page.locator('#dash-hero').getByText('Back to today').click()
+    await expect(title, '"Back to today" brings the strip home too').toHaveText('This week')
+    await page.locator('#dash-week [data-week-step="-1"]').click()
+    await page.locator('#dash-week [data-week-home]').click()
+    await expect(title).toHaveText('This week')
+    await expect(page.locator('#dash-week [data-week-home]')).toHaveCount(0)
+    expect((await cappedApiCalls(page)).length, 'stepping weeks never reads anything').toBe(readsBefore)
+  })
+
+  test('the week arrows are real tap targets and fit at 320 px', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 760 })
+    await withData(page)
+    const sizes = await page.locator('#dash-week .dash-wk-arrow').evaluateAll(els => els.map(e => { const b = e.getBoundingClientRect(); return [Math.round(b.width), Math.round(b.height)] }))
+    expect(sizes.flat().every(n => n >= 44)).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0)
+  })
+
   test('a day that was planned and not logged reads as missed; a later planned day shows when it is', async ({ page }) => {
     // Drop Friday's log: Friday was planned, has gone, and has nothing logged.
     const uid = await page.evaluate(() => currentUser.id)

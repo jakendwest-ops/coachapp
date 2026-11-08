@@ -1847,11 +1847,12 @@ function _sessionVsLine(cmp, prevDate) {
   return `vs ${_dashFormatDate(prevDate)}${parts ? ': ' + parts : ''}`
 }
 
-// The bars: `weeks` calendar weeks, oldest first, ending with this one. Working sets only (_diaryExMetrics, the tiles' own count), and no cardio or interval.
-function _weeklyVolume(sessions, todayStr, weeks = 8) {
-  const thisWeek = _dashMonday(todayStr)
+// The bars: `weeks` calendar weeks, oldest first, ending with this one, or `back` weeks before it (the bars' Previous / Next week, 2026-11-08). Working sets only
+// (_diaryExMetrics, the tiles' own count), and no cardio or interval.
+function _weeklyVolume(sessions, todayStr, weeks = 8, back = 0) {
+  const thisWeek = _dashMonday(todayStr), last = _dashAddDays(thisWeek, -7 * back)
   const out = Array.from({ length: weeks }, (_, n) => {
-    const monday = _dashAddDays(thisWeek, -7 * (weeks - 1 - n))
+    const monday = _dashAddDays(last, -7 * (weeks - 1 - n))
     return { monday, sets: 0, kg: 0, current: monday === thisWeek }
   })
   const byMonday = new Map(out.map(w => [w.monday, w]))
@@ -1866,8 +1867,17 @@ function _weeklyVolume(sessions, todayStr, weeks = 8) {
   return out
 }
 
+// How far back the bars can step: until the oldest week with a bar to draw is the first bar. 0 when everything fits in the eight. A session the bars leave out
+// (cardio or intervals only, an abandoned start) does not count, or the last steps would show nothing but empty bars (review, 2026-11-08).
+function _weeklyVolumeMaxBack(sessions, todayStr, weeks = 8) {
+  const counts = s => (s.workout_log_exercises || []).some(ex => { const m = _diaryExMetrics(ex); return !m.isCardio && m.sets > 0 })
+  const oldest = (sessions || []).filter(counts).reduce((o, s) => { const ds = String(s.date).slice(0, 10); return !o || ds < o ? ds : o }, null)
+  return oldest ? Math.max(0, _dashWeeksBetween(_dashMonday(oldest), _dashMonday(todayStr)) - (weeks - 1)) : 0
+}
+
 let _sessionVolumeMode = 'sets'   // 'sets' or 'kg': which measure the bars show, for this visit
-function _sessionVolumeHtml(weeks, mode) {
+let _sessionVolumeBack = 0        // weeks the bars are stepped back from this one (Jake, 2026-11-08: one week a tap); a new render starts at the latest
+function _sessionVolumeHtml(weeks, mode, back = 0, maxBack = 0) {
   const value = w => (mode === 'kg' ? Math.round(Number(weightToPref(w.kg))) : w.sets)
   const peak = Math.max(...weeks.map(value))
   const label = n => (mode === 'kg' && n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
@@ -1879,12 +1889,29 @@ function _sessionVolumeHtml(weeks, mode) {
       return `<div class="sv-col${w.current ? ' sv-now' : ''}" data-sv-week="${w.monday}"><span class="sv-val">${v ? label(v) : ''}</span><div class="sv-track"><div class="sv-bar" style="height:${peak ? Math.round(v / peak * 100) : 0}%"></div></div><span class="sv-day">${day}/${month}</span></div>`
     }).join('')}</div>
     <div class="xs-sub">Working sets, week starting Monday. Cardio and intervals are left out.</div>
+    ${maxBack ? `<div class="sv-nav"><button type="button" class="sv-step" data-sv-step="1"${back >= maxBack ? ' disabled' : ''} onclick="_stepSessionVolume(1)">‹ Previous week</button><button type="button" class="sv-step" data-sv-step="-1"${back <= 0 ? ' disabled' : ''} onclick="_stepSessionVolume(-1)">Next week ›</button></div>` : ''}
+    ${back ? '<button type="button" class="sv-home" data-sv-home onclick="_stepSessionVolume(0)">Back to the latest</button>' : ''}
   </div>`
+}
+function _drawSessionVolume() {
+  const host = document.getElementById('perf-sess-volume'), data = /** @type {any} */ (window)._perfSessionData
+  if (!host || !data || !data.all) return
+  const today = _ymdLocal(new Date())
+  host.innerHTML = _sessionVolumeHtml(_weeklyVolume(data.all, today, 8, _sessionVolumeBack), _sessionVolumeMode, _sessionVolumeBack, _weeklyVolumeMaxBack(data.all, today))
 }
 function _setSessionVolumeMode(mode) {
   _sessionVolumeMode = mode
-  const host = document.getElementById('perf-sess-volume'), data = /** @type {any} */ (window)._perfSessionData
-  if (host && data) host.innerHTML = _sessionVolumeHtml(data.weeks, mode)
+  _drawSessionVolume()
+}
+// step 1 = a week earlier, -1 = a week later, 0 = back to the latest. Focus stays on the button pressed while it can still be pressed.
+function _stepSessionVolume(step) {
+  const data = /** @type {any} */ (window)._perfSessionData
+  if (!data || !data.all) return
+  const maxBack = _weeklyVolumeMaxBack(data.all, _ymdLocal(new Date()))
+  _sessionVolumeBack = step === 0 ? 0 : Math.max(0, Math.min(maxBack, _sessionVolumeBack + step))
+  _drawSessionVolume()
+  const again = /** @type {HTMLElement|null} */ (step ? document.querySelector(`#perf-sess-volume [data-sv-step="${step}"]:not([disabled])`) : null)
+  ;(again || /** @type {HTMLElement|null} */ (document.querySelector('#perf-sess-volume [data-sv-mode][aria-pressed="true"]')))?.focus()
 }
 
 const _SESSION_VERDICTS = {
@@ -1978,15 +2005,17 @@ async function renderProgressPerSession(clientId, el) {
       ;(history[ex.exercise_name] ||= []).push({ id: s.id, date: s.date, m: _diaryExMetrics(ex) })
     })
   })
+  _sessionVolumeBack = 0
   const weeks = whole ? _weeklyVolume(all, _ymdLocal(new Date())) : null
   const lastTime = sessions.map((s, i) => {
     const prev = whole && _sessionHasSets(s) ? _previousSessionOf(all, i) : null
     return prev ? { prev, cmp: _sessionCompare(s, prev) } : null
   })
-  window._perfSessionData = { sessions, history, weeks, lastTime, whole }
+  // `all` only from the whole history: the bars' steps must never page through a partial one.
+  window._perfSessionData = { sessions, history, weeks, lastTime, whole, all: whole ? all : null }
 
   const top = whole
-    ? `<div id="perf-sess-volume">${_sessionVolumeHtml(weeks, _sessionVolumeMode)}</div>`
+    ? `<div id="perf-sess-volume">${_sessionVolumeHtml(weeks, _sessionVolumeMode, 0, _weeklyVolumeMaxBack(all, _ymdLocal(new Date())))}</div>`
     : '<div class="xs-sub" data-sessions-partial>Showing the latest sessions. Comparisons and weekly totals could not load.</div>'
   el.innerHTML = top + sessions.map((s, i) => {
     const exs = (s.workout_log_exercises || []).filter(e => e.exercise_name)
