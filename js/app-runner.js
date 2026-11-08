@@ -1123,7 +1123,8 @@ function _buildTargetCols(tgt, ex) {
   // _effortRange, not a truthy test: a prescribed 0 (RIR 0, "to failure") is the most meaningful value on that scale.
   const effortTxt = _effortRange(tgt.effortMin, tgt.effortMax)
   if (effortTxt !== null) cols.push({ val: escapeHtml(effortTxt), label: tgt.effortType==='rir'?'RIR':'RPE' })
-  if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: escapeHtml(tgt.restMin+(tgt.restMax&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:'')), label: 'REST' })
+  // _hasTimeTarget for the maximum too: the builder stores an unfilled box as '0:00', which is truthy and read "3:00–0:00" here.
+  if (tgt.restMin && tgt.restMin !== '0:00') cols.push({ val: escapeHtml(tgt.restMin+(_hasTimeTarget(tgt.restMax)&&tgt.restMax!==tgt.restMin?'–'+tgt.restMax:'')), label: 'REST' })
   if (tgt.tempo && takesLoad) cols.push({ val: escapeHtml(tgt.tempo), label: 'TEMPO' })
   return { cols, needsOneRM }
 }
@@ -2987,12 +2988,16 @@ function addExtraCardioSet() {
 // wizard deleted on 2026-08-11; superseded by addTableRow. Found by the weekly full-file review.
 
 // The ONE rule for "this session beat what was lifted before" — the finish screen's header count and its per-exercise
-// chips both call it. baselineKg is the heaviest weight (kg) ever logged for the lift: 0 when there is no history (the
-// first ever log of a lift counts as a PR, as it always has), and null/undefined when it could not be read — which is
-// NEVER a PR. A lookup that has not returned, or failed, must not read as "no history, so everything is a record".
+// chips both call it. baselineKg is the heaviest weight (kg) ever logged for the lift: 0 when there is no history, and
+// null/undefined when it could not be read. Neither is a PR. A first ever log has nothing to beat (Jake, 2026-11-08,
+// answering R4-0 Q4), and a lookup that has not returned, or failed, must not read as "everything is a record".
 function _isWeightPr(bestKg, baselineKg) {
-  return baselineKg != null && bestKg > 0 && bestKg > baselineKg
+  return baselineKg != null && baselineKg > 0 && bestKg > baselineKg
 }
+
+// The heaviest kg logged before this session for each finished lift, from the latest finish screen; saveRunnerSession's 1RM question reads it. Keyed by the
+// exercise object, so an earlier session's map can never match, and kept off _runner because a Map does not survive the JSON draft.
+let _finishPrBaselines = null
 
 // The heaviest set (kg) this client has EVER logged for one lift: 0 when there is none, and it THROWS when it cannot be
 // read. Two bounded reads in parallel — one by the lift's library id, one by its exact name — and the heavier wins:
@@ -3134,6 +3139,9 @@ async function showRunnerFinish() {
             const isCardio = e.type === 'cardio'
             const bestWeight = bestKg(e)
             const isPR = isPr(e, baselines)
+            // One trophy per exercise: the first of the sets with the most reps at the top weight. Marking every set at that weight also crowned a weaker 100 x 4 after a 100 x 5.
+            const topReps = Math.max(0, ...e.loggedSets.filter(s => parseFloat(s.weight) === bestWeight).map(s => parseInt(s.reps, 10) || 0))
+            const prSetIdx = e.loggedSets.findIndex(s => parseFloat(s.weight) === bestWeight && (parseInt(s.reps, 10) || 0) === topReps)
             const exVol = isCardio ? 0 : e.loggedSets.reduce((s,set) => {
               const w = parseFloat(set.weight), r = parseInt(set.reps,10)
               return s + (isNaN(w)||isNaN(r) ? 0 : w*r)
@@ -3160,7 +3168,7 @@ async function showRunnerFinish() {
               </div>
               ${e.loggedSets.map((s,i) => {
                 const w = parseFloat(s.weight), r = parseInt(s.reps,10)
-                const isSetPR = !isCardio && w > 0 && w === bestWeight && isPR
+                const isSetPR = !isCardio && w > 0 && isPR && i === prSetIdx
                 return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);font-size:13px${isSetPR?' background:rgba(245,158,11,.06)':''}">
                   <span style="color:var(--text-muted)">${setLabels[i]}</span>
                   <span style="font-weight:600${isSetPR?';color:#d97706':''}">
@@ -3212,6 +3220,7 @@ async function showRunnerFinish() {
       try { baselines.set(e, await _prBaseline(clientId, { name: e.name, exerciseId: e.exerciseId })) }
       catch (err) { log.warn('showRunnerFinish', 'PR baseline unavailable', { code: err?.code }) }
     }))
+    _finishPrBaselines = baselines
     // Repaint only when it would CHANGE something. The finished screen depends on the baselines only through its PR
     // chips, so with no PR to show it is identical to the one already up — and replacing it would drop the athlete's
     // focus, caret and scroll (and close a phone keyboard) for nothing. And never over a save that is already under way:
@@ -3394,6 +3403,7 @@ async function saveRunnerSession() {
   // The re-sync from the live table happens INSIDE _loggedExercises(), so this and the finish screen
   // read the same values — see the comment there.
   const exercises = _loggedExercises()
+  const prBaselines = _finishPrBaselines
   // Said again at the moment of saving (the finish screen says it too): a ticked set that was emptied is not in this save.
   const leftOut = _droppedTickedCount()
   if (leftOut) showToast(`${leftOut} ticked set${leftOut > 1 ? 's' : ''} left out — reps or weight were blank`, 'warn', 5000)
@@ -3594,6 +3604,13 @@ async function saveRunnerSession() {
       if (!best) return null
       const currentOneRM = ex.oneRM ? parseFloat(ex.oneRM) : 0
       if (best.estimate <= currentOneRM) return null
+      // No saved 1RM to beat: currentOneRM is 0, so every later session of the lift asked again, even one with no record in it. Now it asks on the first log
+      // (the moment a starting 1RM is useful) and after that only on a new heaviest set. A baseline that could not be read keeps the old behaviour and asks.
+      if (!currentOneRM && prBaselines?.has(ex)) {
+        const before = prBaselines.get(ex)
+        const heaviest = Math.max(0, ...ex.loggedSets.map(s => parseFloat(s.weight) || 0))
+        if (before > 0 && heaviest <= before) return null
+      }
       // exerciseId carried, not dropped: _savePostSessionOneRM writes client_1rms, and a row without
       // exercise_id survives only on the name fallback — it breaks the moment the lift is renamed,
       // the precise failure exercise_id exists to prevent. The id is already here; discarding it and
@@ -4356,7 +4373,7 @@ async function openWorkoutLog(logId, clientId) {
   const { data: prevLog } = await db.from('workout_logs')
     .select('id, date, workout_log_exercises(*)')
     .eq('client_id', clientId).eq('name', session.name)
-    .lt('date', session.date).order('date', { ascending: false }).limit(1).single()
+    .lt('date', session.date).order('date', { ascending: false }).limit(1).maybeSingle()   // no earlier session is normal: .single() turned it into a red 406 in the console
   if (prevLog) {
     const prevExIds = (prevLog.workout_log_exercises || []).map(e => e.id)
     const { data: prevSets } = prevExIds.length
@@ -4520,9 +4537,9 @@ async function openWorkoutLog(logId, clientId) {
     </div></div>` : ''}
     <div class="card" style="margin-top:8px">
       <div class="card-body">
-        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Coach notes</div>
+        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">${currentProfile?.role === 'solo' ? 'Notes' : 'Coach notes'}</div>
         ${_isCoachView
-          ? `<textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="Add coaching feedback, cues, or observations…" style="resize:vertical">${escapeHtml(session.notes)}</textarea>
+          ? `<textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="${currentProfile?.role === 'solo' ? 'Anything to remember about this session' : 'Add coaching feedback, cues, or observations…'}" style="resize:vertical">${escapeHtml(session.notes)}</textarea>
              <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:var(--text-base, 13px);padding:7px 16px">Save notes</button>
              <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:var(--text-md, 12px);color:var(--success-fg);font-weight:600">Saved ✓</span>`
           : session.notes

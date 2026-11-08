@@ -83,6 +83,8 @@ async function renderCalendar(el) {
 
   const isClient = currentProfile?.role === 'client' || currentProfile?.role === 'solo'
   let events, clientMap = {}, programWorkoutsByDate = {}
+  // Own calendar only. logsByDate stays null when the sessions could not be read, and then no day is marked: "missed" must never be claimed without the data.
+  let logsByDate = null, plannedFromStart = {}
 
   if (isClient) {
     // Step 1: get clients.id — solo uses personal record, coached client uses coached record
@@ -91,7 +93,7 @@ async function renderCalendar(el) {
     const clientsId = resolvedId
 
     // Step 2: events + client_programs in parallel (client_programs uses clients.id not auth uid)
-    const [evRes, cpRes] = await Promise.all([
+    const [evRes, cpRes, logRes] = await Promise.all([
       // Filtered to THIS client record, as the own-dashboard's events read is. It leaned on RLS alone until 2026-10-18, and for a master account in solo view
       // RLS also returns its coaching clients' events ("coach access"), so the Personal calendar showed them. Every events insert from a client or solo login sets
       // client_id (saveClientEvent), so their own events all stay; a master account's client-less events made in coach view are coach-calendar events and no longer
@@ -102,9 +104,18 @@ async function renderCalendar(el) {
       clientsId
         // Every assignment, not the newest: the current plan is picked by date and the block booked after it is drawn too (2026-10-29).
         ? db.from('client_programs').select('id, start_date, created_at, programs(program_phases(duration_weeks, order_index, program_phase_workouts(id, day_of_week, session_order, week_number, workout_templates(id, name, workout_template_exercises(exercise_name, exercise_type, metric_type, order_index, sets_json)))))').eq('client_id', clientsId).order('created_at', { ascending: false })
-        : Promise.resolve({ data: [] })
+        : Promise.resolve({ data: [] }),
+      // One month of the person's own sessions. The embed is there to drop abandoned starts, as Recent sessions does.
+      clientsId
+        ? db.from('workout_logs').select('date, workout_log_exercises(id)').eq('client_id', clientsId).gte('date', from).lte('date', to).order('date').limit(200)
+        : Promise.resolve({ data: [], error: null })
     ])
     events = evRes.data
+    if (logRes.error) log.error('renderCalendar', 'sessions read failed', logRes.error)
+    else {
+      logsByDate = {}
+      ;(logRes.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0).forEach(l => { (logsByDate[l.date] ||= []).push(l) })
+    }
 
     // Step 3: client_program_workouts scoped to the current plan and the one booked after it
     const _cpwMap = {}
@@ -132,6 +143,7 @@ async function renderCalendar(el) {
     if (drawn.some(cp => cp.start_date && _mondayOfWeek(cp.start_date))) {
       Object.assign(programWorkoutsByDate, _programWorkoutsByDateAll(drawn, _cpwMap))
       window._calProgramWorkouts = programWorkoutsByDate
+      plannedFromStart = _programWorkoutsByDateAll(drawn, _cpwMap, { fromStart: true })   // the dashboard's rule: days before a plan started are not missed
     }
   } else {
     const [evRes, clRes] = await Promise.all([
@@ -188,6 +200,8 @@ async function renderCalendar(el) {
             const dayWorkouts = programWorkoutsByDate[dateStr] || []
             const isToday = dateStr === todayStr
             const hasWorkouts = dayWorkouts.length > 0
+            const kind = logsByDate ? _dashDayKind(dateStr, todayStr, plannedFromStart[dateStr] || [], logsByDate[dateStr] || []) : 'rest'
+            const mark = kind === 'done' ? { glyph: '✓', word: 'Done', colour: 'var(--success-fg)' } : kind === 'miss' ? { glyph: '×', word: 'Missed', colour: 'var(--danger-text)' } : null
             return `
               <div onclick="showDayEvents('${dateStr}')" style="
                 padding:4px;border-radius:8px;cursor:pointer;min-height:52px;min-width:0;overflow:hidden;
@@ -196,8 +210,8 @@ async function renderCalendar(el) {
                 transition:background 0.15s
               " onmouseover="this.style.background='${isToday ? 'var(--accent)' : 'var(--surface-2)'}'"
                  onmouseout="this.style.background='${isToday ? 'var(--accent)' : hasWorkouts ? 'var(--surface-2)' : 'transparent'}'">
-                <div style="font-size:11px;font-weight:${isToday?'700':'500'};color:${isToday?'var(--on-accent)':'var(--text)'}">
-                  ${d}
+                <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:${isToday?'700':'500'};color:${isToday?'var(--on-accent)':'var(--text)'}">
+                  <span>${d}</span>${mark ? `<span data-cal-status="${kind}" role="img" aria-label="${mark.word}" title="${mark.word}" style="font-weight:800;color:${isToday ? 'var(--on-accent)' : mark.colour}">${mark.glyph}</span>` : ''}
                 </div>
                 ${hasWorkouts ? dayWorkouts.map(pw => `
                   <div style="margin-top:2px">
@@ -219,12 +233,14 @@ async function renderCalendar(el) {
 
     <!-- Event list for selected month -->
     <div id="cal-event-list">
-      ${renderEventList(events || [], clientMap)}
+      ${renderEventList(events || [], clientMap, Object.keys(programWorkoutsByDate).some(ds => ds >= from && ds <= to) || Object.keys(logsByDate || {}).length > 0)}
     </div>
   `
 }
 
-function renderEventList(events, clientMap) {
+// monthHasWorkouts: "No events this month" under a grid full of workouts read as if the month were empty, so the empty card only shows on a truly empty month.
+function renderEventList(events, clientMap, monthHasWorkouts = false) {
+  if (!events.length && monthHasWorkouts) return ''
   if (!events.length) return `
     <div class="card"><div class="card-body" style="padding:20px;text-align:center">
       <p style="color:var(--text-muted);font-size:var(--text-base, 13px)">No events this month</p>

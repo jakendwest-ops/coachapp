@@ -289,6 +289,11 @@ const _DASH_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 //         later  a planned session still to come
 //         miss   a planned session on a day that has gone, with nothing logged
 //         rest   nothing planned, nothing logged
+// The one rule for a day's state, shared with the month calendar so the two can never disagree.
+function _dashDayKind(ds, todayStr, planned, done) {
+  return done.length ? 'done' : planned.length ? (ds === todayStr ? 'plan' : ds < todayStr ? 'miss' : 'later') : 'rest'
+}
+
 function _dashWeekDays(todayStr, progByDate, logs, weekStart = null) {
   const monday = weekStart || _dashMonday(todayStr)
   const byDate = {}
@@ -297,7 +302,7 @@ function _dashWeekDays(todayStr, progByDate, logs, weekStart = null) {
     const ds = _dashAddDays(monday, i)
     const planned = (progByDate || {})[ds] || [], done = byDate[ds] || []
     const today = ds === todayStr
-    const kind = done.length ? 'done' : planned.length ? (today ? 'plan' : ds < todayStr ? 'miss' : 'later') : 'rest'
+    const kind = _dashDayKind(ds, todayStr, planned, done)
     return { ds, label, num: +ds.slice(8), today, kind, planned, done }
   })
 }

@@ -124,9 +124,16 @@ test.describe('the runner finish screen\'s PR baseline', () => {
     expect(r.text, 'a failed lookup must never read as "you have no history, so everything is a record"').not.toContain('🏆')
   })
 
-  test('MIRROR: with no history at all, the first ever log of a lift still counts as a PR (behaviour unchanged)', async ({ page }) => {
+  test('one trophy per exercise, on the best set: a weaker set at the same weight is not crowned (2026-11-08)', async ({ page }) => {
+    const r = await finish(page, { exercises: [EX({ loggedSets: [{ weight: '100', reps: '4' }, { weight: '100', reps: '5' }, { weight: '100', reps: '4' }] })], tables: history([bench(90)]) })
+    expect([r.headerPrs, r.chips], 'one PR in the header and one chip').toEqual(['1', 1])
+    expect((r.text.match(/🏆/g) || []).length, 'header + chip + exactly one set').toBe(3)
+    expect(r.text, 'the trophy sits on the 5-rep set').toMatch(/100\s*kg × 5 reps\s*🏆/)
+  })
+
+  test('with no history at all, the first ever log of a lift is NOT a PR (Jake, 2026-11-08, R4-0 Q4)', async ({ page }) => {
     const r = await finish(page, { exercises: [EX()], tables: history([]) })
-    expect([r.headerPrs, r.chips]).toEqual(['1', 1])
+    expect([r.headerPrs, r.chips]).toEqual([null, 0])
   })
 
   test('the header count and the per-exercise chips come from one rule', async ({ page }) => {

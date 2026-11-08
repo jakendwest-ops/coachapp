@@ -153,9 +153,9 @@ test.describe('Add-workout picker — pool, usage and failure states', () => {
       host.remove(); _workoutPickerState = null
       return { failed, genuinelyUnused, used }
     })
-    expect(r.failed, 'a failed lookup must NOT assert "Not used yet"').not.toContain('Not used yet')
+    expect(r.failed, 'a failed lookup must NOT assert "Not in a plan yet"').not.toContain('Not in a plan yet')
     expect(r.failed).toContain('Usage unavailable')
-    expect(r.genuinelyUnused, 'a real empty result still says so').toContain('Not used yet')
+    expect(r.genuinelyUnused, 'a real empty result still says so').toContain('Not in a plan yet')
     expect(r.used).toContain('Used in Phase 1 · Wk 3 · TUE')
   })
 })

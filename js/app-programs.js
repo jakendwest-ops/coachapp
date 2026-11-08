@@ -3538,7 +3538,7 @@ function _renderWorkoutPickerResults(query) {
         <!-- Three states, not two. "Not used yet" is a CLAIM, and asserting it when the lookup failed
              is how every row silently read "unused" on a single query error (Jake, 2026-08-14). -->
         <span style="color:${t._usageFailed ? 'var(--text-muted)' : t._usage ? 'var(--accent)' : 'var(--text-muted)'};font-weight:${t._usage && !t._usageFailed ? '600' : '400'};font-style:${t._usageFailed ? 'italic' : 'normal'}">${
-          t._usageFailed ? '⚠ Usage unavailable' : t._usage ? '↳ Used in ' + escapeHtml(t._usage) : 'Not used yet'
+          t._usageFailed ? '⚠ Usage unavailable' : t._usage ? '↳ Used in ' + escapeHtml(t._usage) : 'Not in a plan yet'
         }</span>
         <span style="color:var(--text-muted);flex-shrink:0">${t._copies > 1 ? `${t._copies} copies · ` : ''}${t._exCount} exercise${t._exCount !== 1 ? 's' : ''}</span>
       </div>

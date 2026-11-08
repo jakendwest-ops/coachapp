@@ -929,7 +929,8 @@ async function renderClientWorkoutsPage(el) {
             <div class="list-row" style="cursor:pointer" onclick="openWorkoutLog('${l.id}','${clientId}')">
               <div style="width:36px;height:36px;border-radius:var(--radius-sm, 8px);background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:var(--text-xl, 16px)">✓</div>
               <div class="row-info">
-                <div class="row-name">${new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</div>
+                <div class="row-name">${escapeHtml(l.name || 'Workout')}</div>
+                <div class="row-meta">${new Date(l.date + 'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</div>
               </div>
             </div>`).join('')}
         </div>
@@ -2922,7 +2923,7 @@ async function _openExercisePicker(coachId, onPick) {
         <h2 class="modal-title">Exercises</h2>
         <button class="modal-close" onclick="_closeExercisePicker()">✕</button>
       </div>
-      <input class="field-input" id="exp-search" placeholder="Find or create exercise with name…" style="margin-bottom:14px" autocomplete="off" oninput="_renderExercisePickerResults(this.value)">
+      <input class="field-input" id="exp-search" placeholder="Find or create exercise with name…" style="margin-bottom:14px" autocomplete="off" enterkeyhint="go" oninput="_renderExercisePickerResults(this.value)" onkeydown="_exercisePickerEnter(event)">
       <div id="exp-results" style="overflow-y:auto;flex:1"><div class="loading-state">Loading…</div></div>
     </div>
   `
@@ -2959,6 +2960,7 @@ async function _openExercisePicker(coachId, onPick) {
   if (loadErr) log.error('_openExercisePicker', 'library read failed', loadErr)
   _exercisePickerState.loadFailed = !!loadErr
   _exercisePickerState.allExercises = data || []
+  _exercisePickerState.loaded = true
   // Re-render using whatever is CURRENTLY typed, not '' — the user may have already started
   // typing while this fetch was in flight, and blindly re-rendering with an empty query would
   // wipe their input's visible results out from under them.
@@ -2996,6 +2998,24 @@ function _renderExercisePickerResults(query) {
       <div id="exp-archived-list" style="display:none">${archivedMatches.map(rowHtml).join('')}</div>
     </div>` : ''}
   `
+}
+
+// The keyboard's Enter: an exact match (active first, then archived), else the first active partial match, else create what was typed. A partial match wins over the Create
+// row on purpose, so "squat" + Enter can't add a junk exercise; a name that is a substring of another still has the Create row to tap. Nothing until the library has loaded,
+// because an empty list then means "not read yet". _createExerciseFromPicker is re-entry guarded.
+function _exercisePickerEnter(e) {
+  if (e.key !== 'Enter' || e.isComposing) return
+  e.preventDefault()
+  const st = _exercisePickerState
+  const typed = (e.target.value || '').trim()
+  if (!st?.loaded || st.loadFailed || !typed) return
+  const q = typed.toLowerCase()
+  const all = st.allExercises || []
+  const active = all.filter(x => !x.is_archived)
+  const isExact = x => (x.name || '').trim().toLowerCase() === q
+  const hit = active.find(isExact) || all.find(isExact) || active.find(x => (x.name || '').toLowerCase().includes(q))
+  if (hit) _pickExercise(hit.id, hit.name, hit.metric_type)
+  else _createExerciseFromPicker(typed)
 }
 
 function _toggleArchivedExercisePicks() {
@@ -3410,6 +3430,8 @@ async function saveTemplateDraft() {
   window._lastExerciseChanges = changes
   await openTemplate(targetId, d.ctx)
   if (changes.length) await _checkClientPlanPropagation(targetId, d.ctx, changes, savedAsRole)
+  // The button just vanished before. Not over a propagation question (a toast hid the last line of one on a phone) and not over a propagation error's own message.
+  if (!document.querySelector('.modal-overlay') && !document.getElementById('app-toast')) showToast('Workout saved', 'success')
   return 'ok'
 }
 guardReentry('saveTemplateDraft')  // double-press could double-fork a shared template and double-write every staged change; see tests/reentry-guard-2026-08-28.spec.js
