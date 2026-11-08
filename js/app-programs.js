@@ -521,8 +521,8 @@ async function saveAssignProgram(clientId) {
   // insert — re-cloning every template in the program twice. The unique index on
   // (client_id, program_id) is the real backstop; this stops the user ever provoking it.
   if (btn?.disabled) return
-  if (btn) { btn.disabled = true; btn.textContent = currentProfile?.role === 'solo' ? 'Starting…' : 'Assigning…' }
-  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = fromReview ? 'Confirm' : currentProfile?.role === 'solo' ? 'Start this plan' : 'Assign' } }
+  if (btn) { btn.disabled = true; btn.textContent = _isPersonalView() ? 'Starting…' : 'Assigning…' }
+  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = fromReview ? 'Confirm' : _isPersonalView() ? 'Start this plan' : 'Assign' } }
 
   const existing = await _existingAssignment(clientId, programId)
   if (existing?.error) { errorEl.textContent = 'Could not check existing assignments. Try again.'; _release(); return }
@@ -1057,8 +1057,8 @@ async function saveAssignProgramToClient(programId, soloClientId) {
 
   const btn = document.getElementById('apc-save-btn')
   if (btn?.disabled) return
-  if (btn) { btn.disabled = true; btn.textContent = currentProfile?.role === 'solo' ? 'Starting…' : 'Assigning…' }
-  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = currentProfile?.role === 'solo' ? 'Start this plan' : 'Assign' } }
+  if (btn) { btn.disabled = true; btn.textContent = _isPersonalView() ? 'Starting…' : 'Assigning…' }
+  const _release = () => { if (btn) { btn.disabled = false; btn.textContent = _isPersonalView() ? 'Start this plan' : 'Assign' } }
 
   // Already assigned? Do NOT just refuse. Every "which program am I on?" read took the NEWEST
   // assignment until 2026-10-29 (now the most recently started - _currentAssignment), and solo view had no Remove/Edit-date control

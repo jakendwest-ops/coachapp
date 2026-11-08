@@ -4541,9 +4541,9 @@ async function openWorkoutLog(logId, clientId) {
     </div></div>` : ''}
     <div class="card" style="margin-top:8px">
       <div class="card-body">
-        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">${currentProfile?.role === 'solo' ? 'Notes' : 'Coach notes'}</div>
+        <div style="font-size:var(--text-sm, 11px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">${_isPersonalView() ? 'Notes' : 'Coach notes'}</div>
         ${_isCoachView
-          ? `<textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="${currentProfile?.role === 'solo' ? 'Anything to remember about this session' : 'Add coaching feedback, cues, or observations…'}" style="resize:vertical">${escapeHtml(session.notes)}</textarea>
+          ? `<textarea id="wl-coach-notes" class="field-input" rows="3" placeholder="${_isPersonalView() ? 'Anything to remember about this session' : 'Add coaching feedback, cues, or observations…'}" style="resize:vertical">${escapeHtml(session.notes)}</textarea>
              <button onclick="saveCoachNotes('${logId}')" class="btn-primary" style="margin-top:8px;font-size:var(--text-base, 13px);padding:7px 16px">Save notes</button>
              <span id="wl-notes-saved" style="display:none;margin-left:10px;font-size:var(--text-md, 12px);color:var(--success-fg);font-weight:600">Saved ✓</span>`
           : session.notes
