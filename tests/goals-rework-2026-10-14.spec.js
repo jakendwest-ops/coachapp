@@ -563,7 +563,7 @@ test.describe('Add and edit a goal (2026-10-14)', () => {
     expect(w.insert).toHaveLength(1)
     const uid = await page.evaluate(() => window.__me)
     expect(w.insert[0]).toEqual({ table: 'goals', rows: [{
-      client_id: 'cid', created_by: uid, title: 'Bench 100 kg', description: null, goal_type: 'custom', metric_label: null, metric_unit: 'kg',
+      client_id: 'cid', created_by: uid, title: 'Bench 100 kg', description: null, goal_type: 'custom', metric_label: null, linked_metric: null, linked_exercise_id: null, metric_unit: 'kg',
       start_value: 80, current_value: 80, target_value: 100, target_date: '2027-01-31', priority: 1, status: 'active' }] })
     await expect(card(page, 'Bench 100 kg')).toBeVisible()
     await expect(card(page, 'Bench 100 kg').locator('.gl-nums')).toContainText('100 kg')

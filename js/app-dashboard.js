@@ -1093,7 +1093,7 @@ function _dashLongDate() {
 async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
   const lookbackStart = _dashAddDays(_dashMonday(todayStr), -7 * _DASH_STREAK_WEEKS)
   const [goalsR, eventsR, weightsR, programsR, logsR, checkInR] = await Promise.all([
-    db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
+    db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, created_at, metric_label, metric_unit, linked_metric, linked_exercise_id, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
     db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
     // 14, not 5: the card draws a trend and weigh-ins are not daily, so 5 rows can span a fortnight and leave the window empty.
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(14),
@@ -1126,6 +1126,7 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
   const currentByDate = _programWorkoutsByDateAll([cp0].filter(Boolean), cpwMap, { fromStart: true })
   // The runner/save path can leave a 0-exercise workout_log (an abandoned start): those are not sessions (D3, 2026-09-07).
   const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
+  await _goalsApplyLive(goalsR.data, clientId)
 
   return {
     goals: goalsR.data, events: eventsR.data, weights: weightsR.data, cp0, cpNext, progByDate, currentByDate, logs,

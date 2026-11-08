@@ -639,6 +639,44 @@ function _goalTimeLeft(due, today) {
   return { text: days < 14 ? `${days} day${s(days)} left` : `${Math.round(days / 7)} weeks left`, late: false }
 }
 const _goalFinished = g => g?.status === 'completed' || g?.status === 'abandoned'
+
+// ─── LINKED GOALS (Jake, 2026-11-08) ──────────────────────────────────────────
+// A goal can follow body weight, or a lift's heaviest set logged since the goal began (From is where it starts; an old best must not fill the bar on day one). A finished goal stays where it
+// finished: its number is saved at that moment and is no longer read live. The number is worked out from the logged data each time a screen opens, and is NEVER written back: one fact, one
+// home. linked_exercise_id goes null if the exercise is deleted, and metric_label keeps the name, so the goal carries on by name.
+const _glEl = id => /** @type {any} */ (document.getElementById(id))
+let _goalLinkLift = null   // the lift chosen on the open New goal sheet
+
+// Canonical kg as the goal's own unit, one decimal at most.
+function _goalLiveValue(kg, unit) {
+  const v = unit === 'lb' ? kg * 2.2046226218 : kg
+  return Math.round(v * 10) / 10
+}
+
+// Sets current_value on the goal objects in hand, for drawing only (a finished goal is left as saved). A goal whose number could not be read keeps its stored value and is marked, so a failed read never looks like progress.
+async function _goalsApplyLive(goals, clientId) {
+  const linked = (goals || []).filter(g => g.linked_metric && !_goalFinished(g))
+  if (!linked.length) return
+  const bodyweight = linked.some(g => g.linked_metric === 'bodyweight')
+    ? db.from('weight_logs').select('weight_kg').eq('client_id', clientId).not('weight_kg', 'is', null).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(1).then(r => r)   // settled once: a query builder re-sends on every await
+    : null
+  await Promise.all(linked.map(async g => {
+    try {
+      let kg
+      if (g.linked_metric === 'bodyweight') {
+        const { data, error } = await bodyweight
+        if (error) throw error
+        kg = parseFloat(data?.[0]?.weight_kg)
+      } else {
+        kg = await _prBaseline(clientId, { name: g.metric_label, exerciseId: g.linked_exercise_id, since: g.created_at ? _ymdLocal(new Date(g.created_at)) : null })
+      }
+      if (Number.isFinite(kg) && kg > 0) g.current_value = _goalLiveValue(kg, g.metric_unit)
+    } catch (err) {
+      g._liveFailed = true
+      log.warn('_goalsApplyLive', 'could not read the latest number', { goalId: g.id, code: err?.code })
+    }
+  }))
+}
 const _GOAL_STATUS_PILL = { completed: 'Done', paused: 'Paused', abandoned: 'Abandoned' }
 
 async function renderClientGoals(clientId, el) {
@@ -655,6 +693,7 @@ async function renderClientGoals(clientId, el) {
   if (error) { log.error('renderClientGoals', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${escapeHtml(error.message)}</div>`; return }
   log.ok('renderClientGoals', `loaded ${goals.length} goals`)
 
+  await _goalsApplyLive(goals, clientId)
   const canManage = _canManageGoals()
   const open = goals.filter(g => !_goalFinished(g)), finished = goals.filter(_goalFinished)
   const cid = escapeAttr(clientId)
@@ -710,7 +749,7 @@ function goalCard(g, clientId) {
       ${n || steps.length ? `<div class="pw-bar gl-bar"><i style="width:${pct}%"></i></div>` : ''}
       <div class="gl-meta">
         ${next ? `<div class="gl-next"><span class="gl-muted">Next</span> ${escapeHtml(next.title)}</div>` : steps.length && !_goalFinished(g) ? '<div class="gl-muted">All steps done</div>' : ''}
-        <div class="gl-meta-row"><span>${n && steps.length ? `${done} of ${steps.length} steps · ` : ''}${last ? 'Updated ' + _glDate(last) : 'No updates yet'}</span><span class="${left?.late ? 'gl-late' : ''}">${when}</span></div>
+        <div class="gl-meta-row"><span>${n && steps.length ? `${done} of ${steps.length} steps · ` : ''}${g._liveFailed ? 'Could not read the latest number' : g.linked_metric && !_goalFinished(g) ? 'Updates automatically' : last ? 'Updated ' + _glDate(last) : 'No updates yet'}</span><span class="${left?.late ? 'gl-late' : ''}">${when}</span></div>
       </div>
     </div>
   `
@@ -721,6 +760,7 @@ function goalCard(g, clientId) {
 // that is not needed to start - description, type, metric label, priority - is folded under "More options" with the same ids, so nothing was lost.
 function showAddGoalModal(clientId) {
   if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
+  _goalLinkLift = null
   const w = escapeHtml(window._unitPrefs?.weight || 'kg')
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
@@ -739,13 +779,22 @@ function showAddGoalModal(clientId) {
       <div class="field">
         <span class="field-label">How will you measure it?</span>
         <div class="gl-chips" id="ag-kind" role="group" aria-label="How will you measure it?">
-          <button type="button" class="gl-chip" aria-pressed="true" data-unit="${w}" onclick="_pickGoalKind(this)">Weight (${w})</button>
+          <button type="button" class="gl-chip" aria-pressed="true" data-unit="${w}" data-weight="1" onclick="_pickGoalKind(this)">Weight (${w})</button>
           <button type="button" class="gl-chip" aria-pressed="false" data-unit="min" onclick="_pickGoalKind(this)">Time (min)</button>
           <button type="button" class="gl-chip" aria-pressed="false" data-unit="reps" onclick="_pickGoalKind(this)">Reps</button>
           <button type="button" class="gl-chip" aria-pressed="false" data-other="1" onclick="_pickGoalKind(this)">Other</button>
           <button type="button" class="gl-chip" aria-pressed="false" data-steps="1" onclick="_pickGoalKind(this)">Steps only</button>
         </div>
         <input class="field-input" id="ag-unit" value="${w}" placeholder="Unit, e.g. km or %" aria-label="Unit" hidden>
+      </div>
+      <div class="field" id="ag-track-wrap">
+        <label class="field-label" for="ag-track">Track automatically</label>
+        <select class="field-input" id="ag-track" onchange="_goalTrackChange('${escapeAttr(clientId)}')">
+          <option value="">No, update it by hand</option>
+          <option value="bodyweight">From body weight</option>
+          <option value="top_set">From a lift's heaviest set</option>
+        </select>
+        <button type="button" class="pw-link gl-link" id="ag-lift" hidden onclick="_goalChooseLift('${escapeAttr(clientId)}')">Choose a lift</button>
       </div>
       <div class="pw-grid2" id="ag-nums">
         <div class="field"><label class="field-label" for="ag-start">From</label><input class="field-input" id="ag-start" type="number" inputmode="decimal" step="any" placeholder="e.g. 100"></div>
@@ -807,6 +856,29 @@ function _pickGoalKind(btn) {
   const unit = document.getElementById('ag-unit'), nums = document.getElementById('ag-nums')
   if (unit) { unit.hidden = !other; unit.value = other || stepsOnly ? '' : btn.dataset.unit; if (other) unit.focus() }
   if (nums) nums.hidden = stepsOnly
+  // Only a weight can be read from body weight or a lift; another measure must not leave a link behind it.
+  const wrap = document.getElementById('ag-track-wrap')
+  if (wrap) wrap.hidden = !btn.hasAttribute('data-weight')
+  if (!btn.hasAttribute('data-weight') && _glEl('ag-track')) { _glEl('ag-track').value = ''; _goalLinkLift = null; _glEl('ag-lift').hidden = true; _glEl('ag-lift').textContent = 'Choose a lift' }
+}
+
+function _goalTrackChange(clientId) {
+  const lift = _glEl('ag-track').value === 'top_set'
+  _glEl('ag-lift').hidden = !lift
+  if (lift && !_goalLinkLift) _goalChooseLift(clientId)
+}
+
+// The same library the 1RM picker uses for this person. Null means the client row could not be read: say so rather than show the wrong library.
+function _goalChooseLift(clientId) {
+  _effectiveCoachIdForClient(clientId).then(coachId => {
+    if (!coachId) { showToast('Could not verify this client — please refresh and try again.', 'error'); return }
+    _openExercisePicker(coachId, picked => {
+      if (picked.metric_type && !['weight_reps', 'unilateral', 'timed_hold'].includes(picked.metric_type)) { showToast('Choose a lift logged with a weight', 'warn'); return }
+      _goalLinkLift = { id: picked.id || null, name: picked.name }
+      const btn = _glEl('ag-lift')
+      if (btn) btn.textContent = 'Lift: ' + picked.name
+    })
+  })
 }
 
 async function saveNewGoal(clientId) {
@@ -821,6 +893,9 @@ async function saveNewGoal(clientId) {
   const start = stepsOnly ? null : _glNum(startRaw), target = stepsOnly ? null : _glNum(targetRaw)
   if (!stepsOnly && (startRaw || targetRaw) && (start == null || target == null)) { errorEl.textContent = 'Enter both From and To, or choose Steps only.'; return }
   if (start != null && start === target) { errorEl.textContent = 'From and To are the same number.'; return }
+  const track = stepsOnly ? '' : _glEl('ag-track').value
+  if (track && start == null) { errorEl.textContent = 'Enter From and To so this goal can track itself.'; return }
+  if (track === 'top_set' && !_goalLinkLift) { errorEl.textContent = 'Choose the lift to track.'; return }
 
   // The CREATE path. _verifyGoalAccess/_verifyMilestoneAccess key on an EXISTING goalId, so neither
   // can cover this one — it was missed by the 2026-08-21 goal sweep for exactly that reason and
@@ -833,7 +908,10 @@ async function saveNewGoal(clientId) {
     title,
     description:  document.getElementById('ag-desc').value.trim()   || null,
     goal_type:    document.getElementById('ag-type').value,
-    metric_label: document.getElementById('ag-metric').value.trim() || null,
+    // A linked lift's name lives here, so the goal survives the exercise being deleted.
+    metric_label: track === 'top_set' ? _goalLinkLift.name : (_glEl('ag-metric').value.trim() || (track === 'bodyweight' ? 'Body weight' : null)),
+    linked_metric: track || null,
+    linked_exercise_id: track === 'top_set' ? _goalLinkLift.id : null,
     metric_unit:  stepsOnly ? null : (document.getElementById('ag-unit').value.trim() || null),
     start_value:  start,
     current_value: start,
@@ -868,6 +946,7 @@ async function openGoal(goalId, clientId) {
     .eq('id', goalId)
     .single()
   if (error || !g) { log.error('openGoal', 'fetch failed', error); el.innerHTML = `${back}<div class="loading-state">Could not load this goal. Check your connection and try again.</div>`; return }
+  await _goalsApplyLive([g], g.client_id)   // the goal's own client, whatever the caller passed
   window._goalOpen = { id: goalId, clientId, goal: g }     // the Update progress sheet starts from this goal's number
 
   const canManage = _canManageGoals()
@@ -887,7 +966,10 @@ async function openGoal(goalId, clientId) {
     return x != null && x > 0 && x < 1 ? `<b class="gl-mark${on ? ' is-hit' : ''}" style="left:${(x * 100).toFixed(1)}%"></b>` : ''
   }).join('') : ''
   const started = g.created_at ? _glDate(_ymdLocal(new Date(g.created_at))) : ''
-  const updateBtn = g.status === 'completed' || g.status === 'abandoned' ? '' : `<button type="button" class="btn-primary gl-update" onclick="showAddCheckInModal('${gid}','${cid}')">Update progress</button>`
+  // A linked goal has no Update progress: its number comes from the logged data, and a typed one would be overwritten on the next open.
+  const updateBtn = g.linked_metric && !_goalFinished(g)
+    ? `<div class="gl-sub" id="gl-linked">${/** @type {any} */ (g)._liveFailed ? 'Could not read the latest number. Showing the last one saved.' : g.linked_metric === 'bodyweight' ? 'Updates from your weigh-ins' : 'Updates from your heaviest logged set'}</div>${canManage ? `<button type="button" class="pw-link gl-link" onclick="stopGoalTracking('${gid}','${cid}')">Stop auto-tracking</button>` : ''}`
+    : g.status === 'completed' || g.status === 'abandoned' ? '' : `<button type="button" class="btn-primary gl-update" onclick="showAddCheckInModal('${gid}','${cid}')">Update progress</button>`
 
   el.innerHTML = `
     ${back}
@@ -947,6 +1029,19 @@ async function openGoal(goalId, clientId) {
       ${checkIns.length > 5 ? `<button type="button" class="pw-link gl-link" aria-expanded="false" onclick="_toggleAllCheckIns(this)">Show all ${checkIns.length}</button>` : ''}` : ''}
   `
 }
+
+// Turns a linked goal back into a by-hand one, keeping the number it had reached. Anchored and row-counted as saveEditGoal is.
+async function stopGoalTracking(goalId, clientId) {
+  if (!_canManageGoals()) { showToast('Only your coach can change your goals', 'warn'); return }
+  if (!(await confirmDialog('This goal will stop updating itself and you will update it by hand. It keeps its current number.', { title: 'Stop auto-tracking?', confirmLabel: 'Stop tracking' }))) return
+  const open = /** @type {any} */ (window)._goalOpen
+  const value = open?.id === goalId && !open.goal?._liveFailed ? open.goal.current_value : undefined
+  const { data, error } = await db.from('goals').update({ linked_metric: null, linked_exercise_id: null, ...(value !== undefined ? { current_value: value } : {}), updated_at: new Date().toISOString() })
+    .eq('id', goalId).eq('created_by', currentUser.id).select('id')
+  if (error || !data?.length) { log.error('stopGoalTracking', 'update failed', error || { refused: true, goalId }); showToast('Could not change this goal. Try again.', 'error'); return }
+  openGoal(goalId, clientId)
+}
+guardReentry('stopGoalTracking')
 
 // The history shows the newest five; this opens the rest and folds them again.
 function _toggleAllCheckIns(btn) {
@@ -1306,10 +1401,10 @@ async function showEditGoalModal(goalId, clientId) {
               <option value="abandoned" ${g.status==='abandoned' ?'selected':''}>Abandoned</option>
             </select>
           </div>
-          <div class="field">
+          ${g.linked_metric ? '' : `<div class="field">
             <label class="field-label" for="eg-current">Current value</label>
             <input class="field-input" id="eg-current" type="number" inputmode="decimal" step="any" value="${escapeHtml(String(g.current_value ?? ''))}">
-          </div>
+          </div>`}
         </div>
       </details>
       <button type="button" class="btn-secondary gl-finish" onclick="_markGoalFinished('${gid}','${cid}','${g.status === 'completed' ? 'active' : 'completed'}')">${g.status === 'completed' ? 'Reopen goal' : 'Mark goal finished'}</button>
@@ -1349,6 +1444,14 @@ async function saveEditGoal(goalId, clientId) {
     if (s != null && s === t) { errorEl.textContent = 'From and To are the same number.'; return }
   }
 
+  // No Current value box means this goal tracks itself: without From and To it would have no number and no way to give it one.
+  const tracked = !_glEl('eg-current')
+  if (tracked && (!_glEl('eg-start')?.value.trim() || !_glEl('eg-target').value.trim())) { errorEl.textContent = 'A goal that tracks itself needs From and To.'; return }
+  // Finishing a tracked goal saves the number it reached, because from now on it is not read live.
+  const open = /** @type {any} */ (window)._goalOpen
+  const finishing = ['completed', 'abandoned'].includes(_glEl('eg-status').value)
+  const reached = tracked && finishing && open?.id === goalId && !open.goal?._liveFailed && !_goalFinished({ status: open.goal?.status }) ? { current_value: open.goal.current_value } : {}
+
   log.info('saveEditGoal', 'updating goal', { goalId })
   // .select('id') + rowcount, as deleteGoal below has: the `created_by` anchor means an account that did not create this goal
   // (a client opening the goal its COACH set) matches no row, and a policy-refused update returns { data: [], error: null } —
@@ -1358,7 +1461,7 @@ async function saveEditGoal(goalId, clientId) {
     description:   document.getElementById('eg-desc').value.trim()    || null,
     status:        document.getElementById('eg-status').value,
     target_date:   document.getElementById('eg-date').value            || null,
-    current_value: document.getElementById('eg-current').value         || null,
+    ...(_glEl('eg-current') ? { current_value: _glEl('eg-current').value || null } : reached),
     target_value:  document.getElementById('eg-target').value          || null,
     ...(document.getElementById('eg-start') ? { start_value: document.getElementById('eg-start').value || null } : {}),
     updated_at:    new Date().toISOString()

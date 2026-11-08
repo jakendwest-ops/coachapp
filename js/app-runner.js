@@ -3010,14 +3010,17 @@ let _finishPrBaselines = null
 // puts NULLs first, and a null would otherwise win the sort.
 //
 // Scoped by client through the embedded log (`!inner`, filtered on the dotted path) exactly as before; RLS still applies.
-async function _prBaseline(clientId, { name, exerciseId }) {
+// `since` (a YYYY-MM-DD day, optional) counts only sessions from that day on: a linked goal's progress starts when the goal does.
+async function _prBaseline(clientId, { name, exerciseId, since = null }) {
   const heaviest = async (column, value) => {
+    let rows = db.from('workout_log_sets')
+      .select('weight_kg, workout_log_exercises!inner(workout_logs!inner(client_id, date))')
+      .eq('workout_log_exercises.workout_logs.client_id', clientId)
+      .eq('workout_log_exercises.' + column, value)
+      .not('weight_kg', 'is', null)
+    if (since) rows = rows.gte('workout_log_exercises.workout_logs.date', since)
     const { data, error } = await dbq('showRunnerFinish:prBaseline',
-      db.from('workout_log_sets')
-        .select('weight_kg, workout_log_exercises!inner(workout_logs!inner(client_id))')
-        .eq('workout_log_exercises.workout_logs.client_id', clientId)
-        .eq('workout_log_exercises.' + column, value)
-        .not('weight_kg', 'is', null)
+      rows
         .order('weight_kg', { ascending: false })
         .limit(1),
       { showUserError: false })

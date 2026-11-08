@@ -697,6 +697,8 @@ export type Database = {
           description: string | null
           goal_type: string | null
           id: string
+          linked_exercise_id: string | null
+          linked_metric: string | null
           metric_label: string | null
           metric_unit: string | null
           priority: number | null
@@ -715,6 +717,8 @@ export type Database = {
           description?: string | null
           goal_type?: string | null
           id?: string
+          linked_exercise_id?: string | null
+          linked_metric?: string | null
           metric_label?: string | null
           metric_unit?: string | null
           priority?: number | null
@@ -733,6 +737,8 @@ export type Database = {
           description?: string | null
           goal_type?: string | null
           id?: string
+          linked_exercise_id?: string | null
+          linked_metric?: string | null
           metric_label?: string | null
           metric_unit?: string | null
           priority?: number | null

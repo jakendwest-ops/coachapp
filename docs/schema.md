@@ -235,6 +235,8 @@ Script and rollback: `scripts/add-client-empty-session-delete-2026-10-01.sql`; l
   A NEW column shows up as a type error until regenerated, which is safe. A DROPPED column keeps
   type-checking against the stale file, which is not.
 
+**goals.linked_metric, goals.linked_exercise_id** (2026-11-08): a goal that follows body weight or a lift. Progress is derived when read, never stored; see scripts/add-goal-links-2026-11-08.sql.
+
 ## Requires Validation
 
 - This file was reconciled against migrations through 2026-08-24 in its original Vault form; this
