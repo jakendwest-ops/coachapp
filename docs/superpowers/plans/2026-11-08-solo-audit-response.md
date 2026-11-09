@@ -6,7 +6,7 @@
 > **Jake's answers (2026-11-08):** Phase 1, all ten items, approved, with no PR on a first log. Logging: prototype the Fill button only.
 > Progression: "+kg per week" in plans. Goals: link them. Phase 2a and 2b still need a file-by-file approval before building.
 
-> **Status (2026-11-08):** Phase 1 is committed locally on top of `a5868ea`, not pushed. Phase 2a is built with one amount per phase and committed locally. Phase 2b is built, SQL applied live, uncommitted: a lift goal counts the heaviest set since the goal began, and a finished goal saves its number. Phase 4b (wording) is pushed. Phase 4a and most of 4c are done; Finish and Save stay separate (Jake asked for the Finish question on 2026-10-11) and the rest-timer jump needs his look. Phase 3 is next. `block-review-2026-11-07.spec.js` "Repeat this plan" fails on `a5868ea` without this work, and will stop the release gate until fixed.
+> **Status (2026-11-08):** Phase 1 is committed locally on top of `a5868ea`, not pushed. Phase 2a is built with one amount per phase and committed locally. Phase 2b is built, SQL applied live, uncommitted: a lift goal counts the heaviest set since the goal began, and a finished goal saves its number. Phase 4b (wording) is pushed. Phase 4a and most of 4c are done; Finish and Save stay separate (Jake asked for the Finish question on 2026-10-11) and the rest-timer jump needs his look. Phase 3 is built, with no SQL; see the notes under Phase 3 for where it is narrower than written.
 
 # Solo audit response
 
@@ -75,6 +75,12 @@ Mostly reads, no SQL unless noted. Answers "is it working?".
 - Bodyweight: kg per week and a projected date.
 - One target bodyweight: Goals and the Bodyweight tab stop holding separate targets.
 - Today says when a linked goal's number could not be read.
+
+Built 2026-11-09, narrower than written in three places:
+- **One history list** is a "See every session" link from Train to Performance > Sessions. Train keeps its newest five.
+- **Records** keeps the saved 1RM, because %1RM sets are worked out from it. When logged training beats it, the row adds "Logged best ≈". Nothing overwrites a saved number.
+- **One target bodyweight** applies while a goal follows body weight: that goal supplies the start and target on both weight pages and the Bodyweight editor steps aside. With no such goal the editor works as before.
+- The missed-session offer stays away when today has its own session, because a run is logged against today and would tick that one off as well. Skip is remembered on that device only.
 
 ## Phase 4: faster building, one language, one look
 

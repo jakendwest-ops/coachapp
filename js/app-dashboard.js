@@ -704,6 +704,24 @@ function _dashCalendarHtml(upcoming, todayStr) {
     `<button type="button" class="dash-link" onclick="event.stopPropagation();navigate('calendar')">See calendar</button></section>`
 }
 
+// After a missed session: the most recent one this week that nothing has been trained since, with a way to do it now or let it go. Skip is remembered on this device for that day only;
+// it changes no data, because the week strip's red mark is the honest record either way.
+function _dashMissedHtml(days, clientId) {
+  const i = days.map(d => d.kind).lastIndexOf('miss')
+  // Not while today has its own session waiting: a run is logged against today, so doing the missed one would tick off today's as well.
+  if (i < 0 || days.slice(i + 1).some(d => d.done.length) || days.some(d => d.kind === 'plan')) return ''
+  const day = days[i], tid = day.planned[0]?._clientTemplateId
+  let skipped = ''; try { skipped = localStorage.getItem('_dashMissSkip_' + clientId) || '' } catch { /* private window */ }
+  if (!tid || skipped === day.ds) return ''
+  const cid = escapeAttr(clientId)
+  return `<section class="dash-card" id="dash-missed"><div class="dash-card-head"><h2 class="dash-card-title">Missed ${_dashFormatDate(day.ds)}</h2></div><p class="dash-sub">${escapeHtml(_dashSessionName(day.planned[0]))}</p><div class="dash-hero-actions">${_dashStart(cid, escapeAttr(tid))}<button type="button" class="dash-btn dash-btn-ghost" data-skip-missed onclick="_dashSkipMissed('${cid}','${day.ds}')">Skip it</button></div></section>`
+}
+
+function _dashSkipMissed(clientId, ds) {
+  try { localStorage.setItem('_dashMissSkip_' + clientId, ds) } catch { /* private window: it just comes back next visit */ }
+  document.getElementById('dash-missed')?.remove()
+}
+
 // Goals: how many are active and the two due soonest, each with its progress. Tapping opens the full goals UI for this role.
 function _dashGoalsHtml(goals, todayStr, isClient) {
   const list = goals || []
@@ -712,7 +730,7 @@ function _dashGoalsHtml(goals, todayStr, isClient) {
   // Soonest deadline first; a goal with no date sorts last rather than being dropped.
   const sorted = [...list].sort((a, b) => (a.target_date || '9999').localeCompare(b.target_date || '9999'))
   return `<section class="dash-card dash-tap" id="dash-goals" onclick="_dashOpenGoals(${isClient})">${head}` +
-    sorted.slice(0, 2).map(g => `<div class="dash-goal"><div class="dash-goal-head"><b>${escapeHtml(g.title)}</b><span>${g.target_date ? _dashDaysUntil(g.target_date, todayStr) : _goalPct(g) + '%'}</span></div>` +
+    sorted.slice(0, 2).map(g => `<div class="dash-goal"><div class="dash-goal-head"><b>${escapeHtml(g.title)}</b><span>${g._liveFailed ? 'Not updated' : g.target_date ? _dashDaysUntil(g.target_date, todayStr) : _goalPct(g) + '%'}</span></div>` +
       `<div class="dash-meter"><i style="width:${_goalPct(g)}%"></i></div></div>`).join('') +
     (list.length > 2 ? `<p class="dash-sub">+${list.length - 2} more</p>` : '') +
     `<button type="button" class="dash-link" onclick="event.stopPropagation();_dashOpenGoals(${isClient})">See all goals</button></section>`
@@ -1298,6 +1316,7 @@ async function _dashRenderOwn(el, role) {
       ${block && block.state === 'last-week' ? _dashBlockHintHtml() : ''}
       ${block && block.state === 'ended' ? _dashBlockCardHtml(block, { phase: 'loading' }) : ''}
       ${heroFor(null)}
+      ${isSudo ? '' : _dashMissedHtml(days, clientId)}
       ${weekFor(null)}
       ${_dashTilesHtml(streak, program, !isClient, !isSudo)}
       ${_dashWeightHtml(d.weights, isClient ? null : clientId)}

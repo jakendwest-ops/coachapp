@@ -41,7 +41,7 @@ test.describe('weight history, personal bests and the data export past the 200-r
   const rows = () => [...mine(), ...foreign()]
 
   const withApi = async (page, tables, fn) => {
-    await installCappedApi(page, tables)
+    await installCappedApi(page, { goals: [], ...tables })   // the weight pages also ask whether a goal follows body weight
     try { return await fn() } finally { await restoreCappedApi(page) }
   }
 

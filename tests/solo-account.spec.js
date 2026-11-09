@@ -129,7 +129,8 @@ test.describe('Solo / Personal account', () => {
     // Non-zero denominator: an empty page is visible too, and would pass while showing nothing. EXACT count, not >=: a card
     // silently disappearing is the failure this guards. Update it deliberately when a card is added - it is 5 now: the week, streak,
     // program, body weight and goals (the My calendar card left Personal view 2026-10-31; the calendar opens from the week card).
-    expect(await page.locator('#dash-root .dash-card').count()).toBe(5)
+    // A missed session this week adds its own card, which depends on the day this runs, so it is not one of the 5.
+    expect(await page.locator('#dash-root .dash-card:not(#dash-missed)').count()).toBe(5)
     await expect(page.locator('#dash-root .dash-card').first()).toBeVisible()
   })
   test('switching back to PT restores coach dashboard', async ({ page }) => {

@@ -934,9 +934,13 @@ async function renderClientWorkoutsPage(el) {
               </div>
             </div>`).join('')}
         </div>
+        <button type="button" class="wk-linkbtn tap-link" data-all-sessions onclick="_openAllSessions()">See every session</button>
       </div>`}
   `
 }
+
+// The newest five live here; the whole history, with comparisons, is Progress > Performance > Sessions. One place to go rather than two lists to reconcile.
+function _openAllSessions() { const w = /** @type {any} */ (window); w._progressTab = 'Performance'; w._perfTab = 'Sessions'; navigate('progress') }
 
 function switchWorkoutTab(tab) {
   document.getElementById('wt-tab-templates').classList.toggle('active', tab === 'templates')

@@ -103,7 +103,7 @@ async function renderClient1RMs(clientId, el) {
     const latest = l.entries[0], prev = l.entries[1]
     const diff = prev ? parseFloat(latest.one_rm_kg) - parseFloat(prev.one_rm_kg) : 0
     const pill = diff ? `<span class="pw-pill ${diff > 0 ? 'is-good' : ''}">${diff > 0 ? '+' : '−'}${_pbW(Math.abs(diff))}</span>` : ''
-    return `<button type="button" class="pb-row" onclick="openLiftPage('${clientId}',${i})"><span class="pb-row-main"><span class="pb-name">${escapeHtml(l.name)}</span><span class="pb-sub">Recorded ${_pwFmtDate(latest.recorded_at)}</span></span>${pill}<strong class="pb-best">${_pbW(parseFloat(latest.one_rm_kg))}</strong>${chev}</button>`
+    return `<button type="button" class="pb-row" onclick="openLiftPage('${clientId}',${i})"><span class="pb-row-main"><span class="pb-name">${escapeHtml(l.name)}</span><span class="pb-logged" data-pb-logged="${i}" hidden></span><span class="pb-sub">Recorded ${_pwFmtDate(latest.recorded_at)}</span></span>${pill}<strong class="pb-best">${_pbW(parseFloat(latest.one_rm_kg))}</strong>${chev}</button>`
   }
   const recorded = lifts.map((l, i) => ({ l, i })).filter(x => x.l.entries.length)
   const missing = lifts.map((l, i) => ({ l, i })).filter(x => !x.l.entries.length)
@@ -116,6 +116,23 @@ async function renderClient1RMs(clientId, el) {
     ${recorded.length ? `<div class="pw-list">${recorded.map(x => rowHtml(x.l, x.i)).join('')}</div>` : ''}
     ${missing.length ? `<div class="pw-group">Not recorded yet</div><div class="pw-list">${missing.map(x => rowHtml(x.l, x.i)).join('')}</div>` : ''}
   `
+  if (recorded.length) _showLoggedBests(clientId, lifts, el)
+}
+
+// A saved 1RM is one the person chose to keep, and %1RM sets are worked out from it, so it is not overwritten. But when training has gone past it the Records page says so, instead of
+// disagreeing silently with Performance. Painted after the list so the page never waits on the whole history; a failed read just leaves the line out.
+async function _showLoggedBests(clientId, lifts, el) {
+  const token = _pbLiftToken   // renderClient1RMs bumps it: a repaint while this reads has different rows at the same index
+  const series = await _buildExerciseSeries(clientId)
+  if (!series || token !== _pbLiftToken || !el.isConnected) return
+  const best = Object.create(null)
+  for (const ex of series) best[ex.name] = Math.max(0, ...ex.sessions.map(s => _sessionBestE1RM(s.sets)))
+  lifts.forEach((l, i) => {
+    const saved = parseFloat(l.entries[0]?.one_rm_kg), mark = el.querySelector(`[data-pb-logged="${i}"]`)
+    if (!mark || !(best[l.name] > saved + 0.5)) return
+    mark.textContent = 'Logged best ≈ ' + fmtWeight(Math.round(best[l.name]), { spaced: true })
+    mark.hidden = false
+  })
 }
 
 // "Record best" on a lift with no best yet: the Add 1RM sheet for that lift.
@@ -768,11 +785,12 @@ async function renderClientWeight(clientId, el) {
 
   // Paged (_fetchAllRows, app-core.js): the API caps a response at 200 rows and says nothing when it truncates, so
   // past 200 weigh-ins this tab's ENTRIES, its "since" date, its table and its chart all stopped at the 200th newest.
-  const [{ data: logs, error }, { data: clientRow, error: clientErr }] = await Promise.all([
+  const [{ data: logs, error }, { data: clientRow, error: clientErr }, linkedBw] = await Promise.all([
     // Same-day weigh-ins tie on `date` (weight_logs has no unique (client, date)), so created_at breaks the tie — the
     // one logged LATER is the current one — and `id` is the unique last resort the paging needs.
     _fetchAllRows(() => db.from('weight_logs').select('*', { count: 'exact' }).eq('client_id', clientId).order('date', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: false })),
-    db.from('clients').select('starting_weight_kg, goal_weight_kg').eq('id', clientId).single()
+    db.from('clients').select('starting_weight_kg, goal_weight_kg').eq('id', clientId).single(),
+    _linkedBodyweightGoal(clientId)
   ])
   // clientErr counts too: ignoring it rendered a BLANK goals editor, and "Save goals" would then write NULLs over the
   // person's real starting and goal weights.
@@ -782,8 +800,7 @@ async function renderClientWeight(clientId, el) {
   if (loadErr) { log.error('renderClientWeight', 'fetch failed', loadErr); el.innerHTML = `<div class="empty-state"><div class="empty-title">Error loading weight data</div></div>`; return }
   log.ok('renderClientWeight', `loaded ${logs.length} entries`)
 
-  const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
-  const goalWeightKg     = clientRow?.goal_weight_kg != null ? parseFloat(clientRow.goal_weight_kg) : null
+  const { startingWeightKg, goalWeightKg } = _weightTargets(clientRow, linkedBw)
 
   const fmt = kg => fmtWeight(kg, { spaced: true, decimals: 1 })
   const latest = logs[0]
@@ -834,6 +851,7 @@ async function renderClientWeight(clientId, el) {
       </div>
 
       <!-- Weight goals — sets the chart's Y-axis range below -->
+      ${linkedBw ? `<p class="pb-note" id="wg-linked">Their target comes from their goal: ${fmtWeight(goalWeightKg, { spaced: true })}.</p>` : `
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md, 12px);padding:18px;margin-bottom:20px">
         <div style="font-size:var(--text-base, 13px);font-weight:700;color:var(--text);margin-bottom:4px">Weight goals</div>
         <div style="font-size:var(--legacy-text-11-5, 11.5px);color:var(--text-muted);margin-bottom:14px">Used to set the chart's range below</div>
@@ -850,6 +868,7 @@ async function renderClientWeight(clientId, el) {
         <p id="wg-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
         <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>
       </div>
+      `}
 
       <!-- Stats row -->
       ${logs.length > 0 ? `
@@ -2136,7 +2155,50 @@ function _stepWeightInput(btn, delta) {
 
 // ONE card for where you are against your goal: the current weight, the change since you started, and (with both goals set) a bar to the goal and "x to go". Moving towards the goal reads
 // green, away from it grey; with no goal the change is just grey. cur / start are kg numbers.
-function _weightGoalCardHtml(cur, start, goal, hasBothGoals) {
+// Body weight over the last 28 days as a trend line, so one heavy morning does not swing it: kg per week, and the date it reaches the goal if it is heading that way. Null with under
+// two weigh-ins or less than a week between them. Pure.
+function _weightTrend(logs, goalKg, todayStr) {
+  const dayNo = ds => { const [y, m, d] = String(ds).slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000 }
+  const end = dayNo(todayStr)
+  const pts = (logs || []).map(l => ({ x: dayNo(l.date), y: parseFloat(l.weight_kg) })).filter(p => Number.isFinite(p.y) && p.x <= end && p.x > end - 28)
+  if (pts.length < 2 || pts[pts.length - 1].x - pts[0].x < 7) return null
+  const mx = pts.reduce((s, p) => s + p.x, 0) / pts.length, my = pts.reduce((s, p) => s + p.y, 0) / pts.length
+  const slope = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / pts.reduce((s, p) => s + (p.x - mx) ** 2, 0)
+  const perWeek = slope * 7, latest = pts[pts.length - 1].y
+  let weeksToGoal = null
+  if (goalKg != null && Math.abs(perWeek) >= 0.05 && Math.sign(goalKg - latest) === Math.sign(perWeek)) weeksToGoal = (goalKg - latest) / perWeek
+  return { perWeek, weeksToGoal }
+}
+
+function _weightTrendHtml(trend, todayStr) {
+  if (!trend) return ''
+  const shown = parseFloat(Number(weightToPref(Math.abs(trend.perWeek))).toFixed(1))
+  const rate = shown === 0 ? 'Holding steady over the last 4 weeks' : `${trend.perWeek > 0 ? 'Gaining' : 'Losing'} ${shown} ${_pzUnit()} a week over the last 4 weeks`
+  let when = ''
+  if (trend.weeksToGoal != null && trend.weeksToGoal < 104) {
+    const [y, m, d] = todayStr.split('-').map(Number)
+    when = ' · on course for your goal around ' + _dashFormatDate(_ymdLocal(new Date(y, m - 1, d + Math.round(trend.weeksToGoal * 7))))
+  }
+  return `<p class="pb-note" id="pw-trend">${rate}${when}</p>`
+}
+
+// An active goal that follows body weight is the one target: its numbers in kg, or null. A failed read falls back to the saved target rather than failing the page.
+async function _linkedBodyweightGoal(clientId) {
+  const { data, error } = await db.from('goals').select('start_value, target_value, metric_unit').eq('client_id', clientId).eq('linked_metric', 'bodyweight').eq('status', 'active').order('created_at', { ascending: false }).limit(1)
+  const g = !error && data?.[0]
+  if (!g || g.target_value == null) return null
+  const kg = v => (v == null ? null : parseFloat(v) / (g.metric_unit === 'lb' ? 2.2046226218 : 1))
+  return { goalKg: kg(g.target_value), startKg: kg(g.start_value) }
+}
+
+// The start and target the weight pages draw. A linked goal supplies both: its own "from", not an older saved starting weight, or a goal of 82 to 85 against a saved start of 90 reads as already reached.
+function _weightTargets(clientRow, linked) {
+  const num = v => (v != null ? parseFloat(v) : null)
+  if (linked) return { startingWeightKg: linked.startKg ?? num(clientRow?.starting_weight_kg), goalWeightKg: linked.goalKg }
+  return { startingWeightKg: num(clientRow?.starting_weight_kg), goalWeightKg: num(clientRow?.goal_weight_kg) }
+}
+
+function _weightGoalCardHtml(cur, start, goal, hasBothGoals, editable = true) {
   const change = cur - start
   const shownChange = parseFloat(Number(weightToPref(Math.abs(change))).toFixed(1))      // what is read: under a tenth is "no change", never "0.0 kg"
   const toward = hasBothGoals && shownChange !== 0 && Math.sign(change) === Math.sign(goal - start)
@@ -2154,7 +2216,7 @@ function _weightGoalCardHtml(cur, start, goal, hasBothGoals) {
   return `<div class="pw-card" id="pw-goalcard">
       <div class="pw-card-row"><div><div class="pw-label">Current</div><div class="pw-big">${_pbN(cur)} <span class="pw-big-unit">${unit}</span></div></div><span class="pw-pill ${toward ? 'is-good' : ''}">${since}</span></div>
       ${bar}
-      ${hasBothGoals ? `<button type="button" class="pw-link" onclick="document.getElementById('wg-editor').style.display='block';this.hidden=true">Edit start and goal</button>` : ''}
+      ${hasBothGoals && editable ? `<button type="button" class="pw-link" onclick="document.getElementById('wg-editor').style.display='block';this.hidden=true">Edit start and goal</button>` : ''}
     </div>`
 }
 
@@ -2206,8 +2268,8 @@ async function renderProgressWeight(el) {
     db.from('clients').select('starting_weight_kg, goal_weight_kg').eq('id', clientId).single()
   ])
   const loadErr = logsErr || clientErr
-  const startingWeightKg = clientRow?.starting_weight_kg != null ? parseFloat(clientRow.starting_weight_kg) : null
-  const goalWeightKg     = clientRow?.goal_weight_kg != null ? parseFloat(clientRow.goal_weight_kg) : null
+  const linkedBw = loadErr ? null : await _linkedBodyweightGoal(clientId)
+  const { startingWeightKg, goalWeightKg } = _weightTargets(clientRow, linkedBw)
   // Jake, 2026-10-13 ("the UI in this section needs a rework"; prototype https://claude.ai/artifact/AvgWLiWo4ogERWiRzJJomm; docs/bugs/2026-10-13-progress-page-needs-a-ui-rework-starting-with-the-body-weight-section.md):
   // ONE goal card instead of the start/goal line and the three tiles, the log form as a slide-up sheet (a stepper, the date, the extras folded away) and the list grouped by month
   // with the change since the last entry. The ids the save and the specs rely on (client-weight-form, cwf-*, wg-*, pw-chart) are unchanged, and so is the chart. (History: until 2026-07-08
@@ -2237,7 +2299,9 @@ async function renderProgressWeight(el) {
       <p id="wg-error" style="color:var(--danger-text);font-size:var(--text-md, 12px);margin:4px 0 0"></p>
       <button onclick="saveWeightGoals('${clientId}')" class="btn-secondary" style="width:100%">Save goals</button>`
   const hasBothGoals = startingWeightKg != null && goalWeightKg != null
-  const goalsCard = hasBothGoals && logs?.length
+  const goalsCard = linkedBw
+    ? `<p class="pb-note" id="wg-linked">Your target comes from your goal: ${fmtWeight(goalWeightKg, { spaced: true })}.</p>`
+    : hasBothGoals && logs?.length
     ? `<div id="wg-editor" class="pw-card" style="display:none">
          <div class="pw-card-title">Weight goals</div>
          ${goalsFields}
@@ -2256,7 +2320,8 @@ async function renderProgressWeight(el) {
   const effectiveStarting = startingWeightKg ?? first.weight_kg
   el.innerHTML = `
     ${addWeightBtn}
-    ${_weightGoalCardHtml(parseFloat(latest.weight_kg), parseFloat(effectiveStarting), goalWeightKg, hasBothGoals)}
+    ${_weightGoalCardHtml(parseFloat(latest.weight_kg), parseFloat(effectiveStarting), goalWeightKg, hasBothGoals, !linkedBw)}
+    ${_weightTrendHtml(_weightTrend(logs, goalWeightKg, _ymdLocal(new Date())), _ymdLocal(new Date()))}
     ${goalsCard}
     <div style="position:relative;height:200px;margin-bottom:16px"><canvas id="pw-chart" style="width:100%;height:100%"></canvas></div>
     ${_weightListHtml(logs, hasBothGoals ? Math.sign(goalWeightKg - effectiveStarting) : 0)}
@@ -2983,6 +3048,41 @@ function _renderBlockComparison() {
   })
 }
 
+// ─── THE STORY (Phase 3, 2026-11-09): is it working? ──────────────────────────
+// The best estimated 1RM of one logged session, or 0: the same number the Est 1RM chart draws (warm-ups left out, RPE counted).
+function _sessionBestE1RM(sets) {
+  return _xsSessionMetrics(sets).e1rm
+}
+
+// Over the last `windowDays`: each weight-and-reps lift done at least twice, its first session against its latest (the better of the last two, so one off day does not read as going
+// backwards), best first. Stalled: four or more sessions and the last three set no new best. Pure; dates are YYYY-MM-DD text.
+function _liftStory(exercises, todayStr, windowDays = 42) {
+  const [y, m, d] = todayStr.split('-').map(Number)
+  const from = _ymdLocal(new Date(y, m - 1, d - windowDays))
+  const rows = []
+  for (const ex of exercises || []) {
+    if (ex.metricType !== 'weight_reps') continue
+    const pts = ex.sessions.filter(s => s.date >= from && s.date <= todayStr).map(s => _sessionBestE1RM(s.sets)).filter(v => v > 0)
+    if (pts.length < 2) continue
+    const first = pts[0], latest = Math.max(...pts.slice(-2))
+    rows.push({ name: ex.name, first, latest, pct: (latest - first) / first * 100, stalled: pts.length >= 4 && Math.max(...pts.slice(-3)) <= Math.max(...pts.slice(0, -3)) })
+  }
+  rows.sort((a, b) => b.pct - a.pct)
+  return { rows, up: rows.filter(r => r.pct >= 0.5).length, stalled: rows.filter(r => r.stalled).map(r => r.name) }
+}
+
+function _liftStoryHtml(story) {
+  if (!story.rows.length) return ''
+  const n = story.rows.length
+  const pct = v => (v > 0 ? '+' : '') + Number(v.toFixed(1)) + '%'
+  return `<div class="pw-card" id="perf-story">
+      <div class="pw-label">Last 6 weeks</div>
+      <div class="pw-card-title">Stronger on ${story.up} of ${n} ${n === 1 ? 'lift' : 'lifts'}</div>
+      <div class="pw-card-sub">Estimated 1RM: your first session against your latest.${story.stalled.length ? ' ' + story.stalled.length + ' stalled.' : ''}</div>
+      <div class="pw-list">${story.rows.slice(0, 8).map(r => `<div class="pb-row pb-row-static"><span class="pb-row-main"><span class="pb-name">${escapeHtml(r.name)}</span><span class="pb-sub">${fmtWeight(Math.round(r.first))} → ${fmtWeight(Math.round(r.latest))}</span></span>${r.stalled ? '<span class="pw-pill">Stalled</span>' : `<span class="pw-pill${r.pct > 0 ? ' is-good' : ''}">${pct(r.pct)}</span>`}</div>`).join('')}</div>
+    </div>`
+}
+
 async function renderProgressStrength(el) {
   el.innerHTML = '<div class="loading-state">Loading exercise data…</div>'
   const myToken = ++_perfExerciseToken
@@ -2996,6 +3096,7 @@ async function renderProgressStrength(el) {
   window._trendState = window._trendState || { range: 'All', metricByEx: {} }
   // The 1M–All range selector moved to renderPerformance's toolbar (a <select>) — P1, 2026-09-07.
   el.innerHTML = `
+    ${_liftStoryHtml(_liftStory(exercises, _ymdLocal(new Date())))}
     <input class="field-input" id="perf-ex-search" placeholder="Search exercises…" style="margin-bottom:12px" autocomplete="off" oninput="_renderPerfExerciseList(this.value)">
     <div class="pf-bar"><span class="pf-count" id="pf-count"></span><button type="button" class="pf-all" id="pf-all" onclick="_perfAll()" hidden></button></div>
     <div id="perf-ex-list"></div>`
