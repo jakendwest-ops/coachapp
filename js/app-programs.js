@@ -1476,7 +1476,15 @@ async function openProgram(programId) {
     </div>`
 
   _pgmInitDesc()
-  loadAllPhaseWorkouts(phases)
+  // A block tapped in the bar before the sessions arrive: they push it down the page, so go to it again once they have landed.
+  const pageState = window._pgmOpen
+  pageState.sessionsLoading = true
+  loadAllPhaseWorkouts(phases).finally(() => {
+    pageState.sessionsLoading = false
+    const jumped = pageState.jumpedWhileLoading
+    pageState.jumpedWhileLoading = null
+    if (jumped && pageState === window._pgmOpen) _pgmScrollToPhase(jumped)
+  })
 }
 
 // ─── The program page (Jake, 2026-10-04: "UI of this page needs to be improved (much like we have just done with the dashboard)") ───
@@ -1622,6 +1630,11 @@ function _pgmRepaintTimeline() {
 function jumpToPhase(phaseId) {
   if (!window._pgmOpen) return
   if (!window._pgmOpen.open[phaseId]) { window._pgmOpen.open[phaseId] = true; _pgmRepaintCard(phaseId) }
+  if (window._pgmOpen.sessionsLoading) window._pgmOpen.jumpedWhileLoading = phaseId
+  _pgmScrollToPhase(phaseId)
+}
+
+function _pgmScrollToPhase(phaseId) {
   document.getElementById('ph-' + phaseId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 

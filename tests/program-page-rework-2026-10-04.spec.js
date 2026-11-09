@@ -183,6 +183,23 @@ test.describe('Program page - the overview and the fold-up phases', () => {
     await expect(page.locator(header(s, 0))).toHaveAttribute('aria-expanded', 'true')
   })
 
+  test('a block tapped while the sessions are still loading is still on screen after they arrive', async ({ page }) => {
+    const s = await seed(page, MAIN)
+    let release
+    const held = new Promise(r => { release = r })
+    await page.route('**/rest/v1/program_phase_workouts*', async route => {
+      if (route.request().method() === 'GET') await held
+      await route.continue()
+    })
+    await open(page, s)
+    await page.locator('.pgm-seg').nth(2).click()
+    await expect(page.locator(header(s, 2))).toHaveAttribute('aria-expanded', 'true')
+    release()
+    await expect(page.locator(`${card(s, 0)} .pgm-ph-t`)).toContainText('3 sessions a week')
+    await expect(page.locator(`${card(s, 0)}`).getByText('[E2E] PgmPage Upper').first()).toBeAttached()
+    await expect(page.locator(header(s, 2))).toBeInViewport()
+  })
+
   test('periodisation is in the phase ⋯ (Edit when set, Add when not, nothing for a one-week phase); Generate weeks stays on the page', async ({ page }) => {
     const s = await seed(page, MAIN)
     await open(page, s)
