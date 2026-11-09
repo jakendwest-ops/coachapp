@@ -78,7 +78,7 @@ priority order:
 - **Google Fonts** loads on every page view (allowlisted as temporary): self-host it, then add a CSP.
 - **The coach calendar's `events` read has no client filter** (`SCOPE-OK`, `js/app-calendar-goals.js`): it also returns the master account's events on its own personal record, with no client name.
 - **Gate limits:** `check-secrets` reads the tree's tip, not each pushed commit; `invite-solo-user` imports a floating `esm.sh` supabase-js@2.
-- **Live objects with no origin here:** `audit_log` and its trigger, `sessions`, `session_exercises`, `logged_sessions`, a 2026-08-09 backup table, the `progress-photos` bucket.
+- **Live objects with no origin here:** `audit_log` and its trigger (retention only: [30 days](../scripts/trim-audit-log-2026-11-09.sql)), `sessions`, `session_exercises`, `logged_sessions`, a 2026-08-09 backup table, the `progress-photos` bucket.
 
 ## Test-gate coverage debt
 
