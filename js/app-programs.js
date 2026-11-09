@@ -1549,7 +1549,7 @@ function _pgmCurrentPhaseId(phases, mine, todayStr) {
 // the last was removed): then the one the plan is in opens (the first when there is none), so a coach is never left looking at closed cards.
 function _pgmOpenState(programId, phases, currentId) {
   let st = window._pgmOpen
-  if (!st || st.programId !== programId) st = window._pgmOpen = { programId, open: {}, seen: new Set() }
+  if (!st || st.programId !== programId) st = window._pgmOpen = { programId, open: {}, seen: new Set(), sessionsLoading: false, jumpedWhileLoading: null }
   const fresh = phases.filter(p => !st.seen.has(p.id))
   if (phases.length && fresh.length === phases.length) st.open[(phases.find(p => p.id === currentId) || phases[0]).id] = true
   st.seen = new Set(phases.map(p => p.id))
@@ -1628,9 +1628,10 @@ function _pgmRepaintTimeline() {
 
 // A block of the overview bar: open that phase if it is folded, and bring it to the top.
 function jumpToPhase(phaseId) {
-  if (!window._pgmOpen) return
-  if (!window._pgmOpen.open[phaseId]) { window._pgmOpen.open[phaseId] = true; _pgmRepaintCard(phaseId) }
-  if (window._pgmOpen.sessionsLoading) window._pgmOpen.jumpedWhileLoading = phaseId
+  const st = window._pgmOpen
+  if (!st) return
+  if (!st.open[phaseId]) { st.open[phaseId] = true; _pgmRepaintCard(phaseId) }
+  if (st.sessionsLoading) st.jumpedWhileLoading = phaseId
   _pgmScrollToPhase(phaseId)
 }
 
