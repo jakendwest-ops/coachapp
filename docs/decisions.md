@@ -12,6 +12,8 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-11-10** — Design system Stage 4: Inter stays and the colours stay neutral until Jake chooses a brand font and colour scheme (Jake, answering the open questions from 2026-08-22). Logger density is still open; he asked for a browser preview first.
+
 **2026-11-09** — `audit_log` keeps 30 days (Jake approved; [script](../scripts/trim-audit-log-2026-11-09.sql)). It had never been trimmed since June and reached 583 MB of a 667 MB database, over the Free plan's 0.5 GB on 408 MB of RAM; that drained the Disk IO budget and took the project offline during a release run. Emptied once (it cannot be undone), then a nightly `pg_cron` job, `audit-log-keep-30-days`, removes older entries. Rejected: deleting only part of it, which frees no space straight away. If the database grows again, check that job first.
 
 **2026-11-08** — Response to the simulated solo audit ([plan](superpowers/plans/2026-11-08-solo-audit-response.md)). A first-ever log is not a PR, answering R4-0 Q4, and one trophy goes on the best set. With no saved 1RM, the post-session question appears on a first log and then only on a new heaviest set. Rows still start empty (2026-07-11 stands) while a "Fill from last time" button is prototyped, not built. Progression direction is "+kg per week" in the plan builder and linked goals, both awaiting a file-by-file approval. The 2026-10-30 drop of a logger target stands.
