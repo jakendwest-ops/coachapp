@@ -52,7 +52,7 @@ test.describe('modal stacking (2026-08-12)', () => {
     await loginAsPT(page)
     const res = await page.evaluate(async () => {
       document.querySelectorAll('.modal-overlay').forEach(m => m.remove())
-      const clientId = (await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)).data?.[0]?.id
+      const clientId = (await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)).data?.[0]?.id
       if (!clientId) return { skip: true }
       // Two DIFFERENT functions, both building an overlay with id 'add-event-modal'.
       showAddEventModal('2026-01-01')

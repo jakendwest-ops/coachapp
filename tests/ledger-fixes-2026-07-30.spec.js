@@ -471,7 +471,7 @@ test.describe('deleteEvent/deleteGoal â€” anchored by created_by, an unrelated c
     try {
       await loginAsPT(ptPage)
       const owned = await ptPage.evaluate(async () => {
-        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         const { data: goal } = await db.from('goals').insert({
           client_id: client.id, created_by: currentUser.id, title: '[E2E] created-by-anchor-probe ' + Date.now(),
           goal_type: 'custom', priority: 1, status: 'active'
@@ -516,7 +516,7 @@ test.describe('workout_log_exercises/workout_log_sets + goals/goal_milestones â€
     try {
       await loginAsPT(ptPage)
       victimLogId = await ptPage.evaluate(async () => {
-        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         const { data: log } = await db.from('workout_logs').insert({
           coach_id: currentUser.id, client_id: client.id, name: '[E2E] child-table-probe ' + Date.now(),
           date: new Date().toLocaleDateString('en-CA')
@@ -569,7 +569,7 @@ test.describe('workout_log_exercises/workout_log_sets + goals/goal_milestones â€
     try {
       await loginAsPT(ptPage)
       const planted = await ptPage.evaluate(async () => {
-        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         const { data: goal } = await db.from('goals').insert({
           client_id: client.id, created_by: currentUser.id, title: '[E2E] goal-anchor-probe ' + Date.now(),
           goal_type: 'custom', priority: 1, status: 'active', current_value: 0
@@ -612,7 +612,7 @@ test.describe('workout_log_exercises/workout_log_sets + goals/goal_milestones â€
     try {
       await loginAsPT(ptPage)
       goalId = await ptPage.evaluate(async () => {
-        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         const { data: goal } = await db.from('goals').insert({
           client_id: client.id, created_by: currentUser.id, title: '[E2E] saveEditGoal-anchor-probe ' + Date.now(),
           goal_type: 'custom', priority: 1, status: 'active'

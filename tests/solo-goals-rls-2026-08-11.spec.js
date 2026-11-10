@@ -54,7 +54,7 @@ test.describe('solo goals RLS (2026-08-11)', () => {
         return { ok: !!data?.id, err: error ? error.message.slice(0, 90) : null }
       }
       const { data: coached } = await db.from('clients').select('id')
-        .eq('coach_id', currentUser.id).limit(1)
+        .eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       return {
         solo: await mk(soloId, 'solo'),
         coached: coached?.[0]?.id ? await mk(coached[0].id, 'coached') : { ok: true, err: null, skipped: true },
@@ -76,7 +76,7 @@ test.describe('solo goals RLS (2026-08-11)', () => {
     // The WITH CHECK was widened; prove it did not become a hole. An unrelated coach must still be
     // unable to plant a goal on this coach's client.
     const victim = await page.evaluate(async () => {
-      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       return data?.[0]?.id || null
     })
     test.skip(!victim, 'no coached client available')

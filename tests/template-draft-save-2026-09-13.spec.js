@@ -1462,7 +1462,7 @@ test.describe('Template draft: client-copy propagation prompt is pluralized', ()
       // a master template in program_phase_workouts, and the real client's OWN clone template
       // referenced via client_programs/client_program_workouts -- exactly what
       // _assignedCopiesForSession needs to populate copies.realClientIds/realClientNames.
-      const { data: clientRow } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).limit(1).single()
+      const { data: clientRow } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
       const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] I3 Program' }).select('id').single()
       const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
       const { data: masterTmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] I3 Session' }).select('id').single()
@@ -1524,7 +1524,7 @@ test.describe('Template draft: a partial-failure Save still propagates whatever 
   test('an insert that succeeds before a later rename fails still triggers the client-copy prompt', async ({ page }) => {
     await loginAsPT(page)
     const setup = await page.evaluate(async () => {
-      const { data: clientRow } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).limit(1).single()
+      const { data: clientRow } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
       const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] I7 Program' }).select('id').single()
       const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
       const { data: masterTmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] I7 Session' }).select('id').single()

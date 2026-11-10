@@ -53,7 +53,7 @@ test.describe('set counts agree across surfaces (2026-08-11)', () => {
 
   test('the coach session-detail header counts work rounds only, and the table agrees with it', async ({ page }) => {
     const res = await page.evaluate(async ({ TAG, PHASES }) => {
-      const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       const clientId = client?.[0]?.id
       if (!clientId) return { skip: 'no coached client' }
 
@@ -148,7 +148,7 @@ test.describe('set counts agree across surfaces (2026-08-11)', () => {
 
   test('an ordinary session with no phases is unaffected — every row is still a set', async ({ page }) => {
     const res = await page.evaluate(async ({ TAG }) => {
-      const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       const clientId = client?.[0]?.id
       if (!clientId) return { skip: 'no coached client' }
 

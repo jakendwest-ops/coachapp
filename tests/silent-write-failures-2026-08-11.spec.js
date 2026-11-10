@@ -52,7 +52,7 @@ test.describe('high-damage writes no longer fail silently (2026-08-11)', () => {
         id: null, name: '[E2E] SilentWrite clone', description: null, is_personal: false,
         workout_template_exercises: [{ exercise_name: null, exercise_type: 'strength', order_index: 0 }]
       }
-      const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       if (!client?.[0]?.id) return { skip: 'no coached client' }
 
       const seen = []

@@ -147,7 +147,7 @@ test.describe('PT Workouts page', () => {
     // leak class already fixed on the flat Templates list and the client Workouts-page fallback.
     // Calls the real function (not a re-implemented query) so a future regression here is caught.
     const clientId = await page.evaluate(async () => {
-      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       return data[0].id
     })
     await page.evaluate((clientId) => { startWorkoutRunner(clientId) }, clientId)
@@ -993,7 +993,7 @@ test.describe('saveWorkoutSession: a failed save is completed by saving again', 
 
   test('a failed sets write leaves the form open, and Save again gives one complete session', async ({ page }) => {
     const setup = await page.evaluate(async () => {
-      const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data: clients } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       return { clientId: clients?.[0]?.id || null }
     })
     test.skip(!setup.clientId, 'E2E PT account has no clients to log a session for')

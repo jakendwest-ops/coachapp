@@ -44,7 +44,7 @@ test.describe('client-authored per-exercise notes now render in the coach\'s ses
     await loginAsPT(page)
     const tag = '<b>[E2E] client note ' + Date.now() + '</b>'
     const fixture = await page.evaluate(async (noteText) => {
-      const { data: clientRow } = await db.from('clients').select('id, coach_id').eq('coach_id', currentUser.id).limit(1).single()
+      const { data: clientRow } = await db.from('clients').select('id, coach_id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
       const { data: log } = await db.from('workout_logs').insert({ coach_id: clientRow.coach_id, client_id: clientRow.id, name: '[E2E] Client-Note Session', date: '2026-01-01' }).select('id').single()
       const { data: ex } = await db.from('workout_log_exercises').insert({ log_id: log.id, exercise_name: '[E2E] Client-Note Exercise', exercise_type: 'strength', metric_type: 'weight_reps', order_index: 0, client_notes: noteText }).select('id').single()
       await db.from('workout_log_sets').insert({ workout_log_exercise_id: ex.id, set_number: 1, weight_kg: 40, reps_achieved: 10 })
@@ -77,7 +77,7 @@ test.describe('weight_logs INSERT — an unrelated coach cannot write a weight e
     try {
       await loginAsPT(ptPage)
       const realClientId = await ptPage.evaluate(async () => {
-        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         return data.id
       })
 
@@ -125,7 +125,7 @@ test.describe('workout_template_exercises UPDATE — a client cannot write to th
     try {
       await loginAsPT(ptPage)
       cleanup = await ptPage.evaluate(async () => {
-        const { data: clientRow } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data: clientRow } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         const { data: prog } = await db.from('programs').insert({ coach_id: currentUser.id, is_personal: false, name: '[E2E] WTE-Probe Program' }).select('id').single()
         const { data: phase } = await db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 1, order_index: 0 }).select('id').single()
         const { data: masterTmpl } = await db.from('workout_templates').insert({ coach_id: currentUser.id, program_id: prog.id, client_id: null, name: '[E2E] WTE-Probe Session' }).select('id').single()
@@ -528,7 +528,7 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
     try {
       await loginAsPT(ptPage)
       const realClientId = await ptPage.evaluate(async () => {
-        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         return data.id
       })
       await loginAsPT2(pt2Page)
@@ -567,7 +567,7 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
     try {
       await loginAsPT(ptPage)
       const setup = await ptPage.evaluate(async () => {
-        const { data: clientRow } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data: clientRow } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         const { data } = await db.from('client_1rms').insert({ client_id: clientRow.id, exercise_name: '[E2E] Delete-Probe 1RM', one_rm_kg: 100, recorded_at: '2026-01-01' }).select('id').single()
         return data.id
       })
@@ -593,7 +593,7 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
     try {
       await loginAsPT(ptPage)
       const realClientId = await ptPage.evaluate(async () => {
-        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         return data.id
       })
       await loginAsPT2(pt2Page)
@@ -633,7 +633,7 @@ test.describe('PT/Personal boundary audit — client_1rms, goals, events', () =>
     try {
       await loginAsPT(ptPage)
       const realClientId = await ptPage.evaluate(async () => {
-        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+        const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
         return data.id
       })
       await loginAsPT2(pt2Page)

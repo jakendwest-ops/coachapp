@@ -224,7 +224,7 @@ test.describe('Propagating an added exercise (2026-09-20)', () => {
     await loginAsPT(page)
     await page.evaluate(installHelpers)
     const clientRowId = await page.evaluate(async () => {
-      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       return data?.[0]?.id || null
     })
     test.skip(!clientRowId, 'the E2E coach has no client to assign to')

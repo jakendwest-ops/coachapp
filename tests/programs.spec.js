@@ -439,7 +439,7 @@ test.describe('Assignment-time 1RM check', () => {
     // completion and its finally block failed to remove them. Separate, still-open bug: see
     // bugs/2026-08-20-client-plan-clone-cleanup-silently-leaks.md.
     const clientId = await page.evaluate(async () => {
-      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       return data?.[0]?.id || null
     })
     test.skip(!clientId, 'E2E PT account has no clients to assign to')
@@ -522,7 +522,7 @@ test.describe('Assignment-time 1RM check', () => {
     // Same skip-before-try leak as the sibling test above — resolve the client BEFORE creating any
     // fixture, so a fired test.skip() cannot strand rows the try/finally was meant to remove.
     const clientId = await page.evaluate(async () => {
-      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       return data?.[0]?.id || null
     })
     test.skip(!clientId, 'E2E PT account has no clients to assign to')
@@ -807,7 +807,7 @@ test.describe('Duplicate week / fork-on-edit / delete blocking', () => {
     // above the writes; cleanup moved into a finally. Found by multi-agent-review 2026-08-20 after the
     // first pass fixed only the two instances it happened to grep up — the class, not the instance.
     const client = await page.evaluate(async () => {
-      const { data } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).limit(1)
+      const { data } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       return data?.[0] ? { id: data[0].id, name: data[0].full_name } : null
     })
     test.skip(!client, 'E2E PT account has no clients to assign to')

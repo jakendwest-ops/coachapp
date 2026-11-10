@@ -145,7 +145,7 @@ test('a CLIENT keeps the tracking controls and they WORK: a check-in saves, a mi
 test('a COACH and a SOLO user keep every goal control — the list AND the goal detail', async ({ page }) => {
   await loginAsPT(page)
   const soloId = await page.evaluate(() => window._soloClientId || null)
-  const coachedId = await page.evaluate(async () => (await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)).data?.[0]?.id || null)
+  const coachedId = await page.evaluate(async () => (await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)).data?.[0]?.id || null)
   // Both roles are required: a green run must never mean the solo path was skipped.
   test.skip(!soloId, 'this account has no solo record, so the solo controls cannot be checked')
   test.skip(!coachedId, 'this account has no coached client, so the coach controls cannot be checked')

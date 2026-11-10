@@ -41,7 +41,7 @@ async function sweep (page) {
 // the session-detail screen, and hands back the table markup.
 async function renderSessionWith (page, label, efforts) {
   return page.evaluate(async ({ TAG, label, efforts }) => {
-    const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+    const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
     const clientId = client?.[0]?.id
     if (!clientId) return { skip: 'no coached client' }
 

@@ -65,7 +65,7 @@ async function plantProgram(page, { name, isPersonal }) {
 // state that made the "Update assigned clients?" dialog appear.
 async function attachRealClient(page, fx) {
   return page.evaluate(async ({ fx, tag }) => {
-    const { data: clients } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).limit(1)
+    const { data: clients } = await db.from('clients').select('id, full_name').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
     if (!clients?.length) return { skip: 'no coached client on this account' }
     const clientId = clients[0].id
     const { data: clone } = await db.from('workout_templates')

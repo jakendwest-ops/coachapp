@@ -113,7 +113,7 @@ test.describe('client self-service writes refuse a foreign client_id at the app 
     const { loginAsPT } = require('./helpers')
     await loginAsPT(page)
     const r = await page.evaluate(async () => {
-      const { data: c } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+      const { data: c } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
       const origProfile = currentProfile
       const mk = (id) => { let e = document.getElementById(id); if (!e) { e = document.createElement('input'); e.id = id; document.body.appendChild(e) } return e }
       const err = document.createElement('p'); err.id = 'cwf-error'; document.body.appendChild(err)

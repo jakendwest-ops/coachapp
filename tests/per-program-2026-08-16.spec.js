@@ -169,7 +169,7 @@ test.describe('Per training plan', () => {
     // A null return must not be mistaken for an empty list — that would tell Jake he has no
     // programmes when in fact the read failed.
     expect(r).toContain("Couldn't load")
-    expect(r).not.toContain('No plan with a start date')
+    expect(r).not.toContain('No sessions logged yet')
   })
 
   test('kg and lb both render the tab without throwing', async ({ page }) => {

@@ -42,7 +42,7 @@ test.describe('client-scoped writes verify the clientId', () => {
   test('a COACH can still write for a client they actually coach (happy path)', async ({ page }) => {
     await loginAsPT(page)
     const r = await page.evaluate(async () => {
-      const { data: c } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1).single()
+      const { data: c } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1).single()
       // Assert the helper's verdict directly. Driving savePerformanceLog end-to-end would need its whole
       // form mounted and would write a real row for a real client; the guard is the thing under test.
       return { clientId: c.id, allowed: await _verifyClientAccess('probe', c.id) }

@@ -48,7 +48,7 @@ test.describe('solo render branches (2026-08-11)', () => {
     //     around it here keeps this test about the crash rather than blocked behind an RLS fix.
     const fx = await page.evaluate(async (TAG) => {
       const { data: coached } = await db.from('clients').select('id')
-        .eq('coach_id', currentUser.id).limit(1)
+        .eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       const clientId = coached?.[0]?.id
       if (!clientId) return { fail: 'no coached client available' }
       const { data: goal, error: ge } = await db.from('goals').insert({

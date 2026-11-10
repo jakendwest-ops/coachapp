@@ -241,7 +241,7 @@ test.describe('the PR baseline against the real database', () => {
 
   test('_prBaseline returns the true heaviest set — by name, by library id, and by both — and 0 when there is none', async ({ page }) => {
     const r = await page.evaluate(async ({ TAG }) => {
-      const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).limit(1)
+      const { data: client } = await db.from('clients').select('id').eq('coach_id', currentUser.id).not('user_id', 'is', null).order('created_at').limit(1)
       const clientId = client?.[0]?.id
       // A library exercise this client has never logged, so only the fixture rows match its id. Checked one id at a time
       // (a read of "every used id" would itself be an unordered read capped at 200 rows — the bug under test).
