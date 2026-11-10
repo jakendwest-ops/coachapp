@@ -37,3 +37,9 @@ R1, R2a, R2b, R2d and R4b are done (shipped across `v2026.09.7`-`v2026.09.9`); t
 - The Stats sheet and the weekday day list were tested against stubbed data, not Jake's real history or a real assigned program
   ([releases/v2026.09.11.md](releases/v2026.09.11.md)).
 - Two of Jake's own git stashes (a worktree's `stash@{0}` and `master`'s `stash@{1}` at `7aeb3ae`) were found untouched on 2026-09-17 and left alone.
+
+## Moved from current-sprint.md on 2026-11-10 (context budget)
+
+- The Stats sheet and the weekday day list were tested against stubbed data, not Jake's real history or a real assigned program
+  ([releases/v2026.09.11.md](../releases/v2026.09.11.md)).
+- Two of Jake's own git stashes (a worktree's `stash@{0}` and `master`'s `stash@{1}` at `7aeb3ae`) were found untouched on 2026-09-17 and left alone.

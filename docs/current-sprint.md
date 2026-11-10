@@ -19,6 +19,3 @@ Nothing built is unreleased as of the v2026.11.3 cut. Supabase log ingestion is 
 ## Requires Validation
 
 - Everything above reflects `git` and the filesystem at 2026-11-10; "pushed" is not "deployed", so confirm the deploy job in `gh run list`.
-- The Stats sheet and the weekday day list were tested against stubbed data, not Jake's real history or a real assigned program
-  ([releases/v2026.09.11.md](releases/v2026.09.11.md)).
-- Two of Jake's own git stashes (a worktree's `stash@{0}` and `master`'s `stash@{1}` at `7aeb3ae`) were found untouched on 2026-09-17 and left alone.
