@@ -184,8 +184,10 @@ test.describe('Runner exercise tabs and Next exercise (2026-09-28)', () => {
       expect(await page.evaluate(() => _runner.restRemaining != null), 'ticking the last set started a rest').toBe(true)
 
       // 1 and 4 are candidates; 2 is the lowest one still to do. A positional rule would say 4.
-      await expect(page.locator('#rest-timer-overlay'), 'the rest bar names the same exercise the button goes to').toContainText('Next: Nav B')
-      await expect(page.locator('#wr-cta-next'), 'and so does the Next bar at the bottom (the header no longer repeats it)').toContainText('Nav B')
+      // Since 2026-11-13 the live rest is the REST cell of the prescription strip (solo audit Phase 4a), which has no room for a
+      // "Next:" line; the Next bar at the bottom is now the one place that names where the button goes.
+      await expect(page.locator('#wr-rx #rest-timer-overlay'), 'the rest is counting in the strip').toBeVisible()
+      await expect(page.locator('#wr-cta-next'), 'the Next bar names the exercise the button goes to (the header no longer repeats it)').toContainText('Nav B')
       await nextBtn(page).click()
       const s = await page.evaluate(() => ({ idx: _runner.exIdx, resting: _runner.restRemaining != null, restFor: _runner._restForExIdx }))
       expect(s.idx, 'Next went to 2').toBe(1)

@@ -377,8 +377,8 @@ test.describe('Workout runner (client)', () => {
     if (!logged) return
     await expect(page.locator('#rest-timer-overlay')).toBeVisible({ timeout: 5000 })
 
-    // Skip rest
-    await page.locator('button:has-text("Skip →")').click()
+    // Skip rest: since 2026-11-13 a tap on the live REST cell in the prescription strip
+    await page.locator('#rest-timer-overlay button').click()
 
     // Rest overlay must be gone
     await expect(page.locator('#rest-timer-overlay')).not.toBeVisible({ timeout: 5000 })

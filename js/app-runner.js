@@ -1160,12 +1160,23 @@ function _buildTargetCols(tgt, ex) {
 // sink they reach (tests/full-file-review-2026-08-01 pins that).
 function _renderTargetBarHtml(cols) {
   if (!cols.length) return ''
-  return `<div id="wr-rx" style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-top:8px">${cols.map((c, i) =>
-    `<div style="flex:1;text-align:center;padding:8px 4px${i < cols.length - 1 ? ';border-right:1px solid var(--border)' : ''}">
+  return `<div id="wr-rx" style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-top:8px">${cols.map((c, i) => {
+    const edge = i < cols.length - 1 ? ';border-right:1px solid var(--border)' : ''
+    // The live rest (solo audit Phase 4a, Jake 2026-11-13): the REST cell itself counts down and a tap skips. It used to be a
+    // bar inserted above the set rows only while resting, which pushed every row down ~65 px on each tick. Same padding and type
+    // sizes as every other cell, so the strip keeps its height. #rest-timer-overlay / #rt-countdown keep their old ids: the
+    // rest ticker (_restTick) and the rest paths that clear the bar find it by them.
+    if (c.live) return `<div id="rest-timer-overlay" style="flex:1;display:flex${edge}">
+      <button type="button" onclick="skipRestTimer()" aria-label="Rest running. Tap to skip" style="flex:1;text-align:center;padding:8px 4px;border:0;background:var(--accent-light);cursor:pointer;font-family:inherit;color:inherit">
+        <div id="rt-countdown" style="font-size:var(--text-2xl, 18px);font-weight:800;color:var(--accent);line-height:1.1;font-variant-numeric:tabular-nums">${fmtRestCountdown(_runner.restRemaining)}</div>
+        <div style="font-size:var(--text-2xs, 9px);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-top:2px">Skip ›</div>
+      </button>
+    </div>`
+    return `<div style="flex:1;text-align:center;padding:8px 4px${edge}">
       <div style="font-size:var(--text-2xl, 18px);font-weight:800;color:${c.accent ? 'var(--accent)' : 'var(--text)'};line-height:1.1">${c.val}</div>
       <div style="font-size:var(--text-2xs, 9px);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:2px">${c.label}</div>
     </div>`
-  ).join('')}</div>`
+  }).join('')}</div>`
 }
 
 // The current set's prescription for the header. Tracks progress (loggedSets.length), so "3 × 8 then 1 × AMRAP"
@@ -1175,7 +1186,15 @@ function _runnerTargetCols(ex) {
   return _buildTargetCols(tgt, ex)
 }
 function _renderPrescriptionLine(ex) {
-  return ex.type !== 'cardio' ? _renderTargetBarHtml(_runnerTargetCols(ex).cols) : ''
+  if (ex.type === 'cardio') return ''
+  let cols = _runnerTargetCols(ex).cols
+  // The strip always has a REST cell, so the live countdown below replaces a cell and never adds one (an added cell on a
+  // strip that had none would add height). With no rest in the prescription it shows the rest the timer will actually run.
+  if (!cols.some(c => c.label === 'REST')) cols = cols.concat({ val: fmtRestCountdown(ex.restSecs || 90), label: 'REST' })
+  // Gated on the OWNING exercise, as the old bar was: a rest can be running for another exercise (2026-07-29 redesign).
+  const resting = _runner.restRemaining != null && _runner._restForExIdx != null && _runner.exercises[_runner._restForExIdx] === ex
+  if (resting) cols = cols.map(c => c.label === 'REST' ? { live: true } : c)
+  return _renderTargetBarHtml(cols)
 }
 
 function renderStrengthTable(ex) {
@@ -1198,24 +1217,7 @@ function renderStrengthTable(ex) {
       <div style="font-size:var(--text-sm, 11px);color:var(--warning-text);margin-top:2px">Tap to add</div>
     </div>` : ''
 
-  let restBar = ''
-  // Gated on _restForExIdx, not just restRemaining != null — a rest can now be running for a
-  // DIFFERENT exercise (2026-07-29 redesign) and must not paint this exercise's inline bar.
-  if (_runner.restRemaining != null && _runner._restForExIdx === _runner.exIdx) {
-    const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
-    const nextIdx = _nextExerciseTarget()   // the same answer the header and the Next button give
-    const nextEx = nextIdx === -1 ? null : _runner.exercises[nextIdx]
-    const nextLabel = hitTarget && nextEx ? 'Next: ' + nextEx.name : hitTarget && !nextEx ? 'Finish 🏁' : 'Next: Set ' + (ex.loggedSets.length + 1)
-    restBar = `
-    <div id="rest-timer-overlay" style="display:flex;align-items:center;gap:12px;padding:10px 12px;margin-bottom:10px;border-radius:var(--radius, 10px);background:var(--surface-2);border:1.5px solid var(--accent)">
-      <div id="rt-countdown" style="font-size:var(--text-4xl, 24px);font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;min-width:56px;text-align:center">${fmtRestCountdown(_runner.restRemaining)}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:var(--text-xs, 10px);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Rest</div>
-        <div style="font-size:var(--text-base, 13px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(nextLabel)}</div>
-      </div>
-      <button onclick="skipRestTimer()" style="padding:8px 12px;border:none;border-radius:var(--radius-sm, 8px);background:var(--surface);font-size:var(--text-base, 13px);font-weight:700;cursor:pointer;color:var(--text);flex-shrink:0">Skip →</button>
-    </div>`
-  }
+  // The live rest is the REST cell of the prescription strip now (_renderPrescriptionLine), not a bar above these rows.
 
   // ②c: the fast table adapts its columns to the exercise's metric_type. weight_reps is unchanged
   // (regression-safe); unilateral/timed_hold/jump_height/jump_distance render their own inputs. Cardio
@@ -1505,7 +1507,6 @@ function renderStrengthTable(ex) {
   }
   return `
     ${showTargets ? oneRMBanner : ''}
-    ${restBar}
     ${header}
     ${rows}
     <button onclick="addTableRow()" style="width:100%;margin-top:8px;padding:8px;border:1px dashed var(--border);border-radius:var(--radius-sm, 8px);background:transparent;font-size:var(--text-md, 12px);font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add set</button>
@@ -2422,9 +2423,9 @@ function startRestTimer(secs) {
   // decoupling "is a rest running" from "is it the one on screen", not by making rests un-stoppable.
   _runner._restForExIdx  = _runner.exIdx
   _runner._restPendingFire = false
-  // Table-mode rest renders inline inside renderStrengthTable (via the caller's imminent
-  // renderRunner() call right after this), so the non-blocking table stays visible/editable
-  // underneath — it never gets the floating page-top overlay that wizard mode still uses.
+  // Table-mode rest renders as the live REST cell of the prescription strip (_renderPrescriptionLine,
+  // via the caller's imminent renderRunner() call right after this), so the table stays visible/editable
+  // and nothing moves — it never gets the floating page-top overlay that wizard mode still uses.
   const tableMode = _isPlainStrengthExercise(_runner.exercises[_runner.exIdx])
   if (!tableMode) renderRestTimer()
   // 250 ms poll, per-second work only when the DISPLAYED second changes — see _restTick.
@@ -2461,7 +2462,7 @@ function _restTick() {
       document.getElementById('rest-timer-overlay')?.remove()
       const cb = _runner._afterRest
       if (cb) { _runner._afterRest = null; cb() }
-      else renderRunner() // clears the inline rest bar (table mode) / stale "Resting…" state
+      else renderRunner() // turns the strip's live REST cell back into the planned rest (table mode) / clears a stale "Resting…" state
     } else {
       // Elapsed while the athlete was viewing a different exercise. Leave _afterRest queued and
       // restForExIdx pointing at the owning exercise — runnerJumpTo consumes it the moment they
@@ -2499,14 +2500,16 @@ function fmtRestCountdown(secs) {
 }
 
 function skipRestTimer() {
-  // Defense in depth: this is only ever meant to be reachable from the inline table bar / floating
-  // overlay for the exercise the rest actually belongs to, both correctly gated on
-  // _restForExIdx === exIdx elsewhere — but if some future path ever leaves a stale overlay/button
-  // mounted for a rest that no longer belongs to the exercise on screen (the exact class of bug the
-  // add/swap-mid-rest gap had, found by multi-agent review 2026-07-29), this must not fire the wrong
-  // exercise's _afterRest. Just clear the stray DOM node and stop.
+  // Defense in depth: this is only ever meant to be reachable from the strip's live REST cell (table
+  // exercises, since 2026-11-13) / floating overlay for the exercise the rest actually belongs to, both
+  // correctly gated on the owning exercise elsewhere — but if some future path ever leaves a stale
+  // overlay/button mounted for a rest that no longer belongs to the exercise on screen (the exact class
+  // of bug the add/swap-mid-rest gap had, found by multi-agent review 2026-07-29), this must not fire the
+  // wrong exercise's _afterRest. Clear the stray node and redraw: the cell lives INSIDE the strip now, so a
+  // bare remove would leave the strip a cell short (multi-agent review 2026-11-13).
   if (_runner._restForExIdx != null && _runner._restForExIdx !== _runner.exIdx) {
     document.getElementById('rest-timer-overlay')?.remove()
+    renderRunner()
     return
   }
   _runner._restInterval = clearTimer(_runner._restInterval)
@@ -2827,8 +2830,8 @@ function runnerJumpTo(i) {
       if (cb) { _runner._afterRest = null; cb() } else renderRunner()
       return
     }
-    // Still counting down — nothing to tear down. Table mode's inline bar reappears on its own via
-    // renderRunner() (renderStrengthTable rebuilds it fresh, gated on _restForExIdx === exIdx). Wizard
+    // Still counting down — nothing to tear down. Table mode's live REST cell reappears on its own via
+    // renderRunner() (_renderPrescriptionLine rebuilds it fresh, gated on the owning exercise). Wizard
     // mode's floating overlay is a SEPARATE DOM node outside #workout-runner's innerHTML tree though —
     // it was explicitly removed on the way out (below), so renderRunner() alone won't bring it back;
     // it must be recreated explicitly here or "navigate back restores the full countdown" silently

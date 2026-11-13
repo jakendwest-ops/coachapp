@@ -12,6 +12,8 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-11-13** — The runner's live rest timer is the REST cell of the prescription strip, not a bar above the set rows (Jake). The old bar appeared above the rows only while resting and pushed them down 65 px on every tick. A reserved always-there slot was built first and rejected: it moved the first set row about 66 px lower on every exercise, against the 2026-09-28 log-first layout, and repeated the rest the strip already shows. The cell counts down, turns red in the last 3 s and a tap skips; the strip always carries a REST cell (the timer's planned rest when the prescription names none) so it never grows. The bar's "Next: Set n" line went with it; the Next bar still names the next exercise.
+
 **2026-11-10** — Design system Stage 4: Inter stays and the colours stay neutral until Jake chooses a brand font and colour scheme (Jake, answering the open questions from 2026-08-22). Logger density stays as it is today (he compared it with a roomier and a big-current-set layout), and the rest timer gets its space kept so the sets stop jumping when it appears.
 
 **2026-11-09** — `audit_log` keeps 30 days (Jake approved; [script](../scripts/trim-audit-log-2026-11-09.sql)). It had never been trimmed since June and reached 583 MB of a 667 MB database, over the Free plan's 0.5 GB on 408 MB of RAM; that drained the Disk IO budget and took the project offline during a release run. Emptied once (it cannot be undone), then a nightly `pg_cron` job, `audit-log-keep-30-days`, removes older entries. Rejected: deleting only part of it, which frees no space straight away. If the database grows again, check that job first.

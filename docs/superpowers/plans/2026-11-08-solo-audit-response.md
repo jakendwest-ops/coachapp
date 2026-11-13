@@ -90,7 +90,7 @@ Each part needs its own file-by-file approval. Interaction counts are from the a
 - Workout build, about 35 interactions down to about 15: Add exercise opens at 3 sets, one reps box (a range behind a link), expert fields folded away, and "Add another" keeps the sheet open.
 - Plan build, about 18 down to about 10: the first phase is made for you, name and weeks go on one form, and the start date defaults to next Monday.
 - Merge the Finish question and Save into one step with a way back.
-- Reserve the rest timer's space so the set rows don't jump after a tick (Jake chose this on 2026-11-10; logger density stays as it is).
+- ~~Reserve the rest timer's space so the set rows don't jump after a tick~~ BUILT 2026-11-13 as the live REST cell in the prescription strip (decisions.md 2026-11-13; logger density stays as it is).
 - Show a workout once in Your workouts, with its plan and own runs counted together.
 
 **4b. One language (Jake chooses the words first)**
