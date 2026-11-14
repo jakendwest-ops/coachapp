@@ -3110,8 +3110,117 @@ function _templateDraftIsDirty() {
     const base = byId.get(ex.id)
     if (!base) return true // shouldn't happen, but a missing baseline counts as changed
     if (i !== d.exercisesBaseline.indexOf(base)) return true // order moved
-    return TEMPLATE_EXERCISE_FIELDS.some(f => JSON.stringify(ex[f]) !== JSON.stringify(base[f]))
+    return TEMPLATE_EXERCISE_FIELDS.some(f => _canonJson(ex[f]) !== _canonJson(base[f]))
   })
+}
+
+// Value-only JSON for "did this change?" checks. Postgres jsonb hands a set's keys back in its OWN order,
+// while _cleanTemplateSets rebuilds every set in the allowlist's order, so a plain JSON.stringify called an
+// exercise "changed" just because its sheet was opened and saved; that exercise then rode along to every
+// copy (docs/bugs/2026-11-14-update-all-copies-overwrites-each-copy-instead-of-applying-only-the-changes.md).
+// Keys are sorted, and a null, undefined or false key counts the same as a missing one (the cleaner writes
+// `amrap:false`/`tempo:null` where older rows have no key at all).
+// The cleaner also writes two DEFAULTS older rows never carried (effortType 'rpe', intensityBasis 'stored');
+// they mean the same as no key, so they count as missing too (multi-agent review, 2026-11-14).
+const _SET_KEY_DEFAULTS = { effortType: 'rpe', intensityBasis: 'stored' }
+function _isAbsentVal(k, v) { return v === null || v === undefined || v === false || (k in _SET_KEY_DEFAULTS && _SET_KEY_DEFAULTS[k] === v) }
+// One key's value, under the same "absent" rule _canonJson uses inside an object.
+function _canonKeyVal(k, v) { return _isAbsentVal(k, v) ? 'null' : _canonJson(v) }
+function _canonJson(v) {
+  if (Array.isArray(v)) return '[' + v.map(_canonJson).join(',') + ']'
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).sort().filter(k => !_isAbsentVal(k, v[k]))
+      .map(k => JSON.stringify(k) + ':' + _canonJson(v[k])).join(',') + '}'
+  }
+  return v === undefined ? 'null' : JSON.stringify(v)
+}
+
+// The exercise-level fields a copy can take from an edit. `sets` (the count) is not here: it follows the
+// copy's own sets_json after the edit is applied (_applyExerciseEdits).
+const _EDIT_FIELDS = ['exercise_id', 'exercise_name', 'exercise_type', 'metric_type', 'notes', 'superset_group']
+
+// What changed on ONE exercise between its saved state (`base`) and the edited one (`next`), field by
+// field and set by set, so "Only my changes" can lay exactly that onto each copy's OWN row. Returns null
+// when nothing changed. Shape:
+//   fields:   { exercise_name: 'Incline Press', ... }      exercise-level fields that changed
+//   setsReplace: [...]                                    the type changed, so the copy's sets cannot be kept
+//   uniform:  { restMin: 120 }                            a set key changed on EVERY set: applies to every set of the copy
+//   keyed:    [{ i: 1, key: 'restMin', value: 120 }]      a set key changed on some sets only: same set number in the copy
+//   added:    [{...}]  removed: 1                         sets added to / taken off the end
+// Pure: tests-node/exercise-edits.test.mjs.
+function _exerciseEdits(base, next) {
+  const fields = {}
+  for (const f of _EDIT_FIELDS) if (_canonJson(base[f]) !== _canonJson(next[f])) fields[f] = next[f] ?? null
+  const B = base.sets_json || [], N = next.sets_json || []
+  const edits = { fields }
+  if ('metric_type' in fields) {
+    if (_canonJson(B) !== _canonJson(N)) edits.setsReplace = JSON.parse(JSON.stringify(N))
+  } else {
+    const n = Math.min(B.length, N.length)
+    const changedAt = new Map()   // key -> set numbers it changed on
+    for (let i = 0; i < n; i++) {
+      for (const k of new Set([...Object.keys(B[i] || {}), ...Object.keys(N[i] || {})])) {
+        if (_canonKeyVal(k, B[i]?.[k]) !== _canonKeyVal(k, N[i]?.[k])) { if (!changedAt.has(k)) changedAt.set(k, []); changedAt.get(k).push(i) }
+      }
+    }
+    const uniform = {}, keyed = []
+    for (const [k, at] of changedAt) {
+      const vals = at.map(i => _canonKeyVal(k, N[i]?.[k]))
+      if (at.length === n && vals.every(v => v === vals[0])) uniform[k] = N[0]?.[k] ?? null
+      else for (const i of at) keyed.push({ i, key: k, value: N[i]?.[k] ?? null })
+    }
+    if (Object.keys(uniform).length) edits.uniform = uniform
+    if (keyed.length) edits.keyed = keyed
+    if (N.length > B.length) edits.added = JSON.parse(JSON.stringify(N.slice(B.length)))
+    // `keep`: a copy is never cut below this exercise's new set count (a copy SHORTER than the base would
+    // otherwise lose sets it never had in common with the base; multi-agent review, 2026-11-14).
+    if (B.length > N.length) { edits.removed = B.length - N.length; edits.keep = N.length }
+  }
+  const any = Object.keys(fields).length || edits.setsReplace || edits.uniform || edits.keyed || edits.added || edits.removed
+  return any ? edits : null
+}
+
+// Lays an _exerciseEdits result onto one COPY's row (`target` needs only sets_json) and returns the
+// update patch: the changed exercise fields, plus sets_json/sets only when the sets were touched.
+function _applyExerciseEdits(target, edits) {
+  const patch = { ...(edits?.fields || {}) }
+  if (!edits) return patch
+  const touchesSets = edits.setsReplace || edits.uniform || edits.keyed || edits.added || edits.removed
+  if (!touchesSets) return patch
+  let T = edits.setsReplace ? JSON.parse(JSON.stringify(edits.setsReplace)) : JSON.parse(JSON.stringify(target.sets_json || []))
+  if (!edits.setsReplace) {
+    if (edits.uniform) for (const s of T) Object.assign(s, edits.uniform)
+    for (const { i, key, value } of edits.keyed || []) if (T[i]) T[i][key] = value
+    if (edits.removed) T = T.slice(0, T.length - Math.min(edits.removed, Math.max(0, T.length - (edits.keep || 0))))
+    if (edits.added) T.push(...JSON.parse(JSON.stringify(edits.added)))
+  }
+  patch.sets_json = T.length ? T : null
+  patch.sets = T.length || null
+  return patch
+}
+
+// Plain words for the propagation dialog: "Bench Press → Incline Press, rest".
+const _SET_KEY_WORD = {
+  repsMin: 'reps', repsMax: 'reps', amrap: 'reps', restMin: 'rest', restMax: 'rest', restSecs: 'rest',
+  effortType: 'effort', effortMin: 'effort', effortMax: 'effort', weight: 'weight', bodyweight: 'weight',
+  intensityMin: '%1RM', intensityMax: '%1RM', intensityBasis: '%1RM', isTopSet: 'top set', tempo: 'tempo',
+}
+function _exerciseEditsLabel(name, edits) {
+  if (!edits) return name
+  const f = edits.fields || {}
+  const words = []
+  if ('exercise_name' in f && f.exercise_name !== name) words.push(`→ ${f.exercise_name}`)
+  if ('metric_type' in f) words.push('type')
+  if ('notes' in f) words.push('notes')
+  if ('superset_group' in f) words.push('superset')
+  for (const k of [...Object.keys(edits.uniform || {}), ...(edits.keyed || []).map(e => e.key)]) words.push(_SET_KEY_WORD[k] || 'targets')
+  if (edits.added) words.push('sets added')
+  if (edits.removed) words.push('sets removed')
+  const uniq = [...new Set(words)]
+  if (!uniq.length) return name
+  // The swap reads as one phrase ("Bench Press → Incline Press"); everything else follows a comma.
+  const [first, ...rest] = uniq
+  return first.startsWith('→') ? [`${name} ${first}`, ...rest].join(', ') : `${name}: ${uniq.join(', ')}`
 }
 
 // Shared by _diffTemplateDraft (what changed), _templateDraftIsDirty (whether anything changed), and
@@ -3139,7 +3248,7 @@ function _diffTemplateDraft(draft) {
 
   const toUpdate = draft.exercises
     .filter(e => e.id !== null)
-    .filter(e => TEMPLATE_EXERCISE_FIELDS.some(f => JSON.stringify(e[f]) !== JSON.stringify(baselineById.get(e.id)?.[f])))
+    .filter(e => TEMPLATE_EXERCISE_FIELDS.some(f => _canonJson(e[f]) !== _canonJson(baselineById.get(e.id)?.[f])))
     .map(e => ({ id: e.id, row: e }))
 
   // Order compares the SURVIVING pre-existing rows' relative sequence, ignoring newly-inserted rows
@@ -3303,8 +3412,14 @@ async function saveTemplateDraft() {
     const patch = { exercise_id: row.exercise_id, exercise_name: row.exercise_name, exercise_type: row.exercise_type, metric_type: row.metric_type, sets: row.sets, sets_json: row.sets_json, notes: row.notes, superset_group: row.superset_group }
     const { data, error } = await db.from('workout_template_exercises').update(patch).eq('id', remapId(u.id)).eq('template_id', targetId).select()
     if (error || !data?.length) { failedAt = { step: 'update', id: u.id }; break }
-    const origName = d.exercisesBaseline.find(e => e.id === u.id)?.exercise_name
-    changes.push({ op: 'update', matchName: origName || row.exercise_name, row: patch })
+    const baseRow = d.exercisesBaseline.find(e => e.id === u.id)
+    // `edits` is what "Only my changes" lays onto each copy: the fields and sets that actually changed,
+    // never this week's whole prescription (2026-11-14 bug). `row` stays for the label fallback and for
+    // any caller that builds a change by hand.
+    // An empty `edits` (the row differed only in something a copy never takes, e.g. a stale `sets` count)
+    // still goes in, so the partial-failure recovery's per-op count stays right, but it writes nothing:
+    // null would fall back to the old whole-row overwrite (multi-agent review, 2026-11-14).
+    changes.push({ op: 'update', matchName: baseRow?.exercise_name || row.exercise_name, row: patch, edits: baseRow ? (_exerciseEdits(baseRow, row) || { fields: {} }) : undefined })
   }
 
   // Selects the real inserted id back (an RLS-refused INSERT resolves as { data: [], error: null } --
@@ -3496,8 +3611,20 @@ async function _propagateExerciseChangeToTemplates(change, targetIds) {
   for (const tid of targetIds) {
     if (change.op === 'delete') {
       await propagate('delete', db.from('workout_template_exercises').delete().eq('template_id', tid).eq('exercise_name', change.matchName))
+    } else if (change.op === 'update' && change.edits) {
+      // Field-level (2026-11-14): read each matching row's OWN sets, lay only the edited fields/sets onto
+      // them, write back by id. A copy's week-specific loads, reps and RPE survive. The row was readable,
+      // so a write that returns no row was refused: counted, like the add branch.
+      const { data: rows, error } = await dbq('_propagateExerciseChange:read', db.from('workout_template_exercises').select('id, sets_json').eq('template_id', tid).eq('exercise_name', change.matchName), { showUserError: false })
+      if (error) { propagationFailures++; continue }
+      for (const r of rows || []) {
+        const patch = _applyExerciseEdits(r, change.edits)
+        if (!Object.keys(patch).length) continue
+        await propagate('update', db.from('workout_template_exercises').update(patch).eq('id', r.id).eq('template_id', tid).select('id'), { expectRows: true, tid })
+      }
     } else if (change.op === 'update') {
-      // Update every row in the target that matches the name (0 rows = a safe no-op when the target
+      // A change built without `edits` (a hand-built one, or a baseline row that was missing): the old
+      // whole-row write. Update every row in the target that matches the name (0 rows = a safe no-op when the target
       // doesn't have that exercise). Acts on ALL same-named rows, matching the delete branch — so a
       // session that happens to list an exercise name twice is treated consistently, never left
       // half-updated. A rename is fine: change.row carries the new name.
@@ -3652,8 +3779,9 @@ function _showClientCopyPropagateModal(clientNames, templateId, changes) {
   const summary = changes.length === 1
     ? (changes[0].op === 'rename' ? 'Only the name and description will be applied.'
        : changes[0].op === 'reorder' ? 'Only the order will be applied.'
+       : changes[0].op === 'update' && changes[0].edits ? `Only what you changed will be applied: ${_exerciseEditsLabel(changes[0].matchName || '', changes[0].edits)}.`
        : 'Only the exercise you changed will be applied.')
-    : `${changes.length} changes: ${changes.map(c => OP_LABEL[c.op] ? OP_LABEL[c.op](c.matchName || '') : c.op).join(' · ')}`
+    : `${changes.length} changes: ${changes.map(c => c.op === 'update' && c.edits ? _exerciseEditsLabel(c.matchName || '', c.edits) : OP_LABEL[c.op] ? OP_LABEL[c.op](c.matchName || '') : c.op).join(' · ')}`
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'client-copy-modal'
@@ -3713,26 +3841,38 @@ function _unlinkedSameNameCount (rows, idOf, templateId, name, targets) {
 // HTML comment.
 function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, changes = [] }) {
   const OP_LABEL = { add: n => `${n} added`, update: n => `${n} updated`, delete: n => `${n} removed`, rename: () => 'renamed', reorder: () => 'reordered' }
+  const word = c => c.op === 'update' && c.edits ? _exerciseEditsLabel(c.matchName || '', c.edits) : OP_LABEL[c.op] ? OP_LABEL[c.op](c.matchName || '') : c.op
   const summary = changes.length === 1
     ? (changes[0].op === 'rename' ? 'Only the name and description will be applied — a week marker like "— W2" is kept.'
        : changes[0].op === 'reorder' ? 'Only the ORDER changes. Exercises a copy has that this one does not stay exactly where they are.'
+       : changes[0].op === 'update' && changes[0].edits ? `Only what you changed will be applied: ${word(changes[0])}.`
        : 'Only the exercise you changed will be applied.')
-    : `${changes.length} changes: ${changes.map(c => OP_LABEL[c.op] ? OP_LABEL[c.op](c.matchName || '') : c.op).join(' · ')}`
+    : `${changes.length} changes: ${changes.map(word).join(' · ')}`
   const action = changes.length === 1 && changes[0].op === 'rename' ? `Rename all ${count + 1}`
     : changes.length === 1 && changes[0].op === 'reorder' ? `Reorder all ${count + 1}`
     : `Update all ${count + 1} copies`
   const one = unlinked === 1
+  // Two ways to update (Jake, 2026-11-14): only the edits (the default, and the only thing this dialogue
+  // offered before), or make every copy an exact copy of this workout. Native radios, read by the button.
+  const choice = (value, title, detail, checked, danger) => `
+          <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;margin:0 0 8px;border:1px solid var(--border);border-radius:var(--radius, 10px);cursor:pointer">
+            <input type="radio" name="propagate-mode" value="${value}" ${checked ? 'checked' : ''} style="margin-top:3px">
+            <span><span style="display:block;font-weight:700;font-size:var(--text-lg, 14px)">${title}</span>
+            <span style="display:block;font-size:var(--text-base, 13px);line-height:1.5;color:${danger ? 'var(--danger, #ef4444)' : 'var(--text-muted)'}">${detail}</span></span>
+          </label>`
   return `
       <div class="modal">
         <div class="modal-header">
           <h2 class="modal-title">Apply to other sessions?</h2>
           <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
         </div>
-        <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 ${unlinked ? '12px' : '20px'}">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}. ${escapeHtml(summary)}</p>
-        ${unlinked ? `<p style="font-size:var(--text-base, 13px);line-height:1.6;margin:0 0 20px;color:var(--text-muted)"><strong>${unlinked}</strong> other session${one ? '' : 's'} here share${one ? 's' : ''} this name but ${one ? 'is' : 'are'} not linked to this one, so ${one ? 'it' : 'they'} will not change.</p>` : ''}
-        <div class="modal-footer">
+        <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 12px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}.</p>
+        ${choice('changes', 'Only my changes', `${escapeHtml(summary)}${summary.endsWith('.') ? '' : '.'} Each copy keeps its own weights, reps and effort.`, true, false)}
+        ${choice('whole', 'Whole workout', 'Every copy becomes an exact copy of this one. Each copy\'s own weights, reps, effort and extra exercises are replaced.', false, true)}
+        ${unlinked ? `<p style="font-size:var(--text-base, 13px);line-height:1.6;margin:4px 0 0;color:var(--text-muted)"><strong>${unlinked}</strong> other session${one ? '' : 's'} here share${one ? 's' : ''} this name but ${one ? 'is' : 'are'} not linked to this one, so ${one ? 'it' : 'they'} will not change.</p>` : ''}
+        <div class="modal-footer" style="margin-top:12px">
           <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
-          <button class="btn-primary" onclick="_applyToAllSessions('${templateId}')">${action}</button>
+          <button class="btn-primary" onclick="_applyToAllSessions('${templateId}',document.querySelector('#propagate-modal input[name=propagate-mode]:checked')?.value)">${action}</button>
         </div>
       </div>
     `
@@ -3964,26 +4104,89 @@ async function _propagateReorderToTemplates(change, targetIds) {
 
 // Applies the captured changes to the other copies of this session and to THEIR assigned client
 // copies — never a wholesale workout overwrite.
-async function _applyToAllSessions(sourceTemplateId) {
+// `mode` is the dialogue's choice: 'changes' (default) applies only the edits; 'whole' makes every copy an
+// exact copy of this workout (_replaceWholeWorkoutInTemplates). Same targets either way.
+async function _applyToAllSessions(sourceTemplateId, mode = 'changes') {
   closeModal('propagate-modal')
   const targetIds = window._propagateTargets || []
   const changes = window._propagateChanges || window._lastExerciseChanges
   if (!targetIds.length || !changes?.length) { openTemplate(sourceTemplateId, window._templateCtx); return }
+  const whole = mode === 'whole'
+  const applyTo = async (ids) => {
+    if (whole) return await _replaceWholeWorkoutInTemplates(sourceTemplateId, ids)
+    let f = 0
+    for (const change of changes) f += (await _applyChangeToTemplates(change, ids)) || 0
+    return f
+  }
 
-  let applyAllFailures = 0
-  for (const change of changes) applyAllFailures += (await _applyChangeToTemplates(change, targetIds)) || 0
+  let applyAllFailures = await applyTo(targetIds)
 
   if (window._templateCtx?.programId) {
-    const copies = await _assignedCopiesForSession(targetIds)
-    for (const change of changes) applyAllFailures += (await _applyChangeToTemplates(change, copies.soloSelfIds)) || 0
+    // Whole mode also replaces the user's own assigned copy of the EDITED workout: that copy was synced
+    // before this dialogue with the edits only, and "every copy becomes an exact copy" must include the one
+    // a solo user trains from (multi-agent review, 2026-11-14). Changes mode leaves it, as before.
+    const copies = await _assignedCopiesForSession(whole ? [...targetIds, sourceTemplateId] : targetIds)
+    applyAllFailures += await applyTo(copies.soloSelfIds)
   }
   if (applyAllFailures) showToast(`${applyAllFailures} assigned session${applyAllFailures === 1 ? '' : 's'} did not pick up this change`, 'error', 6000)
+  else if (whole) showToast(`${targetIds.length} cop${targetIds.length === 1 ? 'y now matches' : 'ies now match'} this workout`, 'success')
   else if (changes.length === 1 && changes[0].op === 'rename') showToast(`Renamed ${targetIds.length + 1} copies`, 'success')
   else if (changes.length === 1 && changes[0].op === 'reorder') showToast(`Reordered ${targetIds.length + 1} copies`, 'success')
   else showToast(`Updated ${targetIds.length + 1} copies`, 'success')
 
-  log.ok('_applyToAllSessions', `propagated ${changes.length} change(s) to ${targetIds.length} sessions`)
+  log.ok('_applyToAllSessions', `propagated ${whole ? 'whole workout' : changes.length + ' change(s)'} to ${targetIds.length} sessions`)
   openTemplate(sourceTemplateId, window._templateCtx)
+}
+
+// "Whole workout" (Jake, 2026-11-14): every target becomes an exact copy of the source's exercises, in the
+// source's order, and takes its name and description (each copy keeps its own week marker, via
+// _propagateRenameToTemplates). This is the wholesale overwrite that was REMOVED as the silent default on
+// 2026-07-12; it is back only as an explicit, warned choice in the dialogue.
+// Insert-then-delete per target, never delete-first: a refused insert leaves the copy exactly as it was,
+// and a refused delete removes the rows just inserted, so a copy is never left empty or doubled.
+// Returns the number of targets that did not end up matching.
+async function _replaceWholeWorkoutInTemplates(sourceTemplateId, targetIds) {
+  if (!targetIds?.length) return 0
+  const { data: src, error: sErr } = await dbq('_replaceWholeWorkout:source',
+    db.from('workout_template_exercises').select('exercise_id, exercise_name, exercise_type, metric_type, order_index, sets, sets_json, notes, superset_group').eq('template_id', sourceTemplateId).order('order_index'), { showUserError: false })
+  const { data: meta } = await dbq('_replaceWholeWorkout:meta', db.from('workout_templates').select('name, description').eq('id', sourceTemplateId).maybeSingle(), { showUserError: false })
+  if (sErr || !src || !meta) { log.error('_replaceWholeWorkout', 'source read failed', { templateId: sourceTemplateId }); return targetIds.length }
+  let failures = 0
+  const replaced = []
+  for (const tid of targetIds) {
+    const { data: old, error: oErr } = await dbq('_replaceWholeWorkout:old', db.from('workout_template_exercises').select('id').eq('template_id', tid), { showUserError: false })
+    if (oErr) { failures++; continue }
+    let newIds = []
+    if (src.length) {
+      const { data: ins, error: iErr } = await dbq('_replaceWholeWorkout:insert',
+        db.from('workout_template_exercises').insert(src.map((r, i) => ({ ...r, template_id: tid, order_index: i }))).select('id'), { showUserError: false })
+      if (iErr || (ins || []).length !== src.length) { log.error('_replaceWholeWorkout', 'insert refused', { templateId: tid }); failures++; continue }
+      newIds = ins.map(r => r.id)
+    }
+    const oldIds = (old || []).map(r => r.id)
+    if (oldIds.length) {
+      const { data: del, error: dErr } = await dbq('_replaceWholeWorkout:delete', db.from('workout_template_exercises').delete().in('id', oldIds).eq('template_id', tid).select('id'), { showUserError: false })
+      if (dErr || (del || []).length !== oldIds.length) {
+        // A short count is not proof the old rows are still there (another tab may have removed one in
+        // between), so re-read before deciding: rolling back when they are gone would EMPTY the copy.
+        const { data: still, error: rErr } = await dbq('_replaceWholeWorkout:recheck', db.from('workout_template_exercises').select('id').in('id', oldIds).eq('template_id', tid), { showUserError: false })
+        if (!rErr && !(still || []).length) { replaced.push(tid); continue }
+        failures++
+        // Roll back only when NONE of the old rows went: the copy is then exactly as it was. If some went,
+        // removing the new rows too would leave it emptier still, so it is left and logged.
+        if (!rErr && (still || []).length === oldIds.length && newIds.length) {
+          const { data: rb } = await dbq('_replaceWholeWorkout:rollback', db.from('workout_template_exercises').delete().in('id', newIds).eq('template_id', tid).select('id'), { showUserError: false })
+          if ((rb || []).length !== newIds.length) log.error('_replaceWholeWorkout', 'rollback incomplete; copy may hold both versions', { templateId: tid })
+          else log.error('_replaceWholeWorkout', 'old rows not removed; insert rolled back', { templateId: tid })
+        } else log.error('_replaceWholeWorkout', 'old rows only partly removed; copy left holding both', { templateId: tid })
+        continue
+      }
+    }
+    replaced.push(tid)
+  }
+  // Only the copies whose exercises were replaced take the name too, so one target is never counted twice.
+  failures += (await _propagateRenameToTemplates({ op: 'rename', name: meta.name, description: meta.description }, replaced)) || 0
+  return failures
 }
 
 // Clones a shared master template (name + description + exercises), preserving its coach/program
