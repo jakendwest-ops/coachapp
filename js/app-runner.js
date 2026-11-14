@@ -1070,8 +1070,9 @@ function _fillValues(ex, i) {
     if (repsRx) { if (/^\d+$/.test(repsRx)) out.reps = repsRx }
     else if (_hasNumVal(prev?.reps_achieved)) out.reps = String(prev.reps_achieved)
   }
+  const isBw = !!ex.bodyweight   // a yes/no flag, not a load (named so checks.sh's zero-weight rule reads it as one)
   if (mt === 'weight_reps') {
-    if (!ex.bodyweight) {
+    if (!isBw) {
       const basis = _basisKgFor(ex, tgt)
       const kg = tgt.intensityMin && basis ? parseFloat(_calcWeightFromPct(basis, tgt.intensityMin)) : 0
       if (kg > 0) { if (!(tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin)) out.weight = kg }
@@ -1603,7 +1604,7 @@ function renderStrengthTable(ex) {
   const fillWeights = fills.filter(p => p.f === 'weight').map(p => weightToPref(p.v))
   const hasFillSource = !!_runner?.lastSession?.[ex.name]?.sets?.length && ex.tableRows.some((_, i) => Object.keys(_fillValues(ex, i)).length)
   const fillBtn = !hasFillSource ? '' : `<button id="wr-fill-last" type="button" ${fills.length ? 'onclick="fillFromLastTime()"' : 'disabled aria-disabled="true"'} style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:44px;margin-bottom:8px;padding:0 14px;border:1.5px solid ${fills.length ? 'var(--accent)' : 'var(--border)'};border-radius:var(--radius, 10px);background:${fills.length ? 'var(--accent-light)' : 'transparent'};color:${fills.length ? 'var(--accent)' : 'var(--text-muted)'};font-family:inherit;font-size:var(--text-md, 14px);font-weight:700;cursor:${fills.length ? 'pointer' : 'default'}">
-      <span style="flex-shrink:0;white-space:nowrap">${fills.length ? 'Fill from last time' : 'Filled from last time'}</span>${fillWeights.length ? `<span style="min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:500;font-size:var(--text-sm, 12px);color:var(--text-muted)">${escapeHtml(fillWeights.join(' · '))} ${escapeHtml(window._unitPrefs.weight)}</span>` : ''}
+      <span style="flex-shrink:0;white-space:nowrap">${fills.length ? 'Fill from last time' : 'Filled from last time'}</span>${fillWeights.length ? `<span style="min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:500;font-size:var(--text-sm, 12px);color:var(--text-muted)">${escapeHtml(fillWeights.join(' · '))} ${escapeHtml(weightLabel.toLowerCase())}</span>` : ''}
     </button>`
   return `
     ${showTargets ? oneRMBanner : ''}
