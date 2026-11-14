@@ -1,0 +1,300 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoachApp Solo Audit</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: a training logbook. One reading column, plate colours carry priority (red 25kg = high, yellow 15kg = medium, green 10kg = low). */
+:root{--bg:#f3f4f1;--panel:#ffffff;--ink:#1c2125;--muted:#596268;--line:#d8dcd6;--accent:#1f4e8c;--high:#b92b27;--med:#8a6400;--low:#2c7a4b;--track:#e3e6e0;
+--display:"Barlow Condensed","Arial Narrow",sans-serif;--body:"Source Sans 3","Segoe UI",sans-serif;--mono:"IBM Plex Mono",Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15191c;--panel:#1e2428;--ink:#eceeea;--muted:#a3adb2;--line:#333b40;--accent:#86b4f0;--high:#f0817c;--med:#e3bb55;--low:#73cc97;--track:#2d3439;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#15191c;--panel:#1e2428;--ink:#eceeea;--muted:#a3adb2;--line:#333b40;--accent:#86b4f0;--high:#f0817c;--med:#e3bb55;--low:#73cc97;--track:#2d3439;color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:17px/1.5 var(--body)}
+.wrap{max-width:860px;margin:0 auto;padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:44px}
+.wrap>*{min-width:0}
+h1,h2,h3{font-family:var(--display);line-height:1.08;text-wrap:balance;margin:0}
+h1{font-size:clamp(44px,8vw,68px)}h2{font-size:36px;border-bottom:3px solid var(--ink);padding-bottom:6px;margin-bottom:16px}h3{font-size:25px;margin:26px 0 10px}
+p{margin:0 0 12px;max-width:68ch}ul{margin:0 0 12px;padding-left:20px;max-width:68ch}li{margin-bottom:6px}
+.lede{font-size:21px;line-height:1.4;margin-top:14px}.muted{color:var(--muted)}
+nav{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:16px}a{color:var(--accent)}a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tw{overflow-x:auto;background:var(--panel);border:1px solid var(--line)}table{border-collapse:collapse;width:100%;font-size:16px}th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}th{font-family:var(--display);font-size:18px}tr:last-child td{border-bottom:0}
+.score{display:grid;grid-template-columns:minmax(0,190px) 44px minmax(0,1fr);gap:4px 12px;align-items:start;padding:11px 0;border-bottom:1px solid var(--line)}.score b{font-weight:700}.num{font:500 19px var(--mono);font-variant-numeric:tabular-nums}.bar{height:9px;background:var(--track);margin-top:7px}.bar i{display:block;height:100%;background:var(--accent)}.score p{grid-column:3;margin:0;font-size:16px;color:var(--muted)}
+@media(max-width:560px){.score{grid-template-columns:minmax(0,1fr) 44px}.score p,.score .bar{grid-column:1/-1}}
+.item{background:var(--panel);border:1px solid var(--line);border-left:7px solid var(--accent);padding:13px 16px;margin-bottom:10px}.item.high{border-left-color:var(--high)}.item.medium{border-left-color:var(--med)}.item.low{border-left-color:var(--low)}
+.item h4{font:700 18.5px/1.3 var(--body);margin:0 0 5px}.item dl{margin:0;display:grid;grid-template-columns:minmax(0,92px) minmax(0,1fr);gap:3px 12px;font-size:15.5px}.item dt{color:var(--muted);font-weight:600}.item dd{margin:0}
+@media(max-width:480px){.item dl{grid-template-columns:minmax(0,1fr)}.item dd{margin-bottom:5px}}
+.tag{font:500 13px var(--mono);padding:1px 7px;border:1px solid currentColor;margin-left:7px;white-space:nowrap}.tag.Low{color:var(--low)}.tag.Medium{color:var(--med)}.tag.High{color:var(--high)}
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}figure{margin:0}figure img{display:block;width:100%;border:1px solid var(--line)}figcaption{font-size:15px;color:var(--muted);margin-top:5px}
+.ans{font-weight:700}.y{color:var(--low)}.p{color:var(--med)}.n{color:var(--high)}
+</style>
+<div class="wrap">
+<header>
+<p class="muted" style="margin:0">Solo lifter, no coach · 3 days a week · 8 November 2026</p>
+<h1>CoachApp through a new lifter's eyes</h1>
+<p class="lede">The app tells you what to train today in under a second. It is much slower at logging, and it can't yet tell you to add weight or show that a goal is moving. A lifter would likely try it for a block, then go back to a tracker that pre-fills sets.</p>
+<nav><a href="#limits">Test limits</a><a href="#scenarios">Scenarios</a><a href="#design">UX audit</a><a href="#expert">Fitness review</a><a href="#compete">Competitors</a><a href="#scores">Scores</a><a href="#friction">Friction list</a><a href="#tops">Top 10s</a></nav>
+</header>
+
+<section>
+<h2>The three questions that matter</h2>
+<div class="tw"><table><tr><th>Question</th><th>Answer</th><th>What happened</th></tr>
+<tr><td>What should I do today?</td><td class="ans y">Yes, instantly</td><td>Today shows the workout name, "Session 1 of 3 this week" and a Start button at the top. This is the app's strongest moment.</td></tr>
+<tr><td>Am I getting stronger?</td><td class="ans p">Only at the end</td><td>The end-of-block card says so clearly, for two lifts. For the four weeks before that you open each lift separately.</td></tr>
+<tr><td>Am I progressing towards my goals?</td><td class="ans n">No, and it misleads</td><td>After squatting 107.5kg against a 100kg start and logging 83.5kg bodyweight, both goals read "0%" or their starting value with "No updates yet".</td></tr></table></div>
+<div class="shots" style="margin-top:16px">
+<figure><img src="shots/tick.png" alt="Logger with an Enter reps first warning"><figcaption>Target is on screen, but ticking the set is refused.</figcaption></figure>
+<figure><img src="shots/goals.png" alt="Goals page showing no updates"><figcaption>Goals after four weeks of training.</figcaption></figure>
+<figure><img src="shots/summary.png" alt="Summary with a trophy on every set"><figcaption>Nine sets, nine trophies, including the weaker third sets.</figcaption></figure>
+<figure><img src="shots/block.png" alt="Block complete card"><figcaption>The best screen in the app. It needs to exist earlier.</figcaption></figure>
+</div>
+</section>
+
+<section id="limits">
+<h2>What this test could and could not see</h2>
+<p>I used the current master build in a phone-sized touch browser (390×844) against the real database, and I tapped through the real screens. I logged 12 sessions and 12 weigh-ins, moving the browser's date forward to cover 12 Oct to 9 Nov.</p>
+<ul>
+<li><strong>Not a true first run.</strong> Sign-up is closed, so I used the test coach's Personal view. That account shows a PT/Personal switch, an email in the greeting, 288 leftover test plans and almost no exercise library. A real solo account gets starter content, which I did not see. I did not score those things.</li>
+<li><strong>Not a real phone.</strong> I did not test iOS Safari, one-handed reach, the on-screen keyboard covering fields, a screen staying awake, or the sound at the end of a rest.</li>
+<li><strong>Not covered:</strong> cardio, timed, unilateral and superset exercises, pounds, offline use, screen readers, and the desktop layout.</li>
+<li><strong>Block comparison is only partly judged.</strong> Its dropdowns were filled with old test plans.</li>
+<li><strong>Competitor notes</strong> come from web pages, many written by vendors, plus general product knowledge. I did not use those apps. Check details before relying on them.</li>
+<li><strong>Tap counts</strong> are counted from the flows I ran. They exclude keyboard dismissal and scrolling, so real use costs more.</li>
+</ul>
+</section>
+
+<section id="scenarios">
+<h2>The six scenarios</h2>
+<h3>1. One-off workout</h3>
+<p><strong>Result: completed, about 35 interactions to build and 33 to log.</strong> Building three exercises took 10 interactions each, because a new exercise opens a long form that starts at 1 set and 0 reps. Logging needed weight, reps and a tick on all nine sets.</p>
+<ul>
+<li>Good: the Create choice is clear, the logger layout is clean, numeric keypads and 16px inputs are correct, and the rest timer starts itself.</li>
+<li>Unclear: "template", "workout" and "session" are used for overlapping things. "Save workout" means three different things across the flow.</li>
+<li>Unexpected: in a first session, typing 100kg for set 1 leaves set 2 empty.</li>
+<li>Missing: warm-up sets, set-level effort entry in the main table, and editing a session after saving. A saved session offers only Delete.</li>
+<li>Faster creation: one sheet with sets × reps × weight on one line, default 3 sets, add another without closing. Faster logging: tick to accept.</li>
+</ul>
+<h3>2. Four-week programme</h3>
+<p><strong>Result: completed, and quicker than expected once the model clicked.</strong> You build one week and duplicate it, which turns 12 sessions into 2 workouts and about 18 interactions, not counting building the workouts.</p>
+<ul>
+<li>Good: Duplicate week is excellent. Copies are labelled, the week tabs are clear, and the picker shows where a workout is already used.</li>
+<li>Workout vs programme: mostly understandable, but "phase" is compulsory before anything else, and "Add to my plan" on a thing called a training plan reads oddly. "Assign" is coach language.</li>
+<li>Progression is the weak point. It only works as % of 1RM or RPE. A lifter writing 100kg can't say "add 2.5kg a week", and the app only warns after you open the tool that nothing in Week 1 can be progressed.</li>
+<li>Missing: templates to start from, a view of all 4 weeks at once, weekly set counts per muscle, and swapping a workout across all weeks.</li>
+</ul>
+<h3>3. Following it for four weeks</h3>
+<p><strong>Result: 11 of 12 sessions, one deliberately missed.</strong> Finding the day's session stayed effortless. The repeated typing got worse every week.</p>
+<ul>
+<li>Repeated frustration: after week 1, last session's numbers appear in grey. They look filled in, but ticking gives "Enter reps first". That was 27 entries a session, every session.</li>
+<li>Gets worse over time: the target never moves. In week 4 the deadlift still said 120kg when I had lifted 130kg. By then the target is noise.</li>
+<li>Useful at first, annoying later: the "New 1RM estimates" pop-up. It appeared after a session with no records, and it blocks the screen after every save until dealt with.</li>
+<li>Reviewing last time: the Last Time card and Stats sheet are good, but the card sits below the sets and shows only the top set, hiding that the third set fell short.</li>
+<li>Missed session: Friday turns red and the plan moves on with no offer to catch up. You can restart it from the Calendar, three taps in, on a screen that doesn't say it was missed.</li>
+<li>Encouragement to progress: none during the session, apart from trophies afterwards.</li>
+</ul>
+<h3>4. Goals</h3>
+<p><strong>Result: easy to create, then disconnected from everything.</strong> The form is short and the examples help. A goal has no link to an exercise or to bodyweight, so all progress is typed by hand through Update progress. Today lists goals with days remaining but no progress.</p>
+<ul><li>Missing: link to a lift or to bodyweight, automatic updates, projected finish date, reminders, a celebration on completion, and goal context in the logger.</li></ul>
+<h3>5. Bodyweight</h3>
+<p><strong>Result: the most complete feature.</strong> Logging is one field and one button on Today. The chart with a 7-day average shows a clear trend, and the history is grouped by month. I logged 12 entries and could see +1.1kg at once.</p>
+<ul><li>Missing: weekly rate of change, trend against the goal, projected date, a link to the training phase, body measurements or photos, and Apple Health or Google Fit import. Target weight also lives in two places, here and in Goals.</li></ul>
+<h3>6. Progress review after the block</h3>
+<div class="tw"><table><tr><th>Question</th><th>Answer</th><th>How I got there</th></tr>
+<tr><td>Stronger than 4 weeks ago?</td><td class="ans p">Per lift</td><td>Open each of 6 lifts. The block card shows only two.</td></tr>
+<tr><td>Which improved most?</td><td class="ans p">Roughly</td><td>Block card shows two. Otherwise compare by eye, as the lists aren't ranked.</td></tr>
+<tr><td>Which stalled?</td><td class="ans p">By inference</td><td>A 0% row in Blocks, if you find it. Nothing is flagged as stalled.</td></tr>
+<tr><td>Did volume increase?</td><td class="ans y">Yes</td><td>Sessions weekly chart, kg view: 13.8k in week 1 to 14.2k in week 4, with 9.4k in the missed-session week. Three taps.</td></tr>
+<tr><td>Bodyweight change?</td><td class="ans y">Yes</td><td>82.4 to 83.5kg, on Today and Bodyweight.</td></tr>
+<tr><td>Progress to goals?</td><td class="ans n">No</td><td>Goals show their starting values.</td></tr>
+<tr><td>Best sessions?</td><td class="ans n">No</td><td>Scan 11 cards. "vs last time" helps, but nothing ranks them.</td></tr>
+<tr><td>Week 4 vs Week 1?</td><td class="ans n">No</td><td>No side-by-side view. Weekly totals only.</td></tr>
+<tr><td>What next?</td><td class="ans n">No</td><td>Repeat or choose another plan. No advice.</td></tr></table></div>
+<p style="margin-top:12px">The numbers are mostly there, and the charts are good. What is missing is the story: nothing joins them into "here is what happened and what to do".</p>
+</section>
+
+<section id="design">
+<h2>UI and UX audit</h2>
+<h3>Navigation</h3><p>Four tabs (Today, Train, Progress, More) are simple, with large targets (94×63). Dead ends are rare. The cost is depth: Plans sits behind a switch in Train, Goals behind a chip in Progress, and Calendar behind a link on Today.</p>
+<h3>Consistency</h3><p>The weakest area of the design. The same thing has several names: workout, template, session, plan, training plan, programme, phase, block. Most forms are bottom sheets, while Add phase is inline. History appears in two places, in two formats. The same workout appears twice in Your workouts once a plan uses it, with its count split (4 times and 1 time). The plan picker said "Not used yet" for a workout done the day before.</p>
+<h3>Visual hierarchy</h3><p>Today and the logger are clear about the next action. Elsewhere the same purple marks everything: on the workout screen Start and Save sit side by side at equal weight. Delete week is a large red block beside Duplicate week.</p>
+<h3>Information architecture</h3><p>Workouts, plans, bodyweight and progress are quick to find. History is the exception: the list on Train is collapsed by default and shows only a date, while the useful version is under Progress, Performance, Sessions.</p>
+<h3>Cognitive load</h3><p>The set form shows type, set structure, reps range, weight, rest range, RPE/RIR, bodyweight and AMRAP at once. Expert controls should sit behind a default. In the gym you must remember what to add, because the app doesn't say.</p>
+<h3>Data entry cost</h3>
+<div class="tw"><table><tr><th>Task</th><th>Interactions</th><th>Should be</th><th>Where the waste is</th></tr>
+<tr><td>Build a 3-exercise workout</td><td>~35</td><td>~15</td><td>Separate reps min and max boxes, stepper from 1, closing the form per exercise</td></tr>
+<tr><td>Log 9 sets, 3 exercises</td><td>~33</td><td>~13</td><td>Typing accepted values, Finish confirm then Save, 1RM pop-up</td></tr>
+<tr><td>Build the 4-week plan, workouts made</td><td>~18</td><td>~10</td><td>Compulsory phase, separate name form, separate date form</td></tr>
+<tr><td>Log bodyweight</td><td>2</td><td>2</td><td>None</td></tr>
+<tr><td>Create a goal</td><td>5 to 6</td><td>2 to 3</td><td>Start value and target should come from your data</td></tr></table></div>
+<h3>Mobile</h3><p>Measured, the basics are right: 44px ticks, numeric keypads, 16px inputs that shouldn't trigger zoom, and a fixed primary button at the bottom. Concerns are the top-corner End button (56×30), 32×32 red delete buttons right beside the tick, and the rest banner pushing the table down 65px straight after you tap. Reach and keyboard were not tested on a real phone.</p>
+<h3>Feedback</h3><p>Weight, plan and 1RM actions show clear green messages, and an unfinished session offers Resume. The gaps are Save workout, where I saw no message and the button just vanishes, and "Enter reps first", which blames the user for not typing what the screen already shows. After reload, the Resume offer appears only once you tap Start.</p>
+<h3>Accessibility</h3><p>On Today and Performance, contrast was almost clean: one chart number at 4.0:1, all others at 4.5:1 or better. Buttons have labels. Performance has 42 pieces of text under 12px, down to 9px, which is hard to read mid-workout. Sheet close buttons are 27×26. Status colours are paired with ✓ and × on the week strip, which is good. Screen reader and keyboard use were not tested.</p>
+</section>
+
+<section id="expert">
+<h2>Fitness product review</h2>
+<div class="tw"><table><tr><th>Area</th><th>Supported?</th><th>Why</th></tr>
+<tr><td>Adherence</td><td class="ans p">Partly</td><td>The week strip and sessions-done count are strong. There are no reminders and no catch-up.</td></tr>
+<tr><td>Motivation</td><td class="ans p">Partly</td><td>The block card lands well. First-session trophies are empty and later wins are small.</td></tr>
+<tr><td>Habit formation</td><td class="ans n">Weak</td><td>No notification, no routine prompt, and a web app that has to be opened by hand.</td></tr>
+<tr><td>Progressive overload</td><td class="ans n">Weak</td><td>Data is captured but never turned into an instruction. This is the central job for this lifter.</td></tr>
+<tr><td>Long-term engagement</td><td class="ans p">Partly</td><td>Lift history compounds nicely. Nothing changes the experience at month three.</td></tr>
+<tr><td>Accountability</td><td class="ans n">Weak</td><td>A red cross is the only consequence of missing. No weekly review, no sharing.</td></tr></table></div>
+<p style="margin-top:12px"><strong>Where users feel it.</strong> Confused at "phase" and "Add to my plan". Uncertain whether grey numbers count. Frustrated by the 27th typed number. Unmotivated by a goal stuck at 0%. Lost after a missed session and on the first day after a block if they tap Not now.</p>
+</section>
+
+<section id="compete">
+<h2>Competitive comparison</h2>
+<div class="tw"><table><tr><th>App</th><th>Solves better</th><th>What to learn</th></tr>
+<tr><td>Hevy</td><td>Fast logging, routines, a social feed, and a generous free tier</td><td>The feed creates a reason to return that CoachApp lacks entirely</td></tr>
+<tr><td>Strong</td><td>Minimal, quick logging and a mature Apple Watch app</td><td>Remove every step between the rack and the saved set</td></tr>
+<tr><td>Alpha Progression</td><td>A specific weight and rep target for each working set from your history, double progression, mesocycles with deloads</td><td>The direct answer to this persona's main need</td></tr>
+<tr><td>Boostcamp</td><td>A large program library, auto progression (linear, double, missed-rep), per-muscle volume</td><td>Ready-made programs remove the build step altogether</td></tr>
+<tr><td>TrainHeroic</td><td>Leaderboards, readiness insights, a coach program marketplace</td><td>Closest model to CoachApp's coach side, and a route to revenue</td></tr></table></div>
+<p style="margin-top:12px"><strong>Where CoachApp is already ahead or level:</strong> the Today screen's clarity, Duplicate week, a live preview of periodization, the end-of-block review, works in any browser, and a coach and client can share one product. That last point is its real differentiator, and a pure solo lifter gets no benefit from it.</p>
+<p class="muted">Sources: <a href="https://www.lyfta.app/vs/hevy-vs-strong">Lyfta comparison</a>, <a href="https://setgraph.app/articles/hevy-vs-strong-app-comparison-2026">Setgraph comparison</a>, <a href="https://alphaprogression.com/en/blog/best-progressive-overload-apps">Alpha Progression</a>, <a href="https://www.boostcamp.app/pro">Boostcamp Pro</a>, <a href="https://www.boostcamp.app/features">Boostcamp features</a>, <a href="https://trainheroic.com/athlete/">TrainHeroic</a>. Most of these are vendors describing themselves or rivals.</p>
+</section>
+
+<section id="scores"><h2>Scores</h2><div id="scorelist"></div></section>
+<section id="friction"><h2>Friction list</h2><p class="muted">Every issue I found. Colour on the left edge matches priority.</p><div id="fric"></div></section>
+<section id="tops"><h2>Recommendations</h2><p class="muted">"Business impact" assumes a future paid or wider release, since there are no clients on the app today. Complexity is a product estimate; I did not read the code to size it.</p><div id="toplists"></div></section>
+</div>
+<script>
+const S=[["Overall User Experience",6,"Clean, calm and clear about today. Held back by logging effort and no guidance."],
+["Workout Creation",5,"Works, but the form is long and defaults are empty. About 35 interactions for three exercises."],
+["Workout Logging",5,"Excellent layout and timer. Forcing every value to be typed is the biggest flaw in the product."],
+["Programme Building",5.5,"Duplicate week is great. The compulsory phase and %/RPE-only progression hurt."],
+["Progress Tracking",7,"Per-lift charts, records and comparisons are strong. Records can go stale against Performance."],
+["Goal Tracking",3,"Easy to create, then manual and disconnected. It reported 0% after real progress."],
+["Bodyweight Tracking",7,"Two-tap logging and a useful 7-day average. No rate, projection or integrations."],
+["Analytics & Insights",5.5,"Plenty of accurate numbers and almost no conclusions. It doesn't flag a stall."],
+["Mobile Experience",7,"Well-sized main controls and correct inputs. Some small or risky targets. Not tested on a real phone."],
+["Navigation",7,"Four clear tabs. Plans, Goals and Calendar each sit a level deeper than they should."],
+["Consistency",5,"Too many names for the same things, duplicated workouts and two versions of history."],
+["Discoverability",6,"Core actions are obvious. Catch-up, history and Stats are easy to miss."],
+["Long-Term Usability",5,"History gets more useful, but typing and static targets get more annoying each week."],
+["User Motivation",4.5,"The block card is good. Trophies are hollow early, and goals don't move."],
+["User Retention Potential",4,"No reminders, no auto progression, no ready programs and no community to come back to."]];
+document.getElementById('scorelist').innerHTML=S.map(s=>`<div class="score"><b>${s[0]}</b><span class="num">${s[1]}</span><div class="bar"><i style="width:${s[1]*10}%"></i></div><p>${s[2]}</p></div>`).join('');
+
+const F={High:[
+["Pre-filled numbers can't be accepted","Logger, every set after week 1","Grey values look entered. Ticking gives \"Enter reps first\".","27 entries per 9-set session, forever. The most likely reason to quit.","Tapping ✓ accepts the shown weight and reps."],
+["Set 1's weight doesn't carry to set 2","Logger, first session of an exercise","Straight sets are the same weight, yet every row starts empty.","Repeated typing on the first impression.","Copy a completed set's values into the next row."],
+["Targets never progress","Logger, plans","Deadlift target stayed at 120kg after lifting 130kg.","The plan stops meaning anything by week 3.","Suggest next load from last performance, with one tap to accept."],
+["Progression needs %1RM or RPE","Plan, Add periodization","No way to add kilos per week. The dead end appears after opening the tool.","The standard beginner and intermediate method is unavailable.","Add \"+2.5kg per week\" and double progression, per exercise."],
+["Goals aren't connected to data","Progress, Goals","No link to a lift or bodyweight. Everything is typed by hand.","Shows 0% after real progress, which destroys trust.","Pick a lift or bodyweight when creating a goal, then update automatically."],
+["No single answer to \"am I stronger?\"","Progress, Today","Requires opening lifts one at a time until the block ends.","The main reason to track goes unanswered day to day.","Add a progress summary with top gains and stalls, always visible."],
+["No guidance on what to do next","End of session, end of block","Numbers without any recommendation.","The lifter must be their own coach.","Rule-based suggestions: add load, hold, deload, swap."],
+["A solo person can't sign up","Sign-in screen","No sign-up route. This is your deliberate decision for now.","This persona can't get in without you creating the account.","Keep closed until ready, but treat it as a launch blocker for solo."]],
+Medium:[
+["Trophy on every first-time set","Workout summary","A weaker third set earns a trophy too.","Rewards feel automatic and lose meaning.","Skip first-ever baselines, award one per exercise."],
+["1RM pop-up after saving","After Save","Blocks the screen, and appeared after a session with no records.","Interrupts the moment of satisfaction.","Update estimates silently and show them on the summary."],
+["Records disagree with Performance","Progress","Squat 116.7kg in Records, 125kg in Performance, after answering \"Not now\".","Two figures for the same fact.","Compute records from logged sets."],
+["Too many names","Across the app","Workout, template, session, plan, programme, phase, block.","New users must learn a vocabulary.","Pick one word each and use it everywhere."],
+["Phase is compulsory","New plan","Must add a phase before any session.","Coach concept placed in a solo user's path.","Create a default phase, ask only for weeks."],
+["Long set form with empty defaults","Add exercise","Starts at 1 set, 0 reps. Reps and rest are two boxes each.","About 10 interactions per exercise.","Default 3×10, one reps box, advanced behind a link."],
+["Keyboard Enter doesn't create","Exercise search","Pressing Enter does nothing with the create option on screen.","An extra reach to the middle of the screen.","Enter picks the top result or creates."],
+["No muscle group on new exercises","Create exercise","Name only.","Blocks per-muscle volume, key for hypertrophy.","One optional muscle picker."],
+["Missed sessions have no path","Today, Calendar","Red mark only. Catch-up is hidden and unlabelled.","Lifters lose the plan's balance or feel they failed.","Offer Do it today, Move it or Skip on the next visit."],
+["Calendar hides what happened","Calendar","Done and missed look the same, names truncate to \"ZZAu…\", says \"No events this month\".","Can't review the month at a glance.","Use the Today week strip's colours and hide the empty message."],
+["Duplicate workout entries","Your workouts","Using one in a plan creates a second entry and splits the count.","Clutter, and doubt about which to edit.","Group by name or link the copies."],
+["A saved session can't be edited","Session detail","Delete is the only action.","A typo stays in the charts forever.","Add Edit to the session screen."],
+["\"Save workout\" has three meanings","Builder, summary, post-session","Save a template, save a session, or save as a workout.","Doubt at the final step.","Finish and save in one action, and rename the others."],
+["Rest shows \"3:00–0:00\"","Logger","Filling the first rest box leaves a zero maximum.","Looks broken.","Treat an empty maximum as a single value."],
+["Screen jumps after a tick","Logger","Rest banner pushes rows down 65px.","A second tap can land on the wrong row.","Reserve the space or use a fixed bar."],
+["Red delete beside the tick","Logger","Solid 32×32 × next to ✓.","Accidental deletes with sweaty hands.","Hide behind swipe or an edit mode."],
+["History in two places","Train, Performance","Train's collapsed list shows only a date.","Users may conclude history is thin.","One history list, with name and volume."],
+["No week-against-week view","Performance","Only totals by week.","Can't compare a block's start and end.","Add a Week 1 vs Week 4 table."],
+["No trend insight on bodyweight","Bodyweight","No rate or projection.","Hard to judge a gain or cut.","Show kg per week and projected goal date."],
+["Target weight in two places","Goals, Bodyweight","Two separate fields, not linked.","Conflicting targets.","Use the goal as the only target."]],
+Low:[
+["\"Coach notes\" for a solo user","Session detail","Prompts for coaching feedback when there's no coach.","Feels built for someone else.","Rename to Notes for solo."],
+["Workout names truncate","Your workouts","Badge and Start squeeze the name.","Similar workouts are hard to tell apart.","Move the badge under the name."],
+["\"1 phase\" appears twice","Plans list","Same value on both sides of the row.","Minor clutter.","Show weeks and days instead."],
+["Inline phase form","Plan builder","Other forms are bottom sheets.","Small inconsistency.","Use the shared sheet."],
+["Two equal primary buttons","Workout screen","Start and Save compete.","Next action is less clear.","One primary at a time."],
+["Resume offered late","After reload","No prompt until you tap Start.","May think the session is lost.","Show a banner on Today and Train."],
+["Tiny text","Performance","42 strings under 12px, down to 9px.","Hard to read in a gym.","Set a 12px minimum."],
+["Small close and toggle targets","Sheets, set form","27×26 close, 24px-high toggles.","Mistaps.","Raise to 44px."],
+["Console error opening a session","Session detail","A background request returned 406.","Nothing visible, worth a check.","Investigate."]]};
+document.getElementById('fric').innerHTML=Object.keys(F).map(p=>`<h3>${p} priority · ${F[p].length}</h3>`+F[p].map(i=>`<div class="item ${p.toLowerCase()}"><h4>${i[0]}</h4><dl><dt>Where</dt><dd>${i[1]}</dd><dt>Friction</dt><dd>${i[2]}</dd><dt>Impact</dt><dd>${i[3]}</dd><dt>Fix</dt><dd>${i[4]}</dd><dt>Priority</dt><dd>${p}</dd></dl></div>`).join('')).join('');
+
+const T={"Top 10 Missing Features":[
+["Next-load suggestions","Show a target weight for each set from recent results.","This is what the persona came for.","No more guessing what to lift.","Main reason to pay or stay.","High"],
+["Linear load progression","Add a set amount per week or session to any exercise.","Standard method for intermediates.","A real plan in kg.","Removes a switching reason.","Medium"],
+["Double progression","Raise reps through a range, then add load.","The default for hypertrophy.","Clear rule to follow.","Matches paid rivals.","Medium"],
+["Linked goals","Tie goals to a lift or bodyweight.","Goals are hand-kept today.","Progress updates itself.","Creates a reason to return.","Medium"],
+["Ready-made programmes","A small library of proven plans.","Most lifters don't want to build.","Start training in minutes.","Better activation.","Medium"],
+["Reminders","Training day and weigh-in notifications.","Nothing brings users back.","Fewer missed sessions.","Direct retention gain.","Medium"],
+["Weekly sets per muscle","Volume by muscle group.","Key hypertrophy measure.","See imbalances.","Parity with Boostcamp.","Medium"],
+["Editing past sessions","Correct logged sets.","Errors are permanent now.","Trustworthy charts.","Fewer support issues.","Low"],
+["Warm-up sets","Separate sets excluded from records.","Real workouts include them.","Honest volume.","Expected by serious lifters.","Medium"],
+["Health integrations","Apple Health and Google Fit import.","Bodyweight is often already recorded.","Less typing.","Stickier data.","High"]],
+"Top 10 UX Improvements":[
+["Tap to accept a set","✓ uses the visible values.","Largest single waste in the app.","Log a set with one tap.","Lifts daily satisfaction.","Low"],
+["One vocabulary","Workout, session, plan, week only.","Terms overlap today.","Less to learn.","Better conversion.","Low"],
+["Quick add sheet","One line per exercise, stays open.","Forms are slow.","Workouts built in half the time.","Better activation.","Medium"],
+["Merge finish and save","One action with Undo.","Two confirmations in a row.","Clean ending.","Fewer lost sessions.","Low"],
+["Hide plan phases by default","Ask only name, weeks, days.","Coach concept for solos.","Easier first plan.","More plans finished.","Medium"],
+["Handle a missed session","Do today, Move or Skip.","Red cross is a dead end.","Plan stays intact.","Protects adherence.","Medium"],
+["One history","Single list with names and volume.","Two versions today.","Finds past sessions fast.","More perceived value.","Low"],
+["Last Time above the sets","All sets, in place.","Currently below, top set only.","Instant comparison.","Better logging.","Low"],
+["Safer logger controls","Stable layout, hidden delete.","Mistap risk.","Confidence with sweaty hands.","Fewer errors.","Low"],
+["Better calendar","Done and missed states, readable names.","Month view hides results.","Month at a glance.","Stronger habit loop.","Low"]],
+"Top 10 Quick Wins":[
+["Copy set 1 down","Fill the next rows when a set is completed.","Stops repeat typing.","Fewer entries.","Better first session.","Low"],
+["Fix the rest range display","Show 3:00 alone.","Looks broken.","Clearer target.","Polish.","Low"],
+["Sensible defaults","3 sets, one reps box.","Starts at 1 and 0.","Fewer taps.","Better activation.","Low"],
+["Meaningful PR badges","One per exercise, none on first attempt.","All sets get trophies.","Records feel earned.","Better motivation.","Low"],
+["Enter key creates","Keyboard action picks or creates.","Enter does nothing.","Faster entry.","Polish.","Low"],
+["Save confirmation","Show \"Workout saved\".","Button just vanishes.","Certainty.","Trust.","Low"],
+["Rename Coach notes","Notes for solo.","Wrong audience.","Feels personal.","Solo credibility.","Low"],
+["Calm the 1RM pop-up","Show only on a real new best.","Fires with no record.","Fewer interruptions.","Better end of session.","Low"],
+["Fix \"Not used yet\"","Use real history.","Contradicts Train.","Accurate picker.","Trust.","Low"],
+["12px text minimum","Raise labels on Performance.","Text goes down to 9px.","Readable in the gym.","Accessibility.","Low"]],
+"Top 10 High-Impact Features":[
+["Auto-progression engine","Rules decide next week's targets.","Turns a log into a coach.","Clear instruction every set.","Core paid feature.","High"],
+["Next session preview","\"Friday: squat 110kg, up 2.5\" on Today.","Links Today to progress.","Knows the plan before the gym.","Daily reason to open.","Medium"],
+["Weekly review","Summary every Sunday.","No story between blocks.","Sees progress weekly.","Regular return moment.","Medium"],
+["Stall detection","Flag lifts flat for 3 sessions.","Currently inferred.","Fixes plateaus early.","Coaching value.","Medium"],
+["Automatic deloads","Suggest after fatigue or stalls.","Only a manual tick today.","Fewer stalls and injuries.","Rival parity.","Medium"],
+["Programme templates with kg setup","Enter your lifts, get a plan.","Skips building.","Plan in two minutes.","Main onboarding lever.","High"],
+["Solo sign-up and onboarding","Goal, days and a first plan.","Closed today.","Immediate start.","Required for any solo market.","High"],
+["Installable app with push","A proper home-screen app.","Habit needs a trigger.","Feels native.","Retention base.","Medium"],
+["Goal timeline","Projected date from trend.","Goals are static.","Knows if on track.","Motivation.","Medium"],
+["Coach insight bridge","Solo users can invite a PT.","Your unique advantage.","Help when stuck.","Links solo to coach revenue.","High"]],
+"Top 10 Retention Improvements":[
+["Training-day reminders","Timed to the plan's days.","No trigger today.","Fewer forgotten sessions.","Fast retention gain.","Medium"],
+["Comeback flow","Ease back in after a gap.","Absence has no path.","No guilt.","Recovers lapsing users.","Medium"],
+["Meaningful streaks","Weeks hitting planned sessions, with one free miss.","Rewards consistency fairly.","Keeps going through bad weeks.","Habit strength.","Low"],
+["Monthly recap","Shareable stats card.","No milestones.","Pride in work done.","Free marketing.","Medium"],
+["Automatic next block","Carries loads forward.","End of plan risks churn.","No gap in training.","Protects the highest churn moment.","Medium"],
+["PR celebrations","Real records get a moment.","Currently a small badge.","Satisfying wins.","Emotional hook.","Low"],
+["Milestones","Tonnage, session count, plate goals.","Long-term markers absent.","Goals beyond the block.","Year-long engagement.","Low"],
+["Training partners","Share sessions with friends.","Accountability is zero.","Someone notices.","Word of mouth.","High"],
+["Goal check-ins","Prompt when a goal is near or off track.","Goals are forgotten.","Goals stay alive.","More return visits.","Medium"],
+["Data confidence","Promote export and history.","Fear of losing logs.","Comfort investing years.","Lowers switching doubt.","Low"]],
+"Top 10 Product Improvements":[
+["Decide who solo is for","Pick the core solo user.","Solo inherits coach concepts.","Product fits them.","Clear positioning.","Low"],
+["Make Today the coach","Add target, last result and the trend.","It's already the best screen.","One screen is enough.","Daily value.","Medium"],
+["Simplify plan model","Weeks and days first.","Heavy structure.","Lower learning cost.","More plans.","High"],
+["Single source of records","Derive from logged sets.","Two truths today.","Trustworthy numbers.","Credibility.","Medium"],
+["Larger seeded library check","Confirm ~40 is enough, with search and aliases.","Not visible in this test.","Find lifts first time.","Activation.","Medium"],
+["Superset and warm-up flows","Natural in the logger.","Common in real gyms.","Fits real sessions.","Serious-user trust.","Medium"],
+["Offline confidence","Visible saved-locally state.","Gyms have poor signal.","Trust during sets.","Fewer lost sessions.","Medium"],
+["Plates and quick increments","±2.5 buttons in the logger.","Typing small changes is slow.","Quicker edits.","Polish that shows.","Low"],
+["Lock screen rest timer","Alert when rest ends.","Phone gets pocketed.","Rest on time.","Rival parity.","High"],
+["Evidence-driven beta","Observe real lifters for two blocks.","This test was simulated.","Real problems found.","Saves wasted building.","Low"]],
+"Top 10 Analytics & Progress Tracking Improvements":[
+["Progress headline","\"Stronger on 4 of 6 lifts this month.\"","Answers the main question.","Instant clarity.","Core perceived value.","Medium"],
+["Ranked lifts","Most improved to most declined.","Currently alphabetical.","Finds wins and stalls.","Insight value.","Low"],
+["Week 1 vs Week 4","Side-by-side per lift.","Not available.","Block made obvious.","Premium feature.","Medium"],
+["Stalled lift badges","Mark no progress over 3 sessions.","Inference only.","Acts sooner.","Coaching value.","Low"],
+["Muscle volume charts","Sets by muscle per week.","Needs muscle tags.","Better balance.","Rival parity.","Medium"],
+["Effort trend","RPE against load over time.","Effort not central in logger.","Spot fatigue.","Advanced users.","Medium"],
+["Bodyweight rate","kg per week and projection.","Trend is visual only.","Knows if on pace.","Retention.","Low"],
+["Strength relative to bodyweight","Lift ÷ bodyweight.","Joins two datasets.","Fairer view while bulking.","Differentiator.","Low"],
+["Adherence insight","Completion by weekday.","Only counts sessions.","Plans around real life.","Habit support.","Low"],
+["Plain-English block report","What improved, stalled and what to try next.","Numbers have no story.","Knows next steps.","Headline paid value.","Medium"]]};
+document.getElementById('toplists').innerHTML=Object.keys(T).map((k,n)=>`<h3>${k}</h3>`+T[k].map((r,i)=>`<div class="item"><h4>${i+1}. ${r[0]}<span class="tag ${r[5]}">${r[5]}</span></h4><dl><dt>What</dt><dd>${r[1]}</dd><dt>Why</dt><dd>${r[2]}</dd><dt>User gain</dt><dd>${r[3]}</dd><dt>Business</dt><dd>${r[4]}</dd><dt>Effort</dt><dd>${r[5]}</dd></dl></div>`).join('')).join('');
+</script>
