@@ -1,0 +1,10 @@
+# Decisions archived verbatim from docs/decisions.md (2026-11-14, docs budget)
+
+## 2026-10-29 - Type-check the classic scripts before any move to ES modules
+
+**Decided (Jake approved the plan, 2026-10-29):** every push runs `tsc` over the nine `js/` files as the browser loads them (classic scripts, one global, `index.html` order, nothing emitted), and `scripts/check-types.mjs` fails if any file's error count rises above `scripts/type-baseline.json`. `db` is typed against `types/database.d.ts`, generated from the live schema, so a wrong column name blocks the push (mutation-checked: `.eq('coach_idd', …)` is caught). **Why:** asked whether the stack was right, the answer was yes; the costs were the shared global and no types. Measurement then put types first: ES modules hit ~500 inline `onclick` handlers needing `window` globals, 173 of 179 specs reaching into globals, strict mode, and load order, while types need no runtime change at all. **Why a ratchet, not zero:** 994 errors on day one, mostly harmless; requiring zero would mean no gate for weeks. The gate refuses runs it cannot trust (a canary file with exactly one error, `@ts-nocheck` refused, `@ts-ignore` counted). **Rejected:** TypeScript source (a build step); ES modules first. Modules are a later decision, plan: [superpowers/plans/2026-10-29-type-check-then-modules.md](superpowers/plans/2026-10-29-type-check-then-modules.md) (Phase 2, recommending splitting the big files as classic scripts).
+
+## 2026-10-29 - The old wiki is dead to CoachApp too
+
+**Decided (Jake, 2026-10-29):** everything lives in the GitHub repo and nowhere else. **Why it was missed:** no repo file ever said so. On 2026-09-20 Jake asked "confirm if wiki is vault or repo"; I answered "a third, separate location" and the rituals kept using it (`save` Step 7, `hello-claude` Step 6, a memory note) until a `/save` wrote to it on 2026-10-29. **Done:** Step 7 retired, Step 6 starts from `docs/current-sprint.md`, memory rewritten, a `CLAUDE.md` table row, and `os-lint` warns on a pointer to it. Scope: CoachApp only; the wiki's other content is Jake's call. **Rejected:** a mirror "in case" (two places disagree).
+

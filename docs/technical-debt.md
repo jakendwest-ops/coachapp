@@ -42,7 +42,7 @@ so check `docs/bugs/` and `docs/releases/` first.
   of 731 names found none), and `showPostSessionOneRMModal` and the resume modal print `clientId` into an `onclick` without `escapeAttr` (own storage only).
 - **Weekly check-in notification** always shows "Due" past 7 days with no dismiss until submitted (a UX gap). **Invite email** has no PT branding yet.
 - **Runner vs. competitor apps:** background rest-timer alerts need an installable app (the wake lock covers most gym use); the last-session
-  strip is strength-only. No pre-fill is Jake's choice (2026-07-11), not a gap.
+  strip is strength-only. Rows start empty (2026-07-11); "Fill from last time" and copy-down fill them only on a tap (2026-11-14).
 
 **From the template-draft-save release (2026-09-17; deferred, detail in [releases/v2026.09.6.md](releases/v2026.09.6.md)):** `sudoAsClient`/`exitSudo`
 flip `currentProfile.role` before the dirty-draft check (the shape of the `switchView` bug that release fixed; narrower exposure; the fix mirrors

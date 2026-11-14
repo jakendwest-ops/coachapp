@@ -12,6 +12,8 @@ process-level entries below were pulled out and belong here.
 
 ---
 
+**2026-11-14** — The logger gets a "Fill from last time" button and copy-down (Jake, after a prototype: 10 taps for 3 sets became 4). Rows still START empty and every set is still ticked by hand, so the 2026-07-11 rule stands: nothing fills on its own. Fill takes the grey number shown in each empty box (plan first, last time second), never a typed box, a ticked set, a range or effort; ticking a set copies its boxes into the next set if that set is empty and prescribes the same. Top-set exercises get neither (2026-10-03). Once used up the button stays, disabled, as "Filled from last time": removing it would pull the rows up on a tick.
+
 **2026-11-13** — The runner's live rest timer is the REST cell of the prescription strip, not a bar above the set rows (Jake). The old bar appeared above the rows only while resting and pushed them down 65 px on every tick. A reserved always-there slot was built first and rejected: it moved the first set row about 66 px lower on every exercise, against the 2026-09-28 log-first layout, and repeated the rest the strip already shows. The cell counts down, turns red in the last 3 s and a tap skips; the strip always carries a REST cell (the timer's planned rest when the prescription names none) so it never grows. The bar's "Next: Set n" line went with it; the Next bar still names the next exercise.
 
 **2026-11-10** — Design system Stage 4: Inter stays and the colours stay neutral until Jake chooses a brand font and colour scheme (Jake, answering the open questions from 2026-08-22). Logger density stays as it is today (he compared it with a roomier and a big-current-set layout), and the rest timer gets its space kept so the sets stop jumping when it appears.
@@ -34,16 +36,12 @@ process-level entries below were pulled out and belong here.
 
 **2026-10-29** — check-ins get a coach review: UPDATE narrowed to 3 columns, server-stamped, never pre-filled on insert ([row](bugs/2026-10-29-client-check-ins-get-no-response.md)).
 
-## 2026-10-29 - Type-check the classic scripts before any move to ES modules
-
-**Decided (Jake approved the plan, 2026-10-29):** every push runs `tsc` over the nine `js/` files as the browser loads them (classic scripts, one global, `index.html` order, nothing emitted), and `scripts/check-types.mjs` fails if any file's error count rises above `scripts/type-baseline.json`. `db` is typed against `types/database.d.ts`, generated from the live schema, so a wrong column name blocks the push (mutation-checked: `.eq('coach_idd', …)` is caught). **Why:** asked whether the stack was right, the answer was yes; the costs were the shared global and no types. Measurement then put types first: ES modules hit ~500 inline `onclick` handlers needing `window` globals, 173 of 179 specs reaching into globals, strict mode, and load order, while types need no runtime change at all. **Why a ratchet, not zero:** 994 errors on day one, mostly harmless; requiring zero would mean no gate for weeks. The gate refuses runs it cannot trust (a canary file with exactly one error, `@ts-nocheck` refused, `@ts-ignore` counted). **Rejected:** TypeScript source (a build step); ES modules first. Modules are a later decision, plan: [superpowers/plans/2026-10-29-type-check-then-modules.md](superpowers/plans/2026-10-29-type-check-then-modules.md) (Phase 2, recommending splitting the big files as classic scripts).
+**2026-10-29** — every push type-checks the nine `js/` files as classic scripts and the per-file error count may only fall (`scripts/check-types.mjs`). Archived verbatim: [archive/decisions-2026-10-29-typecheck-and-wiki.md](archive/decisions-2026-10-29-typecheck-and-wiki.md).
 
 **2026-10-29** — coach work starts, for a 25-client roster (overrides the 2026-09-26 roster deferral); a client's current plan is the most recently STARTED one, never the newest-assigned. Archived verbatim:
 [archive/decisions-2026-10-29-coach-current-plan.md](archive/decisions-2026-10-29-coach-current-plan.md).
 
-## 2026-10-29 - The old wiki is dead to CoachApp too
-
-**Decided (Jake, 2026-10-29):** everything lives in the GitHub repo and nowhere else. **Why it was missed:** no repo file ever said so. On 2026-09-20 Jake asked "confirm if wiki is vault or repo"; I answered "a third, separate location" and the rituals kept using it (`save` Step 7, `hello-claude` Step 6, a memory note) until a `/save` wrote to it on 2026-10-29. **Done:** Step 7 retired, Step 6 starts from `docs/current-sprint.md`, memory rewritten, a `CLAUDE.md` table row, and `os-lint` warns on a pointer to it. Scope: CoachApp only; the wiki's other content is Jake's call. **Rejected:** a mirror "in case" (two places disagree).
+**2026-10-29** — the old LLM wiki is dead to CoachApp too: everything lives in this repo. Archived verbatim: [archive/decisions-2026-10-29-typecheck-and-wiki.md](archive/decisions-2026-10-29-typecheck-and-wiki.md).
 
 **2026-10-28** — the exercise builder is rebuilt around set groups with a third "% of" choice (`intensityBasis: 'topSetWeight'`, the old `'topSet'` keeping its meaning of today's estimated 1RM), and the runner's beeps are rebuilt after the page is hidden (Jake: "fix using beeps"). Archived verbatim:
 [archive/decisions-2026-10-28-builder-and-beeps.md](archive/decisions-2026-10-28-builder-and-beeps.md).

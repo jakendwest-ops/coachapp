@@ -120,7 +120,9 @@ test.describe('Runner log-first layout (2026-09-28)', () => {
       const tabs = document.getElementById('wr-tabs').getBoundingClientRect()
       const rx = document.getElementById('wr-rx').getBoundingClientRect()
       const firstRow = document.querySelector('#workout-runner input[oninput*="tableRows[0].weight"]').getBoundingClientRect()
-      return { rxGap: rx.top - tabs.bottom, afterRxGap: firstRow.top - rx.bottom, rowBottom: firstRow.bottom, vh: innerHeight, rxWidth: rx.width, tabsWidth: tabs.width }
+      // The Fill from last time button (2026-11-14) is the one other thing allowed here, and only when there IS a last time.
+      const fill = document.getElementById('wr-fill-last')?.getBoundingClientRect()
+      return { rxGap: rx.top - tabs.bottom, afterRxGap: firstRow.top - rx.bottom - (fill ? fill.height + 8 : 0), rowBottom: firstRow.bottom, vh: innerHeight, rxWidth: rx.width, tabsWidth: tabs.width }
     })
     // #wr-rx follows the tabs immediately — just its own 8px top margin, not a Swap/Add row or a stats card.
     expect(m.rxGap, 'the prescription boxes sit right under the tabs').toBeGreaterThanOrEqual(0)

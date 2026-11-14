@@ -29,7 +29,7 @@ plain defects stand on their own. Feature requests do not, until someone hits th
 
 | Report item | Decision | Treatment |
 |---|---|---|
-| Tap ✓ to accept grey numbers; carry set 1 down | 2026-07-11: a pre-filled value can't be told apart from an entered one, so rows start empty (`js/app-runner.js:889`) | Not built as written. Option: a prototype of an explicit "Fill from last time" that turns values white, with each set still ticked |
+| Tap ✓ to accept grey numbers; carry set 1 down | 2026-07-11: a pre-filled value can't be told apart from an entered one, so rows start empty (`js/app-runner.js:889`) | BUILT 2026-11-14 after the prototype: a "Fill from last time" button plus copy-down on tick; each set still ticked (decisions.md 2026-11-14) |
 | Next-session target in the logger | 2026-10-30: dropped after a prototype, rebuild only if Jake is unsure what to lift, as a bare "↑ +2.5 kg" | Not built unless Jake reopens it |
 | First-ever log counts as a PR | Open since 2026-09-19 (R4-0 Q4) | Jake's answer needed |
 

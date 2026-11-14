@@ -983,6 +983,7 @@ function toggleTableSet(rowIdx) {
     _unlockAudio()
     row.done = true
     row._dropped = false   // ticked again on purpose: no longer "left out"
+    _copyDownFrom(ex, rowIdx)
     _syncLoggedSetsFromTable(ex)
     _recomputeLiveE1RM(ex)
     startRestTimer(ex.restSecs || 90)
@@ -1017,6 +1018,94 @@ function _basisKgFor(ex, tgt) {
   if (b === 'topSetWeight') return ex._liveTopWeight
   if (b === 'topSet') return ex._liveE1RM
   return ex.oneRM
+}
+
+// ─── Fill from last time, and copy-down (Jake chose both after a prototype, 2026-11-14) ──────────────────────────────
+// Rows still START empty (2026-07-11, see _ensureTableRows): what was wrong with the old pre-fill was that it happened on
+// its own, so a set could be ticked with a number nobody had looked at. Both of these are explicit and visible instead:
+// Fill is a tap on a labelled button, copy-down follows a tick of the set above, the values turn white, and every set is
+// still ticked by hand. Effort is never filled or copied: it rates the set just done, so a carried 8 is exactly the
+// "never actually checked" number July removed. A top-set exercise gets neither: it has no grey numbers on purpose
+// (2026-10-03) and its back-offs are worked out from today's top set.
+
+// The boxes copy-down carries, per metric type. Effort is deliberately absent; a bodyweight load is 'BW' already.
+function _copyFields(ex) {
+  const mt = _exMetricType(ex), bw = !!ex.bodyweight
+  if (mt === 'unilateral') return bw ? ['leftReps', 'rightReps'] : ['leftWeight', 'leftReps', 'rightWeight', 'rightReps']
+  if (mt === 'timed_hold') return bw ? ['duration'] : ['duration', 'weight']
+  if (mt === 'jump_height') return ['height_cm', 'reps']
+  if (mt === 'jump_distance') return ['distance_m', 'reps']
+  return bw ? ['reps'] : ['weight', 'reps']
+}
+
+const _isTopSetExercise = ex => _exMetricType(ex) === 'weight_reps' && !!ex.sets_json?.[0]?.isTopSet
+// A box with nothing in it. 0 is a value (the falsy-zero class); a blank duration renders as '' or '0:00'.
+const _boxEmpty = (v, f) => !_hasNumVal(v) || (f === 'duration' && v === '0:00')
+
+// Ticking row i copies its boxes into row i+1 when that set is not ticked, every box it would fill is empty, and it
+// prescribes the same thing (a set with a different rep target or load is a different set). A row with no prescription
+// of its own (an added set) takes the copy.
+function _copyDownFrom(ex, i) {
+  const row = ex.tableRows?.[i], next = ex.tableRows?.[i + 1]
+  if (!row || !next || next.done || _isTopSetExercise(ex)) return   // back-offs are worked out from today's top set, never carried
+  const a = ex.sets_json?.[i] || {}, b = ex.sets_json?.[i + 1]
+  const keys = ['repsMin', 'repsMax', 'intensityMin', 'intensityMax', 'intensityBasis', 'timed', 'targetHeightCm', 'targetDistanceM', 'isTopSet']
+  if (b && keys.some(k => String(a[k] ?? '') !== String(b[k] ?? ''))) return
+  const fields = _copyFields(ex)
+  if (!fields.every(f => _boxEmpty(next[f], f))) return
+  fields.forEach(f => { if (!_boxEmpty(row[f], f)) next[f] = row[f] })
+}
+
+// What Fill would put in each box: exactly the grey NUMBER that box shows (renderStrengthTable's placeholders, same tier
+// order: today's prescription first, last time second), in canonical kg/cm. A range target ("100–105") is left out:
+// choosing a number inside it is the lifter's call. Weight × reps and jumps only, the types whose boxes ghost a number.
+function _fillValues(ex, i) {
+  const mt = _exMetricType(ex)
+  if (_isTopSetExercise(ex)) return {}
+  const prev = _prevSetsByIndex(ex)[i], tgt = ex.sets_json?.[i] || {}
+  const out = {}
+  // A prescribed rep count wins the grey box whatever it holds; only a plain whole number is filled.
+  const repsRx = tgt.repsMin && !tgt.timed ? String(tgt.repsMin) : null
+  const fillReps = () => {
+    if (repsRx) { if (/^\d+$/.test(repsRx)) out.reps = repsRx }
+    else if (_hasNumVal(prev?.reps_achieved)) out.reps = String(prev.reps_achieved)
+  }
+  if (mt === 'weight_reps') {
+    if (!ex.bodyweight) {
+      const basis = _basisKgFor(ex, tgt)
+      const kg = tgt.intensityMin && basis ? parseFloat(_calcWeightFromPct(basis, tgt.intensityMin)) : 0
+      if (kg > 0) { if (!(tgt.intensityMax && tgt.intensityMax !== tgt.intensityMin)) out.weight = kg }
+      else if (_hasNumVal(prev?.weight_kg)) out.weight = Number(prev.weight_kg)
+    }
+    fillReps()
+  } else if (mt === 'jump_height' || mt === 'jump_distance') {
+    const f = mt === 'jump_height' ? 'height_cm' : 'distance_m'
+    const t = mt === 'jump_height' ? tgt.targetHeightCm : tgt.targetDistanceM
+    // Same tests as the jump placeholders: height's target wins when it is not null, distance's when it is truthy.
+    const tgtWins = mt === 'jump_height' ? t != null : !!t
+    if (tgtWins) { if (_hasNumVal(t)) out[f] = mt === 'jump_height' ? Number(t) : String(t) }
+    else if (_hasNumVal(prev?.[f])) out[f] = mt === 'jump_height' ? Number(prev[f]) : String(prev[f])
+    fillReps()
+  }
+  return out
+}
+
+// The boxes Fill would change right now: unticked rows, empty boxes only, never a typed value. Shown only when there IS a
+// last time for this exercise (the button's label says so).
+function _pendingFills(ex) {
+  if (!_runner?.lastSession?.[ex.name]?.sets?.length) return []
+  const out = []
+  ;(ex.tableRows || []).forEach((row, i) => {
+    if (row.done) return
+    Object.entries(_fillValues(ex, i)).forEach(([f, v]) => { if (_boxEmpty(row[f], f)) out.push({ i, f, v }) })
+  })
+  return out
+}
+
+function fillFromLastTime() {
+  const ex = _runner.exercises[_runner.exIdx]
+  _pendingFills(ex).forEach(({ i, f, v }) => { ex.tableRows[i][f] = v })
+  renderRunner()
 }
 
 function addTableRow() {
@@ -1505,8 +1594,20 @@ function renderStrengthTable(ex) {
   } else {
     header = `<div id="wr-table-header" style="display:flex;gap:6px;padding:0 6px 6px">${th('Set','22px')}${th(weightLabel)}${th('Reps')}${effortRx ? th(effortRx.effortType === 'rir' ? 'RIR' : 'RPE') : ''}<span style="width:44px"></span>${delSpacer}</div>`
   }
+  // Fill from last time (2026-11-14, see _fillValues): only while some empty box has a grey number to take. The muted
+  // list beside the label is the weights it would fill, so the tap is not a leap of faith.
+  // Once an exercise HAS something to fill from, the button keeps its place for good: when the last empty box is filled
+  // (by Fill, by typing, or by a tick's copy-down) it stays as a spent, disabled "Filled from last time". Removing it
+  // would pull every set row up by its height on that tick, the jump fixed for the rest timer on 2026-11-13.
+  const fills = _pendingFills(ex)
+  const fillWeights = fills.filter(p => p.f === 'weight').map(p => weightToPref(p.v))
+  const hasFillSource = !!_runner?.lastSession?.[ex.name]?.sets?.length && ex.tableRows.some((_, i) => Object.keys(_fillValues(ex, i)).length)
+  const fillBtn = !hasFillSource ? '' : `<button id="wr-fill-last" type="button" ${fills.length ? 'onclick="fillFromLastTime()"' : 'disabled aria-disabled="true"'} style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:44px;margin-bottom:8px;padding:0 14px;border:1.5px solid ${fills.length ? 'var(--accent)' : 'var(--border)'};border-radius:var(--radius, 10px);background:${fills.length ? 'var(--accent-light)' : 'transparent'};color:${fills.length ? 'var(--accent)' : 'var(--text-muted)'};font-family:inherit;font-size:var(--text-md, 14px);font-weight:700;cursor:${fills.length ? 'pointer' : 'default'}">
+      <span style="flex-shrink:0;white-space:nowrap">${fills.length ? 'Fill from last time' : 'Filled from last time'}</span>${fillWeights.length ? `<span style="min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:500;font-size:var(--text-sm, 12px);color:var(--text-muted)">${escapeHtml(fillWeights.join(' · '))} ${escapeHtml(window._unitPrefs.weight)}</span>` : ''}
+    </button>`
   return `
     ${showTargets ? oneRMBanner : ''}
+    ${fillBtn}
     ${header}
     ${rows}
     <button onclick="addTableRow()" style="width:100%;margin-top:8px;padding:8px;border:1px dashed var(--border);border-radius:var(--radius-sm, 8px);background:transparent;font-size:var(--text-md, 12px);font-weight:600;cursor:pointer;color:var(--text-muted)">+ Add set</button>
