@@ -114,3 +114,102 @@ test.describe('"Update all copies" gives a choice (2026-11-14)', () => {
     } finally { await cleanup(page, S) }
   })
 })
+
+// Jake, 2026-11-14: "only that week and the weeks after it". Editing Week 2 must never reach Week 1 (already
+// trained, or about to be), but must reach every later copy — including one in a LATER PHASE whose own
+// week_number restarts at 1 (phase order first, then week). Phase 1: W1, W2 (edited). Phase 2: week 1.
+async function setupTwoPhases(page) {
+  return page.evaluate(async (P) => {
+    const one = async (q) => { const { data, error } = await q; if (error) throw new Error(error.message); return data }
+    const uid = currentUser.id
+    const sets = (w) => [1, 2].map(() => ({ repsMin: 5, weight: w, restMin: 90 }))
+    const prog = await one(db.from('programs').insert({ coach_id: uid, is_personal: true, name: P + ' Plan' }).select('id').single())
+    const ph1 = await one(db.from('program_phases').insert({ program_id: prog.id, name: 'Block 1', duration_weeks: 2, order_index: 0 }).select('id').single())
+    const ph2 = await one(db.from('program_phases').insert({ program_id: prog.id, name: 'Block 2', duration_weeks: 1, order_index: 1 }).select('id').single())
+    const mk = async (name, fam) => one(db.from('workout_templates').insert({ coach_id: uid, program_id: prog.id, is_personal: true, name: P + name, ...(fam ? { family_id: fam } : {}) }).select('id, family_id').single())
+    const a = await mk(' Monday')
+    const fam = a.family_id || a.id
+    const b = await mk(' Monday — W2', fam)
+    const c = await mk(' Monday — B2W1', fam)
+    await one(db.from('workout_template_exercises').insert([[a, 100], [b, 105], [c, 110]].map(([t, w]) =>
+      ({ template_id: t.id, exercise_name: '[E2E] Bench', exercise_type: 'strength', metric_type: 'weight_reps', order_index: 0, sets: 2, sets_json: sets(w) }))).select('id'))
+    const slot = (phase, t, week) => one(db.from('program_phase_workouts').insert({ phase_id: phase, day_of_week: 1, day_label: 'Monday', session_order: 1, template_id: t, week_number: week }).select('id').single())
+    const pwA = await slot(ph1.id, a.id, 1)
+    const pwB = await slot(ph1.id, b.id, 2)
+    const pwC = await slot(ph2.id, c.id, 1)
+    return { progId: prog.id, phaseIds: [ph1.id, ph2.id], a: a.id, b: b.id, c: c.id, pwA: pwA.id, pwB: pwB.id, pwC: pwC.id }
+  }, P)
+}
+
+async function cleanupTwoPhases(page, S) {
+  await page.evaluate(async ({ progId, phaseIds, P }) => {
+    const uid = currentUser.id
+    const ids = ((await db.from('workout_templates').select('id').eq('coach_id', uid).like('name', P + '%')).data || []).map(t => t.id)
+    const cps = ((await db.from('client_programs').select('id').eq('program_id', progId)).data || []).map(r => r.id)
+    if (cps.length) await db.from('client_program_workouts').delete().in('client_program_id', cps).select('id')
+    if (cps.length) await db.from('client_programs').delete().in('id', cps).select('id')
+    await db.from('program_phase_workouts').delete().in('phase_id', phaseIds).select('id')
+    await db.from('program_phases').delete().in('id', phaseIds).select('id')
+    await db.from('programs').delete().eq('id', progId).select('id')
+    if (ids.length) await db.from('workout_template_exercises').delete().in('template_id', ids).select('id')
+    if (ids.length) await db.from('workout_templates').delete().in('id', ids).eq('coach_id', uid).select('id')
+  }, { ...S, P })
+  const left = await page.evaluate(async (P) => ((await db.from('workout_templates').select('id').eq('coach_id', currentUser.id).like('name', P + '%')).data || []).length, P)
+  expect(left, 'cleanup left [E2E] CopyChoice templates behind').toBe(0)
+}
+
+const editRestTo150 = (page) => page.evaluate(async () => {
+  const bench = window._templateDraft.exercises.find(e => e.exercise_name === '[E2E] Bench')
+  bench.sets_json = bench.sets_json.map(s => ({ ...s, restMin: 150 }))
+  await saveTemplateDraft()
+})
+
+test.describe('"Update all copies" reaches only this week and later ones (2026-11-14)', () => {
+  test.beforeEach(async ({ page }) => {
+    await soloReady(page)
+    await expect.poll(() => page.evaluate(() => currentProfile?.role)).toBe('solo')
+  })
+
+  test('programme: editing Week 2 updates the later-phase copy and leaves Week 1 alone, and the dialogue says so', async ({ page }) => {
+    const S = await setupTwoPhases(page)
+    try {
+      await page.evaluate(({ b, progId, pwB }) => openTemplate(b, { programId: progId, phaseWorkoutId: pwB }), S)
+      await editRestTo150(page)
+      const modal = page.locator('#propagate-modal')
+      await expect(modal, 'the later-phase copy must be offered the change').toBeAttached()
+      await expect(modal).toContainText('There is 1 other copy')
+      await expect(modal).toContainText('Earlier weeks are not changed (1 earlier copy)')
+      const saved = await page.evaluate(async (pwB) => (await db.from('program_phase_workouts').select('template_id').eq('id', pwB).single()).data.template_id, S.pwB)
+      await page.evaluate((id) => _applyToAllSessions(id, 'changes'), saved)
+      expect(await dump(page, S.a), 'Week 1 is before the edited week: untouched').toEqual(['Bench 100kg/90s 100kg/90s'])
+      expect(await dump(page, S.c), 'the later phase gets only the rest').toEqual(['Bench 110kg/150s 110kg/150s'])
+    } finally { await cleanupTwoPhases(page, S) }
+  })
+
+  // The client-plan route positions a copy by client_program_workouts.week_number plus the phase of the master
+  // slot it was cloned from (an embed). Driven on the solo user's own assigned copy of the same plan.
+  test('client plan: editing Week 2 of an assigned copy updates the later-phase copy and leaves Week 1 alone', async ({ page }) => {
+    test.skip(!(await page.evaluate(() => !!window._soloClientId)), 'no solo client record on this account')
+    const S = await setupTwoPhases(page)
+    try {
+      const C = await page.evaluate(async ({ progId, pwA, pwB, pwC }) => {
+        const { data: cp, error } = await db.from('client_programs').insert({ client_id: window._soloClientId, program_id: progId, start_date: null }).select('id').single()
+        if (error) throw new Error(error.message)
+        const ok = await _cloneProgramForClient(cp.id, progId, window._soloClientId)
+        const { data: cpws } = await db.from('client_program_workouts').select('program_phase_workout_id, workout_template_id').eq('client_program_id', cp.id)
+        const copyOf = (pw) => (cpws || []).find(r => r.program_phase_workout_id === pw)?.workout_template_id
+        return { cpId: cp.id, ok, a: copyOf(pwA), b: copyOf(pwB), c: copyOf(pwC) }
+      }, S)
+      expect(C.ok && C.a && C.b && C.c, 'fixture: self-assign must have cloned all three sessions').toBeTruthy()
+      await page.evaluate(({ b, cpId }) => openTemplate(b, { backTo: 'client', backLabel: 'Me', clientId: window._soloClientId, clientName: 'Me', clientProgramId: cpId }), C)
+      await editRestTo150(page)
+      const modal = page.locator('#propagate-modal')
+      await expect(modal, 'the later-phase copy must be offered the change').toBeAttached()
+      await expect(modal).toContainText('There is 1 other copy')
+      await expect(modal).toContainText('Earlier weeks are not changed (1 earlier copy)')
+      await page.evaluate((id) => _applyToAllSessions(id, 'changes'), C.b)
+      expect(await dump(page, C.a), 'Week 1 copy is before the edited week: untouched').toEqual(['Bench 100kg/90s 100kg/90s'])
+      expect(await dump(page, C.c), 'the later-phase copy gets only the rest').toEqual(['Bench 110kg/150s 110kg/150s'])
+    } finally { await cleanupTwoPhases(page, S) }
+  })
+})

@@ -3839,7 +3839,7 @@ function _unlinkedSameNameCount (rows, idOf, templateId, name, targets) {
 // carries two scars from this one: a hardcoded "only the exercise you changed" that became a lie when
 // renames started flowing through, and an XSS that shipped because a name was interpolated into an
 // HTML comment.
-function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, changes = [] }) {
+function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, changes = [], earlier = 0, unknown = 0, weekScoped = false }) {
   const OP_LABEL = { add: n => `${n} added`, update: n => `${n} updated`, delete: n => `${n} removed`, rename: () => 'renamed', reorder: () => 'reordered' }
   const word = c => c.op === 'update' && c.edits ? _exerciseEditsLabel(c.matchName || '', c.edits) : OP_LABEL[c.op] ? OP_LABEL[c.op](c.matchName || '') : c.op
   const summary = changes.length === 1
@@ -3867,6 +3867,7 @@ function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, ch
           <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
         </div>
         <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 12px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}.</p>
+        ${weekScoped ? `<p style="font-size:var(--text-base, 13px);line-height:1.6;margin:0 0 12px;color:var(--text-muted)">Only this week and later weeks are updated. Earlier weeks are not changed${earlier ? ` (<strong>${earlier}</strong> earlier cop${earlier === 1 ? 'y' : 'ies'})` : ''}.${unknown ? ` <strong>${unknown}</strong> cop${unknown === 1 ? 'y' : 'ies'} whose week could not be read will not change either.` : ''}</p>` : ''}
         ${choice('changes', 'Only my changes', `${escapeHtml(summary)}${summary.endsWith('.') ? '' : '.'} Each copy keeps its own weights, reps and effort.`, true, false)}
         ${choice('whole', 'Whole workout', 'Every copy becomes an exact copy of this one. Each copy\'s own weights, reps, effort and extra exercises are replaced.', false, true)}
         ${unlinked ? `<p style="font-size:var(--text-base, 13px);line-height:1.6;margin:4px 0 0;color:var(--text-muted)"><strong>${unlinked}</strong> other session${one ? '' : 's'} here share${one ? 's' : ''} this name but ${one ? 'is' : 'are'} not linked to this one, so ${one ? 'it' : 'they'} will not change.</p>` : ''}
@@ -3898,11 +3899,11 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
   // comment and the img executed on innerHTML — with the Supabase session token sitting in
   // localStorage. One line below, the same value was correctly escaped. NEVER interpolate into an HTML
   // comment; and prefer `//` comments outside the string, since an HTML comment ships to the DOM anyway.
-  const _showPropagateModal = (name, count, label, unlinked = 0) => {
+  const _showPropagateModal = (name, count, label, unlinked = 0, earlier = 0, unknown = 0) => {
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.id = 'propagate-modal'
-    overlay.innerHTML = _propagateModalHtml({ templateId, name, count, label, unlinked, changes })
+    overlay.innerHTML = _propagateModalHtml({ templateId, name, count, label, unlinked, changes, earlier, unknown, weekScoped: true })
     mountModal(overlay)
   }
 
@@ -3927,27 +3928,64 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
       .map(idOf))]
   }
 
+  // THIS WEEK AND LATER ONLY (Jake, 2026-11-14: "only that week and the weeks after it"). Editing Week 3 used
+  // to reach Weeks 1-2 as well — sessions already trained or about to be. A slot's position is
+  // [phase order, week_number]: week_number restarts in every phase, so a later phase's week 1 is still
+  // AFTER this phase's week 4. A target is kept only if EVERY slot it sits in is at or after the edited
+  // session's earliest slot; a slot whose position cannot be worked out is never updated by guesswork.
+  // Returns the kept targets, how many were held back as EARLIER, and how many as UNKNOWN (a slot whose
+  // position could not be read — e.g. a master slot RLS hides from this coach). Kept apart so the
+  // dialogue never calls a copy "earlier" when it simply could not tell (review, 2026-11-14).
+  const _fromThisWeekOn = (rows, idOf, posOf, allTargets) => {
+    const before = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])
+    const own = rows.filter(r => idOf(r) === templateId).map(posOf)
+    if (!own.length || own.some(p => !p)) return { targets: [], earlier: 0, unknown: allTargets.length }
+    const start = own.reduce((m, p) => before(p, m) ? p : m)
+    let earlier = 0, unknown = 0
+    const kept = allTargets.filter(id => {
+      const slots = rows.filter(r => idOf(r) === id).map(posOf)
+      if (!slots.length || slots.some(p => !p)) { unknown++; return false }
+      if (slots.some(p => before(p, start))) { earlier++; return false }
+      return true
+    })
+    return { targets: kept, earlier, unknown }
+  }
+  // ONE toast: showToast replaces whatever toast is showing, so two calls in a row lose the first.
+  const _noTargetsNote = (unlinked, earlier, unknown) => {
+    const parts = []
+    if (earlier) parts.push(`${earlier} earlier cop${earlier === 1 ? 'y' : 'ies'} of this session not changed`)
+    if (unknown) parts.push(`${unknown} cop${unknown === 1 ? 'y' : 'ies'} whose week could not be read not changed`)
+    if (unlinked) parts.push(`${unlinked} other session${unlinked === 1 ? '' : 's'} share this name but ${unlinked === 1 ? 'is' : 'are'} not linked — not changed`)
+    if (parts.length) showToast(parts.join(' · '), unlinked || unknown ? 'warn' : 'info')
+  }
+
   // Client plan propagation
   if (ctx?.isClientPlan && ctx.clientProgramId) {
     const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
     if (!tmpl) return openTemplate(templateId, ctx)
     const { data: siblings } = await db.from('client_program_workouts')
-      .select('workout_template_id, workout_templates(id, name, family_id)')
+      .select('workout_template_id, week_number, workout_templates(id, name, family_id), program_phase_workouts(phase_id, program_phases(order_index))')
       .eq('client_program_id', ctx.clientProgramId)
-    const targets = _targets(siblings || [], r => r.workout_template_id)
-    const unlinked = _unlinkedSameNameCount(siblings || [], r => r.workout_template_id, templateId, tmpl.name, targets)
+    const linked = _targets(siblings || [], r => r.workout_template_id)
+    const unlinked = _unlinkedSameNameCount(siblings || [], r => r.workout_template_id, templateId, tmpl.name, linked)
+    // A client copy's slot carries its own week_number; its phase comes through the master slot it was cloned
+    // from. An unreadable/missing master slot leaves the position unknown, so that copy is held back.
+    const { targets, earlier, unknown } = _fromThisWeekOn(siblings || [], r => r.workout_template_id, r => {
+      const ph = r.program_phase_workouts?.program_phases
+      return ph ? [ph.order_index ?? 0, r.week_number || 1] : null
+    }, linked)
     // NO TARGETS USED TO MEAN SILENCE, and silence reads as "there was nothing to do". When sessions
     // share the name but not the family — the normal case for anything built before 2026-08-14 —
     // saying nothing is how "the copies don't actually update" goes unnoticed for weeks. The name is
     // deliberately NOT interpolated here: showToast takes plain text, and this file has already
     // shipped one XSS from putting a session name somewhere that did not escape it.
     if (!targets.length) {
-      if (unlinked) showToast(`${unlinked} other session${unlinked === 1 ? '' : 's'} share this name but ${unlinked === 1 ? 'is' : 'are'} not linked — not changed`, 'warn')
+      _noTargetsNote(unlinked, earlier, unknown)
       return openTemplate(templateId, ctx)
     }
     window._propagateTargets = targets
     window._propagateChanges = changes
-    _showPropagateModal(tmpl.name, targets.length, `${ctx.clientName || 'this client'}'s plan`, unlinked)
+    _showPropagateModal(tmpl.name, targets.length, `${ctx.clientName || 'this client'}'s plan`, unlinked, earlier, unknown)
     return
   }
 
@@ -3957,24 +3995,27 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
   if (ctx?.programId) {
     const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
     if (!tmpl) return openTemplate(templateId, ctx)
-    const { data: phases } = await db.from('program_phases').select('id').eq('program_id', ctx.programId)
+    const { data: phases } = await db.from('program_phases').select('id, order_index').eq('program_id', ctx.programId)
     const phaseIds = (phases || []).map(p => p.id)
     if (!phaseIds.length) return openTemplate(templateId, ctx)
+    const phaseOrder = new Map((phases || []).map(p => [p.id, p.order_index ?? 0]))
     const { data: pws } = await db.from('program_phase_workouts')
-      .select('template_id, workout_templates(id, name, family_id)')
+      .select('template_id, phase_id, week_number, workout_templates(id, name, family_id)')
       .in('phase_id', phaseIds)
     // Note: a template still shared across multiple phase slots at this point would mean
     // _resolveEditableTemplateId's fork didn't run (e.g. edited with no phaseWorkoutId context) —
     // that's a pre-existing edge case, not one this check needs to warn about separately.
-    const targets = _targets(pws || [], r => r.template_id)
-    const unlinked = _unlinkedSameNameCount(pws || [], r => r.template_id, templateId, tmpl.name, targets)
+    const linked = _targets(pws || [], r => r.template_id)
+    const unlinked = _unlinkedSameNameCount(pws || [], r => r.template_id, templateId, tmpl.name, linked)
+    const { targets, earlier, unknown } = _fromThisWeekOn(pws || [], r => r.template_id,
+      r => phaseOrder.has(r.phase_id) ? [phaseOrder.get(r.phase_id), r.week_number || 1] : null, linked)
     if (!targets.length) {
-      if (unlinked) showToast(`${unlinked} other session${unlinked === 1 ? '' : 's'} share this name but ${unlinked === 1 ? 'is' : 'are'} not linked — not changed`, 'warn')
+      _noTargetsNote(unlinked, earlier, unknown)
       return openTemplate(templateId, ctx)
     }
     window._propagateTargets = targets
     window._propagateChanges = changes
-    _showPropagateModal(tmpl.name, targets.length, 'this plan', unlinked)
+    _showPropagateModal(tmpl.name, targets.length, 'this plan', unlinked, earlier, unknown)
     return
   }
 
