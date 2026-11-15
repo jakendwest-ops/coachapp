@@ -1,5 +1,8 @@
 # Add exercise sheet: what is settled (scoping, NOT approved to build)
 
+> **RESUMED 2026-11-14:** the Strength sheet is fully settled (see "Answered 2026-11-14"); Jake chose to scope everything before
+> building, starting with Superset. Still nothing approved to build.
+>
 > **PARKED 2026-11-13 by Jake ("this looks good for now").** Where it stands: the working demo
 > (https://claude.ai/artifact/5nSU2ah4d9yhsSbgrAZB5o, private; source in the session scratchpad, not the repo) shows everything below.
 > Still open when it resumes: Fixed / Range under the box (A) or beside the label (B); Bodyweight as a Load option; point 2 and
@@ -45,12 +48,45 @@ Customise each set link · More options chips · Cancel / Add another / Add exer
 - On desktop, Top set sits above Back-offs (side by side squeezed the base buttons).
 - "Add another" in the footer (adds this one and opens the picker again).
 
-## Open, in the order to settle them
+## Answered 2026-11-14 (Jake, in the demo's "Still to decide" panel)
 
-1. **Where the Fixed / Range switch goes:** under the box (layout A) or beside the label (layout B).
-2. **"Top set has no rep field":** not reproduced. Reps shows under Top set (3) and Back-offs (8) at every width tried. Which screen?
-3. **"For B, rest into each set":** Top set + back-offs (separate rest for top set and back-offs), or Customise each set in layout B?
-4. **Set style's place:** your saved layout A moved it into More options. Top of the sheet (as 1 says) or More options?
+- **Fixed / Range switch: beside the label (layout B).** RPE / RIR therefore sits under the Effort box.
+- **Load stays Weight (kg) | % of 1RM | % of e1RM.** No Bodyweight option.
+- **Point 2 kept:** Sets and Reps on one row, Effort and Rest on the next, boxes as wide as their value.
+- **All five "My calls" above kept.**
+- **Scope everything before building** (not the Strength sheet first). Next to scope, in order: Superset, the other exercise types (timed hold, jumps, intervals) and which chips apply to each, exercise search and creating a workout, the plan builder.
+- The earlier open questions 2-4 were answered on 13 Nov (Reps never reproduced missing; each block has its own rest; set style stays at the top).
+
+## Superset (scoping started 2026-11-14)
+
+Today: a typed letter on the Add exercise form, shown as an "SS: A" tag; the logger ignores it (its auto-advance was removed 2026-08-11, `js/app-runner.js` ~1901).
+
+- **How Jake runs one:** A1 bench, A2 row, alternate set by set, ONE rest after the last exercise of the round, none between them.
+- **Group size:** 2 or 3 exercises (A1, A2, A3). Never more.
+- **Linked while adding** (not afterwards on the list), with an **"Add + superset" button** in the footer (Jake chose option 2, 2026-11-14): pressed on A1, it adds A1 and reopens the picker; the next exercise becomes A2 with Sets following A1. Pressed again on A2 it makes A3, the limit.
+- **Every exercise in the group keeps its OWN rest box** (Jake, 2026-11-14; replaces "rest on the last exercise only", agreed minutes earlier, and the mock-ups' "Rest after round"). A1's rest is the gap before A2; the last exercise's rest is the gap before going back to A1.
+- **In the logger:** tick A1, A1's rest counts down, then A2; tick A2, A2's rest, then A3 or back to A1; repeat for every round. (Today's logger ignores supersets, so this is new logger work.)
+- **Logger layout: one exercise at a time** (Jake chose option 1, 2026-11-14): each exercise keeps today's screen with an A1/A2 tag and "Superset A · round n of 3"; when a rest ends the screen moves to the next exercise in the round by itself; a line at the bottom names what comes next.
+- **Undo:** editing an exercise in a superset shows "Remove from superset" (Jake, 2026-11-14). My calls: removing one member of a pair leaves the other as a normal exercise; removing one of three renumbers the rest (A1, A2).
+- **Sets are always equal across the group** ("never happens, keep equal"). My reading: the builder keeps them in step, so changing Sets on one changes them all (to confirm when the builder is mocked).
+
+## Other exercise types (2026-11-14)
+
+Jake: timed hold, jump height, jump distance and intervals are used rarely, so they are skipped for now. My reading, to confirm at plan time: picking one of those types keeps today's form for that exercise until it is scoped.
+
+## Creating a workout and exercise search (scoping started 2026-11-14)
+
+- **The slow step is the picker** (Jake, 2026-11-14: "there was a delay", then "yes, the picker"). Cause, read from code, timing
+  NOT measured: `_openExercisePicker` (`js/app-workouts.js` ~2918) re-reads the whole library on EVERY open, 200 rows per
+  request, one request after another, nothing kept between opens, so "Add another" pays it again per exercise.
+- My proposed fix, to confirm at plan time: load the library once per visit and keep it; a newly created exercise is added to
+  the kept copy; the picker opens with the list already there.
+- **Jake finds exercises by typing, not scrolling** (2026-11-14). Today's search is a plain "name contains the typed text"
+  filter, alphabetical, no ranking (`_renderExercisePickerResults`).
+- **Search results are fine:** the wanted exercise "comes up" (Jake, 2026-11-14). So search matching is NOT in scope; only
+  the load is.
+- Today's path to the first exercise (`showCreateTemplateModal` / `saveNewTemplate`, ~1397): New workout → a modal asking
+  Name (required) + Description → Create → the empty editor → Add exercise → picker (the slow load) → pick → sets form.
 
 ## Parked / not scoped yet
 
