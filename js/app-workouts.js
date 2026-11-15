@@ -1809,16 +1809,25 @@ async function _templateGoBack() {
 // prompt down before the user ever answers it. Purely additive: does not change either modal's own
 // dismiss handlers, just waits from the outside for both known overlay ids to be gone -- same
 // MutationObserver technique _confirmLeaveTemplateDraft already uses for the identical problem.
+// Also waits while _applyToAllSessions is mid-write (review, 2026-11-15): it closes the copies dialogue, writes,
+// and only THEN asks the clients question. Without the in-flight flag a view switch slipped into that gap and the
+// clients question (real client names) appeared over Personal view.
 function _waitForPropagationModalsToClear(timeoutMs = 120000) {
-  const stillOpen = () => document.getElementById('client-copy-modal') || document.getElementById('propagate-modal')
+  const stillOpen = () => window._propagationInFlight || document.getElementById('client-copy-modal') || document.getElementById('propagate-modal')
   if (!stillOpen()) return Promise.resolve()
   return new Promise((resolve) => {
     let done = false
-    const finish = () => { if (done) return; done = true; obs.disconnect(); clearTimeout(t); resolve() }
-    const obs = new MutationObserver(() => { if (!stillOpen()) finish() })
+    const check = () => { if (!stillOpen()) finish() }
+    const finish = () => { if (done) return; done = true; obs.disconnect(); clearTimeout(t); document.removeEventListener('propagation-settled', check); resolve() }
+    const obs = new MutationObserver(check)
     obs.observe(document.body, { childList: true })
+    document.addEventListener('propagation-settled', check)
     const t = setTimeout(finish, timeoutMs)
   })
+}
+function _settlePropagation() {
+  window._propagationInFlight = false
+  document.dispatchEvent(new Event('propagation-settled'))
 }
 
 async function openClientProgramsTab(clientId) {
@@ -3223,6 +3232,28 @@ function _exerciseEditsLabel(name, edits) {
   return first.startsWith('→') ? [`${name} ${first}`, ...rest].join(', ') : `${name}: ${uniq.join(', ')}`
 }
 
+// What each copy KEEPS of its own, for the copies dialogue (Jake, 2026-11-15): it used to say "keeps its own
+// weights, reps and effort" even when reps was the very thing being changed. Names only the targets this Save
+// does not touch. A set key without a known word, a type change (sets replaced) or an update without field-level
+// edits counts as touching all three, so the sentence never promises something the write will not keep.
+function _keptWordsSentence(changes, lead = 'Each copy keeps its own') {
+  const ALL = ['weight', 'reps', 'effort']
+  const touched = new Set()
+  for (const c of changes || []) {
+    if (c.op !== 'update') continue
+    const e = c.edits
+    // Added sets arrive with THIS workout's weight, reps and effort, so nothing can be promised for them.
+    if (!e || e.setsReplace || e.added) { ALL.forEach(w => touched.add(w)); continue }
+    for (const k of [...Object.keys(e.uniform || {}), ...(e.keyed || []).map(x => x.key)]) {
+      const w = _SET_KEY_WORD[k] === '%1RM' ? 'weight' : _SET_KEY_WORD[k]
+      if (!w) ALL.forEach(x => touched.add(x)); else touched.add(w)
+    }
+  }
+  const kept = [['weight', 'weights'], ['reps', 'reps'], ['effort', 'effort']].filter(([w]) => !touched.has(w)).map(([, label]) => label)
+  if (!kept.length) return ''
+  return `${lead} ${kept.length === 1 ? kept[0] : kept.slice(0, -1).join(', ') + ' and ' + kept[kept.length - 1]}.`
+}
+
 // Shared by _diffTemplateDraft (what changed), _templateDraftIsDirty (whether anything changed), and
 // saveTemplateDraft's partial-failure recovery (which fields to re-apply onto a freshly re-fetched
 // row -- never `id`/`_draftKey`/`order_index`, or a recovery re-stage after a shared-template fork
@@ -3733,6 +3764,11 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverr
   const ctx = ctxOverride || window._templateCtx
   const changes = changesOverride !== undefined ? changesOverride : window._lastExerciseChanges
   const role = roleOverride !== undefined ? roleOverride : currentProfile?.role
+  // One question for real clients, asked LAST (Jake, 2026-11-15): collected here for this week's copy, joined
+  // by their later-week copies in _applyToAllSessions, asked by _afterSiblingStep. Reset on every Save so a
+  // dismissed prompt from an earlier Save can never be re-asked or applied with this Save's changes.
+  window._pendingClientCopyProp = null
+  window._propagateRole = role
 
   // (#2) Sync assigned copies of the edited session — master program edits only (a direct client-plan
   // edit is already editing the client's own copy, so there's nothing downstream to sync).
@@ -3757,17 +3793,35 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverr
       showToast(`Personal edit — ${copies.realClientCount} assigned client${copies.realClientCount === 1 ? "'s plan was" : "s' plans were"} not changed. Switch to PT view to update them.`, 'info', 6000)
     }
     if (copies.realClientIds.length) {
-      window._pendingClientCopyProp = { changes, ids: copies.realClientIds }
-      _showClientCopyPropagateModal(copies.realClientNames, templateId, changes)
-      return
+      window._pendingClientCopyProp = { changes, ids: copies.realClientIds, names: copies.realClientNames }
     }
   }
 
   return _checkSiblingPropagation(templateId, ctx, changes)
 }
 
+// The last step of every Save that reaches the copies question (or would have, with no copies to offer):
+// "Just this session", ✕, "Update all copies", or nothing to offer at all. If real clients have this workout
+// — this week's copy, plus (after "Update all copies") their copies of the later weeks — ask once now;
+// otherwise reopen the workout. laterIds/laterNames come from _applyToAllSessions.
+// priorFailures: copies the "Update all copies" step failed to write. Carried into the clients answer so its
+// success toast cannot replace that error (showToast keeps one node).
+function _afterSiblingStep(templateId, ctx, laterIds = [], laterNames = [], priorFailures = 0) {
+  const p = window._pendingClientCopyProp
+  const thisWeek = new Set(p?.ids || [])
+  const ids = [...new Set([...thisWeek, ...laterIds])]
+  if (!ids.length) {
+    window._pendingClientCopyProp = null
+    return openTemplate(templateId, ctx || window._templateCtx)
+  }
+  const names = [...new Set([...(p?.names || []), ...laterNames])]
+  const changes = p?.changes || window._propagateChanges || window._lastExerciseChanges || []
+  window._pendingClientCopyProp = { changes, ids, names, ctx: ctx || window._templateCtx, priorFailures }
+  _showClientCopyPropagateModal(names, templateId, changes, laterIds.some(id => !thisWeek.has(id)))
+}
+
 // (#2) prompt shown when real clients have the edited session assigned.
-function _showClientCopyPropagateModal(clientNames, templateId, changes) {
+function _showClientCopyPropagateModal(clientNames, templateId, changes, laterWeeks = false) {
   const names = clientNames.length <= 3 ? clientNames.join(', ') : `${clientNames.slice(0, 3).join(', ')} +${clientNames.length - 3} more`
   const n = clientNames.length
   // Same OP_LABEL shape _propagateModalHtml (Task 9) uses, duplicated rather than shared: the two
@@ -3791,7 +3845,7 @@ function _showClientCopyPropagateModal(clientNames, templateId, changes) {
         <h2 class="modal-title">Update assigned clients?</h2>
         <button class="modal-close" onclick="_continueAfterClientCopy('${templateId}',false)">✕</button>
       </div>
-      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px"><strong>${n}</strong> client${n === 1 ? ' has' : 's have'} this workout assigned (${escapeHtml(names)}). ${escapeHtml(summary)}</p>
+      <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 20px"><strong>${n}</strong> client${n === 1 ? ' has' : 's have'} this workout assigned (${escapeHtml(names)}). ${escapeHtml(summary)}${laterWeeks ? ' This covers their copy of this week and of the later weeks you just updated.' : ''} ${_keptWordsSentence(changes, 'Their copies keep their own')}</p>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="_continueAfterClientCopy('${templateId}',false)">Not now</button>
         <button class="btn-primary" onclick="_continueAfterClientCopy('${templateId}',true)">Update their copies</button>
@@ -3801,12 +3855,18 @@ function _showClientCopyPropagateModal(clientNames, templateId, changes) {
   mountModal(overlay)
 }
 
+// Now the LAST step (2026-11-15): the copies question has already been answered, so this reopens the workout
+// instead of going on to it. Clients get the edits only, never a whole-workout copy.
 async function _continueAfterClientCopy(templateId, doIt) {
   closeModal('client-copy-modal')
   const p = window._pendingClientCopyProp
-  if (doIt && p) for (const change of p.changes) await _applyChangeToTemplates(change, p.ids)
   window._pendingClientCopyProp = null
-  _checkSiblingPropagation(templateId)
+  let failures = 0
+  if (doIt && p) for (const change of p.changes) failures += (await _applyChangeToTemplates(change, p.ids)) || 0
+  const prior = p?.priorFailures || 0
+  if (failures || prior) showToast([prior && `${prior} of your cop${prior === 1 ? 'y' : 'ies'}`, failures && `${failures} client cop${failures === 1 ? 'y' : 'ies'}`].filter(Boolean).join(' and ') + ' did not pick up this change', 'error', 6000)
+  else if (doIt && p) showToast(`Updated ${p.ids.length} client cop${p.ids.length === 1 ? 'y' : 'ies'}`, 'success')
+  openTemplate(templateId, p?.ctx || window._templateCtx)
 }
 
 // (#3) offer to apply the same change to other sessions that share this one's name. ctxOverride lets
@@ -3864,15 +3924,15 @@ function _propagateModalHtml ({ templateId, name, count, label, unlinked = 0, ch
       <div class="modal">
         <div class="modal-header">
           <h2 class="modal-title">Apply to other sessions?</h2>
-          <button class="modal-close" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">✕</button>
+          <button class="modal-close" onclick="closeModal('propagate-modal');_afterSiblingStep('${templateId}')">✕</button>
         </div>
         <p style="font-size:var(--text-lg, 14px);line-height:1.6;margin:0 0 12px">There ${count === 1 ? 'is' : 'are'} <strong>${count}</strong> other cop${count === 1 ? 'y' : 'ies'} of "<strong>${escapeHtml(name)}</strong>" in ${escapeHtml(label)}.</p>
         ${weekScoped ? `<p style="font-size:var(--text-base, 13px);line-height:1.6;margin:0 0 12px;color:var(--text-muted)">Only this week and later weeks are updated. Earlier weeks are not changed${earlier ? ` (<strong>${earlier}</strong> earlier cop${earlier === 1 ? 'y' : 'ies'})` : ''}.${unknown ? ` <strong>${unknown}</strong> cop${unknown === 1 ? 'y' : 'ies'} whose week could not be read will not change either.` : ''}</p>` : ''}
-        ${choice('changes', 'Only my changes', `${escapeHtml(summary)}${summary.endsWith('.') ? '' : '.'} Each copy keeps its own weights, reps and effort.`, true, false)}
+        ${choice('changes', 'Only my changes', `${escapeHtml(summary)}${summary.endsWith('.') ? '' : '.'} ${_keptWordsSentence(changes)}`, true, false)}
         ${choice('whole', 'Whole workout', 'Every copy becomes an exact copy of this one. Each copy\'s own weights, reps, effort and extra exercises are replaced.', false, true)}
         ${unlinked ? `<p style="font-size:var(--text-base, 13px);line-height:1.6;margin:4px 0 0;color:var(--text-muted)"><strong>${unlinked}</strong> other session${one ? '' : 's'} here share${one ? 's' : ''} this name but ${one ? 'is' : 'are'} not linked to this one, so ${one ? 'it' : 'they'} will not change.</p>` : ''}
         <div class="modal-footer" style="margin-top:12px">
-          <button class="btn-secondary" onclick="closeModal('propagate-modal');openTemplate('${templateId}',window._templateCtx)">Just this session</button>
+          <button class="btn-secondary" onclick="closeModal('propagate-modal');_afterSiblingStep('${templateId}')">Just this session</button>
           <button class="btn-primary" onclick="_applyToAllSessions('${templateId}',document.querySelector('#propagate-modal input[name=propagate-mode]:checked')?.value)">${action}</button>
         </div>
       </div>
@@ -3962,7 +4022,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
   // Client plan propagation
   if (ctx?.isClientPlan && ctx.clientProgramId) {
     const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
-    if (!tmpl) return openTemplate(templateId, ctx)
+    if (!tmpl) return _afterSiblingStep(templateId, ctx)
     const { data: siblings } = await db.from('client_program_workouts')
       .select('workout_template_id, week_number, workout_templates(id, name, family_id), program_phase_workouts(phase_id, program_phases(order_index))')
       .eq('client_program_id', ctx.clientProgramId)
@@ -3981,7 +4041,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
     // shipped one XSS from putting a session name somewhere that did not escape it.
     if (!targets.length) {
       _noTargetsNote(unlinked, earlier, unknown)
-      return openTemplate(templateId, ctx)
+      return _afterSiblingStep(templateId, ctx)
     }
     window._propagateTargets = targets
     window._propagateChanges = changes
@@ -3994,10 +4054,10 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
   // its own separate prompt (#2) which names the clients affected before touching anything.
   if (ctx?.programId) {
     const { data: tmpl } = await db.from('workout_templates').select('name').eq('id', templateId).single()
-    if (!tmpl) return openTemplate(templateId, ctx)
+    if (!tmpl) return _afterSiblingStep(templateId, ctx)
     const { data: phases } = await db.from('program_phases').select('id, order_index').eq('program_id', ctx.programId)
     const phaseIds = (phases || []).map(p => p.id)
-    if (!phaseIds.length) return openTemplate(templateId, ctx)
+    if (!phaseIds.length) return _afterSiblingStep(templateId, ctx)
     const phaseOrder = new Map((phases || []).map(p => [p.id, p.order_index ?? 0]))
     const { data: pws } = await db.from('program_phase_workouts')
       .select('template_id, phase_id, week_number, workout_templates(id, name, family_id)')
@@ -4011,7 +4071,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
       r => phaseOrder.has(r.phase_id) ? [phaseOrder.get(r.phase_id), r.week_number || 1] : null, linked)
     if (!targets.length) {
       _noTargetsNote(unlinked, earlier, unknown)
-      return openTemplate(templateId, ctx)
+      return _afterSiblingStep(templateId, ctx)
     }
     window._propagateTargets = targets
     window._propagateChanges = changes
@@ -4019,7 +4079,7 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
     return
   }
 
-  openTemplate(templateId, ctx)
+  _afterSiblingStep(templateId, ctx)
 }
 
 // A periodization clone is named `${base} — W2`. When the base session is renamed, the clone must keep
@@ -4143,15 +4203,29 @@ async function _propagateReorderToTemplates(change, targetIds) {
   return failures
 }
 
-// Applies the captured changes to the other copies of this session and to THEIR assigned client
-// copies — never a wholesale workout overwrite.
+// Applies the captured changes to the other copies of this session and to the user's OWN assigned copies of
+// them. Real clients' copies are NOT written here: they are collected and asked about once, afterwards, by
+// _afterSiblingStep (this comment used to claim they were updated here; they were silently skipped, 2026-11-15).
 // `mode` is the dialogue's choice: 'changes' (default) applies only the edits; 'whole' makes every copy an
-// exact copy of this workout (_replaceWholeWorkoutInTemplates). Same targets either way.
+// exact copy of this workout (_replaceWholeWorkoutInTemplates). Same targets either way. Real clients only
+// ever get the edits, whichever mode was picked.
 async function _applyToAllSessions(sourceTemplateId, mode = 'changes') {
+  // In flight from BEFORE the dialogue closes until the clients question is mounted (or the workout reopened):
+  // _waitForPropagationModalsToClear holds a view switch for that whole stretch. finally, so a throw cannot
+  // leave the switch waiting out its timeout.
+  window._propagationInFlight = true
+  try {
+    await _applyToAllSessionsInner(sourceTemplateId, mode)
+  } finally {
+    _settlePropagation()
+  }
+}
+
+async function _applyToAllSessionsInner(sourceTemplateId, mode) {
   closeModal('propagate-modal')
   const targetIds = window._propagateTargets || []
   const changes = window._propagateChanges || window._lastExerciseChanges
-  if (!targetIds.length || !changes?.length) { openTemplate(sourceTemplateId, window._templateCtx); return }
+  if (!targetIds.length || !changes?.length) { _afterSiblingStep(sourceTemplateId, window._templateCtx); return }
   const whole = mode === 'whole'
   const applyTo = async (ids) => {
     if (whole) return await _replaceWholeWorkoutInTemplates(sourceTemplateId, ids)
@@ -4161,13 +4235,18 @@ async function _applyToAllSessions(sourceTemplateId, mode = 'changes') {
   }
 
   let applyAllFailures = await applyTo(targetIds)
+  let laterClient = { ids: [], names: [] }
 
-  if (window._templateCtx?.programId) {
+  // Not for a client plan (review, 2026-11-15): its copies ARE a client's, so they would come back as "real
+  // clients" and the plan would be asked about itself. Its entry points pass no programId today; this keeps it so.
+  if (window._templateCtx?.programId && !window._templateCtx.isClientPlan) {
     // Whole mode also replaces the user's own assigned copy of the EDITED workout: that copy was synced
     // before this dialogue with the edits only, and "every copy becomes an exact copy" must include the one
     // a solo user trains from (multi-agent review, 2026-11-14). Changes mode leaves it, as before.
-    const copies = await _assignedCopiesForSession(whole ? [...targetIds, sourceTemplateId] : targetIds)
+    // Role snapshot from the Save, like _checkClientPlanPropagation: Personal view must never collect a client.
+    const copies = await _assignedCopiesForSession(whole ? [...targetIds, sourceTemplateId] : targetIds, window._propagateRole)
     applyAllFailures += await applyTo(copies.soloSelfIds)
+    laterClient = { ids: copies.realClientIds, names: copies.realClientNames }
   }
   if (applyAllFailures) showToast(`${applyAllFailures} assigned session${applyAllFailures === 1 ? '' : 's'} did not pick up this change`, 'error', 6000)
   else if (whole) showToast(`${targetIds.length} cop${targetIds.length === 1 ? 'y now matches' : 'ies now match'} this workout`, 'success')
@@ -4176,7 +4255,7 @@ async function _applyToAllSessions(sourceTemplateId, mode = 'changes') {
   else showToast(`Updated ${targetIds.length + 1} copies`, 'success')
 
   log.ok('_applyToAllSessions', `propagated ${whole ? 'whole workout' : changes.length + ' change(s)'} to ${targetIds.length} sessions`)
-  openTemplate(sourceTemplateId, window._templateCtx)
+  _afterSiblingStep(sourceTemplateId, window._templateCtx, laterClient.ids, laterClient.names, applyAllFailures)
 }
 
 // "Whole workout" (Jake, 2026-11-14): every target becomes an exact copy of the source's exercises, in the

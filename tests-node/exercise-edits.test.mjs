@@ -108,6 +108,22 @@ test('removing a set never cuts a SHORTER copy below the exercise\'s new set cou
   same(_applyExerciseEdits({ sets_json: [1, 2, 3, 4].map(w => ({ weight: w })) }, edits).sets_json.length, 3, 'a 4-set copy loses one')
 })
 
+// Jake, 2026-11-15: the dialogue said "keeps its own weights, reps and effort" while the change WAS the reps.
+test('the "keeps its own" sentence names only what this Save does not touch', () => {
+  const k = context._keptWordsSentence
+  const base = row()
+  const up = (next) => [{ op: 'update', edits: _exerciseEdits(base, next) }]
+  assert.equal(k(up(row({ sets_json: base.sets_json.map(s => ({ ...s, restMin: 120 })) }))), 'Each copy keeps its own weights, reps and effort.')
+  assert.equal(k(up(row({ sets_json: base.sets_json.map(s => ({ ...s, repsMin: 6 })) }))), 'Each copy keeps its own weights and effort.')
+  assert.equal(k(up(row({ sets_json: base.sets_json.map((s, i) => i ? s : { ...s, weight: 120, repsMin: 3 }) }))), 'Each copy keeps its own effort.')
+  assert.equal(k(up(row({ sets_json: base.sets_json.map(s => ({ ...s, intensityMin: 70 })) }))), 'Each copy keeps its own reps and effort.', '%1RM is a load')
+  assert.equal(k(up(row({ metric_type: 'timed', sets_json: [{ duration: 60 }] }))), '', 'a type change replaces the sets: promise nothing')
+  assert.equal(k([{ op: 'update' }]), '', 'an update without field-level edits writes the whole row: promise nothing')
+  assert.equal(k([{ op: 'add' }, { op: 'rename' }]), 'Each copy keeps its own weights, reps and effort.')
+  assert.equal(k(up(row({ sets: 4, sets_json: [...base.sets_json, { repsMin: 8, weight: 80, restMin: 60 }] }))), '', 'an added set arrives with this workout\'s numbers: promise nothing')
+  assert.equal(k(up(row({ sets_json: base.sets_json.map(s => ({ ...s, repsMin: 6 })) })), 'Their copies keep their own'), 'Their copies keep their own weights and effort.')
+})
+
 test('the label names what changed, in words', () => {
   const base = row()
   const next = row({ exercise_id: 'ex2', exercise_name: 'Incline Press', sets_json: base.sets_json.map(s => ({ ...s, restMin: 120 })) })
