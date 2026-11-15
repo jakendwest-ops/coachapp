@@ -1813,7 +1813,7 @@ async function _templateGoBack() {
 // and only THEN asks the clients question. Without the in-flight flag a view switch slipped into that gap and the
 // clients question (real client names) appeared over Personal view.
 function _waitForPropagationModalsToClear(timeoutMs = 120000) {
-  const stillOpen = () => window._propagationInFlight || document.getElementById('client-copy-modal') || document.getElementById('propagate-modal')
+  const stillOpen = () => /** @type {any} */ (window)._propagationInFlight || document.getElementById('client-copy-modal') || document.getElementById('propagate-modal')
   if (!stillOpen()) return Promise.resolve()
   return new Promise((resolve) => {
     let done = false
@@ -1826,7 +1826,7 @@ function _waitForPropagationModalsToClear(timeoutMs = 120000) {
   })
 }
 function _settlePropagation() {
-  window._propagationInFlight = false
+  ;/** @type {any} */ (window)._propagationInFlight = false
   document.dispatchEvent(new Event('propagation-settled'))
 }
 
@@ -3767,8 +3767,8 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverr
   // One question for real clients, asked LAST (Jake, 2026-11-15): collected here for this week's copy, joined
   // by their later-week copies in _applyToAllSessions, asked by _afterSiblingStep. Reset on every Save so a
   // dismissed prompt from an earlier Save can never be re-asked or applied with this Save's changes.
-  window._pendingClientCopyProp = null
-  window._propagateRole = role
+  ;/** @type {any} */ (window)._pendingClientCopyProp = null
+  ;/** @type {any} */ (window)._propagateRole = role
 
   // (#2) Sync assigned copies of the edited session — master program edits only (a direct client-plan
   // edit is already editing the client's own copy, so there's nothing downstream to sync).
@@ -3793,7 +3793,7 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverr
       showToast(`Personal edit — ${copies.realClientCount} assigned client${copies.realClientCount === 1 ? "'s plan was" : "s' plans were"} not changed. Switch to PT view to update them.`, 'info', 6000)
     }
     if (copies.realClientIds.length) {
-      window._pendingClientCopyProp = { changes, ids: copies.realClientIds, names: copies.realClientNames }
+      ;/** @type {any} */ (window)._pendingClientCopyProp = { changes, ids: copies.realClientIds, names: copies.realClientNames }
     }
   }
 
@@ -3807,16 +3807,16 @@ async function _checkClientPlanPropagation(templateId, ctxOverride, changesOverr
 // priorFailures: copies the "Update all copies" step failed to write. Carried into the clients answer so its
 // success toast cannot replace that error (showToast keeps one node).
 function _afterSiblingStep(templateId, ctx, laterIds = [], laterNames = [], priorFailures = 0) {
-  const p = window._pendingClientCopyProp
+  const p = /** @type {any} */ (window)._pendingClientCopyProp
   const thisWeek = new Set(p?.ids || [])
   const ids = [...new Set([...thisWeek, ...laterIds])]
   if (!ids.length) {
-    window._pendingClientCopyProp = null
+    ;/** @type {any} */ (window)._pendingClientCopyProp = null
     return openTemplate(templateId, ctx || window._templateCtx)
   }
   const names = [...new Set([...(p?.names || []), ...laterNames])]
-  const changes = p?.changes || window._propagateChanges || window._lastExerciseChanges || []
-  window._pendingClientCopyProp = { changes, ids, names, ctx: ctx || window._templateCtx, priorFailures }
+  const changes = p?.changes || /** @type {any} */ (window)._propagateChanges || window._lastExerciseChanges || []
+  ;/** @type {any} */ (window)._pendingClientCopyProp = { changes, ids, names, ctx: ctx || window._templateCtx, priorFailures }
   _showClientCopyPropagateModal(names, templateId, changes, laterIds.some(id => !thisWeek.has(id)))
 }
 
@@ -3859,8 +3859,8 @@ function _showClientCopyPropagateModal(clientNames, templateId, changes, laterWe
 // instead of going on to it. Clients get the edits only, never a whole-workout copy.
 async function _continueAfterClientCopy(templateId, doIt) {
   closeModal('client-copy-modal')
-  const p = window._pendingClientCopyProp
-  window._pendingClientCopyProp = null
+  const p = /** @type {any} */ (window)._pendingClientCopyProp
+  ;/** @type {any} */ (window)._pendingClientCopyProp = null
   let failures = 0
   if (doIt && p) for (const change of p.changes) failures += (await _applyChangeToTemplates(change, p.ids)) || 0
   const prior = p?.priorFailures || 0
@@ -4043,8 +4043,8 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
       _noTargetsNote(unlinked, earlier, unknown)
       return _afterSiblingStep(templateId, ctx)
     }
-    window._propagateTargets = targets
-    window._propagateChanges = changes
+    ;/** @type {any} */ (window)._propagateTargets = targets
+    ;/** @type {any} */ (window)._propagateChanges = changes
     _showPropagateModal(tmpl.name, targets.length, `${ctx.clientName || 'this client'}'s plan`, unlinked, earlier, unknown)
     return
   }
@@ -4073,8 +4073,8 @@ async function _checkSiblingPropagation(templateId, ctxOverride, changesOverride
       _noTargetsNote(unlinked, earlier, unknown)
       return _afterSiblingStep(templateId, ctx)
     }
-    window._propagateTargets = targets
-    window._propagateChanges = changes
+    ;/** @type {any} */ (window)._propagateTargets = targets
+    ;/** @type {any} */ (window)._propagateChanges = changes
     _showPropagateModal(tmpl.name, targets.length, 'this plan', unlinked, earlier, unknown)
     return
   }
@@ -4213,7 +4213,7 @@ async function _applyToAllSessions(sourceTemplateId, mode = 'changes') {
   // In flight from BEFORE the dialogue closes until the clients question is mounted (or the workout reopened):
   // _waitForPropagationModalsToClear holds a view switch for that whole stretch. finally, so a throw cannot
   // leave the switch waiting out its timeout.
-  window._propagationInFlight = true
+  ;/** @type {any} */ (window)._propagationInFlight = true
   try {
     await _applyToAllSessionsInner(sourceTemplateId, mode)
   } finally {
@@ -4223,8 +4223,8 @@ async function _applyToAllSessions(sourceTemplateId, mode = 'changes') {
 
 async function _applyToAllSessionsInner(sourceTemplateId, mode) {
   closeModal('propagate-modal')
-  const targetIds = window._propagateTargets || []
-  const changes = window._propagateChanges || window._lastExerciseChanges
+  const targetIds = /** @type {any} */ (window)._propagateTargets || []
+  const changes = /** @type {any} */ (window)._propagateChanges || window._lastExerciseChanges
   if (!targetIds.length || !changes?.length) { _afterSiblingStep(sourceTemplateId, window._templateCtx); return }
   const whole = mode === 'whole'
   const applyTo = async (ids) => {
@@ -4244,7 +4244,7 @@ async function _applyToAllSessionsInner(sourceTemplateId, mode) {
     // before this dialogue with the edits only, and "every copy becomes an exact copy" must include the one
     // a solo user trains from (multi-agent review, 2026-11-14). Changes mode leaves it, as before.
     // Role snapshot from the Save, like _checkClientPlanPropagation: Personal view must never collect a client.
-    const copies = await _assignedCopiesForSession(whole ? [...targetIds, sourceTemplateId] : targetIds, window._propagateRole)
+    const copies = await _assignedCopiesForSession(whole ? [...targetIds, sourceTemplateId] : targetIds, /** @type {any} */ (window)._propagateRole)
     applyAllFailures += await applyTo(copies.soloSelfIds)
     laterClient = { ids: copies.realClientIds, names: copies.realClientNames }
   }
