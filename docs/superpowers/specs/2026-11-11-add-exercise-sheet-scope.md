@@ -87,6 +87,38 @@ Jake: timed hold, jump height, jump distance and intervals are used rarely, so t
   the load is.
 - Today's path to the first exercise (`showCreateTemplateModal` / `saveNewTemplate`, ~1397): New workout → a modal asking
   Name (required) + Description → Create → the empty editor → Add exercise → picker (the slow load) → pick → sets form.
+- **Naming first is fine** ("doesn't feel like a slow step", Jake, 2026-11-14). The name modal stays as it is.
+- **Part 3 settled:** the only change is the picker load (above). Search and the name step are unchanged.
+
+## Plan builder (scoping started 2026-11-15)
+
+- **The slowest part is entering each exercise's prescription** (sets, reps, top set, RPE, percentages) (Jake, 2026-11-15).
+  A plan's workouts use the SAME Add exercise form (`_showExerciseSetsModal`, one form; its callers are all in
+  `js/app-workouts.js`), so the Strength sheet scoped above already covers this. It is scoped, NOT built.
+
+## Whole-flow prototype feedback (Jake, 2026-11-15)
+
+Prototype: https://claude.ai/artifact/8rj3Xvn8Q6WJbX8x7P6rei (private). Changed in it the same day:
+
+1. **Every Fixed / Range switch sits centred directly over its own box.** Each field is one column: label, switch, box
+   (RPE / RIR centred under Effort). A field with no switch keeps an empty switch row, so the boxes line up across a row.
+2. **Customise each set uses the SAME grid as Straight sets:** the open set's name sits in the Sets position, then Reps,
+   Effort, Rest, Percentage. No boxed editor. "Same for every set" is now a full-width button ("‹ Back to the same for every
+   set") with a line saying per-set changes are dropped.
+3. **Top set page = Straight sets layout:** the Top set block shows Sets fixed at 1 in the Sets position, so both blocks and
+   Straight sets put Sets | Reps / Effort | Rest in the same places. Back-offs' "How many" is labelled Sets.
+4. **Percentage has Fixed / Range** (main page and each back-off tile).
+5. **Load has Fixed / Range, and every added option's remove button is the app's red ✕** (the same as the delete-set ✕).
+6. **The footer is pinned to the bottom of the sheet** (Jake, 2026-11-15, after a 390 px check showed Add exercise below the
+   fold on Straight sets and the Top set page about two screens long): Add + superset / Add another / Cancel / Add exercise
+   stay in view while the fields scroll under them.
+
+## Answered 2026-11-15 (Jake)
+
+- **Every % option shows on both pages** (Straight sets and Top set + back-offs). On Straight sets "% of e1RM" comes from that
+  exercise's best set last session. My reading, to confirm: "% of today's top set" on Straight sets = % of set 1's weight today.
+- **Exercise types are a separate, later session.** This release finishes the builder as scoped; Timed hold, jumps and
+  Intervals keep today's form.
 
 ## Parked / not scoped yet
 
