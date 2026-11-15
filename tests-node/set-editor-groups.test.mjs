@@ -131,14 +131,14 @@ describe('what each view draws', () => {
     for (const id of ['ts-rmin-0', 'ts-rmax-0', 'ts-weight-0', 'ts-restmin-0', 'ts-emin-0', 'ts-emax-0', 'ts-imin-0', 'ts-tempo-0', 'ts-cd-0']) assert.ok(ids(html).includes(id), id + ' keeps its id')
   })
 
-  test('top set + back-offs: a top-set block and a back-off block with the three-way "% of", the worked example and the stepper', () => {
+  test('top set + back-offs: a top-set block and a back-off block with the four-way "% of" (lastBest added 2026-11-15), the worked example and the stepper', () => {
     dom({ sets: [set({ isTopSet: true, repsMin: '4', effortMin: '7' }), set({ repsMin: '4', effortMin: '7', intensityMin: '70', intensityBasis: 'topSet' }), set({ repsMin: '4', effortMin: '7', intensityMin: '70', intensityBasis: 'topSet' })] })
     const html = render()
     assert.match(html, /id="ts-block-top"/); assert.match(html, /id="ts-block-back"/)
     assert.match(html, /id="ts-topset-0" aria-pressed="true"/)
     assert.match(html, /id="ts-step-n"[^>]*>2</, 'two back-off sets')
     const sel = /<select id="ts-basis-1"[\s\S]*?<\/select>/.exec(html)[0]
-    assert.deepEqual([...sel.matchAll(/value="(\w+)"/g)].map(m => m[1]), ['topSetWeight', 'topSet', 'stored'])
+    assert.deepEqual([...sel.matchAll(/value="(\w+)"/g)].map(m => m[1]), ['topSetWeight', 'topSet', 'lastBest', 'stored'])
     assert.match(sel, /value="topSet" selected/)
     assert.match(sel, /Today's top set weight/); assert.match(sel, /Today's estimated 1RM/); assert.match(sel, /Last saved 1RM/)
     assert.match(html, /id="ts-example-calc"[^>]*>Top set 100 kg × 4 @ RPE 7 → estimated 1RM 123\.3 kg → 70% = <b>85 kg<\/b>/)

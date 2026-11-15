@@ -9,7 +9,8 @@
 //   topSetWeight -> "Today's top set weight"  (NEW: a percentage of the weight actually lifted)
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { get } from './load-app.mjs'
+import vm from 'node:vm'
+import { get, app } from './load-app.mjs'
 
 const isTop = get('_isTopSetBasis'), orDefault = get('_intensityBasisOrDefault')
 const short = get('_intensityBasisShort'), label = get('_intensityBasisLabel'), help = get('_intensityBasisHelp')
@@ -137,6 +138,72 @@ describe('the runner resolves each basis to the right kilograms', () => {
     assert.equal(cols(tgt('topSetWeight'), exercise).needsOneRM, false)
     assert.equal(cols(tgt('topSet'), exercise).needsOneRM, false)
     assert.equal(cols(tgt('stored'), exercise).needsOneRM, true, 'a stored-1RM row with no saved 1RM still asks for one')
+  })
+})
+
+// 2026-11-15 (Jake: every % option on both the Straight sets and the Top set pages). Straight sets have no top set, so their
+// e1RM comes from this exercise's best working set LAST session: a fourth base, 'lastBest'.
+describe("'lastBest': a % of last session's estimated 1RM", () => {
+  const basisKg = get('_basisKgFor'), best = get('_bestE1RMOfSets'), est = get('_estimate1RM')
+
+  test('it is a live base (no saved 1RM, the wave leaves it alone) but NOT a top-set base (needs no set 1 today)', () => {
+    assert.equal(get('_isLiveBasis')('lastBest'), true)
+    assert.equal(isTop('lastBest'), false, 'the builder must not warn "set 1 is no longer a top set" about it')
+    for (const b of ['topSet', 'topSetWeight']) assert.equal(get('_isLiveBasis')(b), true)
+    for (const b of ['stored', '', null, undefined, 'LastBest']) assert.equal(get('_isLiveBasis')(b), false, String(b))
+    assert.equal(orDefault('lastBest'), 'lastBest', 'it survives a save')
+    assert.equal(label('lastBest'), "Last session's estimated 1RM")
+    assert.equal(short('lastBest'), '% of last e1RM')
+    assert.ok(help('lastBest').length > 10)
+  })
+
+  test('the best of last time\'s WORKING sets wins; warm-ups, bodyweight and blanks are left out', () => {
+    const sets = [
+      { phase: 'warmup', weight_kg: 140, reps_achieved: 3 },                         // heaviest, but a warm-up
+      { phase: 'work', weight_kg: 100, reps_achieved: 5, effort_type: 'rpe', effort_value: 8 },
+      { weight_kg: 105, reps_achieved: 3 },                                            // no phase = a working set (older rows)
+      { phase: 'work', weight_kg: 0, reps_achieved: 10 },                              // bodyweight: nothing to estimate
+      { phase: 'work', weight_kg: null, reps_achieved: null },
+    ]
+    const want = Math.max(est(100, 5, { effortType: 'rpe', effortValue: 8 }), est(105, 3, {}))
+    assert.equal(best(sets), want)
+    assert.ok(best(sets) < est(140, 3, {}), 'the warm-up must not set the base')
+  })
+
+  test('it is the SAME number My Progress shows for that session (one engine): an effort with no scale on it is not guessed as RPE', () => {
+    const legacy = [{ weight_kg: 100, reps_achieved: 5, effort_value: 8, effort_type: null }]
+    assert.equal(best(legacy), get('_sessionBestE1RM')(legacy))
+    assert.equal(best(legacy), est(100, 5, {}), 'unlabelled RPE 8 would give 123.3; the Stats card gives 116.7')
+  })
+
+  test('nothing estimable last time (or no last time) is null, never 0 and never the saved 1RM', () => {
+    assert.equal(best(undefined), null)
+    assert.equal(best([]), null)
+    assert.equal(best([{ phase: 'work', weight_kg: 0, reps_achieved: 8 }]), null)
+  })
+
+  test('the runner reads it from the logger\'s last-session record for that exercise', () => {
+    // `_runner` is a script-level `let` inside the app's vm context, so it is set from inside that context.
+    const setRunner = vm.runInContext('(r => { const was = _runner; _runner = r; return was })', app())
+    const had = setRunner({ lastSession: { Squat: { date: '2026-11-08', sets: [{ phase: 'work', weight_kg: 100, reps_achieved: 5 }] } } })
+    try {
+      assert.equal(basisKg({ name: 'Squat', oneRM: 200 }, { intensityBasis: 'lastBest' }), est(100, 5, {}))
+      assert.ok(!basisKg({ name: 'Bench', oneRM: 200 }, { intensityBasis: 'lastBest' }), 'no history: blank, not the saved 200')
+    } finally { setRunner(had) }
+  })
+
+  test('the target bar labels it and never asks for a saved 1RM', () => {
+    const r = get('_buildTargetCols')({ repsMin: '5', intensityMin: '80', intensityMax: '80', intensityBasis: 'lastBest' }, { name: 'Squat', metric_type: 'weight_reps', oneRM: null })
+    assert.equal(r.cols.find(c => /%$/.test(c.val))?.label, 'OF LAST E1RM')
+    assert.equal(r.needsOneRM, false)
+  })
+
+  test('the programme code needs no saved 1RM for it and the weekly wave leaves its % alone', () => {
+    const s = { repsMin: '5', intensityMin: '80', intensityMax: '80', intensityBasis: 'lastBest' }
+    assert.equal(get('_applyWavePct')(s, () => 95), s)
+    const phases = [{ program_phase_workouts: [{ week_number: 1, workout_templates: { workout_template_exercises: [
+      { exercise_name: 'Squat', exercise_id: 'e1', sets_json: [s] }] } }] }]
+    assert.deepEqual([...get('_neededOneRMsByName')(phases).keys()], [])
   })
 })
 

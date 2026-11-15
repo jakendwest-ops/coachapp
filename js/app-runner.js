@@ -590,7 +590,9 @@ async function fetchRunnerLastSession(exName, exerciseId) {
   const exRows = [...byId, ...byName.filter(r => !exerciseId || r.exercise_id == null || r.exercise_id === exerciseId)]
     .filter(r => !seen.has(r.id) && seen.add(r.id))
     .sort((a, b) => String(b.workout_logs.date).localeCompare(String(a.workout_logs.date)) || String(b.workout_logs.created_at || '').localeCompare(String(a.workout_logs.created_at || '')))
-  if (!exRows.length) { rn.lastSession[exName] = null; return }
+  // lastSessionDone: this exercise's read has SETTLED (found or not). A null entry alone cannot say so: it is also null in flight.
+  const settle = () => { rn.lastSessionDone = rn.lastSessionDone || {}; rn.lastSessionDone[exName] = true }
+  if (!exRows.length) { rn.lastSession[exName] = null; settle(); renderRunnerLastSession(exName); return }
 
   // A jump set can be logged with height_cm/distance_m set and reps_achieved (contacts) still
   // null (contacts aren't required to log a jump) — must count as real data too. A truthy check
@@ -606,9 +608,10 @@ async function fetchRunnerLastSession(exName, exerciseId) {
     const sets = (r.workout_log_sets || [])
       .filter(s => _hasNumVal(s.weight_kg) || _hasNumVal(s.reps_achieved) || _hasNumVal(s.height_cm) || _hasNumVal(s.distance_m))
       .sort((a, b) => a.set_number - b.set_number)
-    if (sets.length) { rn.lastSession[exName] = { date: r.workout_logs.date, sets }; renderRunnerLastSession(exName); return }
+    if (sets.length) { rn.lastSession[exName] = { date: r.workout_logs.date, sets }; settle(); renderRunnerLastSession(exName); return }
   }
   rn.lastSession[exName] = null
+  settle()
   renderRunnerLastSession(exName)
 }
 
@@ -638,8 +641,10 @@ function renderRunnerLastSession(exName) {
   // auto-filling them again through the back door (the exact behaviour removed 2026-07-11).
   // Guarded on _prevTablePaintKey so a repaint can't re-trigger itself into a render loop.
   const ex = _runner?.exercises?.[_runner.exIdx]
-  if (ex?.name === exName && ex.tableRows && data?.sets?.length) {
-    const key = exName + ':' + data.sets.length
+  // A '% of last session's e1RM' set also repaints when the read settles with NOTHING, so its "can't work it out" note appears.
+  const waitsOnLastBest = !data?.sets?.length && (ex?.sets_json || []).some(s => s?.intensityBasis === 'lastBest')
+  if (ex?.name === exName && ex.tableRows && (data?.sets?.length || waitsOnLastBest)) {
+    const key = exName + ':' + (data?.sets?.length || 'none')
     if (_runner._prevTablePaintKey !== key) {
       _runner._prevTablePaintKey = key
       renderRunner()
@@ -1017,7 +1022,18 @@ function _basisKgFor(ex, tgt) {
   const b = tgt?.intensityBasis
   if (b === 'topSetWeight') return ex._liveTopWeight
   if (b === 'topSet') return ex._liveE1RM
+  if (b === 'lastBest') return _bestE1RMOfSets(_runner?.lastSession?.[ex.name]?.sets)
   return ex.oneRM
+}
+
+// 'lastBest': the highest 1RM estimated from last session's WORKING sets of this exercise. The SAME number My Progress's Est 1RM
+// chart and Stats card show for that session (_sessionBestE1RM, app-progress.js: warm-ups left out, an effort counted only when it
+// says which scale it is on) - a second copy here had already drifted from it on older unlabelled sets (multi-agent review,
+// 2026-11-15). null when last time has nothing estimable (no history yet, bodyweight only, all sets above the table's rep limit):
+// the caller then shows an honest blank, never the stored 1RM.
+function _bestE1RMOfSets(sets) {
+  const e = _sessionBestE1RM(sets || [])
+  return e > 0 ? e : null
 }
 
 // ─── Fill from last time, and copy-down (Jake chose both after a prototype, 2026-11-14) ──────────────────────────────
@@ -1222,11 +1238,11 @@ function _buildTargetCols(tgt, ex) {
     // the same instant its kg ghost started resolving correctly: the screen showed a working target
     // beside a warning that no target could be shown. Sibling of basisRM in renderStrengthTable —
     // that one learned about intensityBasis and this one did not (multi-agent review, 2026-09-30).
-    const ofTopSet = _isTopSetBasis(tgt.intensityBasis)
-    if (!ex.oneRM && !ofTopSet) needsOneRM = true   // banner still offers to set it; without a 1RM there is no kg to ghost
+    const ofLiveBase = _isLiveBasis(tgt.intensityBasis)   // today's top set, or last session's best set: neither needs a saved 1RM
+    if (!ex.oneRM && !ofLiveBase) needsOneRM = true   // banner still offers to set it; without a 1RM there is no kg to ghost
     // Said in the label too: "OF TOP SET" is the weight lifted, "OF E1RM" the estimated 1RM (Jake, 2026-10-28: the old single
     // "Today's top set" read as the former and meant the latter).
-    cols.push({ val: escapeHtml(pct) + '%', label: tgt.intensityBasis === 'topSetWeight' ? 'OF TOP SET' : tgt.intensityBasis === 'topSet' ? 'OF E1RM' : '1RM TARGET', accent: true })
+    cols.push({ val: escapeHtml(pct) + '%', label: tgt.intensityBasis === 'topSetWeight' ? 'OF TOP SET' : tgt.intensityBasis === 'topSet' ? 'OF E1RM' : tgt.intensityBasis === 'lastBest' ? 'OF LAST E1RM' : '1RM TARGET', accent: true })
   }
   // Value carries the NUMBER only — the column's own label already says RPE or RIR, so prefixing
   // the value with it just says the same word twice ("RPE / RPE 8–9"). Jake, 2026-07-11.
@@ -1417,7 +1433,7 @@ function renderStrengthTable(ex) {
     // estimate, so `!basisRM` covers both — and when it's falsy a topSet row deliberately falls through
     // to '' rather than to ex.oneRM. Never fall back to the stored 1RM here: a plausible-looking stale
     // number sitting on the bar is worse than an honest blank.
-    const usesTopSet = _isTopSetBasis(rowTgt0?.intensityBasis)
+    const usesLiveBase = _isLiveBasis(rowTgt0?.intensityBasis)   // includes 'lastBest': blank (with a note) until there is a base, never the stored 1RM
     const basisRM = _basisKgFor(ex, rowTgt0)
     // The %1RM rounding (nearest 2.5kg, a barbell-plate constraint) stays in kg regardless of
     // preference — only the DISPLAYED number converts, same as every other weight ghost value.
@@ -1540,13 +1556,17 @@ function renderStrengthTable(ex) {
     const topLogged = !!(hasTopSet && topRow0?.done)
     // A percentage of the top set's WEIGHT needs no effort, so the effort message (case 2) never applies to it; its third case is a
     // ticked top set with no usable weight (a bodyweight row).
-    const basisNoteText = !hasTopSet ? 'No top set left in this workout — enter the weight yourself'
+    const basisNoteText = rowTgt0?.intensityBasis === 'lastBest' ? "Can't work out a weight from last time — enter it yourself"
+      : !hasTopSet ? 'No top set left in this workout — enter the weight yourself'
       : !topLogged ? 'Log the top set first'
       : rowTgt0?.intensityBasis === 'topSetWeight' ? "Can't work out a weight from this set"
       : _effortOrNull(topRow0.effort) === null
         ? `Enter the top set's ${ex.sets_json[0].effortType === 'rir' ? 'RIR' : 'RPE'} (0–10), then tick it again`
         : "Can't estimate from this set"
-    const basisNote = (usesTopSet && !basisRM && rowTgt0?.intensityMin)
+    // 'lastBest' says nothing until last session's read has SETTLED (lastSessionDone): while it is in flight the entry is null exactly as
+    // it is for "no history", and the note would flash a false "can't" on every first paint (multi-agent review, 2026-11-15).
+    const lastBestPending = rowTgt0?.intensityBasis === 'lastBest' && !_runner?.lastSessionDone?.[ex.name]
+    const basisNote = (usesLiveBase && !basisRM && rowTgt0?.intensityMin && !lastBestPending)
       ? `<div id="set-${i}-basis-note" style="font-size:var(--text-sm, 11px);color:var(--text-muted);padding:2px 0 0 28px">${basisNoteText}</div>`
       : ''
     return `${cardOpen}<div style="display:flex;align-items:center;gap:6px">

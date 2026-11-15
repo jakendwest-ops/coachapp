@@ -2098,6 +2098,10 @@ function _tsExampleHtml({ basis, pct, topKg, reps, effortType, effortValue, stor
     const eff = Number.isFinite(parseFloat(effortValue)) ? ` @ ${effortType === 'rir' ? 'RIR' : 'RPE'} ${parseFloat(effortValue)}` : ''
     return `Top set ${fmtWeight(topKg, { spaced: true })} × ${parseInt(reps, 10)}${eff} → estimated 1RM ${fmtWeight(e, { spaced: true, decimals: 1 })} → ${p}% = <b>${load(e)}</b>`
   }
+  if (b === 'lastBest') {
+    const e = _estimate1RM(100, 5, {})   // a worked example: the real base is last session's best set, known only in the logger
+    return `Best set last time, e.g. ${fmtWeight(100, { spaced: true })} × 5 → estimated 1RM ${fmtWeight(e, { spaced: true, decimals: 1 })} → ${p}% = <b>${load(e)}</b>`
+  }
   return `A saved 1RM of ${fmtWeight(storedKg, { spaced: true })} → ${p}% = <b>${load(storedKg)}</b>`
 }
 
@@ -2129,7 +2133,7 @@ function tsSetStructure(mode, containerId) {
     // A back-off set that has no percentage yet is pointed at the weight lifted on the top set (the usual "drop 10%" idiom), not at a
     // saved 1RM the client may not have. One that already carries a percentage is left exactly as the coach set it.
     for (let i = 1; i < sets.length; i++) {
-      if (!_isTopSetBasis(sets[i].intensityBasis) && !sets[i].intensityMin && !sets[i].intensityMax) sets[i].intensityBasis = 'topSetWeight'
+      if (!_isLiveBasis(sets[i].intensityBasis) && !sets[i].intensityMin && !sets[i].intensityMax) sets[i].intensityBasis = 'topSetWeight'   // a chosen 'lastBest' stays
     }
   }
   _tsRerender(containerId)
@@ -2271,7 +2275,7 @@ function _tsGroupedHtml({ containerId, topMode, sets, ui }) {
         <div class="ts-grid">${stepper('Number of sets')}${repsCell(1)}${restCell(1)}${effortCell(1)}</div>
         <div class="wb-load">
           ${cell('Percentage', gmini('ts-imin-1', 'type="number" placeholder="Min" oninput="tsExampleRefresh()"' + val(sets[1].intensityMin)) + dash + gmini('ts-imax-1', 'type="number" placeholder="Max"' + val(sets[1].intensityMax)))}
-          <div class="ts-cell"><label for="ts-basis-1">Of</label><div class="ts-cell-inputs"><select id="ts-basis-1" class="field-input" onchange="tsBasisChanged()">${['topSetWeight', 'topSet', 'stored'].map(x => `<option value="${x}"${b === x ? ' selected' : ''}>${_intensityBasisLabel(x)}</option>`).join('')}</select></div></div>
+          <div class="ts-cell"><label for="ts-basis-1">Of</label><div class="ts-cell-inputs"><select id="ts-basis-1" class="field-input" onchange="tsBasisChanged()">${['topSetWeight', 'topSet', 'lastBest', 'stored'].map(x => `<option value="${x}"${b === x ? ' selected' : ''}>${_intensityBasisLabel(x)}</option>`).join('')}</select></div></div>
           <p class="wb-hint" id="ts-basis-help">${_intensityBasisHelp(b)}</p>
         </div>
         ${exampleHtml}
@@ -2515,12 +2519,12 @@ function renderTemplateSets(containerId, type) {
     //
     // Only offered on a row that ISN'T the top set itself, and only once row 0 actually IS one — a top set has no %1RM of anything to speak of,
     // and this control means nothing until there is a top set for it to point at.
-    const showBasis = i > 0 && (topSetActive || _isTopSetBasis(s.intensityBasis))
+    const showBasis = i > 0 && (topSetActive || _isLiveBasis(s.intensityBasis))
     // Intensity (%1RM) has nothing to be a percentage OF on the top set's own row -- its whole point is to PRODUCE today's e1RM, not consume
     // one. Omitted only for that row; every other row keeps it exactly as before.
     const pctCell = (i === 0 && topSetActive) ? '' : cell(showBasis ? 'Percentage' : 'Intensity (%1RM)', gmini(`ts-imin-${i}`,'type="number" placeholder="Min"'+(s.intensityMin?` value="${escapeHtml(String(s.intensityMin))}"`:'')) + dash + gmini(`ts-imax-${i}`,'type="number" placeholder="Max"'+(s.intensityMax?` value="${escapeHtml(String(s.intensityMax))}"`:'')))
     const basisCell = showBasis ? cell('Of', `<select id="ts-basis-${i}" class="field-input" style="font-size:var(--text-base, 13px)" onchange="flushTemplateSets('${containerId}');window._templateSets[${i}].intensityBasis=this.value">
-      ${['topSetWeight', 'topSet', 'stored'].map(b => `<option value="${b}"${_intensityBasisOrDefault(s.intensityBasis) === b ? ' selected' : ''}>${_intensityBasisLabel(b)}</option>`).join('')}
+      ${['topSetWeight', 'topSet', 'lastBest', 'stored'].map(b => `<option value="${b}"${_intensityBasisOrDefault(s.intensityBasis) === b ? ' selected' : ''}>${_intensityBasisLabel(b)}</option>`).join('')}
     </select>`) : ''
     return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0 14px;margin-bottom:6px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">

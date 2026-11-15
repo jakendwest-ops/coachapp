@@ -739,7 +739,7 @@ function _neededOneRMsByName(phases) {
     ;(phase.program_phase_workouts || []).filter(pw => (pw.week_number || 1) === 1).forEach(pw => {
       ;(pw.workout_templates?.workout_template_exercises || []).forEach(ex => {
         if (ex.exercise_id && !idByName.get(ex.exercise_name)) idByName.set(ex.exercise_name, ex.exercise_id)
-        if ((ex.sets_json || []).some(s => (s.intensityMin != null || s.intensityMax != null) && !_isTopSetBasis(s.intensityBasis))) {
+        if ((ex.sets_json || []).some(s => (s.intensityMin != null || s.intensityMax != null) && !_isLiveBasis(s.intensityBasis))) {
           needsStored.add(ex.exercise_name)
         }
       })
@@ -2370,7 +2370,7 @@ function _pzRefreshPreview(durationWeeks) {
     else {
       note = `Week 1 has <b>${n} set${n === 1 ? '' : 's'} with ${unit}</b>: ${n === 1 ? 'it steps' : 'they step'} week by week.`
       if (rpe && rep.rir) note += ` ${rep.rir} ${rep.rir === 1 ? 'is' : 'are'} written in RIR and ${rep.rir === 1 ? 'converts' : 'convert'} (RIR = 10 − RPE).`
-      if (!rpe && rep.held) note += ` ${rep.held} back-off set${rep.held === 1 ? '' : 's'} pointed at today's top set keep the % you typed.`
+      if (!rpe && rep.held) note += ` ${rep.held} set${rep.held === 1 ? '' : 's'} worked out from today's top set or last session keep the % you typed.`
       note += ' Everything else stays as you typed it.'
       if (rep.mixed) { note += ` They sit at different ${rpe ? 'RPEs' : 'percentages'} now (${rep.values.map(v => show(v)).join(', ')}); every generated week gives them all the same one.`; warn = true }
     }
@@ -2986,7 +2986,7 @@ async function _cleanupPhaseWeeksBeyond(phaseId, maxWeek, programId) {
 // tests-node/periodization-basis.test.mjs. Before 2026-10-01 this was inline in generatePhasePeriodization and basis-blind.
 function _applyWavePct(s, pctOf) {
   if (s.intensityMin == null && s.intensityMax == null) return s
-  if (_isTopSetBasis(s.intensityBasis)) return s
+  if (_isLiveBasis(s.intensityBasis)) return s   // also 'lastBest' (2026-11-15): a % of last session's e1RM keeps the % the coach typed
   const pct = pctOf()
   return pct == null ? s : { ...s, intensityMin: pct, intensityMax: pct }
 }
@@ -3110,7 +3110,7 @@ function _pzWeek1Report(basis, pws) {
           const raw = rpe ? (_hasNumVal(s.effortMin) ? s.effortMin : s.effortMax) : (_hasNumVal(s.intensityMin) ? s.intensityMin : s.intensityMax)
           const n = _pzNum(raw)
           if (n !== null) seen.add(rpe && s.effortType === 'rir' ? 10 - n : n)
-        } else if (!rpe && _isTopSetBasis(s.intensityBasis) && (s.intensityMin != null || s.intensityMax != null)) held++
+        } else if (!rpe && _isLiveBasis(s.intensityBasis) && (s.intensityMin != null || s.intensityMax != null)) held++
       }
     }
   }

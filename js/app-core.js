@@ -1054,18 +1054,25 @@ const _hasNumVal = w => w != null && w !== ''
 //                   kept so no saved template changes meaning; the screens call it "Today's estimated 1RM".
 //   'topSetWeight'  the weight actually LIFTED on today's top set (added 2026-10-28, Jake: "% of the actual weight of the top set, or a %
 //                   of the weight of the e1rm").
+//   'lastBest'      the 1RM ESTIMATED from this exercise's best working set LAST session (added 2026-11-15, Jake: every % option on both
+//                   the Straight sets and the Top set pages; Straight sets have no top set today, so their e1RM comes from last time).
 // The last two resolve against what was lifted TODAY, so they need no stored 1RM and are never rewritten by the weekly percentage wave.
 // ONE definition: the builder, the runner and the programme code each used to compare against 'topSet' on their own.
+// _isTopSetBasis = needs TODAY's top set (set 1). _isLiveBasis = needs no stored 1RM and keeps its typed % through the wave: the two
+// top-set bases AND 'lastBest'. Use _isLiveBasis for "does this need a saved 1RM / does the wave touch it", _isTopSetBasis only for
+// "does this depend on set 1 being a top set".
 function _isTopSetBasis(b) { return b === 'topSet' || b === 'topSetWeight' }
-// Only the three known values survive a save; anything else (a hand-edited sets_json) is the stored-1RM default it always meant.
-function _intensityBasisOrDefault(b) { return _isTopSetBasis(b) ? b : 'stored' }
+function _isLiveBasis(b) { return _isTopSetBasis(b) || b === 'lastBest' }
+// Only the four known values survive a save; anything else (a hand-edited sets_json) is the stored-1RM default it always meant.
+function _intensityBasisOrDefault(b) { return _isLiveBasis(b) ? b : 'stored' }
 // The short label for a set's percentage in a summary line ("70% of e1RM") and the long label for the builder's dropdown.
-function _intensityBasisShort(b) { return b === 'topSetWeight' ? '% of top set' : b === 'topSet' ? '% of e1RM' : '% 1RM' }
-function _intensityBasisLabel(b) { return b === 'topSetWeight' ? "Today's top set weight" : b === 'topSet' ? "Today's estimated 1RM" : 'Last saved 1RM' }
+function _intensityBasisShort(b) { return b === 'topSetWeight' ? '% of top set' : b === 'topSet' ? '% of e1RM' : b === 'lastBest' ? '% of last e1RM' : '% 1RM' }
+function _intensityBasisLabel(b) { return b === 'topSetWeight' ? "Today's top set weight" : b === 'topSet' ? "Today's estimated 1RM" : b === 'lastBest' ? "Last session's estimated 1RM" : 'Last saved 1RM' }
 // One plain sentence per basis, shown under the builder's dropdown so the choice explains itself.
 function _intensityBasisHelp(b) {
   return b === 'topSetWeight' ? 'The weight you lift on set 1.'
     : b === 'topSet' ? "Worked out from set 1's weight, reps and RPE."
+    : b === 'lastBest' ? "Worked out from this exercise's best set last session."
     : "The 1RM saved on the client's profile."
 }
 

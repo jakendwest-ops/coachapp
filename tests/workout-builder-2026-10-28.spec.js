@@ -171,14 +171,14 @@ test.describe('editor: sets that match are one group', () => {
 })
 
 test.describe('editor: top set + back-offs and the "% of" choice', () => {
-  test('choosing "Top set + back-offs" makes the back-off set and offers the three "% of" choices', async ({ page }) => {
+  test('choosing "Top set + back-offs" makes the back-off set and offers the four "% of" choices (last session e1RM added 2026-11-15)', async ({ page }) => {
     await openEditor(page, [{ repsMin: '3', effortType: 'rpe', effortMin: '8' }])
     await page.click('#ts-topset-0')
     await expect(page.locator('#ts-block-top')).toBeVisible()
     await expect(page.locator('#ts-block-back')).toBeVisible()
     await expect(page.locator('#ts-step-n'), 'one back-off set was made').toHaveText('1')
     const options = await page.locator('#ts-basis-1 option').allTextContents()
-    expect(options).toEqual(['Today\'s top set weight', 'Today\'s estimated 1RM', 'Last saved 1RM'])
+    expect(options).toEqual(['Today\'s top set weight', 'Today\'s estimated 1RM', 'Last session\'s estimated 1RM', 'Last saved 1RM'])
     await expect(page.locator('#ts-basis-1'), 'a new back-off set starts on the top set weight: no effort or saved 1RM needed').toHaveValue('topSetWeight')
     await expect(page.locator('#ts-basis-help')).not.toBeEmpty()
   })
