@@ -121,6 +121,7 @@ async function _seedStarterContent() {
       missingEx.map(e => ({ coach_id: currentUser.id, is_personal: isSoloAccount, name: e.name, muscle_group: e.muscle_group, category: e.category }))
     ).select('id, name')
     if (exErr) { log.error('_seedStarterContent', 'exercise seed failed', exErr); return }
+    if (typeof _dropExerciseLibCache === 'function') _dropExerciseLibCache()   // the picker's kept library is now stale
     ;(exRows || []).forEach(r => { exIdByName.set(_exerciseKey(r.name), r.id) })
   }
 

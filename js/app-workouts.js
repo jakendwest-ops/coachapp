@@ -1109,10 +1109,13 @@ async function renderWorkoutTemplates(el) {
 async function renderExerciseLibrary(el) {
   el.innerHTML = '<div class="loading-state">Loading…</div>'
   // Paged for the same reason as the picker's read: a plain read showed only the first 200 exercises.
+  // Owner and view read ONCE: a coach/solo switch mid-read must not file one view's rows under the other's key (multi-agent review, 2026-11-15).
+  const owner = currentUser.id, personal = currentProfile?.role === 'solo', gen = _exerciseLibGen
   const { data: exercises, error } = await _fetchAllRows(() => db.from('exercises').select('*', { count: 'exact' })
-    .eq('coach_id', currentUser.id).eq('is_personal', currentProfile?.role === 'solo').order('name').order('id'))
+    .eq('coach_id', owner).eq('is_personal', personal).order('name').order('id'))
 
   if (error) { log.error('renderExerciseLibrary', 'fetch failed', error); el.innerHTML = `<div class="loading-state">${error.message}</div>`; return }
+  _keepExerciseLib(owner, personal, exercises, gen)   // same rows the picker reads: refresh its copy
 
   const active = exercises.filter(e => !e.is_archived)
   const archived = exercises.filter(e => e.is_archived)
@@ -1171,6 +1174,7 @@ function _toggleArchivedExerciseLibrary() {
 async function toggleExerciseArchived(id, archive) {
   const { error } = await db.from('exercises').update({ is_archived: archive }).eq('id', id).eq('coach_id', currentUser.id)
   if (error) { log.error('toggleExerciseArchived', 'update failed', error); showToast('Could not update — try again.', 'error'); return }
+  _dropExerciseLibCache()
   closeModal('edit-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
 }
@@ -1264,6 +1268,7 @@ async function saveNewExercise() {
   })
 
   if (error) { log.error('saveNewExercise', 'insert failed', error); errorEl.textContent = error.message; return }
+  _dropExerciseLibCache()
   log.ok('saveNewExercise', 'exercise created', {})
   closeModal('add-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
@@ -1356,6 +1361,7 @@ async function saveEditExercise(id) {
 
   if (error) { log.error('saveEditExercise', 'update failed', error); errorEl.textContent = error.message; return }
   if (!(updated || []).length) { log.error('saveEditExercise', 'update matched no row', { id }); errorEl.textContent = 'Not saved — you may not have permission to edit this exercise.'; return }
+  _dropExerciseLibCache()
   log.ok('saveEditExercise', 'exercise updated', { id })
   closeModal('edit-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
@@ -1380,6 +1386,7 @@ async function deleteExercise(id) {
     showToast('That exercise could not be deleted', 'error')
     return
   }
+  _dropExerciseLibCache()
   log.ok('deleteExercise', 'exercise deleted', { id })
   closeModal('edit-exercise-modal')
   renderExerciseLibrary(document.getElementById('workout-tab-content'))
@@ -2911,6 +2918,7 @@ async function _resolveExerciseIdForSave(name, coachId) {
   if (existing) return existing.id
   const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, is_personal: isPersonal, name: trimmed }).select('id').single()
   if (error) { log.error('_resolveExerciseIdForSave', 'auto-create failed', error); return null }
+  _dropExerciseLibCache()
   return created.id
 }
 
@@ -2919,6 +2927,28 @@ async function _resolveExerciseIdForSave(name, coachId) {
 // and a collapsible archived section — replaces the old dropdown+free-text combo everywhere.
 
 let _exercisePickerState = null
+
+// The picker's library, kept between opens (Jake, 2026-11-14: "there was a delay" on every Add exercise). It was re-read in
+// 200-row pages, one after another, on EVERY open. Keyed by owner + personal flag, so a view switch or another account never
+// reads a different library's copy. Every library write drops it (_dropExerciseLibCache, called at each write: the Library
+// page's add / edit / archive / delete, auto-create on save, the starter seed); the picker's own Create adds its row instead;
+// the Library page's own full read refreshes it. Another device's additions show after a reload - accepted in the plan.
+// Also dropped on sign-out (app-progress.js's SIGNED_OUT branch: sign-out does not reload the page).
+// _exerciseLibGen counts library changes. A read records it before it starts and keeps its rows only if nothing changed while it
+// was in flight: otherwise a write that landed mid-read (a Create tapped during "Loading…", an auto-create on save) would be
+// overwritten by the older list (multi-agent review, 2026-11-15).
+let _exerciseLibCache = null   // { key, rows }
+let _exerciseLibGen = 0
+function _exerciseLibKey(coachId, isPersonal) { return coachId ? `${coachId}|${isPersonal ? 1 : 0}` : null }
+function _dropExerciseLibCache() { _exerciseLibCache = null; _exerciseLibGen++ }
+function _keepExerciseLib(coachId, isPersonal, rows, genAtRead) {
+  if (genAtRead !== _exerciseLibGen) return   // the library changed while this read was in flight: its rows are stale
+  const key = _exerciseLibKey(coachId, isPersonal)
+  // An EMPTY read is not kept: "No exercises yet" must not stick for the visit if the read was silently empty.
+  _exerciseLibCache = key && Array.isArray(rows) && rows.length
+    ? { key, rows: rows.map(r => ({ id: r.id, name: r.name, muscle_group: r.muscle_group ?? null, is_archived: !!r.is_archived, metric_type: r.metric_type ?? null })) }
+    : null
+}
 
 // `coachId` may be a VALUE or a PROMISE. Accepting a promise is what lets the caller paint this
 // overlay immediately instead of after 2-3 sequential round-trips of unchanged screen — which is
@@ -2966,10 +2996,19 @@ async function _openExercisePicker(coachId, onPick) {
   }
   if (!_exercisePickerState) return // closed while resolving
   _exercisePickerState.coachId = coachId
-  // Paged: the API silently returns at most 200 rows, so a plain read hid every exercise past row 200 from
-  // BOTH the list and its search (the E2E account holds 6,275). Fails to null rather than a partial list.
-  const { data, error: loadErr } = await _fetchAllRows(() => db.from('exercises').select('id, name, muscle_group, is_archived, metric_type', { count: 'exact' })
-    .eq('coach_id', coachId).eq('is_personal', currentProfile?.role === 'solo').order('name').order('id'))
+  const isPersonal = currentProfile?.role === 'solo'
+  const key = _exerciseLibKey(coachId, isPersonal)
+  let data = null, loadErr = null
+  if (key && _exerciseLibCache?.key === key) {
+    data = _exerciseLibCache.rows   // kept from an earlier open or the Library page: no read
+  } else {
+    // Paged: the API silently returns at most 200 rows, so a plain read hid every exercise past row 200 from
+    // BOTH the list and its search (the E2E account holds 6,275). Fails to null rather than a partial list.
+    const gen = _exerciseLibGen
+    ;({ data, error: loadErr } = await _fetchAllRows(() => db.from('exercises').select('id, name, muscle_group, is_archived, metric_type', { count: 'exact' })
+      .eq('coach_id', coachId).eq('is_personal', isPersonal).order('name').order('id')))
+    if (!loadErr) _keepExerciseLib(coachId, isPersonal, data, gen)   // a failed read is never kept
+  }
   if (!_exercisePickerState) return // closed before the fetch resolved
   // A failed read must not look like an empty library: "No exercises yet — create your first one" over a library of
   // thousands is exactly how a duplicate gets typed in. Say it failed, and offer no Create row (we cannot tell what exists).
@@ -3062,6 +3101,16 @@ async function _createExerciseFromPicker(name) {
   if (existing) { _pickExercise(existing.id, existing.name, existing.metric_type); return }
   const { data: created, error } = await db.from('exercises').insert({ coach_id: coachId, is_personal: isPersonal, name: trimmed }).select('id, name').single()
   if (error) { log.error('_createExerciseFromPicker', 'insert failed', error); showToast('Could not create exercise — try again.', 'error'); return }
+  // Add it to the kept library (in name order) so the next open lists it without a re-read.
+  // Only the new row is placed; the rest keep the database's own order. A read still in flight is made stale (gen++).
+  const ck = _exerciseLibKey(coachId, isPersonal)
+  _exerciseLibGen++
+  if (ck && _exerciseLibCache?.key === ck) {
+    const rows = [..._exerciseLibCache.rows]
+    const at = rows.findIndex(r => (r.name || '').localeCompare(created.name, undefined, { sensitivity: 'base' }) > 0)
+    rows.splice(at < 0 ? rows.length : at, 0, { id: created.id, name: created.name, muscle_group: null, is_archived: false, metric_type: null })
+    _exerciseLibCache = { key: ck, rows }
+  }
   _pickExercise(created.id, created.name)
 }
 guardReentry('_createExerciseFromPicker')  // double-press duplicates; see tests/reentry-guard-2026-08-28.spec.js
@@ -3100,8 +3149,13 @@ function _deriveFromMetricType(metricType) {
 // next time. A convenience default, not correctness-critical — never block the modal close on it.
 function _rememberExerciseMetricType(libId, metricType) {
   if (!libId) return
-  db.from('exercises').update({ metric_type: metricType }).eq('id', libId).eq('coach_id', currentUser.id)
-    .then(({ error }) => { if (error) log.error('_rememberExerciseMetricType', 'update failed', error) })
+  // .select('id'): a client's update matches no row and returns no error, so only a row that came back is copied into the kept library.
+  db.from('exercises').update({ metric_type: metricType }).eq('id', libId).eq('coach_id', currentUser.id).select('id')
+    .then(({ data, error }) => {
+      if (error) { log.error('_rememberExerciseMetricType', 'update failed', error); return }
+      const kept = (data || []).length ? _exerciseLibCache?.rows.find(r => r.id === libId) : null
+      if (kept) kept.metric_type = metricType   // the picker's next open defaults to it without a re-read
+    })
 }
 
 // Returns true if the draft differs from its baseline — a newly added row (id === null), a removed

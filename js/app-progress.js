@@ -1390,6 +1390,8 @@ db.auth.onAuthStateChange((event, session) => {
     window._soloClientId = null
     // "View as" too: More's Sign out does not reload, and the next account would load the viewed client's id (review, 2026-11-07).
     for (const k of ['_sudoClientId', '_sudoClientName', '_sudoFromRole']) delete /** @type {any} */ (window)[k]
+    // The exercise picker's kept library (app-workouts.js): the next account on this tab reads its own (review, 2026-11-15).
+    if (typeof _dropExerciseLibCache === 'function') _dropExerciseLibCache()
     const switcher = document.getElementById('view-switcher')
     if (switcher) switcher.style.display = 'none'
     document.getElementById('mobile-view-switcher')?.classList.remove('mvs-on')
