@@ -991,9 +991,38 @@ function toggleTableSet(rowIdx) {
     _copyDownFrom(ex, rowIdx)
     _syncLoggedSetsFromTable(ex)
     _recomputeLiveE1RM(ex)
+    // In a superset the screen moves on to the next member after this exercise's rest (Step D); a 0:00 rest moves on at once.
+    const owner = _runner.exIdx
+    const ssNext = _rnSsNext(_runner.exercises, owner)
+    if (ssNext !== -1) {
+      const rest = _rnSsRest(ex)
+      if (rest === 0) {
+        // This tick replaces any rest still running - and the move it had queued - before going straight on. Without this an
+        // older member's rest, still counting or already done, fired its own "move on" on arrival or later and bounced the screen to
+        // the wrong member (multi-agent review, 2026-11-16).
+        _runner._restInterval = clearTimer(_runner._restInterval)
+        _runner.restRemaining = null
+        _runner._restForExIdx = null
+        _runner._restPendingFire = false
+        _runner._afterRest = null
+        document.getElementById('rest-timer-overlay')?.remove()
+        runnerJumpTo(ssNext)
+        return
+      }
+      // Worked out again when the rest ends, not now: a member swapped out or finished by hand during the rest is passed over.
+      _runner._afterRest = () => { const n = _rnSsNext(_runner.exercises, owner); _runner.exIdx = n !== -1 ? n : owner; renderRunner() }
+      startRestTimer(rest)
+      renderRunner()
+      return
+    }
+    // This tick's rest replaces any rest still running, so it replaces what that rest was going to do next too: a superset member's
+    // queued "move on to A2" must not fire at the end of this exercise's rest.
+    _runner._afterRest = null
     startRestTimer(ex.restSecs || 90)
     renderRunner()
   } else {
+    // Unticked during the rest it started: that rest no longer leads anywhere, so it must not move the screen on.
+    if (_runner._restForExIdx === _runner.exIdx) _runner._afterRest = null
     row.done = false
     _syncLoggedSetsFromTable(ex)
     _recomputeLiveE1RM(ex)
@@ -1653,6 +1682,10 @@ function renderRunner() {
   const doneFlags = _runner.exercises.map(e => _isExerciseComplete(e))
   const lastSet = ex.loggedSets[ex.loggedSets.length - 1]
   const isTable = _isPlainStrengthExercise(ex)
+  // Superset (Step D): the A1 tag and round line in the header, and a line above the button naming where the screen goes after this set.
+  const ss = _rnSsInfo(_runner.exercises, _runner.exIdx)
+  const ssNextIdx = ss ? _rnSsNext(_runner.exercises, _runner.exIdx) : -1
+  const ssNextInfo = ssNextIdx !== -1 ? _rnSsInfo(_runner.exercises, ssNextIdx) : null
 
   let el = document.getElementById('workout-runner')
   if (!el) { el = document.createElement('div'); el.id = 'workout-runner'; document.body.appendChild(el) }
@@ -1670,6 +1703,7 @@ function renderRunner() {
               <span style="font-size:var(--text-sm, 11px);font-weight:600;color:var(--text-muted)"><span id="wr-timer">${fmtRunnerTime(_runner.startTime)}</span></span>
             </div>
             <div id="wr-title" style="font-size:var(--legacy-text-22, 22px);font-weight:800;color:var(--text);line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden">${escapeHtml(ex.name)||'Exercise name'}</div>
+            ${ss ? `<div id="wr-ss" style="display:flex;align-items:center;gap:8px;margin-top:6px"><span id="wr-ss-tag" class="tpl-chip tpl-chip-ss">${escapeHtml(ss.tag)}</span><span id="wr-ss-round" style="font-size:var(--text-md);font-weight:700;color:var(--text-muted)">${escapeHtml(ss.line)}</span></div>` : ''}
             ${isTable && Number.isFinite(ex._liveE1RM) ? `<div style="margin-top:6px"><span id="ex-e1rm-chip" style="font-size:var(--text-lg, 14px);font-weight:700;color:var(--accent);padding:4px 10px;border-radius:999px;background:rgba(99,102,241,.12)">Est. 1RM: ${fmtWeight(ex._liveE1RM, { spaced: true, decimals: 1 })}</span></div>` : ''}
             ${!isTable && (ex.targetReps||ex.targetWeight) ? `<div style="font-size:var(--text-base, 13px);font-weight:600;color:var(--text);margin-top:4px">${[ex.targetReps?escapeHtml(ex.targetReps)+' reps':null,ex.targetWeight?'@ '+fmtWeight(ex.targetWeight):null].filter(Boolean).join(' · ')}</div>` : ''}
             <!-- The set table has the Next bar at the bottom, which names the next exercise; cardio has no such bar. -->
@@ -1763,6 +1797,9 @@ function renderRunner() {
         <div style="display:flex;gap:4px">${Array.from({length:ex.targetSets},(_,i)=>`<div style="width:20px;height:6px;border-radius:3px;background:${i<ex.loggedSets.length?'var(--accent)':i===ex.loggedSets.length?'rgba(99,102,241,0.4)':'var(--border)'}"></div>`).join('')}</div>
       </div>` : ''}
 
+
+      <!-- Superset: where the screen goes after this set (Step D). -->
+      ${ssNextInfo ? `<div id="wr-ss-next" style="padding:8px 14px;border-top:1px solid var(--border);background:var(--bg);font-size:var(--text-base);color:var(--text-muted)">After this set: <span style="font-weight:700;color:var(--text)">${escapeHtml(ssNextInfo.tag)} · ${escapeHtml(_runner.exercises[ssNextIdx].name)}</span></div>` : ''}
 
       <!-- Set input -->
       <div style="padding:10px 12px 12px;background:var(--surface)${isTable ? ';padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px));border-top:1px solid var(--border)' : ''}">
@@ -1928,9 +1965,8 @@ function logRunnerSet() {
   // NOTE: the superset auto-advance that used to sit here was deleted with the wizard (2026-08-11).
   // It was reachable — cardio still reaches logRunnerSet — but had four bugs (scanned from index 0 so
   // it jumped BACKWARDS, ping-ponged with 3+ members, no completion check, and its bare return skipped
-  // both the rest timer and the finish screen). `supersetGroup` is still WRITTEN (launchRunner and the
-  // builder) but now has no reader anywhere: supersets are inert in the runner until the grouped-work
-  // slice rebuilds them properly. That is a known, deliberate gap, not an accident.
+  // both the rest timer and the finish screen). Supersets came back on 2026-11-16 (Step D) for exercises logged in the set table
+  // only: see _rnSsNext and toggleTableSet. A cardio or interval exercise is never part of the rounds.
   const hitTarget = ex.targetSets > 0 && ex.loggedSets.length >= ex.targetSets
   if (hitTarget) {
     const proceed = () => {
@@ -1954,6 +1990,9 @@ function logRunnerSet() {
     return
   }
   const restSecs = ex.restSecs || 90
+  // This set's rest replaces any rest still running, so it replaces that rest's queued "move on" too (a superset member's, say): the
+  // same rule as the table tick (multi-agent review, 2026-11-16). The interval timer below queues its own when there is one.
+  _runner._afterRest = null
   if (ex.type === 'cardio') {
     const nextTgt = ex.sets_json?.[ex.loggedSets.length] || ex.sets_json?.[0] || {}
     // Interval-shaped blocks (incl. a steady-effort block someone extended via +Add extra set) keep
@@ -2923,6 +2962,51 @@ function _nextExerciseTarget() {
   if (!todo.length) return -1
   if (_isExerciseComplete(exercises[exIdx])) return todo[0]
   return todo.find(i => i > exIdx) ?? -1
+}
+
+// ─── SUPERSETS IN THE LOGGER (Step D, docs/superpowers/plans/2026-11-15-workout-builder-speed.md; Jake's option 1) ───────────────────────
+// One exercise at a time: tick A1 -> A1's rest -> the screen moves to A2 by itself -> tick -> A2's rest -> A3, or back to A1, every round.
+// A superset is the exercises carrying the same letter (2+ of them, the builder's own rule: a letter on one exercise is not a superset).
+// Only exercises logged in the set table take part; an interval or cardio member is done on its own. Pure helpers first
+// (tests-node/superset-runner.test.mjs). The "Next exercise" button is NOT superset-aware on purpose: it is the way out of a superset,
+// and the tabs still go anywhere. Everything here is worked out from ticked sets, so moving by hand never breaks the round count.
+const _rnSsKey = ex => (ex?.supersetGroup == null ? '' : String(ex.supersetGroup).trim().toUpperCase())
+// Indices of i's superset in list order, or [] when i is not in one.
+function _rnSsMembers(exercises, i) {
+  const k = _rnSsKey(exercises[i])
+  if (!k || !_isPlainStrengthExercise(exercises[i])) return []
+  const m = exercises.map((e, x) => x).filter(x => _rnSsKey(exercises[x]) === k && _isPlainStrengthExercise(exercises[x]) && exercises[x].name)
+  return m.length >= 2 ? m : []
+}
+// Where the screen goes after a tick on i: the next member round the circle that still has a set to do, or -1 (no other member has one).
+function _rnSsNext(exercises, i) {
+  const m = _rnSsMembers(exercises, i)
+  const at = m.indexOf(i)
+  if (at === -1) return -1
+  for (let s = 1; s < m.length; s++) {
+    const x = m[(at + s) % m.length]
+    if (!_isExerciseComplete(exercises[x])) return x
+  }
+  return -1
+}
+// Sets ticked so far on an exercise (its table if it has been opened, otherwise what was logged).
+// Counted as _isExerciseComplete counts them (work sets only), so the header and the move-on choice never disagree.
+const _rnDoneCount = ex => (ex?.tableRows?.length ? ex.tableRows.filter(r => r.done).length : _countableSets(ex?.loggedSets || []).length)
+// What the header says: { tag: 'A1', line: 'Superset A · round 2 of 3' }, or null when not in a superset.
+function _rnSsInfo(exercises, i) {
+  const m = _rnSsMembers(exercises, i)
+  if (!m.length) return null
+  const k = _rnSsKey(exercises[i]), ex = exercises[i]
+  const total = ex.targetSets || ex.tableRows?.length || 1
+  const done = _rnDoneCount(ex)
+  return { tag: k + (m.indexOf(i) + 1), line: done >= total ? `Superset ${k} · done` : `Superset ${k} · round ${done + 1} of ${total}` }
+}
+// The rest before moving on: the exercise's own rest, except that a rest written as 0:00 means "go straight to the next one" (the usual
+// prescription between A1 and A2). Elsewhere a blank or zero rest is still 90 s, as it always was.
+function _rnSsRest(ex) {
+  const raw = ex?.sets_json?.[0]?.restMin
+  if (raw != null && String(raw).trim() !== '' && parseRest(raw) === 0) return 0
+  return ex?.restSecs || 90
 }
 
 function skipToNextExercise() {
