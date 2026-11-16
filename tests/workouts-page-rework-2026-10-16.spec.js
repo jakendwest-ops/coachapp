@@ -510,7 +510,8 @@ test.describe('Solo: the reworked Workouts page (2026-10-16)', () => {
       await item.locator('[data-yw-toggle]').click()
       const card = await item.boundingBox()
       const acts = await item.locator('.wk-acts button').all()
-      expect(acts.length, 'Edit and Make a copy are both there').toBe(2)
+      // Add to calendar joined Edit and Make a copy on 2026-11-16 (Personal view's own workouts; tests/schedule-workout-2026-11-16.spec.js).
+      expect(acts.length, 'Edit, Make a copy and Add to calendar are all there').toBe(3)
       for (const b of acts) {
         const r = await b.boundingBox()
         expect(r.x, 'inside the card').toBeGreaterThanOrEqual(card.x)

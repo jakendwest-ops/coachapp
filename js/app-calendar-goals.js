@@ -136,6 +136,7 @@ async function _scheduleWorkout(templateId, ds) {
   _refreshAfterSchedule()
   return true
 }
+guardReentry('_scheduleWorkout')   // a double tap (or Enter then a tap) would put the workout on the day twice
 
 // Takes a scheduled workout off its day. The workout itself stays in the person's workouts; only the calendar entry goes. Rowcount-checked:
 // a refused delete returns no error and no row.
